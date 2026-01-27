@@ -1,196 +1,201 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SLY Transportation Services</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLY Transportation Services</title>
 
-  <!-- Flatpickr Calendar -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+* {
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
 
-  <style>
-    /* Global */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: Arial, Helvetica, sans-serif;
-    }
+body {
+  margin: 0;
+  background: #f4f4f4;
+  color: #222;
+}
 
-    body {
-      background: #f4f4f4;
-      color: #222;
-    }
+header {
+  background: #000;
+  color: #fff;
+  text-align: center;
+  padding: 20px;
+}
 
-    /* Header */
-    .business-header {
-      background: #000;
-      color: #fff;
-      text-align: center;
-      padding: 20px;
-    }
+.slider {
+  max-width: 900px;
+  height: 300px;
+  margin: 20px auto;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+}
 
-    .business-name {
-      font-size: 26px;
-      font-weight: bold;
-    }
+.slide {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 3s ease-in-out;
+}
 
-    .business-tagline {
-      font-size: 14px;
-      margin-top: 5px;
-    }
+.slide.active {
+  opacity: 1;
+}
 
-    /* Slider */
-    .slider {
-      position: relative;
-      max-width: 900px;
-      height: 320px;
-      margin: 20px auto;
-      overflow: hidden;
-      border-radius: 10px;
-    }
+.container {
+  max-width: 900px;
+  background: #fff;
+  margin: 20px auto;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 5px 15px rgba(0,0,0,.15);
+}
 
-    .slide {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      opacity: 0;
-      transition: opacity 3s ease-in-out;
-    }
+.vehicle-preview {
+  text-align: center;
+}
 
-    .slide.active {
-      opacity: 1;
-    }
+.vehicle-preview img {
+  max-width: 350px;
+  width: 100%;
+  border-radius: 10px;
+}
 
-    /* Booking Box */
-    .booking-box {
-      background: #fff;
-      max-width: 900px;
-      margin: 20px auto;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
+.requirements {
+  text-align: center;
+  color: #b00000;
+  margin: 15px 0;
+  font-weight: bold;
+}
 
-    .vehicle-preview {
-      text-align: center;
-      margin-bottom: 15px;
-    }
+label {
+  display: block;
+  margin-top: 12px;
+  font-weight: bold;
+}
 
-    .vehicle-preview img {
-      max-width: 350px;
-      width: 100%;
-      border-radius: 10px;
-    }
+input, select {
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  font-size: 16px;
+}
 
-    #vehicleName {
-      font-size: 18px;
-      font-weight: bold;
-      margin-top: 8px;
-    }
+.price {
+  margin-top: 15px;
+  font-size: 22px;
+  font-weight: bold;
+}
 
-    .requirements {
-      text-align: center;
-      color: #c00000;
-      margin-bottom: 15px;
-    }
-
-    /* Form */
-    label {
-      display: block;
-      margin-top: 12px;
-      font-weight: bold;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 10px;
-      margin-top: 5px;
-      font-size: 16px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
-    }
-
-    #totalPrice {
-      margin-top: 15px;
-      font-size: 22px;
-      font-weight: bold;
-    }
-
-    #depositInfo {
-      margin-top: 5px;
-      font-size: 16px;
-    }
-
-    button {
-      margin-top: 15px;
-      width: 100%;
-      padding: 12px;
-      font-size: 18px;
-      font-weight: bold;
-      background: #25d366;
-      color: #fff;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-
-    /* WhatsApp Button */
-    .whatsapp-float {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #25d366;
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: 50px;
-      text-decoration: none;
-      font-weight: bold;
-    }
-
-    @media (max-width: 600px) {
-      .slider {
-        height: 220px;
-      }
-    }
-  </style>
+button {
+  margin-top: 15px;
+  width: 100%;
+  padding: 14px;
+  background: #25d366;
+  color: white;
+  border: none;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+}
+</style>
 </head>
+
 <body>
 
-  <div class="business-header">
-    <div class="business-name">SLY TRANSPORTATION SERVICES</div>
-    <div class="business-tagline">Car Rentals</div>
+<header>
+  <h1>SLY TRANSPORTATION SERVICES</h1>
+  <p>Car Rentals</p>
+</header>
+
+<!-- SLIDESHOW -->
+<div class="slider">
+  <img src="IMG_0025.jpeg" class="slide active">
+  <img src="slingshot-1.jpg" class="slide">
+  <img src="slingshot-2.jpg" class="slide">
+</div>
+
+<div class="container">
+
+  <div class="vehicle-preview">
+    <img id="vehicleImage" src="IMG_0025.jpeg">
+    <h3 id="vehicleName">2012 Toyota Camry</h3>
   </div>
 
-  <!-- Slideshow -->
-  <div class="slider">
-    <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
-    <img src="slingshot-1.jpg" class="slide" alt="Slingshot">
-    <img src="slingshot-2.jpg" class="slide" alt="Slingshot">
-    <img src="slingshot-3.jpg" class="slide" alt="Slingshot">
+  <div class="requirements">
+    ALL RENTERS MUST HAVE A VALID DRIVER’S LICENSE AND RENTERS INSURANCE
   </div>
 
-  <div class="booking-box">
+  <label>Pick‑up Date & Time</label>
+  <input type="datetime-local" id="pickup">
 
-    <div class="vehicle-preview">
-      <img id="vehicleImage" src="IMG_0025.jpeg" alt="Vehicle">
-      <div id="vehicleName">2012 Toyota Camry</div>
-    </div>
+  <label>Drop‑off Date & Time</label>
+  <input type="datetime-local" id="dropoff">
 
-    <p class="requirements"><strong>ALL RENTERS MUST HAVE A VALID DRIVER’S LICENSE AND RENTERS INSURANCE</strong></p>
+  <label>Select Vehicle</label>
+  <select id="vehicle">
+    <option value="Camry" data-price="50" data-image="IMG_0025.jpeg">
+      2012 Toyota Camry – $50/day
+    </option>
+    <option value="Slingshot" data-price="300" data-image="slingshot-1.jpg">
+      2023 Slingshot R – $300/day
+    </option>
+  </select>
 
-    <form id="bookingForm">
+  <div class="price" id="totalPrice">$0.00</div>
 
-      <label>Pick‑up Date & Time</label>
-      <input type="text" id="pickup" required>
+  <button onclick="book()">Book via WhatsApp</button>
 
-      <label>Drop‑off Date & Time</label>
-      <input type="text" id="dropoff" required>
+</div>
 
-      <label>Select Vehicle</label>
-      <select id="vehicle">
-        <option value="2012 Toyota Camry"
-          data-daily="50"
-          data-weekly="250"
-          data-deposit="150"
+<script>
+/* SLIDESHOW */
+let slides = document.querySelectorAll(".slide");
+let i = 0;
+
+setInterval(() => {
+  slides[i].classList.remove("active");
+  i = (i + 1) % slides.length;
+  slides[i].classList.add("active");
+}, 7000);
+
+/* VEHICLE CHANGE */
+const vehicle = document.getElementById("vehicle");
+const vehicleImage = document.getElementById("vehicleImage");
+const vehicleName = document.getElementById("vehicleName");
+const totalPrice = document.getElementById("totalPrice");
+
+vehicle.addEventListener("change", () => {
+  let opt = vehicle.options[vehicle.selectedIndex];
+  vehicleImage.src = opt.dataset.image;
+  vehicleName.textContent = opt.text;
+});
+
+/* PRICE CALCULATION */
+function book() {
+  let pickup = new Date(document.getElementById("pickup").value);
+  let dropoff = new Date(document.getElementById("dropoff").value);
+
+  if (!pickup  !dropoff  dropoff <= pickup) {
+    alert("Please select valid dates");
+    return;
+  }
+
+  let days = Math.ceil((dropoff - pickup) / (1000*60*60*24));
+  let price = vehicle.options[vehicle.selectedIndex].dataset.price;
+  let total = days * price;
+
+  totalPrice.textContent = $${total}.00;
+
+  window.open(
+    https://wa.me/12139166606?text=Booking%20Request%20for%20${vehicle.value}%20for%20${days}%20day(s)
+  );
+}
+</script>
+
+</body>
+</html>
