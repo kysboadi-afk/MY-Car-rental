@@ -216,6 +216,26 @@ input:focus {
   cursor: pointer;
   transition: background 0.3s ease, transform 0.2s ease;
 }
+/* ---------- BOOKING FORM ---------- */
+.booking {
+  background: #fff;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-top: 20px;
+}
+
+/* ... your other booking input styles ... */
+
+/* ---------- BOOKED DATE HIGHLIGHT ---------- */
+.booked-date {
+  background: #f44336; /* red */
+  color: #fff;
+  padding: 4px 6px;
+  border-radius: 4px;
+  margin: 2px;
+  display: inline-block;
+}
 
 .booking button:hover {
   background: #333;
