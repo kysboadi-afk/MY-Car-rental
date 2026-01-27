@@ -1,117 +1,88 @@
-/* ===== Global Styles ===== */
-body {
-  font-family: Arial, sans-serif;
+/* ===== BASE RESET ===== */
+* {
+  box-sizing: border-box;
   margin: 0;
-  background-color: #f4f4f4;
-}
-
-/* ===== Header ===== */
-header {
-  background-color: #222;
-  color: white;
-  padding: 20px;
-  text-align: center;
-}
-
-.tagline {
-  text-align: center;
-  margin-bottom: 6px;
-}
-
-.top-info {
-  text-align: center;
-  font-size: 14px;
-  margin-bottom: 20px;
-}
-
-/* ===== Navigation ===== */
-.nav {
-  list-style: none;
   padding: 0;
-  display: flex;
-  justify-content: center;
-  gap: 20px;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-.nav a {
-  color: white;
-  text-decoration: none;
-  font-weight: bold;
-}
-
-/* ===== Image Slider ===== */
-.slider {
-  position: relative;
-  max-width: 500px;
-  margin: 20px auto;
-}
-
-.slide {
-  display: none;
-  width: 100%;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-}
-
-.slide.active {
-  display: block;
-  opacity: 1;
-}
-
-.prev,
-.next {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  border: none;
-  padding: 10px;
-  cursor: pointer;
-}
-
-.prev {
-  left: 10px;
-}
-
-.next {
-  right: 10px;
-}
-
-/* ===== Cars Section ===== */
-.cars {
+/* ===== PAGE CENTERING ===== */
+body {
+  background: #f2f2f2;
   padding: 20px;
 }
 
-.car {
-  background: white;
-  padding: 15px;
-  margin-bottom: 10px;
-  border-radius: 5px;
+/* ===== BOOKING CONTAINER ===== */
+.booking-box {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 22px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
-/* ===== Images Inside Containers ===== */
-.container img:not(.slide) {
-  width: 100%;
-  max-width: 600px;
+/* ===== LABELS ===== */
+.booking-box label {
   display: block;
-  margin: 15px auto;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #333;
+}
+
+/* ===== DATE INPUTS ===== */
+.booking-box input[type="date"] {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 15px;
   border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #ffffff;
 }
 
-/* ===== Deposit & Requirements ===== */
-.deposit,
-.requirement {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #555;
-  text-align: center;
+.booking-box input[type="date"]:focus {
+  border-color: #25d366;
+  outline: none;
 }
 
-/* ===== Footer ===== */
-footer {
+/* ===== PRICE DISPLAY ===== */
+#totalPrice {
+  margin: 18px 0;
+  padding: 14px;
   text-align: center;
-  padding: 10px;
-  background: #222;
-  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  background: #f7f7f7;
+  border-radius: 6px;
+  color: #111;
+}
+
+/* ===== BOOK BUTTON ===== */
+.booking-box button {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #25d366;
+  color: #ffffff;
+  transition: background 0.25s ease;
+}
+
+.booking-box button:hover {
+  background: #1ebe5d;
+}
+
+/* ===== MOBILE OPTIMIZATION ===== */
+@media (max-width: 480px) {
+  body {
+    padding: 10px;
+  }
+
+  .booking-box {
+    padding: 18px;
+  }
 }
