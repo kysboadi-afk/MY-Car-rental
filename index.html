@@ -93,9 +93,6 @@
   scrolling="no">
 </iframe>
 
-
-
-  <h2>Book This Car</h2>
  <h2>Book This Car</h2>
 
 <label for="pickup">Pickup Date</label>
@@ -106,29 +103,41 @@
 
 <div class="price" id="totalPrice">
   Price: --
-  </div>
+</div>
+
+<button onclick="sendWhatsApp()" class="whatsapp-btn">
+  Book on WhatsApp
+</button>
   <div class="footer">
     © SLY TRANSPORTATION SERVICES Car Rental
   </div>
+  
 <script>
   const dailyRate = 45;
 
-  function calculatePrice() {
-    const pickup = document.getElementById("pickup").value;
-    const dropoff = document.getElementById("return").value;
+  function sendWhatsApp() {
+  const pickup = document.getElementById("pickup").value;
+  const returnDate = document.getElementById("return").value;
+  const price = document.getElementById("totalPrice").innerText;
 
-    if (!pickup || !dropoff) return;
-
-    const start = new Date(pickup);
-    const end = new Date(dropoff);
-    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-
-    if (days > 0) {
-      document.getElementById("totalPrice").innerText =
-        "Price: $" + (days * dailyRate);
-    }
+  if (!pickup || !returnDate) {
+    alert("Please select pickup and return dates.");
+    return;
   }
 
+  const message = `I want to book the car.
+Pickup: ${pickup}
+Return: ${returnDate}
+${price}`;
+
+  const phone = "121391666067";
+  const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
+  window.open(url, "_blank");
+}
   document.getElementById("pickup").addEventListener("change", calculatePrice);
-  document.getElementById("return").addEventListener("change", calculatePrice);
+document.getElementById("return").addEventListener("change", calculatePrice);
+
+function sendWhatsApp() {
+  ...
+}
 </script>
