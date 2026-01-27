@@ -34,14 +34,14 @@
   <div class="cars">
 
     <div class="car" onclick="selectCar('Camry',50,250,0,this)">
-      <img src="https://via.placeholder.com/400x200?text=Toyota+Camry" />
+      <img src="images/camry.jpg" alt="Toyota Camry" />
       <h3>Toyota Camry</h3>
       <p class="price">$50 / day • $250 / week</p>
       <p>No security deposit</p>
     </div>
 
     <div class="car" onclick="selectCar('Slingshot',300,0,150,this)">
-      <img src="https://via.placeholder.com/400x200?text=Polaris+Slingshot" />
+      <img src="images/slingshot.jpg" alt="Polaris Slingshot" />
       <h3>Polaris Slingshot</h3>
       <p class="price">$300 / day</p>
       <p>$150 security deposit</p>
@@ -54,10 +54,18 @@
     <p><strong>Selected Car:</strong> <span id="carName">None</span></p>
 
     <label>Pickup Date</label>
-    <input type="date" id="pickup" onchange="calculateTotal()" />
+    <input type="date" id="pickup" onchange="checkAvailability(); calculateTotal();" />
+
+    <label>Pickup Time</label>
+    <input type="time" id="pickupTime" />
 
     <label>Return Date</label>
-    <input type="date" id="return" onchange="calculateTotal()" />
+    <input type="date" id="return" onchange="checkAvailability(); calculateTotal();" />
+
+    <label>Return Time</label>
+    <input type="time" id="returnTime" />
+
+    <p id="availability" style="font-weight:bold; margin-top:10px;"></p>
 
     <label>Email Address</label>
     <input type="email" id="email" placeholder="you@email.com" />
@@ -93,6 +101,11 @@
 
 <script>
   let selectedCar = null;
+  
+  const bookedDates = {
+    Camry: ['2026-02-01','2026-02-02'],
+    Slingshot: ['2026-02-05']
+  };
   let daily = 0;
   let weekly = 0;
   let deposit = 0;
@@ -106,6 +119,26 @@
     deposit = dep;
     document.getElementById('carName').innerText = name;
     calculateTotal();
+  }
+
+  function checkAvailability() {
+    const pick = document.getElementById('pickup').value;
+    const ret = document.getElementById('return').value;
+    const status = document.getElementById('availability');
+
+    if (!selectedCar || !pick || !ret) {
+      status.innerText = '';
+      return;
+    }
+
+    const dates = bookedDates[selectedCar] || [];
+    if (dates.includes(pick) || dates.includes(ret)) {
+      status.innerText = '❌ Not available for selected dates';
+      status.style.color = 'red';
+    } else {
+      status.innerText = '✅ Available';
+      status.style.color = 'green';
+    }
   }
 
   function calculateTotal() {
