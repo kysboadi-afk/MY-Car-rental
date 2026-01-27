@@ -65,10 +65,15 @@
 <h1>SLY TRANSPORTATION SERVICES Car Rental</h1>
   <p style="text-align:center;">Reliable daily car rental</p>
 
-  <img src="IMG_0025.jpeg" alt="Toyota Camry">
-<img src="IMG_0026.jpeg" alt="Toyota Camry side view">
-<img src="IMG_4486.jpeg" alt="Toyota Camry interior">
-  <div class="info">
+ <div class="slider">
+  <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
+  <img src="IMG_0026.jpeg" class="slide" alt="Toyota Camry side view">
+  <img src="IMG_4486.jpeg" class="slide" alt="Toyota Camry interior">
+
+  <button class="prev">&#10094;</button>
+  <button class="next">&#10095;</button>
+</div>
+</div>
     <h2>Vehicle Details</h2>
     <p><strong>Make:</strong> Toyota</p>
     <p><strong>Model:</strong> Camry</p>
@@ -122,6 +127,28 @@
 </div>
   
 <script>
+  // ===== IMAGE SLIDER =====
+document.querySelectorAll(".slider").forEach(slider => {
+  let index = 0;
+  const slides = slider.querySelectorAll(".slide");
+  const nextBtn = slider.querySelector(".next");
+  const prevBtn = slider.querySelector(".prev");
+
+  if (!nextBtn  !prevBtn  slides.length === 0) return;
+
+  nextBtn.addEventListener("click", () => {
+    slides[index].classList.remove("active");
+    index = (index + 1) % slides.length;
+    slides[index].classList.add("active");
+  });
+
+  prevBtn.addEventListener("click", () => {
+    slides[index].classList.remove("active");
+    index = (index - 1 + slides.length) % slides.length;
+    slides[index].classList.add("active");
+  });
+}); 
+  // ===== PRICE CALCULATOR =====
 const dailyRate = 45;
 
 function calculatePrice() {
