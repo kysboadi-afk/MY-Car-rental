@@ -1,64 +1,91 @@
 /* ---------- RESET ---------- */
 * { box-sizing: border-box; margin:0; padding:0; }
-body { font-family: Arial, Helvetica, sans-serif; background: #f5f5f5; color:#111; }
+body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; background: #f5f5f5; color:#111; line-height:1.6; }
 
 /* HEADER */
-header { background:#111; color:#fff; padding:20px; text-align:center; }
-header h1 { margin:0; font-size:28px; }
+header { 
+  background: linear-gradient(90deg, #111, #444); 
+  color:#fff; 
+  padding:25px 20px; 
+  text-align:center; 
+  border-bottom: 3px solid #f44336;
+}
+header h1 { font-size:32px; font-weight:bold; letter-spacing:1px; }
 
 /* CONTAINER */
 .container { max-width:1100px; margin:auto; padding:20px; }
 
 /* CAR SLIDER */
-.car-slider { background:#fff; padding:20px; border-radius:12px; margin-bottom:30px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.1); transition:all 0.3s ease; }
-.car-slider h3 { font-size:22px; margin-bottom:10px; }
-.slider { position:relative; max-width:600px; margin:0 auto 10px; overflow:hidden; border-radius:12px; }
-.slide { display:none; width:100%; border-radius:12px; transition:opacity 0.5s ease; }
-.slide.active { display:block; }
+.car-slider { 
+  background:#fff; 
+  padding:20px; 
+  border-radius:15px; 
+  margin-bottom:30px; 
+  text-align:center; 
+  box-shadow:0 6px 25px rgba(0,0,0,0.12); 
+  transition: all 0.3s ease;
+}
+.car-slider h3 { font-size:24px; margin-bottom:15px; }
+
+/* IMAGE SLIDE */
+.slider { position:relative; max-width:600px; margin:0 auto 10px; overflow:hidden; border-radius:15px; }
+.slide { display:none; width:100%; border-radius:15px; transition: transform 0.5s ease, opacity 0.5s ease; }
+.slide.active { display:block; transform: scale(1); }
+.slide:hover { transform: scale(1.03); }
 
 /* SLIDER BUTTONS */
-.slider-controls button { position:absolute; top:50%; transform:translateY(-50%); background:rgba(0,0,0,0.5); color:#fff; border:none; padding:10px 15px; cursor:pointer; border-radius:50%; font-size:18px; transition: background 0.3s ease; }
-.slider-controls button:hover { background:rgba(0,0,0,0.8); }
+.slider-controls button { 
+  position:absolute; top:50%; transform:translateY(-50%); 
+  background:rgba(0,0,0,0.6); color:#fff; border:none; padding:12px 18px; 
+  cursor:pointer; border-radius:50%; font-size:20px; transition: background 0.3s ease, transform 0.2s ease;
+}
+.slider-controls button:hover { background:rgba(0,0,0,0.9); transform:scale(1.1); }
 .car-slider .slider-controls button:first-child { left:10px; }
 .car-slider .slider-controls button:last-child { right:10px; }
 
 /* SLIDER DOTS */
-.slider-dots { text-align:center; margin-top:8px; }
-.slider-dots .dot { display:inline-block; width:12px; height:12px; margin:0 4px; background:#ccc; border-radius:50%; cursor:pointer; transition: background 0.3s ease; }
-.slider-dots .dot.active { background:#111; }
+.slider-dots { text-align:center; margin-top:10px; }
+.slider-dots .dot { display:inline-block; width:14px; height:14px; margin:0 5px; background:#ccc; border-radius:50%; cursor:pointer; transition: all 0.3s ease; }
+.slider-dots .dot.active { background:#f44336; transform: scale(1.2); }
 
 /* SELECTED CAR HIGHLIGHT */
-.car-slider.selected { border:3px solid #111; box-shadow:0 6px 20px rgba(0,0,0,0.25); transform:scale(1.02); }
+.car-slider.selected { border:3px solid #f44336; box-shadow:0 10px 30px rgba(0,0,0,0.25); transform:scale(1.02); }
 
 /* PRICE & BUTTON */
-.price { font-weight:bold; font-size:18px; margin:10px 0; }
-.car-slider button { padding:12px 20px; background:#111; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:16px; transition: background 0.3s ease, transform 0.2s ease; }
-.car-slider button:hover { background:#333; transform:scale(1.02); }
+.price { font-weight:bold; font-size:18px; margin:12px 0; color:#333; }
+.car-slider button { padding:12px 25px; background:linear-gradient(45deg,#f44336,#ff5722); color:#fff; border:none; border-radius:12px; cursor:pointer; font-size:16px; transition:all 0.3s ease; }
+.car-slider button:hover { transform:scale(1.05); background:linear-gradient(45deg,#ff5722,#f44336); }
 
 /* BOOKING FORM */
-.booking { background:#fff; padding:25px; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,0.1); margin-top:20px; }
-.booking h2 { font-size:24px; margin-bottom:15px; }
-label { display:block; margin-top:10px; font-weight:bold; }
-input[type="date"], input[type="time"], input[type="email"] { width:100%; padding:12px; margin-top:5px; margin-bottom:15px; border:1px solid #ccc; border-radius:8px; font-size:16px; transition:border-color 0.3s ease; }
-input:focus { border-color:#111; outline:none; }
-#total { font-size:20px; font-weight:bold; margin-top:15px; }
+.booking { background:#fff; padding:30px; border-radius:15px; box-shadow:0 6px 25px rgba(0,0,0,0.12); margin-top:20px; }
+.booking h2 { font-size:26px; margin-bottom:20px; }
+label { display:block; margin-top:12px; font-weight:bold; font-size:16px; }
+input[type="date"], input[type="time"], input[type="email"] { width:100%; padding:14px; margin-top:5px; margin-bottom:18px; border:1px solid #ccc; border-radius:10px; font-size:16px; transition:border-color 0.3s ease, box-shadow 0.2s ease; }
+input:focus { border-color:#f44336; outline:none; box-shadow:0 0 8px rgba(244,67,54,0.3); }
+
+#total { font-size:20px; font-weight:bold; margin-top:15px; color:#111; }
 #availability { font-weight:bold; margin-top:10px; font-size:16px; }
 #bookedDatesContainer { margin-top:10px; }
 
 /* BOOKED DATE HIGHLIGHT */
-.booked-date { background:#f44336; color:#fff; padding:4px 6px; border-radius:4px; margin:2px; display:inline-block; }
+.booked-date { background:#f44336; color:#fff; padding:5px 8px; border-radius:6px; margin:3px; display:inline-block; font-size:14px; }
 
 /* BOOKING BUTTON */
-.booking button { margin-top:15px; width:100%; padding:14px; font-size:16px; background:#111; color:#fff; border-radius:8px; border:none; cursor:pointer; transition:background 0.3s ease, transform 0.2s ease; }
-.booking button:hover { background:#333; transform:scale(1.02); }
+.booking button { margin-top:15px; width:100%; padding:16px; font-size:18px; background:linear-gradient(45deg,#f44336,#ff5722); color:#fff; border-radius:12px; border:none; cursor:pointer; transition:all 0.3s ease; }
+.booking button:hover { transform:scale(1.05); background:linear-gradient(45deg,#ff5722,#f44336); }
 
 /* FOOTER */
-footer { margin-top:40px; padding:15px; background:#111; color:#fff; text-align:center; }
+footer { margin-top:40px; padding:20px; background:linear-gradient(90deg,#111,#444); color:#fff; text-align:center; border-top:3px solid #f44336; font-size:16px; }
 
 /* RESPONSIVE */
-@media (max-width:600px) {
+@media (max-width:768px) {
+  header h1 { font-size:26px; }
+  .booking h2 { font-size:22px; }
+  input[type="date"], input[type="time"], input[type="email"] { font-size:15px; padding:12px; }
+  .slider-controls button { padding:8px 12px; font-size:18px; }
+}
+@media (max-width:480px) {
   header h1 { font-size:22px; }
   .booking h2 { font-size:20px; }
-  input[type="date"], input[type="time"], input[type="email"] { font-size:14px; padding:10px; }
-  .slider-controls button { padding:8px 10px; font-size:16px; }
+  .slider-controls button { padding:6px 10px; font-size:16px; }
 }
