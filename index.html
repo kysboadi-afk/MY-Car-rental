@@ -1,126 +1,57 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MY Car Rental</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; background:#f5f5f5; }
-    header { background:#111; color:#fff; padding:20px; text-align:center; }
-    h1 { margin:0; }
-    .container { max-width:1000px; margin:auto; padding:20px; }
-    .cars { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; }
-    .car { background:#fff; border-radius:10px; padding:15px; box-shadow:0 4px 10px rgba(0,0,0,.1); }
-    .car img { width:100%; border-radius:10px; }
-    .car.selected { border:3px solid #111; }
-    .price { font-weight:bold; margin:10px 0; }
-    button { padding:10px 15px; background:#111; color:#fff; border:none; border-radius:6px; cursor:pointer; }
-    button:hover { background:#333; }
-    .booking { margin-top:30px; background:#fff; padding:20px; border-radius:10px; }
-    .booking input { padding:8px; margin:5px 0; width:100%; }
-    footer { text-align:center; padding:15px; background:#111; color:#fff; margin-top:40px; }
-  </style>
-</head>
-<body>
-
-<header>
-  <h1>MY Car Rental</h1>
-  <p>Reliable • Clean • Affordable</p>
-</header>
-
-<div class="container">
-
-  <h2>Select Your Vehicle</h2>
-  <div class="cars">
-
-    <div class="car" onclick="selectCar('Camry',50,250,0,this)">
-      <img src="images/camry.jpg" alt="Toyota Camry" />
-      <h3>Toyota Camry</h3>
-      <p class="price">$50 / day • $250 / week</p>
-      <p>No security deposit</p>
-    </div>
-
-    <div class="car" onclick="selectCar('Slingshot',300,0,150,this)">
-      <img src="images/slingshot.jpg" alt="Polaris Slingshot" />
-      <h3>Polaris Slingshot</h3>
-      <p class="price">$300 / day</p>
-      <p>$150 security deposit</p>
-    </div>
-
-  </div>
-
-  <div class="booking">
-    <h2>Booking Details</h2>
-    <p><strong>Selected Car:</strong> <span id="carName">None</span></p>
-
-    <label>Pickup Date</label>
-    <input type="date" id="pickup" onchange="checkAvailability(); calculateTotal();" />
-
-    <label>Pickup Time</label>
-    <input type="time" id="pickupTime" />
-
-    <label>Return Date</label>
-    <input type="date" id="return" onchange="checkAvailability(); calculateTotal();" />
-
-    <label>Return Time</label>
-    <input type="time" id="returnTime" />
-
-    <p id="availability" style="font-weight:bold; margin-top:10px;"></p>
-
-    <label>Email Address</label>
-    <input type="email" id="email" placeholder="you@email.com" />
-
-    <label>
-      <input type="checkbox" id="agree" /> I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
-    </label>
-
-    <p><strong>Total:</strong> $<span id="total">0</span></p>
-
-    <button onclick="reserve()">Reserve Now</button>
-
-    <p style="font-size:12px; color:#666; margin-top:10px;">
-      * This is a reservation request. Payment will be collected after confirmation.
-    </p>
-  </div>
-
-  <div class="booking" style="margin-top:20px;">
-    <h2>Rental Terms</h2>
-    <ul>
-      <li>Valid driver's license required</li>
-      <li>Vehicle must be returned with same fuel level</li>
-      <li>No smoking inside vehicles</li>
-      <li>Security deposit (if applicable) due at pickup</li>
-    </ul>
-  </div>
-
-</div>
-
-<footer>
-  © 2026 MY Car Rental. All Rights Reserved.
-</footer>
-
 <script>
+  // ---------------- VARIABLES ----------------
   let selectedCar = null;
-  
-  const bookedDates = {
-    Camry: ['2026-02-01','2026-02-02'],
-    Slingshot: ['2026-02-05']
-  };
   let daily = 0;
   let weekly = 0;
   let deposit = 0;
 
+  // Example booked dates (format: YYYY-MM-DD)
+  const bookedDates = {
+    Camry: ['2026-02-01','2026-02-02'],
+    Slingshot: ['2026-02-05']
+  };
+
+  // ---------------- SELECT CAR ----------------
   function selectCar(name, d, w, dep, el) {
+    // remove highlight from all cars
     document.querySelectorAll('.car').forEach(c => c.classList.remove('selected'));
+    // highlight selected car
     el.classList.add('selected');
+
     selectedCar = name;
     daily = d;
     weekly = w;
     deposit = dep;
+
+    // update displayed car name
     document.getElementById('carName').innerText = name;
+
+    // recalc total and check availability
     calculateTotal();
+    checkAvailability();
   }
 
+  // ---------------- CALCULATE TOTAL ----------------
+  function calculateTotal() {
+    const pick = new Date(document.getElementById('pickup').value);
+    const ret = new Date(document.getElementById('return').value);
+
+    if (!selectedCar || !pick || !ret || ret <= pick) return;
+
+    const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
+    let cost = 0;
+
+    if (weekly > 0 && days >= 7) {
+      cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
+    } else {
+      cost = days * daily;
+    }
+
+    cost += deposit; // add security deposit if applicable
+    document.getElementById('total').innerText = cost;
+  }
+
+  // ---------------- CHECK AVAILABILITY ----------------
   function checkAvailability() {
     const pick = document.getElementById('pickup').value;
     const ret = document.getElementById('return').value;
@@ -141,24 +72,7 @@
     }
   }
 
-  function calculateTotal() {
-    const pick = new Date(document.getElementById('pickup').value);
-    const ret = new Date(document.getElementById('return').value);
-    if (!selectedCar || !pick || !ret || ret <= pick) return;
-
-    const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
-    let cost = 0;
-
-    if (weekly > 0 && days >= 7) {
-      cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
-    } else {
-      cost = days * daily;
-    }
-
-    cost += deposit;
-    document.getElementById('total').innerText = cost;
-  }
-
+  // ---------------- RESERVE ----------------
   function reserve() {
     const email = document.getElementById('email').value;
     const agree = document.getElementById('agree').checked;
@@ -172,15 +86,11 @@
       return;
     }
     if (!agree) {
-      alert('You must agree to the rental terms');
+      alert('You must agree to the Rental Agreement & Terms before paying');
       return;
     }
 
-    alert('Reservation request sent! We will contact you shortly.');
-  }
-    alert('Reservation submitted! We will contact you shortly.');
+    // Here you can add email sending / payment integration later
+    alert('✅ Reservation request sent! We will contact you shortly.');
   }
 </script>
-
-</body>
-</html>
