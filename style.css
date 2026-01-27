@@ -1,182 +1,120 @@
+/* RESET */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: Arial, Helvetica, sans-serif;
 }
 
+/* BODY */
 body {
-  background: #f2f2f2;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f5f5f5;
   color: #222;
+  line-height: 1.6;
 }
 
-/* ================= HEADER ================= */
+/* HEADER */
 header {
-  background: #000;
+  background: #111;
   color: #fff;
+  padding: 20px;
   text-align: center;
-  padding: 22px 15px;
 }
 
 header h1 {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 2rem;
 }
 
 header p {
-  font-size: 14px;
-  margin-top: 6px;
+  font-size: 1.1rem;
+  opacity: 0.9;
 }
 
-/* ================= SLIDER ================= */
+/* SLIDER */
 .slider {
   position: relative;
   max-width: 900px;
-  height: 320px;
-  margin: 20px auto;
+  margin: 30px auto;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 10px;
   background: #000;
 }
 
 .slide {
-  position: absolute;
-  inset: 0;
+  display: none;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 2.5s ease-in-out;
 }
 
 .slide.active {
-  opacity: 1;
+  display: block;
 }
 
-/* ================= SLIDER BUTTONS ================= */
-.slider .nav {
+/* SLIDER BUTTONS */
+.nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
   border: none;
-  font-size: 28px;
-  padding: 10px 14px;
+  padding: 12px 18px;
+  font-size: 22px;
   cursor: pointer;
   border-radius: 50%;
-  z-index: 10;
 }
 
-.slider .nav:hover {
-  background: rgba(0,0,0,0.85);
+.nav.prev {
+  left: 15px;
 }
 
-.slider .prev {
-  left: 12px;
+.nav.next {
+  right: 15px;
 }
 
-.slider .next {
-  right: 12px;
+.nav:hover {
+  background: rgba(0, 0, 0, 0.85);
 }
 
-/* ================= CONTAINER ================= */
+/* CONTENT CONTAINER */
 .container {
-  max-width: 900px;
-  background: #fff;
-  margin: 20px auto;
-  padding: 24px;
-  border-radius: 14px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  max-width: 1000px;
+  margin: 40px auto;
+  padding: 0 20px;
 }
 
-/* ================= VEHICLE PREVIEW ================= */
+/* VEHICLE PREVIEW */
 .vehicle-preview {
+  background: #fff;
+  padding: 25px;
+  border-radius: 10px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
   text-align: center;
-  margin-bottom: 18px;
 }
 
 .vehicle-preview img {
-  max-width: 360px;
-  width: 100%;
-  border-radius: 12px;
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 15px;
 }
 
 .vehicle-preview h3 {
-  font-size: 20px;
-  margin-top: 8px;
+  font-size: 1.4rem;
+  margin-bottom: 10px;
 }
 
-/* ================= REQUIREMENTS ================= */
-.requirements {
-  text-align: center;
-  color: #b00000;
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 18px;
+.vehicle-preview p {
+  font-size: 1rem;
+  color: #555;
 }
 
-/* ================= FORM ================= */
-label {
-  display: block;
-  margin-top: 14px;
-  font-weight: 700;
-}
-
-input,
-select {
-  width: 100%;
-  padding: 11px;
-  margin-top: 6px;
-  font-size: 16px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-}
-
-input:focus,
-select:focus {
-  outline: none;
-  border-color: #25d366;
-}
-
-/* ================= PRICE ================= */
-.price {
-  margin-top: 16px;
-  font-size: 24px;
-  font-weight: 700;
-  text-align: center;
-}
-
-/* ================= BUTTON ================= */
-button {
-  margin-top: 18px;
-  width: 100%;
-  padding: 15px;
-  background: #25d366;
-  color: #fff;
-  border: none;
-  font-size: 18px;
-  font-weight: 700;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #1ebc5a;
-}
-
-/* ================= MOBILE ================= */
-@media (max-width: 600px) {
-  .slider {
-    height: 220px;
-  }
-
+/* RESPONSIVE */
+@media (max-width: 768px) {
   header h1 {
-    font-size: 22px;
+    font-size: 1.6rem;
   }
 
-  .container {
-    margin: 15px;
-    padding: 20px;
+  .nav {
+    padding: 8px 12px;
+    font-size: 18px;
   }
 }
