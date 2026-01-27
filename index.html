@@ -21,7 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pricePerDay = Number(selected.dataset.price);
     const total = days * pricePerDay;
 
-    totalPrice.textContent = $${total}.00;
+    totalPrice.textContent = `$${total}.00`;
   }
 
   vehicleSelect.addEventListener("change", calculateTotal);
