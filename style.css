@@ -84,24 +84,25 @@ header p {
 
 /* VEHICLE PREVIEW */
 .vehicle-preview {
+  max-width: 520px;
+  margin: 30px auto;
+  padding: 20px;
   background: #fff;
-  padding: 25px;
   border-radius: 10px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   text-align: center;
 }
 
 .vehicle-preview img {
   width: 100%;
-  max-height: 320px;
+  max-height: 240px;
   object-fit: contain;
   display: block;
-  margin: 0 auto 15px;
+  margin: 0 auto 12px;
 }
-
 .vehicle-preview h3 {
-  font-size: 1.4rem;
-  margin-bottom: 10px;
+  margin: 10px 0 12px;
+  font-size: 1.1rem;
 }
 
 .vehicle-preview p {
@@ -110,13 +111,12 @@ header p {
 }
 
 /* RESPONSIVE */
-@media (max-width: 768px) {
-  header h1 {
-    font-size: 1.6rem;
+@media (max-width: 1366px) {
+  .vehicle-preview {
+    margin: 20px auto;
   }
 
-  .nav {
-    padding: 8px 12px;
-    font-size: 18px;
+  .vehicle-preview img {
+    max-height: 200px;
   }
 }
