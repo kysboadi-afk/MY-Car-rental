@@ -93,6 +93,27 @@ header h1 {
   right: 10px;
 }
 
+/* ---------- SLIDER DOTS ---------- */
+.slider-dots {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.slider-dots .dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin: 0 4px;
+  background: #ccc;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.slider-dots .dot.active {
+  background: #111;
+}
+
 /* ---------- PRICE & SELECT BUTTON ---------- */
 .price {
   font-weight: bold;
