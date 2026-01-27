@@ -60,7 +60,6 @@ header h1 {
   color: #000;
 }
 
-/* 🔥 THIS fixes the “Camry doesn’t pop” issue */
 .car.selected {
   border: 3px solid #111;
   transform: scale(1.02);
@@ -69,10 +68,19 @@ header h1 {
 
 /* ---------- BOOKING ---------- */
 .booking {
-  margin-top: 30px;
   background: #fff;
-  padding: 20px;
+  padding: 25px;
   border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 30px;
+  transition: all 0.3s ease;
+}
+
+.booking h2 {
+  margin-top: 0;
+  font-size: 24px;
+  margin-bottom: 15px;
+  color: #111;
 }
 
 label {
@@ -81,18 +89,44 @@ label {
   font-weight: bold;
 }
 
-input[type=\"date\"],
-input[type=\"email\"] {
+input[type="date"],
+input[type="time"],
+input[type="email"] {
   width: 100%;
-  padding: 10px;
+  padding: 12px;
   margin-top: 5px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
   font-size: 16px;
+  transition: border-color 0.3s ease;
+}
+
+input[type="date"]:focus,
+input[type="time"]:focus,
+input[type="email"]:focus {
+  border-color: #111;
+  outline: none;
 }
 
 #total {
   font-size: 22px;
   font-weight: bold;
   margin-top: 15px;
+}
+
+#availability {
+  font-weight: bold;
+  margin-top: 10px;
+  font-size: 16px;
+}
+
+#availability.green {
+  color: green;
+}
+
+#availability.red {
+  color: red;
 }
 
 /* ---------- BUTTON ---------- */
@@ -103,13 +137,15 @@ button {
   font-size: 16px;
   background: #111;
   color: #fff;
-  border: none;
   border-radius: 8px;
+  border: none;
   cursor: pointer;
+  transition: background 0.3s ease, transform 0.2s ease;
 }
 
 button:hover {
   background: #333;
+  transform: scale(1.02);
 }
 
 /* ---------- FOOTER ---------- */
@@ -125,5 +161,14 @@ footer {
 @media (max-width: 600px) {
   header h1 {
     font-size: 22px;
+  }
+  .booking input[type="date"],
+  .booking input[type="time"],
+  .booking input[type="email"] {
+    font-size: 14px;
+    padding: 10px;
+  }
+  .booking h2 {
+    font-size: 20px;
   }
 }
