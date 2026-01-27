@@ -55,9 +55,9 @@
 </head>
 <body>
 
-<div class="container">
+<div class="container"> 
   <img src="logo.png" alt="Ddd Car Rental Logo" style="width:120px; display:block; margin:auto;">
-<h1>Ddd Car Rental</h1>
+<h1>SLY TRANSPORTATION SERVICES Car Rental</h1>
   <p style="text-align:center;">Reliable daily car rental</p>
 
   <img src="car1.jpg" alt="Toyota Camry">
@@ -89,50 +89,27 @@
   <button onclick="bookNow()">Book via WhatsApp</button>
 
   <div class="footer">
-    © Ddd Car Rental
+    © SLY TRANSPORTATION SERVICES Car Rental
   </div>
-</div>
-
 <script>
   const dailyRate = 45;
 
   function calculatePrice() {
-    const pickup = new Date(document.getElementById("pickup").value);
-    const ret = new Date(document.getElementById("return").value);
+    const pickup = document.getElementById("pickup").value;
+    const dropoff = document.getElementById("return").value;
 
-    if (!isNaN(pickup) && !isNaN(ret) && ret > pickup) {
-      const days = (ret - pickup) / (1000 * 60 * 60 * 24);
-      const total = days * dailyRate;
+    if (!pickup || !dropoff) return;
+
+    const start = new Date(pickup);
+    const end = new Date(dropoff);
+    const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+    if (days > 0) {
       document.getElementById("totalPrice").innerText =
-        "Price: $" + total + " (" + days + " days)";
+        "Price: $" + (days * dailyRate);
     }
   }
 
   document.getElementById("pickup").addEventListener("change", calculatePrice);
   document.getElementById("return").addEventListener("change", calculatePrice);
-
-  function bookNow() {
-    const pickup = document.getElementById("pickup").value;
-    const ret = document.getElementById("return").value;
-    const price = document.getElementById("totalPrice").innerText;
-
-    if (!pickup || !ret) {
-      alert("Please select pickup and return dates");
-      return;
-    }
-
-    const message =
-      "Hello, I want to book the Toyota Camry.%0A" +
-      "Pickup: " + pickup + "%0A" +
-      "Return: " + ret + "%0A" +
-      price;
-
-    window.open(
-      "https://wa.me/12139166606?text=" + message,
-      "_blank"
-    );
-  }
 </script>
-
-</body>
-</html>
