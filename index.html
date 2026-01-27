@@ -63,13 +63,13 @@
       <h2>Book Your Ride</h2>
 
       <label>Pickup Date</label>
-      <input type="date" id="pickup" onchange="calculateTotal(); checkAvailability();">
+      <input type="date" id="pickup">
 
       <label>Pickup Time</label>
       <input type="time" id="pickupTime" onchange="syncReturnTime()">
 
       <label>Return Date</label>
-      <input type="date" id="return" onchange="calculateTotal(); checkAvailability();">
+      <input type="date" id="return">
 
       <label>Return Time</label>
       <input type="time" id="returnTime">
@@ -120,15 +120,16 @@
         card.classList.remove('selected');
       });
 
-      // Highlight the selected card
+      // Highlight selected car
       el.closest('.car-slider').classList.add('selected');
 
-      // Show booked dates below date pickers
+      // Show booked dates visually
       displayBookedDates(name);
 
       alert(name + " selected! Now choose dates and enter your info below.");
       calculateTotal();
       checkAvailability();
+      disableBookedDates();
     }
 
     // ---------- DISPLAY BOOKED DATES ----------
@@ -245,6 +246,28 @@
     function goToSlide(car, index) {
       sliders[car].index = index;
       showSlide(car);
+    }
+
+    // ---------- DISABLE BOOKED DATES ----------
+    function disableBookedDates() {
+      if(!selectedCar) return;
+      const booked = bookedDates[selectedCar] || [];
+      const pickInput = document.getElementById('pickup');
+      const returnInput = document.getElementById('return');
+      const today = new Date().toISOString().split('T')[0];
+      pickInput.setAttribute('min', today);
+      returnInput.setAttribute('min', today);
+
+      [pickInput, returnInput].forEach(input => {
+        input.addEventListener('input', function() {
+          if(booked.includes(this.value)) {
+            alert('This date is already booked! Please select another date.');
+            this.value = '';
+          }
+          checkAvailability();
+          calculateTotal();
+        });
+      });
     }
 
     window.onload = initSliders;
