@@ -1,180 +1,153 @@
-Get Rich or DIE tRYING, [1/27/26 7:14 AM]
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>My Car Rental</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <link rel="stylesheet" href="style.css">
-</head>
-
-<body>
-
-  <h1>My Car Rental</h1>
-
-  <!-- Vehicle Selector -->
-  <section>
-    <label for="vehicleSelect">Choose a vehicle:</label>
-    <select id="vehicleSelect">
-      <option value="">-- Select a vehicle --</option>
-      <option value="option1">Vehicle Option 1</option>
-      <option value="option2">Vehicle Option 2</option>
-    </select>
-  </section>
-
-  <!-- Vehicle Display -->
-  <section>
-    <img id="vehicleImage" src="images/car1.jpg" alt="Vehicle" width="300">
-    <h2 id="vehicleName">Vehicle Name</h2>
-    <p>Price: <span id="price">$0 / day</span></p>
-  </section>
-
-  <!-- Slider -->
-  <section class="slider">
-    <button onclick="changeSlide(-1)">❮</button>
-
-    <div class="slide active">
-      <img src="images/car1.jpg" alt="Car 1" width="300">
-    </div>
-    <div class="slide">
-      <img src="images/car2.jpg" alt="Car 2" width="300">
-    </div>
-
-    <button onclick="changeSlide(1)">❯</button>
-  </section>
-
-  <!-- JavaScript -->
-  <script>
-  document.addEventListener("DOMContentLoaded", () => {
-
-    console.log("Script loaded");
-
-    const vehicles = {
-      option1: {
-        name: "Vehicle Option 1",
-        image: "images/car1.jpg",
-        price: "$50 / day"
-      },
-      option2: {
-        name: "Vehicle Option 2",
-        image: "images/car2.jpg",
-        price: "$70 / day"
-      }
-    };
-
-    const vehicleSelect = document.getElementById("vehicleSelect");
-    const vehicleImage = document.getElementById("vehicleImage");
-    const vehicleName = document.getElementById("vehicleName");
-    const priceLabel = document.getElementById("price");
-
-    vehicleSelect.addEventListener("change", function () {
-      const vehicle = vehicles[this.value];
-      if (!vehicle) return;
-
-      vehicleImage.src = vehicle.image;
-      vehicleName.textContent = vehicle.name;
-      priceLabel.textContent = vehicle.price;
-    });
-
-    // ---------- Slider ----------
-    let currentSlide = 0;
-    const slides = document.querySelectorAll(".slider .slide");
-
-    function showSlide(index) {
-      slides.forEach(slide => slide.classList.remove("active"));
-      slides[index].classList.add("active");
-    }
-
-    window.changeSlide = function (direction) {
-      currentSlide += direction;
-
-      if (currentSlide < 0) currentSlide = slides.length - 1;
-      if (currentSlide >= slides.length) currentSlide = 0;
-
-      showSlide(currentSlide);
-    };
-
-  });
-  </script>
-
-</body>
-</html>
-
-Get Rich or DIE tRYING, [1/27/26 7:31 AM]
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SLY Transportation Services | Car Rentals</title>
-
-  <!-- Main Styles -->
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MY Car Rental</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background:#f5f5f5; }
+    header { background:#111; color:#fff; padding:20px; text-align:center; }
+    h1 { margin:0; }
+    .container { max-width:1000px; margin:auto; padding:20px; }
+    .cars { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; }
+    .car { background:#fff; border-radius:10px; padding:15px; box-shadow:0 4px 10px rgba(0,0,0,.1); }
+    .car img { width:100%; border-radius:10px; }
+    .car.selected { border:3px solid #111; }
+    .price { font-weight:bold; margin:10px 0; }
+    button { padding:10px 15px; background:#111; color:#fff; border:none; border-radius:6px; cursor:pointer; }
+    button:hover { background:#333; }
+    .booking { margin-top:30px; background:#fff; padding:20px; border-radius:10px; }
+    .booking input { padding:8px; margin:5px 0; width:100%; }
+    footer { text-align:center; padding:15px; background:#111; color:#fff; margin-top:40px; }
+  </style>
 </head>
 <body>
 
-  <!-- Page Wrapper -->
-  <div class="page-container">
+<header>
+  <h1>MY Car Rental</h1>
+  <p>Reliable • Clean • Affordable</p>
+</header>
 
-    <!-- Header -->
-    <header class="site-header">
-      <h1 class="company-name">SLY Transportation Services</h1>
-      <p class="company-tagline">Reliable • Affordable • Professional Car Rentals</p>
-    </header>
+<div class="container">
 
-    <!-- Hero / Slider Section -->
-    <section class="hero">
-      <div class="slider">
+  <h2>Select Your Vehicle</h2>
+  <div class="cars">
 
-        <img src="IMG_0025.jpeg" alt="Rental Vehicle 1" class="slide active">
-        <img src="IMG_0026.jpeg" alt="Rental Vehicle 2" class="slide">
-        <img src="IMG_4486.jpeg" alt="Rental Vehicle 3" class="slide">
+    <div class="car" onclick="selectCar('Camry',50,250,0,this)">
+      <img src="https://via.placeholder.com/400x200?text=Toyota+Camry" />
+      <h3>Toyota Camry</h3>
+      <p class="price">$50 / day • $250 / week</p>
+      <p>No security deposit</p>
+    </div>
 
-      </div>
-    </section>
-
-    <!-- Booking Section -->
-    <section class="booking-section">
-      <div class="booking-card">
-
-        <h2>Book Your Ride</h2>
-
-        <form class="booking-form">
-          <label for="pickup-date">Pick‑up Date</label>
-          <input type="date" id="pickup-date" required>
-
-          <label for="dropoff-date">Drop‑off Date</label>
-          <input type="date" id="dropoff-date" required>
-
-          <div class="price-display" id="totalPrice">
-            Total: $0.00
-          </div>
-
-          <button type="submit">Reserve Now</button>
-        </form>
-
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="site-footer">
-      <p>© 2026 SLY Transportation Services. All rights reserved.</p>
-    </footer>
+    <div class="car" onclick="selectCar('Slingshot',300,0,150,this)">
+      <img src="https://via.placeholder.com/400x200?text=Polaris+Slingshot" />
+      <h3>Polaris Slingshot</h3>
+      <p class="price">$300 / day</p>
+      <p>$150 security deposit</p>
+    </div>
 
   </div>
 
-  <!-- Slider Script -->
-  <script>
-    const slides = document.querySelectorAll(".slide");
-    let currentIndex = 0;
+  <div class="booking">
+    <h2>Booking Details</h2>
+    <p><strong>Selected Car:</strong> <span id="carName">None</span></p>
 
-    setInterval(() => {
-      slides[currentIndex].classList.remove("active");
-      currentIndex = (currentIndex + 1) % slides.length;
-      slides[currentIndex].classList.add("active");
-    }, 3500);
-  </script>
+    <label>Pickup Date</label>
+    <input type="date" id="pickup" onchange="calculateTotal()" />
+
+    <label>Return Date</label>
+    <input type="date" id="return" onchange="calculateTotal()" />
+
+    <label>Email Address</label>
+    <input type="email" id="email" placeholder="you@email.com" />
+
+    <label>
+      <input type="checkbox" id="agree" /> I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
+    </label>
+
+    <p><strong>Total:</strong> $<span id="total">0</span></p>
+
+    <button onclick="reserve()">Reserve Now</button>
+
+    <p style="font-size:12px; color:#666; margin-top:10px;">
+      * This is a reservation request. Payment will be collected after confirmation.
+    </p>
+  </div>
+
+  <div class="booking" style="margin-top:20px;">
+    <h2>Rental Terms</h2>
+    <ul>
+      <li>Valid driver's license required</li>
+      <li>Vehicle must be returned with same fuel level</li>
+      <li>No smoking inside vehicles</li>
+      <li>Security deposit (if applicable) due at pickup</li>
+    </ul>
+  </div>
+
+</div>
+
+<footer>
+  © 2026 MY Car Rental. All Rights Reserved.
+</footer>
+
+<script>
+  let selectedCar = null;
+  let daily = 0;
+  let weekly = 0;
+  let deposit = 0;
+
+  function selectCar(name, d, w, dep, el) {
+    document.querySelectorAll('.car').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedCar = name;
+    daily = d;
+    weekly = w;
+    deposit = dep;
+    document.getElementById('carName').innerText = name;
+    calculateTotal();
+  }
+
+  function calculateTotal() {
+    const pick = new Date(document.getElementById('pickup').value);
+    const ret = new Date(document.getElementById('return').value);
+    if (!selectedCar || !pick || !ret || ret <= pick) return;
+
+    const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
+    let cost = 0;
+
+    if (weekly > 0 && days >= 7) {
+      cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
+    } else {
+      cost = days * daily;
+    }
+
+    cost += deposit;
+    document.getElementById('total').innerText = cost;
+  }
+
+  function reserve() {
+    const email = document.getElementById('email').value;
+    const agree = document.getElementById('agree').checked;
+
+    if (!selectedCar) {
+      alert('Please select a vehicle');
+      return;
+    }
+    if (!email) {
+      alert('Please enter your email');
+      return;
+    }
+    if (!agree) {
+      alert('You must agree to the rental terms');
+      return;
+    }
+
+    alert('Reservation request sent! We will contact you shortly.');
+  }
+    alert('Reservation submitted! We will contact you shortly.');
+  }
+</script>
 
 </body>
 </html>
