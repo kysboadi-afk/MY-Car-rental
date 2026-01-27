@@ -1,50 +1,127 @@
-<script>
-  const dailyRate = 45;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Booking Page</title>
 
-  function calculatePrice() {
-    const pickup = document.getElementById("pickup").value;
-    const returnDate = document.getElementById("return").value;
-
-    if (!pickup || !returnDate) {
-      document.getElementById("totalPrice").innerText = "Price: --";
-      return;
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
     }
 
-    const start = new Date(pickup);
-    const end = new Date(returnDate);
-    const days = (end - start) / (1000 * 60 * 60 * 24);
-
-    if (days <= 0) {
-      document.getElementById("totalPrice").innerText = "Price: --";
-      return;
+    body {
+      background: #f2f2f2;
+      padding: 20px;
     }
 
-    const total = days * dailyRate;
-    document.getElementById("totalPrice").innerText = Price: $${total};
-  }
-
-  document.getElementById("pickup").addEventListener("change", calculatePrice);
-  document.getElementById("return").addEventListener("change", calculatePrice);
-
-  function sendWhatsApp() {
-    const pickup = document.getElementById("pickup").value;
-    const returnDate = document.getElementById("return").value;
-    const price = document.getElementById("totalPrice").innerText;
-
-    if (!pickup || !returnDate) {
-      alert("Please select pickup and return dates.");
-      return;
+    .booking-box {
+      max-width: 420px;
+      margin: 0 auto;
+      padding: 22px;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
     }
 
-    const message =
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input[type="date"] {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+
+    #totalPrice {
+      margin: 18px 0;
+      padding: 14px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+      background: #f7f7f7;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+      background: #25d366;
+      color: white;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="booking-box">
+    <label for="pickup">Pickup Date</label>
+    <input type="date" id="pickup">
+
+    <label for="returnDate">Return Date</label>
+    <input type="date" id="returnDate">
+
+    <div id="totalPrice">Price: --</div>
+
+    <button id="bookBtn">Book Now</button>
+  </div>
+
+  <script>
+    const dailyRate = 45;
+
+    const pickupInput = document.getElementById("pickup");
+    const returnInput = document.getElementById("returnDate");
+    const totalPrice = document.getElementById("totalPrice");
+    const bookBtn = document.getElementById("bookBtn");
+
+    function calculatePrice() {
+      if (!pickupInput.value || !returnInput.value) {
+        totalPrice.innerText = "Price: --";
+        return;
+      }
+
+      const start = new Date(pickupInput.value);
+      const end = new Date(returnInput.value);
+      const days = (end - start) / (1000 * 60 * 60 * 24);
+
+      if (days <= 0) {
+        totalPrice.innerText = "Price: --";
+        return;
+      }
+
+      totalPrice.innerText = Price: $${days * dailyRate};
+    }
+
+    pickupInput.addEventListener("change", calculatePrice);
+    returnInput.addEventListener("change", calculatePrice);
+
+    bookBtn.addEventListener("click", function () {
+      if (!pickupInput.value || !returnInput.value) {
+        alert("Please select both dates.");
+        return;
+      }
+
+      const message =
 `I want to book the Toyota Camry
-Pickup: ${pickup}
-Return: ${returnDate}
-${price}`;
+Pickup: ${pickupInput.value}
+Return: ${returnInput.value}
+${totalPrice.innerText}`;
 
-    const phone = "12139166606";
-    const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
+      const phone = "12139166606";
+      const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
 
-    window.open(url, "_blank");
-  }
-</script>
+      window.open(url, "_blank");
+    });
+  </script>
+
+</body>
+</html>
