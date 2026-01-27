@@ -12,6 +12,7 @@
   </header>
 
   <div class="container">
+
     <!-- ---------- VEHICLE SLIDERS ---------- -->
     <section class="cars">
 
@@ -27,6 +28,11 @@
           <button onclick="prevSlide('slingshot')">&#10094;</button>
           <button onclick="nextSlide('slingshot')">&#10095;</button>
         </div>
+        <div class="slider-dots" id="dots-slingshot">
+          <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',1)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',2)"></span>
+        </div>
         <p class="price">$300 / day • $150 deposit</p>
         <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
       </div>
@@ -41,6 +47,10 @@
         <div class="slider-controls">
           <button onclick="prevSlide('camry')">&#10094;</button>
           <button onclick="nextSlide('camry')">&#10095;</button>
+        </div>
+        <div class="slider-dots" id="dots-camry">
+          <span class="dot active" onclick="goToSlide('camry',0)"></span>
+          <span class="dot" onclick="goToSlide('camry',1)"></span>
         </div>
         <p class="price">$50 / day • $250 weekly</p>
         <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
@@ -103,7 +113,6 @@
       daily = d;
       weekly = w;
       deposit = dep;
-
       alert(name + " selected! Now choose dates and enter your info below.");
       calculateTotal();
       checkAvailability();
@@ -175,6 +184,7 @@
     function showSlide(car) {
       const s = sliders[car];
       s.slides.forEach((img, i) => img.classList.toggle('active', i === s.index));
+      updateDots(car);
     }
 
     function nextSlide(car) {
@@ -186,6 +196,17 @@
     function prevSlide(car) {
       const s = sliders[car];
       s.index = (s.index - 1 + s.slides.length) % s.slides.length;
+      showSlide(car);
+    }
+
+    function updateDots(car) {
+      const s = sliders[car];
+      const dots = document.querySelectorAll(`#dots-${car} .dot`);
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === s.index));
+    }
+
+    function goToSlide(car, index) {
+      sliders[car].index = index;
       showSlide(car);
     }
 
