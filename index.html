@@ -1,102 +1,101 @@
-<script>
-document.addEventListener("DOMContentLoaded", () => {
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Car Rental</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  // ---------- Booking & Price Calculation ----------
-  const vehicleSelect = document.getElementById("vehicleSelect");
-  const pickupInput = document.getElementById("pickup");
-  const dropoffInput = document.getElementById("dropoff");
-  const totalPrice = document.getElementById("totalPrice");
+  <link rel="stylesheet" href="style.css">
+</head>
 
-  function calculateTotal() {
-    const pickup = new Date(pickupInput.value);
-    const dropoff = new Date(dropoffInput.value);
+<body>
 
-    if (!pickupInput.value ||!dropoffinput.value || dropoff <= pickup) {
-      totalPrice.textContent = "$0.00";
-      return;
+  <h1>My Car Rental</h1>
+
+  <!-- Vehicle Selector -->
+  <section>
+    <label for="vehicleSelect">Choose a vehicle:</label>
+    <select id="vehicleSelect">
+      <option value="">-- Select a vehicle --</option>
+      <option value="option1">Vehicle Option 1</option>
+      <option value="option2">Vehicle Option 2</option>
+    </select>
+  </section>
+
+  <!-- Vehicle Display -->
+  <section>
+    <img id="vehicleImage" src="images/car1.jpg" alt="Vehicle" width="300">
+    <h2 id="vehicleName">Vehicle Name</h2>
+    <p>Price: <span id="price">$0 / day</span></p>
+  </section>
+
+  <!-- Slider -->
+  <section class="slider">
+    <button onclick="changeSlide(-1)">❮</button>
+
+    <div class="slide active">
+      <img src="images/car1.jpg" alt="Car 1" width="300">
+    </div>
+    <div class="slide">
+      <img src="images/car2.jpg" alt="Car 2" width="300">
+    </div>
+
+    <button onclick="changeSlide(1)">❯</button>
+  </section>
+
+  <!-- JavaScript -->
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+
+    console.log("Script loaded");
+
+    const vehicles = {
+      option1: {
+        name: "Vehicle Option 1",
+        image: "images/car1.jpg",
+        price: "$50 / day"
+      },
+      option2: {
+        name: "Vehicle Option 2",
+        image: "images/car2.jpg",
+        price: "$70 / day"
+      }
+    };
+
+    const vehicleSelect = document.getElementById("vehicleSelect");
+    const vehicleImage = document.getElementById("vehicleImage");
+    const vehicleName = document.getElementById("vehicleName");
+    const priceLabel = document.getElementById("price");
+
+    vehicleSelect.addEventListener("change", function () {
+      const vehicle = vehicles[this.value];
+      if (!vehicle) return;
+
+      vehicleImage.src = vehicle.image;
+      vehicleName.textContent = vehicle.name;
+      priceLabel.textContent = vehicle.price;
+    });
+
+    // ---------- Slider ----------
+    let currentSlide = 0;
+    const slides = document.querySelectorAll(".slider .slide");
+
+    function showSlide(index) {
+      slides.forEach(slide => slide.classList.remove("active"));
+      slides[index].classList.add("active");
     }
 
-    const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
-    const selected = vehicleSelect.options[vehicleSelect.selectedIndex];
-    const pricePerDay = Number(selected.dataset.price);
-    const total = days * pricePerDay;
+    window.changeSlide = function (direction) {
+      currentSlide += direction;
 
-    totalPrice.textContent = `$${total}.00`;
-  }
+      if (currentSlide < 0) currentSlide = slides.length - 1;
+      if (currentSlide >= slides.length) currentSlide = 0;
 
-  vehicleSelect.addEventListener("change", calculateTotal);
-  pickupInput.addEventListener("change", calculateTotal);
-  dropoffInput.addEventListener("change", calculateTotal);
+      showSlide(currentSlide);
+    };
 
-  // ---------- WhatsApp Booking ----------
-  window.sendWhatsApp = function () {
-    const pickup = new Date(pickupInput.value);
-    const dropoff = new Date(dropoffInput.value);
-
-    if (!pickup  !dropoff  dropoff <= pickup) {
-      alert("Please select valid pickup and dropoff dates.");
-      return;
-    }
-
-    const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
-    const selected = vehicleSelect.options[vehicleSelect.selectedIndex];
-    const pricePerDay = Number(selected.dataset.price);
-    const total = days * pricePerDay;
-
-    const message = 
-      Booking Request:\n +
-      Vehicle: ${selected.text}\n +
-      Days: ${days}\n +
-      Total: $${total};
-
-    const url = https://wa.me/12139166606?text=${encodeURIComponent(message)};
-    window.open(url, "_blank");
-  };
-
-  // ---------- Vehicle Display ----------
-  const vehicles = {
-    camry: {
-      name: "2012 Toyota Camry",
-      image: "images/car1.jpg",
-      price: "$50 / day"
-    },
-    option2: {
-      name: "Vehicle Option 2",
-      image: "images/car2.jpg",
-      price: "$70 / day"
-    }
-  };
-
-  const vehicleImage = document.getElementById("vehicleImage");
-  const vehicleName = document.getElementById("vehicleName");
-  const priceLabel = document.getElementById("price");
-
-  vehicleSelect.addEventListener("change", function () {
-    const vehicle = vehicles[this.value];
-    if (!vehicle) return;
-
-    vehicleImage.src = vehicle.image;
-    vehicleName.textContent = vehicle.name;
-    priceLabel.textContent = vehicle.price;
   });
+  </script>
 
-  // ---------- Slider ----------
-  let currentSlide = 0;
-  const slides = document.querySelectorAll(".slider .slide");
-
-  function showSlide(index) {
-    slides.forEach(slide => slide.classList.remove("active"));
-    slides[index].classList.add("active");
-  }
-
-  window.changeSlide = function (direction) {
-    currentSlide += direction;
-
-    if (currentSlide < 0) currentSlide = slides.length - 1;
-    if (currentSlide >= slides.length) currentSlide = 0;
-
-    showSlide(currentSlide);
-  };
-
-});
-</script>
+</body>
+</html>
