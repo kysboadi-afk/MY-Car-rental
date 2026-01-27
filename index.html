@@ -95,9 +95,7 @@
     &copy; 2026 MY Car Rental
   </footer>
 
-  <!-- ----------------- JAVASCRIPT ----------------- -->
   <script>
-    // ---------- VARIABLES ----------
     let selectedCar = null;
     let daily = 0;
     let weekly = 0;
@@ -108,31 +106,19 @@
       "Slingshot R": ['2026-02-05']
     };
 
-    // ---------- CAR SELECTION ----------
+    // ----- CAR SELECTION -----
     function selectCar(name, d, w, dep, el) {
       selectedCar = name;
       daily = d;
       weekly = w;
       deposit = dep;
-
-      // Remove previous highlights
-      document.querySelectorAll('.car-slider').forEach(card => {
-        card.classList.remove('selected');
-      });
-
-      // Highlight selected car
+      document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
       el.closest('.car-slider').classList.add('selected');
-
-      // Show booked dates visually
       displayBookedDates(name);
-
       alert(name + " selected! Now choose dates and enter your info below.");
-      calculateTotal();
-      checkAvailability();
-      disableBookedDates();
+      calculateTotal(); checkAvailability(); disableBookedDates();
     }
 
-    // ---------- DISPLAY BOOKED DATES ----------
     function displayBookedDates(car) {
       const container = document.getElementById('bookedDatesContainer');
       container.innerHTML = '';
@@ -148,129 +134,69 @@
       }
     }
 
-    // ---------- SYNC RETURN TIME ----------
     function syncReturnTime() {
       const pickupTime = document.getElementById('pickupTime').value;
       document.getElementById('returnTime').value = pickupTime;
     }
 
-    // ---------- CALCULATE TOTAL ----------
     function calculateTotal() {
       const pick = new Date(document.getElementById('pickup').value);
       const ret = new Date(document.getElementById('return').value);
       if (!selectedCar || !pick || !ret || ret <= pick) return;
-
-      const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
-      let cost = 0;
-
-      if (weekly > 0 && days >= 7) {
-        cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
-      } else {
-        cost = days * daily;
-      }
-
+      const days = Math.ceil((ret - pick) / (1000*60*60*24));
+      let cost = (weekly>0 && days>=7) ? Math.floor(days/7)*weekly + (days%7)*daily : days*daily;
       cost += deposit;
       document.getElementById('total').innerText = cost;
     }
 
-    // ---------- CHECK AVAILABILITY ----------
     function checkAvailability() {
       const pick = document.getElementById('pickup').value;
       const ret = document.getElementById('return').value;
       const status = document.getElementById('availability');
-
-      if (!selectedCar || !pick || !ret) {
-        status.innerText = '';
-        return;
-      }
-
+      if(!selectedCar || !pick || !ret) { status.innerText=''; return; }
       const dates = bookedDates[selectedCar] || [];
-      let conflict = dates.some(date => date >= pick && date <= ret);
-
-      if(conflict) {
-        status.innerText = '❌ Not available for selected dates';
-        status.style.color = 'red';
-      } else {
-        status.innerText = '✅ Available';
-        status.style.color = 'green';
-      }
+      let conflict = dates.some(date => date>=pick && date<=ret);
+      if(conflict){ status.innerText='❌ Not available for selected dates'; status.style.color='red'; }
+      else { status.innerText='✅ Available'; status.style.color='green'; }
     }
 
-    // ---------- RESERVE ----------
     function reserve() {
       const email = document.getElementById('email').value;
       const agree = document.getElementById('agree').checked;
-
-      if (!selectedCar) { alert('Please select a vehicle'); return; }
-      if (!email) { alert('Please enter your email'); return; }
-      if (!agree) { alert('You must agree to the Rental Agreement & Terms before paying'); return; }
-
+      if(!selectedCar){alert('Please select a vehicle');return;}
+      if(!email){alert('Please enter your email');return;}
+      if(!agree){alert('You must agree to the Rental Agreement & Terms before paying');return;}
       alert('✅ Reservation request sent! We will contact you shortly.');
     }
 
-    // ---------- IMAGE SLIDER ----------
-    const sliders = {
-      slingshot: { index: 0, slides: [] },
-      camry: { index: 0, slides: [] }
-    };
-
+    // ----- IMAGE SLIDER -----
+    const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
     function initSliders() {
       sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
       sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
     }
+    function showSlide(car){const s=sliders[car];s.slides.forEach((img,i)=>img.classList.toggle('active',i===s.index)); updateDots(car);}
+    function nextSlide(car){const s=sliders[car]; s.index=(s.index+1)%s.slides.length; showSlide(car);}
+    function prevSlide(car){const s=sliders[car]; s.index=(s.index-1+s.slides.length)%s.slides.length; showSlide(car);}
+    function updateDots(car){const s=sliders[car]; const dots=document.querySelectorAll(`#dots-${car} .dot`); dots.forEach((dot,i)=>dot.classList.toggle('active',i===s.index));}
+    function goToSlide(car,index){sliders[car].index=index; showSlide(car);}
+    window.onload=initSliders;
 
-    function showSlide(car) {
-      const s = sliders[car];
-      s.slides.forEach((img, i) => img.classList.toggle('active', i === s.index));
-      updateDots(car);
-    }
-
-    function nextSlide(car) {
-      const s = sliders[car];
-      s.index = (s.index + 1) % s.slides.length;
-      showSlide(car);
-    }
-
-    function prevSlide(car) {
-      const s = sliders[car];
-      s.index = (s.index - 1 + s.slides.length) % s.slides.length;
-      showSlide(car);
-    }
-
-    function updateDots(car) {
-      const s = sliders[car];
-      const dots = document.querySelectorAll(`#dots-${car} .dot`);
-      dots.forEach((dot, i) => dot.classList.toggle('active', i === s.index));
-    }
-
-    function goToSlide(car, index) {
-      sliders[car].index = index;
-      showSlide(car);
-    }
-
-    // ---------- DISABLE BOOKED DATES ----------
+    // ----- DISABLE BOOKED DATES -----
     function disableBookedDates() {
       if(!selectedCar) return;
-      const booked = bookedDates[selectedCar] || [];
-      const pickInput = document.getElementById('pickup');
-      const returnInput = document.getElementById('return');
+      const booked = bookedDates[selectedCar]||[];
+      const pick=document.getElementById('pickup');
+      const ret=document.getElementById('return');
       const today = new Date().toISOString().split('T')[0];
-      pickInput.setAttribute('min', today);
-      returnInput.setAttribute('min', today);
-
-      [pickInput, returnInput].forEach(input => {
-        input.addEventListener('input', function() {
-          if(booked.includes(this.value)) {
-            alert('This date is already booked! Please select another date.');
-            this.value = '';
-          }
-          checkAvailability();
-          calculateTotal();
+      pick.setAttribute('min',today); ret.setAttribute('min',today);
+      [pick,ret].forEach(input=>{
+        input.addEventListener('input',function(){
+          if(booked.includes(this.value)){ alert('This date is already booked!'); this.value=''; }
+          checkAvailability(); calculateTotal();
         });
       });
     }
-
-    window.onload = initSliders;
   </script>
 </body>
 </html>
