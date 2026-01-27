@@ -101,12 +101,13 @@
     let weekly = 0;
     let deposit = 0;
 
+    // Start with empty booked dates so cars are available
     const bookedDates = {
-      "Camry 2012": ['2026-02-01','2026-02-02'],
-      "Slingshot R": ['2026-02-05']
+      "Camry 2012": [],
+      "Slingshot R": []
     };
 
-    // ----- CAR SELECTION -----
+    // ---------- CAR SELECTION ----------
     function selectCar(name, d, w, dep, el) {
       selectedCar = name;
       daily = d;
@@ -134,11 +135,13 @@
       }
     }
 
+    // ---------- SYNC RETURN TIME ----------
     function syncReturnTime() {
       const pickupTime = document.getElementById('pickupTime').value;
       document.getElementById('returnTime').value = pickupTime;
     }
 
+    // ---------- CALCULATE TOTAL PRICE ----------
     function calculateTotal() {
       const pick = new Date(document.getElementById('pickup').value);
       const ret = new Date(document.getElementById('return').value);
@@ -149,6 +152,7 @@
       document.getElementById('total').innerText = cost;
     }
 
+    // ---------- CHECK AVAILABILITY ----------
     function checkAvailability() {
       const pick = document.getElementById('pickup').value;
       const ret = document.getElementById('return').value;
@@ -160,16 +164,40 @@
       else { status.innerText='✅ Available'; status.style.color='green'; }
     }
 
+    // ---------- RESERVE FUNCTION ----------
     function reserve() {
       const email = document.getElementById('email').value;
       const agree = document.getElementById('agree').checked;
+      const pick = document.getElementById('pickup').value;
+      const ret = document.getElementById('return').value;
+
       if(!selectedCar){alert('Please select a vehicle');return;}
       if(!email){alert('Please enter your email');return;}
       if(!agree){alert('You must agree to the Rental Agreement & Terms before paying');return;}
+      if(!pick || !ret){alert('Please select valid pickup and return dates');return;}
+
       alert('✅ Reservation request sent! We will contact you shortly.');
+
+      // Add booked dates temporarily for front-end display
+      const datesToBlock = getDatesBetween(pick, ret);
+      bookedDates[selectedCar] = bookedDates[selectedCar].concat(datesToBlock);
+      displayBookedDates(selectedCar);
+      checkAvailability();
     }
 
-    // ----- IMAGE SLIDER -----
+    // Helper function to get all dates between pickup and return
+    function getDatesBetween(start, end) {
+      let arr = [];
+      let current = new Date(start);
+      const last = new Date(end);
+      while(current <= last){
+        arr.push(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+      }
+      return arr;
+    }
+
+    // ---------- IMAGE SLIDERS ----------
     const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
     function initSliders() {
       sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
@@ -182,7 +210,7 @@
     function goToSlide(car,index){sliders[car].index=index; showSlide(car);}
     window.onload=initSliders;
 
-    // ----- DISABLE BOOKED DATES -----
+    // ---------- DISABLE BOOKED DATES ----------
     function disableBookedDates() {
       if(!selectedCar) return;
       const booked = bookedDates[selectedCar]||[];
