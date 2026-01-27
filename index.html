@@ -1,232 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Car Rental</title>
-
-  <!-- CSS file -->
-  <link rel="stylesheet" href="style.css">
-</head>
-  <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #f2f2f2;
-    margin: 0;
-    padding: 0;
-  }
-
-  .container {
-    max-width: 700px;
-    margin: 30px auto;
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 8px;
-  }
-
-  h1, h2 {
-    text-align: center;
-  }
-
-  img {
-    width: 100%;
-    border-radius: 6px;
-    margin-top: 10px;
-  }
-
-  .info {
-    background: #f7f7f7;
-    padding: 15px;
-  }
-
-  .whatsapp-btn {
-    display: inline-block;
-    padding: 12px 20px;
-    background-color: #25D366;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    font-weight: bold;
-    margin-top: 15px;
-    text-align: center;
-  }
-
-  .whatsapp-btn:hover {
-    background-color: #1ebe5d;
-  }
-</style>
-</head>
-<body>
-
-<div class="container"> 
-  <img src="High-Resolution-Color-Logo.png"
-     alt="SLY TRANSPORTATION SERVICES Rental Logo"
-     style="width:280px; max-width:100%; display:block; margin:20px auto;">
-<h1>SLY TRANSPORTATION SERVICES CAR RENTALS</h1>
- <h1 class="main-title">
-
-
-<p class="top-info">
-  <strong>SECURITY DEPOSIT REQUIRED</strong> | 
-  <strong>VALID DL LICENSE REQURED</strong>
-</p>
-
-<div class="slider">
-  <img src="IMG_0025.jpeg" class="slide active">
-  <img src="IMG_0026.jpeg" class="slide">
-  <img src="IMG_4486.jpeg" class="slide">
-
-  <button class="prev">❮</button>
-  <button class="next">❯</button>
-</div>
-
-<h2>Vehicle Details</h2>
-<p><strong>Make:</strong> Toyota</p>
-<p><strong>Model:</strong> Camry</p>
-
 <script>
-  const slides = document.querySelectorAll('.slide');
-  let currentSlide = 0;
-
-  slides[currentSlide].classList.add('active');
-
-  document.querySelector('.next').onclick = () => {
-    slides[currentSlide].classList.remove('active');
-    currentSlide = (currentSlide + 1) % slides.length;
-    slides[currentSlide].classList.add('active');
-  };
-
-  document.querySelector('.prev').onclick = () => {
-    slides[currentSlide].classList.remove('active');
-    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
-    slides[currentSlide].classList.add('active');
-  };
-</script>
-
-</body>
-</html>
-</div>
-</div>
-    <h2>Vehicle Details</h2>
-    <p><strong>Make:</strong> Toyota</p>
-    <p><strong>Model:</strong> Camry</p>
-    <p><strong>Year:</strong> 2012</p>
-  </div>
-  <a
-  href="https://wa.me/12139166606?text=I%20want%20to%20book%20the%20Toyota%20Camry"
-  target="_blank"
-  class="whatsapp-btn">
-  Book on WhatsApp
-  
-</a>
-
-<h2>Availability</h2>
-  
-
-<iframe
-  src="https://calendar.google.com/calendar/embed?src=c_13a05e5c9dd04942a1bb746694101e354c8fa5a044a7a479b46795635593bd1c@group.calendar.google.com"
-  style="border:0"
-  width="100%"
-  height="400"
-  frameborder="0"
-  scrolling="no">
-</iframe>
-
- <h2>Book This Car</h2>
-
-<label for="pickup">Pickup Date</label>
-<input type="date" id="pickup" name="pickup" required>
-
-<label for="return">Return Date</label>
-<input type="date" id="return" name="return" required>
-
-<div class="price" id="totalPrice">
-  Price: --
-</div>
-
-<div class="deposit">
-  Security Deposit: $150 (refundable)
-</div>
-
-<div class="requirement">
-  Renter must provide proof of valid auto insurance.
-</div>
-<div class="requirement">
-    Proof of valid driving license required
-  </div>
-</div>
-<div class="footer">
-  © SLY TRANSPORTATION SERVICES Car Rental
-</div>
-  
-<script>
-  // ===== IMAGE SLIDER =====
-document.querySelectorAll(".slider").forEach(slider => {
-  let index = 0;
-  const slides = slider.querySelectorAll(".slide");
-  const nextBtn = slider.querySelector(".next");
-  const prevBtn = slider.querySelector(".prev");
-
-  if (!nextBtn  !prevBtn  slides.length === 0) return;
-
-  nextBtn.addEventListener("click", () => {
-    slides[index].classList.remove("active");
-    index = (index + 1) % slides.length;
-    slides[index].classList.add("active");
-  });
-
-  prevBtn.addEventListener("click", () => {
-    slides[index].classList.remove("active");
-    index = (index - 1 + slides.length) % slides.length;
-    slides[index].classList.add("active");
-  });
-}); 
   // ===== PRICE CALCULATOR =====
-const dailyRate = 45;
+  const dailyRate = 45;
 
-function calculatePrice() {
-  const pickup = document.getElementById("pickup").value;
-  const returnDate = document.getElementById("return").value;
+  function calculatePrice() {
+    const pickup = document.getElementById("pickup").value;
+    const returnDate = document.getElementById("return").value;
 
-  if (!pickup || !returnDate) {
-    document.getElementById("totalPrice").innerText = "Price: --";
-    return;
+    if (!pickup || !returnDate) {
+      document.getElementById("totalPrice").innerText = "Price: --";
+      return;
+    }
+
+    const start = new Date(pickup);
+    const end = new Date(returnDate);
+    const days = (end - start) / (1000 * 60 * 60 * 24);
+
+    if (days <= 0) {
+      document.getElementById("totalPrice").innerText = "Price: --";
+      return;
+    }
+
+    const total = days * dailyRate;
+    document.getElementById("totalPrice").innerText = Price: $${total};
   }
 
-  const start = new Date(pickup);
-  const end = new Date(returnDate);
-  const days = (end - start) / (1000 * 60 * 60 * 24);
+  document.getElementById("pickup").addEventListener("change", calculatePrice);
+  document.getElementById("return").addEventListener("change", calculatePrice);
 
-  if (days <= 0) {
-    document.getElementById("totalPrice").innerText = "Price: --";
-    return;
-  }
+  function sendWhatsApp() {
+    const pickup = document.getElementById("pickup").value;
+    const returnDate = document.getElementById("return").value;
+    const price = document.getElementById("totalPrice").innerText;
 
-  const total = days * dailyRate;
-  document.getElementById("totalPrice").innerText = Price: $${total};
-}
+    if (!pickup || !returnDate) {
+      alert("Please select pickup and return dates.");
+      return;
+    }
 
-document.getElementById("pickup").addEventListener("change", calculatePrice);
-document.getElementById("return").addEventListener("change", calculatePrice);
-
-function sendWhatsApp() {
-  const pickup = document.getElementById("pickup").value;
-  const returnDate = document.getElementById("return").value;
-  const price = document.getElementById("totalPrice").innerText;
-
-  if (!pickup || !returnDate) {
-    alert("Please select pickup and return dates.");
-    return;
-  }
-
-  const message =
+    const message =
 `I want to book the Toyota Camry
 Pickup: ${pickup}
 Return: ${returnDate}
 ${price}`;
 
-  const phone = "12139166606";
-  const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
-  window.open(url, "_blank");
-}
+    const phone = "12139166606";
+    const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
+
+    window.open(url, "_blank");
+  }
 </script>
