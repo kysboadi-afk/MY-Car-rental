@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pickup = new Date(pickupInput.value);
     const dropoff = new Date(dropoffInput.value);
 
-    if (!pickup  !dropoff  dropoff <= pickup) {
+    if (!pickupInput.value ||!dropoffinput.value || dropoff <= pickup) {
       totalPrice.textContent = "$0.00";
       return;
     }
