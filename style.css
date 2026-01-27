@@ -1,21 +1,27 @@
-/* Reset */
+/* ================================
+   GLOBAL RESET
+================================ */
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f2f2f2;
+  background-color: #f4f4f4;
   color: #222;
+  line-height: 1.4;
 }
 
-/* Business Header */
+/* ================================
+   BUSINESS HEADER
+================================ */
 .business-header {
-  background: #000;
+  background-color: #000;
   color: #fff;
   text-align: center;
-  padding: 22px 15px;
+  padding: 20px 10px;
 }
 
 .business-name {
@@ -25,118 +31,84 @@ body {
 }
 
 .business-tagline {
-  font-size: 15px;
-  margin-top: 4px;
+  font-size: 14px;
+  margin-top: 6px;
   opacity: 0.9;
 }
 
-/* Image Slider */
+/* ================================
+   SLIDESHOW
+================================ */
 .slider {
   position: relative;
   width: 100%;
-  height: 260px;
+  max-width: 900px;
+  height: 320px;
+  margin: 20px auto;
   overflow: hidden;
+  border-radius: 12px;
   background: #000;
 }
 
+/* Slow smooth fade */
 .slide {
   position: absolute;
+  inset: 0;
   width: 100%;
-  height: 260px;
+  height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 1s ease-in-out;
+  transition: opacity 3.5s ease-in-out;
 }
 
 .slide.active {
   opacity: 1;
 }
 
-/* Booking Box */
+/* ================================
+   BOOKING BOX
+================================ */
 .booking-box {
+  max-width: 900px;
+  margin: 20px auto 80px;
+  padding: 20px;
   background: #fff;
-  max-width: 420px;
-  margin: 30px auto;
-  padding: 25px;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  border-radius: 12px;
+  box-shadow: 0 6px 15px rgba(0,0,0,0.12);
 }
 
-.booking-box label {
-  display: block;
-  margin-top: 15px;
-  font-size: 14px;
-}
-
-.booking-box input,
-.booking-box select {
-  width: 100%;
-  padding: 10px;
-  margin-top: 6px;
-  font-size: 14px;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-}
-
-.booking-box input:focus,
-.booking-box select:focus {
-  outline: none;
-  border-color: #25D366;
-}
-
-/* Total Price */
-#totalPrice {
+/* ================================
+   VEHICLE PREVIEW
+================================ */
+.vehicle-preview {
   text-align: center;
-  font-size: 24px;
-  font-weight: bold;
-  margin: 20px 0;
-  color: #000;
+  margin-bottom: 15px;
 }
 
-/* Booking Button */
-.booking-box button {
+.vehicle-preview img {
   width: 100%;
-  padding: 12px;
-  background: #25D366;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
+  max-width: 360px;
+  border-radius: 10px;
+}
+
+#vehicleName {
+  margin-top: 8px;
+  font-size: 18px;
   font-weight: bold;
-  cursor: pointer;
-  transition: background 0.3s ease;
 }
 
-.booking-box button:hover {
-  background: #1ebe5d;
+/* ================================
+   REQUIREMENTS TEXT
+================================ */
+.requirements {
+  text-align: center;
+  color: #b00000;
+  margin-bottom: 15px;
+  font-size: 14px;
 }
 
-/* WhatsApp Floating Button */
-.whatsapp-float {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: #25D366;
-  color: #fff;
-  padding: 14px 20px;
-  border-radius: 50px;
-  text-decoration: none;
-  font-size: 15px;
-  font-weight: bold;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-}
-
-/* Mobile Optimization */
-@media (max-width: 480px) {
-  .slider {
-    height: 220px;
-  }
-
-  .slide {
-    height: 220px;
-  }
-
-  .booking-box {
-    margin: 20px 15px;
-  }
-}
+/* ================================
+   FORM ELEMENTS
+================================ */
+label {
+  display
