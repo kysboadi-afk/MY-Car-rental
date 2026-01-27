@@ -1,51 +1,118 @@
-addEventListener("change", calculateTotal);
+/* ---------- RESET ---------- */
+* {
+  box-sizing: border-box;
+}
 
-    function updateVehicle() {
-      const vehicle = vehicles[vehicleSelect.value];
-      vehicleImage.src = vehicle.image;
-      vehicleName.textContent = vehicle.name;
-      calculateTotal();
-    }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f4f4f4;
+  color: #000;
+}
 
-    function calculateTotal() {
-      if (!pickupInput.value || !dropoffInput.value) {
-        totalPrice.textContent = "$0.00";
-        return;
-      }
+/* ---------- LAYOUT ---------- */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #fff;
+}
 
-      const pickup = new Date(pickupInput.value);
-      const dropoff = new Date(dropoffInput.value);
-      const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
+section {
+  margin-bottom: 30px;
+}
 
-      if (days <= 0) {
-        totalPrice.textContent = "$0.00";
-        return;
-      }
+/* ---------- VEHICLE DISPLAY ---------- */
+.vehicle-display {
+  text-align: center;
+}
 
-      const vehicle = vehicles[vehicleSelect.value];
-      const total = days * vehicle.pricePerDay;
+.vehicle-display img {
+  width: 100%;
+  max-width: 600px;
+  height: auto;
+  margin: 0 auto 10px;
+  display: block;
+}
 
-      totalPrice.textContent = $${total}.00;
-    }
+#vehicleName {
+  font-size: 22px;
+  font-weight: bold;
+}
 
-    // SLIDER
-    let currentSlide = 0;
-    const slides = document.querySelectorAll(".slide");
+#price {
+  font-size: 18px;
+  color: #444;
+}
 
-    function showSlide(index) {
-      slides.forEach(slide => slide.classList.remove("active"));
-      slides[index].classList.add("active");
-    }
+/* ---------- FORM ---------- */
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
 
-    function changeSlide(direction) {
-      currentSlide += direction;
+select,
+input[type="date"] {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  font-size: 16px;
+}
 
-      if (currentSlide < 0) currentSlide = slides.length - 1;
-      if (currentSlide >= slides.length) currentSlide = 0;
+#totalPrice {
+  font-size: 20px;
+  font-weight: bold;
+  margin-top: 10px;
+}
 
-      showSlide(currentSlide);
-    }
-  </script>
+/* ---------- BUTTON ---------- */
+button {
+  padding: 12px 20px;
+  font-size: 16px;
+  background-color: #000;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
 
-</body>
-</html>
+button:hover {
+  background-color: #333;
+}
+
+/* ---------- SLIDER ---------- */
+.slider {
+  position: relative;
+  max-width: 800px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.slide {
+  display: none;
+}
+
+.slide.active {
+  display: block;
+}
+
+.slide img {
+  width: 100%;
+  display: block;
+}
+
+/* ---------- SLIDER CONTROLS ---------- */
+.slider-controls {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.slider-controls button {
+  margin: 0 5px;
+}
+
+/* ---------- SAFETY ---------- */
+.hidden {
+  display: none;
+}
