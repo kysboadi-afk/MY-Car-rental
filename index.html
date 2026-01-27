@@ -2,56 +2,73 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>My Car Rental</title>
+  <title>Toyota Camry Rental</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #f5f5f5;
+      background: #f2f2f2;
       margin: 0;
       padding: 0;
     }
 
     .container {
-      max-width: 600px;
-      margin: 40px auto;
-      background: white;
+      max-width: 700px;
+      margin: 30px auto;
+      background: #ffffff;
       padding: 20px;
       border-radius: 8px;
     }
 
-    h1 {
+    h1, h2 {
       text-align: center;
     }
 
-    .car-box {
-      border: 1px solid #ddd;
-      padding: 15px;
+    img {
+      width: 100%;
       border-radius: 6px;
-      margin-top: 20px;
+      margin-top: 10px;
     }
 
-    .price {
-      font-size: 20px;
+    .info p {
+      margin: 6px 0;
+    }
+
+    label {
+      display: block;
+      margin-top: 15px;
       font-weight: bold;
     }
 
-    .button {
-      display: block;
-      text-align: center;
+    input {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      font-size: 16px;
+    }
+
+    .price {
+      margin-top: 15px;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    button {
+      width: 100%;
+      margin-top: 20px;
+      padding: 15px;
+      font-size: 18px;
       background: #25D366;
       color: white;
-      padding: 14px;
-      text-decoration: none;
-      font-size: 18px;
+      border: none;
       border-radius: 6px;
-      margin-top: 20px;
+      cursor: pointer;
     }
 
     .footer {
       text-align: center;
-      margin-top: 30px;
+      margin-top: 25px;
       color: #777;
       font-size: 14px;
     }
@@ -59,24 +76,78 @@
 </head>
 <body>
 
-  <<div class="car-box">
-  <h2>Available Car</h2>
-  <p><strong>Make:</strong> Toyota</p>
-  <p><strong>Model:</strong> Camry</p>
-  <p><strong>Year:</strong> 2012</p>
-  <p><strong>VIN:</strong> 4T1BF1FK5CU063142</p>
-  <p class="price">$45 per day</p>
+<div class="container">
+  <h1>Ddd Car Rental</h1>
+  <p style="text-align:center;">Reliable daily car rental</p>
+
+  <img src="https://upload.wikimedia.org/wikipedia/commons/6/6f/2012_Toyota_Camry_LE.jpg" alt="Toyota Camry">
+
+  <div class="info">
+    <h2>Vehicle Details</h2>
+    <p><strong>Make:</strong> Toyota</p>
+    <p><strong>Model:</strong> Camry</p>
+    <p><strong>Year:</strong> 2012</p>
+  </div>
+
+  <h2>Book This Car</h2>
+
+  <label>Pickup Date</label>
+  <input type="date" id="pickup">
+
+  <label>Return Date</label>
+  <input type="date" id="return">
+
+  <div class="price" id="totalPrice">
+    Price: —
+  </div>
+
+  <button onclick="bookNow()">Book via WhatsApp</button>
+
+  <div class="footer">
+    © Ddd Car Rental
+  </div>
 </div>
 
-    <a class="button"
-       href="https://wa.me/+12139166606?text=Hello%2C%20I%20want%20to%20book%20the%20car">
-       Book via WhatsApp
-    </a>
+<script>
+  const dailyRate = 45;
 
-    <div class="footer">
-      © My Car Rental
-    </div>
-  </div>
+  function calculatePrice() {
+    const pickup = new Date(document.getElementById("pickup").value);
+    const ret = new Date(document.getElementById("return").value);
+
+    if (!isNaN(pickup) && !isNaN(ret) && ret > pickup) {
+      const days = (ret - pickup) / (1000 * 60 * 60 * 24);
+      const total = days * dailyRate;
+      document.getElementById("totalPrice").innerText =
+        "Price: $" + total + " (" + days + " days)";
+    }
+  }
+
+  document.getElementById("pickup").addEventListener("change", calculatePrice);
+  document.getElementById("return").addEventListener("change", calculatePrice);
+
+  function bookNow() {
+    const pickup = document.getElementById("pickup").value;
+    const ret = document.getElementById("return").value;
+    const price = document.getElementById("totalPrice").innerText;
+
+    if (!pickup || !ret) {
+      alert("Please select pickup and return dates");
+      return;
+    }
+
+    const message =
+      "Hello, I want to book the Toyota Camry.%0A" +
+      "Pickup: " + pickup + "%0A" +
+      "Return: " + ret + "%0A" +
+      price;
+
+    window.open(
+      "https://wa.me/1234567890?text=" + message,
+      "_blank"
+    );
+  }
+</script>
 
 </body>
 </html>
