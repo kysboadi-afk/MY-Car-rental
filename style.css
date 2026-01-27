@@ -18,7 +18,15 @@ header {
   justify-content: center;
   gap: 20px;
 }
+.slide {
+  display: none;
+  transition: opacity 0.4s ease;
+}
 
+.slide.active {
+  display: block;
+  opacity: 1;
+}
 .nav a {
   color: white;
   text-decoration: none;
