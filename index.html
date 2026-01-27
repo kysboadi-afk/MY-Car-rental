@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SLY Transportation Services</title>
 
-  <!-- Link to CSS -->
+  <!-- Flatpickr Calendar CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+  <!-- Main CSS -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,22 +28,39 @@
 
   <!-- Booking Form -->
   <div class="booking-box">
-    <form>
+    <form id="bookingForm">
+
       <label for="pickup">Pick‑up Date</label>
-      <input type="date" id="pickup" required>
+      <input type="text" id="pickup" required>
 
       <label for="dropoff">Drop‑off Date</label>
-      <input type="date" id="dropoff" required>
+      <input type="text" id="dropoff" required>
+
+      <label for="vehicle">Select Vehicle</label>
+      <select id="vehicle">
+        <option value="Toyota Corolla" data-price="60">Toyota Corolla – $60/day</option>
+        <option value="Nissan Rogue" data-price="85">Nissan Rogue – $85/day</option>
+        <option value="Hyundai Elantra" data-price="70">Hyundai Elantra – $70/day</option>
+      </select>
 
       <div id="totalPrice">$0.00</div>
 
-      <button type="submit">Book Now</button>
+      <button type="submit">Book via WhatsApp</button>
     </form>
   </div>
 
-  <!-- Slider Script -->
+  <!-- WhatsApp Floating Button -->
+  <a href="https://wa.me/12139166606" target="_blank" class="whatsapp-float">
+    WhatsApp
+  </a>
+
+  <!-- Flatpickr JS -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+  <!-- Main Script -->
   <script>
-    let slides = document.querySelectorAll(".slide");
+    /* Image Slider */
+    const slides = document.querySelectorAll(".slide");
     let currentSlide = 0;
 
     setInterval(() => {
@@ -48,6 +68,60 @@
       currentSlide = (currentSlide + 1) % slides.length;
       slides[currentSlide].classList.add("active");
     }, 3000);
+
+    /* Calendar */
+    flatpickr("#pickup", {
+      minDate: "today",
+      dateFormat: "Y-m-d"
+    });
+
+    flatpickr("#dropoff", {
+      minDate: "today",
+      dateFormat: "Y-m-d"
+    });
+
+    /* Price Calculation */
+    const pickupInput = document.getElementById("pickup");
+    const dropoffInput = document.getElementById("dropoff");
+    const vehicleSelect = document.getElementById("vehicle");
+    const totalPrice = document.getElementById("totalPrice");
+
+    function calculatePrice() {
+      if (!pickupInput.value || !dropoffInput.value) return;
+
+      const pickupDate = new Date(pickupInput.value);
+      const dropoffDate = new Date(dropoffInput.value);
+      const days = (dropoffDate - pickupDate) / (1000 * 60 * 60 * 24);
+
+      if (days <= 0) {
+        totalPrice.textContent = "$0.00";
+        return;
+      }
+
+      const pricePerDay =
+        vehicleSelect.options[vehicleSelect.selectedIndex].dataset.price;
+
+      totalPrice.textContent = $${days * pricePerDay}.00;
+    }
+
+    pickupInput.addEventListener("change", calculatePrice);
+    dropoffInput.addEventListener("change", calculatePrice);
+    vehicleSelect.addEventListener("change", calculatePrice);
+
+    /* WhatsApp Booking */
+    document.getElementById("bookingForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      const message =
+        Hello, I would like to book the ${vehicleSelect.value}  +
+        from ${pickupInput.value} to ${dropoffInput.value}.  +
+        Total price: ${totalPrice.textContent};
+
+      const whatsappURL =
+        https://wa.me/12139166606?text=${encodeURIComponent(message)};
+
+      window.open(whatsappURL, "_blank");
+    });
   </script>
 
 </body>
