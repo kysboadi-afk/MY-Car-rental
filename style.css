@@ -1,10 +1,11 @@
 /* ---------- RESET ---------- */
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
   font-family: Arial, Helvetica, sans-serif;
   background-color: #f5f5f5;
   color: #111;
@@ -30,57 +31,103 @@ header h1 {
   padding: 20px;
 }
 
-/* ---------- VEHICLES ---------- */
-.cars {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.car {
+/* ---------- CAR SLIDER ---------- */
+.car-slider {
   background: #fff;
+  padding: 20px;
   border-radius: 12px;
-  padding: 15px;
-  box-shadow: 0 4px 10px rgba(0,0,0,.08);
-  cursor: pointer;
-  transition: all 0.3s ease;
+  margin-bottom: 30px;
+  text-align: center;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  position: relative;
 }
 
-.car img {
+.car-slider h3 {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.slider {
+  position: relative;
+  max-width: 600px;
+  margin: 0 auto 10px;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.slide {
+  display: none;
   width: 100%;
-  border-radius: 10px;
+  border-radius: 12px;
+  transition: opacity 0.5s ease;
 }
 
-.car h3 {
-  margin: 10px 0 5px;
+.slide.active {
+  display: block;
 }
 
+/* ---------- SLIDER BUTTONS ---------- */
+.slider-controls button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  padding: 10px 15px;
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 18px;
+  transition: background 0.3s ease;
+}
+
+.slider-controls button:hover {
+  background: rgba(0,0,0,0.8);
+}
+
+.car-slider .slider-controls button:first-child {
+  left: 10px;
+}
+
+.car-slider .slider-controls button:last-child {
+  right: 10px;
+}
+
+/* ---------- PRICE & SELECT BUTTON ---------- */
 .price {
   font-weight: bold;
-  color: #000;
+  font-size: 18px;
+  margin: 10px 0;
 }
 
-.car.selected {
-  border: 3px solid #111;
+.car-slider button {
+  padding: 12px 20px;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.car-slider button:hover {
+  background: #333;
   transform: scale(1.02);
-  background: #fafafa;
 }
 
-/* ---------- BOOKING ---------- */
+/* ---------- BOOKING FORM ---------- */
 .booking {
   background: #fff;
   padding: 25px;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  margin-top: 30px;
-  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+  margin-top: 20px;
 }
 
 .booking h2 {
-  margin-top: 0;
   font-size: 24px;
   margin-bottom: 15px;
-  color: #111;
 }
 
 label {
@@ -102,15 +149,13 @@ input[type="email"] {
   transition: border-color 0.3s ease;
 }
 
-input[type="date"]:focus,
-input[type="time"]:focus,
-input[type="email"]:focus {
+input:focus {
   border-color: #111;
   outline: none;
 }
 
 #total {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: bold;
   margin-top: 15px;
 }
@@ -129,8 +174,8 @@ input[type="email"]:focus {
   color: red;
 }
 
-/* ---------- BUTTON ---------- */
-button {
+/* ---------- BOOKING BUTTON ---------- */
+.booking button {
   margin-top: 15px;
   width: 100%;
   padding: 14px;
@@ -143,7 +188,7 @@ button {
   transition: background 0.3s ease, transform 0.2s ease;
 }
 
-button:hover {
+.booking button:hover {
   background: #333;
   transform: scale(1.02);
 }
@@ -157,18 +202,22 @@ footer {
   text-align: center;
 }
 
-/* ---------- MOBILE ---------- */
+/* ---------- MOBILE RESPONSIVE ---------- */
 @media (max-width: 600px) {
   header h1 {
     font-size: 22px;
   }
-  .booking input[type="date"],
-  .booking input[type="time"],
-  .booking input[type="email"] {
+  .booking h2 {
+    font-size: 20px;
+  }
+  input[type="date"],
+  input[type="time"],
+  input[type="email"] {
     font-size: 14px;
     padding: 10px;
   }
-  .booking h2 {
-    font-size: 20px;
+  .slider-controls button {
+    padding: 8px 10px;
+    font-size: 16px;
   }
 }
