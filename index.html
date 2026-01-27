@@ -17,12 +17,17 @@
 
 <!-- ================= SLIDESHOW ================= -->
 <div class="slider">
+
   <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
   <img src="IMG_0026.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4486.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4532.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4533.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4534.jpeg" class="slide" alt="Slingshot">
+
+  <button class="nav prev" onclick="changeSlide(-1)">❮</button>
+  <button class="nav next" onclick="changeSlide(1)">❯</button>
+
 </div>
 
 <div class="container">
@@ -49,7 +54,8 @@
     <option
       value="2012 Toyota Camry"
       data-price="50"
-      data-image="IMG_0025.jpeg">
+      data-image="IMG_0025.jpeg"
+      selected>
       2012 Toyota Camry – $50/day
     </option>
 
@@ -71,12 +77,28 @@
 /* ================= SLIDESHOW ================= */
 const slides = document.querySelectorAll(".slide");
 let slideIndex = 0;
+let slideTimer;
 
-setInterval(() => {
-  slides[slideIndex].classList.remove("active");
-  slideIndex = (slideIndex + 1) % slides.length;
+function showSlide(index) {
+  slides.forEach(slide => slide.classList.remove("active"));
+  slideIndex = (index + slides.length) % slides.length;
   slides[slideIndex].classList.add("active");
-}, 6000);
+}
+
+function changeSlide(direction) {
+  showSlide(slideIndex + direction);
+  resetTimer();
+}
+
+function resetTimer() {
+  clearInterval(slideTimer);
+  slideTimer = setInterval(() => {
+    showSlide(slideIndex + 1);
+  }, 6000);
+}
+
+showSlide(0);
+resetTimer();
 
 /* ================= VEHICLE CHANGE ================= */
 const vehicleSelect = document.getElementById("vehicle");
