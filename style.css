@@ -4,3 +4,40 @@ body {
   margin: 0;
   padding: 0;
 }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Car Rental</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <!-- PASTE HERE -->
+  <header>
+    <h1>My Car Rental</h1>
+    <p>Reliable cars at affordable prices</p>
+  </header>
+
+  <main>
+    <section class="cars">
+      <h2>Available Cars</h2>
+
+      <div class="car">
+        <h3>Toyota Corolla</h3>
+        <p>Price: $40/day</p>
+      </div>
+
+      <div class="car">
+        <h3>Honda Civic</h3>
+        <p>Price: $45/day</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2026 My Car Rental</p>
+  </footer>
+</body>
+</html>
