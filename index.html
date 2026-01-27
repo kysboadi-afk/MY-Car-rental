@@ -113,6 +113,15 @@
       daily = d;
       weekly = w;
       deposit = dep;
+
+      // Remove previous highlights
+      document.querySelectorAll('.car-slider').forEach(card => {
+        card.classList.remove('selected');
+      });
+
+      // Highlight the selected card
+      el.closest('.car-slider').classList.add('selected');
+
       alert(name + " selected! Now choose dates and enter your info below.");
       calculateTotal();
       checkAvailability();
