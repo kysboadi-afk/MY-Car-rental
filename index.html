@@ -1,3 +1,4 @@
+Get Rich or DIE tRYING, [1/27/26 7:14 AM]
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,6 +96,84 @@
     };
 
   });
+  </script>
+
+</body>
+</html>
+
+Get Rich or DIE tRYING, [1/27/26 7:31 AM]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SLY Transportation Services | Car Rentals</title>
+
+  <!-- Main Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Page Wrapper -->
+  <div class="page-container">
+
+    <!-- Header -->
+    <header class="site-header">
+      <h1 class="company-name">SLY Transportation Services</h1>
+      <p class="company-tagline">Reliable • Affordable • Professional Car Rentals</p>
+    </header>
+
+    <!-- Hero / Slider Section -->
+    <section class="hero">
+      <div class="slider">
+
+        <img src="IMG_0025.jpeg" alt="Rental Vehicle 1" class="slide active">
+        <img src="IMG_0026.jpeg" alt="Rental Vehicle 2" class="slide">
+        <img src="IMG_4486.jpeg" alt="Rental Vehicle 3" class="slide">
+
+      </div>
+    </section>
+
+    <!-- Booking Section -->
+    <section class="booking-section">
+      <div class="booking-card">
+
+        <h2>Book Your Ride</h2>
+
+        <form class="booking-form">
+          <label for="pickup-date">Pick‑up Date</label>
+          <input type="date" id="pickup-date" required>
+
+          <label for="dropoff-date">Drop‑off Date</label>
+          <input type="date" id="dropoff-date" required>
+
+          <div class="price-display" id="totalPrice">
+            Total: $0.00
+          </div>
+
+          <button type="submit">Reserve Now</button>
+        </form>
+
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <p>© 2026 SLY Transportation Services. All rights reserved.</p>
+    </footer>
+
+  </div>
+
+  <!-- Slider Script -->
+  <script>
+    const slides = document.querySelectorAll(".slide");
+    let currentIndex = 0;
+
+    setInterval(() => {
+      slides[currentIndex].classList.remove("active");
+      currentIndex = (currentIndex + 1) % slides.length;
+      slides[currentIndex].classList.add("active");
+    }, 3500);
   </script>
 
 </body>
