@@ -12,50 +12,43 @@
   </header>
 
   <div class="container">
-    <!-- VEHICLE SELECTION -->
+    <!-- ---------- VEHICLE SLIDERS ---------- -->
     <section class="cars">
-      <div class="car" onclick="selectCar('Camry',50,250,0,this)">
-        <img src="images/car1.jpg" alt="Toyota Camry">
-        <h3>Toyota Camry</h3>
-        <p class="price">$50 / day • $250 / week</p>
-        <p>No security deposit</p>
+
+      <!-- Slingshot R -->
+      <div class="car-slider">
+        <h3>Slingshot R</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('slingshot')">&#10094;</button>
+          <button onclick="nextSlide('slingshot')">&#10095;</button>
+        </div>
+        <p class="price">$300 / day • $150 deposit</p>
+        <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
       </div>
 
-      <div class="car" onclick="selectCar('Slingshot',300,0,150,this)">
-        <img src="images/car2.jpg" alt="Polaris Slingshot">
-        <h3>Polaris Slingshot</h3>
-        <p class="price">$300 / day</p>
-        <p>$150 security deposit</p>
+      <!-- Camry 2012 -->
+      <div class="car-slider">
+        <h3>Camry 2012</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+          <img class="slide" src="images/car5.jpg" alt="Camry 2012">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('camry')">&#10094;</button>
+          <button onclick="nextSlide('camry')">&#10095;</button>
+        </div>
+        <p class="price">$50 / day • $250 weekly</p>
+        <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
       </div>
 
-      <!-- Optional: more cars if you have car3.jpg ... car6.jpg -->
-      <div class="car" onclick="selectCar('Car 3',100,500,0,this)">
-        <img src="images/car3.jpg" alt="Car 3">
-        <h3>Car 3</h3>
-        <p class="price">$100 / day</p>
-      </div>
-
-      <div class="car" onclick="selectCar('Car 4',120,550,0,this)">
-        <img src="images/car4.jpg" alt="Car 4">
-        <h3>Car 4</h3>
-        <p class="price">$120 / day</p>
-      </div>
-
-      <div class="car" onclick="selectCar('Car 5',80,400,50,this)">
-        <img src="images/car5.jpg" alt="Car 5">
-        <h3>Car 5</h3>
-        <p class="price">$80 / day</p>
-        <p>$50 security deposit</p>
-      </div>
-
-      <div class="car" onclick="selectCar('Car 6',90,450,0,this)">
-        <img src="images/car6.jpg" alt="Car 6">
-        <h3>Car 6</h3>
-        <p class="price">$90 / day</p>
-      </div>
     </section>
 
-    <!-- BOOKING FORM -->
+    <!-- ---------- BOOKING FORM ---------- -->
     <section class="booking">
       <h2>Book Your Ride</h2>
 
@@ -93,34 +86,33 @@
 
   <!-- ----------------- JAVASCRIPT ----------------- -->
   <script>
+    // ---------- VARIABLES ----------
     let selectedCar = null;
     let daily = 0;
     let weekly = 0;
     let deposit = 0;
 
     const bookedDates = {
-      Camry: ['2026-02-01','2026-02-02'],
-      Slingshot: ['2026-02-05']
+      "Camry 2012": ['2026-02-01','2026-02-02'],
+      "Slingshot R": ['2026-02-05']
     };
 
+    // ---------- CAR SELECTION ----------
     function selectCar(name, d, w, dep, el) {
-      document.querySelectorAll('.car').forEach(c => c.classList.remove('selected'));
-      el.classList.add('selected');
-
       selectedCar = name;
       daily = d;
       weekly = w;
       deposit = dep;
 
-      document.getElementById('carName').innerText = name;
+      alert(name + " selected! Now choose dates and enter your info below.");
       calculateTotal();
       checkAvailability();
     }
 
+    // ---------- CALCULATE TOTAL ----------
     function calculateTotal() {
       const pick = new Date(document.getElementById('pickup').value);
       const ret = new Date(document.getElementById('return').value);
-
       if (!selectedCar || !pick || !ret || ret <= pick) return;
 
       const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
@@ -136,6 +128,7 @@
       document.getElementById('total').innerText = cost;
     }
 
+    // ---------- CHECK AVAILABILITY ----------
     function checkAvailability() {
       const pick = document.getElementById('pickup').value;
       const ret = document.getElementById('return').value;
@@ -156,25 +149,47 @@
       }
     }
 
+    // ---------- RESERVE ----------
     function reserve() {
       const email = document.getElementById('email').value;
       const agree = document.getElementById('agree').checked;
 
-      if (!selectedCar) {
-        alert('Please select a vehicle');
-        return;
-      }
-      if (!email) {
-        alert('Please enter your email');
-        return;
-      }
-      if (!agree) {
-        alert('You must agree to the Rental Agreement & Terms before paying');
-        return;
-      }
+      if (!selectedCar) { alert('Please select a vehicle'); return; }
+      if (!email) { alert('Please enter your email'); return; }
+      if (!agree) { alert('You must agree to the Rental Agreement & Terms before paying'); return; }
 
       alert('✅ Reservation request sent! We will contact you shortly.');
     }
+
+    // ---------- IMAGE SLIDER ----------
+    const sliders = {
+      slingshot: { index: 0, slides: [] },
+      camry: { index: 0, slides: [] }
+    };
+
+    function initSliders() {
+      sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
+      sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
+    }
+
+    function showSlide(car) {
+      const s = sliders[car];
+      s.slides.forEach((img, i) => img.classList.toggle('active', i === s.index));
+    }
+
+    function nextSlide(car) {
+      const s = sliders[car];
+      s.index = (s.index + 1) % s.slides.length;
+      showSlide(car);
+    }
+
+    function prevSlide(car) {
+      const s = sliders[car];
+      s.index = (s.index - 1 + s.slides.length) % s.slides.length;
+      showSlide(car);
+    }
+
+    window.onload = initSliders;
   </script>
 </body>
 </html>
