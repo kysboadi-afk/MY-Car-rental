@@ -1,15 +1,83 @@
-<!DOCTYPE hmtl>
+<!DOCTYPE html>
 <html lang="en">
-  <head></head>
+<head>
   <meta charset="UTF-8">
-  <TITLE></TITLE>My Car Rental</title>
-  <meta name="viewport" content="width=device-width, initital -scale=1"></head>
-  <body>
-  <h1></h1>My Car Rental</h1>
-    <p></p>Simple, Reliable car rental</p>
-    <hr>
-    <hr>Book This Car</h2>
-    <p></p>Call or Whatsappp to book:</p>
-    <p><strong>Phone</strong>123-456-7890</p>
-  </body>
+  <title>My Car Rental</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .car-box {
+      border: 1px solid #ddd;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+
+    .price {
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    .button {
+      display: block;
+      text-align: center;
+      background: #25D366;
+      color: white;
+      padding: 14px;
+      text-decoration: none;
+      font-size: 18px;
+      border-radius: 6px;
+      margin-top: 20px;
+    }
+
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      color: #777;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>My Car Rental</h1>
+    <p style="text-align:center;">Simple, reliable car rental</p>
+
+    <div class="car-box">
+      <h2>Available Car</h2>
+      <p><strong>Model:</strong> 2021 Toyota Corolla</p>
+      <p class="price">$45 per day</p>
+    </div>
+
+    <a class="button"
+       href="https://wa.me/+12139166606?text=Hello%2C%20I%20want%20to%20book%20the%20car">
+       Book via WhatsApp
+    </a>
+
+    <div class="footer">
+      © My Car Rental
+    </div>
+  </div>
+
+</body>
 </html>
