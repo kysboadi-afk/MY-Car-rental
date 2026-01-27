@@ -147,6 +147,21 @@ function book() {
   window.open(`https://wa.me/12139166606?text=${message}`, "_blank");
 }
 </script>
+  <script>
+  const select = document.getElementById("vehicleSelect");
+  const image = document.getElementById("vehicleImage");
+  const name = document.getElementById("vehicleName");
+
+  select.addEventListener("change", () => {
+    if (select.value === "car1") {
+      image.src = "images/car1.jpg";
+      name.textContent = "Vehicle Option 1";
+    } else {
+      image.src = "images/car2.jpg";
+      name.textContent = "Vehicle Option 2";
+    }
+  });
+</script>
 
 </body>
 </html>
