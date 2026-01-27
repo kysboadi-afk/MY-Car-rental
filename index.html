@@ -65,13 +65,40 @@
 <h1>SLY TRANSPORTATION SERVICES Car Rental</h1>
   <p style="text-align:center;">Reliable daily car rental</p>
 
- <div class="slider">
-  <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
-  <img src="IMG_0026.jpeg" class="slide" alt="Toyota Camry side view">
-  <img src="IMG_4486.jpeg" class="slide" alt="Toyota Camry interior">
+<div class="slider">
+  <img src="IMG_0025.jpeg" class="slide active">
+  <img src="IMG_0026.jpeg" class="slide">
+  <img src="IMG_4486.jpeg" class="slide">
 
-  <button class="prev">&#10094;</button>
-  <button class="next">&#10095;</button>
+  <button class="prev">❮</button>
+  <button class="next">❯</button>
+</div>
+
+<h2>Vehicle Details</h2>
+<p><strong>Make:</strong> Toyota</p>
+<p><strong>Model:</strong> Camry</p>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let currentSlide = 0;
+
+  slides[currentSlide].classList.add('active');
+
+  document.querySelector('.next').onclick = () => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide + 1) % slides.length;
+    slides[currentSlide].classList.add('active');
+  };
+
+  document.querySelector('.prev').onclick = () => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+    slides[currentSlide].classList.add('active');
+  };
+</script>
+
+</body>
+</html>
 </div>
 </div>
     <h2>Vehicle Details</h2>
