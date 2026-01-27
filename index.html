@@ -78,6 +78,7 @@
   href="https://wa.me/12139166606?text=I%20want%20to%20book%20the%20Toyota%20Camry"
   target="_blank"
   class="whatsapp-btn">
+  Book on WhatsApp
   
 </a>
 
@@ -85,7 +86,7 @@
   
 
 <iframe
-  src="https://calendar.google.com/calendar/embed?src=c_13a05e5c9dd04942a1bb746694101e354c8fa5a044a7a479b46795635593bd1c@group.calendar.google.com
+  src="https://calendar.google.com/calendar/embed?src=c_13a05e5c9dd04942a1bb746694101e354c8fa5a044a7a479b46795635593bd1c@group.calendar.google.com"
   style="border:0"
   width="100%"
   height="400"
@@ -113,9 +114,34 @@
   </div>
   
 <script>
-  const dailyRate = 45;
+ const dailyRate = 45;
 
-  function sendWhatsApp() {
+function calculatePrice() {
+  const pickup = document.getElementById("pickup").value;
+  const returnDate = document.getElementById("return").value;
+
+  if (!pickup || !returnDate) {
+    document.getElementById("totalPrice").innerText = "Price: --";
+    return;
+  }
+
+  const start = new Date(pickup);
+  const end = new Date(returnDate);
+  const days = (end - start) / (1000 * 60 * 60 * 24);
+
+  if (days <= 0) {
+    document.getElementById("totalPrice").innerText = "Price: --";
+    return;
+  }
+
+  const total = days * dailyRate;
+  document.getElementById("totalPrice").innerText = Price: $${total};
+}
+
+document.getElementById("pickup").addEventListener("change", calculatePrice);
+document.getElementById("return").addEventListener("change", calculatePrice);
+
+function sendWhatsApp() {
   const pickup = document.getElementById("pickup").value;
   const returnDate = document.getElementById("return").value;
   const price = document.getElementById("totalPrice").innerText;
@@ -125,19 +151,14 @@
     return;
   }
 
-  const message = `I want to book the car.
+  const message =
+`I want to book the Toyota Camry
 Pickup: ${pickup}
 Return: ${returnDate}
 ${price}`;
 
-  const phone = "121391666067";
+  const phone = "12139166606";
   const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
   window.open(url, "_blank");
-}
-  document.getElementById("pickup").addEventListener("change", calculatePrice);
-document.getElementById("return").addEventListener("change", calculatePrice);
-
-function sendWhatsApp() {
-  ...
 }
 </script>
