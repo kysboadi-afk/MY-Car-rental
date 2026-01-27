@@ -15,17 +15,19 @@
   <p>Car Rentals</p>
 </header>
 
-<!-- SLIDESHOW -->
+<!-- ================= SLIDESHOW ================= -->
 <div class="slider">
   <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
   <img src="IMG_0026.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4486.jpeg" class="slide" alt="Slingshot">
   <img src="IMG_4532.jpeg" class="slide" alt="Slingshot">
+  <img src="IMG_4533.jpeg" class="slide" alt="Slingshot">
+  <img src="IMG_4534.jpeg" class="slide" alt="Slingshot">
 </div>
 
 <div class="container">
 
-  <!-- VEHICLE PREVIEW -->
+  <!-- ================= VEHICLE PREVIEW ================= -->
   <div class="vehicle-preview">
     <img id="vehicleImage" src="IMG_0025.jpeg" alt="Selected vehicle">
     <h3 id="vehicleName">2012 Toyota Camry</h3>
@@ -35,7 +37,7 @@
     ALL RENTERS MUST HAVE A VALID DRIVER’S LICENSE AND RENTERS INSURANCE
   </div>
 
-  <!-- BOOKING FORM -->
+  <!-- ================= BOOKING FORM ================= -->
   <label for="pickup">Pick‑up Date & Time</label>
   <input type="datetime-local" id="pickup">
 
@@ -66,21 +68,17 @@
 </div>
 
 <script>
-/* =========================
-   SLIDESHOW LOGIC
-========================= */
+/* ================= SLIDESHOW ================= */
 const slides = document.querySelectorAll(".slide");
-let currentSlide = 0;
+let slideIndex = 0;
 
 setInterval(() => {
-  slides[currentSlide].classList.remove("active");
-  currentSlide = (currentSlide + 1) % slides.length;
-  slides[currentSlide].classList.add("active");
-}, 7000);
+  slides[slideIndex].classList.remove("active");
+  slideIndex = (slideIndex + 1) % slides.length;
+  slides[slideIndex].classList.add("active");
+}, 6000);
 
-/* =========================
-   VEHICLE CHANGE PREVIEW
-========================= */
+/* ================= VEHICLE CHANGE ================= */
 const vehicleSelect = document.getElementById("vehicle");
 const vehicleImage = document.getElementById("vehicleImage");
 const vehicleName = document.getElementById("vehicleName");
@@ -91,15 +89,21 @@ vehicleSelect.addEventListener("change", () => {
   vehicleName.textContent = selected.value;
 });
 
-/* =========================
-   BOOKING + PRICE CALC
-========================= */
+/* ================= BOOKING ================= */
 function book() {
-  const pickup = new Date(document.getElementById("pickup").value);
-  const dropoff = new Date(document.getElementById("dropoff").value);
+  const pickupValue = document.getElementById("pickup").value;
+  const dropoffValue = document.getElementById("dropoff").value;
 
-  if (!pickup  !dropoff  dropoff <= pickup) {
-    alert("Please select valid pickup and drop-off dates.");
+  if (!pickupValue || !dropoffValue) {
+    alert("Please select pickup and drop-off date and time.");
+    return;
+  }
+
+  const pickup = new Date(pickupValue);
+  const dropoff = new Date(dropoffValue);
+
+  if (dropoff <= pickup) {
+    alert("Drop-off must be after pickup.");
     return;
   }
 
