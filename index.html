@@ -5,104 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SLY Transportation Services</title>
 
-<style>
-* {
-  box-sizing: border-box;
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-body {
-  margin: 0;
-  background: #f4f4f4;
-  color: #222;
-}
-
-header {
-  background: #000;
-  color: #fff;
-  text-align: center;
-  padding: 20px;
-}
-
-.slider {
-  max-width: 900px;
-  height: 300px;
-  margin: 20px auto;
-  position: relative;
-  overflow: hidden;
-  border-radius: 12px;
-}
-
-.slide {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 3s ease-in-out;
-}
-
-.slide.active {
-  opacity: 1;
-}
-
-.container {
-  max-width: 900px;
-  background: #fff;
-  margin: 20px auto;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 5px 15px rgba(0,0,0,.15);
-}
-
-.vehicle-preview {
-  text-align: center;
-}
-
-.vehicle-preview img {
-  max-width: 350px;
-  width: 100%;
-  border-radius: 10px;
-}
-
-.requirements {
-  text-align: center;
-  color: #b00000;
-  margin: 15px 0;
-  font-weight: bold;
-}
-
-label {
-  display: block;
-  margin-top: 12px;
-  font-weight: bold;
-}
-
-input, select {
-  width: 100%;
-  padding: 10px;
-  margin-top: 6px;
-  font-size: 16px;
-}
-
-.price {
-  margin-top: 15px;
-  font-size: 22px;
-  font-weight: bold;
-}
-
-button {
-  margin-top: 15px;
-  width: 100%;
-  padding: 14px;
-  background: #25d366;
-  color: white;
-  border: none;
-  font-size: 18px;
-  font-weight: bold;
-  cursor: pointer;
-}
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 
 <body>
@@ -114,15 +17,17 @@ button {
 
 <!-- SLIDESHOW -->
 <div class="slider">
-  <img src="IMG_0025.jpeg" class="slide active">
-  <img src="slingshot-1.jpg" class="slide">
-  <img src="slingshot-2.jpg" class="slide">
+  <img src="IMG_0025.jpeg" class="slide active" alt="Toyota Camry">
+  <img src="IMG_0026.jpeg" class="slide" alt="Slingshot">
+  <img src="IMG_4486.jpeg" class="slide" alt="Slingshot">
+  <img src="IMG_4532.jpeg" class="slide" alt="Slingshot">
 </div>
 
 <div class="container">
 
+  <!-- VEHICLE PREVIEW -->
   <div class="vehicle-preview">
-    <img id="vehicleImage" src="IMG_0025.jpeg">
+    <img id="vehicleImage" src="IMG_0025.jpeg" alt="Selected vehicle">
     <h3 id="vehicleName">2012 Toyota Camry</h3>
   </div>
 
@@ -130,18 +35,26 @@ button {
     ALL RENTERS MUST HAVE A VALID DRIVER’S LICENSE AND RENTERS INSURANCE
   </div>
 
-  <label>Pick‑up Date & Time</label>
+  <!-- BOOKING FORM -->
+  <label for="pickup">Pick‑up Date & Time</label>
   <input type="datetime-local" id="pickup">
 
-  <label>Drop‑off Date & Time</label>
+  <label for="dropoff">Drop‑off Date & Time</label>
   <input type="datetime-local" id="dropoff">
 
-  <label>Select Vehicle</label>
+  <label for="vehicle">Select Vehicle</label>
   <select id="vehicle">
-    <option value="Camry" data-price="50" data-image="IMG_0025.jpeg">
+    <option
+      value="2012 Toyota Camry"
+      data-price="50"
+      data-image="IMG_0025.jpeg">
       2012 Toyota Camry – $50/day
     </option>
-    <option value="Slingshot" data-price="300" data-image="slingshot-1.jpg">
+
+    <option
+      value="2023 Slingshot R"
+      data-price="300"
+      data-image="IMG_0026.jpeg">
       2023 Slingshot R – $300/day
     </option>
   </select>
@@ -153,47 +66,57 @@ button {
 </div>
 
 <script>
-/* SLIDESHOW */
-let slides = document.querySelectorAll(".slide");
-let i = 0;
+/* =========================
+   SLIDESHOW LOGIC
+========================= */
+const slides = document.querySelectorAll(".slide");
+let currentSlide = 0;
 
 setInterval(() => {
-  slides[i].classList.remove("active");
-  i = (i + 1) % slides.length;
-  slides[i].classList.add("active");
+  slides[currentSlide].classList.remove("active");
+  currentSlide = (currentSlide + 1) % slides.length;
+  slides[currentSlide].classList.add("active");
 }, 7000);
 
-/* VEHICLE CHANGE */
-const vehicle = document.getElementById("vehicle");
+/* =========================
+   VEHICLE CHANGE PREVIEW
+========================= */
+const vehicleSelect = document.getElementById("vehicle");
 const vehicleImage = document.getElementById("vehicleImage");
 const vehicleName = document.getElementById("vehicleName");
-const totalPrice = document.getElementById("totalPrice");
 
-vehicle.addEventListener("change", () => {
-  let opt = vehicle.options[vehicle.selectedIndex];
-  vehicleImage.src = opt.dataset.image;
-  vehicleName.textContent = opt.text;
+vehicleSelect.addEventListener("change", () => {
+  const selected = vehicleSelect.options[vehicleSelect.selectedIndex];
+  vehicleImage.src = selected.dataset.image;
+  vehicleName.textContent = selected.value;
 });
 
-/* PRICE CALCULATION */
+/* =========================
+   BOOKING + PRICE CALC
+========================= */
 function book() {
-  let pickup = new Date(document.getElementById("pickup").value);
-  let dropoff = new Date(document.getElementById("dropoff").value);
+  const pickup = new Date(document.getElementById("pickup").value);
+  const dropoff = new Date(document.getElementById("dropoff").value);
 
   if (!pickup  !dropoff  dropoff <= pickup) {
-    alert("Please select valid dates");
+    alert("Please select valid pickup and drop-off dates.");
     return;
   }
 
-  let days = Math.ceil((dropoff - pickup) / (1000*60*60*24));
-  let price = vehicle.options[vehicle.selectedIndex].dataset.price;
-  let total = days * price;
+  const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
+  const selected = vehicleSelect.options[vehicleSelect.selectedIndex];
+  const pricePerDay = selected.dataset.price;
+  const total = days * pricePerDay;
 
-  totalPrice.textContent = $${total}.00;
+  document.getElementById("totalPrice").textContent = $${total}.00;
 
-  window.open(
-    https://wa.me/12139166606?text=Booking%20Request%20for%20${vehicle.value}%20for%20${days}%20day(s)
-  );
+  const message =
+    Booking Request:%0A +
+    Vehicle: ${selected.value}%0A +
+    Days: ${days}%0A +
+    Total: $${total};
+
+  window.open(`https://wa.me/12139166606?text=${message}`, "_blank");
 }
 </script>
 
