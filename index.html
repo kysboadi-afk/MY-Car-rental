@@ -2,126 +2,175 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Booking Page</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Car Rental</title>
 
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-
-    body {
-      background: #f2f2f2;
-      padding: 20px;
-    }
-
-    .booking-box {
-      max-width: 420px;
-      margin: 0 auto;
-      padding: 22px;
-      background: #ffffff;
-      border-radius: 10px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    }
-
-    label {
-      display: block;
-      margin-bottom: 6px;
-      font-weight: 600;
-    }
-
-    input[type="date"] {
-      width: 100%;
-      padding: 10px;
-      margin-bottom: 16px;
-      font-size: 15px;
-    }
-
-    #totalPrice {
-      margin: 18px 0;
-      padding: 14px;
-      text-align: center;
-      font-size: 18px;
-      font-weight: bold;
-      background: #f7f7f7;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px;
-      font-size: 16px;
-      font-weight: bold;
-      border: none;
-      cursor: pointer;
-      background: #25d366;
-      color: white;
-    }
-  </style>
+  <!-- CSS file -->
+  <link rel="stylesheet" href="style.css">
 </head>
+  <style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f2f2f2;
+    margin: 0;
+    padding: 0;
+  }
 
+  .container {
+    max-width: 700px;
+    margin: 30px auto;
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 8px;
+  }
+
+  h1, h2 {
+    text-align: center;
+  }
+
+  img {
+    width: 100%;
+    border-radius: 6px;
+    margin-top: 10px;
+  }
+
+  .info {
+    background: #f7f7f7;
+    padding: 15px;
+  }
+
+  .whatsapp-btn {
+    display: inline-block;
+    padding: 12px 20px;
+    background-color: #25D366;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    margin-top: 15px;
+    text-align: center;
+  }
+
+  .whatsapp-btn:hover {
+    background-color: #1ebe5d;
+  }
+</style>
+</head>
 <body>
 
-  <div class="booking-box">
-    <label for="pickup">Pickup Date</label>
-    <input type="date" id="pickup">
+<div class="container"> 
+  <img src="High-Resolution-Color-Logo.png"
+     alt="SLY TRANSPORTATION SERVICES Rental Logo"
+     style="width:280px; max-width:100%; display:block; margin:20px auto;">
+<h1>SLY TRANSPORTATION SERVICES CAR RENTALS</h1>
+ <h1 class="main-title">
 
-    <label for="returnDate">Return Date</label>
-    <input type="date" id="returnDate">
 
-    <div id="totalPrice">Price: --</div>
+<p class="top-info">
+  <strong>SECURITY DEPOSIT REQUIRED</strong> | 
+  <strong>VALID DL LICENSE REQURED</strong>
+</p>
 
-    <button id="bookBtn">Book Now</button>
-  </div>
+<div class="slider">
+  <img src="IMG_0025.jpeg" class="slide active">
+  <img src="IMG_0026.jpeg" class="slide">
+  <img src="IMG_4486.jpeg" class="slide">
 
-  <script>
-    const dailyRate = 45;
+  <button class="prev">❮</button>
+  <button class="next">❯</button>
+</div>
 
-    const pickupInput = document.getElementById("pickup");
-    const returnInput = document.getElementById("returnDate");
-    const totalPrice = document.getElementById("totalPrice");
-    const bookBtn = document.getElementById("bookBtn");
+<h2>Vehicle Details</h2>
+<p><strong>Make:</strong> Toyota</p>
+<p><strong>Model:</strong> Camry</p>
 
-    function calculatePrice() {
-      if (!pickupInput.value || !returnInput.value) {
-        totalPrice.innerText = "Price: --";
-        return;
-      }
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let currentSlide = 0;
 
-      const start = new Date(pickupInput.value);
-      const end = new Date(returnInput.value);
-      const days = (end - start) / (1000 * 60 * 60 * 24);
+  slides[currentSlide].classList.add('active');
 
-      if (days <= 0) {
-        totalPrice.innerText = "Price: --";
-        return;
-      }
+  document.querySelector('.next').onclick = () => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide + 1) % slides.length;
+    slides[currentSlide].classList.add('active');
+  };
 
-      totalPrice.innerText = Price: $${days * dailyRate};
-    }
-
-    pickupInput.addEventListener("change", calculatePrice);
-    returnInput.addEventListener("change", calculatePrice);
-
-    bookBtn.addEventListener("click", function () {
-      if (!pickupInput.value || !returnInput.value) {
-        alert("Please select both dates.");
-        return;
-      }
-
-      const message =
-`I want to book the Toyota Camry
-Pickup: ${pickupInput.value}
-Return: ${returnInput.value}
-${totalPrice.innerText}`;
-
-      const phone = "12139166606";
-      const url = https://wa.me/${phone}?text=${encodeURIComponent(message)};
-
-      window.open(url, "_blank");
-    });
-  </script>
+  document.querySelector('.prev').onclick = () => {
+    slides[currentSlide].classList.remove('active');
+    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+    slides[currentSlide].classList.add('active');
+  };
+</script>
 
 </body>
 </html>
+</div>
+</div>
+    <h2>Vehicle Details</h2>
+    <p><strong>Make:</strong> Toyota</p>
+    <p><strong>Model:</strong> Camry</p>
+    <p><strong>Year:</strong> 2012</p>
+  </div>
+  <a
+  href="https://wa.me/12139166606?text=I%20want%20to%20book%20the%20Toyota%20Camry"
+  target="_blank"
+  class="whatsapp-btn">
+  Book on WhatsApp
+  
+</a>
+
+<h2>Availability</h2>
+  
+
+<iframe
+  src="https://calendar.google.com/calendar/embed?src=c_13a05e5c9dd04942a1bb746694101e354c8fa5a044a7a479b46795635593bd1c@group.calendar.google.com"
+  style="border:0"
+  width="100%"
+  height="400"
+  frameborder="0"
+  scrolling="no">
+</iframe>
+
+ <h2>Book This Car</h2>
+
+<label for="pickup">Pickup Date</label>
+<input type="date" id="pickup" name="pickup" required>
+
+<label for="return">Return Date</label>
+<input type="date" id="return" name="return" required>
+
+<div class="price" id="totalPrice">
+  Price: --
+</div>
+
+<div class="deposit">
+  Security Deposit: $150 (refundable)
+</div>
+
+<div class="requirement">
+  Renter must provide proof of valid auto insurance.
+</div>
+<div class="requirement">
+    Proof of valid driving license required
+  </div>
+</div>
+<div class="footer">
+  © SLY TRANSPORTATION SERVICES Car Rental
+</div>
+  
+<script>
+  // ===== IMAGE SLIDER =====
+document.querySelectorAll(".slider").forEach(slider => {
+  let index = 0;
+  const slides = slider.querySelectorAll(".slide");
+  const nextBtn = slider.querySelector(".next");
+  const prevBtn = slider.querySelector(".prev");
+
+  if (!nextBtn  !prevBtn  slides.length === 0) return;
+
+  nextBtn.addEventListener("click", () => {
+    slides[index].classList.remove("active");
+    index = (index + 1) % slides.length;
+    slides[index].classList.add("active");
+  });
