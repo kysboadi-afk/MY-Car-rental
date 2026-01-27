@@ -1,96 +1,180 @@
-<script>
-  // ---------------- VARIABLES ----------------
-  let selectedCar = null;
-  let daily = 0;
-  let weekly = 0;
-  let deposit = 0;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MY Car Rental</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>MY Car Rental</h1>
+  </header>
 
-  // Example booked dates (format: YYYY-MM-DD)
-  const bookedDates = {
-    Camry: ['2026-02-01','2026-02-02'],
-    Slingshot: ['2026-02-05']
-  };
+  <div class="container">
+    <!-- VEHICLE SELECTION -->
+    <section class="cars">
+      <div class="car" onclick="selectCar('Camry',50,250,0,this)">
+        <img src="images/car1.jpg" alt="Toyota Camry">
+        <h3>Toyota Camry</h3>
+        <p class="price">$50 / day • $250 / week</p>
+        <p>No security deposit</p>
+      </div>
 
-  // ---------------- SELECT CAR ----------------
-  function selectCar(name, d, w, dep, el) {
-    // remove highlight from all cars
-    document.querySelectorAll('.car').forEach(c => c.classList.remove('selected'));
-    // highlight selected car
-    el.classList.add('selected');
+      <div class="car" onclick="selectCar('Slingshot',300,0,150,this)">
+        <img src="images/car2.jpg" alt="Polaris Slingshot">
+        <h3>Polaris Slingshot</h3>
+        <p class="price">$300 / day</p>
+        <p>$150 security deposit</p>
+      </div>
 
-    selectedCar = name;
-    daily = d;
-    weekly = w;
-    deposit = dep;
+      <!-- Optional: more cars if you have car3.jpg ... car6.jpg -->
+      <div class="car" onclick="selectCar('Car 3',100,500,0,this)">
+        <img src="images/car3.jpg" alt="Car 3">
+        <h3>Car 3</h3>
+        <p class="price">$100 / day</p>
+      </div>
 
-    // update displayed car name
-    document.getElementById('carName').innerText = name;
+      <div class="car" onclick="selectCar('Car 4',120,550,0,this)">
+        <img src="images/car4.jpg" alt="Car 4">
+        <h3>Car 4</h3>
+        <p class="price">$120 / day</p>
+      </div>
 
-    // recalc total and check availability
-    calculateTotal();
-    checkAvailability();
-  }
+      <div class="car" onclick="selectCar('Car 5',80,400,50,this)">
+        <img src="images/car5.jpg" alt="Car 5">
+        <h3>Car 5</h3>
+        <p class="price">$80 / day</p>
+        <p>$50 security deposit</p>
+      </div>
 
-  // ---------------- CALCULATE TOTAL ----------------
-  function calculateTotal() {
-    const pick = new Date(document.getElementById('pickup').value);
-    const ret = new Date(document.getElementById('return').value);
+      <div class="car" onclick="selectCar('Car 6',90,450,0,this)">
+        <img src="images/car6.jpg" alt="Car 6">
+        <h3>Car 6</h3>
+        <p class="price">$90 / day</p>
+      </div>
+    </section>
 
-    if (!selectedCar || !pick || !ret || ret <= pick) return;
+    <!-- BOOKING FORM -->
+    <section class="booking">
+      <h2>Book Your Ride</h2>
 
-    const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
-    let cost = 0;
+      <label>Pickup Date</label>
+      <input type="date" id="pickup" onchange="calculateTotal(); checkAvailability();">
 
-    if (weekly > 0 && days >= 7) {
-      cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
-    } else {
-      cost = days * daily;
+      <label>Pickup Time</label>
+      <input type="time" id="pickupTime">
+
+      <label>Return Date</label>
+      <input type="date" id="return" onchange="calculateTotal(); checkAvailability();">
+
+      <label>Return Time</label>
+      <input type="time" id="returnTime">
+
+      <p id="availability"></p>
+
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email">
+
+      <label>
+        <input type="checkbox" id="agree">
+        I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
+      </label>
+
+      <p>Total Price: $<span id="total">0</span></p>
+
+      <button onclick="reserve()">Reserve Now</button>
+    </section>
+  </div>
+
+  <footer>
+    &copy; 2026 MY Car Rental
+  </footer>
+
+  <!-- ----------------- JAVASCRIPT ----------------- -->
+  <script>
+    let selectedCar = null;
+    let daily = 0;
+    let weekly = 0;
+    let deposit = 0;
+
+    const bookedDates = {
+      Camry: ['2026-02-01','2026-02-02'],
+      Slingshot: ['2026-02-05']
+    };
+
+    function selectCar(name, d, w, dep, el) {
+      document.querySelectorAll('.car').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+
+      selectedCar = name;
+      daily = d;
+      weekly = w;
+      deposit = dep;
+
+      document.getElementById('carName').innerText = name;
+      calculateTotal();
+      checkAvailability();
     }
 
-    cost += deposit; // add security deposit if applicable
-    document.getElementById('total').innerText = cost;
-  }
+    function calculateTotal() {
+      const pick = new Date(document.getElementById('pickup').value);
+      const ret = new Date(document.getElementById('return').value);
 
-  // ---------------- CHECK AVAILABILITY ----------------
-  function checkAvailability() {
-    const pick = document.getElementById('pickup').value;
-    const ret = document.getElementById('return').value;
-    const status = document.getElementById('availability');
+      if (!selectedCar || !pick || !ret || ret <= pick) return;
 
-    if (!selectedCar || !pick || !ret) {
-      status.innerText = '';
-      return;
+      const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
+      let cost = 0;
+
+      if (weekly > 0 && days >= 7) {
+        cost = Math.floor(days / 7) * weekly + (days % 7) * daily;
+      } else {
+        cost = days * daily;
+      }
+
+      cost += deposit;
+      document.getElementById('total').innerText = cost;
     }
 
-    const dates = bookedDates[selectedCar] || [];
-    if (dates.includes(pick) || dates.includes(ret)) {
-      status.innerText = '❌ Not available for selected dates';
-      status.style.color = 'red';
-    } else {
-      status.innerText = '✅ Available';
-      status.style.color = 'green';
-    }
-  }
+    function checkAvailability() {
+      const pick = document.getElementById('pickup').value;
+      const ret = document.getElementById('return').value;
+      const status = document.getElementById('availability');
 
-  // ---------------- RESERVE ----------------
-  function reserve() {
-    const email = document.getElementById('email').value;
-    const agree = document.getElementById('agree').checked;
+      if (!selectedCar || !pick || !ret) {
+        status.innerText = '';
+        return;
+      }
 
-    if (!selectedCar) {
-      alert('Please select a vehicle');
-      return;
-    }
-    if (!email) {
-      alert('Please enter your email');
-      return;
-    }
-    if (!agree) {
-      alert('You must agree to the Rental Agreement & Terms before paying');
-      return;
+      const dates = bookedDates[selectedCar] || [];
+      if (dates.includes(pick) || dates.includes(ret)) {
+        status.innerText = '❌ Not available for selected dates';
+        status.style.color = 'red';
+      } else {
+        status.innerText = '✅ Available';
+        status.style.color = 'green';
+      }
     }
 
-    // Here you can add email sending / payment integration later
-    alert('✅ Reservation request sent! We will contact you shortly.');
-  }
-</script>
+    function reserve() {
+      const email = document.getElementById('email').value;
+      const agree = document.getElementById('agree').checked;
+
+      if (!selectedCar) {
+        alert('Please select a vehicle');
+        return;
+      }
+      if (!email) {
+        alert('Please enter your email');
+        return;
+      }
+      if (!agree) {
+        alert('You must agree to the Rental Agreement & Terms before paying');
+        return;
+      }
+
+      alert('✅ Reservation request sent! We will contact you shortly.');
+    }
+  </script>
+</body>
+</html>
