@@ -1,51 +1,53 @@
-addEventListener("change", calculateTotal);
+<script>
+  vehicleSelect.addEventListener("change", updateVehicle);
+  pickupInput.addEventListener("change", calculateTotal);
+  dropoffInput.addEventListener("change", calculateTotal);
 
-    function updateVehicle() {
-      const vehicle = vehicles[vehicleSelect.value];
-      vehicleImage.src = vehicle.image;
-      vehicleName.textContent = vehicle.name;
-      calculateTotal();
+  function updateVehicle() {
+    const vehicle = vehicles[vehicleSelect.value];
+    vehicleImage.src = vehicle.image;
+    vehicleName.textContent = vehicle.name;
+    calculateTotal();
+  }
+
+  function calculateTotal() {
+    if (!pickupInput.value || !dropoffInput.value) {
+      totalPrice.textContent = "$0.00";
+      return;
     }
 
-    function calculateTotal() {
-      if (!pickupInput.value || !dropoffInput.value) {
-        totalPrice.textContent = "$0.00";
-        return;
-      }
+    const pickup = new Date(pickupInput.value);
+    const dropoff = new Date(dropoffInput.value);
+    const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
 
-      const pickup = new Date(pickupInput.value);
-      const dropoff = new Date(dropoffInput.value);
-      const days = Math.ceil((dropoff - pickup) / (1000 * 60 * 60 * 24));
-
-      if (days <= 0) {
-        totalPrice.textContent = "$0.00";
-        return;
-      }
-
-      const vehicle = vehicles[vehicleSelect.value];
-      const total = days * vehicle.pricePerDay;
-
-      totalPrice.textContent = $${total}.00;
+    if (days <= 0) {
+      totalPrice.textContent = "$0.00";
+      return;
     }
 
-    // SLIDER
-    let currentSlide = 0;
-    const slides = document.querySelectorAll(".slide");
+    const vehicle = vehicles[vehicleSelect.value];
+    const total = days * vehicle.pricePerDay;
 
-    function showSlide(index) {
-      slides.forEach(slide => slide.classList.remove("active"));
-      slides[index].classList.add("active");
-    }
+    totalPrice.textContent = $${total}.00;
+  }
 
-    function changeSlide(direction) {
-      currentSlide += direction;
+  // SLIDER
+  let currentSlide = 0;
+  const slides = document.querySelectorAll(".slide");
 
-      if (currentSlide < 0) currentSlide = slides.length - 1;
-      if (currentSlide >= slides.length) currentSlide = 0;
+  function showSlide(index) {
+    slides.forEach(slide => slide.classList.remove("active"));
+    slides[index].classList.add("active");
+  }
 
-      showSlide(currentSlide);
-    }
-  </script>
+  function changeSlide(direction) {
+    currentSlide += direction;
 
-</body>
-</html>
+    if (currentSlide < 0) currentSlide = slides.length - 1;
+    if (currentSlide >= slides.length) currentSlide = 0;
+
+    showSlide(currentSlide);
+  }
+
+  showSlide(currentSlide);
+</script>
