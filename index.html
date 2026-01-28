@@ -6,50 +6,65 @@
   <title>MY Car Rental</title>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-  <header>
-    <h1>MY Car Rental</h1>
-  </header>
+<header>
+  <h1>MY Car Rental</h1>
+</header>
 
-  <div class="container">
-    <section class="cars">
+<div class="container">
 
-      <!-- Slingshot -->
-      <div class="car-slider">
-        <div class="slider">
-          <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
-          <img class="slide" src="images/car2.jpg" alt="Slingshot R">
-          <img class="slide" src="images/car3.jpg" alt="Slingshot R">
-        </div>
+  <!-- ================= CARS LIST ================= -->
+  <section class="cars">
 
-        <div class="car-info">
-          <h3>Slingshot R</h3>
-          <p class="car-subtitle">Sports • 2-Seater</p>
-          <p class="price">$300 / day • $150 deposit</p>
-          <a href="car.html?vehicle=slingshot"><button>Select Slingshot</button></a>
-        </div>
+    <!-- Slingshot -->
+    <div class="car-slider">
+      <div class="slider">
+        <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+        <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+        <img class="slide" src="images/car3.jpg" alt="Slingshot R">
       </div>
 
-      <!-- Camry -->
-      <div class="car-slider">
-        <div class="slider">
-          <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
-          <img class="slide" src="images/car5.jpg" alt="Camry 2012">
-        </div>
+      <div class="car-info">
+        <h3>Slingshot R</h3>
+        <p class="car-subtitle">Sports • 2-Seater</p>
+        <p class="price">$300 / day • $150 deposit</p>
 
-        <div class="car-info">
-          <h3>Camry 2012</h3>
-          <p class="car-subtitle">Sedan • 5-Seater</p>
-          <p class="price">$50 / day • $250 weekly</p>
-          <a href="car.html?vehicle=camry"><button>Select Camry</button></a>
-        </div>
+        <!-- Button linking to car.html with query parameter -->
+        <a href="car.html?vehicle=slingshot">
+          <button>Select Slingshot</button>
+        </a>
+      </div>
+    </div>
+
+    <!-- Camry -->
+    <div class="car-slider">
+      <div class="slider">
+        <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+        <img class="slide" src="images/car5.jpg" alt="Camry 2012">
       </div>
 
-    </section>
-  </div>
+      <div class="car-info">
+        <h3>Camry 2012</h3>
+        <p class="car-subtitle">Sedan • 5-Seater</p>
+        <p class="price">$50 / day • $250 weekly</p>
 
-  <footer>
-    &copy; 2026 MY Car Rental
-  </footer>
+        <a href="car.html?vehicle=camry">
+          <button>Select Camry</button>
+        </a>
+      </div>
+    </div>
+
+    <!-- Add more cars here the same way -->
+
+  </section>
+
+</div>
+
+<footer>
+  &copy; 2026 MY Car Rental
+</footer>
+
+<script src="script.js"></script>
 </body>
 </html>
