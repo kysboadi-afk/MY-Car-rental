@@ -1,115 +1,103 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>MY Car Rental</title>
+
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
+
 <body>
-  <header>
-    <h1>MY Car Rental</h1>
-  </header>
 
-  <div class="container">
+<header>
+  <h1>MY Car Rental</h1>
+</header>
 
-    <!-- ---------- VEHICLE SLIDERS ---------- -->
-    <section class="cars">
+<div class="container">
 
-      <!-- Slingshot R -->
-<div class="car-slider">
-  <h3>Slingshot R</h3>
-  <div class="slider">
-    <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
-    <img class="slide" src="images/car2.jpg" alt="Slingshot R">
-    <img class="slide" src="images/car3.jpg" alt="Slingshot R">
-  </div>
+  <!-- ================= CARS LIST ================= -->
+  <section class="cars">
 
-  <!-- Subtitle: Vehicle type -->
-  <p class="car-subtitle">Sports / 2-seater</p>
+    <!-- Slingshot -->
+    <div class="car-slider">
+      <div class="slider">
+        <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+        <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+        <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+      </div>
 
-  <div class="slider-controls">
-    <button onclick="prevSlide('slingshot')">&#10094;</button>
-    <button onclick="nextSlide('slingshot')">&#10095;</button>
-  </div>
-  <div class="slider-dots" id="dots-slingshot">
-    <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
-    <span class="dot" onclick="goToSlide('slingshot',1)"></span>
-    <span class="dot" onclick="goToSlide('slingshot',2)"></span>
-  </div>
-  <p class="price">$300 / day • $150 deposit</p>
-  <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
+      <div class="car-info">
+        <h3>Slingshot R</h3>
+        <p class="car-subtitle">Sports • 2-Seater</p>
+        <p class="price">$300 / day • $150 deposit</p>
+
+        <button onclick="selectCar('Slingshot R',300,0,150,this)">
+          Select Vehicle
+        </button>
+      </div>
+    </div>
+
+    <!-- Camry -->
+    <div class="car-slider">
+      <div class="slider">
+        <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+        <img class="slide" src="images/car5.jpg" alt="Camry 2012">
+      </div>
+
+      <div class="car-info">
+        <h3>Camry 2012</h3>
+        <p class="car-subtitle">Sedan • 5-Seater</p>
+        <p class="price">$50 / day • $250 weekly</p>
+
+        <button onclick="selectCar('Camry 2012',50,250,0,this)">
+          Select Vehicle
+        </button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ================= BOOKING ================= -->
+  <section class="booking">
+    <h2>Book Your Ride</h2>
+
+    <label>Pickup Date</label>
+    <input type="date" id="pickup">
+
+    <label>Pickup Time</label>
+    <input type="time" id="pickupTime">
+
+    <label>Return Date</label>
+    <input type="date" id="return">
+
+    <label>Return Time</label>
+    <input type="time" id="returnTime">
+
+    <label>Email</label>
+    <input type="email" id="email" placeholder="Enter your email">
+
+    <label class="agree">
+      <input type="checkbox" id="agree">
+      I agree to the
+      <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">
+        Rental Agreement & Terms
+      </a>
+    </label>
+
+    <p class="total">Total: $<span id="total">0</span></p>
+
+    <button id="stripePay" disabled>💳 Pay Now</button>
+    <button onclick="reserve()">Reserve Without Paying</button>
+  </section>
+
 </div>
 
+<footer>
+  &copy; 2026 MY Car Rental
+</footer>
 
-      <!-- Camry 2012 -->
-<div class="car-slider">
-  <h3>Camry 2012</h3>
-
-  <div class="slider">
-    <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
-    <img class="slide" src="images/car5.jpg" alt="Camry 2012">
-  </div>
-
-  <!-- Subtitle: Vehicle type -->
-  <p class="car-subtitle">Sedan / 5-seater</p>
-
-  <div class="slider-controls">
-    <button onclick="prevSlide('camry')">&#10094;</button>
-    <button onclick="nextSlide('camry')">&#10095;</button>
-  </div>
-
-  <div class="slider-dots" id="dots-camry">
-    <span class="dot active" onclick="goToSlide('camry',0)"></span>
-    <span class="dot" onclick="goToSlide('camry',1)"></span>
-  </div>
-
-  <p class="price">$50 / day • $250 weekly</p>
-  <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
-</div>
-
-    </section>
-
-    <!-- ---------- BOOKING FORM ---------- -->
-    <section class="booking">
-      <h2>Book Your Ride</h2>
-
-      <label>Pickup Date</label>
-      <input type="date" id="pickup">
-
-      <label>Pickup Time</label>
-      <input type="time" id="pickupTime">
-
-      <label>Return Date</label>
-      <input type="date" id="return">
-
-      <label>Return Time</label>
-      <input type="time" id="returnTime">
-
-      <p id="availability"></p>
-      <p id="bookedDatesContainer"></p>
-
-      <label>Email</label>
-      <input type="email" id="email" placeholder="Enter your email">
-
-      <label>
-        <input type="checkbox" id="agree">
-        I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
-      </label>
-
-      <p>Total Price: $<span id="total">0</span></p>
-
-      <button id="stripePay" disabled>💳 Pay Now</button>
-      <button onclick="reserve()">Reserve Without Paying</button>
-    </section>
-  </div>
-
-  <footer>
-    &copy; 2026 MY Car Rental
-  </footer>
-
-  <!-- Link to your updated JS -->
-  <script src="script.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
