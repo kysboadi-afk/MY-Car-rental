@@ -1,282 +1,301 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MY Car Rental</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://js.stripe.com/v3/"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MY Car Rental</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
-<header>
-  <h1>MY Car Rental</h1>
-</header>
+  <header>
+    <h1>MY Car Rental</h1>
+  </header>
 
-<div class="container">
+  <div class="container">
 
-  <!-- ---------- VEHICLE SLIDERS ---------- -->
-  <section class="cars">
+    <!-- ---------- VEHICLE SLIDERS ---------- -->
+    <section class="cars">
 
-    <!-- Slingshot R -->
-    <div class="car-slider">
-      <h3>Slingshot R</h3>
-      <div class="slider">
-        <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
-        <img class="slide" src="images/car2.jpg" alt="Slingshot R">
-        <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+      <!-- Slingshot R -->
+      <div class="car-slider">
+        <h3>Slingshot R</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('slingshot')">&#10094;</button>
+          <button onclick="nextSlide('slingshot')">&#10095;</button>
+        </div>
+        <div class="slider-dots" id="dots-slingshot">
+          <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',1)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',2)"></span>
+        </div>
+        <p class="price">$300 / day • $150 deposit</p>
+        <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
       </div>
-      <div class="slider-controls">
-        <button onclick="prevSlide('slingshot')">&#10094;</button>
-        <button onclick="nextSlide('slingshot')">&#10095;</button>
+
+      <!-- Camry 2012 -->
+      <div class="car-slider">
+        <h3>Camry 2012</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+          <img class="slide" src="images/car5.jpg" alt="Camry 2012">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('camry')">&#10094;</button>
+          <button onclick="nextSlide('camry')">&#10095;</button>
+        </div>
+        <div class="slider-dots" id="dots-camry">
+          <span class="dot active" onclick="goToSlide('camry',0)"></span>
+          <span class="dot" onclick="goToSlide('camry',1)"></span>
+        </div>
+        <p class="price">$50 / day • $250 weekly</p>
+        <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
       </div>
-      <div class="slider-dots" id="dots-slingshot">
-        <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
-        <span class="dot" onclick="goToSlide('slingshot',1)"></span>
-        <span class="dot" onclick="goToSlide('slingshot',2)"></span>
-      </div>
-      <p class="price">$300 / day • $150 deposit</p>
-      <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
-    </div>
 
-    <!-- Camry 2012 -->
-    <div class="car-slider">
-      <h3>Camry 2012</h3>
-      <div class="slider">
-        <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
-        <img class="slide" src="images/car5.jpg" alt="Camry 2012">
-      </div>
-      <div class="slider-controls">
-        <button onclick="prevSlide('camry')">&#10094;</button>
-        <button onclick="nextSlide('camry')">&#10095;</button>
-      </div>
-      <div class="slider-dots" id="dots-camry">
-        <span class="dot active" onclick="goToSlide('camry',0)"></span>
-        <span class="dot" onclick="goToSlide('camry',1)"></span>
-      </div>
-      <p class="price">$50 / day • $250 weekly</p>
-      <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
-    </div>
+    </section>
 
-  </section>
+    <!-- ---------- BOOKING FORM ---------- -->
+    <section class="booking">
+      <h2>Book Your Ride</h2>
 
-  <!-- ---------- BOOKING FORM ---------- -->
-  <section class="booking">
-    <h2>Book Your Ride</h2>
+      <label>Pickup Date</label>
+      <input type="date" id="pickup">
 
-    <label>Pickup Date</label>
-    <input type="date" id="pickup">
+      <label>Pickup Time</label>
+      <input type="time" id="pickupTime" onchange="syncReturnTime()">
 
-    <label>Pickup Time</label>
-    <input type="time" id="pickupTime" onchange="syncReturnTime()">
+      <label>Return Date</label>
+      <input type="date" id="return">
 
-    <label>Return Date</label>
-    <input type="date" id="return">
+      <label>Return Time</label>
+      <input type="time" id="returnTime">
 
-    <label>Return Time</label>
-    <input type="time" id="returnTime">
+      <p id="availability"></p>
+      <p id="bookedDatesContainer"></p>
 
-    <p id="availability"></p>
-    <p id="bookedDatesContainer"></p>
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email">
 
-    <label>Email</label>
-    <input type="email" id="email" placeholder="Enter your email">
+      <label>
+        <input type="checkbox" id="agree">
+        I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
+      </label>
 
-    <label>
-      <input type="checkbox" id="agree">
-      I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
-    </label>
+      <p>Total Price: $<span id="total">0</span></p>
 
-    <p>Total Price: $<span id="total">0</span></p>
+      <button id="stripePay" disabled>💳 Pay Now</button>
+      <button onclick="reserveTemporary()">Reserve Without Paying</button>
+    </section>
+  </div>
 
-    <button id="stripePay" disabled>💳 Pay Now</button>
-    <button onclick="reserveTemporary()">Reserve Without Paying</button>
-  </section>
-</div>
+  <footer>
+    &copy; 2026 MY Car Rental
+  </footer>
 
-<footer>
-  &copy; 2026 MY Car Rental
-</footer>
+  <!-- ===== FULL JS INTEGRATION ===== -->
+  <script>
+  let selectedCar = null;
+  let daily = 0;
+  let weekly = 0;
+  let deposit = 0;
+  let totalCost = 0;
 
-<script>
-let selectedCar = null;
-let daily = 0, weekly = 0, deposit = 0, totalCost = 0;
+  const stripeBackendURL = "/api/create-checkout-session"; // Your Vercel endpoint
 
-// Booked dates structure: permanent = paid, temp = temporary reservation
-const bookedDates = {
-  "Camry 2012": { permanent: [], temp: [] },
-  "Slingshot R": { permanent: [], temp: [] }
-};
+  const pickup = document.getElementById('pickup');
+  const returnDate = document.getElementById('return');
+  const agree = document.getElementById('agree');
+  const stripePayButton = document.getElementById('stripePay');
+  const totalPriceDisplay = document.getElementById('total');
 
-const pickup = document.getElementById('pickup');
-const returnDate = document.getElementById('return');
-const agree = document.getElementById('agree');
-const stripePayButton = document.getElementById('stripePay');
-const totalPriceDisplay = document.getElementById('total');
+  const bookedDates = { "Camry 2012": [], "Slingshot R": [] };
+  const tempReservations = {};
+  const TEMP_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
-const stripeBackendURL = "https://my-car-rental-backend.vercel.app/api/create-checkout-session"; // Replace with your backend
-
-// ---------- CAR SELECTION ----------
-function selectCar(name, d, w, dep, el) {
-  selectedCar = name;
-  daily = d; weekly = w; deposit = dep;
-  document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
-  el.closest('.car-slider').classList.add('selected');
-  displayBookedDates();
-  disableBookedDates();
-  alert(name + " selected! Now choose dates and enter your info below.");
-  calculateTotal();
-  checkAvailability();
-  updateStripeButton();
-}
-
-// ---------- DISPLAY BOOKED DATES ----------
-function displayBookedDates() {
-  if(!selectedCar) return;
-  const container = document.getElementById('bookedDatesContainer');
-  container.innerHTML = '';
-  const { permanent, temp } = bookedDates[selectedCar];
-
-  if(permanent.length || temp.length) {
-    container.innerHTML = '<strong>Booked Dates:</strong> ';
-    permanent.forEach(date => {
-      const span = document.createElement('span');
-      span.className = 'booked-date';
-      span.innerText = date;
-      container.appendChild(span);
-    });
-    temp.forEach(date => {
-      const span = document.createElement('span');
-      span.className = 'temp-date';
-      span.innerText = date;
-      container.appendChild(span);
-    });
+  // ---------- CAR SELECTION ----------
+  function selectCar(name, d, w, dep, el) {
+    selectedCar = name;
+    daily = d;
+    weekly = w;
+    deposit = dep;
+    document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
+    el.closest('.car-slider').classList.add('selected');
+    displayBookedDates(name);
+    disableBookedDates();
+    alert(name + " selected! Now choose dates and enter your info below.");
+    calculateTotal();
+    checkAvailability();
+    updateStripeButton();
   }
-}
 
-// ---------- TEMP RESERVATION ----------
-function reserveTemporary() {
-  if(!selectedCar){ alert("Select a car first."); return; }
-  const pick = pickup.value, ret = returnDate.value, email = document.getElementById('email').value;
-  if(!pick || !ret){ alert("Select valid pickup and return dates."); return; }
-  if(!email){ alert("Enter your email."); return; }
-
-  const tempDates = getDatesBetween(pick, ret);
-  bookedDates[selectedCar].temp.push(...tempDates);
-  displayBookedDates();
-  alert("✅ Temporary reservation made! Proceed to Pay Now to confirm.");
-  calculateTotal();
-  checkAvailability();
-  updateStripeButton();
-}
-
-// ---------- STRIPE PAYMENT ----------
-stripePayButton.addEventListener("click", async () => {
-  if(!selectedCar || !totalCost){ alert("Complete your booking first."); return; }
-  const email = document.getElementById('email').value;
-  const pickupValue = pickup.value;
-  const returnValue = returnDate.value;
-
-  try {
-    const response = await fetch(stripeBackendURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        car: selectedCar,
-        amount: totalCost,
-        email: email,
-        pickup: pickupValue,
-        returnDate: returnValue
-      })
-    });
-    const data = await response.json();
-
-    // Move temporary dates to permanent after payment
-    const tempDates = bookedDates[selectedCar].temp;
-    bookedDates[selectedCar].permanent.push(...tempDates);
-    bookedDates[selectedCar].temp = [];
-    displayBookedDates();
-
-    window.location.href = data.url;
-  } catch(err) {
-    alert("Error connecting to Stripe. Try again.");
-    console.error(err);
-  }
-});
-
-// ---------- CALCULATE TOTAL ----------
-function calculateTotal() {
-  const pick = new Date(pickup.value), ret = new Date(returnDate.value);
-  if(!selectedCar || !pick || !ret || ret<=pick) return;
-  const days = Math.ceil((ret-pick)/(1000*60*60*24));
-  let cost = (weekly>0 && days>=7) ? Math.floor(days/7)*weekly + (days%7)*daily : days*daily;
-  cost += deposit;
-  totalCost = cost;
-  totalPriceDisplay.innerText = totalCost;
-}
-
-// ---------- CHECK AVAILABILITY ----------
-function checkAvailability() {
-  if(!selectedCar){ document.getElementById('availability').innerText=''; return; }
-  const pick = pickup.value, ret = returnDate.value;
-  if(!pick || !ret){ document.getElementById('availability').innerText=''; return; }
-
-  const { permanent, temp } = bookedDates[selectedCar];
-  let conflict = [...permanent, ...temp].some(d => d>=pick && d<=ret);
-
-  const status = document.getElementById('availability');
-  if(conflict){ status.innerText='❌ Not available'; status.style.color='red'; }
-  else{ status.innerText='✅ Available'; status.style.color='green'; }
-}
-
-// ---------- SYNC RETURN TIME ----------
-function syncReturnTime() {
-  document.getElementById('returnTime').value = document.getElementById('pickupTime').value;
-}
-
-// ---------- DATE RANGE ----------
-function getDatesBetween(start, end){
-  let arr=[], current=new Date(start), last=new Date(end);
-  while(current<=last){
-    arr.push(current.toISOString().split('T')[0]);
-    current.setDate(current.getDate()+1);
-  }
-  return arr;
-}
-
-// ---------- DISABLE BOOKED DATES ----------
-function disableBookedDates(){
-  if(!selectedCar) return;
-  const pick = document.getElementById('pickup'), ret = document.getElementById('return');
-  const today = new Date().toISOString().split('T')[0];
-  pick.setAttribute('min', today); ret.setAttribute('min', today);
-  [pick, ret].forEach(input => input.addEventListener('input',function(){
-    const { permanent, temp } = bookedDates[selectedCar];
-    if([...permanent,...temp].includes(this.value)){
-      alert('❌ This date is already booked!');
-      this.value='';
+  function displayBookedDates(car) {
+    const container = document.getElementById('bookedDatesContainer');
+    container.innerHTML = '';
+    const booked = bookedDates[car] || [];
+    const temp = tempReservations[car] || [];
+    if(booked.length || temp.length) {
+      container.innerHTML = '<strong>Booked/Pending Dates:</strong> ';
+      booked.forEach(date => {
+        const span = document.createElement('span');
+        span.className = 'booked-date';
+        span.innerText = date;
+        container.appendChild(span);
+      });
+      temp.forEach(date => {
+        const span = document.createElement('span');
+        span.className = 'temp-date';
+        span.innerText = date + " (pending)";
+        container.appendChild(span);
+      });
     }
-    calculateTotal(); checkAvailability(); updateStripeButton();
-  }));
-}
+  }
 
-// ---------- SLIDERS ----------
-const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
-function initSliders() {
-  sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
-  sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
-}
-function showSlide(car){ const s=sliders[car]; s.slides.forEach((img,i)=>img.classList.toggle('active',i===s.index)); updateDots(car);}
-function nextSlide(car){ const s=sliders[car]; s.index=(s.index+1)%s.slides.length; showSlide(car);}
-function prevSlide(car){ const s=sliders[car]; s.index=(s.index-1+s.slides.length)%s.slides.length; showSlide(car);}
-function updateDots(car){ const s=sliders[car]; const dots=document.querySelectorAll(`#dots-${car} .dot`); dots.forEach((dot,i)=>dot.classList.toggle('active',i===s.index));}
-function goToSlide(car,index){ sliders[car].index=index; showSlide(car);}
-window.onload=initSliders;
+  // ---------- TEMPORARY RESERVATION ----------
+  function reserveTemporary() {
+    const pick = pickup.value;
+    const ret = returnDate.value;
+    if (!selectedCar || !pick || !ret) { alert("Select car and valid dates first."); return; }
+    if (!tempReservations[selectedCar]) tempReservations[selectedCar] = [];
 
-// ---------- STRIPE BUTTON STATE ----------
-function updateStripeButton(){
-  stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked || document.getElementById('availability').innerText.includes('❌');
-}
-[pickup, returnDate, agree].forEach(el => el.addEventListener('change', updateStripeButton));
-</script>
+    const datesToTemp = getDatesBetween(pick, ret);
+    datesToTemp.forEach(date => {
+      if (!bookedDates[selectedCar].includes(date) && !tempReservations[selectedCar].includes(date)) {
+        tempReservations[selectedCar].push(date);
+      }
+    });
+    displayBookedDates(selectedCar);
+
+    // Remove temp after timeout
+    setTimeout(() => {
+      datesToTemp.forEach(date => {
+        const idx = tempReservations[selectedCar].indexOf(date);
+        if(idx !== -1) tempReservations[selectedCar].splice(idx, 1);
+      });
+      displayBookedDates(selectedCar);
+      alert("⏱ Temporary reservation expired for " + selectedCar);
+    }, TEMP_TIMEOUT);
+  }
+
+  // ---------- SYNC RETURN TIME ----------
+  function syncReturnTime() {
+    const pickupTime = document.getElementById('pickupTime').value;
+    document.getElementById('returnTime').value = pickupTime;
+  }
+
+  // ---------- CALCULATE TOTAL ----------
+  function calculateTotal() {
+    const pick = new Date(pickup.value);
+    const ret = new Date(returnDate.value);
+    if (!selectedCar || !pick || !ret || ret <= pick) return;
+
+    const days = Math.ceil((ret - pick) / (1000*60*60*24));
+    let cost = (weekly>0 && days>=7) ? Math.floor(days/7)*weekly + (days%7)*daily : days*daily;
+    cost += deposit;
+    totalCost = cost;
+    totalPriceDisplay.innerText = totalCost;
+  }
+
+  // ---------- CHECK AVAILABILITY ----------
+  function checkAvailability() {
+    const pick = pickup.value;
+    const ret = returnDate.value;
+    const status = document.getElementById('availability');
+    if(!selectedCar || !pick || !ret) { status.innerText=''; return; }
+    const dates = bookedDates[selectedCar] || [];
+    const temp = tempReservations[selectedCar] || [];
+    let conflict = dates.concat(temp).some(date => date>=pick && date<=ret);
+    if(conflict){ status.innerText='❌ Not available'; status.style.color='red'; }
+    else { status.innerText='✅ Available'; status.style.color='green'; }
+  }
+
+  function getDatesBetween(start, end) {
+    let arr = [];
+    let current = new Date(start);
+    const last = new Date(end);
+    while(current <= last){
+      arr.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    return arr;
+  }
+
+  // ---------- DISABLE DATES IN PICKER ----------
+  function disableBookedDates() {
+    if(!selectedCar) return;
+    const booked = bookedDates[selectedCar] || [];
+    const temp = tempReservations[selectedCar] || [];
+    const pick = document.getElementById('pickup');
+    const ret = document.getElementById('return');
+    const today = new Date().toISOString().split('T')[0];
+    pick.setAttribute('min', today);
+    ret.setAttribute('min', today);
+
+    [pick, ret].forEach(input => {
+      input.addEventListener('input', function() {
+        if(booked.includes(this.value) || temp.includes(this.value)){
+          alert('❌ This date is already booked/pending!');
+          this.value='';
+        }
+        calculateTotal();
+        checkAvailability();
+        updateStripeButton();
+      });
+    });
+  }
+
+  // ---------- SLIDER FUNCTIONS ----------
+  const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
+  function initSliders() {
+    sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
+    sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
+  }
+  function showSlide(car){const s=sliders[car];s.slides.forEach((img,i)=>img.classList.toggle('active',i===s.index)); updateDots(car);}
+  function nextSlide(car){const s=sliders[car]; s.index=(s.index+1)%s.slides.length; showSlide(car);}
+  function prevSlide(car){const s=sliders[car]; s.index=(s.index-1+s.slides.length)%s.slides.length; showSlide(car);}
+  function updateDots(car){const s=sliders[car]; const dots=document.querySelectorAll(`#dots-${car} .dot`); dots.forEach((dot,i)=>dot.classList.toggle('active',i===s.index));}
+  function goToSlide(car,index){sliders[car].index=index; showSlide(car);}
+  window.onload=initSliders;
+
+  // ---------- STRIPE BUTTON ----------
+  function updateStripeButton() {
+    stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked || document.getElementById('availability').innerText.includes('❌');
+  }
+
+  stripePayButton.addEventListener("click", async () => {
+    if (!selectedCar || !totalCost) { alert("Complete your booking first."); return; }
+
+    const email = document.getElementById('email').value;
+    const pick = pickup.value;
+    const ret = returnDate.value;
+
+    try {
+      const response = await fetch(stripeBackendURL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ car:selectedCar, amount:totalCost, email, pickup:pick, returnDate:ret })
+      });
+      const data = await response.json();
+
+      // Move temp reservations to bookedDates after payment
+      const temp = tempReservations[selectedCar] || [];
+      bookedDates[selectedCar] = bookedDates[selectedCar].concat(temp);
+      tempReservations[selectedCar] = [];
+      displayBookedDates(selectedCar);
+
+      window.location.href = data.url;
+    } catch (err) {
+      alert("Error connecting to Stripe. Try again.");
+      console.error(err);
+    }
+  });
+
+  [pickup, returnDate, agree].forEach(el => el.addEventListener('change', updateStripeButton));
+
+  </script>
 </body>
 </html>
