@@ -250,6 +250,7 @@ input:focus {
   border-radius: 12px;
   cursor: pointer;
   transition: 0.3s;
+  margin-top: 10px;
 }
 
 .booking button:hover {
