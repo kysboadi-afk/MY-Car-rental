@@ -9,57 +9,52 @@
 </head>
 
 <body>
-
 <header>
   <h1>MY Car Rental</h1>
 </header>
 
 <div class="container">
 
-  <section class="car-details">
-    <div class="slider" id="carSlider">
-      <!-- Images will be injected by JS -->
-    </div>
+  <!-- Back button -->
+  <button id="backBtn">← Back to Cars</button>
 
-    <div class="car-info">
-      <h3 id="carName"></h3>
-      <p class="car-subtitle" id="carSubtitle"></p>
-      <p class="price" id="carPrice"></p>
-    </div>
-
-    <section class="booking">
-      <h2>Book This Ride</h2>
-
-      <label>Pickup Date</label>
-      <input type="date" id="pickup">
-
-      <label>Pickup Time</label>
-      <input type="time" id="pickupTime">
-
-      <label>Return Date</label>
-      <input type="date" id="return">
-
-      <label>Return Time</label>
-      <input type="time" id="returnTime">
-
-      <label>Email</label>
-      <input type="email" id="email" placeholder="Enter your email">
-
-      <label class="agree">
-        <input type="checkbox" id="agree">
-        I agree to the
-        <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">
-          Rental Agreement & Terms
-        </a>
-      </label>
-
-      <p class="total">Total: $<span id="total">0</span></p>
-
-      <button id="stripePay" disabled>💳 Pay Now</button>
-      <button onclick="reserve()">Reserve Without Paying</button>
-    </section>
+  <!-- Car slider section -->
+  <section class="car-slider" id="carSlider">
+    <!-- Images & info populated by car.js -->
   </section>
 
+  <!-- Booking form -->
+  <section class="booking">
+    <h2>Book Your Ride</h2>
+
+    <label>Pickup Date</label>
+    <input type="date" id="pickup">
+
+    <label>Pickup Time</label>
+    <input type="time" id="pickupTime">
+
+    <label>Return Date</label>
+    <input type="date" id="return">
+
+    <label>Return Time</label>
+    <input type="time" id="returnTime">
+
+    <label>Email</label>
+    <input type="email" id="email" placeholder="Enter your email">
+
+    <label class="agree">
+      <input type="checkbox" id="agree">
+      I agree to the
+      <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">
+        Rental Agreement & Terms
+      </a>
+    </label>
+
+    <p class="total">Total: $<span id="total">0</span></p>
+
+    <button id="stripePay" disabled>💳 Pay Now</button>
+    <button onclick="reserve()">Reserve Without Paying</button>
+  </section>
 </div>
 
 <footer>
