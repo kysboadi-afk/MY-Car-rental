@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Car Details - MY Car Rental</title>
+  <title>Car Details</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -13,22 +13,22 @@
   </header>
 
   <div class="container">
-    <!-- Car Details Section -->
+
     <section class="car-details">
-      <h2 id="carName">Car Name</h2>
-      <p id="carSubtitle" class="car-subtitle">Car Type / Seats</p>
+      <h2 id="carName"></h2>
+      <p class="car-subtitle" id="carSubtitle"></p>
 
-      <!-- Image Slider -->
-      <div class="slider" id="carImages"></div>
-      <div class="slider-controls">
-        <button id="prevBtn">&#10094;</button>
-        <button id="nextBtn">&#10095;</button>
+      <div class="slider" id="carSlider">
+        <!-- images will be injected here -->
       </div>
-      <div class="slider-dots" id="dots"></div>
+      <div class="slider-controls">
+        <button id="prevSlide">&#10094;</button>
+        <button id="nextSlide">&#10095;</button>
+      </div>
+      <div class="slider-dots" id="dotsContainer"></div>
 
-      <p class="price" id="carPrice">$0 / day</p>
+      <p class="price" id="carPrice"></p>
 
-      <!-- Booking Form -->
       <section class="booking">
         <h2>Book Your Ride</h2>
 
@@ -55,9 +55,11 @@
         <p>Total Price: $<span id="total">0</span></p>
 
         <button id="stripePay" disabled>💳 Pay Now</button>
-        <button onclick="reserve()">Reserve Without Paying</button>
+        <button id="reserveBtn">Reserve Without Paying</button>
       </section>
+
     </section>
+
   </div>
 
   <footer>
