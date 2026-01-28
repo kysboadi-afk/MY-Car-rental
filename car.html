@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Car Details & Booking</title>
+  <title>MY Car Rental - Vehicle</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -13,38 +13,36 @@
 </header>
 
 <div class="container">
-  <button id="backBtn">← Back to Cars</button>
 
-  <section class="selected-car">
-    <div class="slider">
-      <img id="mainCarImg" src="" alt="Selected Car">
+  <button id="backBtn">⬅ Back to Cars</button>
+
+  <div class="car-slider" id="carSlider">
+    <div class="slider" id="sliderContainer"></div>
+    <div class="slider-controls">
+      <button id="prevSlide">&#10094;</button>
+      <button id="nextSlide">&#10095;</button>
     </div>
+    <div class="slider-dots" id="sliderDots"></div>
 
     <div class="car-info">
       <h3 id="carName"></h3>
       <p class="car-subtitle" id="carSubtitle"></p>
       <p class="price" id="carPrice"></p>
     </div>
-  </section>
+  </div>
 
   <section class="booking">
     <h2>Book Your Ride</h2>
-
     <label>Pickup Date</label>
     <input type="date" id="pickup">
-
     <label>Pickup Time</label>
     <input type="time" id="pickupTime">
-
     <label>Return Date</label>
     <input type="date" id="return">
-
     <label>Return Time</label>
     <input type="time" id="returnTime">
-
     <label>Email</label>
     <input type="email" id="email" placeholder="Enter your email">
-
     <label class="agree">
       <input type="checkbox" id="agree">
       I agree to the
@@ -52,9 +50,7 @@
         Rental Agreement & Terms
       </a>
     </label>
-
     <p class="total">Total: $<span id="total">0</span></p>
-
     <button id="stripePay" disabled>💳 Pay Now</button>
     <button onclick="reserve()">Reserve Without Paying</button>
   </section>
