@@ -27,28 +27,62 @@ if (vehicle) {
   document.getElementById("carSubtitle").textContent = vehicle.subtitle;
   document.getElementById("carPrice").textContent = `$${vehicle.pricePerDay} / day • $${vehicle.deposit} deposit`;
 
-  // Populate slider images
-  const slider = document.getElementById("carSlider");
+  // Populate slider container
+  const sliderContainer = document.getElementById("carSlider");
+  sliderContainer.style.position = "relative";
+
+  // Add slides
   vehicle.images.forEach((imgSrc, index) => {
     const img = document.createElement("img");
     img.src = imgSrc;
     img.alt = vehicle.name;
     img.className = "slide" + (index === 0 ? " active" : "");
-    slider.appendChild(img);
+    sliderContainer.appendChild(img);
   });
 
-  // Initialize slider controls
-  let currentSlide = 0;
-  const slides = slider.querySelectorAll(".slide");
+  // Create dots
+  const dotsContainer = document.createElement("div");
+  dotsContainer.className = "slider-dots";
+  sliderContainer.appendChild(dotsContainer);
 
-  function showSlide(n) {
-    slides.forEach((s, i) => s.classList.toggle("active", i === n));
-  }
+  vehicle.images.forEach((_, i) => {
+    const dot = document.createElement("span");
+    dot.className = "dot" + (i === 0 ? " active" : "");
+    dot.addEventListener("click", () => {
+      currentSlide = i;
+      showSlide(currentSlide);
+    });
+    dotsContainer.appendChild(dot);
+  });
 
-  slider.addEventListener("click", () => {
+  // Create Next / Prev buttons
+  const prevBtn = document.createElement("button");
+  prevBtn.innerHTML = "&#10094;";
+  prevBtn.className = "prevBtn";
+  prevBtn.addEventListener("click", () => {
+    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+    showSlide(currentSlide);
+  });
+  sliderContainer.appendChild(prevBtn);
+
+  const nextBtn = document.createElement("button");
+  nextBtn.innerHTML = "&#10095;";
+  nextBtn.className = "nextBtn";
+  nextBtn.addEventListener("click", () => {
     currentSlide = (currentSlide + 1) % slides.length;
     showSlide(currentSlide);
   });
+  sliderContainer.appendChild(nextBtn);
+
+  // Show slides function
+  let currentSlide = 0;
+  const slides = sliderContainer.querySelectorAll(".slide");
+  const dots = sliderContainer.querySelectorAll(".dot");
+
+  function showSlide(n) {
+    slides.forEach((s, i) => s.classList.toggle("active", i === n));
+    dots.forEach((d, i) => d.classList.toggle("active", i === n));
+  }
 }
 
 // Total calculation
@@ -68,5 +102,3 @@ function updateTotal() {
 
 pickup.addEventListener("change", updateTotal);
 ret.addEventListener("change", updateTotal);
-
-// Stripe / Reserve button logic here (reuse from your old script)
