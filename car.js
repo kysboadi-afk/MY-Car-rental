@@ -1,104 +1,117 @@
 // Car data
-const vehicles = {
+const cars = {
   slingshot: {
     name: "Slingshot R",
     subtitle: "Sports • 2-Seater",
+    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"],
     pricePerDay: 300,
-    deposit: 150,
-    images: ["images/car1.jpg", "images/car2.jpg", "images/car3.jpg"]
+    deposit: 150
   },
   camry: {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
+    images: ["images/car4.jpg","images/car5.jpg"],
     pricePerDay: 50,
-    deposit: 0,
-    images: ["images/car4.jpg", "images/car5.jpg"]
+    weekly: 250
   }
 };
 
-// Get vehicle from URL
-const params = new URLSearchParams(window.location.search);
-const vehicleId = params.get("vehicle");
-const vehicle = vehicles[vehicleId];
+// Get selected car from URL
+const urlParams = new URLSearchParams(window.location.search);
+const vehicleId = urlParams.get("vehicle");
+const carData = cars[vehicleId];
 
-if (vehicle) {
-  // Populate details
-  document.getElementById("carName").textContent = vehicle.name;
-  document.getElementById("carSubtitle").textContent = vehicle.subtitle;
-  document.getElementById("carPrice").textContent = `$${vehicle.pricePerDay} / day • $${vehicle.deposit} deposit`;
+const carSlider = document.getElementById("carSlider");
+const backBtn = document.getElementById("backBtn");
+const totalSpan = document.getElementById("total");
+let selectedCar = carData;
+let totalCost = 0;
 
-  // Populate slider container
-  const sliderContainer = document.getElementById("carSlider");
-  sliderContainer.style.position = "relative";
+// Redirect back to homepage
+backBtn.addEventListener("click", () => {
+  window.location.href = "index.html";
+});
 
-  // Add slides
-  vehicle.images.forEach((imgSrc, index) => {
+// Populate slider
+if(carData && carSlider){
+  const sliderDiv = document.createElement("div");
+  sliderDiv.classList.add("slider");
+  carData.images.forEach((imgSrc, index) => {
     const img = document.createElement("img");
     img.src = imgSrc;
-    img.alt = vehicle.name;
-    img.className = "slide" + (index === 0 ? " active" : "");
-    sliderContainer.appendChild(img);
+    img.alt = carData.name;
+    img.className = "slide" + (index===0 ? " active" : "");
+    sliderDiv.appendChild(img);
   });
 
-  // Create dots
-  const dotsContainer = document.createElement("div");
-  dotsContainer.className = "slider-dots";
-  sliderContainer.appendChild(dotsContainer);
+  const infoDiv = document.createElement("div");
+  infoDiv.classList.add("car-info");
+  infoDiv.innerHTML = `
+    <h3>${carData.name}</h3>
+    <p class="car-subtitle">${carData.subtitle}</p>
+    <p class="price">$${carData.pricePerDay} / day ${carData.deposit ? "• $" + carData.deposit + " deposit" : ""}</p>
+  `;
 
-  vehicle.images.forEach((_, i) => {
-    const dot = document.createElement("span");
-    dot.className = "dot" + (i === 0 ? " active" : "");
-    dot.addEventListener("click", () => {
-      currentSlide = i;
-      showSlide(currentSlide);
+  carSlider.appendChild(sliderDiv);
+  carSlider.appendChild(infoDiv);
+
+  // Slider logic
+  let currentIndex = 0;
+  function showSlide(index){
+    const slides = sliderDiv.querySelectorAll(".slide");
+    slides.forEach((s,i)=> s.classList.toggle("active", i===index));
+  }
+
+  sliderDiv.addEventListener("click", () => {
+    currentIndex = (currentIndex + 1) % carData.images.length;
+    showSlide(currentIndex);
+  });
+}
+
+// Price calculation
+const pickupInput = document.getElementById("pickup");
+const returnInput = document.getElementById("return");
+function calculateTotal() {
+  const pickup = new Date(pickupInput.value);
+  const ret = new Date(returnInput.value);
+  if(pickup && ret && ret > pickup){
+    const diffDays = Math.ceil((ret - pickup)/(1000*60*60*24));
+    totalCost = diffDays * carData.pricePerDay;
+    totalSpan.textContent = totalCost;
+    document.getElementById("stripePay").disabled = false;
+  }
+}
+pickupInput.addEventListener("change", calculateTotal);
+returnInput.addEventListener("change", calculateTotal);
+
+// Stripe pay
+const stripePayBtn = document.getElementById("stripePay");
+stripePayBtn.addEventListener("click", async () => {
+  if(!selectedCar || totalCost<=0){
+    alert("Please select dates first.");
+    return;
+  }
+  const email = document.getElementById("email").value;
+  if(!email){
+    alert("Enter your email.");
+    return;
+  }
+
+  try {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        car: selectedCar.name,
+        amount: totalCost,
+        email: email
+      })
     });
-    dotsContainer.appendChild(dot);
-  });
-
-  // Create Next / Prev buttons
-  const prevBtn = document.createElement("button");
-  prevBtn.innerHTML = "&#10094;";
-  prevBtn.className = "prevBtn";
-  prevBtn.addEventListener("click", () => {
-    currentSlide = (currentSlide - 1 + slides.length) % slides.length;
-    showSlide(currentSlide);
-  });
-  sliderContainer.appendChild(prevBtn);
-
-  const nextBtn = document.createElement("button");
-  nextBtn.innerHTML = "&#10095;";
-  nextBtn.className = "nextBtn";
-  nextBtn.addEventListener("click", () => {
-    currentSlide = (currentSlide + 1) % slides.length;
-    showSlide(currentSlide);
-  });
-  sliderContainer.appendChild(nextBtn);
-
-  // Show slides function
-  let currentSlide = 0;
-  const slides = sliderContainer.querySelectorAll(".slide");
-  const dots = sliderContainer.querySelectorAll(".dot");
-
-  function showSlide(n) {
-    slides.forEach((s, i) => s.classList.toggle("active", i === n));
-    dots.forEach((d, i) => d.classList.toggle("active", i === n));
+    const data = await res.json();
+    if(data.url) window.location.href = data.url;
+    else alert("Stripe session failed");
+  } catch(err){
+    console.error(err);
+    alert("Payment error. Try again.");
   }
-}
-
-// Total calculation
-const pickup = document.getElementById("pickup");
-const ret = document.getElementById("return");
-const totalSpan = document.getElementById("total");
-
-function updateTotal() {
-  if (pickup.value && ret.value) {
-    const start = new Date(pickup.value);
-    const end = new Date(ret.value);
-    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    const total = diffDays > 0 ? diffDays * vehicle.pricePerDay + vehicle.deposit : vehicle.deposit;
-    totalSpan.textContent = total;
-  }
-}
-
-pickup.addEventListener("change", updateTotal);
-ret.addEventListener("change", updateTotal);
+});
