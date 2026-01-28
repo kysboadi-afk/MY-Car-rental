@@ -1,115 +1,90 @@
-/* ================= GLOBAL STATE ================= */
+// =======================
+// GLOBAL VARIABLES
+// =======================
 let selectedCar = null;
 let daily = 0;
 let weekly = 0;
 let deposit = 0;
 let totalCost = 0;
 
-const pickup = document.getElementById("pickup");
-const pickupTime = document.getElementById("pickupTime");
-const returnDate = document.getElementById("return");
-const returnTime = document.getElementById("returnTime");
-const totalDisplay = document.getElementById("total");
-const stripePayBtn = document.getElementById("stripePay");
+const bookedDates = { "Camry 2012": [], "Slingshot R": [] };
 
-/* ================= VEHICLE SELECT ================= */
-function selectCar(name, d, w, dep, btn) {
-  selectedCar = name;
-  daily = d;
-  weekly = w;
-  deposit = dep;
+const pickup = document.getElementById('pickup');
+const returnDate = document.getElementById('return');
+const pickupTime = document.getElementById('pickupTime');
+const returnTime = document.getElementById('returnTime');
+const agree = document.getElementById('agree');
+const stripePayBtn = document.getElementById('stripePay');
+const totalPriceDisplay = document.getElementById('total');
+const bookedDatesContainer = document.getElementById('bookedDatesContainer');
+const availabilityStatus = document.getElementById('availability');
 
-  document.querySelectorAll(".car-slider")
-    .forEach(c => c.classList.remove("selected"));
+// =======================
+// CAR SELECTION
+// =======================
+function selectCar(name, d, w, dep, el) {
+    selectedCar = name;
+    daily = d;
+    weekly = w;
+    deposit = dep;
+    
+    document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
+    el.closest('.car-slider').classList.add('selected');
 
-  btn.closest(".car-slider").classList.add("selected");
+    displayBookedDates();
+    disableBookedDates();
+    calculateTotal();
+    checkAvailability();
+    updateStripeButton();
 
-  calculateTotal();
-  updateStripeButton();
+    alert(`${name} selected! Now choose dates and enter your info below.`);
 }
 
-/* ================= TIME SYNC ================= */
-pickupTime.addEventListener("change", () => {
-  returnTime.value = pickupTime.value;
-});
+// =======================
+// DISPLAY BOOKED DATES
+// =======================
+function displayBookedDates() {
+    bookedDatesContainer.innerHTML = '';
+    if (!selectedCar) return;
+    const dates = bookedDates[selectedCar] || [];
+    if (dates.length) {
+        bookedDatesContainer.innerHTML = '<strong>Booked Dates:</strong> ';
+        dates.forEach(date => {
+            const span = document.createElement('span');
+            span.className = 'booked-date';
+            span.innerText = date;
+            bookedDatesContainer.appendChild(span);
+        });
+    }
+}
 
-/* ================= PRICE ================= */
+// =======================
+// SYNC RETURN TIME
+// =======================
+pickupTime.addEventListener('input', syncReturnTime);
+function syncReturnTime() {
+    returnTime.value = pickupTime.value;
+}
+
+// =======================
+// CALCULATE TOTAL PRICE
+// =======================
 function calculateTotal() {
-  if (!pickup.value || !returnDate.value || !selectedCar) return;
+    if (!selectedCar || !pickup.value || !returnDate.value) return;
 
-  const start = new Date(pickup.value);
-  const end = new Date(returnDate.value);
-  if (end <= start) return;
+    const pick = new Date(pickup.value);
+    const ret = new Date(returnDate.value);
+    if (ret <= pick) return;
 
-  const days = Math.ceil((end - start) / 86400000);
-  totalCost = days * daily + deposit;
-
-  totalDisplay.textContent = totalCost;
+    const days = Math.ceil((ret - pick) / (1000 * 60 * 60 * 24));
+    let cost = (weekly > 0 && days >= 7) ? Math.floor(days / 7) * weekly + (days % 7) * daily : days * daily;
+    cost += deposit;
+    totalCost = cost;
+    totalPriceDisplay.innerText = totalCost;
 }
 
-/* ================= STRIPE ENABLE ================= */
-function updateStripeButton() {
-  stripePayBtn.disabled = !selectedCar || totalCost <= 0;
-}
-
-pickup.addEventListener("change", calculateTotal);
-returnDate.addEventListener("change", calculateTotal);
-
-/* ================= SLIDER ================= */
-const sliders = {
-  slingshot: { index: 0, slides: [] },
-  camry: { index: 0, slides: [] }
-};
-
-window.onload = () => {
-  sliders.slingshot.slides = document.querySelectorAll(".car-slider:nth-child(1) .slide");
-  sliders.camry.slides = document.querySelectorAll(".car-slider:nth-child(2) .slide");
-};
-
-function showSlide(car) {
-  const s = sliders[car];
-  s.slides.forEach((img,i)=>img.classList.toggle("active", i===s.index));
-}
-
-function nextSlide(car) {
-  const s = sliders[car];
-  s.index = (s.index + 1) % s.slides.length;
-  showSlide(car);
-}
-
-function prevSlide(car) {
-  const s = sliders[car];
-  s.index = (s.index - 1 + s.slides.length) % s.slides.length;
-  showSlide(car);
-}
-
-/* ================= STRIPE ================= */
-stripePayBtn.addEventListener("click", async () => {
-  const email = document.getElementById("email").value;
-
-  if (!email) {
-    alert("Enter email");
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      "https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",
-      {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          car: selectedCar,
-          amount: totalCost,
-          email
-        })
-      }
-    );
-
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
-    else alert("Stripe error");
-  } catch (e) {
-    alert("Payment failed");
-  }
-});
+// =======================
+// CHECK AVAILABILITY
+// =======================
+function checkAvailability() {
+    if (!selecte
