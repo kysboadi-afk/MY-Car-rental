@@ -3,60 +3,60 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>MY Car Rental</title>
+  <title>Car Details | MY Car Rental</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
-
 <body>
+
 <header>
   <h1>MY Car Rental</h1>
 </header>
 
 <div class="container">
 
-  <!-- ================= CARS LIST ================= -->
-  <section class="cars">
+  <!-- Back button -->
+  <button onclick="window.location.href='index.html'" style="margin-bottom:20px;">
+    ← Back to Cars
+  </button>
 
-    <!-- Slingshot -->
-    <div class="car-slider">
-      <div class="slider">
-        <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
-        <img class="slide" src="images/car2.jpg" alt="Slingshot R">
-        <img class="slide" src="images/car3.jpg" alt="Slingshot R">
-      </div>
+  <!-- Car Details -->
+  <section class="car-details">
+    <div class="slider" id="carSlider"></div>
+    <div class="car-info" id="carInfo"></div>
+  </section>
 
-      <div class="car-info">
-        <h3>Slingshot R</h3>
-        <p class="car-subtitle">Sports • 2-Seater</p>
-        <p class="price">$300 / day • $150 deposit</p>
+  <!-- Booking Form -->
+  <section class="booking">
+    <h2>Book Your Ride</h2>
 
-        <!-- Button linking to car.html with query parameter -->
-        <a href="car.html?vehicle=slingshot">
-          <button>Select Slingshot</button>
-        </a>
-      </div>
-    </div>
+    <label>Pickup Date</label>
+    <input type="date" id="pickup">
 
-    <!-- Camry -->
-    <div class="car-slider">
-      <div class="slider">
-        <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
-        <img class="slide" src="images/car5.jpg" alt="Camry 2012">
-      </div>
+    <label>Pickup Time</label>
+    <input type="time" id="pickupTime" onchange="syncReturnTime()">
 
-      <div class="car-info">
-        <h3>Camry 2012</h3>
-        <p class="car-subtitle">Sedan • 5-Seater</p>
-        <p class="price">$50 / day • $250 weekly</p>
+    <label>Return Date</label>
+    <input type="date" id="return">
 
-        <a href="car.html?vehicle=camry">
-          <button>Select Camry</button>
-        </a>
-      </div>
-    </div>
+    <label>Return Time</label>
+    <input type="time" id="returnTime">
 
-    <!-- Add more cars here the same way -->
+    <label>Email</label>
+    <input type="email" id="email" placeholder="Enter your email">
 
+    <label class="agree">
+      <input type="checkbox" id="agree">
+      I agree to the
+      <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">
+        Rental Agreement & Terms
+      </a>
+    </label>
+
+    <p class="total">Total: $<span id="total">0</span></p>
+
+    <button id="stripePay" disabled>💳 Pay Now</button>
+    <button onclick="reserve()">Reserve Without Paying</button>
   </section>
 
 </div>
@@ -65,6 +65,6 @@
   &copy; 2026 MY Car Rental
 </footer>
 
-<script src="script.js"></script>
+<script src="car.js"></script>
 </body>
 </html>
