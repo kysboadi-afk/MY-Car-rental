@@ -40,50 +40,78 @@ header h1 {
 }
 
 /* =======================
-   CAR SLIDERS
+   CAR LIST LAYOUT
+======================= */
+.cars {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* =======================
+   CAR CARD (HORIZONTAL)
 ======================= */
 .car-slider {
+  display: flex;
+  gap: 18px;
+  align-items: center;
   background: #fff;
-  padding: 20px;
+  padding: 18px;
   border-radius: 16px;
-  margin-bottom: 30px;
-  text-align: center;
   box-shadow: 0 6px 25px rgba(0,0,0,0.12);
-  transition: all 0.3s ease;
+  transition: 0.3s ease;
 }
 
 .car-slider.selected {
   border: 3px solid #f44336;
-  transform: scale(1.02);
 }
 
-.car-slider h3 {
-  font-size: 24px;
-  margin-bottom: 15px;
+.car-info {
+  flex: 1;
 }
-/* Subtitle for vehicle type */
+
+/* =======================
+   VEHICLE TEXT
+======================= */
+.car-slider h3 {
+  font-size: 22px;
+  margin-bottom: 4px;
+  text-align: left;
+}
+
 .car-subtitle {
-  font-size: 16px;
-  color: #555;
-  margin: 8px 0 12px 0;
-  font-style: italic;
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: left;
+}
+
+.price {
+  font-size: 17px;
+  font-weight: bold;
+  margin: 8px 0;
+  text-align: left;
 }
 
 /* =======================
    IMAGE SLIDER
 ======================= */
 .slider {
-  position: relative;
-  max-width: 400px; /* Medium size */
-  margin: 0 auto 15px;
+  width: 240px;
+  flex-shrink: 0;
+  border-radius: 14px;
   overflow: hidden;
-  border-radius: 16px;
+  position: relative;
 }
 
 .slide {
   display: none;
   width: 100%;
-  border-radius: 16px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 14px;
 }
 
 .slide.active {
@@ -100,39 +128,35 @@ header h1 {
   background: rgba(0,0,0,0.6);
   color: #fff;
   border: none;
-  padding: 10px 16px;
-  font-size: 18px;
+  padding: 8px 12px;
+  font-size: 16px;
   border-radius: 50%;
   cursor: pointer;
-  transition: 0.3s;
 }
 
-.slider-controls button:hover {
-  background: rgba(0,0,0,0.9);
+.slider-controls button:first-child {
+  left: 8px;
 }
 
-.car-slider .slider-controls button:first-child {
-  left: 10px;
-}
-
-.car-slider .slider-controls button:last-child {
-  right: 10px;
+.slider-controls button:last-child {
+  right: 8px;
 }
 
 /* =======================
    SLIDER DOTS
 ======================= */
 .slider-dots {
-  margin-top: 10px;
+  margin-top: 6px;
+  text-align: left;
 }
 
 .slider-dots .dot {
-  height: 12px;
-  width: 12px;
+  height: 10px;
+  width: 10px;
   background: #ccc;
   display: inline-block;
   border-radius: 50%;
-  margin: 0 5px;
+  margin-right: 4px;
   cursor: pointer;
 }
 
@@ -141,28 +165,17 @@ header h1 {
 }
 
 /* =======================
-   PRICE & BUTTONS
+   BUTTONS
 ======================= */
-.price {
-  font-size: 18px;
-  font-weight: bold;
-  margin: 12px 0;
-}
-
 .car-slider button {
-  padding: 12px 22px;
+  padding: 10px 16px;
   background: linear-gradient(45deg, #f44336, #ff5722);
   color: #fff;
   border: none;
-  border-radius: 12px;
-  font-size: 16px;
+  border-radius: 10px;
+  font-size: 15px;
   cursor: pointer;
-  margin: 6px;
-  transition: 0.3s;
-}
-
-.car-slider button:hover {
-  transform: scale(1.05);
+  margin-top: 8px;
 }
 
 /* Stripe Pay Button */
@@ -183,6 +196,7 @@ header h1 {
   padding: 30px;
   border-radius: 16px;
   box-shadow: 0 6px 25px rgba(0,0,0,0.12);
+  margin-top: 30px;
 }
 
 .booking h2 {
@@ -214,7 +228,7 @@ input:focus {
 }
 
 /* =======================
-   STATUS TEXT
+   STATUS & TOTAL
 ======================= */
 #availability {
   font-weight: bold;
@@ -245,7 +259,7 @@ input:focus {
 }
 
 /* =======================
-   BOOKING BUTTON
+   BOOKING BUTTONS
 ======================= */
 .booking button {
   width: 100%;
@@ -256,12 +270,7 @@ input:focus {
   border: none;
   border-radius: 12px;
   cursor: pointer;
-  transition: 0.3s;
   margin-top: 10px;
-}
-
-.booking button:hover {
-  transform: scale(1.05);
 }
 
 /* =======================
@@ -277,21 +286,22 @@ footer {
 }
 
 /* =======================
-   RESPONSIVE
+   MOBILE
 ======================= */
 @media (max-width: 768px) {
-  header h1 {
-    font-size: 26px;
+  .car-slider {
+    flex-direction: column;
+    text-align: center;
   }
 
-  .car-slider h3 {
-    font-size: 22px;
+  .slider {
+    width: 100%;
   }
-}
 
-@media (max-width: 480px) {
-  header h1 { font-size: 22px; }
-  .car-slider h3 { font-size: 20px; }
-  input[type="date"], input[type="time"], input[type="email"] { font-size: 14px; padding: 12px; }
-  .slider-controls button { padding: 6px 10px; font-size: 16px; }
+  .car-slider h3,
+  .car-subtitle,
+  .price,
+  .slider-dots {
+    text-align: center;
+  }
 }
