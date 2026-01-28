@@ -3,27 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Car Details - MY Car Rental</title>
+  <title>Car Details & Booking</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
-
 <body>
 <header>
   <h1>MY Car Rental</h1>
 </header>
 
 <div class="container">
-
-  <!-- Back button -->
   <button id="backBtn">← Back to Cars</button>
 
-  <!-- Car slider section -->
-  <section class="car-slider" id="carSlider">
-    <!-- Images & info populated by car.js -->
+  <section class="selected-car">
+    <div class="slider">
+      <img id="mainCarImg" src="" alt="Selected Car">
+    </div>
+
+    <div class="car-info">
+      <h3 id="carName"></h3>
+      <p class="car-subtitle" id="carSubtitle"></p>
+      <p class="price" id="carPrice"></p>
+    </div>
   </section>
 
-  <!-- Booking form -->
   <section class="booking">
     <h2>Book Your Ride</h2>
 
