@@ -4,7 +4,7 @@
 const urlParams = new URLSearchParams(window.location.search);
 const vehicleId = urlParams.get("vehicle");
 
-// Example vehicle data
+// Vehicle data
 const vehicles = {
   slingshot: {
     name: "Slingshot R",
@@ -23,7 +23,7 @@ const vehicles = {
 };
 
 // ---------------------------
-// Populate page dynamically
+// DOM Elements
 // ---------------------------
 const carTitle = document.getElementById("carTitle");
 const carSubtitle = document.getElementById("carSubtitle");
@@ -31,10 +31,20 @@ const sliderContainer = document.getElementById("sliderContainer");
 const priceElem = document.getElementById("price");
 const totalElem = document.getElementById("total");
 
+const pickup = document.getElementById("pickup");
+const returnDate = document.getElementById("return");
+const pickupTime = document.getElementById("pickupTime");
+const returnTime = document.getElementById("returnTime");
+const stripePayBtn = document.getElementById("stripePay");
+const emailInput = document.getElementById("email");
+
 let selectedCar = null;
 let totalCost = 0;
 let currentSlide = 0;
 
+// ---------------------------
+// Load car details
+// ---------------------------
 if (vehicleId && vehicles[vehicleId]) {
   selectedCar = vehicles[vehicleId];
   carTitle.textContent = selectedCar.name;
@@ -48,12 +58,11 @@ if (vehicleId && vehicles[vehicleId]) {
     sliderContainer.appendChild(img);
   });
 
-  // Set price
-  priceElem.textContent = selectedCar.daily || selectedCar.weekly;
+  priceElem.textContent = selectedCar.daily;
 }
 
 // ---------------------------
-// Slider controls
+// Slider Controls
 // ---------------------------
 function nextSlide() {
   const slides = sliderContainer.querySelectorAll(".slide");
@@ -70,44 +79,36 @@ function prevSlide() {
 }
 
 // ---------------------------
-// Booking logic
+// Booking
 // ---------------------------
-const pickup = document.getElementById("pickup");
-const returnDate = document.getElementById("return");
-const pickupTime = document.getElementById("pickupTime");
-const returnTime = document.getElementById("returnTime");
-
 function calculateTotal() {
   if (!selectedCar) return;
-
-  const pickupVal = new Date(pickup.value);
-  const returnVal = new Date(returnDate.value);
-
-  if (pickupVal && returnVal && returnVal > pickupVal) {
-    const diffTime = returnVal - pickupVal;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const start = new Date(pickup.value);
+  const end = new Date(returnDate.value);
+  if (start && end && end > start) {
+    const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
     totalCost = diffDays * selectedCar.daily;
     totalElem.textContent = totalCost;
+    checkReady();
   }
 }
 
-// Sync return time with pickup
 pickupTime.addEventListener("change", () => {
   returnTime.value = pickupTime.value;
 });
 
-pickup.addEventListener("change", calculateTotal);
-returnDate.addEventListener("change", calculateTotal);
+[pickup, returnDate, pickupTime, returnTime, emailInput].forEach(el =>
+  el.addEventListener("change", () => {
+    calculateTotal();
+    checkReady();
+  })
+);
 
 // ---------------------------
-// Stripe payment
+// Stripe Payment
 // ---------------------------
-const stripePayBtn = document.getElementById("stripePay");
-
 stripePayBtn.addEventListener("click", async () => {
-  const email = document.getElementById("email").value;
-
-  if (!selectedCar || totalCost <= 0 || !email) {
+  if (!selectedCar || totalCost <= 0 || !emailInput.value) {
     alert("Please complete your booking first.");
     return;
   }
@@ -121,20 +122,15 @@ stripePayBtn.addEventListener("click", async () => {
         body: JSON.stringify({
           car: selectedCar.name,
           amount: totalCost,
-          email: email,
+          email: emailInput.value,
           pickup: pickup.value,
           returnDate: returnDate.value
         })
       }
     );
-
     const data = await res.json();
-
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Stripe session failed to create.");
-    }
+    if (data.url) window.location.href = data.url;
+    else alert("Stripe session failed to create.");
   } catch (err) {
     console.error(err);
     alert("Payment error. Please try again.");
@@ -142,7 +138,7 @@ stripePayBtn.addEventListener("click", async () => {
 });
 
 // ---------------------------
-// Enable Pay Now if booking is complete
+// Enable Pay Now button
 // ---------------------------
 function checkReady() {
   if (
@@ -150,14 +146,10 @@ function checkReady() {
     returnDate.value &&
     pickupTime.value &&
     returnTime.value &&
-    document.getElementById("email").value
+    emailInput.value
   ) {
     stripePayBtn.disabled = false;
   } else {
     stripePayBtn.disabled = true;
   }
 }
-
-[pickup, returnDate, pickupTime, returnTime, document.getElementById("email")].forEach(
-  el => el.addEventListener("change", checkReady)
-);
