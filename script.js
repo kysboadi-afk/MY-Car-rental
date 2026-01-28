@@ -1,10 +1,10 @@
-// ===== GLOBAL VARIABLES =====
 let selectedCar = null;
 let daily = 0;
 let weekly = 0;
 let deposit = 0;
 let totalCost = 0;
 
+// Update with your Vercel backend URL
 const stripeBackendURL = "https://slyservices-stripe-backend.vercel.app/api/create-checkout-session";
 
 const pickup = document.getElementById('pickup');
@@ -15,26 +15,22 @@ const totalPriceDisplay = document.getElementById('total');
 
 const bookedDates = { "Camry 2012": [], "Slingshot R": [] };
 
-// ===== CAR SELECTION =====
+// ---------- CAR SELECTION ----------
 function selectCar(name, d, w, dep, el) {
   selectedCar = name;
   daily = d;
   weekly = w;
   deposit = dep;
-
   document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
   el.closest('.car-slider').classList.add('selected');
-
   displayBookedDates(name);
   disableBookedDates();
-
   alert(name + " selected! Now choose dates and enter your info below.");
   calculateTotal();
   checkAvailability();
   updateStripeButton();
 }
 
-// ===== DISPLAY BOOKED DATES =====
 function displayBookedDates(car) {
   const container = document.getElementById('bookedDatesContainer');
   container.innerHTML = '';
@@ -50,13 +46,13 @@ function displayBookedDates(car) {
   }
 }
 
-// ===== SYNC RETURN TIME =====
+// ---------- SYNC RETURN TIME ----------
 function syncReturnTime() {
   const pickupTime = document.getElementById('pickupTime').value;
   document.getElementById('returnTime').value = pickupTime;
 }
 
-// ===== CALCULATE TOTAL PRICE =====
+// ---------- CALCULATE TOTAL PRICE ----------
 function calculateTotal() {
   const pick = new Date(pickup.value);
   const ret = new Date(returnDate.value);
@@ -69,25 +65,19 @@ function calculateTotal() {
   totalPriceDisplay.innerText = totalCost;
 }
 
-// ===== CHECK AVAILABILITY =====
+// ---------- CHECK AVAILABILITY ----------
 function checkAvailability() {
   const pick = pickup.value;
   const ret = returnDate.value;
   const status = document.getElementById('availability');
   if(!selectedCar || !pick || !ret) { status.innerText=''; return; }
-
   const dates = bookedDates[selectedCar] || [];
   let conflict = dates.some(date => date>=pick && date<=ret);
-  if(conflict){
-    status.innerText='❌ Not available';
-    status.style.color='red';
-  } else {
-    status.innerText='✅ Available';
-    status.style.color='green';
-  }
+  if(conflict){ status.innerText='❌ Not available'; status.style.color='red'; }
+  else { status.innerText='✅ Available'; status.style.color='green'; }
 }
 
-// ===== RESERVE WITHOUT PAYMENT =====
+// ---------- RESERVE FUNCTION ----------
 function reserve() {
   const email = document.getElementById('email').value;
   const agreeChecked = agree.checked;
@@ -99,7 +89,7 @@ function reserve() {
   if(!agreeChecked){alert('You must agree to the Rental Agreement & Terms before paying');return;}
   if(!pick || !ret){alert('Please select valid pickup and return dates');return;}
 
-  alert('✅ Temporary reservation sent! Dates are now marked as requested.');
+  alert('✅ Temporary reservation made! Dates are now blocked.');
 
   const datesToBlock = getDatesBetween(pick, ret);
   bookedDates[selectedCar] = bookedDates[selectedCar].concat(datesToBlock);
@@ -107,7 +97,6 @@ function reserve() {
   checkAvailability();
 }
 
-// ===== GET ALL DATES BETWEEN TWO DATES =====
 function getDatesBetween(start, end) {
   let arr = [];
   let current = new Date(start);
@@ -119,7 +108,7 @@ function getDatesBetween(start, end) {
   return arr;
 }
 
-// ===== DISABLE BOOKED DATES =====
+// ---------- DISABLE BOOKED DATES ----------
 function disableBookedDates() {
   if(!selectedCar) return;
 
@@ -144,28 +133,20 @@ function disableBookedDates() {
   });
 }
 
-// ===== IMAGE SLIDER =====
+// ---------- SLIDER FUNCTIONS ----------
 const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
-
 function initSliders() {
   sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
   sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
 }
+function showSlide(car){const s=sliders[car];s.slides.forEach((img,i)=>img.classList.toggle('active',i===s.index)); updateDots(car);}
+function nextSlide(car){const s=sliders[car]; s.index=(s.index+1)%s.slides.length; showSlide(car);}
+function prevSlide(car){const s=sliders[car]; s.index=(s.index-1+s.slides.length)%s.slides.length; showSlide(car);}
+function updateDots(car){const s=sliders[car]; const dots=document.querySelectorAll(`#dots-${car} .dot`); dots.forEach((dot,i)=>dot.classList.toggle('active',i===s.index));}
+function goToSlide(car,index){sliders[car].index=index; showSlide(car);}
+window.onload=initSliders;
 
-function showSlide(car){
-  const s = sliders[car];
-  s.slides.forEach((img,i)=>img.classList.toggle('active',i===s.index));
-  updateDots(car);
-}
-
-function nextSlide(car){ const s = sliders[car]; s.index=(s.index+1)%s.slides.length; showSlide(car);}
-function prevSlide(car){ const s = sliders[car]; s.index=(s.index-1+s.slides.length)%s.slides.length; showSlide(car);}
-function updateDots(car){ const s=sliders[car]; const dots=document.querySelectorAll(`#dots-${car} .dot`); dots.forEach((dot,i)=>dot.classList.toggle('active',i===s.index));}
-function goToSlide(car,index){ sliders[car].index=index; showSlide(car); }
-
-window.onload = initSliders;
-
-// ===== STRIPE PAY BUTTON =====
+// ---------- STRIPE BUTTON ----------
 function updateStripeButton() {
   stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked || document.getElementById('availability').innerText.includes('❌');
 }
@@ -198,5 +179,4 @@ stripePayButton.addEventListener("click", async () => {
   }
 });
 
-// ===== LISTEN FOR CHANGES TO UPDATE STRIPE BUTTON =====
 [pickup, returnDate, agree].forEach(el => el.addEventListener('change', updateStripeButton));
