@@ -2,102 +2,101 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>MY Car Rental</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+  <title>MY Car Rental</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
-
 <body>
+  <header>
+    <h1>MY Car Rental</h1>
+  </header>
 
-<header>
-  <h1>MY Car Rental</h1>
-</header>
+  <div class="container">
 
-<div class="container">
+    <!-- ---------- VEHICLE SLIDERS ---------- -->
+    <section class="cars">
 
-  <!-- ================= CARS ================= -->
-  <section class="cars">
-
-    <!-- SLINGSHOT -->
-    <div class="car-slider">
-      <h3>Slingshot R</h3>
-
-      <div class="slider">
-        <img class="slide active" src="images/car1.jpg">
-        <img class="slide" src="images/car2.jpg">
-        <img class="slide" src="images/car3.jpg">
+      <!-- Slingshot R -->
+      <div class="car-slider">
+        <h3>Slingshot R</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+          <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('slingshot')">&#10094;</button>
+          <button onclick="nextSlide('slingshot')">&#10095;</button>
+        </div>
+        <div class="slider-dots" id="dots-slingshot">
+          <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',1)"></span>
+          <span class="dot" onclick="goToSlide('slingshot',2)"></span>
+        </div>
+        <p class="price">$300 / day • $150 deposit</p>
+        <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
       </div>
 
-      <div class="slider-controls">
-        <button onclick="prevSlide('slingshot')">&#10094;</button>
-        <button onclick="nextSlide('slingshot')">&#10095;</button>
+      <!-- Camry 2012 -->
+      <div class="car-slider">
+        <h3>Camry 2012</h3>
+        <div class="slider">
+          <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+          <img class="slide" src="images/car5.jpg" alt="Camry 2012">
+        </div>
+        <div class="slider-controls">
+          <button onclick="prevSlide('camry')">&#10094;</button>
+          <button onclick="nextSlide('camry')">&#10095;</button>
+        </div>
+        <div class="slider-dots" id="dots-camry">
+          <span class="dot active" onclick="goToSlide('camry',0)"></span>
+          <span class="dot" onclick="goToSlide('camry',1)"></span>
+        </div>
+        <p class="price">$50 / day • $250 weekly</p>
+        <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
       </div>
 
-      <p class="price">$300 / day • $150 deposit</p>
-      <button onclick="selectCar('Slingshot R',300,0,150,this)">
-        Select Slingshot
-      </button>
-    </div>
+    </section>
 
-    <!-- CAMRY -->
-    <div class="car-slider">
-      <h3>Camry 2012</h3>
+    <!-- ---------- BOOKING FORM ---------- -->
+    <section class="booking">
+      <h2>Book Your Ride</h2>
 
-      <div class="slider">
-        <img class="slide active" src="images/car4.jpg">
-        <img class="slide" src="images/car5.jpg">
-      </div>
+      <label>Pickup Date</label>
+      <input type="date" id="pickup">
 
-      <div class="slider-controls">
-        <button onclick="prevSlide('camry')">&#10094;</button>
-        <button onclick="nextSlide('camry')">&#10095;</button>
-      </div>
+      <label>Pickup Time</label>
+      <input type="time" id="pickupTime" onchange="syncReturnTime()">
 
-      <p class="price">$50 / day</p>
-      <button onclick="selectCar('Camry 2012',50,0,0,this)">
-        Select Camry
-      </button>
-    </div>
+      <label>Return Date</label>
+      <input type="date" id="return">
 
-  </section>
+      <label>Return Time</label>
+      <input type="time" id="returnTime">
 
-  <!-- ================= BOOKING ================= -->
-  <section class="booking">
-    <h2>Book Your Ride</h2>
+      <p id="availability"></p>
+      <p id="bookedDatesContainer"></p>
 
-    <label>Pickup Date</label>
-    <input type="date" id="pickup">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email">
 
-    <label>Pickup Time</label>
-    <input type="time" id="pickupTime">
+      <label>
+        <input type="checkbox" id="agree">
+        I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
+      </label>
 
-    <label>Return Date</label>
-    <input type="date" id="return">
+      <p>Total Price: $<span id="total">0</span></p>
 
-    <label>Return Time</label>
-    <input type="time" id="returnTime" readonly>
+      <button id="stripePay" disabled>💳 Pay Now</button>
+      <button onclick="reserve()">Reserve Without Paying</button>
+    </section>
+  </div>
 
-    <label>Email</label>
-    <input type="email" id="email" placeholder="Enter email">
+  <footer>
+    &copy; 2026 MY Car Rental
+  </footer>
 
-    <label class="checkbox">
-      <input type="checkbox" id="agree">
-      I agree to the Rental Agreement
-    </label>
-
-    <p>Total Price: $<span id="total">0</span></p>
-
-    <button id="stripePay" disabled>💳 Pay Now</button>
-  </section>
-
-</div>
-
-<footer>
-  &copy; 2026 MY Car Rental
-</footer>
-
-<script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
