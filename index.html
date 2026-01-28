@@ -89,6 +89,7 @@
       <p>Total Price: $<span id="total">0</span></p>
 
       <button id="stripePay" disabled>💳 Pay Now</button>
+      <button onclick="reserve()">Reserve Without Paying</button>
     </section>
   </div>
 
@@ -96,7 +97,6 @@
     &copy; 2026 MY Car Rental
   </footer>
 
-  <!-- ===== FULL JS INTEGRATION ===== -->
   <script>
   let selectedCar = null;
   let daily = 0;
@@ -104,7 +104,7 @@
   let deposit = 0;
   let totalCost = 0;
 
-  const stripeBackendURL = "https://my-car-rental-backend.vercel.app/api/create-checkout-session"; // <-- Replace with your Vercel URL
+  const stripeBackendURL = "https://my-car-rental-backend.vercel.app/api/create-checkout-session"; // Replace with your backend
 
   const pickup = document.getElementById('pickup');
   const returnDate = document.getElementById('return');
@@ -123,7 +123,7 @@
     document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
     el.closest('.car-slider').classList.add('selected');
     displayBookedDates(name);
-    disableBookedDates(); // <-- NEW
+    disableBookedDates();
     alert(name + " selected! Now choose dates and enter your info below.");
     calculateTotal();
     checkAvailability();
@@ -172,7 +172,7 @@
     if(!selectedCar || !pick || !ret) { status.innerText=''; return; }
     const dates = bookedDates[selectedCar] || [];
     let conflict = dates.some(date => date>=pick && date<=ret);
-    if(conflict){ status.innerText='❌ Not available for selected dates'; status.style.color='red'; }
+    if(conflict){ status.innerText='❌ Not available'; status.style.color='red'; }
     else { status.innerText='✅ Available'; status.style.color='green'; }
   }
 
@@ -245,7 +245,7 @@
   function goToSlide(car,index){sliders[car].index=index; showSlide(car);}
   window.onload=initSliders;
 
-  // ---------- STRIPE INTEGRATION ----------
+  // ---------- STRIPE BUTTON ----------
   function updateStripeButton() {
     stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked || document.getElementById('availability').innerText.includes('❌');
   }
@@ -269,7 +269,6 @@
   });
 
   [pickup, returnDate, agree].forEach(el => el.addEventListener('change', updateStripeButton));
-
   </script>
 </body>
 </html>
