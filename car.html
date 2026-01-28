@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Car Details</title>
+  <title>Car Details - MY Car Rental</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -13,53 +13,35 @@
   </header>
 
   <div class="container">
-
     <section class="car-details">
-      <h2 id="carName"></h2>
-      <p class="car-subtitle" id="carSubtitle"></p>
+      <h2 id="carTitle"></h2>
+      <p id="carSubtitle"></p>
 
-      <div class="slider" id="carSlider">
-        <!-- images will be injected here -->
-      </div>
+      <div id="sliderContainer" class="slider"></div>
       <div class="slider-controls">
-        <button id="prevSlide">&#10094;</button>
-        <button id="nextSlide">&#10095;</button>
+        <button onclick="prevSlide()">&#10094;</button>
+        <button onclick="nextSlide()">&#10095;</button>
       </div>
-      <div class="slider-dots" id="dotsContainer"></div>
+      <div class="slider-dots" id="sliderDots"></div>
 
-      <p class="price" id="carPrice"></p>
+      <p>Price per day: $<span id="price">0</span></p>
 
-      <section class="booking">
-        <h2>Book Your Ride</h2>
+      <h3>Book Your Ride</h3>
+      <label>Pickup Date</label>
+      <input type="date" id="pickup">
+      <label>Pickup Time</label>
+      <input type="time" id="pickupTime">
+      <label>Return Date</label>
+      <input type="date" id="return">
+      <label>Return Time</label>
+      <input type="time" id="returnTime">
+      <label>Email</label>
+      <input type="email" id="email" placeholder="Enter your email">
 
-        <label>Pickup Date</label>
-        <input type="date" id="pickup">
+      <p>Total: $<span id="total">0</span></p>
 
-        <label>Pickup Time</label>
-        <input type="time" id="pickupTime">
-
-        <label>Return Date</label>
-        <input type="date" id="return">
-
-        <label>Return Time</label>
-        <input type="time" id="returnTime">
-
-        <label>Email</label>
-        <input type="email" id="email" placeholder="Enter your email">
-
-        <label>
-          <input type="checkbox" id="agree">
-          I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
-        </label>
-
-        <p>Total Price: $<span id="total">0</span></p>
-
-        <button id="stripePay" disabled>💳 Pay Now</button>
-        <button id="reserveBtn">Reserve Without Paying</button>
-      </section>
-
+      <button id="stripePay" disabled>💳 Pay Now</button>
     </section>
-
   </div>
 
   <footer>
