@@ -1,149 +1,119 @@
-// =====================
-// CAR DATA
-// =====================
+// ----- Car Data -----
 const cars = {
   slingshot: {
     name: "Slingshot R",
     subtitle: "Sports • 2-Seater",
-    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"],
     pricePerDay: 300,
-    deposit: 150
+    deposit: 150,
+    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"]
   },
   camry: {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
-    images: ["images/car4.jpg","images/car5.jpg"],
     pricePerDay: 50,
-    weekly: 250
+    weekly: 250,
+    images: ["images/car4.jpg","images/car5.jpg"]
   }
-  // Add more cars here
 };
 
-// =====================
-// GET SELECTED CAR
-// =====================
-const urlParams = new URLSearchParams(window.location.search);
-const vehicleId = urlParams.get("vehicle");
-const selectedCar = cars[vehicleId];
-
-if (!selectedCar) {
-  document.getElementById("carInfo").innerHTML = "<p>Car not found!</p>";
-  throw new Error("Car not found!");
+// ----- Helpers -----
+function getVehicleFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("vehicle");
 }
 
-// =====================
-// POPULATE CAR INFO
-// =====================
-const carInfoDiv = document.getElementById("carInfo");
-carInfoDiv.innerHTML = `
-  <h3>${selectedCar.name}</h3>
-  <p class="car-subtitle">${selectedCar.subtitle}</p>
-  <p class="price">
-    ${selectedCar.pricePerDay ? "$"+selectedCar.pricePerDay+" / day" : ""}
-    ${selectedCar.deposit ? "• $"+selectedCar.deposit+" deposit" : ""}
-    ${selectedCar.weekly ? "• $"+selectedCar.weekly+" weekly" : ""}
-  </p>
-`;
+// ----- Load Car Data -----
+const vehicleId = getVehicleFromURL();
+if (!vehicleId || !cars[vehicleId]) {
+  alert("Vehicle not found.");
+  window.location.href = "index.html";
+}
 
-// =====================
-// POPULATE SLIDER
-// =====================
-const sliderDiv = document.getElementById("carSlider");
-selectedCar.images.forEach((src, i) => {
-  const img = document.createElement("img");
-  img.src = src;
-  img.className = "slide" + (i === 0 ? " active" : "");
-  sliderDiv.appendChild(img);
-});
+const carData = cars[vehicleId];
+document.getElementById("carName").textContent = carData.name;
+document.getElementById("carSubtitle").textContent = carData.subtitle;
+document.getElementById("carPrice").textContent = `$${carData.pricePerDay} / day`;
 
-// =====================
-// SLIDER LOGIC
-// =====================
+const sliderContainer = document.getElementById("sliderContainer");
+const sliderDots = document.getElementById("sliderDots");
 let currentSlide = 0;
-function showSlide(n) {
-  const slides = sliderDiv.getElementsByClassName("slide");
-  if (n >= slides.length) currentSlide = 0;
-  if (n < 0) currentSlide = slides.length - 1;
-  for (let i = 0; i < slides.length; i++) slides[i].classList.remove("active");
-  slides[currentSlide].classList.add("active");
-}
 
-sliderDiv.addEventListener("click", () => {
-  currentSlide++;
-  showSlide(currentSlide);
+// Load images
+carData.images.forEach((imgSrc, idx) => {
+  const img = document.createElement("img");
+  img.src = imgSrc;
+  img.classList.add("slide");
+  if (idx === 0) img.classList.add("active");
+  sliderContainer.appendChild(img);
+
+  const dot = document.createElement("span");
+  dot.classList.add("dot");
+  if (idx === 0) dot.classList.add("active");
+  dot.addEventListener("click", () => goToSlide(idx));
+  sliderDots.appendChild(dot);
 });
 
-// =====================
-// BOOKING AUTOMATION
-// =====================
+function showSlide(index) {
+  const slides = sliderContainer.querySelectorAll(".slide");
+  const dots = sliderDots.querySelectorAll(".dot");
+  slides.forEach((s,i)=>s.classList.toggle("active", i===index));
+  dots.forEach((d,i)=>d.classList.toggle("active", i===index));
+  currentSlide = index;
+}
+
+function nextSlide() { showSlide((currentSlide+1)%carData.images.length); }
+function prevSlide() { showSlide((currentSlide-1+carData.images.length)%carData.images.length); }
+document.getElementById("nextSlide").addEventListener("click", nextSlide);
+document.getElementById("prevSlide").addEventListener("click", prevSlide);
+function goToSlide(idx){ showSlide(idx); }
+
+// ----- Back Button -----
+document.getElementById("backBtn").addEventListener("click", ()=>window.location.href="index.html");
+
+// ----- Booking Form Automation -----
 const pickup = document.getElementById("pickup");
 const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
-const totalSpan = document.getElementById("total");
-const stripePayBtn = document.getElementById("stripePay");
+const totalEl = document.getElementById("total");
+const stripeBtn = document.getElementById("stripePay");
 
-function calculateTotal() {
-  if (!pickup.value || !returnDate.value) return 0;
-  const start = new Date(pickup.value);
-  const end = new Date(returnDate.value);
-  let diffDays = Math.ceil((end - start) / (1000*60*60*24));
-  if (diffDays <= 0) diffDays = 1;
-  let total = (selectedCar.pricePerDay || 0) * diffDays;
-  totalSpan.textContent = total;
-  return total;
-}
-
-pickup.addEventListener("change", calculateTotal);
-returnDate.addEventListener("change", calculateTotal);
-
-function syncReturnTime() {
-  returnTime.value = pickupTime.value;
-}
-
-pickupTime.addEventListener("change", syncReturnTime);
-
-// Enable Stripe button if form ready
-const email = document.getElementById("email");
-const agree = document.getElementById("agree");
-
-function checkReady() {
-  stripePayBtn.disabled = !(email.value && agree.checked);
-}
-email.addEventListener("input", checkReady);
-agree.addEventListener("change", checkReady);
-
-// =====================
-// RESERVE / PAY
-// =====================
-stripePayBtn.addEventListener("click", async () => {
-  const totalCost = calculateTotal();
-  if (!totalCost) return alert("Select pickup and return dates");
-
-  try {
-    const res = await fetch(
-      "https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          car: selectedCar.name,
-          amount: totalCost,
-          email: email.value,
-          pickup: pickup.value,
-          returnDate: returnDate.value
-        })
-      }
-    );
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
-    else alert("Stripe session failed");
-  } catch (err) {
-    console.error(err);
-    alert("Payment error");
-  }
+[pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
+  inp.addEventListener("change", updateTotal);
 });
 
+function updateTotal() {
+  if(!pickup.value || !returnDate.value) return;
+  const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  const total = dayCount * carData.pricePerDay + (carData.deposit || 0);
+  totalEl.textContent = total;
+  stripeBtn.disabled = false;
+}
+
+// ----- Reserve / Pay Now -----
+stripeBtn.addEventListener("click", async ()=>{
+  const email = document.getElementById("email").value;
+  if(!email) { alert("Enter email"); return; }
+
+  try {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        car: carData.name,
+        amount: parseFloat(totalEl.textContent),
+        email: email,
+        pickup: pickup.value,
+        returnDate: returnDate.value
+      })
+    });
+    const data = await res.json();
+    if(data.url) window.location.href = data.url;
+    else alert("Stripe session failed");
+  } catch(err){ console.error(err); alert("Payment error"); }
+});
+
+// ----- Reserve Without Pay -----
 function reserve() {
-  alert(`Reserved ${selectedCar.name}!`);
+  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}`);
 }
