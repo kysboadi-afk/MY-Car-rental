@@ -1,0 +1,12 @@
+MY-Car-rental/         <-- root of your repo
+│
+├─ index.html          <-- your HTML file
+├─ style.css           <-- your CSS file
+├─ images/             <-- folder containing all car images
+│   ├─ car1.jpg
+│   ├─ car2.jpg
+│   ├─ car3.jpg
+│   ├─ car4.jpg
+│   ├─ car5.jpg
+│   └─ car6.jpg
+└─ README.md           <-- optional
