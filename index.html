@@ -98,14 +98,13 @@
 
   <!-- ===== FULL JS INTEGRATION ===== -->
   <script>
-  // ===== VARIABLES =====
   let selectedCar = null;
   let daily = 0;
   let weekly = 0;
   let deposit = 0;
   let totalCost = 0;
 
-  const stripeBackendURL = "https://my-car-rental-backend.vercel.app/api/create-checkout-session"; // <-- your Vercel URL
+  const stripeBackendURL = "https://my-car-rental-backend.vercel.app/api/create-checkout-session"; // <-- Replace with your Vercel URL
 
   const pickup = document.getElementById('pickup');
   const returnDate = document.getElementById('return');
@@ -124,6 +123,7 @@
     document.querySelectorAll('.car-slider').forEach(card => card.classList.remove('selected'));
     el.closest('.car-slider').classList.add('selected');
     displayBookedDates(name);
+    disableBookedDates(); // <-- NEW
     alert(name + " selected! Now choose dates and enter your info below.");
     calculateTotal();
     checkAvailability();
@@ -176,7 +176,7 @@
     else { status.innerText='✅ Available'; status.style.color='green'; }
   }
 
-  // ---------- RESERVE FUNCTION (TEMP FRONT-END BOOKING) ----------
+  // ---------- RESERVE FUNCTION ----------
   function reserve() {
     const email = document.getElementById('email').value;
     const agreeChecked = agree.checked;
@@ -207,6 +207,31 @@
     return arr;
   }
 
+  // ---------- DISABLE BOOKED DATES ----------
+  function disableBookedDates() {
+    if(!selectedCar) return;
+
+    const booked = bookedDates[selectedCar] || [];
+    const pick = document.getElementById('pickup');
+    const ret = document.getElementById('return');
+
+    const today = new Date().toISOString().split('T')[0];
+    pick.setAttribute('min', today);
+    ret.setAttribute('min', today);
+
+    [pick, ret].forEach(input => {
+      input.addEventListener('input', function() {
+        if(booked.includes(this.value)) {
+          alert('❌ This date is already booked!');
+          this.value = '';
+        }
+        calculateTotal();
+        checkAvailability();
+        updateStripeButton();
+      });
+    });
+  }
+
   // ---------- SLIDER FUNCTIONS ----------
   const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
   function initSliders() {
@@ -222,7 +247,7 @@
 
   // ---------- STRIPE INTEGRATION ----------
   function updateStripeButton() {
-    stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked;
+    stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked || document.getElementById('availability').innerText.includes('❌');
   }
 
   stripePayButton.addEventListener("click", async () => {
