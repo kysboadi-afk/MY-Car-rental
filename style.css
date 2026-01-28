@@ -228,7 +228,17 @@ input:focus {
 }
 
 .booked-date {
-  background: #f44336;
+  background: #f44336; /* red for paid */
+  color: #fff;
+  padding: 5px 8px;
+  border-radius: 6px;
+  margin: 3px;
+  display: inline-block;
+  font-size: 14px;
+}
+
+.temp-date {
+  background: #ff9800; /* orange for temporary reservation */
   color: #fff;
   padding: 5px 8px;
   border-radius: 6px;
