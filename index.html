@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MY Car Rental</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
   <header>
@@ -35,6 +36,8 @@
         </div>
         <p class="price">$300 / day • $150 deposit</p>
         <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
+        <button id="stripePay" disabled>💳 Pay Now</button>
+
       </div>
 
       <!-- Camry 2012 -->
@@ -224,7 +227,93 @@
           checkAvailability(); calculateTotal();
         });
       });
-    }
+   <script>
+// ===== VARIABLES =====
+let selectedCar = null;
+let totalCost = 0;
+
+// Stripe backend URL
+const stripeBackendURL = "https://YOUR-VERCEL-APP.vercel.app/api/create-checkout-session"; // <-- REPLACE with your Vercel URL
+
+// ===== SELECTORS =====
+const carSelect = document.getElementById("vehicle"); // your car dropdown
+const pickup = document.getElementById("pickup");
+const returnDate = document.getElementById("return");
+const agree = document.getElementById("agree");
+const stripePayButton = document.getElementById("stripePay");
+const totalPriceDisplay = document.getElementById("totalPrice");
+
+// ===== CAR PRICES =====
+const carPrices = {
+  "Slingshot R": 300, // per day
+  "Camry 2012": 50     // per day
+};
+
+// ===== FUNCTIONS =====
+
+// Update selected car
+carSelect.addEventListener("change", () => {
+  selectedCar = carSelect.value;
+  calculateTotal();
+  updateStripeButton();
+});
+
+// Calculate total price
+function calculateTotal() {
+  if (!selectedCar || !pickup.value || !returnDate.value) {
+    totalCost = 0;
+    totalPriceDisplay.innerText = "$0";
+    return;
+  }
+
+  const start = new Date(pickup.value);
+  const end = new Date(returnDate.value);
+  const diffTime = end - start;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  const dailyPrice = carPrices[selectedCar];
+  totalCost = dailyPrice * diffDays;
+  
+  totalPriceDisplay.innerText = "$" + totalCost;
+}
+
+// Enable/disable Stripe button
+function updateStripeButton() {
+  stripePayButton.disabled = !selectedCar || !pickup.value || !returnDate.value || !agree.checked;
+}
+
+// Listen to changes
+pickup.addEventListener("change", () => { calculateTotal(); updateStripeButton(); });
+returnDate.addEventListener("change", () => { calculateTotal(); updateStripeButton(); });
+agree.addEventListener("change", updateStripeButton);
+
+// ===== PAY WITH STRIPE =====
+stripePayButton.addEventListener("click", async () => {
+  if (!selectedCar || !totalCost) {
+    alert("Please complete your booking first.");
+    return;
+  }
+
+  try {
+    const response = await fetch(stripeBackendURL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        car: selectedCar,
+        amount: totalCost
+      })
+    });
+
+    const data = await response.json();
+
+    // Redirect to Stripe Checkout
+    window.location.href = data.url;
+  } catch (err) {
+    alert("Error connecting to payment. Please try again.");
+    console.error(err);
+  }
+});
+
   </script>
 </body>
 </html>
