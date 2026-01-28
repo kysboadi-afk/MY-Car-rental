@@ -18,44 +18,56 @@
     <section class="cars">
 
       <!-- Slingshot R -->
-      <div class="car-slider">
-        <h3>Slingshot R</h3>
-        <div class="slider">
-          <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
-          <img class="slide" src="images/car2.jpg" alt="Slingshot R">
-          <img class="slide" src="images/car3.jpg" alt="Slingshot R">
-        </div>
-        <div class="slider-controls">
-          <button onclick="prevSlide('slingshot')">&#10094;</button>
-          <button onclick="nextSlide('slingshot')">&#10095;</button>
-        </div>
-        <div class="slider-dots" id="dots-slingshot">
-          <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
-          <span class="dot" onclick="goToSlide('slingshot',1)"></span>
-          <span class="dot" onclick="goToSlide('slingshot',2)"></span>
-        </div>
-        <p class="price">$300 / day • $150 deposit</p>
-        <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
-      </div>
+<div class="car-slider">
+  <h3>Slingshot R</h3>
+  <div class="slider">
+    <img class="slide active" src="images/car1.jpg" alt="Slingshot R">
+    <img class="slide" src="images/car2.jpg" alt="Slingshot R">
+    <img class="slide" src="images/car3.jpg" alt="Slingshot R">
+  </div>
+
+  <!-- Subtitle: Vehicle type -->
+  <p class="car-subtitle">Sports / 2-seater</p>
+
+  <div class="slider-controls">
+    <button onclick="prevSlide('slingshot')">&#10094;</button>
+    <button onclick="nextSlide('slingshot')">&#10095;</button>
+  </div>
+  <div class="slider-dots" id="dots-slingshot">
+    <span class="dot active" onclick="goToSlide('slingshot',0)"></span>
+    <span class="dot" onclick="goToSlide('slingshot',1)"></span>
+    <span class="dot" onclick="goToSlide('slingshot',2)"></span>
+  </div>
+  <p class="price">$300 / day • $150 deposit</p>
+  <button onclick="selectCar('Slingshot R',300,0,150,this)">Select Slingshot</button>
+</div>
+
 
       <!-- Camry 2012 -->
-      <div class="car-slider">
-        <h3>Camry 2012</h3>
-        <div class="slider">
-          <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
-          <img class="slide" src="images/car5.jpg" alt="Camry 2012">
-        </div>
-        <div class="slider-controls">
-          <button onclick="prevSlide('camry')">&#10094;</button>
-          <button onclick="nextSlide('camry')">&#10095;</button>
-        </div>
-        <div class="slider-dots" id="dots-camry">
-          <span class="dot active" onclick="goToSlide('camry',0)"></span>
-          <span class="dot" onclick="goToSlide('camry',1)"></span>
-        </div>
-        <p class="price">$50 / day • $250 weekly</p>
-        <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
-      </div>
+<div class="car-slider">
+  <h3>Camry 2012</h3>
+
+  <div class="slider">
+    <img class="slide active" src="images/car4.jpg" alt="Camry 2012">
+    <img class="slide" src="images/car5.jpg" alt="Camry 2012">
+  </div>
+
+  <!-- Subtitle: Vehicle type -->
+  <p class="car-subtitle">Sedan / 5-seater</p>
+
+  <div class="slider-controls">
+    <button onclick="prevSlide('camry')">&#10094;</button>
+    <button onclick="nextSlide('camry')">&#10095;</button>
+  </div>
+
+  <div class="slider-dots" id="dots-camry">
+    <span class="dot active" onclick="goToSlide('camry',0)"></span>
+    <span class="dot" onclick="goToSlide('camry',1)"></span>
+  </div>
+
+  <p class="price">$50 / day • $250 weekly</p>
+  <button onclick="selectCar('Camry 2012',50,250,0,this)">Select Camry</button>
+</div>
 
     </section>
 
