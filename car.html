@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car Details - MY Car Rental</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+  <header>
+    <h1>MY Car Rental</h1>
+  </header>
+
+  <div class="container">
+    <!-- Car Details Section -->
+    <section class="car-details">
+      <h2 id="carName">Car Name</h2>
+      <p id="carSubtitle" class="car-subtitle">Car Type / Seats</p>
+
+      <!-- Image Slider -->
+      <div class="slider" id="carImages"></div>
+      <div class="slider-controls">
+        <button id="prevBtn">&#10094;</button>
+        <button id="nextBtn">&#10095;</button>
+      </div>
+      <div class="slider-dots" id="dots"></div>
+
+      <p class="price" id="carPrice">$0 / day</p>
+
+      <!-- Booking Form -->
+      <section class="booking">
+        <h2>Book Your Ride</h2>
+
+        <label>Pickup Date</label>
+        <input type="date" id="pickup">
+
+        <label>Pickup Time</label>
+        <input type="time" id="pickupTime">
+
+        <label>Return Date</label>
+        <input type="date" id="return">
+
+        <label>Return Time</label>
+        <input type="time" id="returnTime">
+
+        <label>Email</label>
+        <input type="email" id="email" placeholder="Enter your email">
+
+        <label>
+          <input type="checkbox" id="agree">
+          I agree to the <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">Rental Agreement & Terms</a>
+        </label>
+
+        <p>Total Price: $<span id="total">0</span></p>
+
+        <button id="stripePay" disabled>💳 Pay Now</button>
+        <button onclick="reserve()">Reserve Without Paying</button>
+      </section>
+    </section>
+  </div>
+
+  <footer>
+    &copy; 2026 MY Car Rental
+  </footer>
+
+  <script src="car.js"></script>
+</body>
+</html>
