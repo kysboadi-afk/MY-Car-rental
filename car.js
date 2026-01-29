@@ -81,6 +81,20 @@ const stripeBtn = document.getElementById("stripePay");
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
+document
+  .getElementById("pickupTime")
+  ?.addEventListener("change", syncReturnTime);
+
+function syncReturnTime() {
+  const pickupTime = document.getElementById("pickupTime");
+  const returnTime = document.getElementById("returnTime");
+
+  if (!pickupTime || !returnTime) return;
+
+  if (pickupTime.value) {
+    returnTime.value = pickupTime.value;
+  }
+}
 
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
