@@ -100,3 +100,7 @@ footer { margin-top:30px; padding:20px; background:linear-gradient(90deg,#111,#3
   .cars { flex-direction:column; align-items:center; }
   .slider { width:100%; height:200px; }
 }
+button[onclick="reserve()"] {
+  display: none !important;
+}
+
