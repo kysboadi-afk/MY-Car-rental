@@ -1,2 +1,2 @@
-# MY-Car-rental
+# SLY-RIDES
 Simple car rental website
