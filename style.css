@@ -134,23 +134,37 @@ footer {
 }
 
 .slider-controls {
-  text-align: center;
-  margin-top: 10px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
 }
 
 .slider-controls button {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   color: #fff;
   border: none;
-  padding: 10px 15px;
+  padding: 15px 20px;
   cursor: pointer;
-  margin: 0 5px;
-  border-radius: 5px;
-  font-size: 18px;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: bold;
+  pointer-events: all;
+  transition: background 0.3s ease;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .slider-controls button:hover {
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.9);
+  transform: scale(1.1);
 }
 
 .slider-dots {
@@ -275,6 +289,13 @@ footer {
   
   .slider img.slide {
     height: 250px;
+  }
+  
+  .slider-controls button {
+    width: 40px;
+    height: 40px;
+    padding: 10px;
+    font-size: 20px;
   }
   
   .container {
