@@ -12,7 +12,7 @@ const cars = {
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
     weekly: 300,
-    images: ["images/car4.jpg","images/car5.jpg"]
+    images: ["images/car5.jpg","images/car4.jpg"]
   }
 };
 
