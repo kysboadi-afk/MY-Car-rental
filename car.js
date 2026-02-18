@@ -11,7 +11,7 @@ const cars = {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
-    weekly: 250,
+    weekly: 300,
     images: ["images/car4.jpg","images/car5.jpg"]
   }
 };
@@ -99,7 +99,18 @@ function syncReturnTime() {
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
-  const total = dayCount * carData.pricePerDay + (carData.deposit || 0);
+  
+  // Calculate cost with weekly rate if applicable
+  let cost = 0;
+  if (carData.weekly && dayCount >= 7) {
+    const weeks = Math.floor(dayCount / 7);
+    const remainingDays = dayCount % 7;
+    cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
+  } else {
+    cost = dayCount * carData.pricePerDay;
+  }
+  
+  const total = cost + (carData.deposit || 0);
   totalEl.textContent = total;
   stripeBtn.disabled = false;
 }
