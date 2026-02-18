@@ -94,6 +94,59 @@
   letter-spacing: 1px;
 }
 
+/* ABOUT SECTION */
+.about {
+  background: #fff;
+  padding: 80px 20px;
+}
+
+.about-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.about h2 {
+  text-align: center;
+  font-size: 36px;
+  margin-bottom: 40px;
+  color: #333;
+  font-weight: bold;
+}
+
+.about-content {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.about-text,
+.about-values {
+  background: #f8f9fa;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.about-text p,
+.about-values p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: #555;
+  margin: 0;
+}
+
+.about-values h3 {
+  font-size: 24px;
+  color: #333;
+  margin-bottom: 15px;
+  font-weight: 600;
+}
+
+.about-values {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-left: 4px solid #ffb400;
+}
+
 /* CONTAINER */
 .container {
   padding: 40px;
@@ -346,6 +399,30 @@ footer {
   
   .stat-label {
     font-size: 13px;
+  }
+  
+  .about {
+    padding: 60px 20px;
+  }
+  
+  .about h2 {
+    font-size: 28px;
+    margin-bottom: 30px;
+  }
+  
+  .about-text,
+  .about-values {
+    padding: 20px;
+  }
+  
+  .about-values h3 {
+    font-size: 20px;
+  }
+  
+  .about-text p,
+  .about-values p {
+    font-size: 15px;
+    line-height: 1.7;
   }
   
   .slider img.slide {
