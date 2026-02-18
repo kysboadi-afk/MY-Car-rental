@@ -5,7 +5,7 @@ const cars = {
     subtitle: "Sports • 2-Seater",
     pricePerDay: 300,
     deposit: 150,
-    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"]
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"]
   },
   camry: {
     name: "Camry 2012",
