@@ -1,6 +1,6 @@
 # SLY RIDES - Car Rental Website
 
-Modern, professional car rental website for SLY Rides.
+Modern, professional car rental website for SLY RIDES.
 
 ## 🚗 Features
 
@@ -82,5 +82,5 @@ Edit `index.html` stats section:
 
 ## 📝 License
 
-© 2026 SLY Rides. All rights reserved.
+© 2026 SLY RIDES. All rights reserved.
 
