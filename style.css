@@ -1,106 +1,116 @@
-body {
-  font-family: "Segoe UI", Arial, sans-serif;
-  background: #f4f4f4;
-  color: #111;
-  line-height: 1.6;
+* {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
+  font-family: Arial, sans-serif;
 }
 
-header {
-  background: linear-gradient(90deg,#111,#333);
-  color: #fff;
-  padding: 25px;
+/* HEADER */
+.site-header {
   text-align: center;
-  border-bottom: 3px solid #f44336;
+  padding: 20px;
+  background: #000;
 }
 
-header h1 { font-size:32px; }
+.site-logo {
+  height: 80px;
+}
 
-.container { max-width:1100px; margin:auto; padding:20px; }
+/* HERO */
+.hero {
+  height: 70vh;
+  background: linear-gradient(
+      rgba(0,0,0,0.6),
+      rgba(0,0,0,0.6)
+    ),
+    url("images/car3.jpg") center/cover no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #fff;
+}
 
-/* ---------------- HOMEPAGE CAR CARDS ---------------- */
+.hero-content h1 {
+  font-size: 40px;
+  margin-bottom: 15px;
+}
+
+.hero-content p {
+  font-size: 18px;
+  margin-bottom: 25px;
+}
+
+.hero-btn {
+  background: #ffb400;
+  color: #000;
+  padding: 12px 30px;
+  text-decoration: none;
+  font-weight: bold;
+  border-radius: 5px;
+}
+
+/* CONTAINER */
+.container {
+  padding: 40px;
+}
+
+/* CARS */
 .cars {
-  display:flex;
-  gap:18px;
-  flex-wrap:wrap;
-  justify-content:center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 25px;
 }
 
 .car-card {
-  background:#fff;
-  width:220px;
-  border-radius:14px;
-  box-shadow:0 6px 25px rgba(0,0,0,0.12);
-  text-align:center;
-  padding:12px;
-  transition:0.3s;
+  background: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
 }
 
 .car-card img {
-  width:100%;
-  height:140px;
-  object-fit:cover;
-  border-radius:12px;
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
 }
 
-.car-card h3 { font-size:18px; margin:8px 0 4px; }
-.car-card .car-subtitle { font-size:13px; color:#666; margin:0 0 6px; }
-.car-card .price { font-weight:bold; font-size:15px; margin:0 0 8px; }
-
-.car-card button {
-  padding:8px 12px;
-  background: linear-gradient(45deg,#f44336,#ff5722);
-  border:none;
-  border-radius:10px;
-  color:#fff;
-  cursor:pointer;
+.car-info {
+  padding: 20px;
 }
 
-/* ---------------- CAR PAGE SLIDER ---------------- */
-.car-slider { margin:20px 0; display:flex; flex-direction:column; align-items:center; }
-.slider { width:300px; height:180px; position:relative; overflow:hidden; border-radius:12px; margin-bottom:12px; }
-.slide { display:none; width:100%; height:100%; object-fit:cover; border-radius:12px; }
-.slide.active { display:block; }
-
-.slider-controls button {
-  position:absolute; top:50%; transform:translateY(-50%);
-  background:rgba(0,0,0,0.6); color:#fff; border:none; padding:8px 12px; font-size:16px; border-radius:50%;
-  cursor:pointer;
+.car-subtitle {
+  color: #777;
+  font-size: 14px;
 }
 
-.slider-controls button:first-child { left:8px; }
-.slider-controls button:last-child { right:8px; }
-
-.slider-dots { text-align:center; margin-top:6px; }
-.slider-dots .dot { width:10px; height:10px; border-radius:50%; background:#ccc; display:inline-block; margin:0 4px; cursor:pointer; }
-.slider-dots .dot.active { background:#f44336; }
-
-.car-info { text-align:center; }
-.car-info h3 { font-size:22px; margin:8px 0; }
-.car-subtitle { font-size:14px; color:#666; margin-bottom:8px; }
-.price { font-weight:bold; margin-bottom:10px; }
-
-/* ---------------- BOOKING FORM ---------------- */
-.booking { background:#fff; padding:20px; border-radius:14px; box-shadow:0 6px 25px rgba(0,0,0,0.12); margin-top:20px; }
-.booking h2 { margin-bottom:14px; font-size:22px; }
-.booking label { display:block; margin:8px 0 4px; font-weight:bold; }
-.booking input { width:100%; padding:10px; margin-bottom:12px; border-radius:10px; border:1px solid #ccc; font-size:15px; }
-#stripePay { background:linear-gradient(45deg,#000,#444); color:#fff; padding:12px; border:none; border-radius:12px; cursor:pointer; width:100%; margin-top:6px; }
-#stripePay:disabled { opacity:0.5; cursor:not-allowed; }
-.booking button { padding:12px; background:linear-gradient(45deg,#f44336,#ff5722); color:#fff; border:none; border-radius:12px; width:100%; margin-top:6px; cursor:pointer; }
-
-/* ---------------- BACK BUTTON ---------------- */
-#backBtn { padding:6px 10px; background:#f44336; color:#fff; border:none; border-radius:8px; cursor:pointer; margin-bottom:12px; }
-
-footer { margin-top:30px; padding:20px; background:linear-gradient(90deg,#111,#333); color:#fff; text-align:center; border-top:3px solid #f44336; }
-
-/* ---------------- RESPONSIVE ---------------- */
-@media(max-width:768px){
-  .cars { flex-direction:column; align-items:center; }
-  .slider { width:100%; height:200px; }
-}
-button[onclick="reserve()"] {
-  display: none !important;
+.price {
+  font-weight: bold;
+  margin: 10px 0;
 }
 
+.car-info button {
+  width: 100%;
+  padding: 10px;
+  background: #000;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+/* FOOTER */
+footer {
+  text-align: center;
+  padding: 20px;
+  background: #111;
+  color: #fff;
+  margin-top: 40px;
+}
+
+/* MOBILE */
+@media (max-width: 600px) {
+  .hero-content h1 {
+    font-size: 28px;
+  }
+}
