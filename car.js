@@ -101,10 +101,11 @@ function updateTotal() {
   const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
   
   // Calculate cost with weekly rate if applicable
+  const DAYS_PER_WEEK = 7;
   let cost = 0;
-  if (carData.weekly && dayCount >= 7) {
-    const weeks = Math.floor(dayCount / 7);
-    const remainingDays = dayCount % 7;
+  if (carData.weekly && dayCount >= DAYS_PER_WEEK) {
+    const weeks = Math.floor(dayCount / DAYS_PER_WEEK);
+    const remainingDays = dayCount % DAYS_PER_WEEK;
     cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
   } else {
     cost = dayCount * carData.pricePerDay;
