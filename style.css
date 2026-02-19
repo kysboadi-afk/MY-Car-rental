@@ -101,7 +101,8 @@
 }
 
 /* CAR DETAIL PAGE */
-header {
+/* Header for car detail page (car.html) */
+header:not(.site-header) {
   text-align: center;
   padding: 20px;
   background: #000;
@@ -255,7 +256,7 @@ header {
 }
 
 .booking button#stripePay {
-  background: #635BFF;
+  background: #635BFF; /* Stripe brand color for payment button */
   color: #fff;
 }
 
