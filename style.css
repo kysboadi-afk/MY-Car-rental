@@ -100,6 +100,179 @@
   border-radius: 5px;
 }
 
+/* CAR DETAIL PAGE */
+header {
+  text-align: center;
+  padding: 20px;
+  background: #000;
+  color: #fff;
+}
+
+#backBtn {
+  padding: 10px 20px;
+  background: #000;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+/* SLIDER */
+.car-slider {
+  position: relative;
+  max-width: 800px;
+  margin: 0 auto 40px;
+}
+
+.slider {
+  position: relative;
+  width: 100%;
+  height: 400px;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.slider .slide {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #f5f5f5;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.slider .slide.active {
+  opacity: 1;
+}
+
+.slider-controls {
+  position: absolute;
+  width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+  pointer-events: none;
+}
+
+.slider-controls button {
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  padding: 15px 20px;
+  font-size: 20px;
+  cursor: pointer;
+  border-radius: 5px;
+  pointer-events: all;
+}
+
+.slider-controls button:hover {
+  background: rgba(0,0,0,0.8);
+}
+
+.slider-dots {
+  text-align: center;
+  padding: 15px 0;
+}
+
+.slider-dots .dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ccc;
+  margin: 0 5px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.slider-dots .dot.active {
+  background: #000;
+}
+
+/* BOOKING SECTION */
+.booking {
+  background: #f9f9f9;
+  padding: 30px;
+  border-radius: 10px;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.booking h2 {
+  margin-bottom: 20px;
+}
+
+.booking label {
+  display: block;
+  margin-top: 15px;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.booking input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.booking .agree {
+  font-weight: normal;
+  margin-top: 20px;
+}
+
+.booking .agree input {
+  width: auto;
+  margin-right: 8px;
+}
+
+.booking .agree a {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+.booking .total {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.booking button {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.booking button#stripePay {
+  background: #635BFF;
+  color: #fff;
+}
+
+.booking button#stripePay:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.booking button:not(#stripePay) {
+  background: #000;
+  color: #fff;
+}
+
+.booking button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
 /* FOOTER */
 footer {
   text-align: center;
