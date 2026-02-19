@@ -102,7 +102,7 @@
 
 /* CAR DETAIL PAGE */
 /* Header for car detail page (car.html) */
-header:not(.site-header) {
+.car-detail-header {
   text-align: center;
   padding: 20px;
   background: #000;
