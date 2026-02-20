@@ -1,42 +1,28 @@
 # SLY-RIDES
 Simple car rental website
 
-## Custom Domain Setup
+## Custom Domain
 
-This site is configured to be served at **www.slytrans.com** via GitHub Pages.
+🌐 **www.slytrans.com** — hosted on GitHub Pages
 
-**Yes — you must update GoDaddy DNS settings to make the domain work.** Follow both steps below.
-
----
-
-### Step 1 — Update GoDaddy DNS ✅ (required)
-
-Log in to your GoDaddy account → **My Products → DNS** for `slytrans.com` and add these records:
-
-**A Records** (point the root domain to GitHub Pages):
-
-| Type | Name | Value | TTL |
-|------|------|-------|-----|
-| A | @ | 185.199.108.153 | 600 |
-| A | @ | 185.199.109.153 | 600 |
-| A | @ | 185.199.110.153 | 600 |
-| A | @ | 185.199.111.153 | 600 |
-
-**CNAME Record** (point `www` to GitHub Pages):
-
-| Type | Name | Value | TTL |
-|------|------|-------|-----|
-| CNAME | www | your-github-pages-url.github.io | 600 |
-
-> **Note:** For the CNAME value, use your GitHub Pages URL (e.g. `username.github.io`). This is found in your repository **Settings → Pages**.
-
-Save the records. DNS changes can take up to 48 hours to fully propagate.
+> ✅ **GoDaddy DNS records have been updated.**
+> The site will be live at [www.slytrans.com](https://www.slytrans.com) once DNS propagation completes (within 24–48 hours).
 
 ---
 
-### Step 2 — Set custom domain in GitHub ✅ (required)
+### DNS Records (already configured in GoDaddy)
 
-1. Go to your repository on GitHub
-2. Click **Settings → Pages**
-3. Under **Custom domain**, enter `www.slytrans.com` and click **Save**
-4. Once DNS propagates, check **Enforce HTTPS**
+**A Records:**
+
+| Type | Name | Value |
+|------|------|-------|
+| A | @ | 185.199.108.153 |
+| A | @ | 185.199.109.153 |
+| A | @ | 185.199.110.153 |
+| A | @ | 185.199.111.153 |
+
+**CNAME Record:**
+
+| Type | Name | Value |
+|------|------|-------|
+| CNAME | www | your-github-pages-url.github.io |
