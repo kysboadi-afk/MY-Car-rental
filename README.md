@@ -3,7 +3,7 @@ Simple car rental website
 
 ## Custom Domain (GoDaddy)
 
-This site is hosted on GitHub Pages at **www.slyrides.com**.
+This site is hosted on GitHub Pages at **www.slytrans.com**.
 
 ### GoDaddy DNS Configuration
 
@@ -24,4 +24,4 @@ To connect your GoDaddy domain to this GitHub Pages site, add the following reco
 |------|------|-------|
 | CNAME | www | kysboadi-afk.github.io |
 
-After saving the DNS records, go to your GitHub repository **Settings → Pages** and set the custom domain to `www.slyrides.com`. DNS propagation may take up to 48 hours.
+After saving the DNS records, go to your GitHub repository **Settings → Pages** and set the custom domain to `www.slytrans.com`. DNS propagation may take up to 48 hours.
