@@ -6,6 +6,12 @@
   <title>MY Car Rental - Vehicle</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+  <script type="text/javascript">
+    (function(){
+      emailjs.init("YOUR_PUBLIC_KEY"); // To be configured by user
+    })();
+  </script>
 </head>
 <body>
 <header class="car-detail-header">
@@ -69,6 +75,9 @@
 <footer>
   &copy; 2026 MY Car Rental
 </footer>
+
+<!-- Custom Chatbot -->
+<script src="chatbot.js"></script>
 
 <script src="car.js"></script>
 </body>
