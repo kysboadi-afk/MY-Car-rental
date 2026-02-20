@@ -22,6 +22,6 @@ To connect your GoDaddy domain to this GitHub Pages site, add the following reco
 
 | Type | Name | Value |
 |------|------|-------|
-| CNAME | www | kysboadi-afk.github.io |
+| CNAME | www | your-github-pages-url.github.io |
 
 After saving the DNS records, go to your GitHub repository **Settings → Pages** and set the custom domain to `www.slytrans.com`. DNS propagation may take up to 48 hours.
