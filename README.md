@@ -1,27 +1,42 @@
 # SLY-RIDES
 Simple car rental website
 
-## Custom Domain (GoDaddy)
+## Custom Domain Setup
 
-This site is hosted on GitHub Pages at **www.slytrans.com**.
+This site is configured to be served at **www.slytrans.com** via GitHub Pages.
 
-### GoDaddy DNS Configuration
+**Yes — you must update GoDaddy DNS settings to make the domain work.** Follow both steps below.
 
-To connect your GoDaddy domain to this GitHub Pages site, add the following records in your GoDaddy DNS settings:
+---
 
-**A Records** (point your apex/root domain to GitHub Pages):
+### Step 1 — Update GoDaddy DNS ✅ (required)
 
-| Type | Name | Value |
-|------|------|-------|
-| A | @ | 185.199.108.153 |
-| A | @ | 185.199.109.153 |
-| A | @ | 185.199.110.153 |
-| A | @ | 185.199.111.153 |
+Log in to your GoDaddy account → **My Products → DNS** for `slytrans.com` and add these records:
 
-**CNAME Record** (for the `www` subdomain):
+**A Records** (point the root domain to GitHub Pages):
 
-| Type | Name | Value |
-|------|------|-------|
-| CNAME | www | your-github-pages-url.github.io |
+| Type | Name | Value | TTL |
+|------|------|-------|-----|
+| A | @ | 185.199.108.153 | 600 |
+| A | @ | 185.199.109.153 | 600 |
+| A | @ | 185.199.110.153 | 600 |
+| A | @ | 185.199.111.153 | 600 |
 
-After saving the DNS records, go to your GitHub repository **Settings → Pages** and set the custom domain to `www.slytrans.com`. DNS propagation may take up to 48 hours.
+**CNAME Record** (point `www` to GitHub Pages):
+
+| Type | Name | Value | TTL |
+|------|------|-------|-----|
+| CNAME | www | your-github-pages-url.github.io | 600 |
+
+> **Note:** For the CNAME value, use your GitHub Pages URL (e.g. `username.github.io`). This is found in your repository **Settings → Pages**.
+
+Save the records. DNS changes can take up to 48 hours to fully propagate.
+
+---
+
+### Step 2 — Set custom domain in GitHub ✅ (required)
+
+1. Go to your repository on GitHub
+2. Click **Settings → Pages**
+3. Under **Custom domain**, enter `www.slytrans.com` and click **Save**
+4. Once DNS propagates, check **Enforce HTTPS**
