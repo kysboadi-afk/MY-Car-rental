@@ -75,12 +75,15 @@ const pickup = document.getElementById("pickup");
 const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
+const agreeCheckbox = document.getElementById("agree");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
+agreeCheckbox.addEventListener("change", updatePayBtn);
+
 document
   .getElementById("pickupTime")
   ?.addEventListener("change", syncReturnTime);
@@ -96,18 +99,25 @@ function syncReturnTime() {
   }
 }
 
+function updatePayBtn() {
+  stripeBtn.disabled = !(pickup.value && returnDate.value && agreeCheckbox.checked);
+}
+
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
   const total = dayCount * carData.pricePerDay + (carData.deposit || 0);
   totalEl.textContent = total;
-  stripeBtn.disabled = false;
+  updatePayBtn();
 }
 
 // ----- Reserve / Pay Now -----
 stripeBtn.addEventListener("click", async ()=>{
   const email = document.getElementById("email").value;
-  if(!email) { alert("Enter email"); return; }
+  if(!email) { alert("Please enter your email address."); return; }
+
+  stripeBtn.disabled = true;
+  stripeBtn.textContent = "Processing...";
 
   try {
     const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
@@ -122,12 +132,23 @@ stripeBtn.addEventListener("click", async ()=>{
       })
     });
     const data = await res.json();
-    if(data.url) window.location.href = data.url;
-    else alert("Stripe session failed");
-  } catch(err){ console.error(err); alert("Payment error"); }
+    if(data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Payment could not be started. Please try again or contact us.");
+      stripeBtn.disabled = false;
+      stripeBtn.textContent = "💳 Pay Now";
+    }
+  } catch(err){
+    console.error(err);
+    alert("Payment error. Please check your connection and try again.");
+    stripeBtn.disabled = false;
+    stripeBtn.textContent = "💳 Pay Now";
+  }
 });
 
 // ----- Reserve Without Pay -----
 function reserve() {
-  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}`);
+  if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
+  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}. We will contact you shortly!`);
 }
