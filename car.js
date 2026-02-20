@@ -76,6 +76,7 @@ const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
 const agreeCheckbox = document.getElementById("agree");
+const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
@@ -83,6 +84,7 @@ const stripeBtn = document.getElementById("stripePay");
   inp.addEventListener("change", updateTotal);
 });
 agreeCheckbox.addEventListener("change", updatePayBtn);
+idUpload.addEventListener("change", updatePayBtn);
 
 document
   .getElementById("pickupTime")
@@ -100,7 +102,7 @@ function syncReturnTime() {
 }
 
 function updatePayBtn() {
-  stripeBtn.disabled = !(pickup.value && returnDate.value && agreeCheckbox.checked);
+  stripeBtn.disabled = !(pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0);
 }
 
 function updateTotal() {
@@ -150,5 +152,6 @@ stripeBtn.addEventListener("click", async ()=>{
 // ----- Reserve Without Pay -----
 function reserve() {
   if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
-  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}. We will contact you shortly!`);
+  if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
+  alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
 }

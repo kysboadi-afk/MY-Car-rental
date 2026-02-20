@@ -115,4 +115,6 @@ function buildChatbot() {
   input.addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
 }
 
-document.addEventListener("DOMContentLoaded", buildChatbot);
+document.readyState === "loading"
+  ? document.addEventListener("DOMContentLoaded", buildChatbot)
+  : buildChatbot();
