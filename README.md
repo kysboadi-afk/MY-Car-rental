@@ -10,6 +10,22 @@ Simple car rental website
 
 ---
 
+### GitHub Settings (do this once DNS has propagated)
+
+Here are the exact steps to make in your GitHub repository:
+
+1. Open this repository on GitHub
+2. Click **Settings** (top menu of the repo)
+3. In the left sidebar, click **Pages**
+4. Under **"Custom domain"**, type: `www.slytrans.com`
+5. Click **Save**
+6. Wait for the green checkmark (DNS must propagate first — up to 48 hrs)
+7. Once the checkmark appears, tick **"Enforce HTTPS"**
+
+That's it — your site will then load at **https://www.slytrans.com**.
+
+---
+
 ### DNS Records (already configured in GoDaddy)
 
 **A Records:**
