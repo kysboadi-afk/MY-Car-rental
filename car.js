@@ -294,7 +294,7 @@ async function sendReservationEmail() {
 }
 
 // ----- Reserve Without Pay -----
-async function reserve() {
+async function reserve(event) {
   const email = document.getElementById("email").value;
   
   if (!email) {
@@ -308,7 +308,7 @@ async function reserve() {
   }
   
   // Send reservation email
-  const reserveBtn = event.target;
+  const reserveBtn = event ? event.target : document.querySelector('button[onclick="reserve()"]');
   const originalText = reserveBtn.textContent;
   reserveBtn.disabled = true;
   reserveBtn.textContent = "Sending reservation...";
@@ -316,9 +316,9 @@ async function reserve() {
   const emailSent = await sendReservationEmail();
   
   if (emailSent) {
-    alert(`✅ Reservation confirmed!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly.\n\nCar: ${carData.name}\nPickup: ${pickup.value}\nReturn: ${returnDate.value}`);
+    alert(`✅ Reservation request sent!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly to confirm.\n\nCar: ${carData.name}\nPickup: ${pickup.value}\nReturn: ${returnDate.value}`);
   } else {
-    alert("⚠️ Reservation saved, but email notification failed. We'll contact you soon at " + email);
+    alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
   }
   
   reserveBtn.disabled = false;

@@ -156,13 +156,13 @@ async function reserve() {
     });
     
     if (response.ok) {
-      alert(`✅ Reservation confirmed!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly.\n\nCar: ${selectedCar}\nPickup: ${pickupInput.value}\nReturn: ${returnInput.value}`);
+      alert(`✅ Reservation request sent!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly to confirm.\n\nCar: ${selectedCar}\nPickup: ${pickupInput.value}\nReturn: ${returnInput.value}`);
     } else {
-      alert("⚠️ Reservation saved, but email notification failed. We'll contact you soon at " + email);
+      alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
     }
   } catch (error) {
     console.error('Error sending reservation email:', error);
-    alert("⚠️ Reservation saved, but email notification failed. We'll contact you soon at " + email);
+    alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
   }
 
   // Block dates temporarily (for display only)

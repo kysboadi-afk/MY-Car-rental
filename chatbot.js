@@ -194,7 +194,36 @@ class SimpleChatbot {
     }
     
     // Default response with comprehensive topics
-    return "I'm here to help! You can ask me about:\n\n📋 Booking & Reservations\n• How to book a car\n• Requirements needed\n• Payment options\n• Reserve without paying\n\n🚗 Vehicles & Pricing\n• Available cars\n• Pricing & deposits\n• Vehicle features\n\n📄 Policies & Terms\n• Age requirements\n• Driver requirements\n• Insurance & damage\n• Fuel policy\n• Cancellations & refunds\n• Late returns & extensions\n\n💡 Website Help\n• Navigation\n• ID upload process\n• Pickup & delivery\n• Hours & availability\n\n📧 Contact: slyservices@support-info.com";
+    const topics = [
+      "📋 Booking & Reservations",
+      "• How to book a car",
+      "• Requirements needed",
+      "• Payment options",
+      "• Reserve without paying",
+      "",
+      "🚗 Vehicles & Pricing",
+      "• Available cars",
+      "• Pricing & deposits",
+      "• Vehicle features",
+      "",
+      "📄 Policies & Terms",
+      "• Age requirements",
+      "• Driver requirements",
+      "• Insurance & damage",
+      "• Fuel policy",
+      "• Cancellations & refunds",
+      "• Late returns & extensions",
+      "",
+      "💡 Website Help",
+      "• Navigation",
+      "• ID upload process",
+      "• Pickup & delivery",
+      "• Hours & availability",
+      "",
+      "📧 Contact: slyservices@support-info.com"
+    ];
+    
+    return "I'm here to help! You can ask me about:\n\n" + topics.join("\n");
   }
 }
 
