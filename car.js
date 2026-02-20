@@ -81,7 +81,6 @@ const idUpload = document.getElementById("idUpload");
 const fileInfo = document.getElementById("fileInfo");
 
 let uploadedFile = null;
-let uploadedFileBase64 = null;
 
 // ----- File Upload Handling -----
 idUpload.addEventListener("change", function(e) {
@@ -89,7 +88,6 @@ idUpload.addEventListener("change", function(e) {
   
   if (!file) {
     uploadedFile = null;
-    uploadedFileBase64 = null;
     updateFileInfo(null);
     updatePaymentButton();
     return;
@@ -101,7 +99,6 @@ idUpload.addEventListener("change", function(e) {
     alert("Please upload a valid ID document (JPG, PNG, or PDF)");
     e.target.value = '';
     uploadedFile = null;
-    uploadedFileBase64 = null;
     updateFileInfo(null);
     updatePaymentButton();
     return;
@@ -113,22 +110,14 @@ idUpload.addEventListener("change", function(e) {
     alert("File size must be less than 5MB");
     e.target.value = '';
     uploadedFile = null;
-    uploadedFileBase64 = null;
     updateFileInfo(null);
     updatePaymentButton();
     return;
   }
   
   uploadedFile = file;
-  
-  // Convert file to base64 for email
-  const reader = new FileReader();
-  reader.onload = function(event) {
-    uploadedFileBase64 = event.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
-    updateFileInfo(file);
-    updatePaymentButton();
-  };
-  reader.readAsDataURL(file);
+  updateFileInfo(file);
+  updatePaymentButton();
 });
 
 function updateFileInfo(file) {
@@ -156,36 +145,20 @@ function formatFileSize(bytes) {
 
 // ----- Send ID Document via Email -----
 async function sendIDViaEmail() {
-  if (!uploadedFile || !uploadedFileBase64) {
+  if (!uploadedFile) {
     return false;
   }
   
-  const emailParams = {
-    to_email: 'slyservices@support-info.com',
-    from_email: document.getElementById("email").value,
-    car_name: carData.name,
-    pickup_date: pickup.value,
-    return_date: returnDate.value,
-    total_amount: totalEl.textContent,
-    file_name: uploadedFile.name,
-    file_content: uploadedFileBase64,
-    file_type: uploadedFile.type
-  };
-  
   try {
-    // Note: EmailJS requires configuration with your service ID, template ID, and public key
-    // This is a placeholder - users need to set up their EmailJS account
-    // For now, we'll use a simple email service or FormSubmit
-    
-    // Alternative: Using FormSubmit (no registration required)
+    // Using FormSubmit service for email delivery
     const formData = new FormData();
     formData.append('_to', 'slyservices@support-info.com');
     formData.append('_subject', `New Car Rental Booking - ${carData.name}`);
     formData.append('Car', carData.name);
-    formData.append('Customer Email', emailParams.from_email);
-    formData.append('Pickup Date', emailParams.pickup_date);
-    formData.append('Return Date', emailParams.return_date);
-    formData.append('Total Amount', '$' + emailParams.total_amount);
+    formData.append('Customer Email', document.getElementById("email").value);
+    formData.append('Pickup Date', pickup.value);
+    formData.append('Return Date', returnDate.value);
+    formData.append('Total Amount', '$' + totalEl.textContent);
     formData.append('ID Document', uploadedFile);
     
     const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
