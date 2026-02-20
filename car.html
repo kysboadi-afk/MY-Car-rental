@@ -43,6 +43,16 @@
     <input type="time" id="returnTime">
     <label>Email</label>
     <input type="email" id="email" placeholder="Enter your email">
+    <label for="idUpload">ID Document Upload <span class="required">*</span></label>
+    <div class="file-upload-wrapper">
+      <input type="file" id="idUpload" accept="image/*,.pdf" required>
+      <div class="file-info" id="fileInfo">
+        <span class="file-icon">📄</span>
+        <span class="file-name">No file selected</span>
+        <span class="file-size"></span>
+      </div>
+      <p class="file-help">Upload a government-issued ID (JPG, PNG, or PDF - Max 5MB)</p>
+    </div>
     <label class="agree">
       <input type="checkbox" id="agree">
       I agree to the
