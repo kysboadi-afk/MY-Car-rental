@@ -261,7 +261,66 @@ stripeBtn.addEventListener("click", async ()=>{
   }
 });
 
+// ----- Send Reservation Email -----
+async function sendReservationEmail() {
+  const email = document.getElementById("email").value;
+  if (!email) {
+    return false;
+  }
+  
+  try {
+    const formData = new FormData();
+    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_subject', `New Reservation (No Payment) - ${carData.name}`);
+    formData.append('Reservation Type', 'Reserve Without Payment');
+    formData.append('Car', carData.name);
+    formData.append('Customer Email', email);
+    formData.append('Pickup Date', pickup.value);
+    formData.append('Pickup Time', pickupTime.value || 'Not specified');
+    formData.append('Return Date', returnDate.value);
+    formData.append('Return Time', returnTime.value || 'Not specified');
+    formData.append('Total Amount', '$' + totalEl.textContent);
+    
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+      method: 'POST',
+      body: formData
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('Error sending reservation email:', error);
+    return false;
+  }
+}
+
 // ----- Reserve Without Pay -----
-function reserve() {
-  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}`);
+async function reserve() {
+  const email = document.getElementById("email").value;
+  
+  if (!email) {
+    alert("Please enter your email address");
+    return;
+  }
+  
+  if (!pickup.value || !returnDate.value) {
+    alert("Please select pickup and return dates");
+    return;
+  }
+  
+  // Send reservation email
+  const reserveBtn = event.target;
+  const originalText = reserveBtn.textContent;
+  reserveBtn.disabled = true;
+  reserveBtn.textContent = "Sending reservation...";
+  
+  const emailSent = await sendReservationEmail();
+  
+  if (emailSent) {
+    alert(`✅ Reservation confirmed!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly.\n\nCar: ${carData.name}\nPickup: ${pickup.value}\nReturn: ${returnDate.value}`);
+  } else {
+    alert("⚠️ Reservation saved, but email notification failed. We'll contact you soon at " + email);
+  }
+  
+  reserveBtn.disabled = false;
+  reserveBtn.textContent = originalText;
 }
