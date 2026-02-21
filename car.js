@@ -233,7 +233,7 @@ stripeBtn.addEventListener("click", async ()=>{
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
-    reserve();
+    alert("Payment failed. Please try again or contact support.");
   }
 });
 
