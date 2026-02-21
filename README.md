@@ -1,34 +1,22 @@
 # SLY-RIDES
-Simple car rental website
+Simple car rental website — live at **[https://www.slytrans.com](https://www.slytrans.com)** 🚗
 
-## Custom Domain
+## Domain Status
 
-🌐 **www.slytrans.com** — hosted on GitHub Pages
+| Step | Status |
+|------|--------|
+| GoDaddy DNS records configured | ✅ Done |
+| DNS propagated | ✅ Done |
+| GitHub Pages custom domain set | ✅ Done |
+| Enforce HTTPS enabled | ✅ Done |
 
-> ✅ **GoDaddy DNS records are active.**
-> DNS has propagated. Follow the steps below to finish connecting the domain in GitHub.
-
----
-
-### ⚡ Action Required — Finish in GitHub Settings
-
-**Do this now (takes 2 minutes):**
-
-1. Open this repository on GitHub
-2. Click **Settings** (top menu of the repo)
-3. In the left sidebar, click **Pages**
-4. Under **"Custom domain"**, type: `www.slytrans.com`
-5. Click **Save**
-6. Wait a moment for the green ✅ checkmark to appear
-7. Once the checkmark appears, tick **"Enforce HTTPS"**
-
-✅ Your site will then be live and secured at **https://www.slytrans.com**
+🎉 **The site is fully live and secured at [https://www.slytrans.com](https://www.slytrans.com)**
 
 ---
 
-### DNS Records (configured in GoDaddy) ✅
+### DNS Records (reference)
 
-**A Records:**
+**A Records (GoDaddy → GitHub Pages):**
 
 | Type | Name | Value |
 |------|------|-------|
