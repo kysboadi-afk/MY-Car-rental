@@ -219,7 +219,13 @@
 .booking .total {
   font-size: 20px;
   font-weight: bold;
-  margin: 20px 0 12px;
+  margin: 20px 0 8px;
+}
+
+.pay-hint {
+  font-size: 12px;
+  color: #e53935;
+  margin-bottom: 10px;
 }
 
 .booking #stripePay {
@@ -336,14 +342,19 @@ footer {
 
 #chat-box {
   width: 320px;
-  max-height: 480px;
+  height: 480px;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 6px 24px rgba(0,0,0,0.2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: absolute;
+  bottom: 70px;
+  right: 0;
 }
+
+#chat-box[hidden] { display: none; }
 
 #chat-header {
   background: #111;

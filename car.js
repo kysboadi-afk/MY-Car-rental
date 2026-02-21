@@ -102,7 +102,10 @@ function syncReturnTime() {
 }
 
 function updatePayBtn() {
-  stripeBtn.disabled = !(pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0);
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
+  stripeBtn.disabled = !ready;
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = ready ? "none" : "block";
 }
 
 function updateTotal() {
@@ -133,19 +136,30 @@ stripeBtn.addEventListener("click", async ()=>{
         returnDate: returnDate.value
       })
     });
+
+    if (!res.ok) {
+      throw new Error("Server responded with status " + res.status);
+    }
+
     const data = await res.json();
     if(data.url) {
       window.location.href = data.url;
     } else {
-      alert("Payment could not be started. Please try again or contact us.");
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = "💳 Pay Now";
+      throw new Error("No checkout URL returned");
     }
   } catch(err){
-    console.error(err);
-    alert("Payment error. Please check your connection and try again.");
+    console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
+    const wantReserve = confirm(
+      "⚠️ Online payment is temporarily unavailable.\n\n" +
+      "Would you like to Reserve Without Paying instead?\n" +
+      "We will contact you to arrange payment.\n\n" +
+      "Click OK to reserve, or Cancel to try paying again later."
+    );
+    if (wantReserve) {
+      reserve();
+    }
   }
 });
 
