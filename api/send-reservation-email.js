@@ -1,50 +1,13 @@
-// /api/create-checkout-session.js
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
-
-  try {
-    const { car, amount, pickup, returnDate, email } = req.body;
-
-    // Create a Stripe Checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: { name: car },
-            unit_amount: amount * 100, // Stripe expects cents
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      customer_email: email,
-      success_url: `${req.headers.origin}/success.html`,
-      cancel_url: `${req.headers.origin}/cancel.html`,
-    });
-
-    res.status(200).json({ url: session.url });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Stripe session failed" });
-  }
-}
-
-// -------------------------------------------------------
-// /api/send-reservation-email.js
-// Deploy this file as api/send-reservation-email.js in your Vercel project.
-// Required environment variables in Vercel:
-//   SMTP_HOST     — your SMTP server (e.g. smtp.gmail.com)
-//   SMTP_PORT     — SMTP port (587 for TLS, 465 for SSL)
-//   SMTP_USER     — sending email address
-//   SMTP_PASS     — SMTP password or app password
-//   OWNER_EMAIL   — business email to receive all reservation notifications
-// -------------------------------------------------------
+// api/send-reservation-email.js
+// Vercel serverless function — sends reservation emails via SMTP
+//
+// Required environment variables (set in Vercel dashboard):
+//   SMTP_HOST    — SMTP server hostname  (e.g. smtp.gmail.com)
+//   SMTP_PORT    — SMTP port             (587 for TLS, 465 for SSL)
+//   SMTP_USER    — sending email address
+//   SMTP_PASS    — email password or app password
+//   OWNER_EMAIL  — business email that receives all reservation alerts
+//                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
