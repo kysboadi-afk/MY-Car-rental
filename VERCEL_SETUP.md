@@ -3,7 +3,9 @@
 Your Vercel backend is the project running at:
 **`https://slyservices-stripe-backend-ipeq.vercel.app`**
 
-It handles Stripe payments and now also sends reservation emails. Follow the steps below to deploy the new email endpoint.
+It handles Stripe payments and sends reservation emails. Follow the steps below to deploy the latest files.
+
+> ⚠️ **Important:** `api/create-checkout-session.js` has also been updated — it now includes CORS headers and fixed redirect URLs. You must redeploy **both** API files for Stripe payments to work correctly.
 
 ---
 
@@ -17,32 +19,36 @@ Your Vercel backend is a **separate** project from this GitHub Pages site. You n
 
 ---
 
-## Step 2 — Add the New Email File
+## Step 2 — Update Both API Files
 
-The new endpoint lives in `api/send-reservation-email.js` in **this repo** under the `api/` folder. You need to copy it into your Vercel backend project.
+You need to copy **both** files from the `api/` folder in this repo into your Vercel backend project's `api/` folder:
+
+| File | What changed |
+|------|-------------|
+| `api/create-checkout-session.js` | **Updated** — added CORS headers and fixed success/cancel redirect URLs (this is why Stripe wasn't working) |
+| `api/send-reservation-email.js` | **New** — sends reservation notification + customer confirmation emails |
 
 ### Option A — If your Vercel project is linked to a GitHub repo (recommended)
 
 1. Go to your Vercel backend's GitHub repository.
 2. Navigate to the `api/` folder.
-3. Click **"Add file" → "Create new file"**.
-4. Name it: `api/send-reservation-email.js`
-5. Paste in the full contents of [`api/send-reservation-email.js`](api/send-reservation-email.js) from this repo.
-6. Click **"Commit changes"**.
-   - Vercel will automatically redeploy within ~1 minute.
+3. **Replace** `api/create-checkout-session.js` with the updated version from this repo (click the file → pencil icon → paste new contents → commit).
+4. **Add** `api/send-reservation-email.js`: click **"Add file" → "Create new file"**, name it `api/send-reservation-email.js`, paste in the full contents from this repo, and commit.
+5. Vercel will automatically redeploy within ~1 minute.
 
 ### Option B — If you have the project files on your computer
 
 1. Open the Vercel backend project folder on your computer.
-2. Copy the file `api/send-reservation-email.js` from this repo into the `api/` folder of the backend project.
-3. Open a terminal in that folder and run:
+2. **Replace** `api/create-checkout-session.js` with the updated version from this repo.
+3. **Copy** `api/send-reservation-email.js` from this repo into the backend's `api/` folder.
+4. Open a terminal in that folder and run:
    ```bash
    npm install nodemailer
    ```
-4. Commit and push:
+5. Commit and push:
    ```bash
    git add .
-   git commit -m "Add reservation email endpoint"
+   git commit -m "Fix CORS and add reservation email endpoint"
    git push
    ```
    Vercel will redeploy automatically.
