@@ -136,27 +136,24 @@ async function reserve() {
   if (!email) { alert('Please enter email'); return; }
   if (!agreeCheckbox.checked) { alert('You must agree to the terms'); return; }
 
-  // Send reservation email
+  // Send reservation email to owner and customer confirmation
   try {
-    const formData = new FormData();
-    formData.append('_to', 'slyservices@support-info.com');
-    formData.append('_subject', `New Reservation (No Payment) - ${selectedCar}`);
-    formData.append('Reservation Type', 'Reserve Without Payment');
-    formData.append('Car', selectedCar);
-    formData.append('Customer Email', email);
-    formData.append('Pickup Date', pickupInput.value);
-    formData.append('Pickup Time', pickupTimeInput.value || 'Not specified');
-    formData.append('Return Date', returnInput.value);
-    formData.append('Return Time', returnTimeInput.value || 'Not specified');
-    formData.append('Total Amount', '$' + totalPriceDisplay.textContent);
-    
-    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+    const response = await fetch('https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email', {
       method: 'POST',
-      body: formData
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        car: selectedCar,
+        pickup: pickupInput.value,
+        pickupTime: pickupTimeInput.value || 'Not specified',
+        returnDate: returnInput.value,
+        returnTime: returnTimeInput.value || 'Not specified',
+        email: email,
+        total: totalPriceDisplay.textContent
+      })
     });
-    
+
     if (response.ok) {
-      alert(`✅ Reservation request sent!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly to confirm.\n\nCar: ${selectedCar}\nPickup: ${pickupInput.value}\nReturn: ${returnInput.value}`);
+      alert(`✅ Reservation request sent!\n\nA confirmation email has been sent to ${email}. We will also contact you shortly to confirm.\n\nCar: ${selectedCar}\nPickup: ${pickupInput.value}\nReturn: ${returnInput.value}`);
     } else {
       alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
     }
