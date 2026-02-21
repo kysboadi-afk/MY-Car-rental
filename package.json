@@ -1,0 +1,10 @@
+{
+  "name": "sly-rides-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "SLY Rides Vercel serverless backend",
+  "dependencies": {
+    "nodemailer": "^8.0.1",
+    "stripe": "^20.3.1"
+  }
+}
