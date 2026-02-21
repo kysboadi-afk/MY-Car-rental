@@ -3,24 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>MY Car Rental - Vehicle</title>
+  <title>SLY Rides | Book a Vehicle</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
-<header class="car-detail-header">
-  <h1>MY Car Rental</h1>
+<header class="site-header">
+  <img src="images/logo.jpg" alt="SLY Rides Logo" class="site-logo">
 </header>
 
 <div class="container">
 
-  <button id="backBtn">⬅ Back to Cars</button>
+  <button id="backBtn" class="back-btn">⬅ Back to Cars</button>
 
   <div class="car-slider" id="carSlider">
-    <div class="slider" id="sliderContainer"></div>
-    <div class="slider-controls">
-      <button id="prevSlide">&#10094;</button>
-      <button id="nextSlide">&#10095;</button>
+    <div class="slider" id="sliderContainer">
+      <div class="slider-controls">
+        <button id="prevSlide">&#10094;</button>
+        <button id="nextSlide">&#10095;</button>
+      </div>
     </div>
     <div class="slider-dots" id="sliderDots"></div>
 
@@ -33,46 +34,55 @@
 
   <section class="booking">
     <h2>Book Your Ride</h2>
-    <label>Pickup Date</label>
+
+    <label for="pickup">Pickup Date</label>
     <input type="date" id="pickup">
-    <label>Pickup Time</label>
+
+    <label for="pickupTime">Pickup Time</label>
     <input type="time" id="pickupTime">
-    <label>Return Date</label>
+
+    <label for="return">Return Date</label>
     <input type="date" id="return">
-    <label>Return Time</label>
+
+    <label for="returnTime">Return Time</label>
     <input type="time" id="returnTime">
-    <label>Email</label>
+
+    <label for="email">Email Address</label>
     <input type="email" id="email" placeholder="Enter your email">
-    <label for="idUpload">ID Document Upload <span class="required">*</span></label>
-    <div class="file-upload-wrapper">
-      <input type="file" id="idUpload" accept="image/*,.pdf" required>
-      <div class="file-info" id="fileInfo">
-        <span class="file-icon">📄</span>
-        <span class="file-name">No file selected</span>
-        <span class="file-size"></span>
-      </div>
-      <p class="file-help">Upload a government-issued ID (JPG, PNG, or PDF - Max 5MB)</p>
+
+    <label for="phone">Phone Number</label>
+    <input type="tel" id="phone" placeholder="Enter your phone number">
+
+    <div class="id-upload-section">
+      <label for="idUpload">📎 Upload Driver's License / ID <span class="required">*</span></label>
+      <p class="id-note">A valid government-issued ID is required to confirm your rental.</p>
+      <input type="file" id="idUpload" accept="image/*,.pdf">
+      <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
     </div>
+
     <label class="agree">
       <input type="checkbox" id="agree">
       I agree to the
       <a href="https://docs.google.com/document/d/1vvG-SbqoUa8OipyduvTMlyOrwx7JREwCpYOkgURoVdI/edit?usp=sharing" target="_blank">
-        Rental Agreement & Terms
+        Rental Agreement &amp; Terms
       </a>
     </label>
+
     <p class="total">Total: $<span id="total">0</span></p>
+    <p class="pay-hint" id="payHint">⚠️ To enable payment: fill dates, upload ID, and agree to terms.</p>
     <button id="stripePay" disabled>💳 Pay Now</button>
-    <button onclick="reserve()">Reserve Without Paying</button>
+    <button class="reserve-btn" onclick="reserve()">Reserve Without Paying</button>
   </section>
 </div>
 
 <footer>
-  &copy; 2026 MY Car Rental
+  &copy; 2026 SLY Rides. All rights reserved.
 </footer>
 
 <!-- Custom Chatbot -->
 <script src="chatbot.js"></script>
 
 <script src="car.js"></script>
+<script src="chatbot.js"></script>
 </body>
 </html>

@@ -5,14 +5,14 @@ const cars = {
     subtitle: "Sports • 2-Seater",
     pricePerDay: 300,
     deposit: 150,
-    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"]
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"]
   },
   camry: {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
-    weekly: 250,
-    images: ["images/car4.jpg","images/car5.jpg"]
+    weekly: 300,
+    images: ["images/car5.jpg","images/car4.jpg"]
   }
 };
 
@@ -75,6 +75,8 @@ const pickup = document.getElementById("pickup");
 const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
+const agreeCheckbox = document.getElementById("agree");
+const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 const idUpload = document.getElementById("idUpload");
@@ -173,9 +175,17 @@ async function sendIDViaEmail() {
   }
 }
 
+// Block past dates — only allow today or future dates
+const todayStr = new Date().toISOString().split("T")[0];
+pickup.setAttribute("min", todayStr);
+returnDate.setAttribute("min", todayStr);
+
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
+agreeCheckbox.addEventListener("change", updatePayBtn);
+idUpload.addEventListener("change", updatePayBtn);
+
 document
   .getElementById("pickupTime")
   ?.addEventListener("change", syncReturnTime);
@@ -191,47 +201,39 @@ function syncReturnTime() {
   }
 }
 
+function updatePayBtn() {
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
+  stripeBtn.disabled = !ready;
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = ready ? "none" : "block";
+}
+
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
-  const total = dayCount * carData.pricePerDay + (carData.deposit || 0);
-  totalEl.textContent = total;
-  updatePaymentButton();
-}
-
-function updatePaymentButton() {
-  // Enable payment button only if:
-  // 1. Total is calculated (pickup and return dates are set)
-  // 2. ID document is uploaded
-  const hasTotal = totalEl.textContent !== '0';
-  const hasID = uploadedFile !== null;
   
-  stripeBtn.disabled = !(hasTotal && hasID);
+  // Calculate cost with weekly rate if applicable
+  const DAYS_PER_WEEK = 7;
+  let cost = 0;
+  if (carData.weekly && dayCount >= DAYS_PER_WEEK) {
+    const weeks = Math.floor(dayCount / DAYS_PER_WEEK);
+    const remainingDays = dayCount % DAYS_PER_WEEK;
+    cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
+  } else {
+    cost = dayCount * carData.pricePerDay;
+  }
+  
+  const total = cost + (carData.deposit || 0);
+  totalEl.textContent = total;
+  updatePayBtn();
 }
 
 // ----- Reserve / Pay Now -----
 stripeBtn.addEventListener("click", async ()=>{
   const email = document.getElementById("email").value;
-  if(!email) { alert("Enter email"); return; }
-  
-  if(!uploadedFile) {
-    alert("Please upload your ID document before proceeding with payment");
-    return;
-  }
-  
-  // Send ID document via email
+  if(!email) { alert("Please enter your email address."); return; }
+
   stripeBtn.disabled = true;
-  stripeBtn.textContent = "Sending ID...";
-  
-  const emailSent = await sendIDViaEmail();
-  
-  if (!emailSent) {
-    alert("Failed to send ID document. Please try again or contact support.");
-    stripeBtn.disabled = false;
-    stripeBtn.textContent = "💳 Pay Now";
-    return;
-  }
-  
   stripeBtn.textContent = "Processing...";
 
   try {
@@ -246,18 +248,30 @@ stripeBtn.addEventListener("click", async ()=>{
         returnDate: returnDate.value
       })
     });
-    const data = await res.json();
-    if(data.url) window.location.href = data.url;
-    else {
-      alert("Stripe session failed");
-      stripeBtn.disabled = false;
-      stripeBtn.textContent = "💳 Pay Now";
+
+    if (!res.ok) {
+      throw new Error("Server responded with status " + res.status);
     }
-  } catch(err){ 
-    console.error(err); 
-    alert("Payment error");
+
+    const data = await res.json();
+    if(data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error("No checkout URL returned");
+    }
+  } catch(err){
+    console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
+    const wantReserve = confirm(
+      "⚠️ Online payment is temporarily unavailable.\n\n" +
+      "Would you like to Reserve Without Paying instead?\n" +
+      "We will contact you to arrange payment.\n\n" +
+      "Click OK to reserve, or Cancel to try paying again later."
+    );
+    if (wantReserve) {
+      reserve();
+    }
   }
 });
 
@@ -294,33 +308,35 @@ async function sendReservationEmail() {
 }
 
 // ----- Reserve Without Pay -----
-async function reserve(event) {
+async function reserve() {
+  if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
+  if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
+
   const email = document.getElementById("email").value;
-  
-  if (!email) {
-    alert("Please enter your email address");
-    return;
+  const phone = document.getElementById("phone").value;
+
+  try {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        car: carData.name,
+        pickup: pickup.value,
+        returnDate: returnDate.value,
+        email: email,
+        phone: phone,
+        total: totalEl.textContent
+      })
+    });
+    const emailSent = res.ok;
+    alert(
+      `✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\n` +
+      (emailSent
+        ? "A confirmation has been sent to your email. We will contact you shortly!"
+        : "We will contact you shortly to confirm your reservation.")
+    );
+  } catch(e) {
+    console.error("Reservation email notification failed:", e);
+    alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
   }
-  
-  if (!pickup.value || !returnDate.value) {
-    alert("Please select pickup and return dates");
-    return;
-  }
-  
-  // Send reservation email
-  const reserveBtn = event ? event.target : document.querySelector('button[onclick="reserve()"]');
-  const originalText = reserveBtn.textContent;
-  reserveBtn.disabled = true;
-  reserveBtn.textContent = "Sending reservation...";
-  
-  const emailSent = await sendReservationEmail();
-  
-  if (emailSent) {
-    alert(`✅ Reservation request sent!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly to confirm.\n\nCar: ${carData.name}\nPickup: ${pickup.value}\nReturn: ${returnDate.value}`);
-  } else {
-    alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
-  }
-  
-  reserveBtn.disabled = false;
-  reserveBtn.textContent = originalText;
 }

@@ -1,0 +1,61 @@
+# Sensitive Files - NEVER commit these!
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.txt
+secrets.txt
+config.local.*
+ftp-config.json
+
+# GoDaddy/FTP configs
+.ftpconfig
+.ftppass
+sftp-config.json
+deployment-config.json
+
+# API Keys
+*-api-key*
+*-secret*
+*.credentials
+
+# Database
+*.sql
+*.sqlite
+*.db
+
+# Logs
+*.log
+logs/
+*.pid
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+node_modules/
+dist/
+build/
+.cache/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.backup
+*.bak
+*-backup.*

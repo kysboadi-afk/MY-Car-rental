@@ -1,15 +1,20 @@
-// /api/create-checkout-session.js
+// api/create-checkout-session.js
+// Vercel serverless function — Stripe payment session
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const ALLOWED_ORIGIN = "https://www.slytrans.com";
 
 export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   try {
     const { car, amount, pickup, returnDate, email } = req.body;
 
-    // Create a Stripe Checkout session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
@@ -24,8 +29,8 @@ export default async function handler(req, res) {
       ],
       mode: "payment",
       customer_email: email,
-      success_url: `${req.headers.origin}/success.html`,
-      cancel_url: `${req.headers.origin}/cancel.html`,
+      success_url: `${ALLOWED_ORIGIN}/success.html`,
+      cancel_url: `${ALLOWED_ORIGIN}/cancel.html`,
     });
 
     res.status(200).json({ url: session.url });
