@@ -5,6 +5,11 @@
   font-family: Arial, sans-serif;
 }
 
+body {
+  background: #111;
+  color: #fff;
+}
+
 /* HEADER */
 .site-header {
   text-align: center;

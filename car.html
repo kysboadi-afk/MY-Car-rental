@@ -73,10 +73,8 @@
     </label>
 
     <p class="total">Total: $<span id="total">0</span></p>
-    <div class="payment-maintenance" id="paymentMaintenance">
-      🔧 <strong>Online payment is temporarily unavailable</strong> — our payment gateway is currently under maintenance. Please use <em>Reserve Without Paying</em> below to hold your booking, and we will contact you to arrange payment.
-    </div>
-    <button id="stripePay" disabled style="display:none">💳 Pay Now</button>
+    <p class="pay-hint" id="payHint">Fill in dates, upload your ID, and agree to terms to enable payment.</p>
+    <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
     <button class="reserve-btn" onclick="reserve()">Reserve Without Paying</button>
   </section>
 </div>
