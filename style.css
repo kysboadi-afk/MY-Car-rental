@@ -386,6 +386,32 @@
   margin-top: 6px;
 }
 
+#fileInfo {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+  padding: 6px 8px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#fileInfo.has-file {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+#fileInfo .file-size {
+  color: #999;
+  font-size: 11px;
+}
+
+#fileInfo.has-file .file-size {
+  color: #66bb6a;
+}
+
 .id-upload-section input[type="file"] {
   width: 100%;
   padding: 8px;
