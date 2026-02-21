@@ -5,28 +5,28 @@ Simple car rental website
 
 🌐 **www.slytrans.com** — hosted on GitHub Pages
 
-> ✅ **GoDaddy DNS records have been updated.**
-> The site will be live at [www.slytrans.com](https://www.slytrans.com) once DNS propagation completes (within 24–48 hours).
+> ✅ **GoDaddy DNS records are active.**
+> DNS has propagated. Follow the steps below to finish connecting the domain in GitHub.
 
 ---
 
-### GitHub Settings (do this once DNS has propagated)
+### ⚡ Action Required — Finish in GitHub Settings
 
-Here are the exact steps to make in your GitHub repository:
+**Do this now (takes 2 minutes):**
 
 1. Open this repository on GitHub
 2. Click **Settings** (top menu of the repo)
 3. In the left sidebar, click **Pages**
 4. Under **"Custom domain"**, type: `www.slytrans.com`
 5. Click **Save**
-6. Wait for the green checkmark (DNS must propagate first — up to 48 hrs)
+6. Wait a moment for the green ✅ checkmark to appear
 7. Once the checkmark appears, tick **"Enforce HTTPS"**
 
-That's it — your site will then load at **https://www.slytrans.com**.
+✅ Your site will then be live and secured at **https://www.slytrans.com**
 
 ---
 
-### DNS Records (already configured in GoDaddy)
+### DNS Records (configured in GoDaddy) ✅
 
 **A Records:**
 
