@@ -128,13 +128,42 @@ function checkAvailability() {
 // =======================
 // RESERVE WITHOUT PAY
 // =======================
-function reserve() {
+async function reserve() {
   if (!selectedCar) { alert('Please select a vehicle'); return; }
   if (!pickupInput.value || !returnInput.value) { alert('Please select dates'); return; }
-  if (!document.getElementById('email').value) { alert('Please enter email'); return; }
+  
+  const email = document.getElementById('email').value;
+  if (!email) { alert('Please enter email'); return; }
   if (!agreeCheckbox.checked) { alert('You must agree to the terms'); return; }
 
-  alert('✅ Reservation sent! We will contact you.');
+  // Send reservation email
+  try {
+    const formData = new FormData();
+    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_subject', `New Reservation (No Payment) - ${selectedCar}`);
+    formData.append('Reservation Type', 'Reserve Without Payment');
+    formData.append('Car', selectedCar);
+    formData.append('Customer Email', email);
+    formData.append('Pickup Date', pickupInput.value);
+    formData.append('Pickup Time', pickupTimeInput.value || 'Not specified');
+    formData.append('Return Date', returnInput.value);
+    formData.append('Return Time', returnTimeInput.value || 'Not specified');
+    formData.append('Total Amount', '$' + totalPriceDisplay.textContent);
+    
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (response.ok) {
+      alert(`✅ Reservation request sent!\n\nWe've sent the details to slyservices@support-info.com and will contact you at ${email} shortly to confirm.\n\nCar: ${selectedCar}\nPickup: ${pickupInput.value}\nReturn: ${returnInput.value}`);
+    } else {
+      alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
+    }
+  } catch (error) {
+    console.error('Error sending reservation email:', error);
+    alert("⚠️ Reservation request saved, but email notification failed. We'll contact you soon at " + email);
+  }
 
   // Block dates temporarily (for display only)
   const datesToBlock = getDatesBetween(pickupInput.value, returnInput.value);

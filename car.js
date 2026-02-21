@@ -79,6 +79,101 @@ const agreeCheckbox = document.getElementById("agree");
 const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
+const idUpload = document.getElementById("idUpload");
+const fileInfo = document.getElementById("fileInfo");
+
+let uploadedFile = null;
+
+// ----- File Upload Handling -----
+idUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  
+  if (!file) {
+    uploadedFile = null;
+    updateFileInfo(null);
+    updatePaymentButton();
+    return;
+  }
+  
+  // Validate file type
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please upload a valid ID document (JPG, PNG, or PDF)");
+    e.target.value = '';
+    uploadedFile = null;
+    updateFileInfo(null);
+    updatePaymentButton();
+    return;
+  }
+  
+  // Validate file size (5MB max)
+  const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+  if (file.size > maxSize) {
+    alert("File size must be less than 5MB");
+    e.target.value = '';
+    uploadedFile = null;
+    updateFileInfo(null);
+    updatePaymentButton();
+    return;
+  }
+  
+  uploadedFile = file;
+  updateFileInfo(file);
+  updatePaymentButton();
+});
+
+function updateFileInfo(file) {
+  const fileName = fileInfo.querySelector('.file-name');
+  const fileSize = fileInfo.querySelector('.file-size');
+  
+  if (file) {
+    fileName.textContent = file.name;
+    fileSize.textContent = formatFileSize(file.size);
+    fileInfo.classList.add('has-file');
+  } else {
+    fileName.textContent = 'No file selected';
+    fileSize.textContent = '';
+    fileInfo.classList.remove('has-file');
+  }
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// ----- Send ID Document via Email -----
+async function sendIDViaEmail() {
+  if (!uploadedFile) {
+    return false;
+  }
+  
+  try {
+    // Using FormSubmit service for email delivery
+    const formData = new FormData();
+    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_subject', `New Car Rental Booking - ${carData.name}`);
+    formData.append('Car', carData.name);
+    formData.append('Customer Email', document.getElementById("email").value);
+    formData.append('Pickup Date', pickup.value);
+    formData.append('Return Date', returnDate.value);
+    formData.append('Total Amount', '$' + totalEl.textContent);
+    formData.append('ID Document', uploadedFile);
+    
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+      method: 'POST',
+      body: formData
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('Error sending ID document:', error);
+    return false;
+  }
+}
 
 // Block past dates — only allow today or future dates
 const todayStr = new Date().toISOString().split("T")[0];
@@ -179,6 +274,38 @@ stripeBtn.addEventListener("click", async ()=>{
     }
   }
 });
+
+// ----- Send Reservation Email -----
+async function sendReservationEmail() {
+  const email = document.getElementById("email").value;
+  if (!email) {
+    return false;
+  }
+  
+  try {
+    const formData = new FormData();
+    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_subject', `New Reservation (No Payment) - ${carData.name}`);
+    formData.append('Reservation Type', 'Reserve Without Payment');
+    formData.append('Car', carData.name);
+    formData.append('Customer Email', email);
+    formData.append('Pickup Date', pickup.value);
+    formData.append('Pickup Time', pickupTime.value || 'Not specified');
+    formData.append('Return Date', returnDate.value);
+    formData.append('Return Time', returnTime.value || 'Not specified');
+    formData.append('Total Amount', '$' + totalEl.textContent);
+    
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+      method: 'POST',
+      body: formData
+    });
+    
+    return response.ok;
+  } catch (error) {
+    console.error('Error sending reservation email:', error);
+    return false;
+  }
+}
 
 // ----- Reserve Without Pay -----
 async function reserve() {
