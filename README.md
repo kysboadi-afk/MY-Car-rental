@@ -1,6 +1,10 @@
 # SLY-RIDES
 Simple car rental website — live at **[https://www.slytrans.com](https://www.slytrans.com)** 🚗
 
+## 📧 Need to update the Vercel backend (reservation emails)?
+
+See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
+
 ## ⚠️ Action Required — Merge the Pull Request
 
 **The chatbot, ID upload section, and payment fixes are NOT yet live** because the pull request is still a **Draft** (that's why there is no merge button).
