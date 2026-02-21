@@ -83,11 +83,19 @@ const stripeBtn = document.getElementById("stripePay");
 let uploadedFile = null;
 
 // ----- File Upload Handling -----
+function resetFileInfo() {
+  const fileInfoEl = document.getElementById("fileInfo");
+  fileInfoEl.querySelector(".file-name").textContent = "No file selected";
+  fileInfoEl.querySelector(".file-size").textContent = "";
+  fileInfoEl.classList.remove("has-file");
+}
+
 idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
     uploadedFile = null;
+    resetFileInfo();
     updatePayBtn();
     return;
   }
@@ -98,6 +106,7 @@ idUpload.addEventListener("change", function(e) {
     alert("Please upload a valid ID document (JPG, PNG, or PDF)");
     e.target.value = '';
     uploadedFile = null;
+    resetFileInfo();
     updatePayBtn();
     return;
   }
@@ -108,11 +117,16 @@ idUpload.addEventListener("change", function(e) {
     alert("File size must be less than 5MB");
     e.target.value = '';
     uploadedFile = null;
+    resetFileInfo();
     updatePayBtn();
     return;
   }
 
   uploadedFile = file;
+  const fileInfoEl = document.getElementById("fileInfo");
+  fileInfoEl.querySelector(".file-name").textContent = file.name;
+  fileInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  fileInfoEl.classList.add("has-file");
   updatePayBtn();
 });
 
@@ -273,8 +287,11 @@ async function sendReservationEmail() {
 async function reserve() {
   if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
   if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
+  if(!agreeCheckbox.checked) { alert("Please agree to the Rental Agreement & Terms."); return; }
 
   const email = document.getElementById("email").value;
+  if(!email) { alert("Please enter your email address."); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Please enter a valid email address."); return; }
   const phone = document.getElementById("phone").value;
 
   try {

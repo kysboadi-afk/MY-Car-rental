@@ -7,7 +7,7 @@ const botResponses = [
   },
   {
     patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly"],
-    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $250 / week\n\nPrices include standard insurance. Need anything else?"
+    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $300 / week\n\nPrices include standard insurance. Need anything else?"
   },
   {
     patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
