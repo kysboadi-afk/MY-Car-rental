@@ -139,7 +139,7 @@ async function sendIDViaEmail() {
   try {
     // Using FormSubmit service for email delivery
     const formData = new FormData();
-    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_to', 'slyservices@supports-info.com');
     formData.append('_subject', `New Car Rental Booking - ${carData.name}`);
     formData.append('Car', carData.name);
     formData.append('Customer Email', document.getElementById("email").value);
@@ -148,7 +148,7 @@ async function sendIDViaEmail() {
     formData.append('Total Amount', '$' + totalEl.textContent);
     formData.append('ID Document', uploadedFile);
     
-    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
       method: 'POST',
       body: formData
     });
@@ -260,7 +260,7 @@ async function sendReservationEmail() {
   
   try {
     const formData = new FormData();
-    formData.append('_to', 'slyservices@support-info.com');
+    formData.append('_to', 'slyservices@supports-info.com');
     formData.append('_subject', `New Reservation (No Payment) - ${carData.name}`);
     formData.append('Reservation Type', 'Reserve Without Payment');
     formData.append('Car', carData.name);
@@ -271,7 +271,7 @@ async function sendReservationEmail() {
     formData.append('Return Time', returnTime.value || 'Not specified');
     formData.append('Total Amount', '$' + totalEl.textContent);
     
-    const response = await fetch('https://formsubmit.co/ajax/slyservices@support-info.com', {
+    const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
       method: 'POST',
       body: formData
     });

@@ -7,10 +7,10 @@
 //   SMTP_USER    — sending email address
 //   SMTP_PASS    — email password or app password
 //   OWNER_EMAIL  — business email that receives all reservation alerts
-//                  (defaults to slyservices@support-info.com)
+//                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@support-info.com";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Escape special HTML characters to prevent XSS in email templates
@@ -85,7 +85,7 @@ export default async function handler(req, res) {
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Estimated Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(total) || "TBD"}</td></tr>
           </table>
-          <p>We will contact you shortly to confirm all details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@support-info.com">slyservices@support-info.com</a>.</p>
+          <p>We will contact you shortly to confirm all details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
           <p><strong>SLY Rides Team 🚗</strong></p>
         `,
       });

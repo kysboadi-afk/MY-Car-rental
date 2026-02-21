@@ -92,7 +92,7 @@ This is the most important step. Without these, emails won't send.
 | `SMTP_PORT` | `587` (recommended) |
 | `SMTP_USER` | The email address that sends the emails (e.g. your Gmail) |
 | `SMTP_PASS` | The password for that email — **use an App Password, not your regular password** |
-| `OWNER_EMAIL` | `slyservices@support-info.com` |
+| `OWNER_EMAIL` | `slyservices@supports-info.com` |
 
 ### SMTP server values by email provider:
 
@@ -133,7 +133,7 @@ Once deployed, test by making a reservation on **[www.slytrans.com](https://www.
 
 1. Select a car, fill in dates and your email, upload an ID.
 2. Click **"Reserve Without Paying"**.
-3. Check `slyservices@support-info.com` — you should receive a reservation notification.
+3. Check `slyservices@supports-info.com` — you should receive a reservation notification.
 4. Check the customer email address — they should receive a booking confirmation.
 
 ---
