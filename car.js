@@ -79,7 +79,6 @@ const agreeCheckbox = document.getElementById("agree");
 const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
-const idUpload = document.getElementById("idUpload");
 const fileInfo = document.getElementById("fileInfo");
 
 let uploadedFile = null;
@@ -263,15 +262,7 @@ stripeBtn.addEventListener("click", async ()=>{
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
-    const wantReserve = confirm(
-      "⚠️ Online payment is temporarily unavailable.\n\n" +
-      "Would you like to Reserve Without Paying instead?\n" +
-      "We will contact you to arrange payment.\n\n" +
-      "Click OK to reserve, or Cancel to try paying again later."
-    );
-    if (wantReserve) {
-      reserve();
-    }
+    reserve();
   }
 });
 
@@ -330,13 +321,29 @@ async function reserve() {
     });
     const emailSent = res.ok;
     alert(
-      `✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\n` +
+      `✅ Reservation Confirmed!\n\n` +
+      `🚗 Car: ${carData.name}\n` +
+      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
+      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
+      `💰 Total: $${totalEl.textContent}\n` +
+      `📧 Email: ${email}\n` +
+      (phone ? `📱 Phone: ${phone}\n` : '') +
+      `\n` +
       (emailSent
         ? "A confirmation has been sent to your email. We will contact you shortly!"
         : "We will contact you shortly to confirm your reservation.")
     );
   } catch(e) {
     console.error("Reservation email notification failed:", e);
-    alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
+    alert(
+      `✅ Reservation Confirmed!\n\n` +
+      `🚗 Car: ${carData.name}\n` +
+      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
+      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
+      `💰 Total: $${totalEl.textContent}\n` +
+      `📧 Email: ${email}\n` +
+      (phone ? `📱 Phone: ${phone}\n` : '') +
+      `\nWe will contact you shortly to confirm!`
+    );
   }
 }
