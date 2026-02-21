@@ -27,7 +27,7 @@ const botResponses = [
   },
   {
     patterns: ["contact","phone","call","email","reach","support","help"],
-    reply: "You can reach us at:\n\n📧 kysboadi@gmail.com\n\nWe typically respond within a few hours. Feel free to ask!"
+    reply: "You can reach us at:\n\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
   },
   {
     patterns: ["pay","payment","stripe","credit","card","paypal"],
@@ -35,7 +35,7 @@ const botResponses = [
   },
   {
     patterns: ["location","where","pickup","pick up","pick-up","address"],
-    reply: "📍 Please contact us to confirm the pickup location:\n\n📧 kysboadi@gmail.com\n\nWe'll share the exact address after your booking is confirmed!"
+    reply: "📍 Please contact us to confirm the pickup location:\n\n📧 slyservices@supports-info.com\n\nWe'll share the exact address after your booking is confirmed!"
   },
   {
     patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
@@ -50,7 +50,7 @@ function getBotReply(input) {
       return item.reply;
     }
   }
-  return "I'm not sure about that one 🤔\n\nTry asking about:\n• Pricing\n• Available cars\n• How to book\n• Deposit\n• Contact info\n\nOr email us at kysboadi@gmail.com";
+  return "I'm not sure about that one 🤔\n\nTry asking about:\n• Pricing\n• Available cars\n• How to book\n• Deposit\n• Contact info\n\nOr email us at slyservices@supports-info.com";
 }
 
 function buildChatbot() {
