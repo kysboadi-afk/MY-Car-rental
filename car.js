@@ -5,14 +5,14 @@ const cars = {
     subtitle: "Sports • 2-Seater",
     pricePerDay: 300,
     deposit: 150,
-    images: ["images/car1.jpg","images/car2.jpg","images/car3.jpg"]
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"]
   },
   camry: {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
-    weekly: 250,
-    images: ["images/car4.jpg","images/car5.jpg"]
+    weekly: 300,
+    images: ["images/car5.jpg","images/car4.jpg"]
   }
 };
 
@@ -116,7 +116,19 @@ function updatePayBtn() {
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
-  const total = dayCount * carData.pricePerDay + (carData.deposit || 0);
+  
+  // Calculate cost with weekly rate if applicable
+  const DAYS_PER_WEEK = 7;
+  let cost = 0;
+  if (carData.weekly && dayCount >= DAYS_PER_WEEK) {
+    const weeks = Math.floor(dayCount / DAYS_PER_WEEK);
+    const remainingDays = dayCount % DAYS_PER_WEEK;
+    cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
+  } else {
+    cost = dayCount * carData.pricePerDay;
+  }
+  
+  const total = cost + (carData.deposit || 0);
   totalEl.textContent = total;
   updatePayBtn();
 }
