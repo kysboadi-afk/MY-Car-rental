@@ -196,6 +196,205 @@
   border-radius: 5px;
 }
 
+/* BOOKING PAGE */
+.back-btn {
+  background: #111;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 24px;
+  display: inline-block;
+}
+.back-btn:hover { background: #333; }
+
+.car-slider {
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  margin-bottom: 30px;
+}
+
+.slider {
+  position: relative;
+  width: 100%;
+  max-height: 340px;
+  overflow: hidden;
+}
+
+.slider img.slide {
+  width: 100%;
+  max-height: 340px;
+  object-fit: cover;
+  display: none;
+}
+.slider img.slide.active { display: block; }
+
+.slider-controls {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #f5f5f5;
+}
+.slider-controls button {
+  background: #111;
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.slider-controls button:hover { background: #333; }
+
+.slider-dots {
+  text-align: center;
+  padding: 8px 0;
+}
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: #ccc;
+  border-radius: 50%;
+  margin: 0 4px;
+  cursor: pointer;
+}
+.dot.active { background: #ffb400; }
+
+/* BOOKING FORM */
+.booking {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  max-width: 560px;
+}
+
+.booking h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #111;
+}
+
+.booking label {
+  display: block;
+  font-weight: bold;
+  font-size: 13px;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.booking input[type="date"],
+.booking input[type="time"],
+.booking input[type="email"],
+.booking input[type="tel"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.booking input:focus { border-color: #ffb400; }
+
+.booking label.agree {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+  margin-top: 20px;
+  font-size: 14px;
+}
+.booking label.agree a { color: #ffb400; }
+
+.booking .total {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 20px 0 8px;
+}
+
+.pay-hint {
+  font-size: 12px;
+  color: #e53935;
+  margin-bottom: 10px;
+}
+
+.booking #stripePay {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+.booking #stripePay:hover:not(:disabled) { background: #e0a000; }
+.booking #stripePay:disabled { background: #ccc; cursor: not-allowed; }
+
+.booking .reserve-btn {
+  width: 100%;
+  padding: 12px;
+  background: #111;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.booking .reserve-btn:hover { background: #333; }
+
+/* ID UPLOAD */
+.id-upload-section {
+  margin-top: 20px;
+  background: #fffbf0;
+  border: 1px solid #ffb400;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.id-upload-section label {
+  margin-top: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.id-upload-section .required {
+  color: #e53935;
+}
+
+.id-note {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 10px;
+}
+
+.id-accepted {
+  font-size: 11px;
+  color: #999;
+  margin-top: 6px;
+}
+
+.id-upload-section input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed #ccc;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  cursor: pointer;
+}
+
 /* FOOTER */
 footer {
   text-align: center;
@@ -439,4 +638,129 @@ footer {
   .container {
     padding: 20px;
   }
+}
+
+/* ===== CHATBOT WIDGET ===== */
+#chat-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  font-family: Arial, sans-serif;
+}
+
+#chat-toggle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ffb400;
+  border: none;
+  font-size: 26px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+#chat-toggle:hover { transform: scale(1.1); }
+
+#chat-box {
+  width: 320px;
+  height: 480px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: absolute;
+  bottom: 70px;
+  right: 0;
+}
+
+#chat-box[hidden] { display: none; }
+
+#chat-header {
+  background: #111;
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+#chat-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #f9f9f9;
+}
+
+.chat-msg {
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-msg.bot {
+  background: #fff;
+  border: 1px solid #ddd;
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-msg.user {
+  background: #ffb400;
+  color: #000;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+#chat-input-row {
+  display: flex;
+  border-top: 1px solid #eee;
+  background: #fff;
+}
+
+#chat-input {
+  flex: 1;
+  border: none;
+  padding: 12px 14px;
+  font-size: 13px;
+  outline: none;
+}
+
+#chat-send {
+  background: #ffb400;
+  border: none;
+  padding: 12px 16px;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#chat-send:hover { background: #e0a000; }
+
+@media (max-width: 400px) {
+  #chat-box { width: 290px; }
 }

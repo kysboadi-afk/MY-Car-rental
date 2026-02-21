@@ -75,12 +75,22 @@ const pickup = document.getElementById("pickup");
 const pickupTime = document.getElementById("pickupTime");
 const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
+const agreeCheckbox = document.getElementById("agree");
+const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
+
+// Block past dates — only allow today or future dates
+const todayStr = new Date().toISOString().split("T")[0];
+pickup.setAttribute("min", todayStr);
+returnDate.setAttribute("min", todayStr);
 
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
+agreeCheckbox.addEventListener("change", updatePayBtn);
+idUpload.addEventListener("change", updatePayBtn);
+
 document
   .getElementById("pickupTime")
   ?.addEventListener("change", syncReturnTime);
@@ -94,6 +104,13 @@ function syncReturnTime() {
   if (pickupTime.value) {
     returnTime.value = pickupTime.value;
   }
+}
+
+function updatePayBtn() {
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
+  stripeBtn.disabled = !ready;
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = ready ? "none" : "block";
 }
 
 function updateTotal() {
@@ -113,13 +130,16 @@ function updateTotal() {
   
   const total = cost + (carData.deposit || 0);
   totalEl.textContent = total;
-  stripeBtn.disabled = false;
+  updatePayBtn();
 }
 
 // ----- Reserve / Pay Now -----
 stripeBtn.addEventListener("click", async ()=>{
   const email = document.getElementById("email").value;
-  if(!email) { alert("Enter email"); return; }
+  if(!email) { alert("Please enter your email address."); return; }
+
+  stripeBtn.disabled = true;
+  stripeBtn.textContent = "Processing...";
 
   try {
     const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
@@ -133,13 +153,63 @@ stripeBtn.addEventListener("click", async ()=>{
         returnDate: returnDate.value
       })
     });
+
+    if (!res.ok) {
+      throw new Error("Server responded with status " + res.status);
+    }
+
     const data = await res.json();
-    if(data.url) window.location.href = data.url;
-    else alert("Stripe session failed");
-  } catch(err){ console.error(err); alert("Payment error"); }
+    if(data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error("No checkout URL returned");
+    }
+  } catch(err){
+    console.error("Stripe error:", err);
+    stripeBtn.disabled = false;
+    stripeBtn.textContent = "💳 Pay Now";
+    const wantReserve = confirm(
+      "⚠️ Online payment is temporarily unavailable.\n\n" +
+      "Would you like to Reserve Without Paying instead?\n" +
+      "We will contact you to arrange payment.\n\n" +
+      "Click OK to reserve, or Cancel to try paying again later."
+    );
+    if (wantReserve) {
+      reserve();
+    }
+  }
 });
 
 // ----- Reserve Without Pay -----
-function reserve() {
-  alert(`Reserved ${carData.name} from ${pickup.value} to ${returnDate.value}`);
+async function reserve() {
+  if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
+  if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
+
+  const email = document.getElementById("email").value;
+  const phone = document.getElementById("phone").value;
+
+  try {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        car: carData.name,
+        pickup: pickup.value,
+        returnDate: returnDate.value,
+        email: email,
+        phone: phone,
+        total: totalEl.textContent
+      })
+    });
+    const emailSent = res.ok;
+    alert(
+      `✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\n` +
+      (emailSent
+        ? "A confirmation has been sent to your email. We will contact you shortly!"
+        : "We will contact you shortly to confirm your reservation.")
+    );
+  } catch(e) {
+    console.error("Reservation email notification failed:", e);
+    alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
+  }
 }
