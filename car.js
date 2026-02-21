@@ -81,6 +81,7 @@ const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
+let currentDayCount = 1;
 
 // ----- File Upload Handling -----
 function resetFileInfo() {
@@ -194,17 +195,17 @@ function updatePayBtn() {
 
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
-  const dayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  currentDayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
   
   // Calculate cost with weekly rate if applicable
   const DAYS_PER_WEEK = 7;
   let cost = 0;
-  if (carData.weekly && dayCount >= DAYS_PER_WEEK) {
-    const weeks = Math.floor(dayCount / DAYS_PER_WEEK);
-    const remainingDays = dayCount % DAYS_PER_WEEK;
+  if (carData.weekly && currentDayCount >= DAYS_PER_WEEK) {
+    const weeks = Math.floor(currentDayCount / DAYS_PER_WEEK);
+    const remainingDays = currentDayCount % DAYS_PER_WEEK;
     cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
   } else {
-    cost = dayCount * carData.pricePerDay;
+    cost = currentDayCount * carData.pricePerDay;
   }
   
   const total = cost + (carData.deposit || 0);
@@ -301,10 +302,16 @@ async function reserve() {
       body: JSON.stringify({
         car: carData.name,
         pickup: pickup.value,
+        pickupTime: pickupTime.value || '',
         returnDate: returnDate.value,
+        returnTime: returnTime.value || '',
         email: email,
         phone: phone,
-        total: totalEl.textContent
+        total: totalEl.textContent,
+        pricePerDay: carData.pricePerDay,
+        pricePerWeek: carData.weekly || null,
+        deposit: carData.deposit || 0,
+        days: currentDayCount
       })
     });
     const emailSent = res.ok;
