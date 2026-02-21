@@ -80,6 +80,11 @@ const idUpload = document.getElementById("idUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
+// Block past dates — only allow today or future dates
+const todayStr = new Date().toISOString().split("T")[0];
+pickup.setAttribute("min", todayStr);
+returnDate.setAttribute("min", todayStr);
+
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
@@ -164,8 +169,35 @@ stripeBtn.addEventListener("click", async ()=>{
 });
 
 // ----- Reserve Without Pay -----
-function reserve() {
+async function reserve() {
   if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
   if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
-  alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
+
+  const email = document.getElementById("email").value;
+  const phone = document.getElementById("phone").value;
+
+  try {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        car: carData.name,
+        pickup: pickup.value,
+        returnDate: returnDate.value,
+        email: email,
+        phone: phone,
+        total: totalEl.textContent
+      })
+    });
+    const emailSent = res.ok;
+    alert(
+      `✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\n` +
+      (emailSent
+        ? "A confirmation has been sent to your email. We will contact you shortly!"
+        : "We will contact you shortly to confirm your reservation.")
+    );
+  } catch(e) {
+    console.error("Reservation email notification failed:", e);
+    alert(`✅ Reservation received for ${carData.name} from ${pickup.value} to ${returnDate.value}.\n\nWe will contact you shortly to confirm!`);
+  }
 }
