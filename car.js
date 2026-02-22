@@ -1,3 +1,8 @@
+// ----- API Base URL -----
+// The backend runs as a separate Vercel project; always use the absolute URL
+// so that fetch calls work correctly from the GitHub Pages frontend.
+const API_BASE = "https://slyservices-stripe-backend-ipeq.vercel.app";
+
 // ----- Car Data -----
 const cars = {
   slingshot: {
