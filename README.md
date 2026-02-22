@@ -126,4 +126,4 @@ All pull requests have been merged to `main` and the site is fully live at **www
 
 | Type | Name | Value |
 |------|------|-------|
-| CNAME | www | your-github-pages-url.github.io |
+| CNAME | www | kysboadi-afk.github.io |
