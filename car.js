@@ -1,3 +1,8 @@
+// ----- API Base URL -----
+// The backend runs as a separate Vercel project; always use the absolute URL
+// so that fetch calls work correctly from the GitHub Pages frontend.
+const API_BASE = "https://slyservices-stripe-backend-ipeq.vercel.app";
+
 // ----- Car Data -----
 const cars = {
   slingshot: {
@@ -238,7 +243,7 @@ stripeBtn.addEventListener("click", async ()=>{
   stripeBtn.textContent = "Processing...";
 
   try {
-    const res = await fetch("/api/create-checkout-session",{
+    const res = await fetch(API_BASE + "/api/create-checkout-session",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -312,7 +317,7 @@ async function reserve() {
   const phone = document.getElementById("phone").value;
 
   try {
-    const res = await fetch("/api/send-reservation-email", {
+    const res = await fetch(API_BASE + "/api/send-reservation-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
