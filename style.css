@@ -859,6 +859,63 @@ footer {
   }
 }
 
+/* ===== FLATPICKR THEME OVERRIDES ===== */
+.flatpickr-calendar {
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6) !important;
+}
+.flatpickr-months .flatpickr-month,
+.flatpickr-weekdays,
+span.flatpickr-weekday {
+  background: #111 !important;
+  color: #ffb400 !important;
+}
+.flatpickr-day {
+  color: #ddd !important;
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: #333 !important;
+  border-color: #ffb400 !important;
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: #ffb400 !important;
+  border-color: #ffb400 !important;
+  color: #000 !important;
+}
+.flatpickr-day.today {
+  border-color: #ffb400 !important;
+}
+.flatpickr-day.disabled,
+.flatpickr-day.disabled:hover {
+  color: #444 !important;
+  background: transparent !important;
+  text-decoration: line-through;
+}
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  color: #ffb400 !important;
+  fill: #ffb400 !important;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year {
+  color: #ffb400 !important;
+}
+.flatpickr-time input,
+.flatpickr-time .flatpickr-am-pm {
+  color: #fff !important;
+  background: #111 !important;
+}
+.flatpickr-time input:hover,
+.flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus,
+.flatpickr-time .flatpickr-am-pm:focus {
+  background: #222 !important;
+}
+.numInput.cur-year { color: #ffb400 !important; }
+
 /* ===== CHATBOT WIDGET ===== */
 #chat-widget {
   position: fixed;

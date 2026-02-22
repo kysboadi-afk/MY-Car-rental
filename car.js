@@ -171,41 +171,69 @@ const todayStr = new Date().toISOString().split("T")[0];
 pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
-// Pre-fill dates from URL query params (e.g. when coming from "Check Now")
-(function prefillDatesFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  const prePickup = params.get("pickup");
-  const preReturn = params.get("return");
-  if (prePickup && prePickup >= todayStr) {
-    pickup.value = prePickup;
-  }
-  if (preReturn && preReturn > (prePickup || todayStr)) {
-    returnDate.value = preReturn;
-  }
-  if (pickup.value && returnDate.value) {
-    updateTotal();
-  }
-})();
-
-[pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
-  inp.addEventListener("change", updateTotal);
-});
 agreeCheckbox.addEventListener("change", updatePayBtn);
 
-document
-  .getElementById("pickupTime")
-  ?.addEventListener("change", syncReturnTime);
+// Native change listeners as fallback (Flatpickr also fires native change events)
+[pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
+  inp.addEventListener("change", updateTotal);
+});
 
-function syncReturnTime() {
-  const pickupTime = document.getElementById("pickupTime");
-  const returnTime = document.getElementById("returnTime");
+// ----- Date Pickers (Flatpickr) -----
+async function initDatePickers() {
+  if (typeof flatpickr === "undefined") return; // fallback to native inputs
+  let bookedRanges = [];
+  try {
+    const resp = await fetch("booked-dates.json");
+    if (resp.ok) {
+      const data = await resp.json();
+      bookedRanges = data[vehicleId] || [];
+    }
+  } catch (e) { console.error("Failed to load booked-dates.json:", e); }
 
-  if (!pickupTime || !returnTime) return;
-
-  if (pickupTime.value) {
-    returnTime.value = pickupTime.value;
+  function isBooked(date) {
+    return bookedRanges.some(function(r) {
+      const from = new Date(r.from + "T00:00:00");
+      const to = new Date(r.to + "T23:59:59");
+      return date >= from && date <= to;
+    });
   }
+
+  const pickupPicker = flatpickr(pickup, {
+    minDate: "today",
+    disable: [isBooked],
+    onChange: function(selectedDates) {
+      if (selectedDates[0]) {
+        returnPicker.set("minDate", selectedDates[0]);
+      }
+      updateTotal();
+    }
+  });
+
+  const returnPicker = flatpickr(returnDate, {
+    minDate: "today",
+    disable: [isBooked],
+    onChange: function() { updateTotal(); }
+  });
+
+  let returnTimePicker;
+
+  flatpickr(pickupTime, {
+    enableTime: true,
+    noCalendar: true,
+    dateFormat: "h:i K",
+    onChange: function(_, timeStr) {
+      if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
+    }
+  });
+
+  returnTimePicker = flatpickr(returnTime, {
+    enableTime: true,
+    noCalendar: true,
+    dateFormat: "h:i K"
+  });
 }
+
+initDatePickers();
 
 function updatePayBtn() {
   const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
@@ -243,7 +271,7 @@ stripeBtn.addEventListener("click", async ()=>{
   stripeBtn.textContent = "Processing...";
 
   try {
-    const res = await fetch(API_BASE + "/api/create-checkout-session",{
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -317,7 +345,7 @@ async function reserve() {
   const phone = document.getElementById("phone").value;
 
   try {
-    const res = await fetch(API_BASE + "/api/send-reservation-email", {
+    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
