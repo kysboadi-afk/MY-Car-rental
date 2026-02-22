@@ -172,6 +172,7 @@ pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
 agreeCheckbox.addEventListener("change", updatePayBtn);
+document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // Native change listeners as fallback (Flatpickr also fires native change events)
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
@@ -236,7 +237,8 @@ async function initDatePickers() {
 initDatePickers();
 
 function updatePayBtn() {
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
+  const emailVal = document.getElementById("email").value.trim();
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
