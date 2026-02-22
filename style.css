@@ -6,7 +6,7 @@
 }
 
 body {
-  background: #111;
+  background: #000;
   color: #fff;
 }
 
@@ -15,6 +15,7 @@ body {
   text-align: center;
   padding: 20px;
   background: #000;
+  border-bottom: 2px solid #ffb400;
 }
 
 .site-logo {
@@ -57,8 +58,9 @@ body {
 
 /* STATS SECTION */
 .stats {
-  background: #f8f9fa;
+  background: #0d0d0d;
   padding: 60px 20px;
+  border-top: 1px solid #2a2a2a;
 }
 
 .stats-container {
@@ -70,17 +72,19 @@ body {
 }
 
 .stat-card {
-  background: #fff;
+  background: #1a1a1a;
   padding: 40px 20px;
   text-align: center;
   border-radius: 10px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .stat-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
+  border-color: #ffb400;
 }
 
 .stat-number {
@@ -93,7 +97,7 @@ body {
 
 .stat-label {
   font-size: 16px;
-  color: #666;
+  color: #aaa;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -101,8 +105,9 @@ body {
 
 /* ABOUT SECTION */
 .about {
-  background: #fff;
+  background: #000;
   padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
 }
 
 .about-container {
@@ -114,7 +119,7 @@ body {
   text-align: center;
   font-size: 36px;
   margin-bottom: 40px;
-  color: #333;
+  color: #ffb400;
   font-weight: bold;
 }
 
@@ -126,29 +131,30 @@ body {
 
 .about-text,
 .about-values {
-  background: #f8f9fa;
+  background: #1a1a1a;
   padding: 30px;
   border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .about-text p,
 .about-values p {
   font-size: 16px;
   line-height: 1.8;
-  color: #555;
+  color: #ccc;
   margin: 0;
 }
 
 .about-values h3 {
   font-size: 24px;
-  color: #333;
+  color: #ffb400;
   margin-bottom: 15px;
   font-weight: 600;
 }
 
 .about-values {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: #1a1a1a;
   border-left: 4px solid #ffb400;
 }
 
@@ -165,10 +171,11 @@ body {
 }
 
 .car-card {
-  background: #f5f5f5;
+  background: #1a1a1a;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.4);
 }
 
 .car-card img {
@@ -180,48 +187,57 @@ body {
 
 .car-info {
   padding: 20px;
-  background: #fff;
+  background: #1a1a1a;
 }
 
 .car-subtitle {
-  color: #777;
+  color: #aaa;
   font-size: 14px;
 }
 
 .price {
   font-weight: bold;
   margin: 10px 0;
+  color: #ffb400;
 }
 
 .car-info button {
   width: 100%;
   padding: 10px;
-  background: #000;
-  color: #fff;
+  background: #ffb400;
+  color: #000;
   border: none;
   cursor: pointer;
   border-radius: 5px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+
+.car-info button:hover {
+  background: #e0a000;
 }
 
 /* BOOKING PAGE */
 .back-btn {
-  background: #111;
-  color: #fff;
-  border: none;
+  background: #000;
+  color: #ffb400;
+  border: 1px solid #ffb400;
   padding: 10px 20px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
   margin-bottom: 24px;
   display: inline-block;
+  transition: background 0.2s, color 0.2s;
 }
-.back-btn:hover { background: #333; }
+.back-btn:hover { background: #ffb400; color: #000; }
 
 .car-slider {
-  background: #fff;
+  background: #1a1a1a;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   margin-bottom: 30px;
 }
 
@@ -275,17 +291,18 @@ body {
 
 /* BOOKING FORM */
 .booking {
-  background: #fff;
+  background: #1a1a1a;
   border-radius: 12px;
   padding: 32px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   max-width: 560px;
 }
 
 .booking h2 {
   font-size: 24px;
   margin-bottom: 20px;
-  color: #111;
+  color: #ffb400;
 }
 
 .booking label {
@@ -294,7 +311,7 @@ body {
   font-size: 13px;
   margin-top: 16px;
   margin-bottom: 6px;
-  color: #333;
+  color: #ddd;
 }
 
 .booking input[type="date"],
@@ -303,11 +320,13 @@ body {
 .booking input[type="tel"] {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid #333;
   border-radius: 8px;
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
+  background: #111;
+  color: #fff;
 }
 .booking input:focus { border-color: #ffb400; }
 
@@ -325,6 +344,7 @@ body {
   font-size: 20px;
   font-weight: bold;
   margin: 20px 0 8px;
+  color: #ffb400;
 }
 
 .pay-hint {
@@ -347,25 +367,25 @@ body {
   margin-bottom: 10px;
 }
 .booking #stripePay:hover:not(:disabled) { background: #e0a000; }
-.booking #stripePay:disabled { background: #ccc; cursor: not-allowed; }
+.booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
 
 .booking .reserve-btn {
   width: 100%;
   padding: 12px;
-  background: #111;
-  color: #fff;
-  border: none;
+  background: #000;
+  color: #ffb400;
+  border: 2px solid #ffb400;
   border-radius: 8px;
   font-size: 15px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
-.booking .reserve-btn:hover { background: #333; }
+.booking .reserve-btn:hover { background: #ffb400; color: #000; }
 
 /* ID UPLOAD */
 .id-upload-section {
   margin-top: 20px;
-  background: #fffbf0;
+  background: #111;
   border: 1px solid #ffb400;
   border-radius: 10px;
   padding: 16px;
@@ -374,7 +394,7 @@ body {
 .id-upload-section label {
   margin-top: 0;
   font-size: 14px;
-  color: #333;
+  color: #ddd;
 }
 
 .id-upload-section .required {
@@ -383,22 +403,22 @@ body {
 
 .id-note {
   font-size: 12px;
-  color: #666;
+  color: #aaa;
   margin-bottom: 10px;
 }
 
 .id-accepted {
   font-size: 11px;
-  color: #999;
+  color: #888;
   margin-top: 6px;
 }
 
 #fileInfo {
   margin-top: 8px;
   font-size: 12px;
-  color: #666;
+  color: #aaa;
   padding: 6px 8px;
-  background: #f5f5f5;
+  background: #222;
   border-radius: 6px;
   display: flex;
   gap: 8px;
@@ -406,12 +426,12 @@ body {
 }
 
 #fileInfo.has-file {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: #1a2e1a;
+  color: #66bb6a;
 }
 
 #fileInfo .file-size {
-  color: #999;
+  color: #888;
   font-size: 11px;
 }
 
@@ -422,10 +442,11 @@ body {
 .id-upload-section input[type="file"] {
   width: 100%;
   padding: 8px;
-  border: 1px dashed #ccc;
+  border: 1px dashed #444;
   border-radius: 8px;
   font-size: 13px;
-  background: #fff;
+  background: #1a1a1a;
+  color: #ccc;
   cursor: pointer;
 }
 
@@ -433,8 +454,9 @@ body {
 footer {
   text-align: center;
   padding: 20px;
-  background: #111;
-  color: #fff;
+  background: #000;
+  color: #aaa;
+  border-top: 2px solid #ffb400;
   margin-top: 40px;
 }
 
@@ -515,12 +537,12 @@ footer {
 }
 
 .slider-dots .dot.active {
-  background: #000;
+  background: #ffb400;
 }
 
-/* BOOKING FORM */
+/* BOOKING FORM (duplicate block) */
 .booking {
-  background: #f9f9f9;
+  background: #1a1a1a;
   padding: 30px;
   border-radius: 10px;
   max-width: 600px;
@@ -544,9 +566,11 @@ footer {
   width: 100%;
   padding: 10px;
   margin-bottom: 15px;
-  border: 1px solid #ddd;
+  border: 1px solid #333;
   border-radius: 5px;
   font-size: 14px;
+  background: #111;
+  color: #fff;
 }
 
 .booking label.agree {
@@ -579,14 +603,14 @@ footer {
 }
 
 .booking button:first-of-type {
-  background: #000;
-  color: #fff;
+  background: #ffb400;
+  color: #000;
 }
 
 .booking button:last-of-type {
-  background: #fff;
-  color: #000;
-  border: 2px solid #000;
+  background: #000;
+  color: #ffb400;
+  border: 2px solid #ffb400;
 }
 
 .booking button:hover {
@@ -594,15 +618,16 @@ footer {
 }
 
 .booking button:disabled {
-  background: #ccc;
+  background: #333;
+  color: #666;
   cursor: not-allowed;
 }
 
 #backBtn {
   background: #000;
-  color: #fff;
+  color: #ffb400;
+  border: 1px solid #ffb400;
   padding: 10px 20px;
-  border: none;
   border-radius: 5px;
   cursor: pointer;
   margin-bottom: 20px;
@@ -610,7 +635,8 @@ footer {
 }
 
 #backBtn:hover {
-  background: #333;
+  background: #ffb400;
+  color: #000;
 }
 
 /* MOBILE */
@@ -705,9 +731,10 @@ footer {
 #chat-box {
   width: 320px;
   height: 480px;
-  background: #fff;
+  background: #1a1a1a;
   border-radius: 14px;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+  border: 1px solid #333;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -745,7 +772,7 @@ footer {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #f9f9f9;
+  background: #111;
 }
 
 .chat-msg {
@@ -759,8 +786,9 @@ footer {
 }
 
 .chat-msg.bot {
-  background: #fff;
-  border: 1px solid #ddd;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #ddd;
   align-self: flex-start;
   border-bottom-left-radius: 4px;
 }
@@ -774,8 +802,8 @@ footer {
 
 #chat-input-row {
   display: flex;
-  border-top: 1px solid #eee;
-  background: #fff;
+  border-top: 1px solid #333;
+  background: #111;
 }
 
 #chat-input {
@@ -784,6 +812,8 @@ footer {
   padding: 12px 14px;
   font-size: 13px;
   outline: none;
+  background: #111;
+  color: #fff;
 }
 
 #chat-send {
@@ -813,19 +843,20 @@ footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #635BFF;
-  color: white;
+  background: #000;
+  color: #ffb400;
+  border: 2px solid #ffb400;
   padding: 12px 20px;
   border-radius: 50px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
   transition: transform 0.2s, box-shadow 0.2s;
   font-weight: bold;
 }
 
 .chatbot-button:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+  box-shadow: 0 6px 16px rgba(255,180,0,0.3);
 }
 
 .chat-icon {
@@ -837,19 +868,21 @@ footer {
   flex-direction: column;
   width: 350px;
   height: 500px;
-  background: white;
+  background: #1a1a1a;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  border: 1px solid #333;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   overflow: hidden;
 }
 
 .chatbot-header {
-  background: #635BFF;
-  color: white;
+  background: #000;
+  color: #ffb400;
   padding: 15px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 2px solid #ffb400;
 }
 
 .chatbot-header h3 {
@@ -860,7 +893,7 @@ footer {
 .chatbot-close {
   background: none;
   border: none;
-  color: white;
+  color: #ffb400;
   font-size: 28px;
   cursor: pointer;
   padding: 0;
@@ -874,14 +907,14 @@ footer {
 }
 
 .chatbot-close:hover {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255, 180, 0, 0.15);
 }
 
 .chatbot-messages {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  background: #f5f5f5;
+  background: #111;
 }
 
 .bot-message,
@@ -896,43 +929,45 @@ footer {
 }
 
 .bot-message {
-  background: white;
-  color: #333;
-  border: 1px solid #e0e0e0;
+  background: #1a1a1a;
+  color: #ddd;
+  border: 1px solid #333;
   margin-right: auto;
 }
 
 .user-message {
-  background: #635BFF;
-  color: white;
+  background: #ffb400;
+  color: #000;
   margin-left: auto;
 }
 
 .chatbot-input-area {
   display: flex;
   padding: 15px;
-  background: white;
-  border-top: 1px solid #e0e0e0;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
 }
 
 .chatbot-input-area input {
   flex: 1;
   padding: 10px 15px;
-  border: 1px solid #ddd;
+  border: 1px solid #333;
   border-radius: 20px;
   font-size: 14px;
   outline: none;
+  background: #111;
+  color: #fff;
 }
 
 .chatbot-input-area input:focus {
-  border-color: #635BFF;
+  border-color: #ffb400;
 }
 
 .chatbot-input-area button {
   margin-left: 10px;
   padding: 10px 20px;
-  background: #635BFF;
-  color: white;
+  background: #ffb400;
+  color: #000;
   border: none;
   border-radius: 20px;
   cursor: pointer;
@@ -942,7 +977,7 @@ footer {
 }
 
 .chatbot-input-area button:hover {
-  background: #5349d9;
+  background: #e0a000;
 }
 
 @media (max-width: 600px) {
