@@ -93,7 +93,9 @@ See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
 
 ## ✅ All Updates Deployed
 
-All pull requests have been merged to `main` and the site is fully live at **www.slytrans.com**.
+All pull requests have been merged to `main`. The site deploys automatically from `main` via GitHub Actions on every push.
+
+> **⚠️ One-time setup required:** Go to **Settings → Pages → Source** and select **"GitHub Actions"** (instead of a branch). This ensures the site always deploys from `main` with the latest changes.
 
 ---
 
