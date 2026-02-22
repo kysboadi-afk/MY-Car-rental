@@ -12,14 +12,34 @@ body {
 
 /* HEADER */
 .site-header {
-  text-align: center;
-  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 40px;
   background: #000;
   border-bottom: 2px solid #ffb400;
 }
 
 .site-logo {
   height: 80px;
+}
+
+.site-nav {
+  display: flex;
+  gap: 30px;
+}
+
+.site-nav a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: color 0.2s;
+}
+
+.site-nav a:hover {
+  color: #ffb400;
 }
 
 /* HERO */
@@ -101,6 +121,65 @@ body {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+/* HOW IT WORKS */
+.how-it-works {
+  background: #0d0d0d;
+  padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.hiw-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.how-it-works h2 {
+  text-align: center;
+  font-size: 36px;
+  margin-bottom: 50px;
+  color: #ffb400;
+  font-weight: bold;
+}
+
+.hiw-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.hiw-step {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 36px 24px;
+  text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hiw-step:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
+  border-color: #ffb400;
+}
+
+.hiw-icon {
+  font-size: 42px;
+  margin-bottom: 16px;
+}
+
+.hiw-step h3 {
+  font-size: 18px;
+  color: #fff;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.hiw-step p {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1.7;
 }
 
 /* ABOUT SECTION */
@@ -641,10 +720,34 @@ footer {
 
 /* MOBILE */
 @media (max-width: 600px) {
+  .site-header {
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 20px;
+  }
+
+  .site-nav {
+    gap: 20px;
+  }
+
+  .site-nav a {
+    font-size: 14px;
+  }
+
   .hero-content h1 {
     font-size: 28px;
   }
   
+  .hiw-steps {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .how-it-works h2 {
+    font-size: 28px;
+    margin-bottom: 30px;
+  }
+
   .stats-container {
     grid-template-columns: repeat(2, 1fr);
     gap: 20px;
