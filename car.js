@@ -348,8 +348,12 @@ async function reserve() {
   const phone = document.getElementById("phone").value;
 
   // Always send the ID document — the JSON API cannot carry file uploads
-  await sendIDViaEmail();
+  const idSent = await sendIDViaEmail();
+  if (!idSent) {
+    console.error("ID document could not be delivered via email");
+  }
 
+  let notified = false;
   try {
     const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
       method: "POST",
@@ -370,34 +374,28 @@ async function reserve() {
       })
     });
 
+    notified = res.ok;
     // If the SMTP API failed, fall back to formsubmit.co so notifications still reach owner + customer
     if (!res.ok) {
-      await sendReservationEmail();
+      notified = await sendReservationEmail();
     }
-
-    alert(
-      `✅ Reservation Confirmed!\n\n` +
-      `🚗 Car: ${carData.name}\n` +
-      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
-      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
-      `💰 Total: $${totalEl.textContent}\n` +
-      `📧 Email: ${email}\n` +
-      (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\nA confirmation has been sent to your email. We will contact you shortly!`
-    );
   } catch(e) {
     console.error("Reservation email notification failed:", e);
     // SMTP API unavailable — use formsubmit.co so owner + customer are still notified
-    await sendReservationEmail();
-    alert(
-      `✅ Reservation Confirmed!\n\n` +
-      `🚗 Car: ${carData.name}\n` +
-      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
-      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
-      `💰 Total: $${totalEl.textContent}\n` +
-      `📧 Email: ${email}\n` +
-      (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\nA confirmation has been sent to your email. We will contact you shortly!`
-    );
+    notified = await sendReservationEmail();
   }
+
+  alert(
+    `✅ Reservation Confirmed!\n\n` +
+    `🚗 Car: ${carData.name}\n` +
+    `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
+    `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
+    `💰 Total: $${totalEl.textContent}\n` +
+    `📧 Email: ${email}\n` +
+    (phone ? `📱 Phone: ${phone}\n` : '') +
+    `\n` +
+    (notified
+      ? "A confirmation has been sent to your email. We will contact you shortly!"
+      : "We will contact you shortly to confirm your reservation.")
+  );
 }

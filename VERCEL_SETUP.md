@@ -93,6 +93,11 @@ This is the most important step. Without these, emails won't send.
 | `SMTP_USER` | The email address that sends the emails (e.g. your Gmail) |
 | `SMTP_PASS` | The password for that email — **use an App Password, not your regular password** |
 | `OWNER_EMAIL` | `slyservices@supports-info.com` |
+| `TWILIO_ACCOUNT_SID` | Your Twilio Account SID — found at [twilio.com/console](https://www.twilio.com/console) |
+| `TWILIO_AUTH_TOKEN` | Your Twilio Auth Token — found at [twilio.com/console](https://www.twilio.com/console) |
+| `TWILIO_FROM_NUMBER` | Your Twilio phone number in E.164 format, e.g. `+12135551234` |
+
+> **Note:** The three `TWILIO_*` variables are optional. If they are not set, SMS messages are silently skipped and everything else (emails, Stripe) continues to work normally.
 
 ### SMTP server values by email provider:
 
@@ -142,7 +147,8 @@ Once deployed, test by making a reservation on **[www.slytrans.com](https://www.
 
 | Problem | Fix |
 |---------|-----|
-| No email received | Check that all 5 env vars are set correctly in Vercel and redeploy |
+| No email received | Check that all 5 SMTP env vars are set correctly in Vercel and redeploy |
+| No SMS received | Check that `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` are set; make sure the customer entered a phone number; check Vercel function logs |
 | Gmail "authentication failed" | Make sure you're using an App Password (Step 4), not your regular Gmail password |
 | "Email sending failed" error in browser console | Check Vercel function logs: Dashboard → Deployments → latest deploy → **Functions** tab |
 | CORS error in browser | Make sure the deployed URL matches `https://slyservices-stripe-backend-ipeq.vercel.app` |
@@ -162,3 +168,4 @@ Your Vercel Backend Project
 
 Environment variables to add in Vercel:
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` *(optional — enables SMS confirmations)*

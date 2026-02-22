@@ -1,13 +1,16 @@
 // api/send-reservation-email.js
-// Vercel serverless function — sends reservation emails via SMTP
+// Vercel serverless function — sends reservation emails via SMTP and SMS via Twilio
 //
 // Required environment variables (set in Vercel dashboard):
-//   SMTP_HOST    — SMTP server hostname  (e.g. smtp.gmail.com)
-//   SMTP_PORT    — SMTP port             (587 for TLS, 465 for SSL)
-//   SMTP_USER    — sending email address
-//   SMTP_PASS    — email password or app password
-//   OWNER_EMAIL  — business email that receives all reservation alerts
-//                  (defaults to slyservices@supports-info.com)
+//   SMTP_HOST           — SMTP server hostname  (e.g. smtp.gmail.com)
+//   SMTP_PORT           — SMTP port             (587 for TLS, 465 for SSL)
+//   SMTP_USER           — sending email address
+//   SMTP_PASS           — email password or app password
+//   OWNER_EMAIL         — business email that receives all reservation alerts
+//                         (defaults to slyservices@supports-info.com)
+//   TWILIO_ACCOUNT_SID  — Twilio Account SID (found at twilio.com/console)
+//   TWILIO_AUTH_TOKEN   — Twilio Auth Token   (found at twilio.com/console)
+//   TWILIO_FROM_NUMBER  — Twilio phone number in E.164 format (e.g. +12135551234)
 import nodemailer from "nodemailer";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -22,6 +25,33 @@ function esc(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Send an SMS via the Twilio REST API (no npm package required — uses native fetch).
+// Silently skips if Twilio env vars are not configured or if `to` is empty.
+async function sendSMS(to, body) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_FROM_NUMBER;
+  if (!accountSid || !authToken || !fromNumber || !to) return;
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const credentials = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+  const params = new URLSearchParams({ To: to, From: fromNumber, Body: body });
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${credentials}`,
+      "Content-Type":  "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(`Twilio ${resp.status}: ${err.message || "Unknown error"}`);
+  }
 }
 
 const transporter = nodemailer.createTransport({
@@ -93,6 +123,22 @@ export default async function handler(req, res) {
           <p><strong>SLY Rides Team 🚗</strong></p>
         `,
       });
+    }
+
+    // --- SMS confirmation to customer ---
+    if (phone) {
+      try {
+        const smsBody =
+          `SLY Rides Booking Confirmed!\n` +
+          `Car: ${car}\n` +
+          `Pickup: ${pickup}${pickupTime ? " at " + pickupTime : ""}\n` +
+          `Return: ${returnDate}${returnTime ? " at " + returnTime : ""}\n` +
+          `Total: $${total}\n` +
+          `Questions? Reply or email slyservices@supports-info.com`;
+        await sendSMS(phone, smsBody);
+      } catch (smsErr) {
+        console.error("SMS notification failed:", smsErr);
+      }
     }
 
     res.status(200).json({ success: true });
