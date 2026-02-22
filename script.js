@@ -138,7 +138,7 @@ async function reserve() {
 
   // Send reservation email to owner and customer confirmation
   try {
-    const response = await fetch('https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email', {
+    const response = await fetch('/api/send-reservation-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -270,7 +270,7 @@ stripePayButton.addEventListener("click", async () => {
 
   try {
     const res = await fetch(
-      "https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",
+      "/api/create-checkout-session",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
