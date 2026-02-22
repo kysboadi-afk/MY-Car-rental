@@ -108,6 +108,23 @@ This is the most important step. Without these, emails won't send.
 | Yahoo Mail | `smtp.mail.yahoo.com` | `587` |
 | iCloud Mail | `smtp.mail.me.com` | `587` |
 
+### 📌 How to set up Twilio for SMS (required for SMS confirmations):
+
+**Yes, you need a free Twilio account.** Sign up takes about 2 minutes and no credit card is required to start.
+
+1. Go to **[https://www.twilio.com/try-twilio](https://www.twilio.com/try-twilio)** and create a free account.
+2. Verify your email address and your own phone number when prompted (Twilio sends a verification code).
+3. Once logged in, go to your **Console** at **[https://console.twilio.com](https://console.twilio.com)**.
+4. On the Console homepage you will see your **Account SID** and **Auth Token** — copy these into Vercel as `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
+5. Get a free Twilio phone number to send SMS from:
+   - In the Console, go to **Phone Numbers → Manage → Buy a number** (it's free on a trial account).
+   - Choose a US number, make sure **SMS** capability is checked, and click **Buy**.
+   - Copy the number in E.164 format (e.g. `+12135551234`) into Vercel as `TWILIO_FROM_NUMBER`.
+
+> **Trial account note:** With a free Twilio trial account, SMS can only be sent to phone numbers you have **verified** in the Twilio console. To send to any customer number, upgrade to a paid account (starts at ~$15/month for the number + ~$0.0079 per SMS). You can upgrade at any time from the Twilio Console.
+
+---
+
 ### 📌 How to get a Gmail App Password (required if using Gmail):
 
 Gmail blocks regular passwords for apps. You need an **App Password**:
