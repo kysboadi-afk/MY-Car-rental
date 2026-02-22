@@ -142,7 +142,7 @@ Once deployed, test by making a reservation on **[www.slytrans.com](https://www.
 
 | Problem | Fix |
 |---------|-----|
-| No email received | Check that all 5 env vars are set correctly in Vercel and redeploy |
+| No email received | Check that all 5 SMTP env vars are set correctly in Vercel and redeploy |
 | Gmail "authentication failed" | Make sure you're using an App Password (Step 4), not your regular Gmail password |
 | "Email sending failed" error in browser console | Check Vercel function logs: Dashboard → Deployments → latest deploy → **Functions** tab |
 | CORS error in browser | Make sure the deployed URL matches `https://slyservices-stripe-backend-ipeq.vercel.app` |

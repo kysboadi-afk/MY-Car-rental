@@ -172,6 +172,7 @@ pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
 agreeCheckbox.addEventListener("change", updatePayBtn);
+document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // Native change listeners as fallback (Flatpickr also fires native change events)
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
@@ -236,7 +237,8 @@ async function initDatePickers() {
 initDatePickers();
 
 function updatePayBtn() {
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0;
+  const emailVal = document.getElementById("email").value.trim();
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -320,6 +322,7 @@ async function sendReservationEmail() {
     formData.append('Return Date', returnDate.value);
     formData.append('Return Time', returnTime.value || 'Not specified');
     formData.append('Total Amount', '$' + totalEl.textContent);
+    formData.append('_cc', email);
     
     const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
       method: 'POST',
@@ -344,6 +347,13 @@ async function reserve() {
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Please enter a valid email address."); return; }
   const phone = document.getElementById("phone").value;
 
+  // Always send the ID document — the JSON API cannot carry file uploads
+  const idSent = await sendIDViaEmail();
+  if (!idSent) {
+    console.error("ID document could not be delivered via email");
+  }
+
+  let notified = false;
   try {
     const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
       method: "POST",
@@ -363,31 +373,29 @@ async function reserve() {
         days: currentDayCount
       })
     });
-    const emailSent = res.ok;
-    alert(
-      `✅ Reservation Confirmed!\n\n` +
-      `🚗 Car: ${carData.name}\n` +
-      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
-      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
-      `💰 Total: $${totalEl.textContent}\n` +
-      `📧 Email: ${email}\n` +
-      (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\n` +
-      (emailSent
-        ? "A confirmation has been sent to your email. We will contact you shortly!"
-        : "We will contact you shortly to confirm your reservation.")
-    );
+
+    notified = res.ok;
+    // If the SMTP API failed, fall back to formsubmit.co so notifications still reach owner + customer
+    if (!res.ok) {
+      notified = await sendReservationEmail();
+    }
   } catch(e) {
     console.error("Reservation email notification failed:", e);
-    alert(
-      `✅ Reservation Confirmed!\n\n` +
-      `🚗 Car: ${carData.name}\n` +
-      `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
-      `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
-      `💰 Total: $${totalEl.textContent}\n` +
-      `📧 Email: ${email}\n` +
-      (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\nWe will contact you shortly to confirm!`
-    );
+    // SMTP API unavailable — use formsubmit.co so owner + customer are still notified
+    notified = await sendReservationEmail();
   }
+
+  alert(
+    `✅ Reservation Confirmed!\n\n` +
+    `🚗 Car: ${carData.name}\n` +
+    `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
+    `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
+    `💰 Total: $${totalEl.textContent}\n` +
+    `📧 Email: ${email}\n` +
+    (phone ? `📱 Phone: ${phone}\n` : '') +
+    `\n` +
+    (notified
+      ? "A confirmation has been sent to your email. We will contact you shortly!"
+      : "We will contact you shortly to confirm your reservation.")
+  );
 }
