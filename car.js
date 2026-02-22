@@ -322,6 +322,7 @@ async function sendReservationEmail() {
     formData.append('Return Date', returnDate.value);
     formData.append('Return Time', returnTime.value || 'Not specified');
     formData.append('Total Amount', '$' + totalEl.textContent);
+    formData.append('_cc', email);
     
     const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
       method: 'POST',
@@ -346,6 +347,9 @@ async function reserve() {
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Please enter a valid email address."); return; }
   const phone = document.getElementById("phone").value;
 
+  // Always send the ID document — the JSON API cannot carry file uploads
+  await sendIDViaEmail();
+
   try {
     const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
       method: "POST",
@@ -365,7 +369,12 @@ async function reserve() {
         days: currentDayCount
       })
     });
-    const emailSent = res.ok;
+
+    // If the SMTP API failed, fall back to formsubmit.co so notifications still reach owner + customer
+    if (!res.ok) {
+      await sendReservationEmail();
+    }
+
     alert(
       `✅ Reservation Confirmed!\n\n` +
       `🚗 Car: ${carData.name}\n` +
@@ -374,13 +383,12 @@ async function reserve() {
       `💰 Total: $${totalEl.textContent}\n` +
       `📧 Email: ${email}\n` +
       (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\n` +
-      (emailSent
-        ? "A confirmation has been sent to your email. We will contact you shortly!"
-        : "We will contact you shortly to confirm your reservation.")
+      `\nA confirmation has been sent to your email. We will contact you shortly!`
     );
   } catch(e) {
     console.error("Reservation email notification failed:", e);
+    // SMTP API unavailable — use formsubmit.co so owner + customer are still notified
+    await sendReservationEmail();
     alert(
       `✅ Reservation Confirmed!\n\n` +
       `🚗 Car: ${carData.name}\n` +
@@ -389,7 +397,7 @@ async function reserve() {
       `💰 Total: $${totalEl.textContent}\n` +
       `📧 Email: ${email}\n` +
       (phone ? `📱 Phone: ${phone}\n` : '') +
-      `\nWe will contact you shortly to confirm!`
+      `\nA confirmation has been sent to your email. We will contact you shortly!`
     );
   }
 }
