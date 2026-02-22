@@ -106,8 +106,15 @@
         <h3>Slingshot R</h3>
         <p class="car-subtitle">Sports • 2-Seater</p>
         <p class="price">$300 / day • $150 deposit</p>
+        <div class="check-availability">
+          <div class="check-dates">
+            <input type="date" class="check-pickup" placeholder="Pickup date" aria-label="Pickup date">
+            <input type="date" class="check-return" placeholder="Return date" aria-label="Return date">
+          </div>
+          <button class="check-now-btn" onclick="checkNow('slingshot', this)">Check Now</button>
+        </div>
         <a href="car.html?vehicle=slingshot">
-          <button>Select</button>
+          <button class="select-btn">Select</button>
         </a>
       </div>
     </div>
@@ -119,8 +126,15 @@
         <h3>Camry 2012</h3>
         <p class="car-subtitle">Sedan • 5-Seater</p>
         <p class="price">$50 / day • $300 weekly</p>
+        <div class="check-availability">
+          <div class="check-dates">
+            <input type="date" class="check-pickup" placeholder="Pickup date" aria-label="Pickup date">
+            <input type="date" class="check-return" placeholder="Return date" aria-label="Return date">
+          </div>
+          <button class="check-now-btn" onclick="checkNow('camry', this)">Check Now</button>
+        </div>
         <a href="car.html?vehicle=camry">
-          <button>Select</button>
+          <button class="select-btn">Select</button>
         </a>
       </div>
     </div>
@@ -133,6 +147,25 @@
   &copy; 2026 SLY Rides. All rights reserved.
 </footer>
 
+<script>
+  // Set minimum date to today for all check-now date inputs
+  const todayISO = new Date().toISOString().split('T')[0];
+  document.querySelectorAll('.check-pickup, .check-return').forEach(function(el) {
+    el.setAttribute('min', todayISO);
+  });
+
+  function checkNow(vehicle, btn) {
+    const card = btn.closest('.car-card');
+    const pickup = card.querySelector('.check-pickup').value;
+    const returnDate = card.querySelector('.check-return').value;
+
+    if (!pickup) { alert('Please select a pickup date.'); return; }
+    if (!returnDate) { alert('Please select a return date.'); return; }
+    if (returnDate <= pickup) { alert('Return date must be after pickup date.'); return; }
+
+    window.location.href = 'car.html?vehicle=' + vehicle + '&pickup=' + encodeURIComponent(pickup) + '&return=' + encodeURIComponent(returnDate);
+  }
+</script>
 <script src="chatbot.js"></script>
 </body>
 </html>

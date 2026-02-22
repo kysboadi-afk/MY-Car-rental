@@ -166,6 +166,22 @@ const todayStr = new Date().toISOString().split("T")[0];
 pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
+// Pre-fill dates from URL query params (e.g. when coming from "Check Now")
+(function prefillDatesFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const prePickup = params.get("pickup");
+  const preReturn = params.get("return");
+  if (prePickup && prePickup >= todayStr) {
+    pickup.value = prePickup;
+  }
+  if (preReturn && preReturn > (prePickup || todayStr)) {
+    returnDate.value = preReturn;
+  }
+  if (pickup.value && returnDate.value) {
+    updateTotal();
+  }
+})();
+
 [pickup, pickupTime, returnDate, returnTime].forEach(inp=>{
   inp.addEventListener("change", updateTotal);
 });
