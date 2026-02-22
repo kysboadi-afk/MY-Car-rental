@@ -93,11 +93,6 @@ This is the most important step. Without these, emails won't send.
 | `SMTP_USER` | The email address that sends the emails (e.g. your Gmail) |
 | `SMTP_PASS` | The password for that email — **use an App Password, not your regular password** |
 | `OWNER_EMAIL` | `slyservices@supports-info.com` |
-| `TWILIO_ACCOUNT_SID` | Your Twilio Account SID — found at [twilio.com/console](https://www.twilio.com/console) |
-| `TWILIO_AUTH_TOKEN` | Your Twilio Auth Token — found at [twilio.com/console](https://www.twilio.com/console) |
-| `TWILIO_FROM_NUMBER` | Your Twilio phone number in E.164 format, e.g. `+12135551234` |
-
-> **Note:** The three `TWILIO_*` variables are optional. If they are not set, SMS messages are silently skipped and everything else (emails, Stripe) continues to work normally.
 
 ### SMTP server values by email provider:
 
@@ -107,23 +102,6 @@ This is the most important step. Without these, emails won't send.
 | Outlook / Hotmail | `smtp.office365.com` | `587` |
 | Yahoo Mail | `smtp.mail.yahoo.com` | `587` |
 | iCloud Mail | `smtp.mail.me.com` | `587` |
-
-### 📌 How to set up Twilio for SMS (required for SMS confirmations):
-
-**Yes, you need a free Twilio account.** Sign up takes about 2 minutes and no credit card is required to start.
-
-1. Go to **[https://www.twilio.com/try-twilio](https://www.twilio.com/try-twilio)** and create a free account.
-2. Verify your email address and your own phone number when prompted (Twilio sends a verification code).
-3. Once logged in, go to your **Console** at **[https://console.twilio.com](https://console.twilio.com)**.
-4. On the Console homepage you will see your **Account SID** and **Auth Token** — copy these into Vercel as `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
-5. Get a free Twilio phone number to send SMS from:
-   - In the Console, go to **Phone Numbers → Manage → Buy a number** (it's free on a trial account).
-   - Choose a US number, make sure **SMS** capability is checked, and click **Buy**.
-   - Copy the number in E.164 format (e.g. `+12135551234`) into Vercel as `TWILIO_FROM_NUMBER`.
-
-> **Trial account note:** With a free Twilio trial account, SMS can only be sent to phone numbers you have **verified** in the Twilio console. To send to any customer number, upgrade to a paid account (starts at ~$15/month for the number + ~$0.0079 per SMS). You can upgrade at any time from the Twilio Console.
-
----
 
 ### 📌 How to get a Gmail App Password (required if using Gmail):
 
@@ -165,7 +143,6 @@ Once deployed, test by making a reservation on **[www.slytrans.com](https://www.
 | Problem | Fix |
 |---------|-----|
 | No email received | Check that all 5 SMTP env vars are set correctly in Vercel and redeploy |
-| No SMS received | Check that `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` are set; make sure the customer entered a phone number; check Vercel function logs |
 | Gmail "authentication failed" | Make sure you're using an App Password (Step 4), not your regular Gmail password |
 | "Email sending failed" error in browser console | Check Vercel function logs: Dashboard → Deployments → latest deploy → **Functions** tab |
 | CORS error in browser | Make sure the deployed URL matches `https://slyservices-stripe-backend-ipeq.vercel.app` |
@@ -185,4 +162,3 @@ Your Vercel Backend Project
 
 Environment variables to add in Vercel:
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL`
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` *(optional — enables SMS confirmations)*
