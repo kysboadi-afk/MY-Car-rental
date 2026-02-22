@@ -516,6 +516,38 @@ body {
 }
 .booking .reserve-btn:hover { background: #ffb400; color: #000; }
 
+/* STRIPE PAYMENT ELEMENT */
+#payment-form {
+  margin-top: 16px;
+  padding: 20px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+}
+#payment-element {
+  margin-bottom: 16px;
+}
+#submit-payment {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+#submit-payment:hover:not(:disabled) { background: #e0a000; }
+#submit-payment:disabled { background: #333; color: #666; cursor: not-allowed; }
+#payment-message {
+  color: #e53935;
+  font-size: 13px;
+  min-height: 18px;
+}
+
 /* ID UPLOAD */
 .id-upload-section {
   margin-top: 20px;

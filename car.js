@@ -270,10 +270,10 @@ stripeBtn.addEventListener("click", async ()=>{
   if(!email) { alert("Please enter your email address."); return; }
 
   stripeBtn.disabled = true;
-  stripeBtn.textContent = "Processing...";
+  stripeBtn.textContent = "Loading payment form…";
 
   try {
-    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
+    const res = await fetch(`${API_BASE}/api/create-payment-intent`,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -289,12 +289,48 @@ stripeBtn.addEventListener("click", async ()=>{
       throw new Error("Server responded with status " + res.status);
     }
 
-    const data = await res.json();
-    if(data.url) {
-      window.location.href = data.url;
-    } else {
-      throw new Error("No checkout URL returned");
+    const { clientSecret, publishableKey } = await res.json();
+    if (!clientSecret || !publishableKey) {
+      throw new Error("Missing payment credentials from server");
     }
+
+    // Initialize Stripe and mount the Payment Element
+    const stripe = Stripe(publishableKey);
+    const elements = stripe.elements({ clientSecret });
+    const paymentElement = elements.create("payment");
+
+    const paymentForm = document.getElementById("payment-form");
+    document.getElementById("payAmount").textContent = totalEl.textContent;
+    paymentForm.style.display = "block";
+    stripeBtn.style.display = "none";
+    const payHint = document.getElementById("payHint");
+    if (payHint) payHint.style.display = "none";
+
+    paymentElement.mount("#payment-element");
+
+    // Handle final submission
+    document.getElementById("submit-payment").addEventListener("click", async () => {
+      const submitBtn = document.getElementById("submit-payment");
+      const msgEl = document.getElementById("payment-message");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Processing…";
+      msgEl.textContent = "";
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html",
+          receipt_email: email,
+        },
+      });
+
+      if (error) {
+        msgEl.textContent = error.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Pay $" + totalEl.textContent;
+      }
+    }, { once: true });
+
   } catch(err){
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;

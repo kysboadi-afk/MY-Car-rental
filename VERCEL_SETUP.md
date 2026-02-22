@@ -19,14 +19,15 @@ Your Vercel backend is a **separate** project from this GitHub Pages site. You n
 
 ---
 
-## Step 2 — Update Both API Files
+## Step 2 — Update All API Files
 
-You need to copy **both** files from the `api/` folder in this repo into your Vercel backend project's `api/` folder:
+You need to copy **all three** files from the `api/` folder in this repo into your Vercel backend project's `api/` folder:
 
 | File | What changed |
 |------|-------------|
-| `api/create-checkout-session.js` | **Updated** — added CORS headers and fixed success/cancel redirect URLs (this is why Stripe wasn't working) |
-| `api/send-reservation-email.js` | **New** — sends reservation notification + customer confirmation emails |
+| `api/create-payment-intent.js` | **New** — creates a Stripe PaymentIntent so the card form appears directly on the booking page |
+| `api/create-checkout-session.js` | Existing — kept for reference |
+| `api/send-reservation-email.js` | Existing — sends reservation notification + customer confirmation emails |
 
 ### Option A — If your Vercel project is linked to a GitHub repo (recommended)
 
@@ -80,7 +81,7 @@ Then make sure `package.json` has it listed under `dependencies` before pushing/
 
 ## Step 4 — Add Environment Variables in Vercel
 
-This is the most important step. Without these, emails won't send.
+This is the most important step. Without these, payments won't work and emails won't send.
 
 1. In your Vercel dashboard, open your backend project.
 2. Go to **Settings → Environment Variables**.
@@ -88,6 +89,8 @@ This is the most important step. Without these, emails won't send.
 
 | Variable Name | What to put |
 |---------------|-------------|
+| `STRIPE_SECRET_KEY` | Your Stripe secret key (starts with `sk_live_` or `sk_test_`) — from [Stripe Dashboard → Developers → API keys](https://dashboard.stripe.com/apikeys) |
+| `STRIPE_PUBLISHABLE_KEY` | Your Stripe publishable key (starts with `pk_live_` or `pk_test_`) — from the same Stripe API keys page |
 | `SMTP_HOST` | Your email provider's SMTP server — see table below |
 | `SMTP_PORT` | `587` (recommended) |
 | `SMTP_USER` | The email address that sends the emails (e.g. your Gmail) |

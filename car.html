@@ -81,6 +81,13 @@
     <p class="total">Total: $<span id="total">0</span></p>
     <p class="pay-hint" id="payHint">Fill in dates, enter your email, upload your ID, and agree to terms to enable payment.</p>
     <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
+
+    <div id="payment-form" style="display:none">
+      <div id="payment-element"></div>
+      <div id="payment-message" role="alert"></div>
+      <button id="submit-payment">Pay $<span id="payAmount">0</span></button>
+    </div>
+
     <button class="reserve-btn" onclick="reserve()">Reserve Without Paying</button>
   </section>
 </div>
