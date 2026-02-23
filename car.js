@@ -145,6 +145,19 @@ returnDate.setAttribute("min", todayStr);
 agreeCheckbox.addEventListener("change", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 
+// ----- Sign Agreement Button -----
+// The confirmation checkbox is disabled until the customer clicks the SignNow link.
+document.getElementById("signAgreementBtn").addEventListener("click", function () {
+  const checkbox = document.getElementById("agree");
+  checkbox.disabled = false;
+  this.classList.add("signed");
+  this.textContent = "✅ Rental Agreement Opened — Please Complete Signing";
+  const status = document.getElementById("signAgreementStatus");
+  status.style.display = "";
+  status.textContent = "Rental agreement opened. You may now check the confirmation box below.";
+  updatePayBtn();
+});
+
 // Native change listeners as fallback (Flatpickr also fires native change events)
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
   inp.addEventListener("change", updateTotal);

@@ -70,16 +70,20 @@
       <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
     </div>
 
-    <label class="agree">
-      <input type="checkbox" id="agree">
-      I agree to the
-      <a href="https://signnow.com/invite_short_link/MpwyfGkjSS" target="_blank">
-        Rental Agreement &amp; Terms
+    <div class="sign-agreement">
+      <p class="sign-agreement-label">📄 Step 1: Sign your Rental Agreement</p>
+      <p id="signAgreementStatus" aria-live="polite" style="display:none"></p>
+      <a href="https://signnow.com/invite_short_link/MpwyfGkjSS" target="_blank" id="signAgreementBtn" class="sign-agreement-btn">
+        ✍ Sign Rental Agreement
       </a>
-    </label>
+      <label class="agree">
+        <input type="checkbox" id="agree" disabled>
+        I have signed the Rental Agreement &amp; Terms
+      </label>
+    </div>
 
     <p class="total">Total: $<span id="total">0</span></p>
-    <p class="pay-hint" id="payHint">Fill in dates, enter your email, upload your ID, and agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint">Fill in dates, enter your email, upload your ID, and sign &amp; agree to terms to enable payment.</p>
     <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
 
     <div id="payment-form" style="display:none">

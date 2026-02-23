@@ -506,6 +506,34 @@ body {
 }
 .booking label.agree a { color: #ffb400; }
 
+/* Sign Agreement block */
+.sign-agreement {
+  margin: 16px 0;
+}
+.sign-agreement-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #aaa;
+  margin: 0 0 8px;
+}
+.sign-agreement-btn {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  background: #145a1e;
+  color: #fff;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: bold;
+  text-decoration: none;
+  margin-bottom: 12px;
+  transition: background 0.2s;
+  box-sizing: border-box;
+}
+.sign-agreement-btn:hover { background: #1e7a2c; }
+.sign-agreement-btn.signed { background: #0e3d16; color: #7dff9b; }
+
 .booking .total {
   font-size: 20px;
   font-weight: bold;
