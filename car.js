@@ -1,7 +1,9 @@
 // ----- API Base URL -----
-// The backend runs as a separate Vercel project; always use the absolute URL
-// so that fetch calls work correctly from the GitHub Pages frontend.
-const API_BASE = "https://slyservices-stripe-backend-ipeq.vercel.app";
+// When this repo is deployed on Vercel (frontend + API together), a relative
+// URL is all that is needed. If you are still using a separate backend project,
+// replace "" with the full URL of that project, e.g.:
+//   const API_BASE = "https://your-project.vercel.app";
+const API_BASE = "";
 
 // ----- Car Data -----
 const cars = {
@@ -234,19 +236,19 @@ function updateTotal() {
   updatePayBtn();
 }
 
-// ----- Reserve / Pay Now -----
-stripeBtn.addEventListener("click", async ()=>{
+// ----- Pay Now -----
+stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
-  if(!email) { alert("Please enter your email address."); return; }
+  if (!email) { alert("Please enter your email address."); return; }
 
   stripeBtn.disabled = true;
   stripeBtn.textContent = "Loading payment form…";
 
   try {
-    const res = await fetch(`${API_BASE}/api/create-payment-intent`,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
+    const res = await fetch(`${API_BASE}/api/create-payment-intent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         car: carData.name,
         amount: parseFloat(totalEl.textContent),
         email: email,
@@ -255,13 +257,19 @@ stripeBtn.addEventListener("click", async ()=>{
       })
     });
 
+    const data = await res.json();
+
     if (!res.ok) {
-      throw new Error("Server responded with status " + res.status);
+      // Surface the server's error message so setup issues are visible
+      throw new Error(data.error || "Server error (" + res.status + ")");
     }
 
-    const { clientSecret, publishableKey } = await res.json();
-    if (!clientSecret || !publishableKey) {
-      throw new Error("Missing payment credentials from server");
+    const { clientSecret, publishableKey } = data;
+    if (!clientSecret) {
+      throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
+    }
+    if (!publishableKey) {
+      throw new Error("No publishableKey returned from server. Check that STRIPE_PUBLISHABLE_KEY is set in your Vercel environment variables.");
     }
 
     // Initialize Stripe and mount the Payment Element
@@ -301,11 +309,21 @@ stripeBtn.addEventListener("click", async ()=>{
       }
     }, { once: true });
 
-  } catch(err){
+  } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
-    alert("Payment failed. Please try again or contact support.");
+    // Show detailed message only for known setup/config errors; generic message otherwise
+    const isSetupError = err.message && (
+      err.message.includes("STRIPE_SECRET_KEY") ||
+      err.message.includes("STRIPE_PUBLISHABLE_KEY") ||
+      err.message.includes("clientSecret") ||
+      err.message.includes("publishableKey")
+    );
+    const userMessage = isSetupError
+      ? "Payment setup error:\n\n" + err.message
+      : "Could not load the payment form. Please refresh the page and try again, or contact support.";
+    alert(userMessage);
   }
 });
 
