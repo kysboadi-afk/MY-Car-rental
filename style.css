@@ -155,8 +155,17 @@ body {
 
 .hiw-steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 30px;
+}
+
+.hiw-step--highlight {
+  border-color: #ffb400;
+  background: #1e1a0e;
+}
+
+.hiw-step--highlight .hiw-icon {
+  color: #ffb400;
 }
 
 .hiw-step {
@@ -416,7 +425,7 @@ body {
 .slider img.slide {
   width: 100%;
   max-height: none;
-  object-fit: contain;
+  object-fit: cover;
   display: none;
 }
 .slider img.slide.active { display: block; }
@@ -714,7 +723,7 @@ footer {
   display: none;
   width: 100%;
   height: 550px;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .slider img.slide.active {
@@ -727,7 +736,6 @@ footer {
   gap: 16px;
   margin-top: 12px;
   padding: 0;
-  pointer-events: none;
   background: transparent;
 }
 
