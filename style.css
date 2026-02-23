@@ -503,18 +503,6 @@ body {
 .booking #stripePay:hover:not(:disabled) { background: #e0a000; }
 .booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
 
-.booking .reserve-btn {
-  width: 100%;
-  padding: 12px;
-  background: #000;
-  color: #ffb400;
-  border: 2px solid #ffb400;
-  border-radius: 8px;
-  font-size: 15px;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.booking .reserve-btn:hover { background: #ffb400; color: #000; }
 
 /* STRIPE PAYMENT ELEMENT */
 #payment-form {
