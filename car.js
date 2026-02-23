@@ -148,7 +148,18 @@ document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // ----- Sign Agreement Button -----
 // The confirmation checkbox is disabled until the customer clicks the SignNow link.
-document.getElementById("signAgreementBtn").addEventListener("click", function () {
+document.getElementById("signAgreementBtn").addEventListener("click", function (e) {
+  e.preventDefault();
+  // Build a fresh SignNow URL with the renter's name/email and a timestamp
+  // so each new booking opens a clean contract form.
+  const renterName = document.getElementById("name").value.trim();
+  const renterEmail = document.getElementById("email").value.trim();
+  const baseUrl = "https://signnow.com/invite_short_link/MpwyfGkjSS";
+  const params = new URLSearchParams({ t: Date.now() });
+  if (renterName) params.set("name", renterName);
+  if (renterEmail) params.set("email", renterEmail);
+  window.open(baseUrl + "?" + params.toString(), "_blank");
+
   const checkbox = document.getElementById("agree");
   checkbox.disabled = false;
   this.classList.add("signed");
@@ -336,9 +347,11 @@ stripeBtn.addEventListener("click", async () => {
       // Store booking data in sessionStorage so success.html can send the
       // confirmation email AFTER the payment redirect completes.
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
+      const name = document.getElementById("name").value.trim();
       const phone = document.getElementById("phone").value.trim();
       const bookingPayload = {
         car: carData.name,
+        name,
         pickup: pickup.value,
         pickupTime: pickupTime.value,
         returnDate: returnDate.value,
