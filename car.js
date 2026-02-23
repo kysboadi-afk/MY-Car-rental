@@ -1,9 +1,8 @@
 // ----- API Base URL -----
-// When this repo is deployed on Vercel (frontend + API together), a relative
-// URL is all that is needed. If you are still using a separate backend project,
-// replace "" with the full URL of that project, e.g.:
-//   const API_BASE = "https://your-project.vercel.app";
-const API_BASE = "";
+// The frontend is served by GitHub Pages (www.slytrans.com).
+// The API functions are deployed on Vercel (sly-rides.vercel.app).
+// Because they are on different domains, the full Vercel URL must be used here.
+const API_BASE = "https://sly-rides.vercel.app";
 
 // ----- Car Data -----
 const cars = {
