@@ -136,36 +136,6 @@ idUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-// ----- Send ID Document via Email -----
-async function sendIDViaEmail() {
-  if (!uploadedFile) {
-    return false;
-  }
-  
-  try {
-    // Using FormSubmit service for email delivery
-    const formData = new FormData();
-    formData.append('_to', 'slyservices@supports-info.com');
-    formData.append('_subject', `New Car Rental Booking - ${carData.name}`);
-    formData.append('Car', carData.name);
-    formData.append('Customer Email', document.getElementById("email").value);
-    formData.append('Pickup Date', pickup.value);
-    formData.append('Return Date', returnDate.value);
-    formData.append('Total Amount', '$' + totalEl.textContent);
-    formData.append('ID Document', uploadedFile);
-    
-    const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
-      method: 'POST',
-      body: formData
-    });
-    
-    return response.ok;
-  } catch (error) {
-    console.error('Error sending ID document:', error);
-    return false;
-  }
-}
-
 // Block past dates — only allow today or future dates
 const todayStr = new Date().toISOString().split("T")[0];
 pickup.setAttribute("min", todayStr);
@@ -270,10 +240,10 @@ stripeBtn.addEventListener("click", async ()=>{
   if(!email) { alert("Please enter your email address."); return; }
 
   stripeBtn.disabled = true;
-  stripeBtn.textContent = "Processing...";
+  stripeBtn.textContent = "Loading payment form…";
 
   try {
-    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/create-checkout-session",{
+    const res = await fetch(`${API_BASE}/api/create-payment-intent`,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -289,12 +259,48 @@ stripeBtn.addEventListener("click", async ()=>{
       throw new Error("Server responded with status " + res.status);
     }
 
-    const data = await res.json();
-    if(data.url) {
-      window.location.href = data.url;
-    } else {
-      throw new Error("No checkout URL returned");
+    const { clientSecret, publishableKey } = await res.json();
+    if (!clientSecret || !publishableKey) {
+      throw new Error("Missing payment credentials from server");
     }
+
+    // Initialize Stripe and mount the Payment Element
+    const stripe = Stripe(publishableKey);
+    const elements = stripe.elements({ clientSecret });
+    const paymentElement = elements.create("payment");
+
+    const paymentForm = document.getElementById("payment-form");
+    document.getElementById("payAmount").textContent = totalEl.textContent;
+    paymentForm.style.display = "block";
+    stripeBtn.style.display = "none";
+    const payHint = document.getElementById("payHint");
+    if (payHint) payHint.style.display = "none";
+
+    paymentElement.mount("#payment-element");
+
+    // Handle final submission
+    document.getElementById("submit-payment").addEventListener("click", async () => {
+      const submitBtn = document.getElementById("submit-payment");
+      const msgEl = document.getElementById("payment-message");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Processing…";
+      msgEl.textContent = "";
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html",
+          receipt_email: email,
+        },
+      });
+
+      if (error) {
+        msgEl.textContent = error.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Pay $" + totalEl.textContent;
+      }
+    }, { once: true });
+
   } catch(err){
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
@@ -303,99 +309,3 @@ stripeBtn.addEventListener("click", async ()=>{
   }
 });
 
-// ----- Send Reservation Email -----
-async function sendReservationEmail() {
-  const email = document.getElementById("email").value;
-  if (!email) {
-    return false;
-  }
-  
-  try {
-    const formData = new FormData();
-    formData.append('_to', 'slyservices@supports-info.com');
-    formData.append('_subject', `New Reservation (No Payment) - ${carData.name}`);
-    formData.append('Reservation Type', 'Reserve Without Payment');
-    formData.append('Car', carData.name);
-    formData.append('Customer Email', email);
-    formData.append('Pickup Date', pickup.value);
-    formData.append('Pickup Time', pickupTime.value || 'Not specified');
-    formData.append('Return Date', returnDate.value);
-    formData.append('Return Time', returnTime.value || 'Not specified');
-    formData.append('Total Amount', '$' + totalEl.textContent);
-    formData.append('_cc', email);
-    
-    const response = await fetch('https://formsubmit.co/ajax/slyservices@supports-info.com', {
-      method: 'POST',
-      body: formData
-    });
-    
-    return response.ok;
-  } catch (error) {
-    console.error('Error sending reservation email:', error);
-    return false;
-  }
-}
-
-// ----- Reserve Without Pay -----
-async function reserve() {
-  if(!pickup.value || !returnDate.value) { alert("Please select pickup and return dates."); return; }
-  if(!idUpload.files.length) { alert("Please upload your Driver's License or ID."); return; }
-  if(!agreeCheckbox.checked) { alert("Please agree to the Rental Agreement & Terms."); return; }
-
-  const email = document.getElementById("email").value;
-  if(!email) { alert("Please enter your email address."); return; }
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert("Please enter a valid email address."); return; }
-  const phone = document.getElementById("phone").value;
-
-  // Always send the ID document — the JSON API cannot carry file uploads
-  const idSent = await sendIDViaEmail();
-  if (!idSent) {
-    console.error("ID document could not be delivered via email");
-  }
-
-  let notified = false;
-  try {
-    const res = await fetch("https://slyservices-stripe-backend-ipeq.vercel.app/api/send-reservation-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        car: carData.name,
-        pickup: pickup.value,
-        pickupTime: pickupTime.value || '',
-        returnDate: returnDate.value,
-        returnTime: returnTime.value || '',
-        email: email,
-        phone: phone,
-        total: totalEl.textContent,
-        pricePerDay: carData.pricePerDay,
-        pricePerWeek: carData.weekly || null,
-        deposit: carData.deposit || 0,
-        days: currentDayCount
-      })
-    });
-
-    notified = res.ok;
-    // If the SMTP API failed, fall back to formsubmit.co so notifications still reach owner + customer
-    if (!res.ok) {
-      notified = await sendReservationEmail();
-    }
-  } catch(e) {
-    console.error("Reservation email notification failed:", e);
-    // SMTP API unavailable — use formsubmit.co so owner + customer are still notified
-    notified = await sendReservationEmail();
-  }
-
-  alert(
-    `✅ Reservation Confirmed!\n\n` +
-    `🚗 Car: ${carData.name}\n` +
-    `📅 Pickup: ${pickup.value}${pickupTime.value ? ' at ' + pickupTime.value : ''}\n` +
-    `📅 Return: ${returnDate.value}${returnTime.value ? ' at ' + returnTime.value : ''}\n` +
-    `💰 Total: $${totalEl.textContent}\n` +
-    `📧 Email: ${email}\n` +
-    (phone ? `📱 Phone: ${phone}\n` : '') +
-    `\n` +
-    (notified
-      ? "A confirmation has been sent to your email. We will contact you shortly!"
-      : "We will contact you shortly to confirm your reservation.")
-  );
-}
