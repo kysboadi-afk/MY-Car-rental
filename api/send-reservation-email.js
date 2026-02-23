@@ -10,6 +10,15 @@
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 
+// Allow larger bodies so the renter's ID photo/PDF can be attached
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "10mb",
+    },
+  },
+};
+
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -44,14 +53,26 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  const { car, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days } = req.body;
+  const { car, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
 
   try {
+    // Build attachment list for the owner email
+    const attachments = [];
+    if (idBase64 && idFileName) {
+      attachments.push({
+        filename: idFileName,
+        content: idBase64,
+        encoding: "base64",
+        contentType: idMimeType || "application/octet-stream",
+      });
+    }
+
     // --- Notify owner ---
     await transporter.sendMail({
       from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: `New Reservation Request – ${esc(car)}`,
+      attachments,
       html: `
         <h2>New Reservation Request</h2>
         <table style="border-collapse:collapse;width:100%">
@@ -68,6 +89,7 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Estimated Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(total) || "TBD"}</td></tr>
         </table>
+        ${attachments.length > 0 ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
         <p>Please follow up with the customer to confirm the reservation.</p>
       `,
     });
@@ -77,7 +99,7 @@ export default async function handler(req, res) {
       await transporter.sendMail({
         from: `"SLY Rides" <${process.env.SMTP_USER}>`,
         to: email,
-        subject: "Your SLY Rides Reservation is Confirmed!",
+        subject: "Your SLY Rides Reservation Request Received",
         html: `
           <h2>✅ Reservation Received – SLY Rides</h2>
           <p>Hi there! Thank you for choosing SLY Rides. We have received your reservation request.</p>
