@@ -49,7 +49,7 @@ export default async function handler(req, res) {
       currency: "usd",
       receipt_email: email,
       description: `SLY Rides – ${car || "Vehicle Rental"}`,
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
     });
 
     res.status(200).json({
