@@ -99,7 +99,7 @@ export default async function handler(req, res) {
       await transporter.sendMail({
         from: `"SLY Rides" <${process.env.SMTP_USER}>`,
         to: email,
-        subject: "Your SLY Rides Reservation is Confirmed!",
+        subject: "Your SLY Rides Reservation Request Received",
         html: `
           <h2>✅ Reservation Received – SLY Rides</h2>
           <p>Hi there! Thank you for choosing SLY Rides. We have received your reservation request.</p>

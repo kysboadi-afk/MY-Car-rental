@@ -62,7 +62,7 @@
     <div class="id-upload-section">
       <label for="idUpload">📎 Upload Driver's License / ID <span class="required">*</span></label>
       <p class="id-note">A valid government-issued ID is required to confirm your rental.</p>
-      <input type="file" id="idUpload" accept="image/*,.pdf">
+      <input type="file" id="idUpload" accept=".jpg,.jpeg,.png,.pdf">
       <div id="fileInfo">
         <span class="file-name">No file selected</span>
         <span class="file-size"></span>
@@ -86,6 +86,7 @@
       <div id="payment-element"></div>
       <div id="payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
       <button id="submit-payment" type="button">Pay $<span id="payAmount">0</span></button>
+      <button id="cancel-payment" type="button">← Change booking details</button>
     </div>
 
   </section>

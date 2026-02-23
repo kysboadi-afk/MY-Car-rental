@@ -304,8 +304,24 @@ stripeBtn.addEventListener("click", async () => {
 
     paymentElement.mount("#payment-element");
 
-    // Handle final submission
+    // Handle cancel — go back to booking form.
+    // { once: true } is intentional: each "Pay Now" click registers a fresh cancel
+    // listener inside its own closure, so once-per-showing is exactly what we want.
+    let paymentSubmitting = false;
+    document.getElementById("cancel-payment").addEventListener("click", () => {
+      paymentSubmitting = false; // reset in case cancelled mid-processing
+      paymentElement.unmount();
+      document.getElementById("payment-form").style.display = "none";
+      document.getElementById("payment-message").textContent = "";
+      stripeBtn.style.display = "";
+      stripeBtn.textContent = "💳 Pay Now";
+      updatePayBtn();
+    }, { once: true });
+
+    // Handle final submission — use a flag instead of { once: true } so retries work
     document.getElementById("submit-payment").addEventListener("click", async () => {
+      if (paymentSubmitting) return;
+      paymentSubmitting = true;
       const submitBtn = document.getElementById("submit-payment");
       const msgEl = document.getElementById("payment-message");
       submitBtn.disabled = true;
@@ -348,8 +364,9 @@ stripeBtn.addEventListener("click", async () => {
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
         submitBtn.textContent = "Pay $" + totalEl.textContent;
+        paymentSubmitting = false;
       }
-    }, { once: true });
+    });
 
   } catch (err) {
     console.error("Stripe error:", err);
