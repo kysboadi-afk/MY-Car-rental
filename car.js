@@ -333,32 +333,34 @@ stripeBtn.addEventListener("click", async () => {
       submitBtn.textContent = "Processing…";
       msgEl.textContent = "";
 
-      // Send reservation email to owner and wait for it to complete before
-      // Stripe redirects the page (fire-and-forget would cancel the request)
+      // Store booking data in sessionStorage so success.html can send the
+      // confirmation email AFTER the payment redirect completes.
+      // (A fire-and-forget fetch here is cancelled by the browser redirect.)
       const phone = document.getElementById("phone").value.trim();
-      const name = document.getElementById("name").value.trim();
-      await fetch(`${API_BASE}/api/send-reservation-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          car: carData.name,
-          name,
-          pickup: pickup.value,
-          pickupTime: pickupTime.value,
-          returnDate: returnDate.value,
-          returnTime: returnTime.value,
-          email,
-          phone,
-          total: totalEl.textContent,
-          pricePerDay: carData.pricePerDay,
-          pricePerWeek: carData.weekly || null,
-          deposit: carData.deposit || 0,
-          days: currentDayCount,
-          idBase64,
-          idFileName,
-          idMimeType,
-        }),
-      }).catch(err => console.error("Reservation email error:", err));
+      const bookingPayload = {
+        car: carData.name,
+        pickup: pickup.value,
+        pickupTime: pickupTime.value,
+        returnDate: returnDate.value,
+        returnTime: returnTime.value,
+        email,
+        phone,
+        total: totalEl.textContent,
+        pricePerDay: carData.pricePerDay,
+        pricePerWeek: carData.weekly || null,
+        deposit: carData.deposit || 0,
+        days: currentDayCount,
+        idFileName,
+        idMimeType,
+      };
+      // Try to include the ID attachment; fall back without it if too large for sessionStorage
+      bookingPayload.idBase64 = idBase64;
+      try {
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+      } catch (e) {
+        delete bookingPayload.idBase64;
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+      }
 
       const { error } = await stripe.confirmPayment({
         elements,
