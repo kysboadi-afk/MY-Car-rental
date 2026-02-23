@@ -45,5 +45,22 @@
     &copy; 2026 SLY Rides. All rights reserved.
   </footer>
   <script src="chatbot.js"></script>
+  <script>
+    // Send the reservation notification email now that payment is confirmed.
+    // Booking data was saved to sessionStorage by car.js before the Stripe redirect.
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+      var raw = sessionStorage.getItem("slyRidesBooking");
+      if (!raw) return;
+      sessionStorage.removeItem("slyRidesBooking");
+      var data;
+      try { data = JSON.parse(raw); } catch (e) { return; }
+      fetch(API_BASE + "/api/send-reservation-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).catch(function (err) { console.error("Reservation email error:", err); });
+    })();
+  </script>
 </body>
 </html>
