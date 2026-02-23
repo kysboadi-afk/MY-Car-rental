@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  const { car, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
+  const { car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
 
   try {
     // Build attachment list for the owner email
@@ -77,6 +77,7 @@ export default async function handler(req, res) {
         <h2>New Reservation Request</h2>
         <table style="border-collapse:collapse;width:100%">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>

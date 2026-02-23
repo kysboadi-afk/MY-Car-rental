@@ -143,6 +143,7 @@ pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
 agreeCheckbox.addEventListener("change", updatePayBtn);
+document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // ----- Sign Agreement Button -----
@@ -221,8 +222,9 @@ async function initDatePickers() {
 initDatePickers();
 
 function updatePayBtn() {
+  const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && emailVal;
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && nameVal && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -331,13 +333,16 @@ stripeBtn.addEventListener("click", async () => {
       submitBtn.textContent = "Processing…";
       msgEl.textContent = "";
 
-      // Send reservation email to owner just before confirming payment
+      // Send reservation email to owner and wait for it to complete before
+      // Stripe redirects the page (fire-and-forget would cancel the request)
       const phone = document.getElementById("phone").value.trim();
-      fetch(`${API_BASE}/api/send-reservation-email`, {
+      const name = document.getElementById("name").value.trim();
+      await fetch(`${API_BASE}/api/send-reservation-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           car: carData.name,
+          name,
           pickup: pickup.value,
           pickupTime: pickupTime.value,
           returnDate: returnDate.value,
