@@ -366,13 +366,27 @@ stripeBtn.addEventListener("click", async () => {
         idFileName,
         idMimeType,
       };
-      // Try to include the ID attachment; fall back without it if too large for sessionStorage
-      bookingPayload.idBase64 = idBase64;
-      try {
-        sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
-      } catch (e) {
-        delete bookingPayload.idBase64;
-        sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+      // Store booking metadata in sessionStorage and the large ID binary in
+      // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
+      sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+
+      if (idBase64 && idFileName) {
+        try {
+          await new Promise((resolve) => {
+            const idbReq = indexedDB.open("slyRidesDB", 1);
+            idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+            idbReq.onsuccess = e => {
+              const db = e.target.result;
+              const tx = db.transaction("files", "readwrite");
+              tx.objectStore("files").put({ idBase64, idFileName, idMimeType }, "pendingId");
+              tx.oncomplete = () => { db.close(); resolve(); };
+              tx.onerror = () => { db.close(); resolve(); };
+            };
+            idbReq.onerror = () => resolve();
+          });
+        } catch (e) {
+          console.warn("Could not save ID to IndexedDB:", e);
+        }
       }
 
       const { error } = await stripe.confirmPayment({
