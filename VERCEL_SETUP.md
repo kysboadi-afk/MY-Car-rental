@@ -1,167 +1,121 @@
-# 🚀 How to Update Your Vercel Backend
+# 🚀 Stripe + Vercel Setup Guide
 
-Your Vercel backend is the project running at:
-**`https://slyservices-stripe-backend-ipeq.vercel.app`**
-
-It handles Stripe payments and sends reservation emails. Follow the steps below to deploy the latest files.
-
-> ⚠️ **Important:** `api/create-checkout-session.js` has also been updated — it now includes CORS headers and fixed redirect URLs. You must redeploy **both** API files for Stripe payments to work correctly.
+This guide explains the current architecture and how to verify your Stripe payment form is working.
 
 ---
 
-## Step 1 — Find Your Vercel Backend Project
+## How Your Site Is Structured
 
-Your Vercel backend is a **separate** project from this GitHub Pages site. You need to locate it:
-
-1. Go to **[https://vercel.com/dashboard](https://vercel.com/dashboard)** and log in.
-2. Find the project named something like **slyservices-stripe-backend** (it's the one connected to `slyservices-stripe-backend-ipeq.vercel.app`).
-3. Click on it to open the project dashboard.
-
----
-
-## Step 2 — Update All API Files
-
-You need to copy **all three** files from the `api/` folder in this repo into your Vercel backend project's `api/` folder:
-
-| File | What changed |
-|------|-------------|
-| `api/create-payment-intent.js` | **New** — creates a Stripe PaymentIntent so the card form appears directly on the booking page |
-| `api/create-checkout-session.js` | Existing — kept for reference |
-| `api/send-reservation-email.js` | Existing — sends reservation notification + customer confirmation emails |
-
-### Option A — If your Vercel project is linked to a GitHub repo (recommended)
-
-1. Go to your Vercel backend's GitHub repository.
-2. Navigate to the `api/` folder.
-3. **Replace** `api/create-checkout-session.js` with the updated version from this repo (click the file → pencil icon → paste new contents → commit).
-4. **Add** `api/send-reservation-email.js`: click **"Add file" → "Create new file"**, name it `api/send-reservation-email.js`, paste in the full contents from this repo, and commit.
-5. Vercel will automatically redeploy within ~1 minute.
-
-### Option B — If you have the project files on your computer
-
-1. Open the Vercel backend project folder on your computer.
-2. **Replace** `api/create-checkout-session.js` with the updated version from this repo.
-3. **Copy** `api/send-reservation-email.js` from this repo into the backend's `api/` folder.
-4. Open a terminal in that folder and run:
-   ```bash
-   npm install nodemailer
-   ```
-5. Commit and push:
-   ```bash
-   git add .
-   git commit -m "Fix CORS and add reservation email endpoint"
-   git push
-   ```
-   Vercel will redeploy automatically.
-
-### Option C — If the backend has no GitHub repo (deployed directly)
-
-1. Go to **[https://vercel.com/dashboard](https://vercel.com/dashboard)** → your backend project.
-2. Go to the **"Deployments"** tab and note the current Git source.
-3. Use the [Vercel CLI](https://vercel.com/docs/cli):
-   ```bash
-   npm install -g vercel
-   vercel login
-   vercel --prod
-   ```
-
----
-
-## Step 3 — Install nodemailer
-
-The email endpoint requires the `nodemailer` package. In your Vercel backend project folder, run:
-
-```bash
-npm install nodemailer
+```
+www.slytrans.com  (GitHub Pages — serves the HTML/CSS/JS frontend)
+        │
+        │  Pay Now click → fetch POST
+        ▼
+sly-rides.vercel.app  (Vercel — runs the API functions)
+   └── /api/create-payment-intent   ← creates the Stripe payment
+        │
+        ▼
+   Stripe (processes card, returns clientSecret)
+        │
+        ▼
+Card form mounts on the booking page ✅
 ```
 
-Then make sure `package.json` has it listed under `dependencies` before pushing/deploying.
+**`sly-rides.vercel.app` is correct.** That is the auto-generated Vercel URL for your project. Your frontend (on GitHub Pages) talks to that URL whenever a customer clicks Pay Now.
 
 ---
 
-## Step 4 — Add Environment Variables in Vercel
+## Step 1 — Confirm Your Vercel Project Is Deployed
 
-This is the most important step. Without these, payments won't work and emails won't send.
+1. Go to **[https://vercel.com/dashboard](https://vercel.com/dashboard)**.
+2. You should see a project named **sly-rides** (or similar).
+3. Its URL should show **`sly-rides.vercel.app`** — this is **correct and expected**.
+4. The status should be **"Ready"** (green). If it says "Error", click the deployment to see the build log.
 
-1. In your Vercel dashboard, open your backend project.
+---
+
+## Step 2 — Add Your Stripe API Keys in Vercel
+
+Without these, the card form cannot load. This is the most common reason it doesn't appear.
+
+### Get your keys from Stripe
+
+1. Go to **[https://dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys)**.
+2. Copy both keys:
+   - **Secret key** — starts with `sk_live_` or `sk_test_`
+   - **Publishable key** — starts with `pk_live_` or `pk_test_`
+
+> 💡 Use `sk_test_` / `pk_test_` for testing. Only switch to live keys when accepting real money.
+
+### Add them to Vercel
+
+1. In Vercel, open your **sly-rides** project.
 2. Go to **Settings → Environment Variables**.
-3. Add each of the following variables (click **"Add New"** for each):
+3. Add both variables (click **"Add New"** for each):
 
-| Variable Name | What to put |
-|---------------|-------------|
-| `STRIPE_SECRET_KEY` | Your Stripe secret key (starts with `sk_live_` or `sk_test_`) — from [Stripe Dashboard → Developers → API keys](https://dashboard.stripe.com/apikeys) |
-| `STRIPE_PUBLISHABLE_KEY` | Your Stripe publishable key (starts with `pk_live_` or `pk_test_`) — from the same Stripe API keys page |
-| `SMTP_HOST` | Your email provider's SMTP server — see table below |
-| `SMTP_PORT` | `587` (recommended) |
-| `SMTP_USER` | The email address that sends the emails (e.g. your Gmail) |
-| `SMTP_PASS` | The password for that email — **use an App Password, not your regular password** |
+| Variable Name | Value |
+|---|---|
+| `STRIPE_SECRET_KEY` | Your secret key (`sk_live_…` or `sk_test_…`) |
+| `STRIPE_PUBLISHABLE_KEY` | Your publishable key (`pk_live_…` or `pk_test_…`) |
+
+4. Click **Save**.
+5. Go to **Deployments** → click the **⋯** next to the latest deployment → **Redeploy**.  
+   *(This is required for new env vars to take effect.)*
+
+---
+
+## Step 3 — Add Your Email Variables (for Reservation Notifications)
+
+Optional but recommended. Without these, no emails are sent.
+
+| Variable Name | Value |
+|---|---|
+| `SMTP_HOST` | e.g. `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | Your sending email address |
+| `SMTP_PASS` | App password for that email (see below) |
 | `OWNER_EMAIL` | `slyservices@supports-info.com` |
 
-### SMTP server values by email provider:
+### How to get a Gmail App Password
 
-| Email Provider | SMTP_HOST | SMTP_PORT |
-|----------------|-----------|-----------|
-| Gmail | `smtp.gmail.com` | `587` |
-| Outlook / Hotmail | `smtp.office365.com` | `587` |
-| Yahoo Mail | `smtp.mail.yahoo.com` | `587` |
-| iCloud Mail | `smtp.mail.me.com` | `587` |
-
-### 📌 How to get a Gmail App Password (required if using Gmail):
-
-Gmail blocks regular passwords for apps. You need an **App Password**:
-
-1. Go to your Google Account → **[https://myaccount.google.com/security](https://myaccount.google.com/security)**
-2. Make sure **2-Step Verification** is turned ON.
-3. Search for **"App passwords"** on that page and click it.
-4. Choose **"Mail"** as the app and **"Other"** as the device → name it `SLY Rides`.
-5. Google will give you a 16-character password — copy it.
-6. Use that 16-character password as your `SMTP_PASS` value in Vercel.
+1. Go to **[https://myaccount.google.com/security](https://myaccount.google.com/security)**.
+2. Make sure **2-Step Verification** is ON.
+3. Search for **"App passwords"** → click it.
+4. Choose **Mail** → **Other (Custom name)** → name it `SLY Rides`.
+5. Copy the 16-character password → use it as `SMTP_PASS` in Vercel.
 
 ---
 
-## Step 5 — Redeploy
+## Step 4 — Test the Payment Form
 
-After adding the environment variables:
-
-1. Go to the **"Deployments"** tab of your Vercel backend project.
-2. Click the three dots (⋯) next to the latest deployment.
-3. Click **"Redeploy"**.
-4. Wait ~30 seconds for the deployment to complete (status turns green ✅).
-
----
-
-## Step 6 — Test It
-
-Once deployed, test by making a reservation on **[www.slytrans.com](https://www.slytrans.com)**:
-
-1. Select a car, fill in dates and your email, upload an ID.
-2. Click **"Reserve Without Paying"**.
-3. Check `slyservices@supports-info.com` — you should receive a reservation notification.
-4. Check the customer email address — they should receive a booking confirmation.
+1. Visit **[https://www.slytrans.com/car.html?vehicle=camry](https://www.slytrans.com/car.html?vehicle=camry)**.
+2. Fill in pickup date, return date, email, and upload an ID.
+3. Check the **"I agree"** checkbox.
+4. Click **💳 Pay Now**.
+5. The Stripe card form should appear below the button. ✅
+6. Use test card **4242 4242 4242 4242** (any future expiry, any CVC) to test without real money.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Fix |
-|---------|-----|
-| No email received | Check that all 5 SMTP env vars are set correctly in Vercel and redeploy |
-| Gmail "authentication failed" | Make sure you're using an App Password (Step 4), not your regular Gmail password |
-| "Email sending failed" error in browser console | Check Vercel function logs: Dashboard → Deployments → latest deploy → **Functions** tab |
-| CORS error in browser | Make sure the deployed URL matches `https://slyservices-stripe-backend-ipeq.vercel.app` |
+| Problem | Likely Cause | Fix |
+|---|---|---|
+| "Could not load the payment form" alert | Missing Stripe env vars | Add `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` in Vercel → Settings → Env Vars, then Redeploy |
+| "Server configuration error: STRIPE_SECRET_KEY is missing" | Env var not yet active | Re-check spelling (case-sensitive), save, and **Redeploy** |
+| Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
+| Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
+| Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
 
 ---
 
 ## Summary
 
-```
-Your Vercel Backend Project
-├── api/
-│   ├── create-checkout-session.js   ✅ already live (Stripe payments)
-│   └── send-reservation-email.js    ← ADD THIS FILE (reservation emails)
-├── package.json                     ← add "nodemailer" to dependencies
-└── ...
-```
+| What | Status |
+|---|---|
+| Vercel project URL | `https://sly-rides.vercel.app` ✅ (this is correct) |
+| Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
+| `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
+| `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
+| Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 
-Environment variables to add in Vercel:
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL`

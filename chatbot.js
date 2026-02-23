@@ -15,7 +15,7 @@ const botResponses = [
   },
   {
     patterns: ["book","booking","reserve","reservation","how do i","how to"],
-    reply: "Booking is easy! 📅\n\n1. Pick a car from the home page\n2. Click 'Select'\n3. Choose your pickup & return dates\n4. Enter your email\n5. Agree to the rental terms\n6. Click 💳 Pay Now or Reserve Without Paying\n\nAny questions?"
+    reply: "Booking is easy! 📅\n\n1. Pick a car from the home page\n2. Click 'Select'\n3. Choose your pickup & return dates\n4. Enter your email\n5. Upload your Driver's License / ID\n6. Agree to the rental terms\n7. Click 💳 Pay Now\n\nAny questions?"
   },
   {
     patterns: ["deposit","security"],
