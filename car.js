@@ -280,8 +280,8 @@ stripeBtn.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        vehicleId: vehicleId,
         car: carData.name,
-        amount: parseFloat(totalEl.textContent),
         email: email,
         pickup: pickup.value,
         returnDate: returnDate.value

@@ -6,6 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
+import { CARS, computeAmount } from "./pricing.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -33,22 +34,34 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { car, amount, email } = req.body;
+    const { vehicleId, email, pickup, returnDate } = req.body;
 
-    // Validate inputs
-    const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
+    // Validate vehicleId against the server-side allowlist
+    if (!vehicleId || !CARS[vehicleId]) {
+      return res.status(400).json({ error: "Invalid vehicle" });
     }
+
+    // Validate dates
+    const pickupD = new Date(pickup + "T00:00:00");
+    const returnD = new Date(returnDate + "T00:00:00");
+    if (isNaN(pickupD.getTime()) || isNaN(returnD.getTime()) || returnD < pickupD) {
+      return res.status(400).json({ error: "Invalid dates" });
+    }
+
+    // Validate email
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: "Invalid email address" });
     }
 
+    // Compute amount server-side — never trust a client-supplied amount
+    const computedAmount = computeAmount(vehicleId, pickup, returnDate);
+    const carData = CARS[vehicleId];
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(parsedAmount * 100), // Stripe expects whole cents
+      amount: Math.round(computedAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
-      description: `SLY Rides – ${car || "Vehicle Rental"}`,
+      description: `SLY Rides – ${carData.name}`,
       payment_method_types: ["card"],
     });
 
