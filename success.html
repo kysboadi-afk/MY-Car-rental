@@ -69,6 +69,11 @@
       // Retrieve the ID attachment from IndexedDB, merge into the payload, then send.
       try {
         var openReq = indexedDB.open("slyRidesDB", 1);
+        // Create the object store if the DB is being created for the first time
+        // (e.g. IndexedDB was cleared between car.html and success.html).
+        openReq.onupgradeneeded = function (e) {
+          e.target.result.createObjectStore("files");
+        };
         openReq.onsuccess = function (e) {
           var db = e.target.result;
           try {
@@ -93,7 +98,7 @@
               }
             };
             getReq.onerror = function () { db.close(); sendEmail(); };
-          } catch (err) { sendEmail(); }
+          } catch (err) { db.close(); sendEmail(); }
         };
         openReq.onerror = function () { sendEmail(); };
       } catch (err) { sendEmail(); }

@@ -377,10 +377,12 @@ stripeBtn.addEventListener("click", async () => {
             idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
             idbReq.onsuccess = e => {
               const db = e.target.result;
-              const tx = db.transaction("files", "readwrite");
-              tx.objectStore("files").put({ idBase64, idFileName, idMimeType }, "pendingId");
-              tx.oncomplete = () => { db.close(); resolve(); };
-              tx.onerror = () => { db.close(); resolve(); };
+              try {
+                const tx = db.transaction("files", "readwrite");
+                tx.objectStore("files").put({ idBase64, idFileName, idMimeType }, "pendingId");
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = () => { db.close(); resolve(); };
+              } catch (e) { db.close(); resolve(); }
             };
             idbReq.onerror = () => resolve();
           });
