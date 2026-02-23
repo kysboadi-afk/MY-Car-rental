@@ -1,6 +1,7 @@
 // api/create-checkout-session.js
 // Vercel serverless function — Stripe payment session
 import Stripe from "stripe";
+import { CARS, computeAmount } from "./pricing.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -16,7 +17,28 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   try {
-    const { car, amount, pickup, returnDate, email } = req.body;
+    const { vehicleId, pickup, returnDate, email } = req.body;
+
+    // Validate vehicleId against the server-side allowlist
+    if (!vehicleId || !CARS[vehicleId]) {
+      return res.status(400).json({ error: "Invalid vehicle" });
+    }
+
+    // Validate dates
+    const pickupD = new Date(pickup + "T00:00:00");
+    const returnD = new Date(returnDate + "T00:00:00");
+    if (isNaN(pickupD.getTime()) || isNaN(returnD.getTime()) || returnD < pickupD) {
+      return res.status(400).json({ error: "Invalid dates" });
+    }
+
+    // Validate email
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email address" });
+    }
+
+    // Compute amount server-side — never trust a client-supplied amount
+    const computedAmount = computeAmount(vehicleId, pickup, returnDate);
+    const carData = CARS[vehicleId];
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
@@ -24,8 +46,8 @@ export default async function handler(req, res) {
         {
           price_data: {
             currency: "usd",
-            product_data: { name: car },
-            unit_amount: Math.round(amount * 100), // Stripe expects whole cents
+            product_data: { name: carData.name },
+            unit_amount: Math.round(computedAmount * 100), // Stripe expects whole cents
           },
           quantity: 1,
         },
