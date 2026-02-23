@@ -24,6 +24,16 @@ body {
   height: 80px;
 }
 
+.site-header a.logo-link {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-header a.logo-link:focus {
+  outline: 2px solid #ffb400;
+  border-radius: 4px;
+}
+
 .site-nav {
   display: flex;
   gap: 30px;
