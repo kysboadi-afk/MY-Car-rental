@@ -639,6 +639,14 @@ body {
   cursor: pointer;
 }
 
+/* FLEET PAGE HEADING */
+.fleet-heading {
+  text-align: center;
+  color: #ffb400;
+  font-size: 36px;
+  margin-bottom: 30px;
+}
+
 /* FOOTER */
 footer {
   text-align: center;
