@@ -53,6 +53,12 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
+  // Guard: fail fast with a clear log if SMTP credentials are missing
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
+    return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
+  }
+
   const { car, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
 
   try {
@@ -71,11 +77,13 @@ export default async function handler(req, res) {
     await transporter.sendMail({
       from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
-      subject: `New Reservation Request – ${esc(car)}`,
+      subject: `💰 Payment Confirmed – New Booking: ${esc(car)}`,
       attachments,
       html: `
-        <h2>New Reservation Request</h2>
+        <h2>💰 Payment Confirmed – New Booking</h2>
+        <p>A customer has completed payment. Their rental details are below.</p>
         <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
@@ -87,10 +95,10 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Daily Rate</strong></td><td style="padding:8px;border:1px solid #ddd">${pricePerDay != null ? "$" + esc(String(pricePerDay)) + " / day" : "N/A"}</td></tr>
           ${pricePerWeek ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Weekly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerWeek))} / week</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Estimated Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(total) || "TBD"}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
         </table>
         ${attachments.length > 0 ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
-        <p>Please follow up with the customer to confirm the reservation.</p>
+        <p>Payment has been received. Please contact the customer to confirm rental details.</p>
       `,
     });
 
@@ -99,19 +107,20 @@ export default async function handler(req, res) {
       await transporter.sendMail({
         from: `"SLY Rides" <${process.env.SMTP_USER}>`,
         to: email,
-        subject: "Your SLY Rides Reservation Request Received",
+        subject: "✅ Your SLY Rides Payment Confirmed",
         html: `
-          <h2>✅ Reservation Received – SLY Rides</h2>
-          <p>Hi there! Thank you for choosing SLY Rides. We have received your reservation request.</p>
+          <h2>✅ Payment Confirmed – SLY Rides</h2>
+          <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
           <table style="border-collapse:collapse;width:100%">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Estimated Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(total) || "TBD"}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
           </table>
-          <p>We will contact you shortly to confirm all details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
+          <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
           <p><strong>SLY Rides Team 🚗</strong></p>
         `,
       });
