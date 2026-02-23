@@ -243,6 +243,25 @@ stripeBtn.addEventListener("click", async () => {
   stripeBtn.disabled = true;
   stripeBtn.textContent = "Loading payment form…";
 
+  // Pre-encode the ID file so it's ready when the user submits payment
+  let idBase64 = null;
+  let idFileName = null;
+  let idMimeType = null;
+  if (uploadedFile) {
+    try {
+      idBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedFile);
+      });
+      idFileName = uploadedFile.name;
+      idMimeType = uploadedFile.type;
+    } catch (err) {
+      console.error("ID encoding error:", err);
+    }
+  }
+
   try {
     const res = await fetch(`${API_BASE}/api/create-payment-intent`, {
       method: "POST",
@@ -292,6 +311,30 @@ stripeBtn.addEventListener("click", async () => {
       submitBtn.disabled = true;
       submitBtn.textContent = "Processing…";
       msgEl.textContent = "";
+
+      // Send reservation email to owner just before confirming payment
+      const phone = document.getElementById("phone").value.trim();
+      fetch(`${API_BASE}/api/send-reservation-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          car: carData.name,
+          pickup: pickup.value,
+          pickupTime: pickupTime.value,
+          returnDate: returnDate.value,
+          returnTime: returnTime.value,
+          email,
+          phone,
+          total: totalEl.textContent,
+          pricePerDay: carData.pricePerDay,
+          pricePerWeek: carData.weekly || null,
+          deposit: carData.deposit || 0,
+          days: currentDayCount,
+          idBase64,
+          idFileName,
+          idMimeType,
+        }),
+      }).catch(err => console.error("Reservation email error:", err));
 
       const { error } = await stripe.confirmPayment({
         elements,
