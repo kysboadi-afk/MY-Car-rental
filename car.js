@@ -143,6 +143,7 @@ pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
 agreeCheckbox.addEventListener("change", updatePayBtn);
+document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // ----- Sign Agreement Button -----
@@ -221,8 +222,9 @@ async function initDatePickers() {
 initDatePickers();
 
 function updatePayBtn() {
+  const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && emailVal;
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && nameVal && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
