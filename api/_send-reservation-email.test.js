@@ -408,6 +408,61 @@ test("blockBookedDates: GitHub API is not called when GITHUB_TOKEN is not set", 
   assert.equal(fetchCalls.length, 0, "GitHub API should not be called without GITHUB_TOKEN");
 });
 
+test("owner email has replyTo set to customer email", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.equal(ownerMail.replyTo, VALID_BODY.email, "Owner email replyTo should be the customer email");
+});
+
+test("owner email has plain-text body", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.ok(typeof ownerMail.text === "string" && ownerMail.text.length > 0, "Owner email should include a plain-text body");
+  assert.ok(ownerMail.text.includes("Jane Doe"), "Plain-text body should contain renter name");
+  assert.ok(ownerMail.text.includes("2026-03-01"), "Plain-text body should contain pickup date");
+});
+
+test("customer email has plain-text body", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should have been sent");
+  assert.ok(typeof customerMail.text === "string" && customerMail.text.length > 0, "Customer email should include a plain-text body");
+  assert.ok(customerMail.text.includes("2026-03-01"), "Plain-text body should contain pickup date");
+  assert.ok(customerMail.text.includes("CONFIRMED"), "Plain-text body should confirm payment status");
+});
+
+test("response is 200 and both emails are sent on success", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(sentMails.length, 2, "Both emails should be sent when no failures occur");
+});
+
 test("returns 500 when SMTP credentials are not configured", async () => {
   const savedHost = process.env.SMTP_HOST;
   const savedUser = process.env.SMTP_USER;

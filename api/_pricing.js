@@ -1,4 +1,4 @@
-// api/pricing.js
+// api/_pricing.js
 // Canonical vehicle pricing used by serverless functions.
 // The server always recomputes charges from these constants;
 // any client-supplied amount is intentionally ignored to prevent tampering.

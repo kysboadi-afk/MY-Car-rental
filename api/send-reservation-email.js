@@ -138,11 +138,36 @@ export default async function handler(req, res) {
     }
 
     // --- Notify owner ---
-    await transporter.sendMail({
+    const ownerEmailOpts = {
       from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: `💰 Payment Confirmed – New Booking: ${esc(car)}`,
       attachments,
+      ...(email ? { replyTo: email } : {}),
+      text: [
+        "Payment Confirmed – New Booking",
+        "",
+        `Payment Status : CONFIRMED`,
+        `Vehicle        : ${car || ""}`,
+        `Renter Name    : ${name || "Not provided"}`,
+        `Pickup Date    : ${pickup || ""}`,
+        `Pickup Time    : ${pickupTime || "Not specified"}`,
+        `Return Date    : ${returnDate || ""}`,
+        `Return Time    : ${returnTime || "Not specified"}`,
+        `Customer Email : ${email || "Not provided"}`,
+        `Phone          : ${phone || "Not provided"}`,
+        `Number of Days : ${days || "N/A"}`,
+        `Daily Rate     : ${pricePerDay != null ? "$" + pricePerDay + " / day" : "N/A"}`,
+        pricePerWeek ? `Weekly Rate    : $${pricePerWeek} / week` : "",
+        `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
+        `Total Charged  : $${total || "TBD"}`,
+        signature ? `Digital Signature: ${signature}` : "",
+        "",
+        idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
+        insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : "No insurance document was uploaded by the renter.",
+        "",
+        "Payment has been received. Please contact the customer to confirm rental details.",
+      ].filter((line) => line !== undefined).join("\n"),
       html: `
         <h2>💰 Payment Confirmed – New Booking</h2>
         <p>A customer has completed payment. Their rental details are below.</p>
@@ -167,30 +192,66 @@ export default async function handler(req, res) {
         ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
         <p>Payment has been received. Please contact the customer to confirm rental details.</p>
       `,
-    });
+    };
+
+    try {
+      await transporter.sendMail(ownerEmailOpts);
+    } catch (ownerErr) {
+      console.error("Owner notification email failed:", ownerErr);
+      // Continue to send the customer confirmation even if the owner email fails.
+    }
 
     // --- Confirmation to customer ---
+    let customerEmailErr = null;
     if (email) {
-      await transporter.sendMail({
-        from: `"SLY Rides" <${process.env.SMTP_USER}>`,
-        to: email,
-        subject: "✅ Your SLY Rides Payment Confirmed",
-        html: `
-          <h2>✅ Payment Confirmed – SLY Rides</h2>
-          <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
-          <table style="border-collapse:collapse;width:100%">
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
-          </table>
-          <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
-          <p><strong>SLY Rides Team 🚗</strong></p>
-        `,
-      });
+      try {
+        await transporter.sendMail({
+          from: `"SLY Rides" <${process.env.SMTP_USER}>`,
+          to: email,
+          subject: "✅ Your SLY Rides Payment Confirmed",
+          text: [
+            "Payment Confirmed – SLY Rides",
+            "",
+            "Hi there! Your payment has been received and your car rental is confirmed.",
+            "Here are your booking details:",
+            "",
+            `Payment Status : CONFIRMED`,
+            `Vehicle        : ${car || ""}`,
+            `Pickup Date    : ${pickup || ""}`,
+            `Pickup Time    : ${pickupTime || "Not specified"}`,
+            `Return Date    : ${returnDate || ""}`,
+            `Return Time    : ${returnTime || "Not specified"}`,
+            `Total Charged  : $${total || "TBD"}`,
+            "",
+            "We will be in touch shortly to confirm your rental pick-up details.",
+            "If you have any questions, reply to this email or reach us at slyservices@supports-info.com.",
+            "",
+            "SLY Rides Team",
+          ].join("\n"),
+          html: `
+            <h2>✅ Payment Confirmed – SLY Rides</h2>
+            <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
+            <table style="border-collapse:collapse;width:100%">
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
+            </table>
+            <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
+            <p><strong>SLY Rides Team 🚗</strong></p>
+          `,
+        });
+      } catch (custErr) {
+        console.error("Customer confirmation email failed:", custErr);
+        customerEmailErr = custErr;
+      }
+    }
+
+    if (customerEmailErr) {
+      return res.status(500).json({ error: "Customer confirmation email failed" });
     }
 
     res.status(200).json({ success: true });
