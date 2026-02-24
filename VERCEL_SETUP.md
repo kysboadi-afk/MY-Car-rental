@@ -4,6 +4,24 @@ This guide explains the current architecture and how to verify your Stripe payme
 
 ---
 
+## Step 0 — Connect Your GitHub Repository to Vercel
+
+Do this **first** if you have not yet imported your project into Vercel.
+
+1. Go to **[https://vercel.com](https://vercel.com)** and sign in (create a free account if you don't have one).
+2. Click **"Add New…" → "Project"**.
+3. Under **"Import Git Repository"**, connect your GitHub account if prompted, then find and select **`kysboadi-afk/SLY-RIDES`**.
+4. On the **"Configure Project"** screen:
+   - **Framework Preset**: leave as **"Other"** (this is not a Next.js project).
+   - **Root Directory**: leave as `/` (the default).
+   - **Build & Output Settings**: leave all fields empty — there is no build step.
+5. Click **"Deploy"**.
+6. Vercel will deploy the project and assign it a URL like **`sly-rides.vercel.app`**.
+
+> ⚠️ **The site will NOT be fully functional yet** — you still need to add your environment variables (Steps 2–4 below). The deployment succeeds because the API functions load lazily; they only fail when called without the required environment variables.
+
+---
+
 ## How Your Site Is Structured
 
 ```
