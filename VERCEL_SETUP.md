@@ -179,7 +179,38 @@ If your SignNow template uses a role name other than **"Signer 1"** (e.g. "Custo
 
 ---
 
-## Step 5 — Test the Payment Form
+## Step 5 — Verify Your SignNow Setup (Diagnostic Endpoint)
+
+After adding your SignNow environment variables and redeploying, visit this URL in your browser to get an instant status report:
+
+```
+https://sly-rides.vercel.app/api/check-signnow
+```
+
+The response will tell you:
+- ✅ / ❌ Whether authentication is working (OAuth or static token)
+- ✅ / ❌ Whether your template ID is set
+- ✅ / ❌ Whether the template is accessible
+- ✅ / ❌ Whether the role name matches a role in your template
+- ✅ What roles are actually in your template (helpful for debugging `SIGNNOW_ROLE_NAME`)
+
+**Example of a healthy response:**
+```json
+{
+  "overall": "✅ All checks passed — SignNow is correctly configured",
+  "auth": { "method": "oauth", "status": "✅ Token obtained successfully" },
+  "templateId": { "status": "✅ Set" },
+  "template": {
+    "status": "✅ Template accessible",
+    "roles": ["Signer 1"],
+    "roleMatch": "✅ \"Signer 1\" found in template roles"
+  }
+}
+```
+
+---
+
+## Step 6 — Test the Payment Form
 
 1. Visit **[https://www.slytrans.com/car.html?vehicle=camry](https://www.slytrans.com/car.html?vehicle=camry)**.
 2. Fill in pickup date, return date, email, and upload an ID.
@@ -203,6 +234,7 @@ If your SignNow template uses a role name other than **"Signer 1"** (e.g. "Custo
 | "Sign Agreement" button shows error message | Missing `SIGNNOW_TEMPLATE_ID` | Add `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
 | "Failed to send signing invite" in Vercel logs | Role name mismatch | The role `"Signer 1"` doesn't match your template. Set `SIGNNOW_ROLE_NAME` to the exact role name defined in your SignNow template, then Redeploy |
+| Not sure what's wrong with SignNow setup | Need to diagnose | Visit `https://sly-rides.vercel.app/api/check-signnow` in your browser — it returns a detailed status report of every component |
 | Booked dates don't appear as blocked on the calendar | `GITHUB_TOKEN` not set or has wrong permissions | Create a fine-grained PAT with Contents: Read and write on the SLY-RIDES repo and add it as `GITHUB_TOKEN` in Vercel → Settings → Env Vars, then Redeploy |
 
 ---
