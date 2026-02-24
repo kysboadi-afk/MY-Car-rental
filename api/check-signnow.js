@@ -9,7 +9,9 @@
 // This endpoint is intentionally open (no authentication required) but exposes
 // only configuration status, not credential values.
 
-const SIGNNOW_API_BASE = "https://api.signnow.com";
+// Read from env so sandbox (api-eval.signnow.com) and production (api.signnow.com)
+// apps both work without a code change.
+const SIGNNOW_API_BASE = process.env.SIGNNOW_API_BASE || "https://api.signnow.com";
 
 function hasOAuthConfig() {
   return !!(
@@ -64,6 +66,33 @@ async function tryGetDocument(token, templateId) {
   return { ok: true, roles };
 }
 
+/**
+ * Returns a human-readable hint for a failed OAuth token response.
+ * The most common failure is "invalid_client" which happens when a sandbox/eval
+ * application is used against the production API endpoint (or vice-versa).
+ */
+function oauthFailureHint(status, errorBody) {
+  try {
+    const parsed = typeof errorBody === "string" ? JSON.parse(errorBody) : errorBody;
+    if (parsed && parsed.error === "invalid_client") {
+      const current = process.env.SIGNNOW_API_BASE || "https://api.signnow.com (production, default)";
+      const other = (process.env.SIGNNOW_API_BASE || "").includes("eval")
+        ? "https://api.signnow.com"
+        : "https://api-eval.signnow.com";
+      return (
+        `"invalid_client" means your Client ID/Secret are not recognised by this API endpoint. ` +
+        `Current endpoint: ${current}. ` +
+        `If you created your app in the SignNow sandbox/eval dashboard, add ` +
+        `SIGNNOW_API_BASE = ${other} in Vercel → Settings → Environment Variables and redeploy. ` +
+        `If you are using the production dashboard, double-check that SIGNNOW_CLIENT_ID and ` +
+        `SIGNNOW_CLIENT_SECRET are copied correctly.`
+      );
+    }
+  } catch (_) { /* not JSON — fall through */ }
+  if (status === 401) return "Invalid credentials — check SIGNNOW_CLIENT_ID, SIGNNOW_CLIENT_SECRET, SIGNNOW_EMAIL, and SIGNNOW_PASSWORD.";
+  return "Unexpected error — check Vercel function logs for details.";
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -72,6 +101,7 @@ export default async function handler(req, res) {
 
   const report = {
     timestamp: new Date().toISOString(),
+    apiBase: SIGNNOW_API_BASE,
     auth: {},
     templateId: {},
     template: null,
@@ -103,6 +133,7 @@ export default async function handler(req, res) {
         report.auth.status = "✅ Token obtained successfully";
       } else {
         report.auth.status = `❌ Token request failed (HTTP ${result.status}): ${result.error}`;
+        report.auth.hint = oauthFailureHint(result.status, result.error);
       }
     } catch (err) {
       report.auth.status = `❌ Token request threw: ${err.message}`;

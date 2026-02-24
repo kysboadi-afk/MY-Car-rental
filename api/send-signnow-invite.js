@@ -19,12 +19,19 @@
 // Optional:
 //   SIGNNOW_ROLE_NAME    — Role name used in the invite (default: "Signer 1").
 //                          Must exactly match the role defined in your SignNow template.
+//   SIGNNOW_API_BASE     — Override the SignNow API base URL.
+//                          Default: https://api.signnow.com  (production)
+//                          Use https://api-eval.signnow.com  for sandbox/eval apps.
+//                          If you get an "invalid_client" error, your app was likely
+//                          created in the SignNow sandbox — set this to the eval URL.
 //
 // Each booking creates a *fresh copy* of the template so every renter signs
 // their own blank document and can never see a previous renter's filled-in data.
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const SIGNNOW_API_BASE = "https://api.signnow.com";
+// Read from env so sandbox (api-eval.signnow.com) and production (api.signnow.com)
+// apps both work without a code change.
+const SIGNNOW_API_BASE = process.env.SIGNNOW_API_BASE || "https://api.signnow.com";
 
 /**
  * Get a SignNow access token.

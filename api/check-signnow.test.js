@@ -270,3 +270,80 @@ test("report includes timestamp", async () => {
   assert.ok(res._body.timestamp, "Should include a timestamp");
   assert.ok(!isNaN(Date.parse(res._body.timestamp)), "Timestamp should be a valid date string");
 });
+
+test("report includes apiBase field", async () => {
+  setOAuthEnv();
+  process.env.SIGNNOW_TEMPLATE_ID = "tmpl-123";
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) return { ok: true, status: 200, text: async () => "", json: async () => ({ access_token: "tok" }) };
+    return { ok: true, status: 200, text: async () => "", json: async () => ({ roles: [{ name: "Signer 1" }], fields: [] }) };
+  });
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.ok(res._body.apiBase, "Should include apiBase field");
+  assert.equal(typeof res._body.apiBase, "string", "apiBase should be a string");
+  assert.ok(res._body.apiBase.startsWith("https://"), "apiBase should start with https://");
+});
+
+test("auth.hint is included when OAuth returns invalid_client (HTTP 400)", async () => {
+  setOAuthEnv();
+  process.env.SIGNNOW_TEMPLATE_ID = "tmpl-123";
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) {
+      return { ok: false, status: 400, text: async () => '{"error":"invalid_client"}', json: async () => ({ error: "invalid_client" }) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.ok(res._body.auth.hint, "Should include a hint when invalid_client is returned");
+  assert.ok(res._body.auth.hint.includes("invalid_client"), "Hint should mention invalid_client");
+  assert.ok(
+    res._body.auth.hint.includes("api-eval") || res._body.auth.hint.includes("sandbox") || res._body.auth.hint.includes("eval"),
+    "Hint should mention the eval/sandbox environment"
+  );
+});
+
+test("auth hint for invalid_client mentions the current API base URL", async () => {
+  setOAuthEnv();
+  process.env.SIGNNOW_TEMPLATE_ID = "tmpl-123";
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) {
+      return { ok: false, status: 400, text: async () => '{"error":"invalid_client"}', json: async () => ({}) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.ok(res._body.auth.hint, "Should include a hint");
+  // The hint should tell the user what endpoint is currently being used
+  assert.ok(
+    res._body.auth.hint.includes("Current endpoint") || res._body.auth.hint.startsWith("\"invalid_client\""),
+    "Hint should describe the current API endpoint so the user knows what to change"
+  );
+});
+
+test("no auth.hint is added when OAuth succeeds", async () => {
+  setOAuthEnv();
+  process.env.SIGNNOW_TEMPLATE_ID = "tmpl-123";
+  delete process.env.SIGNNOW_ROLE_NAME;
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) return { ok: true, status: 200, text: async () => "", json: async () => ({ access_token: "tok" }) };
+    return { ok: true, status: 200, text: async () => "", json: async () => ({ roles: [{ name: "Signer 1" }], fields: [] }) };
+  });
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._body.auth.hint, undefined, "hint should not be set on success");
+});
