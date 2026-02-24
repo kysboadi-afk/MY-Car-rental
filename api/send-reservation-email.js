@@ -9,6 +9,7 @@
 //   OWNER_EMAIL  — business email that receives all reservation alerts
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
+import { hasOverlap } from "./_availability.js";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -55,8 +56,7 @@ async function blockBookedDates(vehicleId, from, to) {
     Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
   );
   if (!current[vehicleId]) current[vehicleId] = [];
-  const alreadyBlocked = current[vehicleId].some((r) => r.from === from && r.to === to);
-  if (alreadyBlocked) return;
+  if (hasOverlap(current[vehicleId], from, to)) return;
   current[vehicleId].push({ from, to });
 
   const updatedContent = Buffer.from(
