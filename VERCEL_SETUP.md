@@ -88,19 +88,40 @@ Optional but recommended. Without these, no emails are sent.
 
 ## Step 3b — Add Your GitHub Token (for Automatic Calendar Blocking)
 
-When a booking is confirmed, the API automatically updates `booked-dates.json` in your GitHub repository so those dates are blocked on the calendar for future visitors. This requires a GitHub personal access token.
+When a booking is confirmed, the API automatically updates `booked-dates.json` in your GitHub repository so those dates are blocked on the calendar for future visitors. This requires a GitHub personal access token (PAT).
 
-| Variable Name | Value |
+| Variable Name | What to put in the "Value" field in Vercel |
 |---|---|
-| `GITHUB_TOKEN` | A GitHub fine-grained PAT with **Contents: Read and write** permission on the `SLY-RIDES` repo |
+| `GITHUB_TOKEN` | The token string you generate below — it looks like `github_pat_11ABCDE…` (a long string of letters and numbers) |
 
-### How to create the token
+> 💡 **The value is the token string itself.** You generate it once on GitHub, copy it, and paste it directly into Vercel's Value field. It is not a username, password, or URL — just that one long string.
 
-1. Go to **[https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)**.
-2. Under **Repository access**, select **Only select repositories** → choose `SLY-RIDES`.
-3. Under **Permissions → Repository permissions**, set **Contents** to **Read and write**.
-4. Click **Generate token** and copy it.
-5. Add it as `GITHUB_TOKEN` in Vercel → Settings → Environment Variables, then **Redeploy**.
+### How to create the token and add it to Vercel
+
+**Part A — Create the token on GitHub**
+
+1. Go to **[https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)**.  
+   *(You must be logged in as the owner of the `kysboadi-afk/SLY-RIDES` repository.)*
+2. Give it a name, e.g. **`SLY-RIDES calendar`**.
+3. Set **Expiration** to a date far in the future (e.g. 1 year) so it doesn't expire mid-season.
+4. Under **Repository access**, select **Only select repositories** → choose `SLY-RIDES`.
+5. Under **Permissions → Repository permissions**, find **Contents** and set it to **Read and write**.
+6. Click **Generate token**.
+7. **Copy the token immediately** — GitHub shows it only once. It will look like:  
+   ```
+   github_pat_11ABCDEFG0aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcdefghij
+   ```
+
+**Part B — Paste it into Vercel**
+
+1. Go to **[https://vercel.com/dashboard](https://vercel.com/dashboard)** and open your **sly-rides** project.
+2. Click **Settings → Environment Variables → Add New**.
+3. Set **Name** to `GITHUB_TOKEN`.
+4. Set **Value** to the token string you just copied from GitHub (the `github_pat_…` string).
+5. Leave **Environment** as **Production** (or select all three if you want it in Preview/Development too).
+6. Click **Save**.
+7. Go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.  
+   *(New env vars only take effect after a redeploy.)*
 
 > ⚠️ Without this token, bookings will still send confirmation emails but the calendar will **not** automatically block the reserved dates. You would need to manually edit `booked-dates.json` in the repository after each booking.
 
