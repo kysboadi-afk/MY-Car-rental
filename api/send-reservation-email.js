@@ -21,6 +21,62 @@ export const config = {
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const BOOKED_DATES_PATH = "booked-dates.json";
+
+/**
+ * Update booked-dates.json in the GitHub repo to block the reserved dates.
+ * Requires GITHUB_TOKEN env var with contents:write permission on the repo.
+ * Failures are logged but do not abort the email response.
+ */
+async function blockBookedDates(vehicleId, from, to) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn("GITHUB_TOKEN not set — booked-dates.json will not be updated automatically");
+    return;
+  }
+  if (!vehicleId || !from || !to) return;
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const getResp = await fetch(apiUrl, { headers });
+  if (!getResp.ok) {
+    const errText = await getResp.text();
+    throw new Error(`GitHub GET failed: ${getResp.status} ${errText}`);
+  }
+  const fileData = await getResp.json();
+
+  const current = JSON.parse(
+    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
+  );
+  if (!current[vehicleId]) current[vehicleId] = [];
+  const alreadyBlocked = current[vehicleId].some((r) => r.from === from && r.to === to);
+  if (alreadyBlocked) return;
+  current[vehicleId].push({ from, to });
+
+  const updatedContent = Buffer.from(
+    JSON.stringify(current, null, 2) + "\n"
+  ).toString("base64");
+
+  const putResp = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: `Block dates for ${vehicleId}: ${from} to ${to}`,
+      content: updatedContent,
+      sha: fileData.sha,
+    }),
+  });
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    throw new Error(`GitHub PUT failed: ${putResp.status} ${errText}`);
+  }
+}
 
 // Escape special HTML characters to prevent XSS in email templates
 function esc(str) {
@@ -59,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
+  const { vehicleId, car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType } = req.body;
 
   try {
     // Build attachment list for the owner email
@@ -128,6 +184,15 @@ export default async function handler(req, res) {
     }
 
     res.status(200).json({ success: true });
+
+    // Block the reserved dates in booked-dates.json so the calendar reflects
+    // the new booking. This runs after the response is sent; failures are
+    // non-fatal and only logged.
+    if (vehicleId && pickup && returnDate) {
+      blockBookedDates(vehicleId, pickup, returnDate).catch((err) => {
+        console.error("Failed to update booked-dates.json:", err.message);
+      });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Email sending failed" });

@@ -86,6 +86,47 @@ Optional but recommended. Without these, no emails are sent.
 
 ---
 
+## Step 3b — Add Your GitHub Token (for Automatic Calendar Blocking)
+
+When a booking is confirmed, the API automatically updates `booked-dates.json` in your GitHub repository so those dates are blocked on the calendar for future visitors. This requires a GitHub personal access token (PAT).
+
+| Variable Name | What to put in the "Value" field in Vercel |
+|---|---|
+| `GITHUB_TOKEN` | The token string you generate below — it looks like `github_pat_11ABCDE…` (a long string of letters and numbers) |
+
+> 💡 **The value is the token string itself.** You generate it once on GitHub, copy it, and paste it directly into Vercel's Value field. It is not a username, password, or URL — just that one long string.
+
+### How to create the token and add it to Vercel
+
+**Part A — Create the token on GitHub**
+
+1. Go to **[https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)**.  
+   *(You must be logged in as the owner of the `kysboadi-afk/SLY-RIDES` repository.)*
+2. Give it a name, e.g. **`SLY-RIDES calendar`**.
+3. Set **Expiration** to a date far in the future (e.g. 1 year) so it doesn't expire mid-season.
+4. Under **Repository access**, select **Only select repositories** → choose `SLY-RIDES`.
+5. Under **Permissions → Repository permissions**, find **Contents** and set it to **Read and write**.
+6. Click **Generate token**.
+7. **Copy the token immediately** — GitHub shows it only once. It will look like:  
+   ```
+   github_pat_11ABCDEFG0aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcdefghij
+   ```
+
+**Part B — Paste it into Vercel**
+
+1. Go to **[https://vercel.com/dashboard](https://vercel.com/dashboard)** and open your **sly-rides** project.
+2. Click **Settings → Environment Variables → Add New**.
+3. Set **Name** to `GITHUB_TOKEN`.
+4. Set **Value** to the token string you just copied from GitHub (the `github_pat_…` string).
+5. Leave **Environment** as **Production** (or select all three if you want it in Preview/Development too).
+6. Click **Save**.
+7. Go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.  
+   *(New env vars only take effect after a redeploy.)*
+
+> ⚠️ Without this token, bookings will still send confirmation emails but the calendar will **not** automatically block the reserved dates. You would need to manually edit `booked-dates.json` in the repository after each booking.
+
+---
+
 ## Step 4 — Add Your SignNow Variables (for E-Signature)
 
 Required for the rental agreement e-signature feature. Without these, the booking page will show an error asking the customer to contact you directly.
@@ -129,6 +170,7 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
 | "Sign Agreement" button shows error message | Missing SignNow env vars | Add `SIGNNOW_API_TOKEN` and `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
+| Booked dates don't appear as blocked on the calendar | `GITHUB_TOKEN` not set or has wrong permissions | Create a fine-grained PAT with Contents: Read and write on the SLY-RIDES repo and add it as `GITHUB_TOKEN` in Vercel → Settings → Env Vars, then Redeploy |
 
 ---
 
@@ -142,5 +184,6 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `SIGNNOW_API_TOKEN` | Must be set in Vercel → Settings → Env Vars |
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |
+| `GITHUB_TOKEN` | Must be set to auto-block calendar dates after each booking |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 

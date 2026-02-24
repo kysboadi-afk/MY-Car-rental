@@ -416,6 +416,7 @@ stripeBtn.addEventListener("click", async () => {
       const name = document.getElementById("name").value.trim();
       const phone = document.getElementById("phone").value.trim();
       const bookingPayload = {
+        vehicleId,
         car: carData.name,
         name,
         pickup: pickup.value,
