@@ -67,15 +67,26 @@
       var data;
       try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
 
+      function showEmailError() {
+        var status = document.getElementById("emailStatus");
+        if (status) {
+          status.textContent = "We couldn't send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.";
+          status.style.color = "#ff9800";
+          status.style.display = "";
+        }
+      }
+
       function sendEmail() {
         fetch(API_BASE + "/api/send-reservation-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
-        }).then(function () {
+        }).then(function (res) {
+          if (!res.ok) { showEmailError(); }
           enableHomeBtn();
         }).catch(function (err) {
           console.error("Reservation email error:", err);
+          showEmailError();
           enableHomeBtn();
         });
       }
