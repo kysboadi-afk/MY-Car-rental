@@ -1,4 +1,14 @@
 {
+  "functions": {
+    "api/booked-dates.js": { "maxDuration": 10 },
+    "api/check-email.js": { "maxDuration": 10 },
+    "api/check-signnow.js": { "maxDuration": 15 },
+    "api/contact-info.js": { "maxDuration": 5 },
+    "api/create-checkout-session.js": { "maxDuration": 10 },
+    "api/create-payment-intent.js": { "maxDuration": 10 },
+    "api/send-reservation-email.js": { "maxDuration": 30 },
+    "api/send-signnow-invite.js": { "maxDuration": 15 }
+  },
   "env": {
     "OWNER_EMAIL": "slyservices@supports-info.com"
   }
