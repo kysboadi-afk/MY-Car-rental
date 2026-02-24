@@ -86,7 +86,25 @@ Optional but recommended. Without these, no emails are sent.
 
 ---
 
-## Step 4 — Test the Payment Form
+## Step 4 — Add Your SignNow Variables (for E-Signature)
+
+Required for the rental agreement e-signature feature. Without these, the booking page falls back to opening a static SignNow link.
+
+| Variable Name | Value |
+|---|---|
+| `SIGNNOW_API_TOKEN` | API access token from your SignNow account |
+| `SIGNNOW_DOCUMENT_ID` | ID of the rental agreement document/template in SignNow |
+
+### How to get your SignNow credentials
+
+1. Log in at **[https://app.signnow.com](https://app.signnow.com)**.
+2. Go to **Apps & SDKs → API** to create or retrieve your API access token.
+3. Open your rental agreement document and copy its **Document ID** from the URL or document settings.
+4. Add both values as environment variables in Vercel (same process as Step 2).
+
+---
+
+## Step 5 — Test the Payment Form
 
 1. Visit **[https://www.slytrans.com/car.html?vehicle=camry](https://www.slytrans.com/car.html?vehicle=camry)**.
 2. Fill in pickup date, return date, email, and upload an ID.
@@ -106,6 +124,7 @@ Optional but recommended. Without these, no emails are sent.
 | Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
 | Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
+| "Sign Agreement" button falls back to static link | Missing SignNow env vars | Add `SIGNNOW_API_TOKEN` and `SIGNNOW_DOCUMENT_ID` in Vercel → Settings → Env Vars, then Redeploy |
 
 ---
 
@@ -117,5 +136,7 @@ Optional but recommended. Without these, no emails are sent.
 | Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
+| `SIGNNOW_API_TOKEN` | Must be set in Vercel → Settings → Env Vars |
+| `SIGNNOW_DOCUMENT_ID` | Must be set in Vercel → Settings → Env Vars |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 

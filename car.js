@@ -147,26 +147,58 @@ document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 
 // ----- Sign Agreement Button -----
-// The confirmation checkbox is disabled until the customer clicks the SignNow link.
-document.getElementById("signAgreementBtn").addEventListener("click", function (e) {
+// Sends a SignNow e-signature invite to the renter's email via the API.
+// Falls back to opening the static SignNow link if the API call fails.
+// The confirmation checkbox is enabled once the invite is dispatched.
+document.getElementById("signAgreementBtn").addEventListener("click", async function (e) {
   e.preventDefault();
-  // Build a fresh SignNow URL with the renter's name/email and a timestamp
-  // so each new booking opens a clean contract form.
+  const btn = this;
   const renterName = document.getElementById("name").value.trim();
   const renterEmail = document.getElementById("email").value.trim();
-  const baseUrl = "https://signnow.com/invite_short_link/MpwyfGkjSS";
-  const params = new URLSearchParams({ t: Date.now() });
-  if (renterName) params.set("name", renterName);
-  if (renterEmail) params.set("email", renterEmail);
-  window.open(baseUrl + "?" + params.toString(), "_blank");
-
   const checkbox = document.getElementById("agree");
-  checkbox.disabled = false;
-  this.classList.add("signed");
-  this.textContent = "✅ Rental Agreement Opened — Please Complete Signing";
   const status = document.getElementById("signAgreementStatus");
+
+  btn.disabled = true;
+  btn.textContent = "Sending…";
   status.style.display = "";
-  status.textContent = "Rental agreement opened. You may now check the confirmation box below.";
+  status.textContent = "Sending rental agreement to your email…";
+
+  let apiOk = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/send-signnow-invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: renterName,
+        email: renterEmail,
+        car: carData.name,
+        pickup: document.getElementById("pickup").value,
+        returnDate: document.getElementById("return").value,
+      }),
+    });
+    apiOk = res.ok;
+  } catch (_) {
+    apiOk = false;
+  }
+
+  if (apiOk) {
+    checkbox.disabled = false;
+    btn.classList.add("signed");
+    btn.textContent = "✅ Rental Agreement Sent — Check Your Email to Sign";
+    status.textContent = `Rental agreement sent to ${renterEmail || "your email"}. Please sign it, then check the box below.`;
+  } else {
+    // Fallback: open the static SignNow link so the customer is never blocked
+    const params = new URLSearchParams({ t: Date.now() });
+    if (renterName) params.set("name", renterName);
+    if (renterEmail) params.set("email", renterEmail);
+    window.open("https://signnow.com/invite_short_link/MpwyfGkjSS?" + params.toString(), "_blank");
+    checkbox.disabled = false;
+    btn.classList.add("signed");
+    btn.textContent = "✅ Rental Agreement Opened — Please Complete Signing";
+    status.textContent = "Rental agreement opened in a new tab. Please sign it, then check the box below.";
+  }
+
+  btn.disabled = false;
   updatePayBtn();
 });
 
