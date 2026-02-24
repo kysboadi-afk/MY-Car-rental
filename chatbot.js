@@ -23,7 +23,7 @@ const botResponses = [
   },
   {
     patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-    reply: "⚠️ Refund Policy\n\nAll payments are non-refundable.\n\n• No-shows are not eligible for a refund\n• Cancellations after booking are not eligible for a refund\n• Please ensure your dates are confirmed before completing payment\n\nFor questions, email us at slyservices@supports-info.com 🙏"
+    reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, email us at slyservices@supports-info.com 🙏"
   },
   {
     patterns: ["contact","phone","call","email","reach","support","help"],
