@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, signature } = req.body;
+  const { vehicleId, car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature } = req.body;
 
   try {
     // Build attachment list for the owner email
@@ -126,6 +126,14 @@ export default async function handler(req, res) {
         content: idBase64,
         encoding: "base64",
         contentType: idMimeType || "application/octet-stream",
+      });
+    }
+    if (insuranceBase64 && insuranceFileName) {
+      attachments.push({
+        filename: insuranceFileName,
+        content: insuranceBase64,
+        encoding: "base64",
+        contentType: insuranceMimeType || "application/octet-stream",
       });
     }
 
@@ -155,7 +163,8 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
-        ${attachments.length > 0 ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
+        ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
+        ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
         <p>Payment has been received. Please contact the customer to confirm rental details.</p>
       `,
     });
