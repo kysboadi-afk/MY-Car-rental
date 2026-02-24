@@ -1,7 +1,7 @@
 // api/create-checkout-session.js
 // Vercel serverless function — Stripe payment session
 import Stripe from "stripe";
-import { CARS, computeAmount } from "./pricing.js";
+import { CARS, computeAmount } from "./_pricing.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];

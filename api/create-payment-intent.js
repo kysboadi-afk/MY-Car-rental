@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount } from "./pricing.js";
+import { CARS, computeAmount } from "./_pricing.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
