@@ -147,7 +147,6 @@ idUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
-const insuranceUpload = document.getElementById("insuranceUpload");
 insuranceUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
