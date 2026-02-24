@@ -5,6 +5,15 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
+// ─── SMTP env vars (must be set before handler is imported) ─────────────────
+// The handler guards against missing SMTP credentials before entering the
+// try block. Set fake values here so the guard passes; nodemailer itself is
+// mocked below and never actually connects to an SMTP server.
+process.env.SMTP_HOST = "smtp.test.invalid";
+process.env.SMTP_PORT = "587";
+process.env.SMTP_USER = "test@test.invalid";
+process.env.SMTP_PASS = "test-password";
+
 // ─── Nodemailer mock ────────────────────────────────────────────────────────
 // Must be registered before the handler module is imported so the
 // module-level `nodemailer.createTransport()` call picks up the mock.
