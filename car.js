@@ -11,14 +11,24 @@ const cars = {
     subtitle: "Sports • 2-Seater",
     pricePerDay: 300,
     deposit: 150,
-    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"]
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: "57XAARHB8P8156561",
+    color: null
   },
   camry: {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
     weekly: 300,
-    images: ["images/car5.jpg","images/car4.jpg"]
+    images: ["images/car5.jpg","images/car4.jpg"],
+    make: "Toyota",
+    model: "Camry",
+    year: 2012,
+    vin: "4T1BF1FK5CU063142",
+    color: "Grey"
   }
 };
 
@@ -213,6 +223,20 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
     intro.innerHTML  = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
   }
+
+  // Populate vehicle details section
+  const elMake  = document.getElementById("agreementVehicleMake");
+  const elModel = document.getElementById("agreementVehicleModel");
+  const elYear  = document.getElementById("agreementVehicleYear");
+  const elVin   = document.getElementById("agreementVehicleVin");
+  const elColor = document.getElementById("agreementVehicleColor");
+  const colorRow = document.getElementById("agreementColorRow");
+  if (elMake)  elMake.textContent  = carData.make  || "";
+  if (elModel) elModel.textContent = carData.model || "";
+  if (elYear)  elYear.textContent  = carData.year  || "";
+  if (elVin)   elVin.textContent   = carData.vin   || "";
+  if (elColor) elColor.textContent = carData.color || "";
+  if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Pre-fill the signature field with the renter's name if already typed
   const sigInput = document.getElementById("signatureInput");
@@ -524,6 +548,11 @@ stripeBtn.addEventListener("click", async () => {
       const bookingPayload = {
         vehicleId,
         car: carData.name,
+        vehicleMake: carData.make || null,
+        vehicleModel: carData.model || null,
+        vehicleYear: carData.year || null,
+        vehicleVin: carData.vin || null,
+        vehicleColor: carData.color || null,
         name,
         pickup: pickup.value,
         pickupTime: pickupTime.value,
