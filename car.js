@@ -226,12 +226,25 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
 // Enable the confirm button only when the signature field has text
 document.getElementById("signatureInput").addEventListener("input", function () {
   document.getElementById("confirmSignBtn").disabled = this.value.trim() === "";
+  const sigError = document.getElementById("signatureError");
+  if (sigError) { sigError.style.display = "none"; sigError.textContent = ""; }
 });
 
 // Confirm & Sign
 document.getElementById("confirmSignBtn").addEventListener("click", function () {
   const sig = document.getElementById("signatureInput").value.trim();
   if (!sig) return;
+
+  // Ensure the typed signature matches the Full Name entered in the booking form
+  const renterName = document.getElementById("name").value.trim();
+  const sigError = document.getElementById("signatureError");
+  if (renterName && sig.toLowerCase() !== renterName.toLowerCase()) {
+    if (sigError) {
+      sigError.textContent = "Signature must match the full name entered in the booking form.";
+      sigError.style.display = "";
+    }
+    return;
+  }
 
   agreementSignature = sig;
 
@@ -319,7 +332,8 @@ async function initDatePickers() {
   returnTimePicker = flatpickr(returnTime, {
     enableTime: true,
     noCalendar: true,
-    dateFormat: "h:i K"
+    dateFormat: "h:i K",
+    clickOpens: false
   });
 }
 

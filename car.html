@@ -50,8 +50,8 @@
     <label for="return">Return Date</label>
     <input type="date" id="return">
 
-    <label for="returnTime">Return Time</label>
-    <input type="time" id="returnTime">
+    <label for="returnTime">Return Time <span class="field-note">(same as pickup time)</span></label>
+    <input type="time" id="returnTime" readonly>
 
     <label for="name">Full Name</label>
     <input type="text" id="name" placeholder="Enter your full name" autocomplete="off" required>
@@ -114,6 +114,7 @@
 
           <h4>6. INSURANCE &amp; LIABILITY</h4>
           <p>The renter is responsible for any damage to the vehicle not covered by SLY Transportation's insurance policy. The renter's personal auto insurance or credit card coverage may apply; it is the renter's responsibility to verify this before the rental begins.</p>
+          <p>The renter assumes full personal liability for any bodily injury, death, or property damage caused to third parties — including other drivers, passengers, pedestrians, or any other persons — arising out of the renter's operation of the vehicle during the rental period. SLY Transportation Services shall not be held liable for any claims, suits, losses, or expenses resulting from the renter's actions or negligence while operating the vehicle. The renter agrees to indemnify, defend, and hold harmless SLY Transportation Services from and against any and all such third-party claims.</p>
 
           <h4>7. SECURITY DEPOSIT</h4>
           <p>A security deposit (where applicable) is charged at the time of booking and will be refunded after the vehicle is returned in satisfactory condition, typically within 5–7 business days.</p>
@@ -131,6 +132,7 @@
         <div class="signature-area">
           <label for="signatureInput">Type your full legal name to sign:</label>
           <input type="text" id="signatureInput" class="signature-input" placeholder="Your full name" autocomplete="off">
+          <p id="signatureError" class="signature-error" style="display:none"></p>
           <p class="signature-note">Typing your name above constitutes your legal electronic signature.</p>
           <div class="agreement-btn-row">
             <button type="button" id="confirmSignBtn" class="confirm-sign-btn" disabled>✅ I Agree &amp; Sign</button>
