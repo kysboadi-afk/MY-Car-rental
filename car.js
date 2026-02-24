@@ -88,6 +88,7 @@ const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
 let currentDayCount = 1;
+let agreementSignature = ""; // typed signature from the inline agreement panel
 
 // ----- File Upload Handling -----
 function resetFileInfo() {
@@ -146,59 +147,68 @@ agreeCheckbox.addEventListener("change", updatePayBtn);
 document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
 
-// ----- Sign Agreement Button -----
-// Sends a SignNow e-signature invite to the renter's email via the API.
-// Falls back to opening the static SignNow link if the API call fails.
-// The confirmation checkbox is enabled once the invite is dispatched.
-document.getElementById("signAgreementBtn").addEventListener("click", async function (e) {
-  e.preventDefault();
-  const btn = this;
+// ----- Inline Rental Agreement / Signing -----
+// Opens the inline agreement panel pre-filled with the current booking details.
+// No external service is used — the customer reads the terms and types their
+// full name as an electronic signature.  The typed name is stored in
+// agreementSignature and included in the owner confirmation email.
+document.getElementById("signAgreementBtn").addEventListener("click", function () {
   const renterName = document.getElementById("name").value.trim();
-  const renterEmail = document.getElementById("email").value.trim();
-  const checkbox = document.getElementById("agree");
+  const pickupVal  = document.getElementById("pickup").value;
+  const returnVal  = document.getElementById("return").value;
+
+  // Populate the agreement intro paragraph with live booking details
+  const intro = document.getElementById("agreementIntro");
+  if (intro) {
+    const namePart   = renterName  ? `<strong>${renterName}</strong>` : "<strong>[Renter]</strong>";
+    const carPart    = `<strong>${carData.name}</strong>`;
+    const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
+    const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
+    intro.innerHTML  = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
+  }
+
+  // Pre-fill the signature field with the renter's name if already typed
+  const sigInput = document.getElementById("signatureInput");
+  if (sigInput && renterName && !sigInput.value) sigInput.value = renterName;
+
+  document.getElementById("rentalAgreementBox").style.display = "";
+  this.style.display = "none";
+  document.getElementById("signAgreementStatus").style.display = "none";
+});
+
+// Enable the confirm button only when the signature field has text
+document.getElementById("signatureInput").addEventListener("input", function () {
+  document.getElementById("confirmSignBtn").disabled = this.value.trim() === "";
+});
+
+// Confirm & Sign
+document.getElementById("confirmSignBtn").addEventListener("click", function () {
+  const sig = document.getElementById("signatureInput").value.trim();
+  if (!sig) return;
+
+  agreementSignature = sig;
+
+  document.getElementById("rentalAgreementBox").style.display = "none";
+  document.getElementById("signAgreementBtn").style.display  = "";
+
+  const btn    = document.getElementById("signAgreementBtn");
   const status = document.getElementById("signAgreementStatus");
+  btn.classList.add("signed");
+  btn.textContent = "✅ Rental Agreement Signed";
 
-  btn.disabled = true;
-  btn.textContent = "Sending…";
   status.style.display = "";
-  status.textContent = "Sending rental agreement to your email…";
+  status.style.color   = "#4caf50";
+  status.textContent   = `Signed by ${sig}. Check the box below to confirm.`;
 
-  let apiOk = false;
-  try {
-    const res = await fetch(`${API_BASE}/api/send-signnow-invite`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: renterName,
-        email: renterEmail,
-        car: carData.name,
-        pickup: document.getElementById("pickup").value,
-        returnDate: document.getElementById("return").value,
-      }),
-    });
-    apiOk = res.ok;
-  } catch (_) {
-    apiOk = false;
-  }
-
-  if (apiOk) {
-    checkbox.disabled = false;
-    btn.classList.add("signed");
-    btn.textContent = "✅ Rental Agreement Sent — Check Your Email to Sign";
-    status.textContent = `Rental agreement sent to ${renterEmail || "your email"}. Please sign it, then check the box below.`;
-  } else {
-    // API unavailable — do NOT open the shared SignNow link because it shows a
-    // single shared document that already contains previous renters' data.
-    // Instead, ask the customer to contact the owner directly.
-    checkbox.disabled = false;
-    btn.classList.add("signed");
-    btn.textContent = "⚠️ Could Not Send Agreement";
-    status.textContent = "We couldn't send your rental agreement automatically. Please email slyservices@supports-info.com to receive your agreement before completing payment.";
-    status.style.color = "#ff9800";
-  }
-
-  btn.disabled = false;
+  const checkbox = document.getElementById("agree");
+  checkbox.disabled = false;
   updatePayBtn();
+});
+
+// Cancel — close the panel and restore the button
+document.getElementById("cancelSignBtn").addEventListener("click", function () {
+  document.getElementById("rentalAgreementBox").style.display = "none";
+  document.getElementById("signAgreementBtn").style.display  = "";
 });
 
 // Native change listeners as fallback (Flatpickr also fires native change events)
@@ -211,12 +221,17 @@ async function initDatePickers() {
   if (typeof flatpickr === "undefined") return; // fallback to native inputs
   let bookedRanges = [];
   try {
-    const resp = await fetch("booked-dates.json");
+    // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
+    // GitHub Pages CDN caches files for several minutes after a commit, so the
+    // static file often shows stale (empty) data even after a booking is saved.
+    // The /api/booked-dates endpoint reads directly from the GitHub Contents API
+    // with Cache-Control: no-store, so new bookings appear immediately.
+    const resp = await fetch(`${API_BASE}/api/booked-dates`);
     if (resp.ok) {
       const data = await resp.json();
       bookedRanges = data[vehicleId] || [];
     }
-  } catch (e) { console.error("Failed to load booked-dates.json:", e); }
+  } catch (e) { console.error("Failed to load booked dates:", e); }
 
   function isBooked(date) {
     return bookedRanges.some(function(r) {
@@ -282,7 +297,15 @@ window.addEventListener("pageshow", function(e) {
   resetFileInfo();
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
-  signBtn.textContent = "✍ Sign Rental Agreement";
+  signBtn.textContent = "✍ Review & Sign Rental Agreement";
+  signBtn.style.display = "";
+  const agreementBox = document.getElementById("rentalAgreementBox");
+  if (agreementBox) agreementBox.style.display = "none";
+  const sigInput = document.getElementById("signatureInput");
+  if (sigInput) sigInput.value = "";
+  const confirmBtn = document.getElementById("confirmSignBtn");
+  if (confirmBtn) confirmBtn.disabled = true;
+  agreementSignature = "";
   const status = document.getElementById("signAgreementStatus");
   status.style.display = "none";
   status.textContent = "";
@@ -432,6 +455,7 @@ stripeBtn.addEventListener("click", async () => {
         days: currentDayCount,
         idFileName,
         idMimeType,
+        signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
