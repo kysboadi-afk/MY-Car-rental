@@ -74,8 +74,8 @@
     </div>
 
     <div class="id-upload-section">
-      <label for="insuranceUpload">📋 Upload Proof of Insurance <span class="optional-label">(Optional)</span></label>
-      <p class="id-note">Upload your personal auto insurance card or policy document if available.</p>
+      <label for="insuranceUpload">🛡️ Upload Proof of Insurance <span class="required">*</span></label>
+      <p class="id-note">Valid auto insurance documentation is required for all rentals.</p>
       <input type="file" id="insuranceUpload" accept=".jpg,.jpeg,.png,.pdf">
       <div id="insuranceFileInfo">
         <span class="file-name">No file selected</span>
@@ -148,7 +148,7 @@
     <p class="refund-notice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
 
     <p class="total">Total: $<span id="total">0</span></p>
-    <p class="pay-hint" id="payHint">Fill in dates, enter your name and email, upload your ID, and sign &amp; agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint">Fill in dates, enter your name and email, upload your ID and proof of insurance, and sign &amp; agree to terms to enable payment.</p>
     <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
 
     <div id="payment-form" style="display:none">

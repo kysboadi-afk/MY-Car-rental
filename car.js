@@ -88,7 +88,7 @@ const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
-let uploadedInsuranceFile = null;
+let uploadedInsurance = null;
 let currentDayCount = 1;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 
@@ -147,40 +147,43 @@ idUpload.addEventListener("change", function(e) {
   updatePayBtn();
 });
 
+const insuranceUpload = document.getElementById("insuranceUpload");
 insuranceUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
 
   if (!file) {
-    uploadedInsuranceFile = null;
+    uploadedInsurance = null;
     resetInsuranceFileInfo();
+    updatePayBtn();
     return;
   }
 
-  // Validate file type
   const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
   if (!allowedTypes.includes(file.type)) {
     alert("Please upload a valid insurance document (JPG, PNG, or PDF)");
     e.target.value = '';
-    uploadedInsuranceFile = null;
+    uploadedInsurance = null;
     resetInsuranceFileInfo();
+    updatePayBtn();
     return;
   }
 
-  // Validate file size (5MB max)
   const maxSize = 5 * 1024 * 1024;
   if (file.size > maxSize) {
     alert("File size must be less than 5MB");
     e.target.value = '';
-    uploadedInsuranceFile = null;
+    uploadedInsurance = null;
     resetInsuranceFileInfo();
+    updatePayBtn();
     return;
   }
 
-  uploadedInsuranceFile = file;
-  const infoEl = document.getElementById("insuranceFileInfo");
-  infoEl.querySelector(".file-name").textContent = file.name;
-  infoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
-  infoEl.classList.add("has-file");
+  uploadedInsurance = file;
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = file.name;
+  el.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  el.classList.add("has-file");
+  updatePayBtn();
 });
 
 // Block past dates — only allow today or future dates
@@ -341,7 +344,7 @@ window.addEventListener("pageshow", function(e) {
   uploadedFile = null;
   resetFileInfo();
   insuranceUpload.value = "";
-  uploadedInsuranceFile = null;
+  uploadedInsurance = null;
   resetInsuranceFileInfo();
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
@@ -372,7 +375,7 @@ window.addEventListener("pageshow", function(e) {
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && nameVal && emailVal;
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceUpload.files.length > 0 && nameVal && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -425,20 +428,20 @@ stripeBtn.addEventListener("click", async () => {
     }
   }
 
-  // Pre-encode the insurance file (optional)
+  // Pre-encode the insurance file
   let insuranceBase64 = null;
   let insuranceFileName = null;
   let insuranceMimeType = null;
-  if (uploadedInsuranceFile) {
+  if (uploadedInsurance) {
     try {
       insuranceBase64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = e => resolve(e.target.result.split(",")[1]);
         reader.onerror = reject;
-        reader.readAsDataURL(uploadedInsuranceFile);
+        reader.readAsDataURL(uploadedInsurance);
       });
-      insuranceFileName = uploadedInsuranceFile.name;
-      insuranceMimeType = uploadedInsuranceFile.type;
+      insuranceFileName = uploadedInsurance.name;
+      insuranceMimeType = uploadedInsurance.type;
     } catch (err) {
       console.error("Insurance encoding error:", err);
     }
@@ -530,7 +533,7 @@ stripeBtn.addEventListener("click", async () => {
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if (idBase64 && idFileName) {
+      if ((idBase64 && idFileName) && (insuranceBase64 && insuranceFileName)) {
         try {
           await new Promise((resolve) => {
             const idbReq = indexedDB.open("slyRidesDB", 1);
@@ -539,7 +542,7 @@ stripeBtn.addEventListener("click", async () => {
               const db = e.target.result;
               try {
                 const tx = db.transaction("files", "readwrite");
-                tx.objectStore("files").put({ idBase64, idFileName, idMimeType }, "pendingId");
+                tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
                 tx.oncomplete = () => { db.close(); resolve(); };
                 tx.onerror = () => { db.close(); resolve(); };
               } catch (e) { db.close(); resolve(); }

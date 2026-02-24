@@ -163,8 +163,8 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
-        ${attachments.length > 0 ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
-        ${insuranceBase64 && insuranceFileName ? `<p>📋 <strong>Proof of insurance is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : ""}
+        ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
+        ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
         <p>Payment has been received. Please contact the customer to confirm rental details.</p>
       `,
     });
