@@ -1,6 +1,23 @@
 {
-  "env": {
-    "OWNER_EMAIL": "slyservices@supports-info.com"
+  "functions": {
+    "api/send-reservation-email.js": {
+      "maxDuration": 30
+    },
+    "api/send-signnow-invite.js": {
+      "maxDuration": 30
+    },
+    "api/check-signnow.js": {
+      "maxDuration": 30
+    },
+    "api/create-payment-intent.js": {
+      "maxDuration": 15
+    },
+    "api/create-checkout-session.js": {
+      "maxDuration": 15
+    },
+    "api/booked-dates.js": {
+      "maxDuration": 15
+    }
   }
 }
 
