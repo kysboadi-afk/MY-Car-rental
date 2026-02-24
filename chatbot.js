@@ -1,5 +1,16 @@
 // ===== SLY Rides CHATBOT =====
 
+const API_BASE = "https://sly-rides.vercel.app";
+let _contactEmail = "slyservices@supports-info.com"; // default, replaced once contact-info loads
+
+// Fetch the owner contact email once so all bot replies use the correct address
+fetch(API_BASE + "/api/contact-info")
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .then(function(d) { if (d && d.email) _contactEmail = d.email; })
+  .catch(function() {});
+
+function contactEmail() { return _contactEmail; }
+
 const botResponses = [
   {
     patterns: ["hello","hi","hey","howdy","sup","what's up"],
@@ -23,11 +34,11 @@ const botResponses = [
   },
   {
     patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-    reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, email us at slyservices@supports-info.com 🙏"
+    reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, email us at {{CONTACT_EMAIL}} 🙏"
   },
   {
     patterns: ["contact","phone","call","email","reach","support","help"],
-    reply: "You can reach us at:\n\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
+    reply: "You can reach us at:\n\n📧 {{CONTACT_EMAIL}}\n\nWe typically respond within a few hours. Feel free to ask!"
   },
   {
     patterns: ["pay","payment","stripe","credit","card","paypal"],
@@ -35,7 +46,7 @@ const botResponses = [
   },
   {
     patterns: ["location","where","pickup","pick up","pick-up","address"],
-    reply: "📍 Please contact us to confirm the pickup location:\n\n📧 slyservices@supports-info.com\n\nWe'll share the exact address after your booking is confirmed!"
+    reply: "📍 Please contact us to confirm the pickup location:\n\n📧 {{CONTACT_EMAIL}}\n\nWe'll share the exact address after your booking is confirmed!"
   },
   {
     patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
@@ -45,12 +56,17 @@ const botResponses = [
 
 function getBotReply(input) {
   const lower = input.toLowerCase();
+  let reply;
   for (const item of botResponses) {
     if (item.patterns.some(p => lower.includes(p))) {
-      return item.reply;
+      reply = item.reply;
+      break;
     }
   }
-  return "I'm not sure about that one 🤔\n\nTry asking about:\n• Pricing\n• Available cars\n• How to book\n• Deposit\n• Contact info\n\nOr email us at slyservices@supports-info.com";
+  if (!reply) {
+    reply = "I'm not sure about that one 🤔\n\nTry asking about:\n• Pricing\n• Available cars\n• How to book\n• Deposit\n• Contact info\n\nOr email us at {{CONTACT_EMAIL}}";
+  }
+  return reply.replace(/\{\{CONTACT_EMAIL\}\}/g, contactEmail());
 }
 
 function buildChatbot() {

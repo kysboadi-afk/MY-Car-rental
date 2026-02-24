@@ -132,6 +132,7 @@ export default async function handler(req, res) {
     // --- Notify owner ---
     await transporter.sendMail({
       from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
+      ...(email ? { replyTo: email } : {}),
       to: OWNER_EMAIL,
       subject: `💰 Payment Confirmed – New Booking: ${esc(car)}`,
       attachments,
@@ -164,6 +165,7 @@ export default async function handler(req, res) {
     if (email) {
       await transporter.sendMail({
         from: `"SLY Rides" <${process.env.SMTP_USER}>`,
+        replyTo: OWNER_EMAIL,
         to: email,
         subject: "✅ Your SLY Rides Payment Confirmed",
         html: `
@@ -178,22 +180,24 @@ export default async function handler(req, res) {
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
           </table>
-          <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
+          <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${OWNER_EMAIL}">${esc(OWNER_EMAIL)}</a>.</p>
           <p><strong>SLY Rides Team 🚗</strong></p>
         `,
       });
     }
 
-    res.status(200).json({ success: true });
-
     // Block the reserved dates in booked-dates.json so the calendar reflects
-    // the new booking. This runs after the response is sent; failures are
-    // non-fatal and only logged.
+    // the new booking immediately. Awaited before sending the response so it
+    // completes reliably in a serverless environment. Failures are non-fatal.
     if (vehicleId && pickup && returnDate) {
-      blockBookedDates(vehicleId, pickup, returnDate).catch((err) => {
+      try {
+        await blockBookedDates(vehicleId, pickup, returnDate);
+      } catch (err) {
         console.error("Failed to update booked-dates.json:", err.message);
-      });
+      }
     }
+
+    res.status(200).json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Email sending failed" });

@@ -66,7 +66,7 @@ Without these, the card form cannot load. This is the most common reason it does
 
 ## Step 3 — Add Your Email Variables (for Reservation Notifications)
 
-Optional but recommended. Without these, no emails are sent.
+Without these, no emails are sent — not to you and not to the renter.
 
 | Variable Name | Value |
 |---|---|
@@ -74,7 +74,9 @@ Optional but recommended. Without these, no emails are sent.
 | `SMTP_PORT` | `587` |
 | `SMTP_USER` | Your sending email address |
 | `SMTP_PASS` | App password for that email (see below) |
-| `OWNER_EMAIL` | `slyservices@supports-info.com` |
+| `OWNER_EMAIL` | Your **work email** — this is where booking notifications land |
+
+> ⚠️ **`OWNER_EMAIL` must be your work email.** Every time a renter pays, the system sends you a notification at this address with the full booking details. If this is not set, notifications go to the default address `slyservices@supports-info.com`. Set it to your actual inbox.
 
 ### How to get a Gmail App Password
 
@@ -83,6 +85,39 @@ Optional but recommended. Without these, no emails are sent.
 3. Search for **"App passwords"** → click it.
 4. Choose **Mail** → **Other (Custom name)** → name it `SLY Rides`.
 5. Copy the 16-character password → use it as `SMTP_PASS` in Vercel.
+
+### Step 3a — Verify Your Email Setup (Diagnostic Endpoint)
+
+After adding your email variables and redeploying, visit this URL in your browser to get an instant status report:
+
+```
+https://sly-rides.vercel.app/api/check-email
+```
+
+The response will tell you:
+- ✅ / ❌ Whether each SMTP variable is set
+- ✅ / ❌ What email address owner notifications will be sent to
+- ✅ / ❌ Whether a live SMTP connection can actually be established
+
+**Example of a healthy response:**
+```json
+{
+  "overall": "✅ All checks passed — email notifications are correctly configured",
+  "smtp": {
+    "SMTP_HOST": "✅ set (smtp.gmail.com)",
+    "SMTP_PORT": "✅ set (587)",
+    "SMTP_USER": "✅ set",
+    "SMTP_PASS": "✅ set"
+  },
+  "ownerEmail": {
+    "value": "yourwork@email.com",
+    "source": "OWNER_EMAIL env var"
+  },
+  "connection": {
+    "status": "✅ SMTP connection to smtp.gmail.com:587 succeeded — emails can be sent"
+  }
+}
+```
 
 ---
 
@@ -230,6 +265,8 @@ The response will tell you:
 | Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
 | Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
+| **Not receiving booking notification emails** | SMTP not configured, wrong password, or `OWNER_EMAIL` not set to your work email | Visit `https://sly-rides.vercel.app/api/check-email` — it shows exactly which variable is missing or why the connection is failing. Then fix the issue in Vercel → Settings → Env Vars and **Redeploy**. |
+| Renter confirmation email shows wrong contact address | `OWNER_EMAIL` not set to your work email | Add `OWNER_EMAIL` = your work email in Vercel → Settings → Env Vars, then Redeploy |
 | "Sign Agreement" button shows error message | Expired or missing SignNow token | **Use OAuth credentials (Option A):** add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD` in Vercel → Settings → Env Vars, then Redeploy. Static tokens expire after ~30–60 min. |
 | "Sign Agreement" button shows error message | Missing `SIGNNOW_TEMPLATE_ID` | Add `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
@@ -247,6 +284,12 @@ The response will tell you:
 | Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
+| `SMTP_HOST` | Must be set for emails to work (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | `587` (or `465` for SSL) |
+| `SMTP_USER` | Sending email address |
+| `SMTP_PASS` | App password for that email |
+| `OWNER_EMAIL` | **Your work email** — booking notifications go here. Must be set or notifications use the default address. |
+| Diagnose email setup | Visit `https://sly-rides.vercel.app/api/check-email` |
 | `SIGNNOW_CLIENT_ID` + `SIGNNOW_CLIENT_SECRET` + `SIGNNOW_EMAIL` + `SIGNNOW_PASSWORD` | **Recommended** — OAuth credentials for reliable, non-expiring SignNow auth |
 | `SIGNNOW_API_TOKEN` | Alternative to OAuth credentials — works but expires after ~30–60 min |
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |
