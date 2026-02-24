@@ -39,7 +39,8 @@
   <div class="message-box">
     <h1>✅ Payment Successful!</h1>
     <p>Thank you for booking with SLY Rides! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
-    <a href="index.html">Back to Homepage</a>
+    <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px">Sending confirmation…</p>
+    <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5">Back to Homepage</a>
   </div>
   <footer>
     &copy; 2026 SLY Rides. All rights reserved.
@@ -52,18 +53,31 @@
     // sessionStorage's ~5 MB size cap.
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
+
+      function enableHomeBtn() {
+        var btn = document.getElementById("homeBtn");
+        var status = document.getElementById("emailStatus");
+        if (btn) { btn.style.pointerEvents = ""; btn.style.opacity = ""; }
+        if (status) { status.style.display = "none"; }
+      }
+
       var raw = sessionStorage.getItem("slyRidesBooking");
-      if (!raw) return;
+      if (!raw) { enableHomeBtn(); return; }
       sessionStorage.removeItem("slyRidesBooking");
       var data;
-      try { data = JSON.parse(raw); } catch (e) { return; }
+      try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
 
       function sendEmail() {
         fetch(API_BASE + "/api/send-reservation-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
-        }).catch(function (err) { console.error("Reservation email error:", err); });
+        }).then(function () {
+          enableHomeBtn();
+        }).catch(function (err) {
+          console.error("Reservation email error:", err);
+          enableHomeBtn();
+        });
       }
 
       // Retrieve the ID attachment from IndexedDB, merge into the payload, then send.
