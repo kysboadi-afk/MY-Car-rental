@@ -110,6 +110,9 @@
                 data.idBase64   = idData.idBase64;
                 data.idFileName = idData.idFileName;
                 data.idMimeType = idData.idMimeType;
+                data.insuranceBase64   = idData.insuranceBase64;
+                data.insuranceFileName = idData.insuranceFileName;
+                data.insuranceMimeType = idData.insuranceMimeType;
                 // Delete using the same db connection; send email after cleanup
                 try {
                   var cleanTx = db.transaction("files", "readwrite");

@@ -87,6 +87,7 @@ const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
+let uploadedInsurance = null;
 let currentDayCount = 1;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 
@@ -96,6 +97,13 @@ function resetFileInfo() {
   fileInfoEl.querySelector(".file-name").textContent = "No file selected";
   fileInfoEl.querySelector(".file-size").textContent = "";
   fileInfoEl.classList.remove("has-file");
+}
+
+function resetInsuranceFileInfo() {
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = "No file selected";
+  el.querySelector(".file-size").textContent = "";
+  el.classList.remove("has-file");
 }
 
 idUpload.addEventListener("change", function(e) {
@@ -135,6 +143,45 @@ idUpload.addEventListener("change", function(e) {
   fileInfoEl.querySelector(".file-name").textContent = file.name;
   fileInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
   fileInfoEl.classList.add("has-file");
+  updatePayBtn();
+});
+
+const insuranceUpload = document.getElementById("insuranceUpload");
+insuranceUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+
+  if (!file) {
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please upload a valid insurance document (JPG, PNG, or PDF)");
+    e.target.value = '';
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert("File size must be less than 5MB");
+    e.target.value = '';
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  uploadedInsurance = file;
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = file.name;
+  el.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  el.classList.add("has-file");
   updatePayBtn();
 });
 
@@ -295,6 +342,9 @@ window.addEventListener("pageshow", function(e) {
   idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
+  insuranceUpload.value = "";
+  uploadedInsurance = null;
+  resetInsuranceFileInfo();
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = "✍ Review & Sign Rental Agreement";
@@ -324,7 +374,7 @@ window.addEventListener("pageshow", function(e) {
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && nameVal && emailVal;
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceUpload.files.length > 0 && nameVal && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -374,6 +424,25 @@ stripeBtn.addEventListener("click", async () => {
       idMimeType = uploadedFile.type;
     } catch (err) {
       console.error("ID encoding error:", err);
+    }
+  }
+
+  // Pre-encode the insurance file
+  let insuranceBase64 = null;
+  let insuranceFileName = null;
+  let insuranceMimeType = null;
+  if (uploadedInsurance) {
+    try {
+      insuranceBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedInsurance);
+      });
+      insuranceFileName = uploadedInsurance.name;
+      insuranceMimeType = uploadedInsurance.type;
+    } catch (err) {
+      console.error("Insurance encoding error:", err);
     }
   }
 
@@ -455,13 +524,15 @@ stripeBtn.addEventListener("click", async () => {
         days: currentDayCount,
         idFileName,
         idMimeType,
+        insuranceFileName,
+        insuranceMimeType,
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if (idBase64 && idFileName) {
+      if ((idBase64 && idFileName) && (insuranceBase64 && insuranceFileName)) {
         try {
           await new Promise((resolve) => {
             const idbReq = indexedDB.open("slyRidesDB", 1);
@@ -470,7 +541,7 @@ stripeBtn.addEventListener("click", async () => {
               const db = e.target.result;
               try {
                 const tx = db.transaction("files", "readwrite");
-                tx.objectStore("files").put({ idBase64, idFileName, idMimeType }, "pendingId");
+                tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
                 tx.oncomplete = () => { db.close(); resolve(); };
                 tx.onerror = () => { db.close(); resolve(); };
               } catch (e) { db.close(); resolve(); }
