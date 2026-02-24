@@ -1,4 +1,7 @@
 {
+  "github": {
+    "enabled": false
+  },
   "functions": {
     "api/send-reservation-email.js": {
       "maxDuration": 30
