@@ -1454,6 +1454,12 @@ span.flatpickr-weekday {
   margin: 4px 0 8px;
 }
 
+.field-note {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
 .agreement-btn-row {
   display: flex;
   gap: 10px;

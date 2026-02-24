@@ -332,7 +332,8 @@ async function initDatePickers() {
   returnTimePicker = flatpickr(returnTime, {
     enableTime: true,
     noCalendar: true,
-    dateFormat: "h:i K"
+    dateFormat: "h:i K",
+    clickOpens: false
   });
 }
 
