@@ -245,6 +245,129 @@ test("owner email notes when ID is attached", async () => {
   assert.equal(ownerMail.attachments[0].filename, "license.jpg");
 });
 
+// ─── blockBookedDates tests ────────────────────────────────────────────────
+
+const MOCK_BOOKED_DATES_CONTENT =
+  Buffer.from(JSON.stringify({ slingshot: [], camry: [] }, null, 2) + "\n").toString("base64");
+const ASYNC_FLUSH_DELAY = 20; // ms to let fire-and-forget blockBookedDates finish
+
+test("blockBookedDates: GitHub API is called with correct params when vehicleId and GITHUB_TOKEN are set", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    fetchCalls.push({ url, method: opts && opts.method });
+    if (opts && opts.method === "PUT") return { ok: true, json: async () => ({}) };
+    return { ok: true, json: async () => ({ content: MOCK_BOOKED_DATES_CONTENT, sha: "abc123" }) };
+  };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(res._status, 200);
+  assert.equal(fetchCalls.length, 2, "Should make 2 GitHub API calls (GET + PUT)");
+  assert.ok(fetchCalls[0].url.includes("booked-dates.json"), "GET should target booked-dates.json");
+  assert.equal(fetchCalls[1].method, "PUT", "Second call should be a PUT");
+});
+
+test("blockBookedDates: PUT body includes the new date range for the correct vehicle", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  let putBody;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "PUT") {
+      putBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({}) };
+    }
+    return { ok: true, json: async () => ({ content: MOCK_BOOKED_DATES_CONTENT, sha: "abc123" }) };
+  };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.ok(putBody, "PUT body should be set");
+  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
+  assert.equal(updated.camry.length, 1, "camry should have one booked range");
+  assert.equal(updated.camry[0].from, VALID_BODY.pickup);
+  assert.equal(updated.camry[0].to, VALID_BODY.returnDate);
+});
+
+test("blockBookedDates: GitHub API failure does not change the 200 response", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => "Server Error" });
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(res._status, 200, "Response should still be 200 when GitHub API fails");
+  assert.deepEqual(res._body, { success: true });
+});
+
+test("blockBookedDates: GitHub API is not called when vehicleId is absent", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  // VALID_BODY has no vehicleId
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(fetchCalls.length, 0, "GitHub API should not be called when vehicleId is absent");
+});
+
+test("blockBookedDates: GitHub API is not called when GITHUB_TOKEN is not set", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
+  delete process.env.GITHUB_TOKEN;
+
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  globalThis.fetch = originalFetch;
+
+  assert.equal(fetchCalls.length, 0, "GitHub API should not be called without GITHUB_TOKEN");
+});
+
 test("returns 500 when SMTP credentials are not configured", async () => {
   const savedHost = process.env.SMTP_HOST;
   const savedUser = process.env.SMTP_USER;

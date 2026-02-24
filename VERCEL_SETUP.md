@@ -86,6 +86,26 @@ Optional but recommended. Without these, no emails are sent.
 
 ---
 
+## Step 3b — Add Your GitHub Token (for Automatic Calendar Blocking)
+
+When a booking is confirmed, the API automatically updates `booked-dates.json` in your GitHub repository so those dates are blocked on the calendar for future visitors. This requires a GitHub personal access token.
+
+| Variable Name | Value |
+|---|---|
+| `GITHUB_TOKEN` | A GitHub fine-grained PAT with **Contents: Read and write** permission on the `SLY-RIDES` repo |
+
+### How to create the token
+
+1. Go to **[https://github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new)**.
+2. Under **Repository access**, select **Only select repositories** → choose `SLY-RIDES`.
+3. Under **Permissions → Repository permissions**, set **Contents** to **Read and write**.
+4. Click **Generate token** and copy it.
+5. Add it as `GITHUB_TOKEN` in Vercel → Settings → Environment Variables, then **Redeploy**.
+
+> ⚠️ Without this token, bookings will still send confirmation emails but the calendar will **not** automatically block the reserved dates. You would need to manually edit `booked-dates.json` in the repository after each booking.
+
+---
+
 ## Step 4 — Add Your SignNow Variables (for E-Signature)
 
 Required for the rental agreement e-signature feature. Without these, the booking page will show an error asking the customer to contact you directly.
@@ -129,6 +149,7 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
 | "Sign Agreement" button shows error message | Missing SignNow env vars | Add `SIGNNOW_API_TOKEN` and `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
+| Booked dates don't appear as blocked on the calendar | `GITHUB_TOKEN` not set or has wrong permissions | Create a fine-grained PAT with Contents: Read and write on the SLY-RIDES repo and add it as `GITHUB_TOKEN` in Vercel → Settings → Env Vars, then Redeploy |
 
 ---
 
@@ -142,5 +163,6 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `SIGNNOW_API_TOKEN` | Must be set in Vercel → Settings → Env Vars |
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |
+| `GITHUB_TOKEN` | Must be set to auto-block calendar dates after each booking |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 
