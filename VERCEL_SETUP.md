@@ -131,24 +131,86 @@ When a booking is confirmed, the API automatically updates `booked-dates.json` i
 
 Required for the rental agreement e-signature feature. Without these, the booking page will show an error asking the customer to contact you directly.
 
+### Option A — OAuth Credentials (Recommended)
+
+Using OAuth credentials is **strongly preferred** over a static token. SignNow access tokens expire after ~30–60 minutes, so a static token that was working when you added it will silently stop working later. OAuth credentials let the API fetch a fresh token on every request.
+
 | Variable Name | Value |
 |---|---|
-| `SIGNNOW_API_TOKEN` | API access token from your SignNow account |
+| `SIGNNOW_CLIENT_ID` | Client ID from your SignNow API application |
+| `SIGNNOW_CLIENT_SECRET` | Client secret from your SignNow API application |
+| `SIGNNOW_EMAIL` | Your SignNow account email address |
+| `SIGNNOW_PASSWORD` | Your SignNow account password |
 | `SIGNNOW_TEMPLATE_ID` | ID of the rental agreement **template** in SignNow |
 
-> ⚠️ **Important — use a Template ID, not a Document ID.** Each booking automatically copies the template to create a fresh blank document for that renter. This ensures every customer signs their own private copy and can never see another renter's filled-in data. If you accidentally set this to a filled document ID, renters will see each other's contracts.
+#### How to get your SignNow Client ID and Client Secret
+
+1. Log in at **[https://app.signnow.com](https://app.signnow.com)**.
+2. Go to **Apps & SDKs → API → Applications**.
+3. Create a new application (or use an existing one).
+4. Copy the **Client ID** and **Client Secret**.
+
+### Option B — Static Access Token (Simple but expires)
+
+> ⚠️ **Static tokens expire.** The token will work briefly after you generate it, but will stop working after ~30–60 minutes, causing the "couldn't send your rental agreement" error. Use Option A if you want reliable long-term operation.
+
+| Variable Name | Value |
+|---|---|
+| `SIGNNOW_API_TOKEN` | Access token from your SignNow account |
+| `SIGNNOW_TEMPLATE_ID` | ID of the rental agreement **template** in SignNow |
 
 ### How to find your SignNow Template ID
 
 1. Log in at **[https://app.signnow.com](https://app.signnow.com)**.
 2. Go to **Templates** and open your rental agreement template.
 3. Copy the ID from the URL: `app.signnow.com/webapp/template/**{TEMPLATE_ID}**/edit`
-4. Go to **Apps & SDKs → API** to create or retrieve your API access token.
-5. Add both values as environment variables in Vercel (same process as Step 2).
+
+> ⚠️ **Important — use a Template ID, not a Document ID.** Each booking automatically copies the template to create a fresh blank document for that renter. This ensures every customer signs their own private copy and can never see another renter's filled-in data. If you accidentally set this to a filled document ID, renters will see each other's contracts.
+
+### Optional: Custom Role Name
+
+If your SignNow template uses a role name other than **"Signer 1"** (e.g. "Customer", "Tenant", "Renter"), add this variable:
+
+| Variable Name | Value |
+|---|---|
+| `SIGNNOW_ROLE_NAME` | The exact role name from your SignNow template (default: `Signer 1`) |
+
+> 💡 To find your template's role name: open the template in SignNow → click **Edit** → look at the role/field assignments on the right side panel.
 
 ---
 
-## Step 5 — Test the Payment Form
+## Step 5 — Verify Your SignNow Setup (Diagnostic Endpoint)
+
+After adding your SignNow environment variables and redeploying, visit this URL in your browser to get an instant status report:
+
+```
+https://sly-rides.vercel.app/api/check-signnow
+```
+
+The response will tell you:
+- ✅ / ❌ Whether authentication is working (OAuth or static token)
+- ✅ / ❌ Whether your template ID is set
+- ✅ / ❌ Whether the template is accessible
+- ✅ / ❌ Whether the role name matches a role in your template
+- ✅ What roles are actually in your template (helpful for debugging `SIGNNOW_ROLE_NAME`)
+
+**Example of a healthy response:**
+```json
+{
+  "overall": "✅ All checks passed — SignNow is correctly configured",
+  "auth": { "method": "oauth", "status": "✅ Token obtained successfully" },
+  "templateId": { "status": "✅ Set" },
+  "template": {
+    "status": "✅ Template accessible",
+    "roles": ["Signer 1"],
+    "roleMatch": "✅ \"Signer 1\" found in template roles"
+  }
+}
+```
+
+---
+
+## Step 6 — Test the Payment Form
 
 1. Visit **[https://www.slytrans.com/car.html?vehicle=camry](https://www.slytrans.com/car.html?vehicle=camry)**.
 2. Fill in pickup date, return date, email, and upload an ID.
@@ -168,8 +230,11 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
 | Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
-| "Sign Agreement" button shows error message | Missing SignNow env vars | Add `SIGNNOW_API_TOKEN` and `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
+| "Sign Agreement" button shows error message | Expired or missing SignNow token | **Use OAuth credentials (Option A):** add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD` in Vercel → Settings → Env Vars, then Redeploy. Static tokens expire after ~30–60 min. |
+| "Sign Agreement" button shows error message | Missing `SIGNNOW_TEMPLATE_ID` | Add `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
+| "Failed to send signing invite" in Vercel logs | Role name mismatch | The role `"Signer 1"` doesn't match your template. Set `SIGNNOW_ROLE_NAME` to the exact role name defined in your SignNow template, then Redeploy |
+| Not sure what's wrong with SignNow setup | Need to diagnose | Visit `https://sly-rides.vercel.app/api/check-signnow` in your browser — it returns a detailed status report of every component |
 | Booked dates don't appear as blocked on the calendar | `GITHUB_TOKEN` not set or has wrong permissions | Create a fine-grained PAT with Contents: Read and write on the SLY-RIDES repo and add it as `GITHUB_TOKEN` in Vercel → Settings → Env Vars, then Redeploy |
 
 ---
@@ -182,8 +247,10 @@ Required for the rental agreement e-signature feature. Without these, the bookin
 | Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
-| `SIGNNOW_API_TOKEN` | Must be set in Vercel → Settings → Env Vars |
+| `SIGNNOW_CLIENT_ID` + `SIGNNOW_CLIENT_SECRET` + `SIGNNOW_EMAIL` + `SIGNNOW_PASSWORD` | **Recommended** — OAuth credentials for reliable, non-expiring SignNow auth |
+| `SIGNNOW_API_TOKEN` | Alternative to OAuth credentials — works but expires after ~30–60 min |
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |
+| `SIGNNOW_ROLE_NAME` | Optional — set only if your template's role is not `"Signer 1"` |
 | `GITHUB_TOKEN` | Must be set to auto-block calendar dates after each booking |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 

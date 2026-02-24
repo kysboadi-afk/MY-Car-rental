@@ -50,6 +50,21 @@ const VALID_BODY = {
   returnDate: "2026-03-05",
 };
 
+// ─── OAuth env helpers ───────────────────────────────────────────────────────
+function setOAuthEnv({ password = "secret" } = {}) {
+  process.env.SIGNNOW_CLIENT_ID = "test-client-id";
+  process.env.SIGNNOW_CLIENT_SECRET = "test-client-secret";
+  process.env.SIGNNOW_EMAIL = "owner@example.com";
+  process.env.SIGNNOW_PASSWORD = password;
+}
+
+function clearOAuthEnv() {
+  delete process.env.SIGNNOW_CLIENT_ID;
+  delete process.env.SIGNNOW_CLIENT_SECRET;
+  delete process.env.SIGNNOW_EMAIL;
+  delete process.env.SIGNNOW_PASSWORD;
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 test("OPTIONS request returns 200", async () => {
@@ -288,4 +303,136 @@ test("returns 500 when fetch throws a network error", async () => {
   await handler(req, res);
 
   assert.equal(res._status, 500);
+});
+
+test("uses OAuth credentials to get a fresh token when all four OAuth env vars are set", async () => {
+  setOAuthEnv();
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ access_token: "fresh-token" }) };
+    }
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  clearOAuthEnv();
+
+  assert.equal(res._status, 200);
+  assert.equal(mockFetch.mock.callCount(), 3, "Should make 3 calls: OAuth token + template copy + invite");
+  const tokenCall = mockFetch.mock.calls.find(c => c.arguments[0].includes("/oauth2/token"));
+  assert.ok(tokenCall, "Should call the OAuth token endpoint");
+});
+
+test("OAuth credentials: Bearer token in copy/invite calls is the fresh token, not the static one", async () => {
+  setOAuthEnv();
+  mockFetch.mock.resetCalls();
+  const capturedAuthHeaders = [];
+  mockFetch.mock.mockImplementation(async (_url, opts) => {
+    if (_url.includes("/oauth2/token")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ access_token: "fresh-oauth-token" }) };
+    }
+    capturedAuthHeaders.push(opts.headers.Authorization);
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  clearOAuthEnv();
+
+  assert.equal(capturedAuthHeaders.length, 2, "copy and invite calls should include Authorization");
+  capturedAuthHeaders.forEach(h => {
+    assert.equal(h, "Bearer fresh-oauth-token", "Should use the freshly obtained OAuth token");
+  });
+});
+
+test("returns 500 when OAuth credentials are set but token endpoint fails", async () => {
+  setOAuthEnv({ password: "wrong-password" });
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/oauth2/token")) {
+      return { ok: false, status: 401, text: async () => "Unauthorized", json: async () => ({}) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  clearOAuthEnv();
+
+  assert.equal(res._status, 500);
+  assert.ok(res._body.error, "Should return an error message");
+});
+
+test("returns 500 when OAuth credentials are incomplete (only some vars set)", async () => {
+  const savedToken = process.env.SIGNNOW_API_TOKEN;
+  delete process.env.SIGNNOW_API_TOKEN;
+  process.env.SIGNNOW_CLIENT_ID = "test-client-id";
+  // Missing SIGNNOW_CLIENT_SECRET, SIGNNOW_EMAIL, SIGNNOW_PASSWORD
+  mockFetch.mock.resetCalls();
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  process.env.SIGNNOW_API_TOKEN = savedToken;
+  delete process.env.SIGNNOW_CLIENT_ID;
+
+  assert.equal(res._status, 500);
+  assert.ok(res._body.error.includes("SignNow"), "Error should mention SignNow");
+});
+
+test("uses SIGNNOW_ROLE_NAME env var as the role in the invite body", async () => {
+  process.env.SIGNNOW_ROLE_NAME = "Tenant";
+  mockFetch.mock.resetCalls();
+  let capturedInviteBody;
+  mockFetch.mock.mockImplementation(async (_url, opts) => {
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    capturedInviteBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  delete process.env.SIGNNOW_ROLE_NAME;
+
+  assert.equal(res._status, 200);
+  assert.equal(capturedInviteBody.to[0].role, "Tenant", "Should use the custom role name from SIGNNOW_ROLE_NAME");
+});
+
+test("defaults to 'Signer 1' role when SIGNNOW_ROLE_NAME is not set", async () => {
+  delete process.env.SIGNNOW_ROLE_NAME;
+  mockFetch.mock.resetCalls();
+  let capturedInviteBody;
+  mockFetch.mock.mockImplementation(async (_url, opts) => {
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    capturedInviteBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(capturedInviteBody.to[0].role, "Signer 1", "Should default to 'Signer 1' role");
 });
