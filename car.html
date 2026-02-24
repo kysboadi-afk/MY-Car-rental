@@ -74,14 +74,63 @@
     </div>
 
     <div class="sign-agreement">
-      <p class="sign-agreement-label">📄 Step 1: Sign your Rental Agreement</p>
+      <p class="sign-agreement-label">📄 Step 1: Read &amp; Sign your Rental Agreement</p>
       <p id="signAgreementStatus" aria-live="polite" style="display:none"></p>
-      <a href="#" target="_blank" id="signAgreementBtn" class="sign-agreement-btn">
-        ✍ Sign Rental Agreement
-      </a>
+      <button type="button" id="signAgreementBtn" class="sign-agreement-btn">
+        ✍ Review &amp; Sign Rental Agreement
+      </button>
+
+      <!-- Inline rental agreement — hidden until the button above is clicked -->
+      <div id="rentalAgreementBox" class="rental-agreement-box" style="display:none">
+        <div class="rental-agreement-scroll" id="agreementText">
+          <h3>SLY TRANSPORTATION SERVICES — VEHICLE RENTAL AGREEMENT</h3>
+          <p id="agreementIntro"></p>
+
+          <h4>1. RENTAL TERMS</h4>
+          <p>The renter agrees to rent the vehicle described above for the specified rental period. The vehicle must be returned to the same location at the agreed return date and time. Late returns may incur additional charges.</p>
+
+          <h4>2. DRIVER REQUIREMENTS</h4>
+          <p>The renter must be at least 21 years of age and hold a valid driver's license. Only the renter and pre-approved additional drivers listed by SLY Transportation may operate the vehicle.</p>
+
+          <h4>3. CONDITION &amp; CARE</h4>
+          <p>The renter accepts the vehicle in its current condition and agrees to return it in the same condition, normal wear and tear excepted. Any damage, loss, or theft that occurs during the rental period is the renter's responsibility.</p>
+
+          <h4>4. PROHIBITED USES</h4>
+          <p>The renter agrees NOT to: use the vehicle for any illegal purpose; transport more passengers than the vehicle is designed to carry; tow or push any trailer or vehicle; drive off-road or on unpaved surfaces; smoke inside the vehicle; or allow an unauthorized driver to operate the vehicle.</p>
+
+          <h4>5. FUEL POLICY</h4>
+          <p>The vehicle will be provided with a full tank of fuel. The renter must return the vehicle with a full tank. Failure to do so will result in a refuelling charge at the prevailing local rate plus a service fee.</p>
+
+          <h4>6. INSURANCE &amp; LIABILITY</h4>
+          <p>The renter is responsible for any damage to the vehicle not covered by SLY Transportation's insurance policy. The renter's personal auto insurance or credit card coverage may apply; it is the renter's responsibility to verify this before the rental begins.</p>
+
+          <h4>7. SECURITY DEPOSIT</h4>
+          <p>A security deposit (where applicable) is charged at the time of booking and will be refunded after the vehicle is returned in satisfactory condition, typically within 5–7 business days.</p>
+
+          <h4>8. NO-REFUND POLICY</h4>
+          <p>All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfil the rental.</p>
+
+          <h4>9. GOVERNING LAW</h4>
+          <p>This agreement is governed by the laws of the State of California. Any disputes shall be resolved in the courts of Los Angeles County.</p>
+
+          <h4>10. ENTIRE AGREEMENT</h4>
+          <p>This document constitutes the entire agreement between SLY Transportation Services and the renter. By signing below the renter acknowledges they have read, understood, and agree to all terms above.</p>
+        </div>
+
+        <div class="signature-area">
+          <label for="signatureInput">Type your full legal name to sign:</label>
+          <input type="text" id="signatureInput" class="signature-input" placeholder="Your full name" autocomplete="off">
+          <p class="signature-note">Typing your name above constitutes your legal electronic signature.</p>
+          <div class="agreement-btn-row">
+            <button type="button" id="confirmSignBtn" class="confirm-sign-btn" disabled>✅ I Agree &amp; Sign</button>
+            <button type="button" id="cancelSignBtn" class="cancel-sign-btn">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <label class="agree">
         <input type="checkbox" id="agree" disabled>
-        I have signed the Rental Agreement &amp; Terms
+        I have read and signed the Rental Agreement &amp; Terms
       </label>
     </div>
 
