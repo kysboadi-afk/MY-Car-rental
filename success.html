@@ -53,6 +53,14 @@
     // sessionStorage's ~5 MB size cap.
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
+      var contactEmail = "slyservices@supports-info.com"; // default, overwritten below
+
+      // Pre-fetch the owner contact email. Stored as a promise so sendEmail()
+      // can await it before showing the fallback error message.
+      var contactInfoReady = fetch(API_BASE + "/api/contact-info")
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(d) { if (d && d.email) contactEmail = d.email; })
+        .catch(function() {}); // non-fatal — fallback value stays
 
       function enableHomeBtn() {
         var btn = document.getElementById("homeBtn");
@@ -70,7 +78,7 @@
       function showEmailError() {
         var status = document.getElementById("emailStatus");
         if (status) {
-          status.textContent = "We couldn't send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.";
+          status.textContent = "We couldn't send your confirmation email automatically. Please contact us at " + contactEmail + " to confirm your booking.";
           status.style.color = "#ff9800";
           status.style.display = "";
         }
@@ -82,12 +90,15 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         }).then(function (res) {
-          if (!res.ok) { showEmailError(); }
-          enableHomeBtn();
+          if (!res.ok) {
+            // Wait for contact-info to settle before displaying the address
+            contactInfoReady.then(function() { showEmailError(); enableHomeBtn(); });
+          } else {
+            enableHomeBtn();
+          }
         }).catch(function (err) {
           console.error("Reservation email error:", err);
-          showEmailError();
-          enableHomeBtn();
+          contactInfoReady.then(function() { showEmailError(); enableHomeBtn(); });
         });
       }
 
