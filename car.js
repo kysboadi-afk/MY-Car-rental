@@ -83,6 +83,7 @@ const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
 const agreeCheckbox = document.getElementById("agree");
 const idUpload = document.getElementById("idUpload");
+const insuranceUpload = document.getElementById("insuranceUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
@@ -550,6 +551,27 @@ stripeBtn.addEventListener("click", async () => {
           });
         } catch (e) {
           console.warn("Could not save ID to IndexedDB:", e);
+        }
+      }
+
+      if (insuranceBase64 && insuranceFileName) {
+        try {
+          await new Promise((resolve) => {
+            const idbReq = indexedDB.open("slyRidesDB", 1);
+            idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+            idbReq.onsuccess = e => {
+              const db = e.target.result;
+              try {
+                const tx = db.transaction("files", "readwrite");
+                tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingInsurance");
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = () => { db.close(); resolve(); };
+              } catch (e) { db.close(); resolve(); }
+            };
+            idbReq.onerror = () => resolve();
+          });
+        } catch (e) {
+          console.warn("Could not save insurance to IndexedDB:", e);
         }
       }
 

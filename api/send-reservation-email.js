@@ -10,11 +10,11 @@
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 
-// Allow larger bodies so the renter's ID photo/PDF can be attached
+// Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: "10mb",
+      sizeLimit: "20mb",
     },
   },
 };

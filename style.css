@@ -679,6 +679,12 @@ body {
   color: #66bb6a;
 }
 
+.optional-label {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
 .id-upload-section input[type="file"] {
   width: 100%;
   padding: 8px;
