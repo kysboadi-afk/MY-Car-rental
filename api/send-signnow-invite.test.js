@@ -5,15 +5,18 @@ import assert from "node:assert/strict";
 
 // ─── SignNow env vars (must be set before handler is imported) ───────────────
 process.env.SIGNNOW_API_TOKEN = "test-token";
-process.env.SIGNNOW_DOCUMENT_ID = "test-document-id";
+process.env.SIGNNOW_TEMPLATE_ID = "test-template-id";
 
 // ─── fetch mock ─────────────────────────────────────────────────────────────
 // The handler uses the global fetch. Patch it before importing the handler.
-const mockFetch = mock.fn(async () => ({
-  ok: true,
-  status: 200,
-  text: async () => "",
-}));
+// Default mock: first call (template copy) returns { id: "new-doc-id" },
+// second call (invite) returns ok.
+const mockFetch = mock.fn(async (_url) => {
+  if (_url && _url.includes("/copy")) {
+    return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+  }
+  return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+});
 
 globalThis.fetch = mockFetch;
 
@@ -112,19 +115,42 @@ test("returns 500 when SIGNNOW_API_TOKEN is missing", async () => {
   assert.ok(res._body.error.includes("SignNow"), "Error should mention SignNow");
 });
 
-test("returns 500 when SIGNNOW_DOCUMENT_ID is missing", async () => {
-  const savedId = process.env.SIGNNOW_DOCUMENT_ID;
+test("returns 500 when both SIGNNOW_TEMPLATE_ID and SIGNNOW_DOCUMENT_ID are missing", async () => {
+  const savedTemplateId = process.env.SIGNNOW_TEMPLATE_ID;
+  const savedDocId = process.env.SIGNNOW_DOCUMENT_ID;
+  delete process.env.SIGNNOW_TEMPLATE_ID;
   delete process.env.SIGNNOW_DOCUMENT_ID;
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();
   await handler(req, res);
-  process.env.SIGNNOW_DOCUMENT_ID = savedId;
+  process.env.SIGNNOW_TEMPLATE_ID = savedTemplateId;
+  if (savedDocId) process.env.SIGNNOW_DOCUMENT_ID = savedDocId;
   assert.equal(res._status, 500);
+});
+
+test("SIGNNOW_DOCUMENT_ID is accepted as fallback when SIGNNOW_TEMPLATE_ID is not set", async () => {
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/copy")) return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+  const savedTemplateId = process.env.SIGNNOW_TEMPLATE_ID;
+  delete process.env.SIGNNOW_TEMPLATE_ID;
+  process.env.SIGNNOW_DOCUMENT_ID = "legacy-doc-id";
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+  process.env.SIGNNOW_TEMPLATE_ID = savedTemplateId;
+  delete process.env.SIGNNOW_DOCUMENT_ID;
+  assert.equal(res._status, 200);
 });
 
 test("valid POST calls SignNow API and returns success", async () => {
   mockFetch.mock.resetCalls();
-  mockFetch.mock.mockImplementation(async () => ({ ok: true, status: 200, text: async () => "" }));
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/copy")) return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
 
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();
@@ -132,48 +158,118 @@ test("valid POST calls SignNow API and returns success", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body, { success: true });
-  assert.equal(mockFetch.mock.callCount(), 1, "Should call SignNow API once");
+  assert.equal(mockFetch.mock.callCount(), 2, "Should make 2 calls: template copy + invite");
 });
 
-test("SignNow API call includes renter email in request body", async () => {
+test("first fetch call copies the template to create a fresh document", async () => {
   mockFetch.mock.resetCalls();
-  let capturedBody;
+  let capturedCopyUrl;
+  let capturedCopyBody;
   mockFetch.mock.mockImplementation(async (_url, opts) => {
-    capturedBody = JSON.parse(opts.body);
-    return { ok: true, status: 200, text: async () => "" };
+    if (_url.includes("/copy")) {
+      capturedCopyUrl = _url;
+      capturedCopyBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "fresh-doc-id" }) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
   });
 
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();
   await handler(req, res);
 
-  assert.ok(capturedBody, "Fetch should have been called");
-  assert.equal(capturedBody.to[0].email, VALID_BODY.email);
+  assert.ok(capturedCopyUrl.includes("test-template-id"), "Copy URL should include the template ID");
+  assert.ok(capturedCopyUrl.includes("/copy"), "First call should be to the /copy endpoint");
+  assert.ok(capturedCopyBody.document_name, "Copy body should include a document_name");
+  assert.ok(capturedCopyBody.document_name.includes(VALID_BODY.name), "document_name should include renter name");
 });
 
-test("SignNow API call uses Bearer token in Authorization header", async () => {
+test("second fetch call sends invite for the newly created document (not the template)", async () => {
   mockFetch.mock.resetCalls();
-  let capturedHeaders;
+  let capturedInviteUrl;
   mockFetch.mock.mockImplementation(async (_url, opts) => {
-    capturedHeaders = opts.headers;
-    return { ok: true, status: 200, text: async () => "" };
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "fresh-doc-id" }) };
+    }
+    capturedInviteUrl = _url;
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
   });
 
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();
   await handler(req, res);
 
-  assert.ok(capturedHeaders.Authorization.startsWith("Bearer "), "Should use Bearer auth");
-  assert.ok(capturedHeaders.Authorization.includes("test-token"), "Should include the API token");
+  assert.ok(capturedInviteUrl, "Invite fetch should have been called");
+  assert.ok(capturedInviteUrl.includes("fresh-doc-id"), "Invite URL should use the new copy's ID, not the template ID");
+  assert.ok(!capturedInviteUrl.includes("test-template-id"), "Invite URL must NOT use the template ID");
 });
 
-test("returns 502 when SignNow API returns an error", async () => {
+test("SignNow API call includes renter email in invite body", async () => {
   mockFetch.mock.resetCalls();
-  mockFetch.mock.mockImplementation(async () => ({
-    ok: false,
-    status: 401,
-    text: async () => "Unauthorized",
-  }));
+  let capturedInviteBody;
+  mockFetch.mock.mockImplementation(async (_url, opts) => {
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    capturedInviteBody = JSON.parse(opts.body);
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.ok(capturedInviteBody, "Invite fetch should have been called");
+  assert.equal(capturedInviteBody.to[0].email, VALID_BODY.email);
+});
+
+test("SignNow API calls use Bearer token in Authorization header", async () => {
+  mockFetch.mock.resetCalls();
+  const capturedAuthHeaders = [];
+  mockFetch.mock.mockImplementation(async (_url, opts) => {
+    capturedAuthHeaders.push(opts.headers.Authorization);
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(capturedAuthHeaders.length, 2, "Both calls should set Authorization");
+  capturedAuthHeaders.forEach(h => {
+    assert.ok(h.startsWith("Bearer "), "Should use Bearer auth");
+    assert.ok(h.includes("test-token"), "Should include the API token");
+  });
+});
+
+test("returns 502 when template copy fails", async () => {
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/copy")) {
+      return { ok: false, status: 404, text: async () => "Not found", json: async () => ({}) };
+    }
+    return { ok: true, status: 200, text: async () => "", json: async () => ({}) };
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 502);
+  assert.ok(res._body.error, "Should return an error message");
+});
+
+test("returns 502 when invite call fails", async () => {
+  mockFetch.mock.resetCalls();
+  mockFetch.mock.mockImplementation(async (_url) => {
+    if (_url.includes("/copy")) {
+      return { ok: true, status: 200, text: async () => "", json: async () => ({ id: "new-doc-id" }) };
+    }
+    return { ok: false, status: 401, text: async () => "Unauthorized", json: async () => ({}) };
+  });
 
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();

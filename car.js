@@ -187,15 +187,14 @@ document.getElementById("signAgreementBtn").addEventListener("click", async func
     btn.textContent = "✅ Rental Agreement Sent — Check Your Email to Sign";
     status.textContent = `Rental agreement sent to ${renterEmail || "your email"}. Please sign it, then check the box below.`;
   } else {
-    // Fallback: open the static SignNow link so the customer is never blocked
-    const params = new URLSearchParams({ t: Date.now() });
-    if (renterName) params.set("name", renterName);
-    if (renterEmail) params.set("email", renterEmail);
-    window.open("https://signnow.com/invite_short_link/MpwyfGkjSS?" + params.toString(), "_blank");
+    // API unavailable — do NOT open the shared SignNow link because it shows a
+    // single shared document that already contains previous renters' data.
+    // Instead, ask the customer to contact the owner directly.
     checkbox.disabled = false;
     btn.classList.add("signed");
-    btn.textContent = "✅ Rental Agreement Opened — Please Complete Signing";
-    status.textContent = "Rental agreement opened in a new tab. Please sign it, then check the box below.";
+    btn.textContent = "⚠️ Could Not Send Agreement";
+    status.textContent = "We couldn't send your rental agreement automatically. Please email slyservices@supports-info.com to receive your agreement before completing payment.";
+    status.style.color = "#ff9800";
   }
 
   btn.disabled = false;
