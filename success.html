@@ -91,11 +91,13 @@
         });
       }
 
-      // Retrieve the ID and insurance attachments from IndexedDB, merge into the payload, then send.
+      // Retrieve the ID and insurance attachments from IndexedDB, merge into the payload,
+      // then call sendEmail() exactly once.
+      // car.js saves both files together under the "pendingId" key so a single
+      // read is sufficient.  Any leftover "pendingInsurance" key is also deleted
+      // as part of cleanup to keep the store tidy.
       try {
         var openReq = indexedDB.open("slyRidesDB", 1);
-        // Create the object store if the DB is being created for the first time
-        // (e.g. IndexedDB was cleared between car.html and success.html).
         openReq.onupgradeneeded = function (e) {
           e.target.result.createObjectStore("files");
         };
@@ -105,47 +107,25 @@
             var tx = db.transaction("files", "readonly");
             var getReq = tx.objectStore("files").get("pendingId");
             getReq.onsuccess = function (ev) {
-              var idData = ev.target.result;
-              if (idData) {
-                data.idBase64   = idData.idBase64;
-                data.idFileName = idData.idFileName;
-                data.idMimeType = idData.idMimeType;
-                data.insuranceBase64   = idData.insuranceBase64;
-                data.insuranceFileName = idData.insuranceFileName;
-                data.insuranceMimeType = idData.insuranceMimeType;
-                // Delete using the same db connection; send email after cleanup
-                try {
-                  var cleanTx = db.transaction("files", "readwrite");
-                  cleanTx.objectStore("files").delete("pendingId");
-                  cleanTx.oncomplete = function () { db.close(); sendEmail(); };
-                  cleanTx.onerror   = function () { db.close(); sendEmail(); };
-                } catch (err) { db.close(); sendEmail(); }
-              } else {
-                db.close();
-                sendEmail();
+              var fileData = ev.target.result;
+              if (fileData) {
+                Object.assign(data, {
+                  idBase64:          fileData.idBase64,
+                  idFileName:        fileData.idFileName,
+                  idMimeType:        fileData.idMimeType,
+                  insuranceBase64:   fileData.insuranceBase64,
+                  insuranceFileName: fileData.insuranceFileName,
+                  insuranceMimeType: fileData.insuranceMimeType,
+                });
               }
-              // Now retrieve insurance
+              // Clean up both keys, then send exactly one email.
               try {
-                var tx2 = db.transaction("files", "readonly");
-                var insReq = tx2.objectStore("files").get("pendingInsurance");
-                insReq.onsuccess = function (ev2) {
-                  var insData = ev2.target.result;
-                  if (insData) {
-                    data.insuranceBase64   = insData.insuranceBase64;
-                    data.insuranceFileName = insData.insuranceFileName;
-                    data.insuranceMimeType = insData.insuranceMimeType;
-                  }
-                  // Clean up both entries then send
-                  try {
-                    var cleanTx = db.transaction("files", "readwrite");
-                    var store = cleanTx.objectStore("files");
-                    store.delete("pendingId");
-                    store.delete("pendingInsurance");
-                    cleanTx.oncomplete = function () { db.close(); sendEmail(); };
-                    cleanTx.onerror   = function () { db.close(); sendEmail(); };
-                  } catch (err) { db.close(); sendEmail(); }
-                };
-                insReq.onerror = function () { db.close(); sendEmail(); };
+                var cleanTx = db.transaction("files", "readwrite");
+                var store = cleanTx.objectStore("files");
+                store.delete("pendingId");
+                store.delete("pendingInsurance");
+                cleanTx.oncomplete = function () { db.close(); sendEmail(); };
+                cleanTx.onerror   = function () { db.close(); sendEmail(); };
               } catch (err) { db.close(); sendEmail(); }
             };
             getReq.onerror = function () { db.close(); sendEmail(); };
