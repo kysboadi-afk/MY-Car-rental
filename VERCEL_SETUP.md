@@ -4,6 +4,25 @@ This guide explains the current architecture and how to verify your Stripe payme
 
 ---
 
+## ✅ Quick Setup Checklist
+
+Follow these steps **in order**. Each links to the full instructions below.
+
+| # | What to do | Required? |
+|---|---|---|
+| [Step 0](#step-0--connect-your-github-repository-to-vercel) | Import the `SLY-RIDES` repo into Vercel and click Deploy | ✅ Yes |
+| [Step 1](#step-1--confirm-your-vercel-project-is-deployed) | Confirm the deployment is green ("Ready") in the Vercel dashboard | ✅ Yes |
+| [Step 2](#step-2--add-your-stripe-api-keys-in-vercel) | Add `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — card form won't load without these |
+| [Step 3](#step-3--add-your-email-variables-for-reservation-notifications) | Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — no booking emails without these |
+| [Step 3b](#step-3b--add-your-github-token-for-automatic-calendar-blocking) | Create a GitHub fine-grained PAT and add it as `GITHUB_TOKEN` in Vercel, then Redeploy | ⚠️ Recommended — without it, booked dates won't be blocked automatically |
+| [Step 4](#step-4--add-your-signnow-variables-for-e-signature) | Add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD`, `SIGNNOW_TEMPLATE_ID` in Vercel, then Redeploy | ✅ Yes — rental agreement e-signature won't work without these |
+| [Step 5](#step-5--verify-your-signnow-setup-diagnostic-endpoint) | Visit `https://sly-rides.vercel.app/api/check-signnow` to verify SignNow is working | ✅ Yes — run this after Step 4 to confirm everything is connected |
+| [Step 6](#step-6--test-the-payment-form) | Do a test booking using Stripe test card `4242 4242 4242 4242` | ✅ Yes — confirms the full flow works end-to-end |
+
+> 💡 After adding **any** new environment variable in Vercel, you must **Redeploy** for it to take effect: go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
+
+---
+
 ## Step 0 — Connect Your GitHub Repository to Vercel
 
 Do this **first** if you have not yet imported your project into Vercel.
