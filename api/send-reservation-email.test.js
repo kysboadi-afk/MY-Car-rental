@@ -308,6 +308,46 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   assert.equal(updated.camry[0].to, VALID_BODY.returnDate);
 });
 
+test("blockBookedDates: works correctly for slingshot vehicle", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  let putBody;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "PUT") {
+      putBody = JSON.parse(opts.body);
+      return { ok: true, json: async () => ({}) };
+    }
+    return { ok: true, json: async () => ({ content: MOCK_BOOKED_DATES_CONTENT, sha: "def456" }) };
+  };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const slingshotBody = {
+    ...VALID_BODY,
+    vehicleId: "slingshot",
+    car: "Slingshot R",
+    pricePerDay: 300,
+    deposit: 150,
+    total: "450",
+  };
+  const req = makeReq("POST", slingshotBody);
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(res._status, 200);
+  assert.ok(putBody, "PUT body should be set");
+  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
+  assert.equal(updated.slingshot.length, 1, "slingshot should have one booked range");
+  assert.equal(updated.slingshot[0].from, slingshotBody.pickup);
+  assert.equal(updated.slingshot[0].to, slingshotBody.returnDate);
+  assert.equal(updated.camry.length, 0, "camry should remain unaffected");
+});
+
 test("blockBookedDates: GitHub API failure does not change the 200 response", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
