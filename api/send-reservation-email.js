@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature } = req.body;
 
   try {
     // Build attachment list for the owner email
@@ -149,6 +149,11 @@ export default async function handler(req, res) {
         "",
         `Payment Status : CONFIRMED`,
         `Vehicle        : ${car || ""}`,
+        vehicleMake  ? `Make           : ${vehicleMake}`  : "",
+        vehicleModel ? `Model          : ${vehicleModel}` : "",
+        vehicleYear  ? `Year           : ${vehicleYear}`  : "",
+        vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
+        vehicleColor ? `Color          : ${vehicleColor}` : "",
         `Renter Name    : ${name || "Not provided"}`,
         `Pickup Date    : ${pickup || ""}`,
         `Pickup Time    : ${pickupTime || "Not specified"}`,
@@ -174,6 +179,11 @@ export default async function handler(req, res) {
         <table style="border-collapse:collapse;width:100%">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
+          ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
+          ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
+          ${vehicleYear  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Year</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(vehicleYear))}</td></tr>`  : ""}
+          ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
+          ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
@@ -217,6 +227,11 @@ export default async function handler(req, res) {
             "",
             `Payment Status : CONFIRMED`,
             `Vehicle        : ${car || ""}`,
+            vehicleMake  ? `Make           : ${vehicleMake}`  : "",
+            vehicleModel ? `Model          : ${vehicleModel}` : "",
+            vehicleYear  ? `Year           : ${vehicleYear}`  : "",
+            vehicleVin   ? `VIN / Plate    : ${vehicleVin}`   : "",
+            vehicleColor ? `Color          : ${vehicleColor}` : "",
             `Pickup Date    : ${pickup || ""}`,
             `Pickup Time    : ${pickupTime || "Not specified"}`,
             `Return Date    : ${returnDate || ""}`,
@@ -234,6 +249,11 @@ export default async function handler(req, res) {
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
+              ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
+              ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
+              ${vehicleYear  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Year</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(vehicleYear))}</td></tr>`  : ""}
+              ${vehicleVin   ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>VIN / Plate</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleVin)}</td></tr>`   : ""}
+              ${vehicleColor ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Color</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleColor)}</td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
