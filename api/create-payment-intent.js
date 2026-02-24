@@ -7,6 +7,7 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
 import { CARS, computeAmount } from "./_pricing.js";
+import { isDatesAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -46,6 +47,12 @@ export default async function handler(req, res) {
     const returnD = new Date(returnDate + "T00:00:00");
     if (isNaN(pickupD.getTime()) || isNaN(returnD.getTime()) || returnD < pickupD) {
       return res.status(400).json({ error: "Invalid dates" });
+    }
+
+    // Check availability — reject if the requested dates overlap an existing booking
+    const available = await isDatesAvailable(vehicleId, pickup, returnDate);
+    if (!available) {
+      return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
     }
 
     // Validate email

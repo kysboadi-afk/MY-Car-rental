@@ -501,7 +501,8 @@ stripeBtn.addEventListener("click", async () => {
 
     if (!res.ok) {
       // Surface the server's error message so setup issues are visible
-      throw new Error(data.error || "Server error (" + res.status + ")");
+      const isDatesError = res.status === 409;
+      throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
     }
 
     const { clientSecret, publishableKey } = data;
@@ -650,6 +651,12 @@ stripeBtn.addEventListener("click", async () => {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = "💳 Pay Now";
+    if (err.isDatesError) {
+      // Dates were booked by someone else — refresh the calendar and tell the user
+      alert(err.message);
+      initDatePickers(); // reload availability so the calendar reflects the new booking
+      return;
+    }
     // Show detailed message only for known setup/config errors; generic message otherwise
     const isSetupError = err.message && (
       err.message.includes("STRIPE_SECRET_KEY") ||
