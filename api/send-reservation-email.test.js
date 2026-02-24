@@ -167,6 +167,57 @@ test("valid POST sends customer confirmation email when email is provided", asyn
   assert.equal(customerMail.to, VALID_BODY.email);
 });
 
+test("customer confirmation email uses OWNER_EMAIL as the contact address in body and replyTo", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should have been sent");
+  // replyTo must be set (to whatever OWNER_EMAIL resolved to)
+  assert.ok(
+    typeof customerMail.replyTo === "string" && customerMail.replyTo.length > 0,
+    "Customer email replyTo should be set to OWNER_EMAIL"
+  );
+  // The body must contain the same address as replyTo (dynamic, not hardcoded)
+  assert.ok(
+    customerMail.html.includes(customerMail.replyTo),
+    "Customer email body should include the OWNER_EMAIL contact address"
+  );
+});
+
+test("owner notification email has replyTo set to the renter email", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.equal(ownerMail.replyTo, VALID_BODY.email, "Owner email replyTo should be the renter email");
+});
+
+test("owner notification email has no replyTo when renter email is omitted", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", { ...VALID_BODY, email: undefined });
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.ok(
+    ownerMail.replyTo === undefined || ownerMail.replyTo === null || ownerMail.replyTo === "",
+    "Owner email replyTo should not be set when no renter email is provided"
+  );
+});
+
 test("no customer email is sent when email is omitted", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
