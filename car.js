@@ -232,6 +232,41 @@ async function initDatePickers() {
 
 initDatePickers();
 
+// ----- Reset form on back-navigation (bfcache restore) -----
+// When the browser restores this page from bfcache (e.g. user hits "back"
+// after the Stripe redirect), all field values and UI state from the previous
+// renter's session would still be visible.  Resetting here ensures each new
+// visitor starts with a completely blank form.
+window.addEventListener("pageshow", function(e) {
+  if (e.persisted) {
+  document.getElementById("name").value = "";
+  document.getElementById("email").value = "";
+  document.getElementById("phone").value = "";
+  pickup.value = "";
+  returnDate.value = "";
+  pickupTime.value = "";
+  returnTime.value = "";
+  idUpload.value = "";
+  uploadedFile = null;
+  resetFileInfo();
+  const signBtn = document.getElementById("signAgreementBtn");
+  signBtn.classList.remove("signed");
+  signBtn.textContent = "✍ Sign Rental Agreement";
+  const status = document.getElementById("signAgreementStatus");
+  status.style.display = "none";
+  status.textContent = "";
+  agreeCheckbox.disabled = true;
+  agreeCheckbox.checked = false;
+  const paymentForm = document.getElementById("payment-form");
+  paymentForm.style.display = "none";
+  document.getElementById("payment-message").textContent = "";
+  stripeBtn.style.display = "";
+  stripeBtn.textContent = "💳 Pay Now";
+  totalEl.textContent = "0";
+  updatePayBtn();
+  }
+});
+
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
