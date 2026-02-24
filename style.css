@@ -649,7 +649,8 @@ body {
   margin-top: 6px;
 }
 
-#fileInfo {
+#fileInfo,
+#insuranceFileInfo {
   margin-top: 8px;
   font-size: 12px;
   color: #aaa;
@@ -661,18 +662,27 @@ body {
   align-items: center;
 }
 
-#fileInfo.has-file {
+#fileInfo.has-file,
+#insuranceFileInfo.has-file {
   background: #1a2e1a;
   color: #66bb6a;
 }
 
-#fileInfo .file-size {
+#fileInfo .file-size,
+#insuranceFileInfo .file-size {
   color: #888;
   font-size: 11px;
 }
 
-#fileInfo.has-file .file-size {
+#fileInfo.has-file .file-size,
+#insuranceFileInfo.has-file .file-size {
   color: #66bb6a;
+}
+
+.optional-label {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
 }
 
 .id-upload-section input[type="file"] {

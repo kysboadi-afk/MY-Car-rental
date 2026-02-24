@@ -83,10 +83,12 @@ const returnDate = document.getElementById("return");
 const returnTime = document.getElementById("returnTime");
 const agreeCheckbox = document.getElementById("agree");
 const idUpload = document.getElementById("idUpload");
+const insuranceUpload = document.getElementById("insuranceUpload");
 const totalEl = document.getElementById("total");
 const stripeBtn = document.getElementById("stripePay");
 
 let uploadedFile = null;
+let uploadedInsuranceFile = null;
 let currentDayCount = 1;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 
@@ -96,6 +98,13 @@ function resetFileInfo() {
   fileInfoEl.querySelector(".file-name").textContent = "No file selected";
   fileInfoEl.querySelector(".file-size").textContent = "";
   fileInfoEl.classList.remove("has-file");
+}
+
+function resetInsuranceFileInfo() {
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = "No file selected";
+  el.querySelector(".file-size").textContent = "";
+  el.classList.remove("has-file");
 }
 
 idUpload.addEventListener("change", function(e) {
@@ -136,6 +145,42 @@ idUpload.addEventListener("change", function(e) {
   fileInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
   fileInfoEl.classList.add("has-file");
   updatePayBtn();
+});
+
+insuranceUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+
+  if (!file) {
+    uploadedInsuranceFile = null;
+    resetInsuranceFileInfo();
+    return;
+  }
+
+  // Validate file type
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please upload a valid insurance document (JPG, PNG, or PDF)");
+    e.target.value = '';
+    uploadedInsuranceFile = null;
+    resetInsuranceFileInfo();
+    return;
+  }
+
+  // Validate file size (5MB max)
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert("File size must be less than 5MB");
+    e.target.value = '';
+    uploadedInsuranceFile = null;
+    resetInsuranceFileInfo();
+    return;
+  }
+
+  uploadedInsuranceFile = file;
+  const infoEl = document.getElementById("insuranceFileInfo");
+  infoEl.querySelector(".file-name").textContent = file.name;
+  infoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  infoEl.classList.add("has-file");
 });
 
 // Block past dates — only allow today or future dates
@@ -295,6 +340,9 @@ window.addEventListener("pageshow", function(e) {
   idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
+  insuranceUpload.value = "";
+  uploadedInsuranceFile = null;
+  resetInsuranceFileInfo();
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = "✍ Review & Sign Rental Agreement";
@@ -377,6 +425,25 @@ stripeBtn.addEventListener("click", async () => {
     }
   }
 
+  // Pre-encode the insurance file (optional)
+  let insuranceBase64 = null;
+  let insuranceFileName = null;
+  let insuranceMimeType = null;
+  if (uploadedInsuranceFile) {
+    try {
+      insuranceBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedInsuranceFile);
+      });
+      insuranceFileName = uploadedInsuranceFile.name;
+      insuranceMimeType = uploadedInsuranceFile.type;
+    } catch (err) {
+      console.error("Insurance encoding error:", err);
+    }
+  }
+
   try {
     const res = await fetch(`${API_BASE}/api/create-payment-intent`, {
       method: "POST",
@@ -455,6 +522,8 @@ stripeBtn.addEventListener("click", async () => {
         days: currentDayCount,
         idFileName,
         idMimeType,
+        insuranceFileName,
+        insuranceMimeType,
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
@@ -479,6 +548,27 @@ stripeBtn.addEventListener("click", async () => {
           });
         } catch (e) {
           console.warn("Could not save ID to IndexedDB:", e);
+        }
+      }
+
+      if (insuranceBase64 && insuranceFileName) {
+        try {
+          await new Promise((resolve) => {
+            const idbReq = indexedDB.open("slyRidesDB", 1);
+            idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+            idbReq.onsuccess = e => {
+              const db = e.target.result;
+              try {
+                const tx = db.transaction("files", "readwrite");
+                tx.objectStore("files").put({ insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingInsurance");
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = () => { db.close(); resolve(); };
+              } catch (e) { db.close(); resolve(); }
+            };
+            idbReq.onerror = () => resolve();
+          });
+        } catch (e) {
+          console.warn("Could not save insurance to IndexedDB:", e);
         }
       }
 
