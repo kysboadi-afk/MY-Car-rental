@@ -476,6 +476,13 @@ stripeBtn.addEventListener("click", async () => {
 
     // Initialize Stripe and mount the Payment Element
     const stripe = Stripe(publishableKey);
+
+    // Show test card info only when Stripe is running in test mode
+    if (publishableKey.startsWith("pk_test_")) {
+      const testNotice = document.querySelector(".test-card-notice");
+      if (testNotice) testNotice.style.display = "block";
+    }
+
     const elements = stripe.elements({ clientSecret });
     const paymentElement = elements.create("payment");
 

@@ -573,6 +573,49 @@ body {
 .booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
 
 
+/* TEST CARD NOTICE */
+.test-card-notice {
+  display: none;
+  background: #0d1a0d;
+  border: 1px solid #2e7d32;
+  border-left: 4px solid #4caf50;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.test-card-title {
+  font-weight: bold;
+  color: #66bb6a;
+  margin-bottom: 8px;
+}
+
+.test-card-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 2px 0;
+  color: #aaa;
+}
+
+.test-card-label {
+  min-width: 95px;
+  color: #888;
+  font-size: 12px;
+}
+
+.test-card-notice code {
+  font-family: "Courier New", monospace;
+  background: #1a2e1a;
+  color: #a5d6a7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
 /* STRIPE PAYMENT ELEMENT */
 #payment-form {
   margin-top: 16px;
