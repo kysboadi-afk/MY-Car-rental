@@ -158,7 +158,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const params = new URLSearchParams({ t: Date.now() });
   if (renterName) params.set("name", renterName);
   if (renterEmail) params.set("email", renterEmail);
-  window.open(baseUrl + "?" + params.toString(), "_blank");
+  window.open(baseUrl + "?" + params.toString(), "_blank", "noopener,noreferrer");
 
   const checkbox = document.getElementById("agree");
   checkbox.disabled = false;
