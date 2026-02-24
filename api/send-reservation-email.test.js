@@ -244,3 +244,26 @@ test("owner email notes when ID is attached", async () => {
   assert.equal(ownerMail.attachments.length, 1, "Should have one attachment");
   assert.equal(ownerMail.attachments[0].filename, "license.jpg");
 });
+
+test("returns 500 when SMTP credentials are not configured", async () => {
+  const savedHost = process.env.SMTP_HOST;
+  const savedUser = process.env.SMTP_USER;
+  const savedPass = process.env.SMTP_PASS;
+  delete process.env.SMTP_HOST;
+  delete process.env.SMTP_USER;
+  delete process.env.SMTP_PASS;
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  process.env.SMTP_HOST = savedHost;
+  process.env.SMTP_USER = savedUser;
+  process.env.SMTP_PASS = savedPass;
+
+  assert.equal(res._status, 500);
+  assert.ok(
+    res._body.error.includes("SMTP"),
+    "Error should mention SMTP so the operator knows what to configure"
+  );
+});
