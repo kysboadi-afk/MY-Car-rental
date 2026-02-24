@@ -694,6 +694,49 @@ body {
   margin-bottom: 30px;
 }
 
+/* REFUND POLICY NOTICE (How It Works section) */
+.refund-policy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: #1e0e0e;
+  border: 1px solid #c0392b;
+  border-left: 4px solid #c0392b;
+  border-radius: 10px;
+  padding: 18px 24px;
+  margin-top: 36px;
+  color: #f5a3a0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.refund-policy-notice .refund-policy-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.refund-policy-notice strong {
+  color: #e57373;
+}
+
+/* REFUND NOTICE (Booking form) */
+.refund-notice {
+  background: #1e0e0e;
+  border: 1px solid #c0392b;
+  border-left: 4px solid #c0392b;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 20px 0 8px;
+  font-size: 13px;
+  color: #f5a3a0;
+  line-height: 1.6;
+}
+
+.refund-notice strong {
+  color: #e57373;
+}
+
 /* FOOTER */
 footer {
   text-align: center;

@@ -22,8 +22,8 @@ const botResponses = [
     reply: "Here's our deposit info 💰\n\n🔴 Slingshot R: $150 deposit\n🔵 Camry 2012: No deposit required\n\nDeposits are refundable upon return of the vehicle in good condition."
   },
   {
-    patterns: ["cancel","cancellation","refund"],
-    reply: "For cancellations and refunds, please review our Rental Agreement (linked on the booking page) or contact us directly. We'll do our best to accommodate you! 🙏"
+    patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
+    reply: "⚠️ Refund Policy\n\nAll payments are non-refundable.\n\n• No-shows are not eligible for a refund\n• Cancellations after booking are not eligible for a refund\n• Please ensure your dates are confirmed before completing payment\n\nFor questions, email us at slyservices@supports-info.com 🙏"
   },
   {
     patterns: ["contact","phone","call","email","reach","support","help"],
