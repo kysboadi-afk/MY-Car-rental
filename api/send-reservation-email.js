@@ -204,11 +204,12 @@ export default async function handler(req, res) {
       `,
     };
 
+    let ownerEmailErr = null;
     try {
       await transporter.sendMail(ownerEmailOpts);
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
-      // Continue to send the customer confirmation even if the owner email fails.
+      ownerEmailErr = ownerErr;
     }
 
     // --- Confirmation to customer ---
@@ -270,8 +271,9 @@ export default async function handler(req, res) {
       }
     }
 
-    if (customerEmailErr) {
-      return res.status(500).json({ error: "Customer confirmation email failed" });
+    if (ownerEmailErr || customerEmailErr) {
+      const which = ownerEmailErr ? "owner notification" : "customer confirmation";
+      return res.status(500).json({ error: `Reservation ${which} email failed. Please contact slyservices@supports-info.com to confirm your booking.` });
     }
 
     res.status(200).json({ success: true });

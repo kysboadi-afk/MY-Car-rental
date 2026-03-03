@@ -463,6 +463,34 @@ test("response is 200 and both emails are sent on success", async () => {
   assert.equal(sentMails.length, 2, "Both emails should be sent when no failures occur");
 });
 
+test("returns 500 when owner email fails to send", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  // Make sendMail throw on the first call (owner email) and succeed on the second
+  let callCount = 0;
+  mockSendMail.mock.mockImplementation(async (opts) => {
+    callCount++;
+    if (callCount === 1) throw new Error("SMTP connection refused");
+    sentMails.push(opts);
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  try {
+    await handler(req, res);
+
+    assert.equal(res._status, 500, "Should return 500 when owner email fails");
+    assert.ok(
+      typeof res._body.error === "string" && res._body.error.length > 0,
+      "Error body should be a non-empty string"
+    );
+  } finally {
+    // Restore default mock behaviour regardless of test outcome
+    mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
+  }
+});
+
 test("returns 500 when SMTP credentials are not configured", async () => {
   const savedHost = process.env.SMTP_HOST;
   const savedUser = process.env.SMTP_USER;
