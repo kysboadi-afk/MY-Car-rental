@@ -627,6 +627,24 @@ stripeBtn.addEventListener("click", async () => {
       });
 
       if (error) {
+        // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
+        // Clear staged sessionStorage so stale data is not re-sent on retry or
+        // accidentally picked up by success.html.
+        fetch(API_BASE + "/api/send-reservation-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...bookingPayload,
+            paymentStatus: "failed",
+            idBase64,
+            idFileName,
+            idMimeType,
+            insuranceBase64,
+            insuranceFileName,
+            insuranceMimeType,
+          }),
+        }).catch(function (err) { console.error("Failed to notify owner of payment failure:", err); });
+        sessionStorage.removeItem("slyRidesBooking");
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
         submitBtn.textContent = "Pay $" + totalEl.textContent;

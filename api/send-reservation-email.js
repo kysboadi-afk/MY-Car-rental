@@ -115,7 +115,21 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature, paymentStatus } = req.body;
+
+  // isConfirmed: true for successful payments (default), false for failed/cancelled
+  const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
+  const ownerSubject = isConfirmed
+    ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
+    : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`;
+  const statusLabel  = isConfirmed ? "✅ CONFIRMED" : "❌ FAILED";
+  const statusColor  = isConfirmed ? "green" : "red";
+  const introText    = isConfirmed
+    ? "A customer has completed payment. Their rental details are below."
+    : "A customer attempted payment but it did not go through. Details below.";
+  const footerText   = isConfirmed
+    ? "Payment has been received. Please contact the customer to confirm rental details."
+    : "NOTE: Payment was NOT completed. The customer may retry or need assistance.";
 
   try {
     // Build attachment list for the owner email
@@ -141,13 +155,13 @@ export default async function handler(req, res) {
     const ownerEmailOpts = {
       from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
-      subject: `💰 Payment Confirmed – New Booking: ${esc(car)}`,
+      subject: ownerSubject,
       attachments,
       ...(email ? { replyTo: email } : {}),
       text: [
-        "Payment Confirmed – New Booking",
+        isConfirmed ? "Payment Confirmed – New Booking" : "Payment Failed – Booking Attempt",
         "",
-        `Payment Status : CONFIRMED`,
+        `Payment Status : ${isConfirmed ? "CONFIRMED" : "FAILED"}`,
         `Vehicle        : ${car || ""}`,
         vehicleMake  ? `Make           : ${vehicleMake}`  : "",
         vehicleModel ? `Model          : ${vehicleModel}` : "",
@@ -171,13 +185,13 @@ export default async function handler(req, res) {
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
         insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : "No insurance document was uploaded by the renter.",
         "",
-        "Payment has been received. Please contact the customer to confirm rental details.",
+        footerText,
       ].filter((line) => line !== undefined).join("\n"),
       html: `
-        <h2>💰 Payment Confirmed – New Booking</h2>
-        <p>A customer has completed payment. Their rental details are below.</p>
+        <h2>${ownerSubject}</h2>
+        <p>${introText}</p>
         <table style="border-collapse:collapse;width:100%">
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:${statusColor}"><strong>${statusLabel}</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
           ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
           ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
@@ -200,20 +214,21 @@ export default async function handler(req, res) {
         </table>
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
         ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
-        <p>Payment has been received. Please contact the customer to confirm rental details.</p>
+        <p>${footerText}</p>
       `,
     };
 
+    let ownerEmailErr = null;
     try {
       await transporter.sendMail(ownerEmailOpts);
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
-      // Continue to send the customer confirmation even if the owner email fails.
+      ownerEmailErr = ownerErr;
     }
 
-    // --- Confirmation to customer ---
+    // --- Confirmation to customer (only for successful payments) ---
     let customerEmailErr = null;
-    if (email) {
+    if (isConfirmed && email) {
       try {
         await transporter.sendMail({
           from: `"SLY Rides" <${process.env.SMTP_USER}>`,
@@ -270,16 +285,19 @@ export default async function handler(req, res) {
       }
     }
 
-    if (customerEmailErr) {
-      return res.status(500).json({ error: "Customer confirmation email failed" });
+    // Owner email is critical — surface a 500 so the operator knows.
+    // Customer email failure is non-fatal: it is already logged above and the
+    // owner received the booking alert so the booking is not lost.
+    if (ownerEmailErr) {
+      return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
     }
 
     res.status(200).json({ success: true });
 
     // Block the reserved dates in booked-dates.json so the calendar reflects
-    // the new booking. This runs after the response is sent; failures are
-    // non-fatal and only logged.
-    if (vehicleId && pickup && returnDate) {
+    // the new booking. Only run for confirmed (successful) payments.
+    // This runs after the response is sent; failures are non-fatal and only logged.
+    if (isConfirmed && vehicleId && pickup && returnDate) {
       blockBookedDates(vehicleId, pickup, returnDate).catch((err) => {
         console.error("Failed to update booked-dates.json:", err.message);
       });

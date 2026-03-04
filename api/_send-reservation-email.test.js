@@ -463,6 +463,34 @@ test("response is 200 and both emails are sent on success", async () => {
   assert.equal(sentMails.length, 2, "Both emails should be sent when no failures occur");
 });
 
+test("returns 500 when owner email fails to send", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  // Make sendMail throw on the first call (owner email) and succeed on the second
+  let callCount = 0;
+  mockSendMail.mock.mockImplementation(async (opts) => {
+    callCount++;
+    if (callCount === 1) throw new Error("SMTP connection refused");
+    sentMails.push(opts);
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  try {
+    await handler(req, res);
+
+    assert.equal(res._status, 500, "Should return 500 when owner email fails");
+    assert.ok(
+      typeof res._body.error === "string" && res._body.error.length > 0,
+      "Error body should be a non-empty string"
+    );
+  } finally {
+    // Restore default mock behaviour regardless of test outcome
+    mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
+  }
+});
+
 test("returns 500 when SMTP credentials are not configured", async () => {
   const savedHost = process.env.SMTP_HOST;
   const savedUser = process.env.SMTP_USER;
@@ -484,4 +512,77 @@ test("returns 500 when SMTP credentials are not configured", async () => {
     res._body.error.includes("SMTP"),
     "Error should mention SMTP so the operator knows what to configure"
   );
+});
+
+// ─── paymentStatus tests ───────────────────────────────────────────────────
+
+test("paymentStatus:failed — owner email is sent with FAILED label in subject and body", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", { ...VALID_BODY, paymentStatus: "failed" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.ok(ownerMail.subject.includes("Payment Failed"), "Subject should indicate payment failed");
+  assert.ok(ownerMail.html.includes("FAILED"), "HTML body should show FAILED status");
+  assert.ok(ownerMail.text.includes("FAILED"), "Plain-text body should show FAILED status");
+});
+
+test("paymentStatus:failed — customer confirmation email is NOT sent", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", { ...VALID_BODY, paymentStatus: "failed" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(mockSendMail.mock.callCount(), 1, "Only the owner email should be sent for a failed payment");
+});
+
+test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry", paymentStatus: "failed" });
+  const res = makeRes();
+  await handler(req, res);
+  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(fetchCalls.length, 0, "GitHub API should not be called for a failed payment");
+});
+
+test("customer email failure returns 200 — owner already received the booking alert", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  // Owner email succeeds; customer email throws
+  let callCount = 0;
+  mockSendMail.mock.mockImplementation(async (opts) => {
+    callCount++;
+    if (callCount === 1) { sentMails.push(opts); return; } // owner succeeds
+    throw new Error("SMTP customer send error");             // customer fails
+  });
+
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  try {
+    await handler(req, res);
+    assert.equal(res._status, 200, "Should still return 200 — owner was notified");
+    assert.deepEqual(res._body, { success: true });
+    assert.equal(sentMails.length, 1, "Only owner email should have been recorded");
+  } finally {
+    mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
+  }
 });
