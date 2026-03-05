@@ -22,7 +22,9 @@ const cars = {
     name: "Camry 2012",
     subtitle: "Sedan • 5-Seater",
     pricePerDay: 50,
-    weekly: 300,
+    weekly: 320,
+    biweekly: 600,
+    monthly: 1200,
     images: ["images/car5.jpg","images/car4.jpg"],
     make: "Toyota",
     model: "Camry",
@@ -422,16 +424,27 @@ function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   currentDayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
   
-  // Calculate cost with weekly rate if applicable
-  const DAYS_PER_WEEK = 7;
+  // Calculate cost using the best applicable discount tier (greedy: largest period first).
+  // "Monthly" is defined as every 30-day block; this is intentional for a rental business
+  // where rates are fixed regardless of calendar month lengths.
   let cost = 0;
-  if (carData.weekly && currentDayCount >= DAYS_PER_WEEK) {
-    const weeks = Math.floor(currentDayCount / DAYS_PER_WEEK);
-    const remainingDays = currentDayCount % DAYS_PER_WEEK;
-    cost = (weeks * carData.weekly) + (remainingDays * carData.pricePerDay);
-  } else {
-    cost = currentDayCount * carData.pricePerDay;
+  let remaining = currentDayCount;
+  if (carData.monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost += months * carData.monthly;
+    remaining = remaining % 30;
   }
+  if (carData.biweekly && remaining >= 14) {
+    const twoWeekPeriods = Math.floor(remaining / 14);
+    cost += twoWeekPeriods * carData.biweekly;
+    remaining = remaining % 14;
+  }
+  if (carData.weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost += weeks * carData.weekly;
+    remaining = remaining % 7;
+  }
+  cost += remaining * carData.pricePerDay;
   
   const total = cost + (carData.deposit || 0);
   totalEl.textContent = total;
@@ -564,6 +577,8 @@ stripeBtn.addEventListener("click", async () => {
         total: totalEl.textContent,
         pricePerDay: carData.pricePerDay,
         pricePerWeek: carData.weekly || null,
+        pricePerBiWeekly: carData.biweekly || null,
+        pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
         idFileName,
