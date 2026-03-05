@@ -24,7 +24,7 @@ const cars = {
     pricePerDay: 50,
     weekly: 320,
     biweekly: 600,
-    monthly: 1200,
+    monthly: 1250,
     images: ["images/car5.jpg","images/car4.jpg"],
     make: "Toyota",
     model: "Camry",
