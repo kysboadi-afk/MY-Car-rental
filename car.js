@@ -407,6 +407,7 @@ window.addEventListener("pageshow", function(e) {
   stripeBtn.style.display = "";
   stripeBtn.textContent = "💳 Pay Now";
   totalEl.textContent = "0";
+  document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
   }
 });
@@ -423,30 +424,63 @@ function updatePayBtn() {
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
   currentDayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
-  
+
   // Calculate cost using the best applicable discount tier (greedy: largest period first).
   // "Monthly" is defined as every 30-day block; this is intentional for a rental business
   // where rates are fixed regardless of calendar month lengths.
   let cost = 0;
   let remaining = currentDayCount;
+  const lines = [];
+
   if (carData.monthly && remaining >= 30) {
     const months = Math.floor(remaining / 30);
-    cost += months * carData.monthly;
+    const subtotal = months * carData.monthly;
+    cost += subtotal;
     remaining = remaining % 30;
+    lines.push({ label: `${months} month${months > 1 ? "s" : ""} × $${carData.monthly}/mo`, amount: subtotal });
   }
   if (carData.biweekly && remaining >= 14) {
     const twoWeekPeriods = Math.floor(remaining / 14);
-    cost += twoWeekPeriods * carData.biweekly;
+    const subtotal = twoWeekPeriods * carData.biweekly;
+    cost += subtotal;
     remaining = remaining % 14;
+    lines.push({ label: `${twoWeekPeriods} 2-week period${twoWeekPeriods > 1 ? "s" : ""} × $${carData.biweekly}`, amount: subtotal });
   }
   if (carData.weekly && remaining >= 7) {
     const weeks = Math.floor(remaining / 7);
-    cost += weeks * carData.weekly;
+    const subtotal = weeks * carData.weekly;
+    cost += subtotal;
     remaining = remaining % 7;
+    lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
   }
-  cost += remaining * carData.pricePerDay;
-  
+  if (remaining > 0) {
+    const subtotal = remaining * carData.pricePerDay;
+    cost += subtotal;
+    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+  }
+  if (carData.deposit) {
+    lines.push({ label: "Security deposit", amount: carData.deposit });
+  }
+
   const total = cost + (carData.deposit || 0);
+
+  const rowsEl = document.getElementById("breakdownRows");
+  rowsEl.innerHTML = "";
+  lines.forEach(function(l) {
+    const row = document.createElement("div");
+    row.className = "breakdown-row";
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "breakdown-label";
+    labelSpan.textContent = l.label;
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "breakdown-value";
+    valueSpan.textContent = "$" + l.amount;
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    rowsEl.appendChild(row);
+  });
+  document.getElementById("priceBreakdown").style.display = "";
+
   totalEl.textContent = total;
   updatePayBtn();
 }
