@@ -21,35 +21,50 @@
 <!-- CARS -->
 <div class="container" id="cars">
   <h2 class="fleet-heading">Our Fleet</h2>
-  <section class="cars">
 
-    <!-- Slingshot -->
-    <div class="car-card">
-      <img src="images/car2.jpg" alt="Slingshot R" style="height: 320px; object-position: bottom;">
-      <div class="car-info">
-        <h3>Slingshot R</h3>
-        <p class="car-subtitle">Sports • 2-Seater</p>
-        <p class="price">$300 / day • $150 deposit</p>
-        <a href="car.html?vehicle=slingshot">
-          <button class="select-btn">Select</button>
-        </a>
+  <div class="cars-page-layout">
+
+    <!-- SIDEBAR -->
+    <aside class="cars-sidebar">
+      <h3 class="sidebar-title">Browse by Type</h3>
+      <nav class="sidebar-nav">
+        <button class="sidebar-btn active" data-filter="all">All Cars</button>
+        <button class="sidebar-btn" data-filter="economy">Economy / Ridesharing</button>
+        <button class="sidebar-btn" data-filter="slingshot">Slingshots</button>
+      </nav>
+    </aside>
+
+    <!-- CAR GRID -->
+    <section class="cars" id="car-grid">
+
+      <!-- Slingshot -->
+      <div class="car-card" data-category="slingshot">
+        <img src="images/car2.jpg" alt="Slingshot R" style="height: 320px; object-position: bottom;">
+        <div class="car-info">
+          <h3>Slingshot R</h3>
+          <p class="car-subtitle">Sports • 2-Seater</p>
+          <p class="price">$300 / day • $150 deposit</p>
+          <a href="car.html?vehicle=slingshot">
+            <button class="select-btn">Select</button>
+          </a>
+        </div>
       </div>
-    </div>
 
-    <!-- Camry -->
-    <div class="car-card">
-      <img src="images/car5.jpg" alt="Camry 2012">
-      <div class="car-info">
-        <h3>Camry 2012</h3>
-        <p class="car-subtitle">Sedan • 5-Seater</p>
-        <p class="price">$50 / day • $320 / week • $600 / bi-week • $1,200 / month</p>
-        <a href="car.html?vehicle=camry">
-          <button class="select-btn">Select</button>
-        </a>
+      <!-- Camry -->
+      <div class="car-card" data-category="economy">
+        <img src="images/car5.jpg" alt="Camry 2012">
+        <div class="car-info">
+          <h3>Camry 2012</h3>
+          <p class="car-subtitle">Sedan • 5-Seater</p>
+          <p class="price">$50 / day • $320 / week • $600 / bi-week • $1,200 / month</p>
+          <a href="car.html?vehicle=camry">
+            <button class="select-btn">Select</button>
+          </a>
+        </div>
       </div>
-    </div>
 
-  </section>
+    </section>
+  </div>
 </div>
 
 <!-- FOOTER -->
@@ -57,6 +72,7 @@
   &copy; 2026 SLY Rides. All rights reserved.
 </footer>
 
+<script src="cars.js"></script>
 <script src="chatbot.js"></script>
 </body>
 </html>

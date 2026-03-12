@@ -736,6 +736,63 @@ body {
   margin-bottom: 30px;
 }
 
+/* CARS PAGE LAYOUT (sidebar + grid) */
+.cars-page-layout {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+/* SIDEBAR */
+.cars-sidebar {
+  flex: 0 0 200px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 24px 16px;
+  position: sticky;
+  top: 80px;
+}
+
+.sidebar-title {
+  color: #ffb400;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 16px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-btn {
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  color: #ccc;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.sidebar-btn:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.sidebar-btn.active {
+  background: #ffb400;
+  color: #000;
+  border-color: #ffb400;
+  font-weight: bold;
+}
+
 /* REFUND POLICY NOTICE (How It Works section) */
 .refund-policy-notice {
   display: flex;
@@ -1058,6 +1115,31 @@ footer {
   
   .container {
     padding: 20px;
+  }
+
+  /* Sidebar becomes horizontal tab strip on mobile */
+  .cars-page-layout {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .cars-sidebar {
+    flex: none;
+    width: 100%;
+    position: static;
+    padding: 16px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sidebar-btn {
+    width: auto;
+    flex: 1 1 auto;
+    text-align: center;
   }
 }
 
