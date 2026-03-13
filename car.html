@@ -169,6 +169,13 @@
     <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
 
     <div id="payment-form" style="display:none">
+      <div class="test-card-notice">
+        <p class="test-card-title">🧪 Test Mode — Use a Stripe Test Card</p>
+        <p class="test-card-row"><span class="test-card-label">Card number</span> <code>4242 4242 4242 4242</code></p>
+        <p class="test-card-row"><span class="test-card-label">Expiry</span> <code>Any future date (e.g. 12/34)</code></p>
+        <p class="test-card-row"><span class="test-card-label">CVC</span> <code>Any 3 digits (e.g. 123)</code></p>
+        <p class="test-card-row"><span class="test-card-label">ZIP</span> <code>Any 5 digits (e.g. 10001)</code></p>
+      </div>
       <div id="payment-element"></div>
       <div id="payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
       <button id="submit-payment" type="button">Pay $<span id="payAmount">0</span></button>
