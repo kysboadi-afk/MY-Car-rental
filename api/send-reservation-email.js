@@ -145,7 +145,7 @@ export default async function handler(req, res) {
 
     // --- Notify owner ---
     const ownerEmailOpts = {
-      from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
+      from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: ownerSubject,
       attachments,
@@ -225,11 +225,11 @@ export default async function handler(req, res) {
     if (isConfirmed && email) {
       try {
         await transporter.sendMail({
-          from: `"SLY Rides" <${process.env.SMTP_USER}>`,
+          from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to: email,
-          subject: "✅ Your SLY Rides Payment Confirmed",
+          subject: "✅ Your Sly Transportation Services LLC Payment Confirmed",
           text: [
-            "Payment Confirmed – SLY Rides",
+            "Payment Confirmed – Sly Transportation Services LLC",
             "",
             "Hi there! Your payment has been received and your car rental is confirmed.",
             "Here are your booking details:",
@@ -250,10 +250,10 @@ export default async function handler(req, res) {
             "We will be in touch shortly to confirm your rental pick-up details.",
             "If you have any questions, reply to this email or reach us at slyservices@supports-info.com.",
             "",
-            "SLY Rides Team",
+            "Sly Transportation Services LLC Team",
           ].join("\n"),
           html: `
-            <h2>✅ Payment Confirmed – SLY Rides</h2>
+            <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
             <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
@@ -270,7 +270,7 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
             </table>
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
-            <p><strong>SLY Rides Team 🚗</strong></p>
+            <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
         });
       } catch (custErr) {

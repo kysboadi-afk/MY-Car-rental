@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     // Step 1: Copy the template to create a fresh blank document for this renter.
     // This ensures each renter signs their own private copy and cannot see any
     // previously filled-in data from another renter.
-    const docName = `SLY Rides Rental Agreement – ${name || email} – ${pickup || new Date().toISOString().slice(0, 10)}`;
+    const docName = `Sly Transportation Services LLC Rental Agreement – ${name || email} – ${pickup || new Date().toISOString().slice(0, 10)}`;
     const copyRes = await fetch(
       `${SIGNNOW_API_BASE}/template/${templateId}/copy`,
       {
@@ -164,7 +164,7 @@ export default async function handler(req, res) {
           to: [{ email, role: roleName, order: 1 }],
           from: process.env.SMTP_USER || "slyservices@supports-info.com",
           cc: [],
-          subject: "Please sign your SLY Rides Rental Agreement",
+          subject: "Please sign your Sly Transportation Services LLC Rental Agreement",
           message: buildInviteMessage(name, car, pickup, returnDate),
         }),
       }

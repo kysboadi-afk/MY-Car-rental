@@ -1,9 +1,9 @@
-// ===== SLY Rides CHATBOT =====
+// ===== Sly Transportation Services LLC CHATBOT =====
 
 const botResponses = [
   {
     patterns: ["hello","hi","hey","howdy","sup","what's up"],
-    reply: "Hey! 👋 Welcome to SLY Rides! How can I help you today?\n\nYou can ask me about:\n• Pricing\n• Available cars\n• How to book\n• Deposit info\n• Contact"
+    reply: "Hey! 👋 Welcome to Sly Transportation Services LLC! How can I help you today?\n\nYou can ask me about:\n• Pricing\n• Available cars\n• How to book\n• Deposit info\n• Contact"
   },
   {
     patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly"],
@@ -39,7 +39,7 @@ const botResponses = [
   },
   {
     patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
-    reply: "You're welcome! 😊 Happy to help. Enjoy your ride with SLY Rides! 🚗💨"
+    reply: "You're welcome! 😊 Happy to help. Enjoy your ride with Sly Transportation Services LLC! 🚗💨"
   }
 ];
 
@@ -60,7 +60,7 @@ function buildChatbot() {
       <button id="chat-toggle" aria-label="Open chat">💬</button>
       <div id="chat-box" hidden>
         <div id="chat-header">
-          <span>🚗 SLY Rides Assistant</span>
+          <span>🚗 Sly Transportation Services LLC Assistant</span>
           <button id="chat-close" aria-label="Close chat">✕</button>
         </div>
         <div id="chat-messages"></div>
@@ -91,7 +91,7 @@ function buildChatbot() {
     chatBox.hidden = false;
     toggle.hidden  = true;
     if (!messages.children.length) {
-      addMessage("Hey! 👋 Welcome to SLY Rides! Ask me anything — pricing, how to book, contact info, and more!", "bot");
+      addMessage("Hey! 👋 Welcome to Sly Transportation Services LLC! Ask me anything — pricing, how to book, contact info, and more!", "bot");
     }
     input.focus();
   }
