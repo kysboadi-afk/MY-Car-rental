@@ -30,7 +30,7 @@
   }
 
   function clearErrors() {
-    ['renterNameError', 'renterEmailError', 'renterPhoneError', 'renterCityError']
+    ['renterNameError', 'renterEmailError', 'renterPhoneError', 'renterCityError', 'renterTextConsentError']
       .forEach(function (id) { document.getElementById(id).textContent = ''; });
   }
 
@@ -69,6 +69,10 @@
     }
     if (!city) {
       setError('renterCityError', 'City is required.');
+      valid = false;
+    }
+    if (!document.getElementById('renterTextConsent').checked) {
+      setError('renterTextConsentError', 'You must consent to receive text messages about your reservation to continue.');
       valid = false;
     }
 
