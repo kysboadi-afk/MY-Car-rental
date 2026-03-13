@@ -20,6 +20,47 @@ body {
   border-bottom: 2px solid #ffb400;
 }
 
+/* Company info banner (fleet page) */
+.company-banner {
+  background: #111;
+  border-bottom: 1px solid #ffb400;
+  padding: 10px 40px;
+}
+
+.company-banner-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.company-banner-name {
+  color: #ffb400;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-size: 14px;
+}
+
+.company-banner-divider {
+  color: #555;
+}
+
+.company-banner-item {
+  color: #ccc;
+}
+
+.company-banner-item a {
+  color: #ffb400;
+  text-decoration: none;
+}
+
+.company-banner-item a:hover {
+  text-decoration: underline;
+}
+
 .site-logo {
   height: 80px;
 }
@@ -1061,6 +1102,20 @@ footer {
     flex-direction: column;
     gap: 14px;
     padding: 16px 20px;
+  }
+
+  .company-banner {
+    padding: 10px 20px;
+  }
+
+  .company-banner-inner {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  .company-banner-divider {
+    display: none;
   }
 
   .site-nav {

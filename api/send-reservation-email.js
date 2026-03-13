@@ -11,7 +11,7 @@
 import nodemailer from "nodemailer";
 import { hasOverlap } from "./_availability.js";
 
-// Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
+// Allow larger bodies so the renter's ID photo/PDF can be attached
 export const config = {
   api: {
     bodyParser: {
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature, paymentStatus } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, signature, paymentStatus } = req.body;
 
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
@@ -142,18 +142,10 @@ export default async function handler(req, res) {
         contentType: idMimeType || "application/octet-stream",
       });
     }
-    if (insuranceBase64 && insuranceFileName) {
-      attachments.push({
-        filename: insuranceFileName,
-        content: insuranceBase64,
-        encoding: "base64",
-        contentType: insuranceMimeType || "application/octet-stream",
-      });
-    }
 
     // --- Notify owner ---
     const ownerEmailOpts = {
-      from: `"SLY Rides Bookings" <${process.env.SMTP_USER}>`,
+      from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: ownerSubject,
       attachments,
@@ -185,7 +177,6 @@ export default async function handler(req, res) {
         signature ? `Digital Signature: ${signature}` : "",
         "",
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
-        insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : "No insurance document was uploaded by the renter.",
         "",
         footerText,
       ].filter((line) => line !== undefined).join("\n"),
@@ -217,7 +208,6 @@ export default async function handler(req, res) {
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
-        ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
         <p>${footerText}</p>
       `,
     };
@@ -235,11 +225,11 @@ export default async function handler(req, res) {
     if (isConfirmed && email) {
       try {
         await transporter.sendMail({
-          from: `"SLY Rides" <${process.env.SMTP_USER}>`,
+          from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to: email,
-          subject: "✅ Your SLY Rides Payment Confirmed",
+          subject: "✅ Your Sly Transportation Services LLC Payment Confirmed",
           text: [
-            "Payment Confirmed – SLY Rides",
+            "Payment Confirmed – Sly Transportation Services LLC",
             "",
             "Hi there! Your payment has been received and your car rental is confirmed.",
             "Here are your booking details:",
@@ -260,10 +250,10 @@ export default async function handler(req, res) {
             "We will be in touch shortly to confirm your rental pick-up details.",
             "If you have any questions, reply to this email or reach us at slyservices@supports-info.com.",
             "",
-            "SLY Rides Team",
+            "Sly Transportation Services LLC Team",
           ].join("\n"),
           html: `
-            <h2>✅ Payment Confirmed – SLY Rides</h2>
+            <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
             <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
@@ -280,7 +270,7 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
             </table>
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
-            <p><strong>SLY Rides Team 🚗</strong></p>
+            <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
         });
       } catch (custErr) {

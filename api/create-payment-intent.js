@@ -68,7 +68,7 @@ export default async function handler(req, res) {
       amount: Math.round(computedAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
-      description: `SLY Rides – ${carData.name}`,
+      description: `Sly Transportation Services LLC – ${carData.name}`,
       payment_method_types: ["card"],
     });
 

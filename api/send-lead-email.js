@@ -58,12 +58,12 @@ export default async function handler(req, res) {
 
   try {
     await transporter.sendMail({
-      from: `"SLY Rides Leads" <${process.env.SMTP_USER}>`,
+      from: `"Sly Transportation Services LLC Leads" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
       subject: `🆕 New Website Visitor – ${name}`,
       ...(email ? { replyTo: email } : {}),
       text: [
-        "New Renter Lead – SLY Rides",
+        "New Renter Lead – Sly Transportation Services LLC",
         "",
         "A visitor has submitted their info on the website.",
         "",
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
       ].join("\n"),
       html: `
         <h2>🆕 New Website Visitor</h2>
-        <p>A visitor has submitted their info on the SLY Rides website.</p>
+        <p>A visitor has submitted their info on the Sly Transportation Services LLC website.</p>
         <table style="border-collapse:collapse;width:100%;max-width:480px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>
