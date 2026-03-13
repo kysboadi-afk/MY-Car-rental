@@ -72,6 +72,15 @@
 
     if (!valid) return;
 
+    // Notify the owner immediately with the visitor's lead info.
+    // The modal is dismissed regardless of whether the API call succeeds
+    // so the visitor's browsing experience is never blocked.
+    fetch('https://sly-rides.vercel.app/api/send-lead-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, email: email, phone: phone, city: city }),
+    }).catch(function () { /* non-fatal — do not block the visitor */ });
+
     // Store only a completion flag, not PII
     sessionStorage.setItem('renterInfoSubmitted', '1');
     hideModal();
