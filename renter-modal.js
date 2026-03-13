@@ -83,6 +83,14 @@
       body: JSON.stringify({ name: name, email: email, phone: phone, city: city }),
     }).catch(function () { /* non-fatal — do not block the visitor */ });
 
+    // Send an SMS confirmation to the visitor.
+    // Also non-fatal — visitor flow is never blocked.
+    fetch(API_BASE + '/api/send-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, phone: phone }),
+    }).catch(function () { /* non-fatal — do not block the visitor */ });
+
     // Store only a completion flag, not PII
     sessionStorage.setItem('renterInfoSubmitted', '1');
     hideModal();
