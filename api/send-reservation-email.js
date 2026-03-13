@@ -294,16 +294,19 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
     }
 
-    res.status(200).json({ success: true });
-
-    // Block the reserved dates in booked-dates.json so the calendar reflects
-    // the new booking. Only run for confirmed (successful) payments.
-    // This runs after the response is sent; failures are non-fatal and only logged.
+    // Block the reserved dates in booked-dates.json BEFORE sending the response.
+    // Vercel terminates the serverless function as soon as res.json() is called,
+    // so any async work scheduled after that is not guaranteed to run.
+    // Failures are non-fatal (emails already sent) and only logged.
     if (isConfirmed && vehicleId && pickup && returnDate) {
-      blockBookedDates(vehicleId, pickup, returnDate).catch((err) => {
+      try {
+        await blockBookedDates(vehicleId, pickup, returnDate);
+      } catch (err) {
         console.error("Failed to update booked-dates.json:", err.message);
-      });
+      }
     }
+
+    res.status(200).json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Email sending failed" });

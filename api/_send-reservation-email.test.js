@@ -249,7 +249,7 @@ test("owner email notes when ID is attached", async () => {
 
 const MOCK_BOOKED_DATES_CONTENT =
   Buffer.from(JSON.stringify({ slingshot: [], camry: [] }, null, 2) + "\n").toString("base64");
-const ASYNC_FLUSH_DELAY = 20; // ms to let fire-and-forget blockBookedDates finish
+// blockBookedDates is now awaited before res.json() so no extra delay is needed.
 
 test("blockBookedDates: GitHub API is called with correct params when vehicleId and GITHUB_TOKEN are set", async () => {
   mockSendMail.mock.resetCalls();
@@ -267,7 +267,6 @@ test("blockBookedDates: GitHub API is called with correct params when vehicleId 
   const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
@@ -296,7 +295,6 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
@@ -334,7 +332,6 @@ test("blockBookedDates: works correctly for slingshot vehicle", async () => {
   const req = makeReq("POST", slingshotBody);
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
@@ -359,7 +356,6 @@ test("blockBookedDates: GitHub API failure does not change the 200 response", as
   const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
@@ -381,7 +377,6 @@ test("blockBookedDates: GitHub API is not called when vehicleId is absent", asyn
   const req = makeReq("POST", VALID_BODY);
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
@@ -401,7 +396,6 @@ test("blockBookedDates: GitHub API is not called when GITHUB_TOKEN is not set", 
   const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   globalThis.fetch = originalFetch;
 
@@ -555,7 +549,6 @@ test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
   const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry", paymentStatus: "failed" });
   const res = makeRes();
   await handler(req, res);
-  await new Promise((resolve) => setTimeout(resolve, ASYNC_FLUSH_DELAY));
 
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
