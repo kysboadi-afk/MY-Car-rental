@@ -507,7 +507,14 @@ stripeBtn.addEventListener("click", async () => {
         },
       },
     });
-    const paymentElement = elements.create("payment");
+    // Collect the cardholder name from our booking form (already validated).
+    // Hide the duplicate name field inside the Stripe Payment Element so the
+    // customer cannot accidentally clear or override it.
+    const paymentElement = elements.create("payment", {
+      fields: {
+        billingDetails: { name: "never" },
+      },
+    });
 
     const paymentForm = document.getElementById("payment-form");
     document.getElementById("payAmount").textContent = totalEl.textContent;
@@ -535,7 +542,6 @@ stripeBtn.addEventListener("click", async () => {
       // Store booking data in sessionStorage so success.html can send the
       // confirmation email AFTER the payment redirect completes.
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
-      const name = document.getElementById("name").value.trim();
       const phone = document.getElementById("phone").value.trim();
       const bookingPayload = {
         vehicleId,
@@ -545,7 +551,7 @@ stripeBtn.addEventListener("click", async () => {
         vehicleYear: carData.year || null,
         vehicleVin: carData.vin || null,
         vehicleColor: carData.color || null,
-        name,
+        name: nameVal,
         pickup: pickup.value,
         pickupTime: pickupTime.value,
         returnDate: returnDate.value,
