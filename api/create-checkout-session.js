@@ -46,14 +46,20 @@ export default async function handler(req, res) {
         {
           price_data: {
             currency: "usd",
-            product_data: { name: carData.name },
+            product_data: {
+              name: carData.name,
+              tax_code: "txcd_20030000", // Vehicle Rental — used by Stripe Tax
+            },
             unit_amount: Math.round(computedAmount * 100), // Stripe expects whole cents
+            tax_behavior: "exclusive", // tax is added on top of the rental price
           },
           quantity: 1,
         },
       ],
       mode: "payment",
       customer_email: email,
+      automatic_tax: { enabled: true }, // automatically calculate and collect sales tax
+      billing_address_collection: "required", // Stripe Tax needs the customer's location
       success_url: "https://www.slytrans.com/success.html",
       cancel_url: "https://www.slytrans.com/cancel.html",
     });
