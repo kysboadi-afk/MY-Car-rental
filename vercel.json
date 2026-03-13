@@ -26,6 +26,9 @@
     },
     "api/open-dates.js": {
       "maxDuration": 15
+    },
+    "api/block-dates.js": {
+      "maxDuration": 15
     }
   }
 }
