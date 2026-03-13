@@ -6,16 +6,16 @@ const botResponses = [
     reply: "Hey! 👋 Welcome to Sly Transportation Services LLC! How can I help you today?\n\nYou can ask me about:\n• Pricing\n• Available cars\n• How to book\n• Deposit info\n• Contact"
   },
   {
-    patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly"],
-    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $300 / week\n\nPrices include standard insurance. Need anything else?"
+    patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
+    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $320 / week\n  • $600 / 2 weeks\n  • $1,250 / month\n\nNeed anything else?"
   },
   {
     patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
-    reply: "We currently have 2 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater, $300/day\n🔵 Camry 2012 — Sedan 5-Seater, $50/day\n\nClick any car on the home page to book!"
+    reply: "We currently have 2 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater, $300/day\n🔵 Camry 2012 — Sedan 5-Seater, $50/day\n\nVisit our Cars page to browse and book!"
   },
   {
     patterns: ["book","booking","reserve","reservation","how do i","how to"],
-    reply: "Booking is easy! 📅\n\n1. Pick a car from the home page\n2. Click 'Select'\n3. Choose your pickup & return dates\n4. Enter your email\n5. Upload your Driver's License / ID\n6. Agree to the rental terms\n7. Click 💳 Pay Now\n\nAny questions?"
+    reply: "Booking is easy! 📅\n\n1. Browse cars at cars.html\n2. Click 'Select' on your chosen vehicle\n3. Choose your pickup & return dates\n4. Enter your name, email & phone\n5. Upload your Driver's License / ID\n6. Sign the rental agreement\n7. Click 💳 Pay Now\n\nAny questions?"
   },
   {
     patterns: ["deposit","security"],
@@ -23,11 +23,11 @@ const botResponses = [
   },
   {
     patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-    reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, email us at slyservices@supports-info.com 🙏"
+    reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
   },
   {
     patterns: ["contact","phone","call","email","reach","support","help"],
-    reply: "You can reach us at:\n\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
+    reply: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
   },
   {
     patterns: ["pay","payment","stripe","credit","card","paypal"],
