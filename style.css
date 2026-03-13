@@ -351,6 +351,28 @@ body {
   overflow: hidden;
   border: 1px solid #2a2a2a;
   box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+  position: relative;
+}
+
+/* Badge shown on car cards that are currently in an active rental */
+.car-in-use-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: #c0392b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 20px;
+  z-index: 2;
+  pointer-events: none;
+  letter-spacing: 0.3px;
+}
+
+/* Dim the card image slightly when the car is currently in use */
+.car-in-use img {
+  opacity: 0.75;
 }
 
 .car-card img {
