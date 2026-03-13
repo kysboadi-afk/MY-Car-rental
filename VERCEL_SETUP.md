@@ -273,6 +273,38 @@ The response will tell you:
 | "Failed to send signing invite" in Vercel logs | Role name mismatch | The role `"Signer 1"` doesn't match your template. Set `SIGNNOW_ROLE_NAME` to the exact role name defined in your SignNow template, then Redeploy |
 | Not sure what's wrong with SignNow setup | Need to diagnose | Visit `https://sly-rides.vercel.app/api/check-signnow` in your browser — it returns a detailed status report of every component |
 | Booked dates don't appear as blocked on the calendar | `GITHUB_TOKEN` not set or has wrong permissions | Create a fine-grained PAT with Contents: Read and write on the SLY-RIDES repo and add it as `GITHUB_TOKEN` in Vercel → Settings → Env Vars, then Redeploy |
+| Google Reviews section is blank | `GOOGLE_PLACES_API_KEY` or `GOOGLE_PLACE_ID` not set | Follow Step 7 below to add them in Vercel → Settings → Env Vars, then Redeploy |
+
+---
+
+## Step 7 — Add Google Reviews to the Homepage
+
+The homepage displays live Google Reviews fetched via the Google Places API. To enable this:
+
+### What you need
+
+| Variable Name | Value |
+|---|---|
+| `GOOGLE_PLACES_API_KEY` | A Google Cloud API key with **Places API** enabled |
+| `GOOGLE_PLACE_ID` | The Place ID for your business on Google Maps |
+
+### How to get your Place ID
+
+1. Go to **[https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder](https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder)**.
+2. Search for **"Sly Transportation Services"** in Los Angeles.
+3. Click the result — the Place ID appears below the map (e.g. `ChIJ…`).
+4. Copy it and add it as `GOOGLE_PLACE_ID` in Vercel.
+
+### How to get a Google Cloud API key
+
+1. Go to **[https://console.cloud.google.com/](https://console.cloud.google.com/)** and sign in.
+2. Create (or select) a project.
+3. Go to **APIs & Services → Library** and enable the **"Places API"**.
+4. Go to **APIs & Services → Credentials → Create Credentials → API key**.
+5. Copy the key and add it as `GOOGLE_PLACES_API_KEY` in Vercel.
+6. **Restrict the key** (recommended): under API restrictions, limit it to the Places API only.
+
+> 💡 The Places API has a free tier of $200/month credit, which is more than enough for a small business site. The homepage caches review results for 1 hour to minimise API calls.
 
 ---
 
@@ -289,5 +321,7 @@ The response will tell you:
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |
 | `SIGNNOW_ROLE_NAME` | Optional — set only if your template's role is not `"Signer 1"` |
 | `GITHUB_TOKEN` | Must be set to auto-block calendar dates after each booking |
+| `GOOGLE_PLACES_API_KEY` | Must be set to display Google Reviews on the homepage |
+| `GOOGLE_PLACE_ID` | Must be set to the Google Place ID for the business |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
 

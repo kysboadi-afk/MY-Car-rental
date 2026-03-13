@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/get-reviews.js": {
+      "maxDuration": 10
+    },
     "api/send-lead-email.js": {
       "maxDuration": 15
     },
