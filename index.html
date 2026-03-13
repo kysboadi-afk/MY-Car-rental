@@ -17,6 +17,7 @@
     <a href="cars.html">Browse Cars</a>
     <a href="#how-it-works">How It Works</a>
     <a href="#about">About</a>
+    <a href="#reviews">Reviews</a>
   </nav>
   <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
 </header>
@@ -121,11 +122,110 @@
   </div>
 </section>
 
+<!-- GOOGLE REVIEWS SECTION -->
+<section class="reviews" id="reviews">
+  <div class="reviews-container">
+    <h2>What Our Customers Say</h2>
+    <div class="reviews-summary" id="reviewsSummary" style="display:none">
+      <span class="reviews-overall-rating" id="reviewsOverallRating"></span>
+      <span class="reviews-stars" id="reviewsOverallStars"></span>
+      <a class="reviews-total" id="reviewsTotal" target="_blank" rel="noopener noreferrer"></a>
+      <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png" alt="Google" class="reviews-google-logo">
+    </div>
+    <div class="reviews-grid" id="reviewsGrid">
+      <p class="reviews-loading">Loading reviews…</p>
+    </div>
+    <div class="reviews-cta" id="reviewsCta" style="display:none">
+      <a id="writeReviewBtn" class="reviews-write-btn" target="_blank" rel="noopener noreferrer">⭐ Write a Review</a>
+      <a id="allReviewsBtn" class="reviews-all-btn" target="_blank" rel="noopener noreferrer">View All on Google →</a>
+    </div>
+  </div>
+</section>
+
 <!-- FOOTER -->
 <footer>
   &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a>
 </footer>
 
 <script src="chatbot.js"></script>
+<script>
+(function () {
+  const API_URL = "https://sly-rides.vercel.app/api/get-reviews";
+  const WRITE_REVIEW_BASE = "https://search.google.com/local/writereview?placeid=";
+
+  function escAttr(str) {
+    if (!str) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function escHtml(str) {
+    if (!str) return "";
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function filledStars(rating) {
+    let s = "";
+    for (let i = 1; i <= 5; i++) {
+      s += i <= rating ? '<span class="star filled">★</span>' : '<span class="star empty">☆</span>';
+    }
+    return s;
+  }
+
+  function renderReviews(data) {
+    const grid    = document.getElementById("reviewsGrid");
+    const summary = document.getElementById("reviewsSummary");
+    const cta     = document.getElementById("reviewsCta");
+
+    if (!data.reviews || data.reviews.length === 0) {
+      grid.innerHTML = '<p class="reviews-empty">No reviews yet. Be the first!</p>';
+      return;
+    }
+
+    if (data.rating) {
+      document.getElementById("reviewsOverallRating").textContent = data.rating.toFixed(1);
+      document.getElementById("reviewsOverallStars").innerHTML    = filledStars(Math.round(data.rating));
+      const totalLink = document.getElementById("reviewsTotal");
+      totalLink.textContent = data.userRatingsTotal + " reviews";
+      totalLink.href        = data.googleMapsUrl || "#";
+      summary.style.display = "flex";
+    }
+
+    grid.innerHTML = data.reviews.map((r) => `
+      <div class="review-card">
+        <div class="review-header">
+          <img class="review-avatar" src="${escAttr(r.profilePhotoUrl || "")}" alt="${escAttr(r.authorName)}" onerror="this.style.display='none'">
+          <div class="review-author-info">
+            <a class="review-author" href="${escAttr(r.authorUrl || "#")}" target="_blank" rel="noopener noreferrer">${escHtml(r.authorName)}</a>
+            <span class="review-time">${escHtml(r.relativeTimeDescription)}</span>
+          </div>
+        </div>
+        <div class="review-stars">${filledStars(r.rating)}</div>
+        <p class="review-text">${escHtml(r.text)}</p>
+      </div>
+    `).join("");
+
+    if (data.googleMapsUrl) {
+      const placeId = (data.googleMapsUrl.match(/place_id=([^&]+)/) || [])[1] || "";
+      const writeUrl = placeId ? WRITE_REVIEW_BASE + encodeURIComponent(placeId) : data.googleMapsUrl;
+      document.getElementById("writeReviewBtn").href   = writeUrl;
+      document.getElementById("allReviewsBtn").href    = data.googleMapsUrl;
+      cta.style.display = "flex";
+    }
+  }
+
+  fetch(API_URL)
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.error) {
+        document.getElementById("reviewsGrid").innerHTML = "";
+      } else {
+        renderReviews(data);
+      }
+    })
+    .catch(() => {
+      document.getElementById("reviewsGrid").innerHTML = "";
+    });
+})();
+</script>
 </body>
 </html>
