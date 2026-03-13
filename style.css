@@ -1755,6 +1755,29 @@ span.flatpickr-weekday {
   background: #e0a000;
 }
 
+.renter-consent-field {
+  margin-top: 4px;
+}
+
+.renter-consent-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.5;
+}
+
+.renter-consent-label input[type="checkbox"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: #ffb400;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 @media (max-width: 480px) {
   .renter-modal {
     padding: 28px 20px;
