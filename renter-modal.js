@@ -95,8 +95,12 @@
       body: JSON.stringify({ name: name, phone: phone }),
     }).catch(function () { /* non-fatal — do not block the visitor */ });
 
-    // Store only a completion flag, not PII
+    // Store a completion flag and the contact details so car.html can
+    // pre-fill the booking form without asking the customer to retype them.
+    // sessionStorage is used intentionally: it is cleared when the tab closes,
+    // is scoped to this origin, and never sent to a server on its own.
     sessionStorage.setItem('renterInfoSubmitted', '1');
+    sessionStorage.setItem('slyRidesLead', JSON.stringify({ name: name, email: email, phone: phone }));
     hideModal();
   });
 }());
