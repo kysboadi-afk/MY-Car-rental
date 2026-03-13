@@ -77,6 +77,7 @@ export default async function handler(req, res) {
       description: `Sly Transportation Services LLC – ${carData.name}`,
       payment_method_types: ["card"],
       metadata: { renter_name: trimmedName },
+      automatic_tax: { enabled: true }, // Stripe Tax: calculate and display sales tax in the payment form
     });
 
     res.status(200).json({

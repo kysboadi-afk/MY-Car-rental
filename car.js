@@ -435,8 +435,10 @@ function updateTotal() {
   if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
+  // Tax is calculated by Stripe at checkout based on the customer's billing address.
+  lines.push({ label: "Sales tax", amount: null });
 
-  const total = cost + (carData.deposit || 0);
+  const subtotal = cost + (carData.deposit || 0);
 
   const rowsEl = document.getElementById("breakdownRows");
   rowsEl.innerHTML = "";
@@ -448,14 +450,14 @@ function updateTotal() {
     labelSpan.textContent = l.label;
     const valueSpan = document.createElement("span");
     valueSpan.className = "breakdown-value";
-    valueSpan.textContent = "$" + l.amount;
+    valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
     row.appendChild(labelSpan);
     row.appendChild(valueSpan);
     rowsEl.appendChild(row);
   });
   document.getElementById("priceBreakdown").style.display = "";
 
-  totalEl.textContent = total;
+  totalEl.textContent = subtotal;
   updatePayBtn();
 }
 
