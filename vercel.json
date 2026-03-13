@@ -3,6 +3,9 @@
     "api/send-lead-email.js": {
       "maxDuration": 15
     },
+    "api/send-sms.js": {
+      "maxDuration": 15
+    },
     "api/send-reservation-email.js": {
       "maxDuration": 30
     },
