@@ -440,7 +440,9 @@ function updateTotal() {
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
+  const nameVal = document.getElementById("name").value.trim();
   if (!email) { alert("Please enter your email address."); return; }
+  if (!nameVal) { alert("Please enter your full name."); return; }
 
   stripeBtn.disabled = true;
   stripeBtn.textContent = "Loading payment form…";
@@ -470,6 +472,7 @@ stripeBtn.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vehicleId: vehicleId,
+        name: nameVal,
         car: carData.name,
         email: email,
         pickup: pickup.value,
@@ -495,7 +498,15 @@ stripeBtn.addEventListener("click", async () => {
 
     // Initialize Stripe and mount the Payment Element
     const stripe = Stripe(publishableKey);
-    const elements = stripe.elements({ clientSecret });
+    const elements = stripe.elements({
+      clientSecret,
+      defaultValues: {
+        billingDetails: {
+          name: nameVal,
+          email: email,
+        },
+      },
+    });
     const paymentElement = elements.create("payment");
 
     const paymentForm = document.getElementById("payment-form");
@@ -582,6 +593,12 @@ stripeBtn.addEventListener("click", async () => {
         confirmParams: {
           return_url: "https://www.slytrans.com/success.html",
           receipt_email: email,
+          payment_method_data: {
+            billing_details: {
+              name: nameVal,
+              email: email,
+            },
+          },
         },
       });
 
