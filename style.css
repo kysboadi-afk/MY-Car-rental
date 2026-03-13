@@ -52,6 +52,20 @@ body {
   color: #ffb400;
 }
 
+.header-phone {
+  color: #ffb400;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+
+.header-phone:hover {
+  color: #fff;
+}
+
 /* HERO */
 .hero {
   height: 70vh;
@@ -852,6 +866,16 @@ footer {
   color: #aaa;
   border-top: 2px solid #ffb400;
   margin-top: 40px;
+}
+
+.footer-phone {
+  color: #ffb400;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-phone:hover {
+  text-decoration: underline;
 }
 
 /* CAR SLIDER */
