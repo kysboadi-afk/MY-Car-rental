@@ -102,6 +102,28 @@ let uploadedFile = null;
 let currentDayCount = 1;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 
+// ----- Pre-fill booking form from renter modal (cars.html) -----
+// If the customer already entered their contact info in the "Before You Browse"
+// modal, read it from sessionStorage and populate the booking fields so they
+// don't have to type the same details again.
+(function prefillFromLead() {
+  try {
+    const raw = sessionStorage.getItem('slyRidesLead');
+    if (!raw) return;
+    const lead = JSON.parse(raw);
+    const nameField  = document.getElementById('name');
+    const emailField = document.getElementById('email');
+    const phoneField = document.getElementById('phone');
+    if (nameField  && !nameField.value  && lead.name)  nameField.value  = lead.name;
+    if (emailField && !emailField.value && lead.email) emailField.value = lead.email;
+    if (phoneField && !phoneField.value && lead.phone) phoneField.value = lead.phone;
+    // Re-evaluate the Pay button now that fields may be populated
+    updatePayBtn();
+  } catch (e) {
+    // Non-fatal — silently ignore parse errors so the form still works
+  }
+}());
+
 // ----- File Upload Handling -----
 function resetFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
@@ -440,7 +462,9 @@ function updateTotal() {
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
+  const nameVal = document.getElementById("name").value.trim();
   if (!email) { alert("Please enter your email address."); return; }
+  if (!nameVal) { alert("Please enter your full name."); return; }
 
   stripeBtn.disabled = true;
   stripeBtn.textContent = "Loading payment form…";
@@ -470,6 +494,7 @@ stripeBtn.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vehicleId: vehicleId,
+        name: nameVal,
         car: carData.name,
         email: email,
         pickup: pickup.value,
@@ -495,8 +520,23 @@ stripeBtn.addEventListener("click", async () => {
 
     // Initialize Stripe and mount the Payment Element
     const stripe = Stripe(publishableKey);
-    const elements = stripe.elements({ clientSecret });
-    const paymentElement = elements.create("payment");
+    const elements = stripe.elements({
+      clientSecret,
+      defaultValues: {
+        billingDetails: {
+          name: nameVal,
+          email: email,
+        },
+      },
+    });
+    // Collect the cardholder name from our booking form (already validated).
+    // Hide the duplicate name field inside the Stripe Payment Element so the
+    // customer cannot accidentally clear or override it.
+    const paymentElement = elements.create("payment", {
+      fields: {
+        billingDetails: { name: "never" },
+      },
+    });
 
     const paymentForm = document.getElementById("payment-form");
     document.getElementById("payAmount").textContent = totalEl.textContent;
@@ -524,7 +564,6 @@ stripeBtn.addEventListener("click", async () => {
       // Store booking data in sessionStorage so success.html can send the
       // confirmation email AFTER the payment redirect completes.
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
-      const name = document.getElementById("name").value.trim();
       const phone = document.getElementById("phone").value.trim();
       const bookingPayload = {
         vehicleId,
@@ -534,7 +573,7 @@ stripeBtn.addEventListener("click", async () => {
         vehicleYear: carData.year || null,
         vehicleVin: carData.vin || null,
         vehicleColor: carData.color || null,
-        name,
+        name: nameVal,
         pickup: pickup.value,
         pickupTime: pickupTime.value,
         returnDate: returnDate.value,
@@ -582,6 +621,12 @@ stripeBtn.addEventListener("click", async () => {
         confirmParams: {
           return_url: "https://www.slytrans.com/success.html",
           receipt_email: email,
+          payment_method_data: {
+            billing_details: {
+              name: nameVal,
+              email: email,
+            },
+          },
         },
       });
 

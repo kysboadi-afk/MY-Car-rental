@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, email, pickup, returnDate } = req.body;
+    const { vehicleId, name, email, pickup, returnDate } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -60,6 +60,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid email address" });
     }
 
+    // Validate name
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Full name is required" });
+    }
+    const trimmedName = name.trim();
+
     // Compute amount server-side — never trust a client-supplied amount
     const computedAmount = computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
@@ -70,6 +76,7 @@ export default async function handler(req, res) {
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name}`,
       payment_method_types: ["card"],
+      metadata: { renter_name: trimmedName },
     });
 
     res.status(200).json({
