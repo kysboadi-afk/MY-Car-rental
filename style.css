@@ -605,6 +605,12 @@ body {
   color: #ffb400;
 }
 
+.tax-note {
+  font-size: 13px;
+  font-weight: normal;
+  color: #bbb;
+}
+
 .price-breakdown {
   background: #1a1a1a;
   border: 1px solid #333;
