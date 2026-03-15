@@ -83,6 +83,9 @@
     <label for="phone">Phone Number</label>
     <input type="tel" id="phone" placeholder="Enter your phone number" autocomplete="tel">
 
+    <label for="zipcode">Billing ZIP Code</label>
+    <input type="text" id="zipcode" placeholder="Enter your 5-digit ZIP code" maxlength="5" inputmode="numeric" pattern="\d{5}" autocomplete="postal-code">
+
     <p class="sms-consent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
 
     <div class="id-upload-section">
@@ -220,9 +223,11 @@
     <div id="priceBreakdown" class="price-breakdown" style="display:none">
       <div id="breakdownRows"></div>
     </div>
-    <p class="total">Subtotal: $<span id="total">0</span> <span class="tax-note">(+ applicable sales tax)</span></p>
+    <p class="total">Subtotal: $<span id="subtotal">0</span></p>
+    <p class="total tax-line" id="taxLine" style="display:none">Sales Tax: $<span id="tax">0.00</span></p>
+    <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote">(+ applicable sales tax)</span></p>
     <p class="pay-hint" id="payHint">Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
-    <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
+    <button id="stripePay" class="pay-button" disabled aria-describedby="payHint">💳 Pay Now</button>
 
     <div id="payment-form" style="display:none">
       <div id="payment-element"></div>

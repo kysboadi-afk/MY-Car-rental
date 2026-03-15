@@ -53,6 +53,27 @@ const PROTECTION_PLAN_DAILY   = 15;  // $15/day
 const PROTECTION_PLAN_WEEKLY  = 75;  // $75/week  (7-day block)
 const PROTECTION_PLAN_MONTHLY = 250; // $250/month (30-day block)
 
+// ----- State Sales Tax Rates -----
+// These are state-level base rates only. Local jurisdictions (city/county)
+// may add additional tax on top of these figures.
+const stateTaxRates = {
+  CA: 0.0825,
+  NY: 0.088,
+  TX: 0.0825,
+  FL: 0.07,
+  GA: 0.08,
+  NJ: 0.06625,
+  IL: 0.0875
+};
+
+async function getStateFromZip(zip) {
+  const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+  if (!res.ok) throw new Error(`ZIP lookup failed with status ${res.status}`);
+  const data = await res.json();
+  if (!data.places || data.places.length === 0) throw new Error(`No location data for ZIP ${zip}`);
+  return data.places[0]["state abbreviation"];
+}
+
 // ----- Helpers -----
 function getVehicleFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -176,6 +197,8 @@ const stripeBtn = document.getElementById("stripePay");
 let uploadedFile = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
+let currentSubtotal = 0;
+let currentTaxRate = 0;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 
@@ -242,6 +265,25 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   clearInsuranceFile();
   updateTotal();
   updatePayBtn();
+});
+
+// ----- ZIP Code → Sales Tax -----
+document.getElementById("zipcode").addEventListener("input", async function () {
+  const zip = this.value;
+  if (/^\d{5}$/.test(zip)) {
+    try {
+      const state = await getStateFromZip(zip);
+      currentTaxRate = stateTaxRates[state] || 0;
+    } catch (error) {
+      console.error(`ZIP lookup failed for "${zip}":`, error);
+      currentTaxRate = 0;
+    }
+  } else {
+    currentTaxRate = 0;
+  }
+  if (pickup.value && returnDate.value) {
+    updateTotal();
+  }
 });
 
 idUpload.addEventListener("change", function(e) {
@@ -541,6 +583,13 @@ window.addEventListener("pageshow", function(e) {
   stripeBtn.style.display = "";
   stripeBtn.textContent = "💳 Pay Now";
   totalEl.textContent = "0";
+  document.getElementById("subtotal").textContent = "0";
+  document.getElementById("taxLine").style.display = "none";
+  const taxNoteReset = document.getElementById("taxNote");
+  if (taxNoteReset) taxNoteReset.style.display = "";
+  document.getElementById("zipcode").value = "";
+  currentSubtotal = 0;
+  currentTaxRate = 0;
   document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
   }
@@ -622,10 +671,20 @@ function updateTotal() {
     cost += protectionCost;
     lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
   }
-  // Tax is calculated by Stripe at checkout based on the customer's billing address.
-  lines.push({ label: "Sales tax", amount: null });
 
-  const subtotal = cost + (carData.deposit || 0);
+  const rentalSubtotal = cost + (carData.deposit || 0);
+  currentSubtotal = rentalSubtotal;
+  const taxAmount = rentalSubtotal * currentTaxRate;
+  const grandTotal = rentalSubtotal + taxAmount;
+
+  // Sales tax breakdown row — show computed amount when ZIP has been resolved,
+  // otherwise indicate it will be calculated at checkout.
+  if (currentTaxRate > 0) {
+    const pct = +((currentTaxRate * 100).toFixed(4));
+    lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+  } else {
+    lines.push({ label: "Sales tax", amount: null });
+  }
 
   const rowsEl = document.getElementById("breakdownRows");
   rowsEl.innerHTML = "";
@@ -644,7 +703,22 @@ function updateTotal() {
   });
   document.getElementById("priceBreakdown").style.display = "";
 
-  totalEl.textContent = subtotal;
+  // Update the subtotal / tax / total display rows
+  document.getElementById("subtotal").textContent = rentalSubtotal;
+  const taxLineEl = document.getElementById("taxLine");
+  const taxNoteEl = document.getElementById("taxNote");
+  const displayTotal = currentTaxRate > 0 ? grandTotal : rentalSubtotal;
+  if (currentTaxRate > 0) {
+    document.getElementById("tax").textContent = taxAmount.toFixed(2);
+    taxLineEl.style.display = "";
+    if (taxNoteEl) taxNoteEl.style.display = "none";
+    totalEl.textContent = grandTotal.toFixed(2);
+  } else {
+    taxLineEl.style.display = "none";
+    if (taxNoteEl) taxNoteEl.style.display = "";
+    totalEl.textContent = rentalSubtotal;
+  }
+  stripeBtn.textContent = `Pay $${displayTotal.toFixed(2)}`;
   updatePayBtn();
 }
 
