@@ -1,9 +1,9 @@
-// Tests for api/_pricing.js — computeAmount
+// Tests for api/_pricing.js — computeAmount and computeProtectionPlanCost
 //
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -127,4 +127,34 @@ test("camry2013: 31 days = 1 × $1300 + 1 × $55 = $1355", () => {
 
 test("camry2013: 37 days = 1 × $1300 + 1 × $350 weekly = $1650", () => {
   assert.equal(computeAmount("camry2013", "2025-07-01", "2025-08-07"), 1650);
+});
+
+// ─── Damage Protection Plan cost ─────────────────────────────────────────────
+
+test("protection plan: 1 day = $15", () => {
+  assert.equal(computeProtectionPlanCost(1), 15);
+});
+
+test("protection plan: 6 days = 6 × $15 = $90", () => {
+  assert.equal(computeProtectionPlanCost(6), 90);
+});
+
+test("protection plan: 7 days = 1 × $75 weekly = $75", () => {
+  assert.equal(computeProtectionPlanCost(7), 75);
+});
+
+test("protection plan: 8 days = 1 × $75 + 1 × $15 = $90", () => {
+  assert.equal(computeProtectionPlanCost(8), 90);
+});
+
+test("protection plan: 30 days = 1 × $250 monthly = $250", () => {
+  assert.equal(computeProtectionPlanCost(30), 250);
+});
+
+test("protection plan: 31 days = 1 × $250 + 1 × $15 = $265", () => {
+  assert.equal(computeProtectionPlanCost(31), 265);
+});
+
+test("protection plan: 37 days = 1 × $250 + 1 × $75 = $325", () => {
+  assert.equal(computeProtectionPlanCost(37), 325);
 });

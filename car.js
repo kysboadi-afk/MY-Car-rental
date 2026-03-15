@@ -706,7 +706,8 @@ stripeBtn.addEventListener("click", async () => {
         car: carData.name,
         email: email,
         pickup: pickup.value,
-        returnDate: returnDate.value
+        returnDate: returnDate.value,
+        protectionPlan: insuranceCoverageChoice === "no",
       })
     });
 
@@ -806,7 +807,7 @@ stripeBtn.addEventListener("click", async () => {
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      if (idBase64 && idFileName) {
+      if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
         try {
           await new Promise((resolve) => {
             const idbReq = indexedDB.open("slyRidesDB", 1);

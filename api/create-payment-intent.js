@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount } from "./_pricing.js";
+import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays } from "./_pricing.js";
 import { isDatesAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate } = req.body;
+    const { vehicleId, name, email, pickup, returnDate, protectionPlan } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -70,8 +70,13 @@ export default async function handler(req, res) {
     const computedAmount = computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
+    // Add Damage Protection Plan cost when the renter opted in
+    const days = computeRentalDays(pickup, returnDate);
+    const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
+    const totalAmount = computedAmount + protectionCost;
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(computedAmount * 100), // Stripe expects whole cents
+      amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name}`,
