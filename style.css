@@ -353,18 +353,35 @@ body {
   overflow: hidden;
   border: 1px solid #2a2a2a;
   box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.car-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+  border-color: #ffb400;
 }
 
 .car-card img {
   display: block;
   width: 100%;
-  height: 200px;
+  height: 220px;
   object-fit: cover;
+}
+
+/* Slingshot needs to show the vehicle from the bottom of its portrait image */
+.car-card img.img-slingshot {
+  object-position: center bottom;
 }
 
 .car-info {
   padding: 20px;
   background: #1a1a1a;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .car-subtitle {
@@ -376,6 +393,12 @@ body {
   font-weight: bold;
   margin: 10px 0;
   color: #ffb400;
+}
+
+.car-info .select-link {
+  margin-top: auto;
+  padding-top: 16px;
+  display: block;
 }
 
 .car-info button {
