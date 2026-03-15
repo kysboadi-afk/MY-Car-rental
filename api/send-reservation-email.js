@@ -24,6 +24,7 @@ const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
+const FLEET_STATUS_PATH = "fleet-status.json";
 
 /**
  * Update booked-dates.json in the GitHub repo to block the reserved dates.
@@ -75,6 +76,73 @@ async function blockBookedDates(vehicleId, from, to) {
   if (!putResp.ok) {
     const errText = await putResp.text();
     throw new Error(`GitHub PUT failed: ${putResp.status} ${errText}`);
+  }
+}
+
+/**
+ * Mark a vehicle as unavailable in fleet-status.json on GitHub.
+ * Called automatically after a confirmed booking so the car card on the
+ * website switches to the red "Unavailable / Booked" state immediately.
+ * Requires GITHUB_TOKEN env var with contents:write permission on the repo.
+ * Failures are logged but do not abort the email response.
+ */
+async function markVehicleUnavailable(vehicleId) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn("GITHUB_TOKEN not set — fleet-status.json will not be updated automatically");
+    return;
+  }
+  if (!vehicleId) return;
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const getResp = await fetch(apiUrl, { headers });
+  let current = {};
+  let sha = null;
+  if (getResp.ok) {
+    const fileData = await getResp.json();
+    sha = fileData.sha;
+    try {
+      current = JSON.parse(
+        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
+      );
+    } catch (parseErr) {
+      console.error("markVehicleUnavailable: malformed JSON in fleet-status.json, resetting:", parseErr);
+      current = {};
+    }
+  }
+
+  if (!current[vehicleId]) current[vehicleId] = {};
+  // Nothing to do if already marked unavailable
+  if (current[vehicleId].available === false) {
+    console.log(`markVehicleUnavailable: ${vehicleId} is already unavailable — skipping write`);
+    return;
+  }
+  current[vehicleId].available = false;
+
+  const updatedContent = Buffer.from(
+    JSON.stringify(current, null, 2) + "\n"
+  ).toString("base64");
+
+  const putBody = {
+    message: `Mark ${vehicleId} unavailable after confirmed booking`,
+    content: updatedContent,
+  };
+  if (sha) putBody.sha = sha;
+
+  const putResp = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(putBody),
+  });
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    throw new Error(`GitHub PUT failed (fleet-status): ${putResp.status} ${errText}`);
   }
 }
 
@@ -306,7 +374,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
     }
 
-    // Block the reserved dates in booked-dates.json BEFORE sending the response.
+    // Block the reserved dates in booked-dates.json and mark the vehicle
+    // unavailable in fleet-status.json BEFORE sending the response.
     // Vercel terminates the serverless function as soon as res.json() is called,
     // so any async work scheduled after that is not guaranteed to run.
     // Failures are non-fatal (emails already sent) and only logged.
@@ -315,6 +384,11 @@ export default async function handler(req, res) {
         await blockBookedDates(vehicleId, pickup, returnDate);
       } catch (err) {
         console.error("Failed to update booked-dates.json:", err.message);
+      }
+      try {
+        await markVehicleUnavailable(vehicleId);
+      } catch (err) {
+        console.error("Failed to update fleet-status.json:", err.message);
       }
     }
 

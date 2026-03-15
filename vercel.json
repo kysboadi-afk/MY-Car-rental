@@ -29,6 +29,12 @@
     },
     "api/block-dates.js": {
       "maxDuration": 15
+    },
+    "api/fleet-status.js": {
+      "maxDuration": 15
+    },
+    "api/update-fleet-status.js": {
+      "maxDuration": 15
     }
   }
 }
