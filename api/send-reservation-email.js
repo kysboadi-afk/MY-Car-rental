@@ -11,7 +11,7 @@
 import nodemailer from "nodemailer";
 import { hasOverlap } from "./_availability.js";
 
-// Allow larger bodies so the renter's ID photo/PDF can be attached
+// Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
   api: {
     bodyParser: {
@@ -115,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, signature, paymentStatus } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, signature, paymentStatus } = req.body;
 
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
@@ -140,6 +140,14 @@ export default async function handler(req, res) {
         content: idBase64,
         encoding: "base64",
         contentType: idMimeType || "application/octet-stream",
+      });
+    }
+    if (insuranceBase64 && insuranceFileName) {
+      attachments.push({
+        filename: insuranceFileName,
+        content: insuranceBase64,
+        encoding: "base64",
+        contentType: insuranceMimeType || "application/octet-stream",
       });
     }
 
@@ -177,6 +185,7 @@ export default async function handler(req, res) {
         signature ? `Digital Signature: ${signature}` : "",
         "",
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
+        insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : "No insurance document was uploaded by the renter.",
         "",
         footerText,
       ].filter((line) => line !== undefined).join("\n"),
@@ -208,6 +217,7 @@ export default async function handler(req, res) {
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
+        ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`}
         <p>${footerText}</p>
         ${isConfirmed && vehicleId && pickup && returnDate ? `
         <hr style="margin:24px 0;border:none;border-top:1px solid #ddd">

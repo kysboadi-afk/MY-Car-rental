@@ -579,3 +579,63 @@ test("customer email failure returns 200 — owner already received the booking 
     mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
   }
 });
+
+test("owner email notes when insurance is attached", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", {
+    ...VALID_BODY,
+    idBase64: "ZmFrZWRhdGE=",
+    idFileName: "license.jpg",
+    idMimeType: "image/jpeg",
+    insuranceBase64: "aW5zdXJhbmNlZGF0YQ==",
+    insuranceFileName: "insurance.pdf",
+    insuranceMimeType: "application/pdf",
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should have been sent");
+  assert.ok(
+    ownerMail.html.includes("insurance document is attached") ||
+    ownerMail.html.includes("Renter&#39;s insurance document is attached"),
+    "Should mention attached insurance"
+  );
+  assert.equal(ownerMail.attachments.length, 2, "Should have two attachments (ID + insurance)");
+  assert.equal(ownerMail.attachments[1].filename, "insurance.pdf");
+});
+
+test("owner email notes when no insurance was uploaded", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", {
+    ...VALID_BODY,
+    insuranceBase64: null,
+    insuranceFileName: null,
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  const { html } = sentMails[0];
+  assert.ok(html.includes("No insurance document was uploaded"), "Should warn when no insurance uploaded");
+});
+
+test("owner email plain-text notes insurance attachment", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", {
+    ...VALID_BODY,
+    insuranceBase64: "aW5zdXJhbmNlZGF0YQ==",
+    insuranceFileName: "insurance.jpg",
+    insuranceMimeType: "image/jpeg",
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail.text.includes("Insurance attached: insurance.jpg"), "Plain-text should note insurance filename");
+});
