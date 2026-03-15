@@ -43,7 +43,7 @@ const cars = {
     make: "Toyota",
     model: "Camry SE",
     year: 2013,
-    vin: "",
+    vin: "4T1BF1FK9DU678911",
     color: "Charcoal Grey"
   }
 };
