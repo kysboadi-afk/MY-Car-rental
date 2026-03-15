@@ -31,6 +31,20 @@ const cars = {
     year: 2012,
     vin: "4T1BF1FK5CU063142",
     color: "Grey"
+  },
+  camry2013: {
+    name: "Camry 2013 SE",
+    subtitle: "Sedan • 5-Seater",
+    pricePerDay: 55,
+    weekly: 350,
+    biweekly: 650,
+    monthly: 1300,
+    images: ["images/IMG_5144.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg", "images/IMG_5145.png"],
+    make: "Toyota",
+    model: "Camry SE",
+    year: 2013,
+    vin: "",
+    color: "Charcoal Grey"
   }
 };
 
