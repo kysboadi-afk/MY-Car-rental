@@ -81,7 +81,14 @@ export default async function handler(req, res) {
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name}`,
       payment_method_types: ["card"],
-      metadata: { renter_name: trimmedName },
+      metadata: {
+        renter_name:  trimmedName,
+        vehicle_id:   vehicleId,
+        vehicle_name: carData.name,
+        pickup_date:  pickup,
+        return_date:  returnDate,
+        email,
+      },
     });
 
     res.status(200).json({

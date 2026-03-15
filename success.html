@@ -44,9 +44,9 @@
     </nav>
     <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
   </header>
-  <div class="message-box">
-    <h1>✅ Payment Successful!</h1>
-    <p>Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
+  <div class="message-box" id="messageBox">
+    <h1 id="messageTitle">✅ Payment Successful!</h1>
+    <p id="messageBody">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
     <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px">Sending confirmation…</p>
     <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5">Back to Homepage</a>
   </div>
@@ -59,6 +59,12 @@
     // Booking metadata was saved to sessionStorage by car.js before the Stripe
     // redirect; the large ID binary was saved separately in IndexedDB to avoid
     // sessionStorage's ~5 MB size cap.
+    //
+    // Always check Stripe's redirect_status URL param first:
+    //   succeeded  → proceed (normal happy path)
+    //   processing → payment is pending; do NOT block dates or send confirmation
+    //   failed / requires_payment_method → payment failed; clear sessionStorage
+    //   absent     → synchronous confirmation (no redirect needed); proceed
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
 
@@ -68,6 +74,40 @@
         if (btn) { btn.style.pointerEvents = ""; btn.style.opacity = ""; }
         if (status) { status.style.display = "none"; }
       }
+
+      function showPaymentFailed() {
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title)  { title.textContent  = "❌ Payment Failed"; title.style.color = "#f44336"; }
+        if (body)   body.textContent  = "Your payment was not completed. No charge was made. Please try booking again or contact us if you need help.";
+        if (status) status.style.display = "none";
+      }
+
+      function showPaymentProcessing() {
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title)  { title.textContent  = "⏳ Payment Processing"; title.style.color = "#ffb400"; }
+        if (body)   body.textContent  = "Your payment is being processed. We will email you once it is confirmed. Please do not re-submit.";
+        if (status) status.style.display = "none";
+      }
+
+      // Check Stripe's redirect_status param before doing anything else.
+      var redirectStatus = new URLSearchParams(window.location.search).get("redirect_status");
+      if (redirectStatus === "failed" || redirectStatus === "requires_payment_method") {
+        sessionStorage.removeItem("slyRidesBooking");
+        showPaymentFailed();
+        enableHomeBtn();
+        return;
+      }
+      if (redirectStatus === "processing") {
+        sessionStorage.removeItem("slyRidesBooking");
+        showPaymentProcessing();
+        enableHomeBtn();
+        return;
+      }
+      // redirectStatus === "succeeded" or absent (synchronous confirmation) → proceed
 
       var raw = sessionStorage.getItem("slyRidesBooking");
       if (!raw) { enableHomeBtn(); return; }
