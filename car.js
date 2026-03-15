@@ -25,7 +25,7 @@ const cars = {
     weekly: 320,
     biweekly: 600,
     monthly: 1250,
-    images: [],
+    images: ["images/IMG_0045.png","images/IMG_0046.png","images/IMG_4486.jpeg"],
     make: "Toyota",
     model: "Camry",
     year: 2012,
