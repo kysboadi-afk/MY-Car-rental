@@ -49,7 +49,9 @@ const cars = {
 };
 
 // ----- Insurance / Protection Plan -----
-const PROTECTION_PLAN_DAILY = 25; // $25/day damage protection plan
+const PROTECTION_PLAN_DAILY   = 15;  // $15/day
+const PROTECTION_PLAN_WEEKLY  = 75;  // $75/week  (7-day block)
+const PROTECTION_PLAN_MONTHLY = 250; // $250/month (30-day block)
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -596,11 +598,29 @@ function updateTotal() {
   if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
-  // Add Damage Protection Plan if the renter has no rental coverage
+  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates)
   if (insuranceCoverageChoice === "no") {
-    const protectionCost = PROTECTION_PLAN_DAILY * currentDayCount;
+    let protectionCost = 0;
+    let protDays = currentDayCount;
+    const protLines = [];
+    if (protDays >= 30) {
+      const months = Math.floor(protDays / 30);
+      protectionCost += months * PROTECTION_PLAN_MONTHLY;
+      protLines.push(`${months} month${months > 1 ? "s" : ""} × $${PROTECTION_PLAN_MONTHLY}/mo`);
+      protDays = protDays % 30;
+    }
+    if (protDays >= 7) {
+      const weeks = Math.floor(protDays / 7);
+      protectionCost += weeks * PROTECTION_PLAN_WEEKLY;
+      protLines.push(`${weeks} week${weeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_WEEKLY}/wk`);
+      protDays = protDays % 7;
+    }
+    if (protDays > 0) {
+      protectionCost += protDays * PROTECTION_PLAN_DAILY;
+      protLines.push(`${protDays} day${protDays > 1 ? "s" : ""} × $${PROTECTION_PLAN_DAILY}/day`);
+    }
     cost += protectionCost;
-    lines.push({ label: `Damage Protection Plan × ${currentDayCount} day${currentDayCount > 1 ? "s" : ""} @ $${PROTECTION_PLAN_DAILY}/day`, amount: protectionCost });
+    lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
   }
   // Tax is calculated by Stripe at checkout based on the customer's billing address.
   lines.push({ label: "Sales tax", amount: null });
