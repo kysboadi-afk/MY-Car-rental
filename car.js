@@ -533,7 +533,55 @@ async function initDatePickers() {
 
 initDatePickers();
 
-// ----- Reset form on back-navigation (bfcache restore) -----
+// ----- Fleet Status Check -----
+// Fetch the vehicle's availability from fleet-status.json. If the vehicle is
+// globally marked unavailable (e.g. already booked or taken offline), show a
+// clear notice and disable all booking form fields so the customer cannot
+// attempt payment. Fails open on any API error so transient outages do not
+// lock out the form.
+(async function checkFleetStatus() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/fleet-status`);
+    if (!resp.ok) return;
+    const status = await resp.json();
+    const entry = status[vehicleId];
+    if (entry && entry.available === false) {
+      showVehicleUnavailable();
+    }
+  } catch (err) {
+    console.warn("Could not check fleet status:", err);
+  }
+})();
+
+function showVehicleUnavailable() {
+  const bookingSection = document.querySelector(".booking");
+  if (!bookingSection) return;
+
+  // Insert an unavailability notice at the top of the booking section
+  if (!document.getElementById("vehicleUnavailableNotice")) {
+    const notice = document.createElement("div");
+    notice.id = "vehicleUnavailableNotice";
+    notice.className = "vehicle-unavailable-notice";
+    notice.innerHTML = `
+      <p>🚫 This vehicle is currently unavailable</p>
+      <p>This car is already booked. Please
+        <a href="cars.html">browse other available vehicles</a>
+        or check back later.</p>`;
+    bookingSection.insertBefore(notice, bookingSection.firstChild);
+  }
+
+  // Disable all interactive form elements inside the booking section
+  bookingSection.querySelectorAll("input, button, select, textarea").forEach(function (el) {
+    el.disabled = true;
+  });
+
+  // Explicitly hide the pay button and its hint text
+  stripeBtn.style.display = "none";
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = "none";
+}
+
+
 // When the browser restores this page from bfcache (e.g. user hits "back"
 // after the Stripe redirect), all field values and UI state from the previous
 // renter's session would still be visible.  Resetting here ensures each new

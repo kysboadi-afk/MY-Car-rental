@@ -7,7 +7,7 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
 import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays } from "./_pricing.js";
-import { isDatesAvailable } from "./_availability.js";
+import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -55,6 +55,12 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
     }
 
+    // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
+    const vehicleAvailable = await isVehicleAvailable(vehicleId);
+    if (!vehicleAvailable) {
+      return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
+    }
+
     // Validate email
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: "Invalid email address" });
@@ -81,6 +87,8 @@ export default async function handler(req, res) {
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name}`,
       payment_method_types: ["card"],
+      // Store full booking context so every payment is auditable from the
+      // Stripe dashboard and can be reconciled with booked-dates.json if needed.
       metadata: {
         renter_name:  trimmedName,
         vehicle_id:   vehicleId,
