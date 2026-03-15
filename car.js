@@ -48,6 +48,9 @@ const cars = {
   }
 };
 
+// ----- Insurance / Protection Plan -----
+const PROTECTION_PLAN_DAILY = 25; // $25/day damage protection plan
+
 // ----- Helpers -----
 function getVehicleFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -172,6 +175,7 @@ let uploadedFile = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
 let agreementSignature = ""; // typed signature from the inline agreement panel
+let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 
 // ----- Pre-fill booking form from renter modal (cars.html) -----
 // If the customer already entered their contact info in the "Before You Browse"
@@ -209,6 +213,34 @@ function resetInsuranceFileInfo() {
   el.querySelector(".file-size").textContent = "";
   el.classList.remove("has-file");
 }
+
+function clearInsuranceFile() {
+  insuranceUpload.value = "";
+  uploadedInsurance = null;
+  resetInsuranceFileInfo();
+}
+
+// ----- Insurance Coverage Radio Buttons -----
+document.getElementById("hasInsurance").addEventListener("change", function() {
+  if (!this.checked) return;
+  insuranceCoverageChoice = "yes";
+  document.getElementById("insuranceUploadSection").style.display = "";
+  document.getElementById("protectionPlanSection").style.display = "none";
+  // Clear any protection-plan file state if previously "no"
+  updateTotal();
+  updatePayBtn();
+});
+
+document.getElementById("noInsurance").addEventListener("change", function() {
+  if (!this.checked) return;
+  insuranceCoverageChoice = "no";
+  document.getElementById("insuranceUploadSection").style.display = "none";
+  document.getElementById("protectionPlanSection").style.display = "";
+  // Clear the uploaded insurance file since it's no longer needed
+  clearInsuranceFile();
+  updateTotal();
+  updatePayBtn();
+});
 
 idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
@@ -474,9 +506,17 @@ window.addEventListener("pageshow", function(e) {
   idUpload.value = "";
   uploadedFile = null;
   resetFileInfo();
-  insuranceUpload.value = "";
-  uploadedInsurance = null;
-  resetInsuranceFileInfo();
+  clearInsuranceFile();
+  // Reset insurance coverage radio buttons
+  const hasInsuranceRadio = document.getElementById("hasInsurance");
+  const noInsuranceRadio = document.getElementById("noInsurance");
+  if (hasInsuranceRadio) hasInsuranceRadio.checked = false;
+  if (noInsuranceRadio) noInsuranceRadio.checked = false;
+  insuranceCoverageChoice = null;
+  const insuranceUploadSection = document.getElementById("insuranceUploadSection");
+  const protectionPlanSection = document.getElementById("protectionPlanSection");
+  if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
+  if (protectionPlanSection) protectionPlanSection.style.display = "none";
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = "✍ Review & Sign Rental Agreement";
@@ -507,7 +547,10 @@ window.addEventListener("pageshow", function(e) {
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceUpload.files.length > 0 && nameVal && emailVal;
+  // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload)
+  const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
+                          insuranceCoverageChoice === "no";
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameVal && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -552,6 +595,12 @@ function updateTotal() {
   }
   if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
+  }
+  // Add Damage Protection Plan if the renter has no rental coverage
+  if (insuranceCoverageChoice === "no") {
+    const protectionCost = PROTECTION_PLAN_DAILY * currentDayCount;
+    cost += protectionCost;
+    lines.push({ label: `Damage Protection Plan × ${currentDayCount} day${currentDayCount > 1 ? "s" : ""} @ $${PROTECTION_PLAN_DAILY}/day`, amount: protectionCost });
   }
   // Tax is calculated by Stripe at checkout based on the customer's billing address.
   lines.push({ label: "Sales tax", amount: null });
@@ -730,6 +779,7 @@ stripeBtn.addEventListener("click", async () => {
         idMimeType,
         insuranceFileName,
         insuranceMimeType,
+        protectionPlan: insuranceCoverageChoice === "no",
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
