@@ -96,15 +96,35 @@
       <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
     </div>
 
-    <div class="id-upload-section">
-      <label for="insuranceUpload">🛡️ Upload Proof of Insurance <span class="required">*</span></label>
-      <p class="id-note">Valid auto insurance documentation is required for all rentals.</p>
-      <input type="file" id="insuranceUpload" accept=".jpg,.jpeg,.png,.pdf">
-      <div id="insuranceFileInfo">
-        <span class="file-name">No file selected</span>
-        <span class="file-size"></span>
+    <div class="id-upload-section insurance-coverage-section">
+      <p class="insurance-question">🛡️ Do you have auto insurance that covers rental vehicles?</p>
+      <div class="insurance-options">
+        <label class="insurance-option">
+          <input type="radio" name="insuranceCoverage" id="hasInsurance" value="yes">
+          <span>Yes, I have rental car coverage</span>
+        </label>
+        <label class="insurance-option">
+          <input type="radio" name="insuranceCoverage" id="noInsurance" value="no">
+          <span>No, I need protection</span>
+        </label>
       </div>
-      <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
+
+      <div id="insuranceUploadSection" style="display:none">
+        <label for="insuranceUpload">📎 Upload Proof of Insurance <span class="required">*</span></label>
+        <p class="id-note">Valid auto insurance documentation is required for all rentals.</p>
+        <input type="file" id="insuranceUpload" accept=".jpg,.jpeg,.png,.pdf">
+        <div id="insuranceFileInfo">
+          <span class="file-name">No file selected</span>
+          <span class="file-size"></span>
+        </div>
+        <p class="id-accepted">Accepted: JPG, PNG, PDF</p>
+      </div>
+
+      <div id="protectionPlanSection" class="protection-plan-notice" style="display:none">
+        <p>⚠️ Your insurance doesn't cover rental vehicles.</p>
+        <p class="protection-plan-price">Protect yourself with our <strong>Damage Protection Plan: $25/day</strong></p>
+        <p class="protection-plan-detail">Reduces your damage responsibility to <strong>$1,000 maximum</strong>.</p>
+      </div>
     </div>
 
     <div class="sign-agreement">
@@ -209,7 +229,7 @@
       <div id="breakdownRows"></div>
     </div>
     <p class="total">Subtotal: $<span id="total">0</span> <span class="tax-note">(+ applicable sales tax)</span></p>
-    <p class="pay-hint" id="payHint">Fill in dates, enter your name and email, upload your ID and proof of insurance, and sign &amp; agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint">Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
     <button id="stripePay" disabled aria-describedby="payHint">💳 Pay Now</button>
 
     <div id="payment-form" style="display:none">

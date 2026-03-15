@@ -904,6 +904,93 @@ body {
   cursor: pointer;
 }
 
+/* INSURANCE COVERAGE QUESTION */
+.insurance-coverage-section .insurance-question {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.insurance-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.insurance-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  transition: border-color 0.2s, background 0.2s;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.insurance-option:hover {
+  border-color: #ffb400;
+  background: #222;
+}
+
+.insurance-option input[type="radio"] {
+  accent-color: #ffb400;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.insurance-option input[type="radio"]:checked + span {
+  color: #ffb400;
+  font-weight: 600;
+}
+
+.insurance-option:has(input:checked) {
+  border-color: #ffb400;
+  background: #1f1a00;
+}
+
+#insuranceUploadSection {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a2a;
+}
+
+/* PROTECTION PLAN NOTICE */
+.protection-plan-notice {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid #e67e22;
+  border-radius: 8px;
+  background: #1f1000;
+}
+
+.protection-plan-notice p {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #f0a040;
+  line-height: 1.5;
+}
+
+.protection-plan-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.protection-plan-price {
+  font-size: 14px !important;
+  color: #ffb400 !important;
+}
+
+.protection-plan-detail {
+  color: #ccc !important;
+}
+
 /* FLEET PAGE HEADING */
 .fleet-heading {
   text-align: center;
