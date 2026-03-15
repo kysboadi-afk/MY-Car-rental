@@ -7,11 +7,11 @@ const botResponses = [
   },
   {
     patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
-    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $320 / week\n  • $600 / 2 weeks\n  • $1,250 / month\n\nNeed anything else?"
+    reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • $300 / day + $150 deposit\n\n🔵 Camry 2012 (Sedan 5-Seater)\n  • $50 / day\n  • $320 / week\n  • $600 / 2 weeks\n  • $1,250 / month\n\n🟢 Camry 2013 SE (Sedan 5-Seater)\n  • $55 / day\n  • $350 / week\n  • $650 / 2 weeks\n  • $1,300 / month\n\nNeed anything else?"
   },
   {
     patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
-    reply: "We currently have 2 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater, $300/day\n🔵 Camry 2012 — Sedan 5-Seater, $50/day\n\nVisit our Cars page to browse and book!"
+    reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater, $300/day\n🔵 Camry 2012 — Sedan 5-Seater, $50/day\n🟢 Camry 2013 SE — Sedan 5-Seater, $55/day\n\nVisit our Cars page to browse and book!"
   },
   {
     patterns: ["book","booking","reserve","reservation","how do i","how to"],
@@ -19,7 +19,7 @@ const botResponses = [
   },
   {
     patterns: ["deposit","security"],
-    reply: "Here's our deposit info 💰\n\n🔴 Slingshot R: $150 deposit\n🔵 Camry 2012: No deposit required\n\nDeposits are refundable upon return of the vehicle in good condition."
+    reply: "Here's our deposit info 💰\n\n🔴 Slingshot R: $150 deposit\n🔵 Camry 2012: No deposit required\n🟢 Camry 2013 SE: No deposit required\n\nDeposits are refundable upon return of the vehicle in good condition."
   },
   {
     patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
