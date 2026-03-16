@@ -415,11 +415,13 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   // Update the Security Deposit section to reflect actual vehicle pricing.
   // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
   // Camry vehicles have no security deposit.
+  const depositHeadingEl = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
   if (vehicleId === "slingshot") {
+    if (depositHeadingEl) depositHeadingEl.style.display = "";
     if (depositIntroEl) depositIntroEl.innerHTML =
       `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
       `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
@@ -429,6 +431,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositNeitherEl) depositNeitherEl.innerHTML =
       `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
   } else {
+    if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositIntroEl) depositIntroEl.textContent =
       "No security deposit is required for this vehicle.";
     if (depositInsEl)     depositInsEl.style.display = "none";
