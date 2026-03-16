@@ -414,7 +414,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
 
   // Update the Security Deposit section to reflect actual vehicle pricing.
   // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
-  // Camry vehicles use the standard $200/$200/$500 deposit tiers at pickup.
+  // Camry vehicles have no security deposit.
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
@@ -430,11 +430,10 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
       `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
   } else {
     if (depositIntroEl) depositIntroEl.textContent =
-      "A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return " +
-      "(typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.";
-    if (depositInsEl)     { depositInsEl.style.display = ""; depositInsEl.innerHTML = "<strong>Verified Rental Car Insurance:</strong> $200"; }
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> $200 deposit"; }
-    if (depositNeitherEl) { depositNeitherEl.style.display = ""; depositNeitherEl.innerHTML = "<strong>Neither Option:</strong> $500"; }
+      "No security deposit is required for this vehicle.";
+    if (depositInsEl)     depositInsEl.style.display = "none";
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositNeitherEl) depositNeitherEl.style.display = "none";
   }
 
   // Pre-fill the signature field with the renter's name if already typed

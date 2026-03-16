@@ -1166,7 +1166,188 @@ body {
   text-align: center;
   color: #ffb400;
   font-size: 36px;
-  margin-bottom: 30px;
+  margin-bottom: 10px;
+}
+
+.fleet-subheading {
+  text-align: center;
+  color: #aaa;
+  font-size: 16px;
+  margin: 0 auto 30px;
+  max-width: 680px;
+  line-height: 1.6;
+}
+
+/* PRICE LIST SECTION LABEL */
+.price-list-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+  margin: 10px 0 4px;
+}
+
+/* BEST VALUE TAG — complements popular-tag */
+.best-value-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: #22c55e;
+  color: #000;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  margin-left: 6px;
+}
+
+/* EARNINGS BREAKDOWN — driver profit estimate shown on Camry cards */
+.earnings-breakdown {
+  background: rgba(255, 180, 0, 0.06);
+  border: 1px solid rgba(255, 180, 0, 0.18);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0 6px;
+}
+
+.earnings-breakdown-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffb400;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.earnings-breakdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.earnings-breakdown-list li {
+  font-size: 12px;
+  color: #bbb;
+  line-height: 1.4;
+}
+
+.earnings-breakdown-list li strong {
+  color: #fff;
+}
+
+/* FLEET INFO SECTIONS (Driver Requirements, Why Choose SLY, CTA) */
+.fleet-info-section {
+  padding: 60px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.driver-req-section {
+  background: #0d0d0d;
+}
+
+.why-drivers-section {
+  background: #000;
+}
+
+.fleet-info-container {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.fleet-info-heading {
+  text-align: center;
+  font-size: 28px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 32px;
+}
+
+/* Driver requirements list */
+.fleet-req-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fleet-req-list li {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid #ffb400;
+  border-radius: 8px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+/* Why drivers choose SLY grid */
+.why-drivers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.why-drivers-item {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+  transition: border-color 0.2s;
+}
+
+.why-drivers-item:hover {
+  border-color: #ffb400;
+}
+
+/* CTA section */
+.fleet-cta-section {
+  background: #0a0a0a;
+  border-top: 1px solid #2a2a2a;
+  padding: 70px 20px;
+  text-align: center;
+}
+
+.fleet-cta-heading {
+  font-size: 32px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 14px;
+}
+
+.fleet-cta-sub {
+  font-size: 16px;
+  color: #aaa;
+  max-width: 560px;
+  margin: 0 auto 28px;
+  line-height: 1.6;
+}
+
+.fleet-cta-btn {
+  display: inline-block;
+  background: #ffb400;
+  color: #000;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 14px 32px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.fleet-cta-btn:hover {
+  background: #ffc933;
+  transform: translateY(-2px);
 }
 
 /* CARS PAGE LAYOUT (sidebar + grid) */
@@ -1421,6 +1602,26 @@ footer {
     width: auto;
     flex: 1 1 auto;
     text-align: center;
+  }
+
+  .fleet-heading {
+    font-size: 26px;
+  }
+
+  .fleet-subheading {
+    font-size: 14px;
+  }
+
+  .why-drivers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-info-heading {
+    font-size: 22px;
+  }
+
+  .fleet-cta-heading {
+    font-size: 24px;
   }
 }
 
