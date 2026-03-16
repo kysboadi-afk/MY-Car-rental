@@ -20,8 +20,7 @@ const cars = {
   },
   camry: {
     name: "Camry 2012",
-    subtitle: "Sedan • 5-Seater",
-    pricePerDay: 50,
+    subtitle: "",
     weekly: 320,
     biweekly: 600,
     monthly: 1250,
@@ -34,8 +33,7 @@ const cars = {
   },
   camry2013: {
     name: "Camry 2013 SE",
-    subtitle: "Sedan • 5-Seater",
-    pricePerDay: 55,
+    subtitle: "",
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
