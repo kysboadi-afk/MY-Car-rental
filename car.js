@@ -173,6 +173,65 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
   }
 }());
 
+// ----- Name Field Validation & Auto-correction -----
+
+// Capitalize the first letter after each word boundary (spaces, hyphens, apostrophes)
+function toTitleCase(str) {
+  return str.replace(/(?:^|[\s'\-])([a-zA-ZÀ-ÖØ-öø-ÿ])/g, function (m) {
+    return m.toUpperCase();
+  });
+}
+
+// Remove any character that is not a letter, space, hyphen, apostrophe, or period.
+function sanitizeNameInput(val) {
+  return val.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-.]/g, '');
+}
+
+// Name must contain at least a first and last name (two words)
+function isValidName(val) {
+  return val.trim().split(/\s+/).filter(Boolean).length >= 2;
+}
+
+(function setupNameField() {
+  const nameField = document.getElementById('name');
+  const nameError = document.getElementById('nameError');
+
+  nameField.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+    // Hide the error while the user is still typing
+    if (nameError) { nameError.style.display = 'none'; }
+    updatePayBtn();
+  });
+
+  nameField.addEventListener('blur', function () {
+    if (this.value.trim()) {
+      this.value = toTitleCase(this.value.trim().replace(/\s+/g, ' '));
+    }
+    // Show validation error if the name is present but incomplete
+    if (nameError) {
+      const val = this.value.trim();
+      if (val && !isValidName(val)) {
+        nameError.textContent = 'Please enter at least a first and last name.';
+        nameError.style.display = '';
+      } else {
+        nameError.style.display = 'none';
+      }
+    }
+    updatePayBtn();
+  });
+}());
+
+// Also sanitize the signature input so it only accepts valid name characters
+(function setupSignatureField() {
+  const sigInput = document.getElementById('signatureInput');
+  if (!sigInput) return;
+  sigInput.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+  });
+}());
+
 // ----- File Upload Handling -----
 function resetFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
@@ -641,7 +700,8 @@ function updatePayBtn() {
   // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload)
   const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
                           insuranceCoverageChoice === "no";
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameVal && emailVal;
+  const nameValid = isValidName(nameVal);
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
