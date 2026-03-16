@@ -21,6 +21,7 @@ const cars = {
   camry: {
     name: "Camry 2012",
     subtitle: "",
+    pricePerDay: 50,
     weekly: 320,
     biweekly: 600,
     monthly: 1250,
@@ -34,6 +35,7 @@ const cars = {
   camry2013: {
     name: "Camry 2013 SE",
     subtitle: "",
+    pricePerDay: 55,
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
