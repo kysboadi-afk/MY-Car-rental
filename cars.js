@@ -50,7 +50,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = "● Available";
       badge.className = "status-badge available";
 
-      btn.textContent = "Select";
+      btn.textContent = "Book Now";
       btn.disabled = false;
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
