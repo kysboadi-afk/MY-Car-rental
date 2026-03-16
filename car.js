@@ -23,7 +23,7 @@ const cars = {
     subtitle: "",
     pricePerDay: 50,
     minRentalDays: 7,
-    weekly: 320,
+    weekly: 350,
     biweekly: 600,
     monthly: 1250,
     images: ["images/IMG_0045.png","images/IMG_0046.png","images/IMG_4486.jpeg"],
