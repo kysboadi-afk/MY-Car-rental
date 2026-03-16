@@ -75,19 +75,6 @@ test("slingshot: 30 days = 30 × $300 + $150 deposit = $9150", () => {
   assert.equal(computeAmount("slingshot", "2025-07-01", "2025-07-31"), 9150);
 });
 
-// Damage Protection Plan waives the deposit
-test("slingshot + skipDeposit: 1 day = $300 only (no deposit)", () => {
-  assert.equal(computeAmount("slingshot", "2025-07-01", "2025-07-02", { skipDeposit: true }), 300);
-});
-
-test("slingshot + skipDeposit: 3 days = 3 × $300 = $900 (no deposit)", () => {
-  assert.equal(computeAmount("slingshot", "2025-07-01", "2025-07-04", { skipDeposit: true }), 900);
-});
-
-test("camry + skipDeposit: unchanged (deposit is already 0)", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-02", { skipDeposit: true }), 50);
-});
-
 // ─── Edge cases ───────────────────────────────────────────────────────────────
 
 test("same-day (0-day gap) treated as 1 day minimum", () => {

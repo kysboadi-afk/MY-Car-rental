@@ -696,9 +696,8 @@ function updateTotal() {
     cost += subtotal;
     lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
   }
-  // Security deposit — waived when the renter opts in to the Damage Protection Plan
-  const depositWaived = insuranceCoverageChoice === "no";
-  if (carData.deposit && !depositWaived) {
+  // Security deposit is always charged (never waived)
+  if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
   // Add Damage Protection Plan if the renter has no rental coverage (tiered rates)
@@ -726,7 +725,7 @@ function updateTotal() {
     lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
   }
 
-  const rentalSubtotal = cost + (depositWaived ? 0 : (carData.deposit || 0));
+  const rentalSubtotal = cost + (carData.deposit || 0);
   currentSubtotal = rentalSubtotal;
   const taxAmount = rentalSubtotal * currentTaxRate;
   const grandTotal = rentalSubtotal + taxAmount;

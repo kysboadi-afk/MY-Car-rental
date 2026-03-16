@@ -73,9 +73,8 @@ export default async function handler(req, res) {
     const trimmedName = name.trim();
 
     // Compute amount server-side — never trust a client-supplied amount.
-    // When the renter opted in to the Damage Protection Plan, the security
-    // deposit is waived (per the rental agreement); pass skipDeposit accordingly.
-    const computedAmount = computeAmount(vehicleId, pickup, returnDate, { skipDeposit: !!protectionPlan });
+    // The security deposit is always charged regardless of insurance choice.
+    const computedAmount = computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in
