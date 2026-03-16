@@ -640,6 +640,10 @@ window.addEventListener("pageshow", function(e) {
   currentTaxRate = 0;
   document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
+  // Re-initialize Flatpickr so the calendar shows fresh state (no lingering
+  // selected dates from the previous session) and fetches the latest booked
+  // ranges from the API.
+  initDatePickers();
   }
 });
 
@@ -692,7 +696,9 @@ function updateTotal() {
     cost += subtotal;
     lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
   }
-  if (carData.deposit) {
+  // Security deposit — waived when the renter opts in to the Damage Protection Plan
+  const depositWaived = insuranceCoverageChoice === "no";
+  if (carData.deposit && !depositWaived) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
   // Add Damage Protection Plan if the renter has no rental coverage (tiered rates)
@@ -720,7 +726,7 @@ function updateTotal() {
     lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
   }
 
-  const rentalSubtotal = cost + (carData.deposit || 0);
+  const rentalSubtotal = cost + (depositWaived ? 0 : (carData.deposit || 0));
   currentSubtotal = rentalSubtotal;
   const taxAmount = rentalSubtotal * currentTaxRate;
   const grandTotal = rentalSubtotal + taxAmount;

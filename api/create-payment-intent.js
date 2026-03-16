@@ -72,8 +72,10 @@ export default async function handler(req, res) {
     }
     const trimmedName = name.trim();
 
-    // Compute amount server-side — never trust a client-supplied amount
-    const computedAmount = computeAmount(vehicleId, pickup, returnDate);
+    // Compute amount server-side — never trust a client-supplied amount.
+    // When the renter opted in to the Damage Protection Plan, the security
+    // deposit is waived (per the rental agreement); pass skipDeposit accordingly.
+    const computedAmount = computeAmount(vehicleId, pickup, returnDate, { skipDeposit: !!protectionPlan });
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in
@@ -89,6 +91,8 @@ export default async function handler(req, res) {
       payment_method_types: ["card"],
       // Store full booking context so every payment is auditable from the
       // Stripe dashboard and can be reconciled with booked-dates.json if needed.
+      // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
+      // needed here — values are only rendered in the Stripe dashboard.
       metadata: {
         renter_name:  trimmedName,
         vehicle_id:   vehicleId,

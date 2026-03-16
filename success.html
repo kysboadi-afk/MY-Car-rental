@@ -94,18 +94,23 @@
       }
 
       // Check Stripe's redirect_status param before doing anything else.
+      // The early `return` below is what prevents date-blocking and confirmation
+      // emails from being sent for non-succeeded states — execution never reaches
+      // the sendEmail() call below for these cases.
       var redirectStatus = new URLSearchParams(window.location.search).get("redirect_status");
       if (redirectStatus === "failed" || redirectStatus === "requires_payment_method") {
         sessionStorage.removeItem("slyRidesBooking");
         showPaymentFailed();
         enableHomeBtn();
-        return;
+        return; // ← exits here; sendEmail() is never called
       }
       if (redirectStatus === "processing") {
+        // Payment is not yet confirmed — clear staging data so it is never sent
+        // accidentally and show a "pending" message. sendEmail() is never called.
         sessionStorage.removeItem("slyRidesBooking");
         showPaymentProcessing();
         enableHomeBtn();
-        return;
+        return; // ← exits here; sendEmail() is never called
       }
       // redirectStatus === "succeeded" or absent (synchronous confirmation) → proceed
 

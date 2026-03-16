@@ -56,9 +56,13 @@ export function computeProtectionPlanCost(days) {
  * @param {string} vehicleId - key from CARS
  * @param {string} pickup    - ISO date string, e.g. "2025-07-01"
  * @param {string} returnDate - ISO date string, e.g. "2025-07-05"
+ * @param {object} [options]
+ * @param {boolean} [options.skipDeposit=false] - when true the security deposit
+ *   is not added (used when the renter opts in to the Damage Protection Plan,
+ *   which waives the deposit per the rental agreement).
  * @returns {number|null} total in dollars, or null if vehicleId is unknown
  */
-export function computeAmount(vehicleId, pickup, returnDate) {
+export function computeAmount(vehicleId, pickup, returnDate, { skipDeposit = false } = {}) {
   const car = CARS[vehicleId];
   if (!car) return null;
   let remaining = computeRentalDays(pickup, returnDate);
@@ -79,5 +83,5 @@ export function computeAmount(vehicleId, pickup, returnDate) {
     remaining = remaining % 7;
   }
   cost += remaining * car.pricePerDay;
-  return cost + (car.deposit || 0);
+  return cost + (skipDeposit ? 0 : (car.deposit || 0));
 }
