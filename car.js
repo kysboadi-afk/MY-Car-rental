@@ -408,9 +408,40 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (elColor) elColor.textContent = carData.color || "";
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
+  // Update the Security Deposit section to reflect actual vehicle pricing.
+  // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
+  // Camry vehicles use the standard $200/$200/$500 deposit tiers at pickup.
+  const depositIntroEl    = document.getElementById("agreementDepositIntro");
+  const depositInsEl      = document.getElementById("agreementDepositInsurance");
+  const depositDppEl      = document.getElementById("agreementDepositDpp");
+  const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  if (vehicleId === "slingshot") {
+    if (depositIntroEl) depositIntroEl.innerHTML =
+      `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
+      `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
+      `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
+    if (depositInsEl)     depositInsEl.style.display = "none";
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositNeitherEl) depositNeitherEl.innerHTML =
+      `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
+  } else {
+    if (depositIntroEl) depositIntroEl.textContent =
+      "A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return " +
+      "(typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.";
+    if (depositInsEl)     { depositInsEl.style.display = ""; depositInsEl.innerHTML = "<strong>Verified Rental Car Insurance:</strong> $200"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> $200 deposit"; }
+    if (depositNeitherEl) { depositNeitherEl.style.display = ""; depositNeitherEl.innerHTML = "<strong>Neither Option:</strong> $500"; }
+  }
+
   // Pre-fill the signature field with the renter's name if already typed
   const sigInput = document.getElementById("signatureInput");
-  if (sigInput && renterName && !sigInput.value) sigInput.value = renterName;
+  if (sigInput && renterName && !sigInput.value) {
+    sigInput.value = renterName;
+    // Programmatic value assignment doesn't fire the 'input' event, so
+    // manually sync the confirm button's disabled state to avoid the renter
+    // having to delete and retype their name just to enable the button.
+    document.getElementById("confirmSignBtn").disabled = false;
+  }
 
   document.getElementById("rentalAgreementBox").style.display = "";
   this.style.display = "none";
@@ -533,7 +564,55 @@ async function initDatePickers() {
 
 initDatePickers();
 
-// ----- Reset form on back-navigation (bfcache restore) -----
+// ----- Fleet Status Check -----
+// Fetch the vehicle's availability from fleet-status.json. If the vehicle is
+// globally marked unavailable (e.g. already booked or taken offline), show a
+// clear notice and disable all booking form fields so the customer cannot
+// attempt payment. Fails open on any API error so transient outages do not
+// lock out the form.
+(async function checkFleetStatus() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/fleet-status`);
+    if (!resp.ok) return;
+    const status = await resp.json();
+    const entry = status[vehicleId];
+    if (entry && entry.available === false) {
+      showVehicleUnavailable();
+    }
+  } catch (err) {
+    console.warn("Could not check fleet status:", err);
+  }
+})();
+
+function showVehicleUnavailable() {
+  const bookingSection = document.querySelector(".booking");
+  if (!bookingSection) return;
+
+  // Insert an unavailability notice at the top of the booking section
+  if (!document.getElementById("vehicleUnavailableNotice")) {
+    const notice = document.createElement("div");
+    notice.id = "vehicleUnavailableNotice";
+    notice.className = "vehicle-unavailable-notice";
+    notice.innerHTML = `
+      <p>🚫 This vehicle is currently unavailable</p>
+      <p>This car is already booked. Please
+        <a href="cars.html">browse other available vehicles</a>
+        or check back later.</p>`;
+    bookingSection.insertBefore(notice, bookingSection.firstChild);
+  }
+
+  // Disable all interactive form elements inside the booking section
+  bookingSection.querySelectorAll("input, button, select, textarea").forEach(function (el) {
+    el.disabled = true;
+  });
+
+  // Explicitly hide the pay button and its hint text
+  stripeBtn.style.display = "none";
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = "none";
+}
+
+
 // When the browser restores this page from bfcache (e.g. user hits "back"
 // after the Stripe redirect), all field values and UI state from the previous
 // renter's session would still be visible.  Resetting here ensures each new
@@ -592,6 +671,10 @@ window.addEventListener("pageshow", function(e) {
   currentTaxRate = 0;
   document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
+  // Re-initialize Flatpickr so the calendar shows fresh state (no lingering
+  // selected dates from the previous session) and fetches the latest booked
+  // ranges from the API.
+  initDatePickers();
   }
 });
 
@@ -644,10 +727,11 @@ function updateTotal() {
     cost += subtotal;
     lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
   }
+  // Security deposit is always charged (never waived)
   if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
-  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates)
+  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
   if (insuranceCoverageChoice === "no") {
     let protectionCost = 0;
     let protDays = currentDayCount;

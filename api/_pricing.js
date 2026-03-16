@@ -53,6 +53,7 @@ export function computeProtectionPlanCost(days) {
 /**
  * Compute the total charge for a rental.
  * Applies the best discount tier greedily: monthly → biweekly → weekly → daily.
+ * The security deposit (if any) is always included — it is never waived.
  * @param {string} vehicleId - key from CARS
  * @param {string} pickup    - ISO date string, e.g. "2025-07-01"
  * @param {string} returnDate - ISO date string, e.g. "2025-07-05"

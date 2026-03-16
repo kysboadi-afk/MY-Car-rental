@@ -4,13 +4,15 @@
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
+const FLEET_STATUS_PATH = "fleet-status.json";
 
 /**
- * Fetch the current booked-dates.json from the GitHub Contents API.
+ * Fetch and decode a JSON file from the GitHub Contents API.
  * Returns the parsed object, or null on any error.
+ * @param {string} filePath - repo-relative path (e.g. "booked-dates.json")
  */
-export async function fetchBookedDates() {
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+async function fetchGitHubFile(filePath) {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${filePath}`;
   const headers = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -24,6 +26,22 @@ export async function fetchBookedDates() {
   return JSON.parse(
     Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
   );
+}
+
+/**
+ * Fetch the current booked-dates.json from the GitHub Contents API.
+ * Returns the parsed object, or null on any error.
+ */
+export async function fetchBookedDates() {
+  return fetchGitHubFile(BOOKED_DATES_PATH);
+}
+
+/**
+ * Fetch the current fleet-status.json from the GitHub Contents API.
+ * Returns the parsed object, or null on any error.
+ */
+export async function fetchFleetStatus() {
+  return fetchGitHubFile(FLEET_STATUS_PATH);
 }
 
 /**
@@ -46,6 +64,23 @@ export async function isDatesAvailable(vehicleId, from, to) {
     if (!data) return true; // can't verify — allow through
     const ranges = data[vehicleId] || [];
     return !hasOverlap(ranges, from, to);
+  } catch {
+    return true; // fail open on transient errors
+  }
+}
+
+/**
+ * Returns true if the vehicle is currently marked available in fleet-status.json.
+ * Fails open (returns true) on any fetch error so transient issues do not
+ * permanently block payments.
+ */
+export async function isVehicleAvailable(vehicleId) {
+  try {
+    const status = await fetchFleetStatus();
+    if (!status) return true; // can't verify — allow through
+    const entry = status[vehicleId];
+    if (!entry) return true; // vehicle not listed — assume available
+    return entry.available !== false;
   } catch {
     return true; // fail open on transient errors
   }
