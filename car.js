@@ -22,6 +22,7 @@ const cars = {
     name: "Camry 2012",
     subtitle: "",
     pricePerDay: 50,
+    minRentalDays: 7,
     weekly: 320,
     biweekly: 600,
     monthly: 1250,
@@ -36,6 +37,7 @@ const cars = {
     name: "Camry 2013 SE",
     subtitle: "",
     pricePerDay: 55,
+    minRentalDays: 7,
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
@@ -90,7 +92,9 @@ if (!vehicleId || !cars[vehicleId]) {
 const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent = carData.subtitle;
-document.getElementById("carPrice").textContent = `$${carData.pricePerDay} / day`;
+document.getElementById("carPrice").textContent = (carData.minRentalDays > 1)
+  ? `from $${carData.weekly} / week`
+  : `$${carData.pricePerDay} / day`;
 
 // ----- Vehicle Promo Banner (Camry only) -----
 const camryPromos = {
@@ -531,7 +535,13 @@ async function initDatePickers() {
     disable: [isBooked],
     onChange: function(selectedDates) {
       if (selectedDates[0]) {
-        returnPicker.set("minDate", selectedDates[0]);
+        if (carData.minRentalDays > 1) {
+          const minReturn = new Date(selectedDates[0]);
+          minReturn.setDate(minReturn.getDate() + carData.minRentalDays);
+          returnPicker.set("minDate", minReturn);
+        } else {
+          returnPicker.set("minDate", selectedDates[0]);
+        }
       }
       updateTotal();
     }
@@ -692,7 +702,8 @@ function updatePayBtn() {
 
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
-  currentDayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  const minDays = carData.minRentalDays || 1;
+  currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
 
   // Calculate cost using the best applicable discount tier (greedy: largest period first).
   // "Monthly" is defined as every 30-day block; this is intentional for a rental business
@@ -723,9 +734,16 @@ function updateTotal() {
     lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
   }
   if (remaining > 0) {
-    const subtotal = remaining * carData.pricePerDay;
-    cost += subtotal;
-    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    if (carData.minRentalDays > 1 && carData.weekly) {
+      // Camrys don't accept daily bookings — partial weeks round up to a full week
+      const subtotal = carData.weekly;
+      cost += subtotal;
+      lines.push({ label: `1 week (rounded up) × $${carData.weekly}/wk`, amount: subtotal });
+    } else {
+      const subtotal = remaining * carData.pricePerDay;
+      cost += subtotal;
+      lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    }
   }
   // Security deposit is always charged (never waived)
   if (carData.deposit) {
