@@ -251,8 +251,6 @@ document.getElementById("hasInsurance").addEventListener("change", function() {
   insuranceCoverageChoice = "yes";
   document.getElementById("insuranceUploadSection").style.display = "";
   document.getElementById("protectionPlanSection").style.display = "none";
-  const slingshotNote = document.getElementById("slingshotInsuranceNote");
-  if (slingshotNote) slingshotNote.style.display = "none";
   // Clear any protection-plan file state if previously "no"
   updateTotal();
   updatePayBtn();
@@ -262,16 +260,7 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-  // Damage Protection Plan is not offered for the Slingshot — deposit is always charged
-  if (vehicleId !== "slingshot") {
-    document.getElementById("protectionPlanSection").style.display = "";
-    const slingshotNote = document.getElementById("slingshotInsuranceNote");
-    if (slingshotNote) slingshotNote.style.display = "none";
-  } else {
-    // Show the Slingshot-specific insurance info note
-    const slingshotNote = document.getElementById("slingshotInsuranceNote");
-    if (slingshotNote) slingshotNote.style.display = "";
-  }
+  document.getElementById("protectionPlanSection").style.display = "";
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
   updateTotal();
@@ -420,7 +409,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Update the Security Deposit section to reflect actual vehicle pricing.
-  // The Slingshot's $150 deposit is always charged and DPP is not offered.
+  // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
   // Camry vehicles use the standard $200/$200/$500 deposit tiers at pickup.
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
@@ -429,12 +418,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (vehicleId === "slingshot") {
     if (depositIntroEl) depositIntroEl.innerHTML =
       `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
-      `and returned after the vehicle is inspected upon return (typically within 5–7 business days). ` +
+      `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
       `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
-    if (depositInsEl)     depositInsEl.style.display     = "none";
-    if (depositDppEl)     depositDppEl.style.display     = "none";
+    if (depositInsEl)     depositInsEl.style.display = "none";
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
     if (depositNeitherEl) depositNeitherEl.innerHTML =
-      `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} — included in rental payment`;
+      `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
   } else {
     if (depositIntroEl) depositIntroEl.textContent =
       "A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return " +
@@ -651,8 +640,6 @@ window.addEventListener("pageshow", function(e) {
   const protectionPlanSection = document.getElementById("protectionPlanSection");
   if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
-  const slingshotNote = document.getElementById("slingshotInsuranceNote");
-  if (slingshotNote) slingshotNote.style.display = "none";
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = "✍ Review & Sign Rental Agreement";
@@ -745,8 +732,7 @@ function updateTotal() {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
   // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
-  // The Slingshot does not offer the DPP — the $150 deposit is always charged instead.
-  if (insuranceCoverageChoice === "no" && vehicleId !== "slingshot") {
+  if (insuranceCoverageChoice === "no") {
     let protectionCost = 0;
     let protDays = currentDayCount;
     const protLines = [];
