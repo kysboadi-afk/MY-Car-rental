@@ -20,8 +20,9 @@ const cars = {
   },
   camry: {
     name: "Camry 2012",
-    subtitle: "Sedan • 5-Seater",
+    subtitle: "",
     pricePerDay: 50,
+    minRentalDays: 7,
     weekly: 320,
     biweekly: 600,
     monthly: 1250,
@@ -34,8 +35,9 @@ const cars = {
   },
   camry2013: {
     name: "Camry 2013 SE",
-    subtitle: "Sedan • 5-Seater",
+    subtitle: "",
     pricePerDay: 55,
+    minRentalDays: 7,
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
@@ -90,7 +92,9 @@ if (!vehicleId || !cars[vehicleId]) {
 const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent = carData.subtitle;
-document.getElementById("carPrice").textContent = `$${carData.pricePerDay} / day`;
+document.getElementById("carPrice").textContent = (carData.minRentalDays > 1)
+  ? `from $${carData.weekly} / week`
+  : `$${carData.pricePerDay} / day`;
 
 const sliderContainer = document.getElementById("sliderContainer");
 const sliderDots = document.getElementById("sliderDots");
@@ -355,12 +359,14 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
 
   // Update the Security Deposit section to reflect actual vehicle pricing.
   // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
-  // Camry vehicles use the standard $200/$200/$500 deposit tiers at pickup.
+  // Camry vehicles have no security deposit.
+  const depositHeadingEl = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
   if (vehicleId === "slingshot") {
+    if (depositHeadingEl) depositHeadingEl.style.display = "";
     if (depositIntroEl) depositIntroEl.innerHTML =
       `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
       `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
@@ -370,12 +376,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositNeitherEl) depositNeitherEl.innerHTML =
       `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
   } else {
+    if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositIntroEl) depositIntroEl.textContent =
-      "A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return " +
-      "(typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.";
-    if (depositInsEl)     { depositInsEl.style.display = ""; depositInsEl.innerHTML = "<strong>Verified Rental Car Insurance:</strong> $200"; }
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> $200 deposit"; }
-    if (depositNeitherEl) { depositNeitherEl.style.display = ""; depositNeitherEl.innerHTML = "<strong>Neither Option:</strong> $500"; }
+      "No security deposit is required for this vehicle.";
+    if (depositInsEl)     depositInsEl.style.display = "none";
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositNeitherEl) depositNeitherEl.style.display = "none";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
@@ -476,7 +482,13 @@ async function initDatePickers() {
     disable: [isBooked],
     onChange: function(selectedDates) {
       if (selectedDates[0]) {
-        returnPicker.set("minDate", selectedDates[0]);
+        if (carData.minRentalDays > 1) {
+          const minReturn = new Date(selectedDates[0]);
+          minReturn.setDate(minReturn.getDate() + carData.minRentalDays);
+          returnPicker.set("minDate", minReturn);
+        } else {
+          returnPicker.set("minDate", selectedDates[0]);
+        }
       }
       updateTotal();
     }
@@ -637,7 +649,8 @@ function updatePayBtn() {
 
 function updateTotal() {
   if(!pickup.value || !returnDate.value) return;
-  currentDayCount = Math.max(1, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  const minDays = carData.minRentalDays || 1;
+  currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
 
   // Calculate cost using the best applicable discount tier (greedy: largest period first).
   // "Monthly" is defined as every 30-day block; this is intentional for a rental business
@@ -668,9 +681,16 @@ function updateTotal() {
     lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
   }
   if (remaining > 0) {
-    const subtotal = remaining * carData.pricePerDay;
-    cost += subtotal;
-    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    if (carData.minRentalDays > 1 && carData.weekly) {
+      // Camrys don't accept daily bookings — partial weeks round up to a full week
+      const subtotal = carData.weekly;
+      cost += subtotal;
+      lines.push({ label: `1 week (rounded up) × $${carData.weekly}/wk`, amount: subtotal });
+    } else {
+      const subtotal = remaining * carData.pricePerDay;
+      cost += subtotal;
+      lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    }
   }
   // Security deposit is always charged (never waived)
   if (carData.deposit) {

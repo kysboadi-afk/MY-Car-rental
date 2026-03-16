@@ -29,6 +29,17 @@ function isBookedToday(ranges) {
   return (ranges || []).some(r => today >= r.from && today <= r.to);
 }
 
+// Capture the original button label for each vehicle from the HTML before any
+// fleet-status override so that re-applying "available" restores the correct
+// per-vehicle text (e.g. "Reserve This Vehicle" for Camry vs "Book Now" for Slingshot).
+const originalBtnText = {};
+carCards.forEach(card => {
+  const vehicleId = card.dataset.vehicle;
+  if (!vehicleId) return;
+  const btn = document.getElementById("select-btn-" + vehicleId);
+  if (btn) originalBtnText[vehicleId] = btn.textContent;
+});
+
 function applyFleetStatus(fleetStatus, bookedDates) {
   carCards.forEach(card => {
     const vehicleId = card.dataset.vehicle;
@@ -50,7 +61,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = "● Available";
       badge.className = "status-badge available";
 
-      btn.textContent = "Book Now";
+      btn.textContent = originalBtnText[vehicleId] || "Book Now";
       btn.disabled = false;
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";

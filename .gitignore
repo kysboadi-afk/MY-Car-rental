@@ -59,3 +59,4 @@ temp/
 *.backup
 *.bak
 *-backup.*
+nohup.out
