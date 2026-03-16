@@ -251,6 +251,8 @@ document.getElementById("hasInsurance").addEventListener("change", function() {
   insuranceCoverageChoice = "yes";
   document.getElementById("insuranceUploadSection").style.display = "";
   document.getElementById("protectionPlanSection").style.display = "none";
+  const slingshotNote = document.getElementById("slingshotInsuranceNote");
+  if (slingshotNote) slingshotNote.style.display = "none";
   // Clear any protection-plan file state if previously "no"
   updateTotal();
   updatePayBtn();
@@ -263,6 +265,12 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   // Damage Protection Plan is not offered for the Slingshot — deposit is always charged
   if (vehicleId !== "slingshot") {
     document.getElementById("protectionPlanSection").style.display = "";
+    const slingshotNote = document.getElementById("slingshotInsuranceNote");
+    if (slingshotNote) slingshotNote.style.display = "none";
+  } else {
+    // Show the Slingshot-specific insurance info note
+    const slingshotNote = document.getElementById("slingshotInsuranceNote");
+    if (slingshotNote) slingshotNote.style.display = "";
   }
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
@@ -411,9 +419,40 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (elColor) elColor.textContent = carData.color || "";
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
+  // Update the Security Deposit section to reflect actual vehicle pricing.
+  // The Slingshot's $150 deposit is always charged and DPP is not offered.
+  // Camry vehicles use the standard $200/$200/$500 deposit tiers at pickup.
+  const depositIntroEl    = document.getElementById("agreementDepositIntro");
+  const depositInsEl      = document.getElementById("agreementDepositInsurance");
+  const depositDppEl      = document.getElementById("agreementDepositDpp");
+  const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  if (vehicleId === "slingshot") {
+    if (depositIntroEl) depositIntroEl.innerHTML =
+      `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
+      `and returned after the vehicle is inspected upon return (typically within 5–7 business days). ` +
+      `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
+    if (depositInsEl)     depositInsEl.style.display     = "none";
+    if (depositDppEl)     depositDppEl.style.display     = "none";
+    if (depositNeitherEl) depositNeitherEl.innerHTML =
+      `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} — included in rental payment`;
+  } else {
+    if (depositIntroEl) depositIntroEl.textContent =
+      "A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return " +
+      "(typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.";
+    if (depositInsEl)     { depositInsEl.style.display = ""; depositInsEl.innerHTML = "<strong>Verified Rental Car Insurance:</strong> $200"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> $200 deposit"; }
+    if (depositNeitherEl) { depositNeitherEl.style.display = ""; depositNeitherEl.innerHTML = "<strong>Neither Option:</strong> $500"; }
+  }
+
   // Pre-fill the signature field with the renter's name if already typed
   const sigInput = document.getElementById("signatureInput");
-  if (sigInput && renterName && !sigInput.value) sigInput.value = renterName;
+  if (sigInput && renterName && !sigInput.value) {
+    sigInput.value = renterName;
+    // Programmatic value assignment doesn't fire the 'input' event, so
+    // manually sync the confirm button's disabled state to avoid the renter
+    // having to delete and retype their name just to enable the button.
+    document.getElementById("confirmSignBtn").disabled = false;
+  }
 
   document.getElementById("rentalAgreementBox").style.display = "";
   this.style.display = "none";
@@ -612,6 +651,8 @@ window.addEventListener("pageshow", function(e) {
   const protectionPlanSection = document.getElementById("protectionPlanSection");
   if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
+  const slingshotNote = document.getElementById("slingshotInsuranceNote");
+  if (slingshotNote) slingshotNote.style.display = "none";
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = "✍ Review & Sign Rental Agreement";
