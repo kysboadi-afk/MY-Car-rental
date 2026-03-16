@@ -77,9 +77,10 @@ export default async function handler(req, res) {
     const computedAmount = computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
-    // Add Damage Protection Plan cost when the renter opted in
+    // Add Damage Protection Plan cost when the renter opted in.
+    // The Slingshot does not offer the DPP — its $150 deposit is always charged instead.
     const days = computeRentalDays(pickup, returnDate);
-    const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
+    const protectionCost = (protectionPlan && vehicleId !== "slingshot") ? computeProtectionPlanCost(days) : 0;
     const totalAmount = computedAmount + protectionCost;
 
     const paymentIntent = await stripe.paymentIntents.create({

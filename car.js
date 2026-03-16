@@ -260,7 +260,10 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-  document.getElementById("protectionPlanSection").style.display = "";
+  // Damage Protection Plan is not offered for the Slingshot — deposit is always charged
+  if (vehicleId !== "slingshot") {
+    document.getElementById("protectionPlanSection").style.display = "";
+  }
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
   updateTotal();
@@ -700,8 +703,9 @@ function updateTotal() {
   if (carData.deposit) {
     lines.push({ label: "Security deposit", amount: carData.deposit });
   }
-  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates)
-  if (insuranceCoverageChoice === "no") {
+  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
+  // The Slingshot does not offer the DPP — the $150 deposit is always charged instead.
+  if (insuranceCoverageChoice === "no" && vehicleId !== "slingshot") {
     let protectionCost = 0;
     let protDays = currentDayCount;
     const protLines = [];
