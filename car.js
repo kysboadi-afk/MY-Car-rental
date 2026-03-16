@@ -92,61 +92,6 @@ document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent = carData.subtitle;
 document.getElementById("carPrice").textContent = `$${carData.pricePerDay} / day`;
 
-// ----- Vehicle Promo Banner (Camry only) -----
-const camryPromos = {
-  camry: {
-    title: "2012 Toyota Camry — Stylish, Comfortable & Rideshare-Ready",
-    tagline: "A well-maintained, fuel-efficient sedan built for reliability and comfort. " +
-             "Whether you're maximizing earnings on the road or need a dependable daily driver, " +
-             "this Camry is the perfect partner for full-time gig workers and weekend earners alike.",
-    highlights: [
-      { icon: "✅", text: "Meets Uber & Lyft vehicle requirements" },
-      { icon: "⛽", text: "Fuel-efficient — more miles, more earnings" },
-      { icon: "🛋️", text: "Spacious cabin — passengers ride in comfort" },
-      { icon: "🔧", text: "Regularly serviced & road-trip ready" },
-      { icon: "📱", text: "Approved for all major delivery platforms" },
-    ]
-  },
-  camry2013: {
-    title: "2013 Toyota Camry SE — Sporty, Professional & Rideshare-Ready",
-    tagline: "The SE sport trim brings a refined interior, responsive handling, and a sleek look " +
-             "that riders and customers notice. Ideal for Uber, Lyft, or any delivery platform — " +
-             "drive something that makes a great first impression every trip.",
-    highlights: [
-      { icon: "✅", text: "SE trim — stands out from the standard sedan" },
-      { icon: "⛽", text: "Fuel-efficient — maximize your gig income" },
-      { icon: "🛋️", text: "Premium cabin comfort for 5-star ride ratings" },
-      { icon: "🔧", text: "Regularly serviced & road-trip ready" },
-      { icon: "📱", text: "Approved for all major delivery platforms" },
-    ]
-  }
-};
-
-(function initPromoBanner() {
-  const promo = camryPromos[vehicleId];
-  if (!promo) return;
-  const titleEl = document.getElementById("promoBannerTitle");
-  const taglineEl = document.getElementById("promoBannerTagline");
-  const highlightsEl = document.getElementById("promoBannerHighlights");
-  const bannerEl = document.getElementById("vehiclePromoBanner");
-  if (!titleEl || !taglineEl || !highlightsEl || !bannerEl) return;
-  titleEl.textContent = promo.title;
-  taglineEl.textContent = promo.tagline;
-  promo.highlights.forEach(({ icon, text }) => {
-    const item = document.createElement("div");
-    item.className = "promo-highlight-item";
-    const iconSpan = document.createElement("span");
-    iconSpan.className = "hi-icon";
-    iconSpan.textContent = icon;
-    const textSpan = document.createElement("span");
-    textSpan.textContent = text;
-    item.appendChild(iconSpan);
-    item.appendChild(textSpan);
-    highlightsEl.appendChild(item);
-  });
-  bannerEl.style.display = "block";
-})();
-
 const sliderContainer = document.getElementById("sliderContainer");
 const sliderDots = document.getElementById("sliderDots");
 let currentSlide = 0;
