@@ -326,6 +326,12 @@
         ></textarea>
       </div>
 
+      <!-- Honeypot — hidden from real users; bots fill it → rejected server-side -->
+      <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden" aria-hidden="true">
+        <label for="cf-website">Website</label>
+        <input type="text" id="cf-website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+
       <button type="submit" class="contact-submit-btn" id="contactSubmitBtn">Send Message</button>
       <p class="contact-status" id="contactStatus" role="status" aria-live="polite"></p>
     </form>
@@ -455,11 +461,12 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const name    = document.getElementById("cf-name").value.trim();
-      const email   = emailInput.value.trim();
-      const phone   = document.getElementById("cf-phone").value.trim();
-      const message = document.getElementById("cf-message").value.trim();
-      const otpCode = otpInput.value.trim();
+      const name     = document.getElementById("cf-name").value.trim();
+      const email    = emailInput.value.trim();
+      const phone    = document.getElementById("cf-phone").value.trim();
+      const message  = document.getElementById("cf-message").value.trim();
+      const otpCode  = otpInput.value.trim();
+      const honeypot = document.getElementById("cf-website").value;
 
       if (!name || !email || !phone || !message) {
         status.textContent = "Please fill in all required fields.";
@@ -489,7 +496,7 @@
         const res = await fetch(API_BASE + "/api/send-contact-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, phone, message, otpToken, otpCode }),
+          body: JSON.stringify({ name, email, phone, message, otpToken, otpCode, honeypot }),
         });
 
         if (res.ok) {

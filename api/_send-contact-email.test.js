@@ -137,13 +137,21 @@ test("returns 400 for OTP token bound to different email", async () => {
   assert.ok(res._body.error);
 });
 
-test("returns 200 and sends email for valid contact submission", async () => {
+test("returns 200 and sends two emails for valid contact submission", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", makeValidBody()), res);
   assert.equal(res._status, 200);
   assert.equal(res._body.success, true);
-  assert.equal(sentMails.length, 1);
+  assert.equal(sentMails.length, 2);
+});
+
+test("response includes a submissionId", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  assert.ok(typeof res._body.submissionId === "string" && res._body.submissionId.startsWith("SLY-"),
+    `Expected submissionId starting with SLY-, got: ${res._body.submissionId}`);
 });
 
 test("sends email to OWNER_EMAIL", async () => {
@@ -198,5 +206,113 @@ test("sets replyTo to the sender email", async () => {
   const res = makeRes();
   await handler(makeReq("POST", makeValidBody()), res);
   assert.equal(sentMails[0].replyTo, "bob@example.com");
+});
+
+test("owner email subject includes submission ID", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  assert.ok(sentMails[0].subject.includes(res._body.submissionId),
+    `Expected subject to include submission ID`);
+});
+
+// ─── Honeypot ─────────────────────────────────────────────────────────────────
+
+test("returns 400 when honeypot field is filled", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody({ honeypot: "http://spam.example.com" })), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error);
+  assert.equal(sentMails.length, 0, "No emails should be sent for honeypot submissions");
+});
+
+test("returns 200 when honeypot field is empty string", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody({ honeypot: "" })), res);
+  assert.equal(res._status, 200);
+});
+
+test("returns 200 when honeypot field is absent", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  const body = makeValidBody();
+  delete body.honeypot;
+  await handler(makeReq("POST", body), res);
+  assert.equal(res._status, 200);
+});
+
+// ─── Auto-reply ───────────────────────────────────────────────────────────────
+
+test("auto-reply is sent to the submitter's email address", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  const autoReply = sentMails[1];
+  assert.equal(autoReply.to, "bob@example.com");
+});
+
+test("auto-reply subject contains the submission ID", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  const autoReply = sentMails[1];
+  assert.ok(autoReply.subject.includes(res._body.submissionId),
+    `Expected auto-reply subject to include submission ID`);
+});
+
+test("auto-reply body contains the submission ID", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  const autoReply = sentMails[1];
+  assert.ok(autoReply.text.includes(res._body.submissionId));
+  assert.ok(autoReply.html.includes(res._body.submissionId));
+});
+
+test("auto-reply body contains the expected response time (5-15 minutes)", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  const autoReply = sentMails[1];
+  assert.ok(autoReply.text.includes("5") && autoReply.text.includes("15"),
+    "Auto-reply text should mention 5 and 15 minute response window");
+  assert.ok(autoReply.html.includes("5") && autoReply.html.includes("15"),
+    "Auto-reply HTML should mention 5 and 15 minute response window");
+});
+
+test("auto-reply body contains the business phone number", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", makeValidBody()), res);
+  const autoReply = sentMails[1];
+  assert.ok(autoReply.text.includes("(213) 916-6606"),
+    "Auto-reply text should contain business phone number");
+  assert.ok(autoReply.html.includes("(213) 916-6606"),
+    "Auto-reply HTML should contain business phone number");
+});
+
+test("auto-reply failure does not prevent 200 response", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  // Owner email succeeds; auto-reply throws
+  let callCount = 0;
+  mockSendMail.mock.mockImplementation(async (opts) => {
+    callCount++;
+    if (callCount === 1) { sentMails.push(opts); return; } // owner succeeds
+    throw new Error("SMTP auto-reply failure");             // auto-reply fails
+  });
+
+  const res = makeRes();
+  try {
+    await handler(makeReq("POST", makeValidBody()), res);
+    assert.equal(res._status, 200, "Should still return 200 when auto-reply fails");
+    assert.equal(res._body.success, true);
+    assert.equal(sentMails.length, 1, "Only owner email recorded when auto-reply fails");
+  } finally {
+    mockSendMail.mock.mockImplementation(async (opts) => { sentMails.push(opts); });
+  }
 });
 
