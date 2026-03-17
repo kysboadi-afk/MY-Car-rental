@@ -10,47 +10,6 @@
 </head>
 <body>
 
-<!-- RENTER INFO MODAL -->
-<div class="renter-modal-overlay" id="renterModalOverlay" role="dialog" aria-modal="true" aria-labelledby="renterModalTitle">
-  <div class="renter-modal">
-    <div class="renter-modal-header">
-      <img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="renter-modal-logo">
-      <h2 id="renterModalTitle">Before You Browse</h2>
-      <p>Please provide your details to continue.</p>
-    </div>
-    <form id="renterInfoForm" class="renter-modal-form" novalidate>
-      <div class="renter-field">
-        <label for="renterName">Full Name <span class="required">*</span></label>
-        <input type="text" id="renterName" placeholder="e.g. John Smith" autocomplete="name" required>
-        <span class="renter-field-error" id="renterNameError"></span>
-      </div>
-      <div class="renter-field">
-        <label for="renterEmail">Email Address <span class="optional">(optional)</span></label>
-        <input type="email" id="renterEmail" placeholder="e.g. john@example.com" autocomplete="email">
-        <span class="renter-field-error" id="renterEmailError"></span>
-      </div>
-      <div class="renter-field">
-        <label for="renterPhone">Phone Number <span class="required">*</span></label>
-        <input type="tel" id="renterPhone" placeholder="e.g. (310) 555-0123" autocomplete="tel" required>
-        <span class="renter-field-error" id="renterPhoneError"></span>
-      </div>
-      <div class="renter-field">
-        <label for="renterCity">City <span class="optional">(optional)</span></label>
-        <input type="text" id="renterCity" placeholder="e.g. Los Angeles" autocomplete="address-level2">
-        <span class="renter-field-error" id="renterCityError"></span>
-      </div>
-      <div class="renter-field renter-consent-field">
-        <label class="renter-consent-label" for="renterTextConsent">
-          <input type="checkbox" id="renterTextConsent">
-          <span>By checking this box, I consent to receive text messages from SLY Transportation Services at the phone number provided above. Message &amp; data rates may apply. Reply STOP to opt out at any time.</span>
-        </label>
-        <span class="renter-field-error" id="renterTextConsentError"></span>
-      </div>
-      <button type="submit" class="renter-submit-btn">View Available Cars →</button>
-    </form>
-  </div>
-</div>
-
 <!-- LOGO + NAV -->
 <header class="site-header">
   <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
@@ -220,6 +179,5 @@
 
 <script src="cars.js"></script>
 <script src="chatbot.js"></script>
-<script src="renter-modal.js"></script>
 </body>
 </html>
