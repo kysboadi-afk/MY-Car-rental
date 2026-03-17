@@ -8,7 +8,9 @@
 //   SMTP_PASS    — email password or app password
 //   OWNER_EMAIL  — business email that receives all contact submissions
 //                  (defaults to slyservices@supports-info.com)
+//   OTP_SECRET   — long random string used to sign OTP tokens (shared with send-otp.js)
 import nodemailer from "nodemailer";
+import { verifyOtpToken } from "./_otp.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -49,10 +51,18 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { name, email, phone, message } = req.body || {};
+  const { name, email, phone, message, otpToken, otpCode } = req.body || {};
 
   if (!name || !email || !phone || !message) {
     return res.status(400).json({ error: "Missing required fields: name, email, phone, message." });
+  }
+
+  if (!otpToken || !otpCode) {
+    return res.status(400).json({ error: "Email verification is required. Please verify your email address before submitting." });
+  }
+
+  if (!verifyOtpToken(otpToken, email, otpCode)) {
+    return res.status(400).json({ error: "Invalid or expired verification code. Please request a new code and try again." });
   }
 
   try {
