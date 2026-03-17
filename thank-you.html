@@ -133,7 +133,7 @@
         <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download>
           📄 Download PDF
         </a>
-        <a href="cars.html" class="ty-btn ty-btn-secondary">
+        <a href="cars.html" class="ty-btn ty-btn-secondary" id="fillAgainBtn">
           🔄 Fill Again
         </a>
       </div>
@@ -149,5 +149,13 @@
     &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a>
   </footer>
   <script src="chatbot.js"></script>
+  <script>
+    // If the user arrived from the contact form, "Fill Again" should go back there.
+    const fromContact = new URLSearchParams(window.location.search).get("from") === "contact";
+    if (fromContact) {
+      const btn = document.getElementById("fillAgainBtn");
+      if (btn) { btn.href = "contact.html"; }
+    }
+  </script>
 </body>
 </html>
