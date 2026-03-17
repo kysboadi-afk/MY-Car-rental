@@ -87,6 +87,12 @@ document.getElementById("carPrice").textContent = (carData.minRentalDays > 1)
   ? `from $${carData.weekly} / week`
   : `$${carData.pricePerDay} / day`;
 
+// Show the Slingshot fun description instead of the Uber/Lyft earnings block
+if (vehicleId === "slingshot") {
+  document.getElementById("earningsBlock").style.display = "none";
+  document.getElementById("slingshotDesc").style.display = "block";
+}
+
 const sliderContainer = document.getElementById("sliderContainer");
 const sliderDots = document.getElementById("sliderDots");
 let currentSlide = 0;
