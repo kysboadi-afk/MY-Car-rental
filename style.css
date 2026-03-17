@@ -121,12 +121,11 @@ body {
 
 /* HERO */
 .hero {
-  height: 70vh;
-  background: linear-gradient(
-      rgba(0,0,0,0.6),
-      rgba(0,0,0,0.6)
-    ),
-    url("images/logo.jpg") center/cover no-repeat;
+  min-height: 500px;
+  height: 75vh;
+  background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)),
+    url("images/camry-interior-hero.jpg") center/cover no-repeat;
+  background-attachment: scroll;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1551,6 +1550,12 @@ footer {
 
   .site-nav a {
     font-size: 14px;
+  }
+
+  .hero {
+    height: 60vh;
+    min-height: 420px;
+    background-position: center center;
   }
 
   .hero-content h1 {
