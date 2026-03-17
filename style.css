@@ -123,8 +123,8 @@ body {
 .hero {
   min-height: 500px;
   height: 75vh;
-  background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)),
-    url("images/camry-interior-hero.jpg") center/cover no-repeat;
+  background: linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)),
+    url("images/camry-beach-hero.png") center/cover no-repeat;
   background-attachment: scroll;
   display: flex;
   align-items: center;
