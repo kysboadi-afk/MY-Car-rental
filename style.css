@@ -1,8 +1,28 @@
+/* ===== DESIGN TOKENS ===== */
+:root {
+  --gold:        #f5a500;
+  --gold-hover:  #d98f00;
+  --gold-glow:   rgba(245, 165, 0, 0.20);
+  --gold-light:  rgba(245, 165, 0, 0.12);
+  --gold-border: rgba(245, 165, 0, 0.30);
+  --bg:          #000;
+  --bg-dark:     #0d0d0d;
+  --bg-card:     #1a1a1a;
+  --bg-input:    #111;
+  --border:      #2a2a2a;
+  --text:        #fff;
+  --text-muted:  #aaa;
+  --text-sub:    #ccc;
+  --red:         #ef4444;
+  --green:       #22c55e;
+  --font: 'Inter', system-ui, -apple-system, Arial, sans-serif;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: Arial, sans-serif;
+  font-family: var(--font);
 }
 
 body {
@@ -17,13 +37,13 @@ body {
   justify-content: space-between;
   padding: 16px 40px;
   background: #000;
-  border-bottom: 2px solid #ffb400;
+  border-bottom: 2px solid var(--gold);
 }
 
 /* Company info banner (fleet page) */
 .company-banner {
   background: #111;
-  border-bottom: 1px solid #ffb400;
+  border-bottom: 1px solid var(--gold);
   padding: 10px 40px;
 }
 
@@ -38,7 +58,7 @@ body {
 }
 
 .company-banner-name {
-  color: #ffb400;
+  color: var(--gold);
   font-weight: 700;
   letter-spacing: 0.5px;
   font-size: 14px;
@@ -53,7 +73,7 @@ body {
 }
 
 .company-banner-item a {
-  color: #ffb400;
+  color: var(--gold);
   text-decoration: none;
 }
 
@@ -71,7 +91,7 @@ body {
 }
 
 .site-header a.logo-link:focus {
-  outline: 2px solid #ffb400;
+  outline: 2px solid var(--gold);
   border-radius: 4px;
 }
 
@@ -90,11 +110,11 @@ body {
 }
 
 .site-nav a:hover {
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .header-phone {
-  color: #ffb400;
+  color: var(--gold);
   text-decoration: none;
   font-size: 15px;
   font-weight: 700;
@@ -111,10 +131,13 @@ body {
 .hero {
   height: 70vh;
   background: linear-gradient(
-      rgba(0,0,0,0.6),
-      rgba(0,0,0,0.6)
-    ),
-    url("images/logo.jpg") center/cover no-repeat;
+    135deg,
+    #0a0a0a 0%,
+    #0f0800 35%,
+    #1a0e00 60%,
+    #0a0a0a 100%
+  );
+  border-bottom: 2px solid var(--gold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -123,22 +146,34 @@ body {
 }
 
 .hero-content h1 {
-  font-size: 40px;
-  margin-bottom: 15px;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  margin-bottom: 16px;
 }
 
 .hero-content p {
   font-size: 18px;
-  margin-bottom: 25px;
+  color: #bbb;
+  margin-bottom: 28px;
 }
 
 .hero-btn {
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
-  padding: 12px 30px;
+  padding: 13px 34px;
   text-decoration: none;
-  font-weight: bold;
-  border-radius: 5px;
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+  transition: background 0.2s, transform 0.2s;
+  display: inline-block;
+}
+
+.hero-btn:hover {
+  background: var(--gold-hover);
+  transform: translateY(-2px);
 }
 
 /* STATS SECTION */
@@ -168,14 +203,14 @@ body {
 
 .stat-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
-  border-color: #ffb400;
+  box-shadow: 0 8px 25px var(--gold-glow);
+  border-color: var(--gold);
 }
 
 .stat-number {
   font-size: 48px;
   font-weight: bold;
-  color: #ffb400;
+  color: var(--gold);
   margin-bottom: 10px;
   line-height: 1;
 }
@@ -204,23 +239,23 @@ body {
   text-align: center;
   font-size: 36px;
   margin-bottom: 50px;
-  color: #ffb400;
+  color: var(--gold);
   font-weight: bold;
 }
 
 .hiw-steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 30px;
 }
 
 .hiw-step--highlight {
-  border-color: #ffb400;
+  border-color: var(--gold);
   background: #1e1a0e;
 }
 
 .hiw-step--highlight .hiw-icon {
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .hiw-step {
@@ -234,8 +269,8 @@ body {
 
 .hiw-step:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
-  border-color: #ffb400;
+  box-shadow: 0 8px 25px var(--gold-glow);
+  border-color: var(--gold);
 }
 
 .hiw-icon {
@@ -256,6 +291,45 @@ body {
   line-height: 1.7;
 }
 
+/* HOW IT WORKS — info row (Unlimited Mileage + Insurance) */
+.hiw-info-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-top: 28px;
+}
+
+.hiw-info-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid var(--gold);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.hiw-info-card .hiw-icon {
+  font-size: 30px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+.hiw-info-card h3 {
+  font-size: 16px;
+  color: #fff;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.hiw-info-card p {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1.7;
+  margin: 0;
+}
+
 /* ABOUT SECTION */
 .about {
   background: #000;
@@ -272,7 +346,7 @@ body {
   text-align: center;
   font-size: 36px;
   margin-bottom: 40px;
-  color: #ffb400;
+  color: var(--gold);
   font-weight: bold;
 }
 
@@ -301,36 +375,14 @@ body {
 
 .about-values h3 {
   font-size: 24px;
-  color: #ffb400;
+  color: var(--gold);
   margin-bottom: 15px;
   font-weight: 600;
 }
 
 .about-values {
   background: #1a1a1a;
-  border-left: 4px solid #ffb400;
-}
-
-.about-gallery {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-top: 24px;
-}
-
-.about-gallery img {
-  width: 100%;
-  height: 220px;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid #2a2a2a;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.about-gallery img:hover {
-  transform: scale(1.03);
-  box-shadow: 0 8px 24px rgba(255,180,0,0.25);
+  border-left: 4px solid var(--gold);
 }
 
 /* CONTAINER */
@@ -361,7 +413,7 @@ body {
 .car-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 10px 28px rgba(0,0,0,0.6);
-  border-color: #ffb400;
+  border-color: var(--gold);
 }
 
 .car-card img {
@@ -438,9 +490,9 @@ body {
   font-weight: 600;
   padding: 3px 9px;
   border-radius: 20px;
-  background: rgba(255, 180, 0, 0.12);
-  color: #ffb400;
-  border: 1px solid rgba(255, 180, 0, 0.3);
+  background: var(--gold-light);
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
   white-space: nowrap;
 }
 
@@ -460,7 +512,7 @@ body {
 .price-item--popular {
   font-size: 15px;
   font-weight: 700;
-  color: #ffb400;
+  color: var(--gold);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -472,7 +524,7 @@ body {
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 20px;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   letter-spacing: 0.3px;
   text-transform: uppercase;
@@ -498,7 +550,7 @@ body {
 .price {
   font-weight: bold;
   margin: 10px 0;
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .car-info .select-link {
@@ -510,7 +562,7 @@ body {
 .car-info button {
   width: 100%;
   padding: 10px;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   border: none;
   cursor: pointer;
@@ -520,7 +572,7 @@ body {
 }
 
 .car-info button:hover {
-  background: #e0a000;
+  background: var(--gold-hover);
 }
 
 /* BOOKED / DISABLED BUTTON STATE */
@@ -558,7 +610,7 @@ body {
   margin: 0;
 }
 .vehicle-unavailable-notice a {
-  color: #ffb400;
+  color: var(--gold);
   text-decoration: underline;
 }
 
@@ -590,15 +642,15 @@ body {
 
 .check-dates input[type="date"]:focus {
   outline: none;
-  border-color: #ffb400;
+  border-color: var(--gold);
 }
 
 .check-now-btn {
   width: 100%;
   padding: 8px;
   background: #1e1e1e !important;
-  color: #ffb400 !important;
-  border: 1px solid #ffb400 !important;
+  color: var(--gold) !important;
+  border: 1px solid var(--gold) !important;
   border-radius: 5px;
   font-weight: bold;
   cursor: pointer;
@@ -607,7 +659,7 @@ body {
 }
 
 .check-now-btn:hover {
-  background: #ffb400 !important;
+  background: var(--gold) !important;
   color: #000 !important;
 }
 
@@ -618,8 +670,8 @@ body {
 /* BOOKING PAGE */
 .back-btn {
   background: #000;
-  color: #ffb400;
-  border: 1px solid #ffb400;
+  color: var(--gold);
+  border: 1px solid var(--gold);
   padding: 10px 20px;
   border-radius: 6px;
   cursor: pointer;
@@ -628,7 +680,7 @@ body {
   display: inline-block;
   transition: background 0.2s, color 0.2s;
 }
-.back-btn:hover { background: #ffb400; color: #000; }
+.back-btn:hover { background: var(--gold); color: #000; }
 
 .car-slider {
   background: #1a1a1a;
@@ -667,8 +719,8 @@ body {
 }
 .slider-controls button {
   background: #1a1a1a;
-  color: #ffb400;
-  border: 1px solid #ffb400;
+  color: var(--gold);
+  border: 1px solid var(--gold);
   padding: 10px 20px;
   border-radius: 6px;
   cursor: pointer;
@@ -682,7 +734,7 @@ body {
   align-items: center;
   justify-content: center;
 }
-.slider-controls button:hover { background: #ffb400; color: #000; }
+.slider-controls button:hover { background: var(--gold); color: #000; }
 
 .slider-dots {
   text-align: center;
@@ -698,16 +750,16 @@ body {
   margin: 0 5px;
   cursor: pointer;
 }
-.dot.active { background: #ffb400; }
+.dot.active { background: var(--gold); }
 
 /* VEHICLE PROMO BANNER */
 .vehicle-promo-banner {
   background: linear-gradient(135deg, #1a1a1a 0%, #222 60%, #1c1c1c 100%);
-  border: 1px solid #ffb400;
+  border: 1px solid var(--gold);
   border-radius: 12px;
   padding: 28px 28px 22px;
   margin-bottom: 28px;
-  box-shadow: 0 4px 20px rgba(255, 180, 0, 0.12);
+  box-shadow: 0 4px 20px var(--gold-light);
   position: relative;
   overflow: hidden;
 }
@@ -717,12 +769,12 @@ body {
   top: 0; left: 0;
   width: 4px;
   height: 100%;
-  background: #ffb400;
+  background: var(--gold);
   border-radius: 12px 0 0 12px;
 }
 .promo-badge {
   display: inline-block;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   font-size: 0.72rem;
   font-weight: 700;
@@ -809,7 +861,7 @@ body {
 .booking h2 {
   font-size: 24px;
   margin-bottom: 20px;
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .booking label {
@@ -835,7 +887,7 @@ body {
   background: #111;
   color: #fff;
 }
-.booking input:focus { border-color: #ffb400; }
+.booking input:focus { border-color: var(--gold); }
 
 .booking label.agree {
   display: flex;
@@ -845,7 +897,7 @@ body {
   margin-top: 20px;
   font-size: 14px;
 }
-.booking label.agree a { color: #ffb400; }
+.booking label.agree a { color: var(--gold); }
 
 /* Sign Agreement block */
 .sign-agreement {
@@ -879,7 +931,7 @@ body {
   font-size: 20px;
   font-weight: bold;
   margin: 20px 0 8px;
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .tax-note {
@@ -929,7 +981,7 @@ body {
 .booking #stripePay {
   width: 100%;
   padding: 14px;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   border: none;
   border-radius: 8px;
@@ -939,7 +991,7 @@ body {
   transition: background 0.2s;
   margin-bottom: 10px;
 }
-.booking #stripePay:hover:not(:disabled) { background: #e0a000; }
+.booking #stripePay:hover:not(:disabled) { background: var(--gold-hover); }
 .booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
 
 
@@ -957,7 +1009,7 @@ body {
 #submit-payment {
   width: 100%;
   padding: 14px;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   border: none;
   border-radius: 8px;
@@ -967,7 +1019,7 @@ body {
   transition: background 0.2s;
   margin-bottom: 10px;
 }
-#submit-payment:hover:not(:disabled) { background: #e0a000; }
+#submit-payment:hover:not(:disabled) { background: var(--gold-hover); }
 #submit-payment:disabled { background: #333; color: #666; cursor: not-allowed; }
 #cancel-payment {
   width: 100%;
@@ -992,7 +1044,7 @@ body {
 .id-upload-section {
   margin-top: 20px;
   background: #111;
-  border: 1px solid #ffb400;
+  border: 1px solid var(--gold);
   border-radius: 10px;
   padding: 16px;
 }
@@ -1104,12 +1156,12 @@ body {
 }
 
 .insurance-option:hover {
-  border-color: #ffb400;
+  border-color: var(--gold);
   background: #222;
 }
 
 .insurance-option input[type="radio"] {
-  accent-color: #ffb400;
+  accent-color: var(--gold);
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -1117,12 +1169,12 @@ body {
 }
 
 .insurance-option input[type="radio"]:checked + span {
-  color: #ffb400;
+  color: var(--gold);
   font-weight: 600;
 }
 
 .insurance-option:has(input:checked) {
-  border-color: #ffb400;
+  border-color: var(--gold);
   background: #1f1a00;
 }
 
@@ -1154,7 +1206,7 @@ body {
 
 .protection-plan-price {
   font-size: 14px !important;
-  color: #ffb400 !important;
+  color: var(--gold) !important;
 }
 
 .protection-plan-whats-included {
@@ -1185,7 +1237,7 @@ body {
 /* FLEET PAGE HEADING */
 .fleet-heading {
   text-align: center;
-  color: #ffb400;
+  color: var(--gold);
   font-size: 36px;
   margin-bottom: 10px;
 }
@@ -1225,8 +1277,8 @@ body {
 
 /* EARNINGS BREAKDOWN — driver profit estimate shown on Camry cards */
 .earnings-breakdown {
-  background: rgba(255, 180, 0, 0.06);
-  border: 1px solid rgba(255, 180, 0, 0.18);
+  background: rgba(245, 165, 0, 0.06);
+  border: 1px solid rgba(245, 165, 0, 0.18);
   border-radius: 8px;
   padding: 10px 14px;
   margin: 10px 0 6px;
@@ -1235,7 +1287,7 @@ body {
 .earnings-breakdown-title {
   font-size: 11px;
   font-weight: 700;
-  color: #ffb400;
+  color: var(--gold);
   margin: 0 0 6px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -1282,7 +1334,7 @@ body {
 .fleet-info-heading {
   text-align: center;
   font-size: 28px;
-  color: #ffb400;
+  color: var(--gold);
   font-weight: bold;
   margin-bottom: 32px;
 }
@@ -1301,7 +1353,7 @@ body {
 .fleet-req-list li {
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
-  border-left: 4px solid #ffb400;
+  border-left: 4px solid var(--gold);
   border-radius: 8px;
   padding: 14px 20px;
   font-size: 15px;
@@ -1328,7 +1380,7 @@ body {
 }
 
 .why-drivers-item:hover {
-  border-color: #ffb400;
+  border-color: var(--gold);
 }
 
 /* CTA section */
@@ -1341,7 +1393,7 @@ body {
 
 .fleet-cta-heading {
   font-size: 32px;
-  color: #ffb400;
+  color: var(--gold);
   font-weight: bold;
   margin-bottom: 14px;
 }
@@ -1356,7 +1408,7 @@ body {
 
 .fleet-cta-btn {
   display: inline-block;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   font-weight: 700;
   font-size: 16px;
@@ -1390,7 +1442,7 @@ body {
 }
 
 .sidebar-title {
-  color: #ffb400;
+  color: var(--gold);
   font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -1422,9 +1474,9 @@ body {
 }
 
 .sidebar-btn.active {
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
-  border-color: #ffb400;
+  border-color: var(--gold);
   font-weight: bold;
 }
 
@@ -1477,12 +1529,12 @@ footer {
   padding: 20px;
   background: #000;
   color: #aaa;
-  border-top: 2px solid #ffb400;
+  border-top: 2px solid var(--gold);
   margin-top: 40px;
 }
 
 .footer-phone {
-  color: #ffb400;
+  color: var(--gold);
   text-decoration: none;
   font-weight: 600;
 }
@@ -1531,6 +1583,10 @@ footer {
     gap: 20px;
   }
 
+  .hiw-info-row {
+    grid-template-columns: 1fr;
+  }
+
   .how-it-works h2 {
     font-size: 28px;
     margin-bottom: 30px;
@@ -1577,14 +1633,6 @@ footer {
     line-height: 1.7;
   }
 
-  .about-gallery {
-    grid-template-columns: 1fr;
-  }
-  
-  .about-gallery img {
-    height: 200px;
-  }
-  
   .slider img.slide {
     height: 350px;
   }
@@ -1656,7 +1704,7 @@ footer {
 .flatpickr-weekdays,
 span.flatpickr-weekday {
   background: #111 !important;
-  color: #ffb400 !important;
+  color: var(--gold) !important;
 }
 .flatpickr-day {
   color: #ddd !important;
@@ -1664,16 +1712,16 @@ span.flatpickr-weekday {
 .flatpickr-day:hover,
 .flatpickr-day:focus {
   background: #333 !important;
-  border-color: #ffb400 !important;
+  border-color: var(--gold) !important;
 }
 .flatpickr-day.selected,
 .flatpickr-day.selected:hover {
-  background: #ffb400 !important;
-  border-color: #ffb400 !important;
+  background: var(--gold) !important;
+  border-color: var(--gold) !important;
   color: #000 !important;
 }
 .flatpickr-day.today {
-  border-color: #ffb400 !important;
+  border-color: var(--gold) !important;
 }
 .flatpickr-day.disabled,
 .flatpickr-day.disabled:hover {
@@ -1683,12 +1731,12 @@ span.flatpickr-weekday {
 }
 .flatpickr-prev-month,
 .flatpickr-next-month {
-  color: #ffb400 !important;
-  fill: #ffb400 !important;
+  color: var(--gold) !important;
+  fill: var(--gold) !important;
 }
 .flatpickr-current-month .flatpickr-monthDropdown-months,
 .flatpickr-current-month input.cur-year {
-  color: #ffb400 !important;
+  color: var(--gold) !important;
 }
 .flatpickr-time input,
 .flatpickr-time .flatpickr-am-pm {
@@ -1701,7 +1749,7 @@ span.flatpickr-weekday {
 .flatpickr-time .flatpickr-am-pm:focus {
   background: #222 !important;
 }
-.numInput.cur-year { color: #ffb400 !important; }
+.numInput.cur-year { color: var(--gold) !important; }
 
 /* ===== CHATBOT WIDGET ===== */
 #chat-widget {
@@ -1709,14 +1757,14 @@ span.flatpickr-weekday {
   bottom: 24px;
   right: 24px;
   z-index: 9999;
-  font-family: Arial, sans-serif;
+  font-family: var(--font);
 }
 
 #chat-toggle {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: #ffb400;
+  background: var(--gold);
   border: none;
   font-size: 26px;
   cursor: pointer;
@@ -1795,7 +1843,7 @@ span.flatpickr-weekday {
 }
 
 .chat-msg.user {
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   align-self: flex-end;
   border-bottom-right-radius: 4px;
@@ -1818,7 +1866,7 @@ span.flatpickr-weekday {
 }
 
 #chat-send {
-  background: #ffb400;
+  background: var(--gold);
   border: none;
   padding: 12px 16px;
   font-weight: bold;
@@ -1826,7 +1874,7 @@ span.flatpickr-weekday {
   cursor: pointer;
 }
 
-#chat-send:hover { background: #e0a000; }
+#chat-send:hover { background: var(--gold-hover); }
 
 @media (max-width: 600px) {
   .vehicle-promo-banner {
@@ -1872,7 +1920,7 @@ span.flatpickr-weekday {
 }
 
 .rental-agreement-scroll h3 {
-  color: #ffb400;
+  color: var(--gold);
   font-size: 14px;
   margin-bottom: 12px;
   text-align: center;
@@ -1914,7 +1962,7 @@ span.flatpickr-weekday {
 
 .signature-input:focus {
   outline: none;
-  border-color: #ffb400;
+  border-color: var(--gold);
 }
 
 .signature-note {
@@ -2000,12 +2048,12 @@ span.flatpickr-weekday {
 
 .renter-modal {
   background: #111;
-  border: 2px solid #ffb400;
+  border: 2px solid var(--gold);
   border-radius: 16px;
   padding: 40px 36px;
   width: 100%;
   max-width: 460px;
-  box-shadow: 0 8px 40px rgba(255, 180, 0, 0.25);
+  box-shadow: 0 8px 40px var(--gold-glow);
 }
 
 .renter-modal-header {
@@ -2021,7 +2069,7 @@ span.flatpickr-weekday {
 
 .renter-modal-header h2 {
   font-size: 24px;
-  color: #ffb400;
+  color: var(--gold);
   margin-bottom: 6px;
 }
 
@@ -2050,7 +2098,7 @@ span.flatpickr-weekday {
 }
 
 .renter-field .required {
-  color: #ffb400;
+  color: var(--gold);
 }
 
 .renter-field input {
@@ -2065,7 +2113,7 @@ span.flatpickr-weekday {
 }
 
 .renter-field input:focus {
-  border-color: #ffb400;
+  border-color: var(--gold);
 }
 
 .renter-field-error {
@@ -2077,7 +2125,7 @@ span.flatpickr-weekday {
 .renter-submit-btn {
   margin-top: 6px;
   padding: 13px;
-  background: #ffb400;
+  background: var(--gold);
   color: #000;
   font-size: 15px;
   font-weight: bold;
@@ -2088,7 +2136,7 @@ span.flatpickr-weekday {
 }
 
 .renter-submit-btn:hover {
-  background: #e0a000;
+  background: var(--gold-hover);
 }
 
 .renter-consent-field {
@@ -2108,7 +2156,7 @@ span.flatpickr-weekday {
 .renter-consent-label input[type="checkbox"] {
   margin-top: 2px;
   flex-shrink: 0;
-  accent-color: #ffb400;
+  accent-color: var(--gold);
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -2135,7 +2183,7 @@ span.flatpickr-weekday {
 .reviews h2 {
   text-align: center;
   font-size: 36px;
-  color: #ffb400;
+  color: var(--gold);
   font-weight: bold;
   margin-bottom: 10px;
 }
@@ -2166,13 +2214,13 @@ span.flatpickr-weekday {
 
 .review-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
-  border-color: #ffb400;
+  box-shadow: 0 8px 25px var(--gold-glow);
+  border-color: var(--gold);
 }
 
 .review-stars {
   font-size: 22px;
-  color: #ffb400;
+  color: var(--gold);
   letter-spacing: 3px;
 }
 
@@ -2186,7 +2234,7 @@ span.flatpickr-weekday {
 .review-author {
   font-size: 14px;
   font-weight: 700;
-  color: #ffb400;
+  color: var(--gold);
   letter-spacing: 0.5px;
 }
 

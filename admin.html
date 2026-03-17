@@ -175,7 +175,6 @@
       <label for="vehicleSelect">Vehicle</label>
       <select id="vehicleSelect">
         <option value="camry">Camry 2012</option>
-        <option value="camry2013">Camry 2013 SE</option>
         <option value="slingshot">Slingshot R</option>
       </select>
     </div>
@@ -232,17 +231,6 @@
           </label>
         </div>
 
-        <!-- Camry 2013 SE -->
-        <div class="fleet-vehicle-row" id="fleet-row-camry2013">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Camry 2013 SE</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-camry2013">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Camry 2013 SE availability">
-            <input type="checkbox" id="toggle-camry2013" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
       </div>
 
       <div id="fleetStatusMsg"></div>
@@ -381,7 +369,6 @@
       var VEHICLES = [
         { id: "slingshot",  name: "Slingshot R" },
         { id: "camry",      name: "Camry 2012" },
-        { id: "camry2013",  name: "Camry 2013 SE" },
       ];
 
       function getAdminSecret() {
