@@ -721,16 +721,9 @@ function updateTotal() {
     lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
   }
   if (remaining > 0) {
-    if (carData.minRentalDays > 1 && carData.weekly) {
-      // Camrys don't accept daily bookings — partial weeks round up to a full week
-      const subtotal = carData.weekly;
-      cost += subtotal;
-      lines.push({ label: `1 week (rounded up) × $${carData.weekly}/wk`, amount: subtotal });
-    } else {
-      const subtotal = remaining * carData.pricePerDay;
-      cost += subtotal;
-      lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
-    }
+    const subtotal = remaining * carData.pricePerDay;
+    cost += subtotal;
+    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
   }
   // Security deposit is always charged (never waived)
   if (carData.deposit) {
