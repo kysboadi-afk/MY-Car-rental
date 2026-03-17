@@ -9,7 +9,12 @@ const cars = {
   slingshot: {
     name: "Slingshot R",
     subtitle: "Sports • 2-Seater",
-    pricePerDay: 300,
+    // Slingshot uses hourly tier pricing — no daily/weekly/monthly rates.
+    hourlyTiers: [
+      { hours: 3,  price: 200, label: "3 Hours" },
+      { hours: 6,  price: 250, label: "6 Hours" },
+      { hours: 24, price: 350, label: "24 Hours" },
+    ],
     deposit: 150,
     images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"],
     make: "Polaris",
@@ -83,14 +88,38 @@ if (!vehicleId || !cars[vehicleId]) {
 const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent = carData.subtitle;
-document.getElementById("carPrice").textContent = (carData.minRentalDays > 1)
-  ? `from $${carData.weekly} / week`
-  : `$${carData.pricePerDay} / day`;
+document.getElementById("carPrice").textContent = (carData.hourlyTiers)
+  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours}hrs`).join(" \u2022 ")
+  : (carData.minRentalDays > 1)
+    ? `from $${carData.weekly} / week`
+    : `$${carData.pricePerDay} / day`;
 
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block
 if (vehicleId === "slingshot") {
   document.getElementById("earningsBlock").style.display = "none";
   document.getElementById("slingshotDesc").style.display = "block";
+  // Populate duration options dynamically from hourlyTiers (single source of truth)
+  const optionsContainer = document.getElementById("durationOptions");
+  if (optionsContainer && carData.hourlyTiers) {
+    carData.hourlyTiers.forEach(function(tier) {
+      const lbl = document.createElement("label");
+      lbl.className = "duration-option";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "slingshotDuration";
+      radio.value = String(tier.hours);
+      const span = document.createElement("span");
+      span.textContent = `${tier.label} \u2014 $${tier.price}`;
+      lbl.appendChild(radio);
+      lbl.appendChild(span);
+      optionsContainer.appendChild(lbl);
+      radio.addEventListener("change", applySlingshotDuration);
+    });
+  }
+  // Show the hourly duration selector and hide the manual return-date picker
+  document.getElementById("slingshotDurationSection").style.display = "";
+  document.getElementById("returnDateSection").style.display = "none";
+  // Return date/time will be auto-computed once pickup date/time + duration are set
 }
 
 const sliderContainer = document.getElementById("sliderContainer");
@@ -143,6 +172,7 @@ const stripeBtn = document.getElementById("stripePay");
 let uploadedFile = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
+let currentSlingshotDuration = null; // selected hourly tier in hours (3 | 6 | 24) for Slingshot
 let currentSubtotal = 0;
 let currentTaxRate = LA_TAX_RATE;
 let agreementSignature = ""; // typed signature from the inline agreement panel
@@ -388,8 +418,13 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
       `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
     if (depositInsEl)     depositInsEl.style.display = "none";
     if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
-    if (depositNeitherEl) depositNeitherEl.innerHTML =
-      `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
+    if (depositNeitherEl) {
+      const rateList = carData.hourlyTiers
+        ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
+        : "";
+      depositNeitherEl.innerHTML =
+        `<strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${carData.deposit} refundable security deposit (included in payment)`;
+    }
   } else {
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositIntroEl) depositIntroEl.textContent =
@@ -462,9 +497,91 @@ document.getElementById("cancelSignBtn").addEventListener("click", function () {
   document.getElementById("signAgreementBtn").style.display  = "";
 });
 
+// Promote return pickers to module scope so applySlingshotDuration() can update them
+let returnPicker = null;
+let returnTimePicker = null;
+
+// ----- Slingshot: auto-compute return date/time from pickup + duration -----
+function applySlingshotDuration() {
+  if (vehicleId !== "slingshot") return;
+  const selectedDuration = document.querySelector('input[name="slingshotDuration"]:checked');
+  if (!selectedDuration) return;
+
+  const hours = parseInt(selectedDuration.value, 10);
+  currentSlingshotDuration = hours;
+
+  const dateStr = pickup.value; // "YYYY-MM-DD"
+  if (!dateStr) { updatePayBtn(); return; }
+
+  // Normalize pickupTime.value to "HH:MM" regardless of Flatpickr's "h:i K" format
+  let timeStr = "12:00"; // default noon if no time selected
+  const rawTime = pickupTime.value;
+  if (rawTime) {
+    const nativeTest = new Date("1970-01-01T" + rawTime);
+    if (!isNaN(nativeTest)) {
+      // Already HH:MM (native input or Flatpickr with 24-hr format)
+      timeStr = rawTime.slice(0, 5);
+    } else {
+      // Flatpickr "h:i K" — e.g. "2:30 PM"
+      const m = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (m) {
+        let h = parseInt(m[1], 10);
+        const mins = m[2];
+        const period = m[3].toUpperCase();
+        if (period === "PM" && h !== 12) h += 12;
+        if (period === "AM" && h === 12) h = 0;
+        timeStr = String(h).padStart(2, "0") + ":" + mins;
+      }
+    }
+  }
+
+  // Build pickup moment and add duration
+  const pickupMoment = new Date(dateStr + "T" + timeStr);
+  if (isNaN(pickupMoment.getTime())) { updatePayBtn(); return; }
+  const returnMoment = new Date(pickupMoment.getTime() + hours * 60 * 60 * 1000);
+
+  // Format return date as "YYYY-MM-DD"
+  const y  = returnMoment.getFullYear();
+  const mo = String(returnMoment.getMonth() + 1).padStart(2, "0");
+  const dd = String(returnMoment.getDate()).padStart(2, "0");
+  const retDateStr = `${y}-${mo}-${dd}`;
+
+  // Format return time as "HH:MM"
+  const retH = String(returnMoment.getHours()).padStart(2, "0");
+  const retM = String(returnMoment.getMinutes()).padStart(2, "0");
+  const retTimeStr = `${retH}:${retM}`;
+
+  // Update return date (via Flatpickr API if available, otherwise direct)
+  if (returnPicker) {
+    returnPicker.setDate(retDateStr, true);
+  } else {
+    returnDate.value = retDateStr;
+  }
+
+  // Update return time (via Flatpickr API if available, otherwise direct)
+  if (returnTimePicker) {
+    returnTimePicker.setDate(returnMoment, true);
+  } else {
+    returnTime.value = retTimeStr;
+  }
+
+  // Show the return section so the renter can see their auto-computed return time
+  const retSection = document.getElementById("returnDateSection");
+  if (retSection) retSection.style.display = "";
+
+  updateTotal();
+  updatePayBtn();
+}
+
 // Native change listeners as fallback (Flatpickr also fires native change events)
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
-  inp.addEventListener("change", updateTotal);
+  inp.addEventListener("change", function() {
+    if (vehicleId === "slingshot") {
+      applySlingshotDuration();
+    } else {
+      updateTotal();
+    }
+  });
 });
 
 // ----- Date Pickers (Flatpickr) -----
@@ -500,29 +617,37 @@ async function initDatePickers() {
         if (carData.minRentalDays > 1) {
           const minReturn = new Date(selectedDates[0]);
           minReturn.setDate(minReturn.getDate() + carData.minRentalDays);
-          returnPicker.set("minDate", minReturn);
+          if (returnPicker) returnPicker.set("minDate", minReturn);
         } else {
-          returnPicker.set("minDate", selectedDates[0]);
+          if (returnPicker) returnPicker.set("minDate", selectedDates[0]);
         }
       }
-      updateTotal();
+      if (vehicleId === "slingshot") {
+        applySlingshotDuration();
+      } else {
+        updateTotal();
+      }
     }
   });
 
-  const returnPicker = flatpickr(returnDate, {
+  returnPicker = flatpickr(returnDate, {
     minDate: "today",
     disable: [isBooked],
-    onChange: function() { updateTotal(); }
+    onChange: function() {
+      if (vehicleId !== "slingshot") updateTotal();
+    }
   });
-
-  let returnTimePicker;
 
   flatpickr(pickupTime, {
     enableTime: true,
     noCalendar: true,
     dateFormat: "h:i K",
-    onChange: function(_, timeStr) {
-      if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
+    onChange: function(selectedDates, timeStr) {
+      if (vehicleId === "slingshot") {
+        applySlingshotDuration();
+      } else {
+        if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
+      }
     }
   });
 
@@ -608,6 +733,13 @@ window.addEventListener("pageshow", function(e) {
   if (hasInsuranceRadio) hasInsuranceRadio.checked = false;
   if (noInsuranceRadio) noInsuranceRadio.checked = false;
   insuranceCoverageChoice = null;
+  // Reset Slingshot duration selection
+  if (vehicleId === "slingshot") {
+    currentSlingshotDuration = null;
+    document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
+    const retSection = document.getElementById("returnDateSection");
+    if (retSection) retSection.style.display = "none";
+  }
   const insuranceUploadSection = document.getElementById("insuranceUploadSection");
   const protectionPlanSection = document.getElementById("protectionPlanSection");
   if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
@@ -656,13 +788,83 @@ function updatePayBtn() {
   const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
                           insuranceCoverageChoice === "no";
   const nameValid = isValidName(nameVal);
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
+  // Slingshot: needs pickup date + a duration selection; other vehicles: needs pickup + return date
+  const datesReady = vehicleId === "slingshot"
+    ? pickup.value && currentSlingshotDuration
+    : pickup.value && returnDate.value;
+  const ready = datesReady && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
 }
 
 function updateTotal() {
+  // ----- Slingshot: hourly tier pricing -----
+  if (vehicleId === "slingshot") {
+    if (!pickup.value || !currentSlingshotDuration) return;
+    const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
+    if (!tier) return;
+    currentDayCount = 1; // DPP uses 1 day for any slingshot rental
+
+    const lines = [];
+    lines.push({ label: `${tier.label} rental`, amount: tier.price });
+    lines.push({ label: "Security deposit (refundable)", amount: carData.deposit });
+
+    // DPP for slingshot is always 1 day ($13) if chosen
+    if (insuranceCoverageChoice === "no") {
+      lines.push({ label: `Damage Protection Plan (1 day × $${PROTECTION_PLAN_DAILY}/day)`, amount: PROTECTION_PLAN_DAILY });
+    }
+
+    let cost = tier.price + (insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0);
+    const rentalSubtotal = cost + carData.deposit;
+    currentSubtotal = rentalSubtotal;
+    const taxAmount = rentalSubtotal * currentTaxRate;
+    const grandTotal = rentalSubtotal + taxAmount;
+
+    if (currentTaxRate > 0) {
+      const pct = +((currentTaxRate * 100).toFixed(4));
+      lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+    } else {
+      lines.push({ label: "Sales tax", amount: null });
+    }
+
+    const rowsEl = document.getElementById("breakdownRows");
+    rowsEl.innerHTML = "";
+    lines.forEach(function(l) {
+      const row = document.createElement("div");
+      row.className = "breakdown-row";
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "breakdown-label";
+      labelSpan.textContent = l.label;
+      const valueSpan = document.createElement("span");
+      valueSpan.className = "breakdown-value";
+      valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
+      row.appendChild(labelSpan);
+      row.appendChild(valueSpan);
+      rowsEl.appendChild(row);
+    });
+    document.getElementById("priceBreakdown").style.display = "";
+
+    document.getElementById("subtotal").textContent = rentalSubtotal;
+    const taxLineEl = document.getElementById("taxLine");
+    const taxNoteEl = document.getElementById("taxNote");
+    const displayTotal = currentTaxRate > 0 ? grandTotal : rentalSubtotal;
+    if (currentTaxRate > 0) {
+      document.getElementById("tax").textContent = taxAmount.toFixed(2);
+      taxLineEl.style.display = "";
+      if (taxNoteEl) taxNoteEl.style.display = "none";
+      totalEl.textContent = grandTotal.toFixed(2);
+    } else {
+      taxLineEl.style.display = "none";
+      if (taxNoteEl) taxNoteEl.style.display = "";
+      totalEl.textContent = rentalSubtotal;
+    }
+    stripeBtn.textContent = `Pay $${displayTotal.toFixed(2)}`;
+    updatePayBtn();
+    return;
+  }
+
+  // ----- Daily/weekly vehicles -----
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
   currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
@@ -845,6 +1047,7 @@ stripeBtn.addEventListener("click", async () => {
         pickup: pickup.value,
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",
+        ...(vehicleId === "slingshot" ? { slingshotDuration: currentSlingshotDuration } : {}),
       })
     });
 
@@ -927,12 +1130,13 @@ stripeBtn.addEventListener("click", async () => {
         email,
         phone,
         total: totalEl.textContent,
-        pricePerDay: carData.pricePerDay,
+        pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
         pricePerBiWeekly: carData.biweekly || null,
         pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
+        ...(vehicleId === "slingshot" ? { slingshotDuration: currentSlingshotDuration } : {}),
         idFileName,
         idMimeType,
         insuranceFileName,
