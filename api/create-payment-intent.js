@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays } from "./_pricing.js";
+import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -80,7 +80,12 @@ export default async function handler(req, res) {
     // Add Damage Protection Plan cost when the renter opted in.
     const days = computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
-    const totalAmount = computedAmount + protectionCost;
+    const preTaxAmount = computedAmount + protectionCost;
+
+    // Apply Los Angeles, CA sales tax — business is operated in LA and tax is
+    // always collected at the combined City of Los Angeles rate.
+    const taxAmount = preTaxAmount * LA_TAX_RATE;
+    const totalAmount = preTaxAmount + taxAmount;
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
@@ -99,6 +104,9 @@ export default async function handler(req, res) {
         pickup_date:  pickup,
         return_date:  returnDate,
         email,
+        tax_jurisdiction: "Los Angeles, CA",
+        tax_rate:         (LA_TAX_RATE * 100).toFixed(2) + "%",
+        tax_amount:       taxAmount.toFixed(2),
       },
     });
 

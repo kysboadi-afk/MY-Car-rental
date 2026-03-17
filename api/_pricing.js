@@ -3,6 +3,12 @@
 // The server always recomputes charges from these constants;
 // any client-supplied amount is intentionally ignored to prevent tampering.
 
+// Los Angeles, CA combined sales tax rate applied to every rental.
+// Business is operated in the City of Los Angeles; tax is always collected
+// at this rate regardless of the renter's home address.
+// Combined City of Los Angeles rate: CA state 7.25% + LA county 2.25% + LA city 0.75% = 10.25%
+export const LA_TAX_RATE = 0.1025;
+
 export const CARS = {
   slingshot:  { name: "Slingshot R",    pricePerDay: 300, deposit: 150 },
   camry:      { name: "Camry 2012",     pricePerDay: 50,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
