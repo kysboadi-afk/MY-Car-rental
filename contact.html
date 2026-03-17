@@ -83,6 +83,99 @@
       color: #555;
     }
 
+    .email-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .email-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .send-code-btn {
+      flex-shrink: 0;
+      padding: 12px 14px;
+      background: #2a2a2a;
+      color: #ffb400;
+      border: 1px solid #ffb400;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .send-code-btn:hover:not(:disabled) {
+      background: #ffb400;
+      color: #000;
+    }
+
+    .send-code-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .otp-group {
+      margin-top: 10px;
+    }
+
+    .otp-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ccc;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .otp-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .otp-row input {
+      flex: 1;
+      min-width: 0;
+      letter-spacing: 4px;
+      font-size: 18px;
+      text-align: center;
+    }
+
+    .otp-hint {
+      font-size: 12px;
+      color: #777;
+      margin-top: 6px;
+    }
+
+    .otp-hint button {
+      background: none;
+      border: none;
+      color: #ffb400;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0;
+      margin-left: 6px;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .otp-hint button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .email-verified-badge {
+      margin-top: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4caf50;
+    }
+
     .contact-submit-btn {
       width: 100%;
       padding: 14px;
@@ -183,14 +276,32 @@
 
       <div class="form-group">
         <label for="cf-email">Email Address <span style="color:#f44336">*</span></label>
-        <input
-          type="email"
-          id="cf-email"
-          name="email"
-          placeholder="you@example.com"
-          required
-          autocomplete="email"
-        >
+        <div class="email-row">
+          <input
+            type="email"
+            id="cf-email"
+            name="email"
+            placeholder="you@example.com"
+            required
+            autocomplete="email"
+          >
+          <button type="button" class="send-code-btn" id="sendOtpBtn">Send Code</button>
+        </div>
+        <div class="otp-group" id="otpGroup" style="display:none">
+          <label for="cf-otp">Verification Code <span style="color:#f44336">*</span></label>
+          <input
+            type="text"
+            id="cf-otp"
+            name="otp"
+            placeholder="6-digit code"
+            maxlength="6"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            autocomplete="one-time-code"
+          >
+          <p class="otp-hint">Check your inbox for a 6-digit code (valid 10 min).<button type="button" id="resendOtpBtn" disabled>Resend</button></p>
+        </div>
+        <p class="email-verified-badge" id="emailVerifiedBadge" style="display:none">✓ Email verified</p>
       </div>
 
       <div class="form-group">
@@ -215,6 +326,12 @@
         ></textarea>
       </div>
 
+      <!-- Honeypot — hidden from real users; bots fill it → rejected server-side -->
+      <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden" aria-hidden="true">
+        <label for="cf-website">Website</label>
+        <input type="text" id="cf-website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+
       <button type="submit" class="contact-submit-btn" id="contactSubmitBtn">Send Message</button>
       <p class="contact-status" id="contactStatus" role="status" aria-live="polite"></p>
     </form>
@@ -236,21 +353,138 @@
   (function () {
     const API_BASE = "https://sly-rides.vercel.app";
 
-    const form   = document.getElementById("contactForm");
-    const btn    = document.getElementById("contactSubmitBtn");
-    const status = document.getElementById("contactStatus");
+    const form       = document.getElementById("contactForm");
+    const btn        = document.getElementById("contactSubmitBtn");
+    const status     = document.getElementById("contactStatus");
+    const emailInput = document.getElementById("cf-email");
+    const sendOtpBtn = document.getElementById("sendOtpBtn");
+    const otpGroup   = document.getElementById("otpGroup");
+    const otpInput   = document.getElementById("cf-otp");
+    const resendBtn  = document.getElementById("resendOtpBtn");
+    const verifiedBadge = document.getElementById("emailVerifiedBadge");
 
+    let otpToken = null;          // signed token returned by /api/send-otp
+    let resendTimer = null;
+
+    // ── Resend cooldown (30 s) ─────────────────────────────────────────────
+    function startResendCooldown() {
+      resendBtn.disabled = true;
+      let secs = 30;
+      resendBtn.textContent = `Resend (${secs}s)`;
+      clearInterval(resendTimer);
+      resendTimer = setInterval(() => {
+        secs -= 1;
+        if (secs <= 0) {
+          clearInterval(resendTimer);
+          resendBtn.disabled = false;
+          resendBtn.textContent = "Resend";
+        } else {
+          resendBtn.textContent = `Resend (${secs}s)`;
+        }
+      }, 1000);
+    }
+
+    // ── Send / resend OTP ─────────────────────────────────────────────────
+    async function sendOtp() {
+      const email = emailInput.value.trim();
+      if (!email) {
+        status.textContent = "Please enter your email address first.";
+        status.className = "contact-status error";
+        emailInput.focus();
+        return;
+      }
+      if (!emailInput.checkValidity()) {
+        status.textContent = "Please enter a valid email address.";
+        status.className = "contact-status error";
+        emailInput.focus();
+        return;
+      }
+
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.textContent = "Sending…";
+      status.textContent = "";
+      status.className = "contact-status";
+
+      try {
+        const res = await fetch(API_BASE + "/api/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          status.textContent = data.error || "Failed to send verification email. Please try again.";
+          status.className = "contact-status error";
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = "Send Code";
+          return;
+        }
+
+        otpToken = data.token;
+        otpGroup.style.display = "block";
+        verifiedBadge.style.display = "none";
+        otpInput.value = "";
+        otpInput.focus();
+        sendOtpBtn.textContent = "Sent ✓";
+        startResendCooldown();
+        status.textContent = "Verification code sent! Check your inbox.";
+        status.className = "contact-status sending";
+      } catch (err) {
+        console.error("Send OTP error:", err);
+        status.textContent = "Network error. Please check your connection and try again.";
+        status.className = "contact-status error";
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = "Send Code";
+      }
+    }
+
+    sendOtpBtn.addEventListener("click", sendOtp);
+    resendBtn.addEventListener("click", async () => {
+      sendOtpBtn.textContent = "Send Code";
+      sendOtpBtn.disabled = false;
+      await sendOtp();
+    });
+
+    // Reset verification state when email address is changed
+    emailInput.addEventListener("input", () => {
+      otpToken = null;
+      otpGroup.style.display = "none";
+      verifiedBadge.style.display = "none";
+      otpInput.value = "";
+      sendOtpBtn.disabled = false;
+      sendOtpBtn.textContent = "Send Code";
+      status.textContent = "";
+      status.className = "contact-status";
+    });
+
+    // ── Form submit ───────────────────────────────────────────────────────
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const name    = document.getElementById("cf-name").value.trim();
-      const email   = document.getElementById("cf-email").value.trim();
-      const phone   = document.getElementById("cf-phone").value.trim();
-      const message = document.getElementById("cf-message").value.trim();
+      const name     = document.getElementById("cf-name").value.trim();
+      const email    = emailInput.value.trim();
+      const phone    = document.getElementById("cf-phone").value.trim();
+      const message  = document.getElementById("cf-message").value.trim();
+      const otpCode  = otpInput.value.trim();
+      const honeypot = document.getElementById("cf-website").value;
 
       if (!name || !email || !phone || !message) {
         status.textContent = "Please fill in all required fields.";
         status.className = "contact-status error";
+        return;
+      }
+
+      if (!otpToken) {
+        status.textContent = "Please verify your email address before submitting.";
+        status.className = "contact-status error";
+        emailInput.focus();
+        return;
+      }
+
+      if (!otpCode) {
+        status.textContent = "Please enter the verification code sent to your email.";
+        status.className = "contact-status error";
+        otpInput.focus();
         return;
       }
 
@@ -262,7 +496,7 @@
         const res = await fetch(API_BASE + "/api/send-contact-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, phone, message }),
+          body: JSON.stringify({ name, email, phone, message, otpToken, otpCode, honeypot }),
         });
 
         if (res.ok) {
