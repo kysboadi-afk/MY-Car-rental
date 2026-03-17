@@ -57,26 +57,15 @@ const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
 // Daily rate auto-derived from weekly so it stays proportional
 const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
-// ----- State Sales Tax Rates -----
-// These are state-level base rates only. Local jurisdictions (city/county)
-// may add additional tax on top of these figures.
-const stateTaxRates = {
-  CA: 0.0825,
-  NY: 0.088,
-  TX: 0.0825,
-  FL: 0.07,
-  GA: 0.08,
-  NJ: 0.06625,
-  IL: 0.0875
-};
-
-async function getStateFromZip(zip) {
-  const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
-  if (!res.ok) throw new Error(`ZIP lookup failed with status ${res.status}`);
-  const data = await res.json();
-  if (!data.places || data.places.length === 0) throw new Error(`No location data for ZIP ${zip}`);
-  return data.places[0]["state abbreviation"];
-}
+// ----- Sales Tax — Los Angeles, CA -----
+// Business is operated in Los Angeles, California. Tax is always applied at
+// the current combined City of Los Angeles rate regardless of the renter's
+// home address.
+// Combined City of Los Angeles rate: CA state 7.25% + LA county 2.25% + LA city 0.75% = 10.25%
+// Note: this constant intentionally mirrors LA_TAX_RATE in api/_pricing.js.
+// The api/ directory uses Node.js ES modules that cannot be imported directly
+// from browser scripts, so the rate must be declared in both places.
+const LA_TAX_RATE = 0.1025;
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -149,7 +138,7 @@ let uploadedFile = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
 let currentSubtotal = 0;
-let currentTaxRate = 0;
+let currentTaxRate = LA_TAX_RATE;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 
@@ -253,25 +242,6 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   clearInsuranceFile();
   updateTotal();
   updatePayBtn();
-});
-
-// ----- ZIP Code → Sales Tax -----
-document.getElementById("zipcode").addEventListener("input", async function () {
-  const zip = this.value;
-  if (/^\d{5}$/.test(zip)) {
-    try {
-      const state = await getStateFromZip(zip);
-      currentTaxRate = stateTaxRates[state] || 0;
-    } catch (error) {
-      console.error(`ZIP lookup failed for "${zip}":`, error);
-      currentTaxRate = 0;
-    }
-  } else {
-    currentTaxRate = 0;
-  }
-  if (pickup.value && returnDate.value) {
-    updateTotal();
-  }
 });
 
 idUpload.addEventListener("change", function(e) {
@@ -662,9 +632,8 @@ window.addEventListener("pageshow", function(e) {
   document.getElementById("taxLine").style.display = "none";
   const taxNoteReset = document.getElementById("taxNote");
   if (taxNoteReset) taxNoteReset.style.display = "";
-  document.getElementById("zipcode").value = "";
   currentSubtotal = 0;
-  currentTaxRate = 0;
+  currentTaxRate = LA_TAX_RATE;
   document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
   // Re-initialize Flatpickr so the calendar shows fresh state (no lingering
