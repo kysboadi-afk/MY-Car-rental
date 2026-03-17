@@ -18,21 +18,6 @@ const cars = {
     vin: "57XAARHB8P8156561",
     color: null
   },
-  camry: {
-    name: "Camry 2012",
-    subtitle: "",
-    pricePerDay: 50,
-    minRentalDays: 7,
-    weekly: 350,
-    biweekly: 650,
-    monthly: 1300,
-    images: ["images/IMG_0045.png","images/IMG_0046.png","images/IMG_4486.jpeg"],
-    make: "Toyota",
-    model: "Camry",
-    year: 2012,
-    vin: "4T1BF1FK5CU063142",
-    color: "Grey"
-  },
   camry2013: {
     name: "Camry 2013 SE",
     subtitle: "",

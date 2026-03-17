@@ -55,7 +55,7 @@ function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
 }
 
 const VALID_BODY = {
-  car: "Camry 2012",
+  car: "Camry 2013 SE",
   name: "Jane Doe",
   pickup: "2026-03-01",
   pickupTime: "10:00 AM",
@@ -64,7 +64,7 @@ const VALID_BODY = {
   email: "jane@example.com",
   phone: "555-1234",
   total: "200",
-  pricePerDay: 50,
+  pricePerDay: 55,
   deposit: 0,
   days: 4,
 };
@@ -190,7 +190,7 @@ test("owner email subject includes vehicle name", async () => {
 
   const ownerMail = sentMails[0];
   assert.ok(
-    ownerMail.subject.includes("Camry 2012"),
+    ownerMail.subject.includes("Camry 2013 SE"),
     "Owner email subject should include vehicle name"
   );
 });
@@ -248,11 +248,11 @@ test("owner email notes when ID is attached", async () => {
 // ─── blockBookedDates + markVehicleUnavailable shared mock helpers ─────────
 
 const MOCK_BOOKED_DATES_CONTENT =
-  Buffer.from(JSON.stringify({ slingshot: [], camry: [] }, null, 2) + "\n").toString("base64");
+  Buffer.from(JSON.stringify({ slingshot: [], camry2013: [] }, null, 2) + "\n").toString("base64");
 
 const MOCK_FLEET_STATUS_CONTENT =
   Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: true }, camry2013: { available: true } }, null, 2) + "\n"
+    JSON.stringify({ slingshot: { available: true }, camry2013: { available: true } }, null, 2) + "\n"
   ).toString("base64");
 
 /**
@@ -287,7 +287,7 @@ test("blockBookedDates: GitHub API is called with correct params when vehicleId 
   globalThis.fetch = makeGitHubFetchMock(fetchCalls);
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -318,7 +318,7 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   globalThis.fetch = makeGitHubFetchMock(fetchCalls);
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -330,9 +330,9 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   assert.ok(bookedDatesPut, "PUT to booked-dates.json should have been made");
   const putBody = JSON.parse(bookedDatesPut.body);
   const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.camry.length, 1, "camry should have one booked range");
-  assert.equal(updated.camry[0].from, VALID_BODY.pickup);
-  assert.equal(updated.camry[0].to, VALID_BODY.returnDate);
+  assert.equal(updated.camry2013.length, 1, "camry2013 should have one booked range");
+  assert.equal(updated.camry2013[0].from, VALID_BODY.pickup);
+  assert.equal(updated.camry2013[0].to, VALID_BODY.returnDate);
 });
 
 test("blockBookedDates: works correctly for slingshot vehicle", async () => {
@@ -367,7 +367,7 @@ test("blockBookedDates: works correctly for slingshot vehicle", async () => {
   assert.equal(updated.slingshot.length, 1, "slingshot should have one booked range");
   assert.equal(updated.slingshot[0].from, slingshotBody.pickup);
   assert.equal(updated.slingshot[0].to, slingshotBody.returnDate);
-  assert.equal(updated.camry.length, 0, "camry should remain unaffected");
+  assert.equal(updated.camry2013.length, 0, "camry2013 should remain unaffected");
 });
 
 test("blockBookedDates: GitHub API failure does not change the 200 response", async () => {
@@ -378,7 +378,7 @@ test("blockBookedDates: GitHub API failure does not change the 200 response", as
   globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => "Server Error" });
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -418,7 +418,7 @@ test("blockBookedDates: GitHub API is not called when GITHUB_TOKEN is not set", 
   globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
   delete process.env.GITHUB_TOKEN;
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -571,7 +571,7 @@ test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
   globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry", paymentStatus: "failed" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013", paymentStatus: "failed" });
   const res = makeRes();
   await handler(req, res);
 
@@ -676,7 +676,7 @@ test("markVehicleUnavailable: fleet-status.json is updated to available:false af
   globalThis.fetch = makeGitHubFetchMock(fetchCalls);
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -688,8 +688,8 @@ test("markVehicleUnavailable: fleet-status.json is updated to available:false af
   assert.ok(fleetStatusPut, "PUT to fleet-status.json should have been made");
   const putBody = JSON.parse(fleetStatusPut.body);
   const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.camry.available, false, "camry should be marked unavailable in fleet-status.json");
-  assert.ok(putBody.message.includes("camry"), "Commit message should reference the vehicle");
+  assert.equal(updated.camry2013.available, false, "camry2013 should be marked unavailable in fleet-status.json");
+  assert.ok(putBody.message.includes("camry2013"), "Commit message should reference the vehicle");
   assert.ok(putBody.message.toLowerCase().includes("unavailable"), "Commit message should mention unavailable");
 });
 
@@ -722,7 +722,7 @@ test("markVehicleUnavailable: fleet-status.json is updated for slingshot vehicle
   const putBody = JSON.parse(fleetStatusPut.body);
   const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
   assert.equal(updated.slingshot.available, false, "slingshot should be marked unavailable");
-  assert.equal(updated.camry.available, true, "camry should remain unaffected");
+  assert.equal(updated.camry2013.available, true, "camry2013 should remain unaffected");
 });
 
 test("markVehicleUnavailable: fleet-status.json is NOT updated for a failed payment", async () => {
@@ -734,7 +734,7 @@ test("markVehicleUnavailable: fleet-status.json is NOT updated for a failed paym
   globalThis.fetch = makeGitHubFetchMock(fetchCalls);
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry", paymentStatus: "failed" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013", paymentStatus: "failed" });
   const res = makeRes();
   await handler(req, res);
 
@@ -754,7 +754,7 @@ test("markVehicleUnavailable: GitHub API is not called when GITHUB_TOKEN is not 
   globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
   delete process.env.GITHUB_TOKEN;
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -780,7 +780,7 @@ test("markVehicleUnavailable: fleet-status.json GitHub failure does not change t
   };
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 
@@ -795,9 +795,9 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
-  // Provide a fleet-status where camry is ALREADY unavailable
+  // Provide a fleet-status where camry2013 is ALREADY unavailable
   const alreadyUnavailableContent = Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: false }, camry2013: { available: true } }, null, 2) + "\n"
+    JSON.stringify({ slingshot: { available: true }, camry2013: { available: false } }, null, 2) + "\n"
   ).toString("base64");
 
   const putCalls = [];
@@ -814,7 +814,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
   };
   process.env.GITHUB_TOKEN = "test-token";
 
-  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+  const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry2013" });
   const res = makeRes();
   await handler(req, res);
 

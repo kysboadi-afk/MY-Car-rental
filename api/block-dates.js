@@ -11,7 +11,7 @@
 // Request body (JSON):
 //   {
 //     "secret":    "<ADMIN_SECRET value>",
-//     "vehicleId": "camry" | "slingshot",
+//     "vehicleId": "camry2013" | "slingshot",
 //     "from":      "YYYY-MM-DD",
 //     "to":        "YYYY-MM-DD"
 //   }

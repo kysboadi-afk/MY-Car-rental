@@ -34,7 +34,7 @@ const MOCK_FILE_CONTENT = (data) =>
 
 const INITIAL_DATES = {
   slingshot: [],
-  camry: [{ from: "2026-03-01", to: "2026-03-05" }],
+  camry2013: [{ from: "2026-03-01", to: "2026-03-05" }],
 };
 
 function mockFetch(initial = INITIAL_DATES) {
@@ -98,14 +98,14 @@ test("CORS header is NOT set for unknown origin", async () => {
 });
 
 test("returns 401 when secret is missing", async () => {
-  const req = makeReq("POST", { vehicleId: "camry", from: "2026-03-01", to: "2026-03-05" });
+  const req = makeReq("POST", { vehicleId: "camry2013", from: "2026-03-01", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 401);
 });
 
 test("returns 401 when secret is wrong", async () => {
-  const req = makeReq("POST", { secret: "wrong-secret", vehicleId: "camry", from: "2026-03-01", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "wrong-secret", vehicleId: "camry2013", from: "2026-03-01", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 401);
@@ -120,7 +120,7 @@ test("returns 400 when vehicleId is missing", async () => {
 });
 
 test("returns 400 when from is missing", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -128,7 +128,7 @@ test("returns 400 when from is missing", async () => {
 });
 
 test("returns 400 when to is missing", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-03-01" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-03-01" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -136,7 +136,7 @@ test("returns 400 when to is missing", async () => {
 });
 
 test("returns 400 when from is after to", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-03-10", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-03-10", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -144,7 +144,7 @@ test("returns 400 when from is after to", async () => {
 });
 
 test("returns 400 when from is not a valid date format", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "03-01-2026", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "03-01-2026", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -156,7 +156,7 @@ test("returns 500 when ADMIN_SECRET is not configured", async () => {
 
   // The handler checks process.env.ADMIN_SECRET at runtime on each invocation,
   // so temporarily deleting the env var is sufficient — no re-import needed.
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-03-01", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-03-01", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   process.env.ADMIN_SECRET = saved;
@@ -168,7 +168,7 @@ test("returns 500 when GITHUB_TOKEN is not configured", async () => {
   const savedToken = process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_TOKEN;
 
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-03-01", to: "2026-03-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-03-01", to: "2026-03-05" });
   const res = makeRes();
   await handler(req, res);
   process.env.GITHUB_TOKEN = savedToken;
@@ -183,7 +183,7 @@ test("successfully removes an existing blocked date range", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-03-01",
     to: "2026-03-05",
   });
@@ -193,7 +193,7 @@ test("successfully removes an existing blocked date range", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body, { success: true, removed: 1 });
-  assert.equal(fetchFn.getStored().camry.length, 0, "Blocked range should be removed");
+  assert.equal(fetchFn.getStored().camry2013.length, 0, "Blocked range should be removed");
 });
 
 test("returns removed:0 when range does not exist", async () => {
@@ -203,7 +203,7 @@ test("returns removed:0 when range does not exist", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-01",
     to: "2026-04-05",
   });
@@ -214,20 +214,20 @@ test("returns removed:0 when range does not exist", async () => {
   assert.equal(res._status, 200);
   assert.deepEqual(res._body, { success: true, removed: 0 });
   // Original range should still be there
-  assert.equal(fetchFn.getStored().camry.length, 1);
+  assert.equal(fetchFn.getStored().camry2013.length, 1);
 });
 
 test("does not remove ranges for other vehicles", async () => {
   const fetchFn = mockFetch({
     slingshot: [{ from: "2026-03-01", to: "2026-03-05" }],
-    camry: [{ from: "2026-03-01", to: "2026-03-05" }],
+    camry2013: [{ from: "2026-03-01", to: "2026-03-05" }],
   });
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-03-01",
     to: "2026-03-05",
   });
@@ -236,7 +236,7 @@ test("does not remove ranges for other vehicles", async () => {
   globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.equal(fetchFn.getStored().camry.length, 0, "camry range should be removed");
+  assert.equal(fetchFn.getStored().camry2013.length, 0, "camry2013 range should be removed");
   assert.equal(fetchFn.getStored().slingshot.length, 1, "slingshot range should be untouched");
 });
 
@@ -247,7 +247,7 @@ test("makes a GET then a PUT to GitHub API", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-03-01",
     to: "2026-03-05",
   });
@@ -267,7 +267,7 @@ test("returns 502 when GitHub GET fails", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-03-01",
     to: "2026-03-05",
   });
@@ -294,7 +294,7 @@ test("returns 502 when GitHub PUT fails", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-03-01",
     to: "2026-03-05",
   });

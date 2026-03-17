@@ -174,7 +174,6 @@
     <div class="form-group">
       <label for="vehicleSelect">Vehicle</label>
       <select id="vehicleSelect">
-        <option value="camry">Camry 2012</option>
         <option value="camry2013">Camry 2013 SE</option>
         <option value="slingshot">Slingshot R</option>
       </select>
@@ -216,18 +215,6 @@
           </div>
           <label class="toggle-switch" aria-label="Toggle Slingshot R availability">
             <input type="checkbox" id="toggle-slingshot" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Camry 2012 -->
-        <div class="fleet-vehicle-row" id="fleet-row-camry">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Camry 2012</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-camry">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Camry 2012 availability">
-            <input type="checkbox" id="toggle-camry" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -380,7 +367,6 @@
       var API_BASE = "https://sly-rides.vercel.app";
       var VEHICLES = [
         { id: "slingshot",  name: "Slingshot R" },
-        { id: "camry",      name: "Camry 2012" },
         { id: "camry2013",  name: "Camry 2013 SE" },
       ];
 

@@ -34,7 +34,7 @@ const MOCK_FILE_CONTENT = (data) =>
 
 const INITIAL_DATES = {
   slingshot: [],
-  camry: [],
+  camry2013: [],
 };
 
 function mockFetch(initial = INITIAL_DATES) {
@@ -98,14 +98,14 @@ test("CORS header is NOT set for unknown origin", async () => {
 });
 
 test("returns 401 when secret is missing", async () => {
-  const req = makeReq("POST", { vehicleId: "camry", from: "2026-04-01", to: "2026-04-05" });
+  const req = makeReq("POST", { vehicleId: "camry2013", from: "2026-04-01", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 401);
 });
 
 test("returns 401 when secret is wrong", async () => {
-  const req = makeReq("POST", { secret: "wrong-secret", vehicleId: "camry", from: "2026-04-01", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "wrong-secret", vehicleId: "camry2013", from: "2026-04-01", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 401);
@@ -120,7 +120,7 @@ test("returns 400 when vehicleId is missing", async () => {
 });
 
 test("returns 400 when from is missing", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -128,7 +128,7 @@ test("returns 400 when from is missing", async () => {
 });
 
 test("returns 400 when to is missing", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-04-01" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-04-01" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -136,7 +136,7 @@ test("returns 400 when to is missing", async () => {
 });
 
 test("returns 400 when from is after to", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-04-10", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-04-10", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -144,7 +144,7 @@ test("returns 400 when from is after to", async () => {
 });
 
 test("returns 400 when from is not a valid date format", async () => {
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "04-01-2026", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "04-01-2026", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._status, 400);
@@ -154,7 +154,7 @@ test("returns 500 when ADMIN_SECRET is not configured", async () => {
   const saved = process.env.ADMIN_SECRET;
   delete process.env.ADMIN_SECRET;
 
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-04-01", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-04-01", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   process.env.ADMIN_SECRET = saved;
@@ -166,7 +166,7 @@ test("returns 500 when GITHUB_TOKEN is not configured", async () => {
   const savedToken = process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_TOKEN;
 
-  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry", from: "2026-04-01", to: "2026-04-05" });
+  const req = makeReq("POST", { secret: "test-admin-secret", vehicleId: "camry2013", from: "2026-04-01", to: "2026-04-05" });
   const res = makeRes();
   await handler(req, res);
   process.env.GITHUB_TOKEN = savedToken;
@@ -181,7 +181,7 @@ test("successfully adds a new blocked date range", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-01",
     to: "2026-04-05",
   });
@@ -191,21 +191,21 @@ test("successfully adds a new blocked date range", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body, { success: true, added: 1 });
-  assert.equal(fetchFn.getStored().camry.length, 1, "Blocked range should be added");
-  assert.deepEqual(fetchFn.getStored().camry[0], { from: "2026-04-01", to: "2026-04-05" });
+  assert.equal(fetchFn.getStored().camry2013.length, 1, "Blocked range should be added");
+  assert.deepEqual(fetchFn.getStored().camry2013[0], { from: "2026-04-01", to: "2026-04-05" });
 });
 
 test("returns added:0 when range overlaps an existing booking", async () => {
   const fetchFn = mockFetch({
     slingshot: [],
-    camry: [{ from: "2026-04-01", to: "2026-04-05" }],
+    camry2013: [{ from: "2026-04-01", to: "2026-04-05" }],
   });
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-03",
     to: "2026-04-07",
   });
@@ -215,20 +215,20 @@ test("returns added:0 when range overlaps an existing booking", async () => {
 
   assert.equal(res._status, 200);
   assert.equal(res._body.added, 0, "Should not add when overlap exists");
-  assert.equal(fetchFn.getStored().camry.length, 1, "Original range should remain unchanged");
+  assert.equal(fetchFn.getStored().camry2013.length, 1, "Original range should remain unchanged");
 });
 
 test("does not affect other vehicles when blocking dates", async () => {
   const fetchFn = mockFetch({
     slingshot: [{ from: "2026-04-01", to: "2026-04-05" }],
-    camry: [],
+    camry2013: [],
   });
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-10",
     to: "2026-04-15",
   });
@@ -237,18 +237,18 @@ test("does not affect other vehicles when blocking dates", async () => {
   globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.equal(fetchFn.getStored().camry.length, 1, "camry range should be added");
+  assert.equal(fetchFn.getStored().camry2013.length, 1, "camry2013 range should be added");
   assert.equal(fetchFn.getStored().slingshot.length, 1, "slingshot range should be untouched");
 });
 
 test("creates vehicle key if it does not exist in the file", async () => {
-  const fetchFn = mockFetch({ slingshot: [] }); // no camry key
+  const fetchFn = mockFetch({ slingshot: [] }); // no camry2013 key
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-10",
     to: "2026-04-15",
   });
@@ -257,8 +257,8 @@ test("creates vehicle key if it does not exist in the file", async () => {
   globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.ok(Array.isArray(fetchFn.getStored().camry), "camry key should be created");
-  assert.equal(fetchFn.getStored().camry.length, 1);
+  assert.ok(Array.isArray(fetchFn.getStored().camry2013), "camry2013 key should be created");
+  assert.equal(fetchFn.getStored().camry2013.length, 1);
 });
 
 test("makes a GET then a PUT to GitHub API", async () => {
@@ -268,7 +268,7 @@ test("makes a GET then a PUT to GitHub API", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-01",
     to: "2026-04-05",
   });
@@ -288,7 +288,7 @@ test("returns 502 when GitHub GET fails", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-01",
     to: "2026-04-05",
   });
@@ -315,7 +315,7 @@ test("returns 502 when GitHub PUT fails", async () => {
 
   const req = makeReq("POST", {
     secret: "test-admin-secret",
-    vehicleId: "camry",
+    vehicleId: "camry2013",
     from: "2026-04-01",
     to: "2026-04-05",
   });

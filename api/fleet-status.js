@@ -13,7 +13,6 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const DEFAULT_STATUS = {
   slingshot: { available: true },
-  camry:     { available: true },
   camry2013: { available: true },
 };
 

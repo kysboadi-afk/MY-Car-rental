@@ -18,7 +18,7 @@ const bookedDatesContainer = document.getElementById('bookedDatesContainer');
 const availabilityStatus = document.getElementById('availability');
 
 // Example booked dates
-const bookedDates = { "Camry 2012": [], "Slingshot R": [] };
+const bookedDates = { "Camry 2013 SE": [], "Slingshot R": [] };
 
 // =======================
 // VEHICLE SELECTION
@@ -162,11 +162,11 @@ function disableBookedDates() {
 // =======================
 // IMAGE SLIDER
 // =======================
-const sliders = { slingshot:{index:0,slides:[]}, camry:{index:0,slides:[]} };
+const sliders = { slingshot:{index:0,slides:[]}, camry2013:{index:0,slides:[]} };
 
 function initSliders() {
   sliders.slingshot.slides = document.querySelectorAll('.car-slider:nth-child(1) .slide');
-  sliders.camry.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
+  sliders.camry2013.slides = document.querySelectorAll('.car-slider:nth-child(2) .slide');
 }
 
 function showSlide(car) {
