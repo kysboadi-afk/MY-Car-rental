@@ -252,7 +252,7 @@ const MOCK_BOOKED_DATES_CONTENT =
 
 const MOCK_FLEET_STATUS_CONTENT =
   Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: true } }, null, 2) + "\n"
+    JSON.stringify({ slingshot: { available: true }, camry: { available: true }, camry2013: { available: true } }, null, 2) + "\n"
   ).toString("base64");
 
 /**
@@ -797,7 +797,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
 
   // Provide a fleet-status where camry is ALREADY unavailable
   const alreadyUnavailableContent = Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: false } }, null, 2) + "\n"
+    JSON.stringify({ slingshot: { available: true }, camry: { available: false }, camry2013: { available: true } }, null, 2) + "\n"
   ).toString("base64");
 
   const putCalls = [];

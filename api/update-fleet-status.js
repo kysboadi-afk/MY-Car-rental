@@ -9,7 +9,7 @@
 // Request body (JSON):
 //   {
 //     "secret":    "<ADMIN_SECRET value>",
-//     "vehicleId": "camry" | "slingshot",
+//     "vehicleId": "camry" | "slingshot" | "camry2013",
 //     "available": true | false
 //   }
 
@@ -20,6 +20,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const DEFAULT_STATUS = {
   slingshot: { available: true },
   camry:     { available: true },
+  camry2013: { available: true },
 };
 
 export default async function handler(req, res) {
