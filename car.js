@@ -153,28 +153,6 @@ let currentTaxRate = 0;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 
-// ----- Pre-fill booking form from renter modal (cars.html) -----
-// If the customer already entered their contact info in the "Before You Browse"
-// modal, read it from sessionStorage and populate the booking fields so they
-// don't have to type the same details again.
-(function prefillFromLead() {
-  try {
-    const raw = sessionStorage.getItem('slyRidesLead');
-    if (!raw) return;
-    const lead = JSON.parse(raw);
-    const nameField  = document.getElementById('name');
-    const emailField = document.getElementById('email');
-    const phoneField = document.getElementById('phone');
-    if (nameField  && !nameField.value  && lead.name)  nameField.value  = lead.name;
-    if (emailField && !emailField.value && lead.email) emailField.value = lead.email;
-    if (phoneField && !phoneField.value && lead.phone) phoneField.value = lead.phone;
-    // Re-evaluate the Pay button now that fields may be populated
-    updatePayBtn();
-  } catch (e) {
-    // Non-fatal — silently ignore parse errors so the form still works
-  }
-}());
-
 // ----- Name Field Validation & Auto-correction -----
 
 // Capitalize the first letter after each word boundary (spaces, hyphens, apostrophes)
