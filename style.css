@@ -2084,6 +2084,12 @@ span.flatpickr-weekday {
   color: #ffb400;
 }
 
+.renter-field .optional {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
 .renter-field input {
   padding: 11px 14px;
   border-radius: 8px;

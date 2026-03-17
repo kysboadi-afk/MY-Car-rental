@@ -106,10 +106,7 @@
       setError('renterNameError', 'Please enter at least a first and last name.');
       valid = false;
     }
-    if (!email) {
-      setError('renterEmailError', 'Email address is required.');
-      valid = false;
-    } else if (!validateEmail(email)) {
+    if (email && !validateEmail(email)) {
       setError('renterEmailError', 'Please enter a valid email address.');
       valid = false;
     }
@@ -120,10 +117,7 @@
       setError('renterPhoneError', 'Please enter a valid phone number (at least 7 digits).');
       valid = false;
     }
-    if (!city) {
-      setError('renterCityError', 'City is required.');
-      valid = false;
-    } else if (!validateCity(city)) {
+    if (city && !validateCity(city)) {
       setError('renterCityError', 'Please enter a valid city name.');
       valid = false;
     }
