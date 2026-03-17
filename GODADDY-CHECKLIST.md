@@ -39,7 +39,6 @@ Use this checklist to deploy SLY Rides to your GoDaddy hosting.
 - [ ] Upload these code files:
   - [ ] style.css
   - [ ] car.js
-  - [ ] script.js
 - [ ] Create `images/` folder in File Manager
 - [ ] Upload all images to images/ folder:
   - [ ] logo.jpg

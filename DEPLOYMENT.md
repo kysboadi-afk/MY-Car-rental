@@ -38,7 +38,6 @@ If you want to replace your WordPress site completely with SLY Rides:
    cancel.html
    style.css
    car.js
-   script.js
    ```
 5. Create a folder called `images/` in public_html
 6. Upload all images from the `images/` folder
@@ -127,7 +126,6 @@ public_html/                    (or subdomain folder)
 ├── cancel.html                ← Payment cancel page
 ├── style.css                  ← Styles
 ├── car.js                     ← Booking logic
-├── script.js                  ← Scripts
 └── images/                    ← Images folder
     ├── logo.jpg
     ├── car1.jpg

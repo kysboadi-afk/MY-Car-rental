@@ -35,7 +35,6 @@ SLY-RIDES/
 ├── cancel.html        # Payment cancellation page
 ├── style.css          # Main stylesheet
 ├── car.js             # Booking page logic
-├── script.js          # Homepage scripts
 ├── images/            # Car photos and logo
 └── DEPLOYMENT.md      # Full deployment guide
 ```
