@@ -454,6 +454,48 @@ body {
   font-size: 14px;
 }
 
+/* EARNINGS BLOCK — car booking page */
+.earnings-block {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: #111;
+  border-left: 3px solid #ffb400;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.earnings-tagline {
+  color: #ccc;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.earnings-title {
+  color: #aaa;
+  margin-bottom: 4px;
+}
+
+.earnings-row {
+  color: #ccc;
+  margin: 2px 0;
+}
+
+.earnings-cta {
+  color: #ccc;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.earnings-green {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.earnings-yellow {
+  color: #ffb400;
+  font-weight: 600;
+}
+
 /* RIDESHARE FEATURE BADGES */
 .rideshare-badges {
   display: flex;
