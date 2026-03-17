@@ -3,14 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Thank you for your interest in Sly Transportation Services LLC. We'll be in touch shortly to get you approved and on the road.">
+  <meta name="description" content="Thank you for your submission! Sly Transportation Services LLC has received your information and will be in touch shortly.">
   <title>Thank You | Sly Transportation Services LLC</title>
   <link rel="icon" href="images/logo.jpg" type="image/jpeg">
   <link rel="stylesheet" href="style.css">
   <style>
-    .thankyou-box {
-      max-width: 620px;
-      margin: 100px auto;
+    .ty-wrapper {
+      min-height: calc(100vh - 120px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .ty-card {
+      max-width: 600px;
+      width: 100%;
       background: #1a1a1a;
       padding: 50px 40px;
       border-radius: 16px;
@@ -18,30 +25,83 @@
       border: 1px solid #2a2a2a;
       box-shadow: 0 6px 25px rgba(0,0,0,0.5);
     }
-    .thankyou-box h1 { color: #4caf50; font-size: 36px; margin-bottom: 16px; }
-    .thankyou-box p { font-size: 18px; margin-bottom: 24px; color: #ccc; line-height: 1.6; }
-    .thankyou-box .cta-phone {
-      display: inline-block;
+    .ty-logo {
+      width: 110px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 50%;
+      border: 3px solid #ffb400;
       margin-bottom: 28px;
-      font-size: 20px;
-      font-weight: 700;
-      color: #ffb400;
-      text-decoration: none;
-      transition: color 0.2s;
     }
-    .thankyou-box .cta-phone:hover { color: #fff; }
-    .thankyou-box a.home-link {
-      display: inline-block;
-      padding: 12px 28px;
-      background: #ffb400;
-      color: #000;
+    .ty-card h1 {
+      color: #4caf50;
+      font-size: 42px;
+      margin-bottom: 14px;
+      line-height: 1.15;
+    }
+    .ty-card .ty-sub {
+      font-size: 19px;
+      color: #ddd;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .ty-card .ty-detail {
+      font-size: 15px;
+      color: #999;
+      margin-bottom: 36px;
+      line-height: 1.6;
+    }
+    .ty-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .ty-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 26px;
       border-radius: 8px;
       text-decoration: none;
-      font-size: 16px;
-      font-weight: bold;
+      font-size: 15px;
+      font-weight: 700;
       transition: background 0.2s, transform 0.2s;
+      white-space: nowrap;
     }
-    .thankyou-box a.home-link:hover { background: #e0a000; transform: scale(1.04); }
+    .ty-btn-primary {
+      background: #ffb400;
+      color: #000;
+    }
+    .ty-btn-primary:hover { background: #e0a000; transform: scale(1.04); }
+    .ty-btn-secondary {
+      background: transparent;
+      color: #ffb400;
+      border: 2px solid #ffb400;
+    }
+    .ty-btn-secondary:hover { background: #ffb400; color: #000; transform: scale(1.04); }
+    .ty-divider {
+      border: none;
+      border-top: 1px solid #2a2a2a;
+      margin: 0 0 24px;
+    }
+    .ty-phone-row {
+      font-size: 15px;
+      color: #aaa;
+    }
+    .ty-phone-row a {
+      color: #ffb400;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .ty-phone-row a:hover { color: #fff; }
+
+    @media (max-width: 520px) {
+      .ty-card { padding: 36px 20px; }
+      .ty-card h1 { font-size: 34px; }
+      .ty-btn { width: 100%; justify-content: center; }
+    }
   </style>
 </head>
 <body>
@@ -59,13 +119,30 @@
     </a>
   </header>
 
-  <div class="thankyou-box">
-    <h1>🎉 You're Almost There!</h1>
-    <p>Thanks for your interest in renting with <strong>Sly Transportation Services LLC</strong>. Our team will reach out to you shortly to complete your approval and get you behind the wheel.</p>
-    <p>Have questions? Call us now:</p>
-    <a href="tel:+12139166606" class="cta-phone">📞 (213) 916-6606</a>
-    <br>
-    <a href="index.html" class="home-link">Back to Homepage</a>
+  <div class="ty-wrapper">
+    <div class="ty-card">
+      <img src="images/logo.jpg" alt="Sly Transportation Services LLC" class="ty-logo">
+      <h1>🎉 Thank You!</h1>
+      <p class="ty-sub">Your submission has been received!</p>
+      <p class="ty-detail">
+        Our team at <strong>Sly Transportation Services LLC</strong> will review your information and reach out to you shortly to complete your approval.
+      </p>
+
+      <div class="ty-actions">
+        <!-- Upload rental-agreement.pdf to the repo root to activate this button -->
+        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download>
+          📄 Download PDF
+        </a>
+        <a href="cars.html" class="ty-btn ty-btn-secondary">
+          🔄 Fill Again
+        </a>
+      </div>
+
+      <hr class="ty-divider">
+      <p class="ty-phone-row">
+        Questions? Call us: <a href="tel:+12139166606">📞 (213) 916-6606</a>
+      </p>
+    </div>
   </div>
 
   <footer>
