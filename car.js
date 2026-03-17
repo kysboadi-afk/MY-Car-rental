@@ -51,9 +51,11 @@ const cars = {
 };
 
 // ----- Insurance / Protection Plan -----
-const PROTECTION_PLAN_DAILY   = 15;  // $15/day
-const PROTECTION_PLAN_WEEKLY  = 75;  // $75/week  (7-day block)
-const PROTECTION_PLAN_MONTHLY = 250; // $250/month (30-day block)
+const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
+const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
+const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
+// Daily rate auto-derived from weekly so it stays proportional
+const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 // ----- State Sales Tax Rates -----
 // These are state-level base rates only. Local jurisdictions (city/county)
@@ -171,6 +173,65 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
   } catch (e) {
     // Non-fatal — silently ignore parse errors so the form still works
   }
+}());
+
+// ----- Name Field Validation & Auto-correction -----
+
+// Capitalize the first letter after each word boundary (spaces, hyphens, apostrophes)
+function toTitleCase(str) {
+  return str.replace(/(?:^|[\s'\-])([a-zA-ZÀ-ÖØ-öø-ÿ])/g, function (m) {
+    return m.toUpperCase();
+  });
+}
+
+// Remove any character that is not a letter, space, hyphen, apostrophe, or period.
+function sanitizeNameInput(val) {
+  return val.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-.]/g, '');
+}
+
+// Name must contain at least a first and last name (two words)
+function isValidName(val) {
+  return val.trim().split(/\s+/).filter(Boolean).length >= 2;
+}
+
+(function setupNameField() {
+  const nameField = document.getElementById('name');
+  const nameError = document.getElementById('nameError');
+
+  nameField.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+    // Hide the error while the user is still typing
+    if (nameError) { nameError.style.display = 'none'; }
+    updatePayBtn();
+  });
+
+  nameField.addEventListener('blur', function () {
+    if (this.value.trim()) {
+      this.value = toTitleCase(this.value.trim().replace(/\s+/g, ' '));
+    }
+    // Show validation error if the name is present but incomplete
+    if (nameError) {
+      const val = this.value.trim();
+      if (val && !isValidName(val)) {
+        nameError.textContent = 'Please enter at least a first and last name.';
+        nameError.style.display = '';
+      } else {
+        nameError.style.display = 'none';
+      }
+    }
+    updatePayBtn();
+  });
+}());
+
+// Also sanitize the signature input so it only accepts valid name characters
+(function setupSignatureField() {
+  const sigInput = document.getElementById('signatureInput');
+  if (!sigInput) return;
+  sigInput.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+  });
 }());
 
 // ----- File Upload Handling -----
@@ -372,7 +433,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
       `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
       `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
     if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
     if (depositNeitherEl) depositNeitherEl.innerHTML =
       `<strong>Slingshot Security Deposit (all rentals):</strong> $${carData.deposit} &mdash; included in rental payment`;
   } else {
@@ -380,7 +441,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositIntroEl) depositIntroEl.textContent =
       "No security deposit is required for this vehicle.";
     if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
   }
 
@@ -641,7 +702,8 @@ function updatePayBtn() {
   // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload)
   const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
                           insuranceCoverageChoice === "no";
-  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameVal && emailVal;
+  const nameValid = isValidName(nameVal);
+  const ready = pickup.value && returnDate.value && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -706,6 +768,12 @@ function updateTotal() {
       protectionCost += months * PROTECTION_PLAN_MONTHLY;
       protLines.push(`${months} month${months > 1 ? "s" : ""} × $${PROTECTION_PLAN_MONTHLY}/mo`);
       protDays = protDays % 30;
+    }
+    if (protDays >= 14) {
+      const twoWeeks = Math.floor(protDays / 14);
+      protectionCost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
+      protLines.push(`${twoWeeks} 2-week period${twoWeeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_BIWEEKLY}`);
+      protDays = protDays % 14;
     }
     if (protDays >= 7) {
       const weeks = Math.floor(protDays / 7);

@@ -14,6 +14,19 @@
     document.body.style.overflow = '';
   }
 
+  // Capitalize the first letter after each word boundary (spaces, hyphens, apostrophes)
+  function toTitleCase(str) {
+    return str.replace(/(?:^|[\s'\-])([a-zA-ZÀ-ÖØ-öø-ÿ])/g, function (m) {
+      return m.toUpperCase();
+    });
+  }
+
+  // Remove any character that is not a letter, space, hyphen, apostrophe, or period.
+  // Used for both name and city fields.
+  function sanitizeTextInput(val) {
+    return val.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-.]/g, '');
+  }
+
   // Require at least 7 digit characters in the phone number
   function validatePhone(val) {
     var digits = val.replace(/\D/g, '');
@@ -25,6 +38,17 @@
     return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(val.trim());
   }
 
+  // Name must have at least two words (first + last name)
+  function validateName(val) {
+    return val.trim().split(/\s+/).filter(Boolean).length >= 2;
+  }
+
+  // City must be at least 2 characters and start with a letter
+  function validateCity(val) {
+    var trimmed = val.trim();
+    return trimmed.length >= 2 && /^[a-zA-ZÀ-ÖØ-öø-ÿ]/.test(trimmed);
+  }
+
   function setError(fieldId, msg) {
     document.getElementById(fieldId).textContent = msg;
   }
@@ -33,6 +57,32 @@
     ['renterNameError', 'renterEmailError', 'renterPhoneError', 'renterCityError', 'renterTextConsentError']
       .forEach(function (id) { document.getElementById(id).textContent = ''; });
   }
+
+  // ----- Real-time sanitization: strip invalid characters as the user types -----
+  var nameInput = document.getElementById('renterName');
+  var cityInput = document.getElementById('renterCity');
+
+  nameInput.addEventListener('input', function () {
+    var cleaned = sanitizeTextInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+  });
+
+  nameInput.addEventListener('blur', function () {
+    if (this.value.trim()) {
+      this.value = toTitleCase(this.value.trim().replace(/\s+/g, ' '));
+    }
+  });
+
+  cityInput.addEventListener('input', function () {
+    var cleaned = sanitizeTextInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+  });
+
+  cityInput.addEventListener('blur', function () {
+    if (this.value.trim()) {
+      this.value = toTitleCase(this.value.trim().replace(/\s+/g, ' '));
+    }
+  });
 
   // Only store a flag — not PII — in sessionStorage
   if (!sessionStorage.getItem('renterInfoSubmitted')) {
@@ -52,6 +102,9 @@
     if (!name) {
       setError('renterNameError', 'Full name is required.');
       valid = false;
+    } else if (!validateName(name)) {
+      setError('renterNameError', 'Please enter at least a first and last name.');
+      valid = false;
     }
     if (!email) {
       setError('renterEmailError', 'Email address is required.');
@@ -69,6 +122,9 @@
     }
     if (!city) {
       setError('renterCityError', 'City is required.');
+      valid = false;
+    } else if (!validateCity(city)) {
+      setError('renterCityError', 'Please enter a valid city name.');
       valid = false;
     }
     if (!document.getElementById('renterTextConsent').checked) {

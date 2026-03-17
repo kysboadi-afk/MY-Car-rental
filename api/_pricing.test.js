@@ -130,31 +130,40 @@ test("camry2013: 37 days = 1 × $1300 + 1 × $350 weekly = $1650", () => {
 });
 
 // ─── Damage Protection Plan cost ─────────────────────────────────────────────
+// Rates: $13/day (derived) · $85/week · $150/2-week · $295/month
 
-test("protection plan: 1 day = $15", () => {
-  assert.equal(computeProtectionPlanCost(1), 15);
+test("protection plan: 1 day = $13", () => {
+  assert.equal(computeProtectionPlanCost(1), 13);
 });
 
-test("protection plan: 6 days = 6 × $15 = $90", () => {
-  assert.equal(computeProtectionPlanCost(6), 90);
+test("protection plan: 6 days = 6 × $13 = $78", () => {
+  assert.equal(computeProtectionPlanCost(6), 78);
 });
 
-test("protection plan: 7 days = 1 × $75 weekly = $75", () => {
-  assert.equal(computeProtectionPlanCost(7), 75);
+test("protection plan: 7 days = 1 × $85 weekly = $85", () => {
+  assert.equal(computeProtectionPlanCost(7), 85);
 });
 
-test("protection plan: 8 days = 1 × $75 + 1 × $15 = $90", () => {
-  assert.equal(computeProtectionPlanCost(8), 90);
+test("protection plan: 8 days = 1 × $85 + 1 × $13 = $98", () => {
+  assert.equal(computeProtectionPlanCost(8), 98);
 });
 
-test("protection plan: 30 days = 1 × $250 monthly = $250", () => {
-  assert.equal(computeProtectionPlanCost(30), 250);
+test("protection plan: 14 days = 1 × $150 biweekly = $150", () => {
+  assert.equal(computeProtectionPlanCost(14), 150);
 });
 
-test("protection plan: 31 days = 1 × $250 + 1 × $15 = $265", () => {
-  assert.equal(computeProtectionPlanCost(31), 265);
+test("protection plan: 15 days = 1 × $150 + 1 × $13 = $163", () => {
+  assert.equal(computeProtectionPlanCost(15), 163);
 });
 
-test("protection plan: 37 days = 1 × $250 + 1 × $75 = $325", () => {
-  assert.equal(computeProtectionPlanCost(37), 325);
+test("protection plan: 30 days = 1 × $295 monthly = $295", () => {
+  assert.equal(computeProtectionPlanCost(30), 295);
+});
+
+test("protection plan: 31 days = 1 × $295 + 1 × $13 = $308", () => {
+  assert.equal(computeProtectionPlanCost(31), 308);
+});
+
+test("protection plan: 37 days = 1 × $295 + 1 × $85 weekly = $380", () => {
+  assert.equal(computeProtectionPlanCost(37), 380);
 });

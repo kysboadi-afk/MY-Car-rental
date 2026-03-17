@@ -10,9 +10,11 @@ export const CARS = {
 };
 
 // Damage Protection Plan rates — must stay in sync with car.js client-side constants.
-export const PROTECTION_PLAN_DAILY   = 15;  // $15/day
-export const PROTECTION_PLAN_WEEKLY  = 75;  // $75/week  (7-day block)
-export const PROTECTION_PLAN_MONTHLY = 250; // $250/month (30-day block)
+export const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
+export const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
+export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
+// Daily rate is auto-derived from the weekly rate so it stays proportional.
+export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 /**
  * Compute the number of rental days from two ISO date strings.
@@ -40,6 +42,11 @@ export function computeProtectionPlanCost(days) {
     const months = Math.floor(remaining / 30);
     cost += months * PROTECTION_PLAN_MONTHLY;
     remaining = remaining % 30;
+  }
+  if (remaining >= 14) {
+    const twoWeeks = Math.floor(remaining / 14);
+    cost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
+    remaining = remaining % 14;
   }
   if (remaining >= 7) {
     const weeks = Math.floor(remaining / 7);

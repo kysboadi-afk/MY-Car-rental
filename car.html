@@ -59,6 +59,7 @@
 
     <label for="name">Full Name</label>
     <input type="text" id="name" placeholder="Enter your full name" autocomplete="off" required>
+    <span class="field-error" id="nameError" style="display:none"></span>
 
     <label for="email">Email Address</label>
     <input type="email" id="email" placeholder="Enter your email" autocomplete="email">
@@ -91,7 +92,7 @@
         </label>
         <label class="insurance-option">
           <input type="radio" name="insuranceCoverage" id="noInsurance" value="no">
-          <span>No, I need protection</span>
+          <span>Add Damage Protection</span>
         </label>
       </div>
 
@@ -107,9 +108,13 @@
       </div>
 
       <div id="protectionPlanSection" class="protection-plan-notice" style="display:none">
-        <p>⚠️ Your insurance doesn't cover rental vehicles.</p>
-        <p class="protection-plan-price">Protect yourself with our <strong>Damage Protection Plan: $15/day &bull; $75/week &bull; $250/month</strong></p>
-        <p class="protection-plan-detail">Covers minor vehicle damage &mdash; reduces your damage liability to $1,000.</p>
+        <p>⚠️ Your Personal Auto Insurance may not cover rental Vehicles</p>
+        <p class="protection-plan-price">Protect yourself with our <strong>Damage Protection Plan: $13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month</strong></p>
+        <p class="protection-plan-whats-included">What's included:</p>
+        <ul class="protection-plan-includes">
+          <li>✅ Covers accidental vehicle damage</li>
+          <li>✅ Reduces your liability to $1,000</li>
+        </ul>
       </div>
     </div>
 
@@ -151,13 +156,13 @@
           <h4 id="agreementDepositHeading">SECURITY DEPOSIT (Refundable)</h4>
           <p id="agreementDepositIntro">A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return (typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
           <p id="agreementDepositInsurance"><strong>Verified Rental Car Insurance:</strong> $200</p>
-          <p id="agreementDepositDpp"><strong>Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month):</strong> $200 deposit</p>
+          <p id="agreementDepositDpp"><strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> $200 deposit</p>
           <p id="agreementDepositNeither"><strong>Neither Option:</strong> $500</p>
 
           <h4>INSURANCE &amp; LIABILITY</h4>
           <p>Renter must provide one of the following:</p>
           <p>Personal auto insurance covering rental vehicles (upload proof), OR</p>
-          <p>SLY Transportation Services Damage Protection Plan ($15/day &bull; $75/week &bull; $250/month &mdash; reduces damage liability to $1,000)</p>
+          <p>SLY Transportation Services Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month &mdash; reduces damage liability to $1,000)</p>
           <p>Renter assumes full liability for:</p>
           <p>All vehicle damage, theft, loss of use, and diminished value</p>
           <p>Third-party bodily injury, property damage, or death</p>
