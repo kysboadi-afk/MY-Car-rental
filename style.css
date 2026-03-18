@@ -2146,7 +2146,14 @@ span.flatpickr-weekday {
   margin-bottom: 40px;
 }
 
-/* Responsive 16:9 wrapper — works for both <video> and <iframe> */
+/* Two-column grid for portrait videos */
+.video-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+/* Responsive wrapper — works for both <video> and <iframe> */
 .video-wrapper {
   position: relative;
   width: 100%;
@@ -2157,6 +2164,11 @@ span.flatpickr-weekday {
   border: 1px solid #2a2a2a;
 }
 
+/* Portrait (9:16) modifier for vertical videos */
+.video-wrapper--portrait {
+  padding-top: 182.76%; /* 848/464 */
+}
+
 .video-wrapper video,
 .video-wrapper iframe {
   position: absolute;
@@ -2165,6 +2177,12 @@ span.flatpickr-weekday {
   height: 100%;
   border: none;
   background: #000;
+}
+
+@media (max-width: 640px) {
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 580px) {
