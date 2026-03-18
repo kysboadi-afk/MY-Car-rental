@@ -573,9 +573,14 @@ function applySlingshotDuration() {
   updatePayBtn();
 }
 
-// Native change listeners as fallback (Flatpickr also fires native change events)
+// Flag set to true inside initDatePickers() once Flatpickr takes over.
+// Flatpickr already fires native change events after its own onChange, so
+// the native listeners below must skip when Flatpickr is active to avoid
+// calling updateTotal() / applySlingshotDuration() twice on every selection.
+let flatpickrActive = false;
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
   inp.addEventListener("change", function() {
+    if (flatpickrActive) return; // Flatpickr's own onChange handles this
     if (vehicleId === "slingshot") {
       applySlingshotDuration();
     } else {
@@ -601,12 +606,18 @@ async function initDatePickers() {
     }
   } catch (e) { console.error("Failed to load booked dates:", e); }
 
+  // Pre-compile range boundaries to millisecond timestamps once so the
+  // disable callback never allocates new Date objects per calendar cell.
+  const compiledRanges = bookedRanges.map(function(r) {
+    return {
+      from: new Date(r.from + "T00:00:00").getTime(),
+      to: new Date(r.to + "T23:59:59").getTime()
+    };
+  });
+
   function isBooked(date) {
-    return bookedRanges.some(function(r) {
-      const from = new Date(r.from + "T00:00:00");
-      const to = new Date(r.to + "T23:59:59");
-      return date >= from && date <= to;
-    });
+    const t = date.getTime();
+    return compiledRanges.some(function(r) { return t >= r.from && t <= r.to; });
   }
 
   const pickupPicker = flatpickr(pickup, {
@@ -657,6 +668,9 @@ async function initDatePickers() {
     dateFormat: "h:i K",
     clickOpens: false
   });
+
+  // Flatpickr is now fully active; native change listeners will defer to it.
+  flatpickrActive = true;
 }
 
 initDatePickers();
@@ -829,7 +843,7 @@ function updateTotal() {
     }
 
     const rowsEl = document.getElementById("breakdownRows");
-    rowsEl.innerHTML = "";
+    const frag = document.createDocumentFragment();
     lines.forEach(function(l) {
       const row = document.createElement("div");
       row.className = "breakdown-row";
@@ -841,8 +855,10 @@ function updateTotal() {
       valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
       row.appendChild(labelSpan);
       row.appendChild(valueSpan);
-      rowsEl.appendChild(row);
+      frag.appendChild(row);
     });
+    rowsEl.innerHTML = "";
+    rowsEl.appendChild(frag);
     document.getElementById("priceBreakdown").style.display = "";
 
     document.getElementById("subtotal").textContent = rentalSubtotal;
@@ -952,7 +968,7 @@ function updateTotal() {
   }
 
   const rowsEl = document.getElementById("breakdownRows");
-  rowsEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
   lines.forEach(function(l) {
     const row = document.createElement("div");
     row.className = "breakdown-row";
@@ -964,8 +980,10 @@ function updateTotal() {
     valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
     row.appendChild(labelSpan);
     row.appendChild(valueSpan);
-    rowsEl.appendChild(row);
+    frag.appendChild(row);
   });
+  rowsEl.innerHTML = "";
+  rowsEl.appendChild(frag);
   document.getElementById("priceBreakdown").style.display = "";
 
   // Update the subtotal / tax / total display rows
