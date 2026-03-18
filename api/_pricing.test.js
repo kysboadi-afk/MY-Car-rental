@@ -1,9 +1,9 @@
-// Tests for api/_pricing.js — computeAmount and computeProtectionPlanCost
+// Tests for api/_pricing.js — computeAmount, computeSlingshotAmount, and computeProtectionPlanCost
 //
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -65,14 +65,24 @@ test("camry: 60 days = 2 × $1300 monthly = $2600", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-08-30"), 2600);
 });
 
-// ─── Slingshot (no tiered rates, has deposit) ────────────────────────────────
+// ─── Slingshot hourly tiers (deposit always $150) ────────────────────────────
 
-test("slingshot: 1 day = $300 + $150 deposit = $450", () => {
-  assert.equal(computeAmount("slingshot", "2025-07-01", "2025-07-02"), 450);
+test("slingshot: 3 hours = $200 + $150 deposit = $350", () => {
+  assert.equal(computeSlingshotAmount(3), 350);
 });
 
-test("slingshot: 30 days = 30 × $300 + $150 deposit = $9150", () => {
-  assert.equal(computeAmount("slingshot", "2025-07-01", "2025-07-31"), 9150);
+test("slingshot: 6 hours = $250 + $150 deposit = $400", () => {
+  assert.equal(computeSlingshotAmount(6), 400);
+});
+
+test("slingshot: 24 hours = $350 + $150 deposit = $500", () => {
+  assert.equal(computeSlingshotAmount(24), 500);
+});
+
+test("slingshot: invalid duration returns null", () => {
+  assert.equal(computeSlingshotAmount(12), null);
+  assert.equal(computeSlingshotAmount(0), null);
+  assert.equal(computeSlingshotAmount(300), null);
 });
 
 // ─── Edge cases ───────────────────────────────────────────────────────────────

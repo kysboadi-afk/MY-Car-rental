@@ -1198,6 +1198,62 @@ body {
   background: #1f1a00;
 }
 
+/* SLINGSHOT DURATION SELECTOR */
+#slingshotDurationSection {
+  margin-bottom: 16px;
+}
+
+#slingshotDurationSection > label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.duration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duration-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px 16px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  transition: border-color 0.2s, background 0.2s;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.duration-option:hover {
+  border-color: #ffb400;
+  background: #222;
+}
+
+.duration-option input[type="radio"] {
+  accent-color: #ffb400;
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.duration-option input[type="radio"]:checked + span {
+  color: #ffb400;
+}
+
+.duration-option:has(input:checked) {
+  border-color: #ffb400;
+  background: #1f1a00;
+}
+
 #insuranceUploadSection {
   margin-top: 4px;
   padding-top: 12px;

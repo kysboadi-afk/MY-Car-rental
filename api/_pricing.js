@@ -10,7 +10,17 @@
 export const LA_TAX_RATE = 0.1025;
 
 export const CARS = {
-  slingshot:  { name: "Slingshot R",    pricePerDay: 300, deposit: 150 },
+  slingshot:  {
+    name: "Slingshot R",
+    deposit: 150,
+    // Slingshot uses hourly tier pricing — no daily/weekly/monthly rates.
+    // Tiers: $200 / 3 hrs · $250 / 6 hrs · $350 / 24 hrs
+    hourlyTiers: [
+      { hours: 3,  price: 200 },
+      { hours: 6,  price: 250 },
+      { hours: 24, price: 350 },
+    ],
+  },
   camry:      { name: "Camry 2012",     pricePerDay: 50,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };
@@ -21,6 +31,19 @@ export const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
 export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
 // Daily rate is auto-derived from the weekly rate so it stays proportional.
 export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
+
+/**
+ * Compute the total charge for a Slingshot hourly rental.
+ * The security deposit is always included.
+ * @param {number} durationHours - rental duration in hours (must be 3, 6, or 24)
+ * @returns {number|null} total in dollars (rental + deposit), or null if invalid
+ */
+export function computeSlingshotAmount(durationHours) {
+  const car = CARS.slingshot;
+  const tier = car.hourlyTiers.find(t => t.hours === durationHours);
+  if (!tier) return null;
+  return tier.price + car.deposit;
+}
 
 /**
  * Compute the number of rental days from two ISO date strings.

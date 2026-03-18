@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays } from "./_pricing.js";
+import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -35,11 +35,18 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan } = req.body;
+    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
       return res.status(400).json({ error: "Invalid vehicle" });
+    }
+
+    // For Slingshot, validate the hourly duration selection
+    if (vehicleId === "slingshot") {
+      if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
+        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
+      }
     }
 
     // Validate dates
@@ -74,11 +81,15 @@ export default async function handler(req, res) {
 
     // Compute amount server-side — never trust a client-supplied amount.
     // The security deposit is always charged regardless of insurance choice.
-    const computedAmount = computeAmount(vehicleId, pickup, returnDate);
+    // Slingshot uses hourly tier pricing; all other vehicles use daily/weekly/etc.
+    const computedAmount = vehicleId === "slingshot"
+      ? computeSlingshotAmount(Number(slingshotDuration))
+      : computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in.
-    const days = computeRentalDays(pickup, returnDate);
+    // Slingshot hourly rentals are treated as 1 day for DPP purposes.
+    const days = vehicleId === "slingshot" ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
     const preTaxAmount = computedAmount + protectionCost;
 
@@ -103,6 +114,7 @@ export default async function handler(req, res) {
         vehicle_name: carData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
+        ...(vehicleId === "slingshot" ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         tax_jurisdiction: "Los Angeles, CA",
         tax_rate:         (LA_TAX_RATE * 100).toFixed(2) + "%",
