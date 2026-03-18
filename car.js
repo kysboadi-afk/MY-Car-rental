@@ -23,6 +23,24 @@ const cars = {
     vin: "57XAARHB8P8156561",
     color: null
   },
+  // Second Slingshot unit — same pricing, different photos.
+  // Replace the image paths below with the actual photos for this vehicle.
+  slingshot2: {
+    name: "Slingshot R",
+    subtitle: "Sports • 2-Seater",
+    hourlyTiers: [
+      { hours: 3,  price: 200, label: "3 Hours" },
+      { hours: 6,  price: 250, label: "6 Hours" },
+      { hours: 24, price: 350, label: "24 Hours" },
+    ],
+    deposit: 150,
+    images: ["images/slingshot2-1.jpg","images/slingshot2-2.jpg","images/slingshot2-3.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: "TBD",
+    color: null
+  },
   camry: {
     name: "Camry 2012",
     subtitle: "",
@@ -95,7 +113,7 @@ document.getElementById("carPrice").textContent = (carData.hourlyTiers)
     : `$${carData.pricePerDay} / day`;
 
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block
-if (vehicleId === "slingshot") {
+if (carData.hourlyTiers) {
   document.getElementById("earningsBlock").style.display = "none";
   document.getElementById("slingshotDesc").style.display = "block";
   // Populate duration options dynamically from hourlyTiers (single source of truth)
@@ -410,7 +428,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
-  if (vehicleId === "slingshot") {
+  if (carData.hourlyTiers) {
     if (depositHeadingEl) depositHeadingEl.style.display = "";
     if (depositIntroEl) depositIntroEl.innerHTML =
       `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
@@ -503,7 +521,7 @@ let returnTimePicker = null;
 
 // ----- Slingshot: auto-compute return date/time from pickup + duration -----
 function applySlingshotDuration() {
-  if (vehicleId !== "slingshot") return;
+  if (!carData.hourlyTiers) return;
   const selectedDuration = document.querySelector('input[name="slingshotDuration"]:checked');
   if (!selectedDuration) return;
 
@@ -581,7 +599,7 @@ let flatpickrActive = false;
 [pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
   inp.addEventListener("change", function() {
     if (flatpickrActive) return; // Flatpickr's own onChange handles this
-    if (vehicleId === "slingshot") {
+    if (carData.hourlyTiers) {
       applySlingshotDuration();
     } else {
       updateTotal();
@@ -633,7 +651,7 @@ async function initDatePickers() {
           if (returnPicker) returnPicker.set("minDate", selectedDates[0]);
         }
       }
-      if (vehicleId === "slingshot") {
+      if (carData.hourlyTiers) {
         applySlingshotDuration();
       } else {
         updateTotal();
@@ -645,7 +663,7 @@ async function initDatePickers() {
     minDate: "today",
     disable: [isBooked],
     onChange: function() {
-      if (vehicleId !== "slingshot") updateTotal();
+      if (!carData.hourlyTiers) updateTotal();
     }
   });
 
@@ -654,7 +672,7 @@ async function initDatePickers() {
     noCalendar: true,
     dateFormat: "h:i K",
     onChange: function(selectedDates, timeStr) {
-      if (vehicleId === "slingshot") {
+      if (carData.hourlyTiers) {
         applySlingshotDuration();
       } else {
         if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
@@ -747,8 +765,8 @@ window.addEventListener("pageshow", function(e) {
   if (hasInsuranceRadio) hasInsuranceRadio.checked = false;
   if (noInsuranceRadio) noInsuranceRadio.checked = false;
   insuranceCoverageChoice = null;
-  // Reset Slingshot duration selection
-  if (vehicleId === "slingshot") {
+  // Reset hourly-tier duration selection (Slingshot vehicles)
+  if (carData.hourlyTiers) {
     currentSlingshotDuration = null;
     document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
     const retSection = document.getElementById("returnDateSection");
@@ -802,8 +820,8 @@ function updatePayBtn() {
   const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
                           insuranceCoverageChoice === "no";
   const nameValid = isValidName(nameVal);
-  // Slingshot: needs pickup date + a duration selection; other vehicles: needs pickup + return date
-  const datesReady = vehicleId === "slingshot"
+  // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
+  const datesReady = carData.hourlyTiers
     ? pickup.value && currentSlingshotDuration
     : pickup.value && returnDate.value;
   const ready = datesReady && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
@@ -813,8 +831,8 @@ function updatePayBtn() {
 }
 
 function updateTotal() {
-  // ----- Slingshot: hourly tier pricing -----
-  if (vehicleId === "slingshot") {
+  // ----- Hourly-tier vehicles (Slingshot) -----
+  if (carData.hourlyTiers) {
     if (!pickup.value || !currentSlingshotDuration) return;
     const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
     if (!tier) return;
@@ -1065,7 +1083,7 @@ stripeBtn.addEventListener("click", async () => {
         pickup: pickup.value,
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",
-        ...(vehicleId === "slingshot" ? { slingshotDuration: currentSlingshotDuration } : {}),
+        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
       })
     });
 
@@ -1154,7 +1172,7 @@ stripeBtn.addEventListener("click", async () => {
         pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
-        ...(vehicleId === "slingshot" ? { slingshotDuration: currentSlingshotDuration } : {}),
+        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
         idFileName,
         idMimeType,
         insuranceFileName,

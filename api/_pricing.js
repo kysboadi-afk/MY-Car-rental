@@ -21,6 +21,16 @@ export const CARS = {
       { hours: 24, price: 350 },
     ],
   },
+  slingshot2: {
+    name: "Slingshot R",
+    deposit: 150,
+    // Same hourly tier pricing as slingshot — different unit with different photos.
+    hourlyTiers: [
+      { hours: 3,  price: 200 },
+      { hours: 6,  price: 250 },
+      { hours: 24, price: 350 },
+    ],
+  },
   camry:      { name: "Camry 2012",     pricePerDay: 50,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };
@@ -33,13 +43,15 @@ export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
 export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 /**
- * Compute the total charge for a Slingshot hourly rental.
+ * Compute the total charge for an hourly-tier rental (Slingshot vehicles).
  * The security deposit is always included.
  * @param {number} durationHours - rental duration in hours (must be 3, 6, or 24)
+ * @param {string} [vehicleId="slingshot"] - key from CARS for the vehicle
  * @returns {number|null} total in dollars (rental + deposit), or null if invalid
  */
-export function computeSlingshotAmount(durationHours) {
-  const car = CARS.slingshot;
+export function computeSlingshotAmount(durationHours, vehicleId = "slingshot") {
+  const car = CARS[vehicleId];
+  if (!car || !car.hourlyTiers) return null;
   const tier = car.hourlyTiers.find(t => t.hours === durationHours);
   if (!tier) return null;
   return tier.price + car.deposit;
