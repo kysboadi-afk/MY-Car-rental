@@ -24,7 +24,7 @@ const cars = {
     color: null
   },
   // Second Slingshot unit — same pricing, different photos.
-  // Replace the image paths below with the actual photos for this vehicle.
+  // TODO: update vin once available.
   slingshot2: {
     name: "Slingshot R",
     subtitle: "Sports • 2-Seater",
@@ -34,7 +34,7 @@ const cars = {
       { hours: 24, price: 350, label: "24 Hours" },
     ],
     deposit: 150,
-    images: ["images/slingshot2-1.jpg","images/slingshot2-2.jpg","images/slingshot2-3.jpg"],
+    images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
