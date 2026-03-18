@@ -42,8 +42,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
 
-    // For Slingshot, validate the hourly duration selection
-    if (vehicleId === "slingshot") {
+    // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
+    if (CARS[vehicleId].hourlyTiers) {
       if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
         return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
       }
@@ -81,15 +81,15 @@ export default async function handler(req, res) {
 
     // Compute amount server-side — never trust a client-supplied amount.
     // The security deposit is always charged regardless of insurance choice.
-    // Slingshot uses hourly tier pricing; all other vehicles use daily/weekly/etc.
-    const computedAmount = vehicleId === "slingshot"
-      ? computeSlingshotAmount(Number(slingshotDuration))
+    // Hourly-tier vehicles (Slingshot) use computeSlingshotAmount; all others use daily/weekly/etc.
+    const computedAmount = CARS[vehicleId].hourlyTiers
+      ? computeSlingshotAmount(Number(slingshotDuration), vehicleId)
       : computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in.
-    // Slingshot hourly rentals are treated as 1 day for DPP purposes.
-    const days = vehicleId === "slingshot" ? 1 : computeRentalDays(pickup, returnDate);
+    // Hourly-tier rentals are treated as 1 day for DPP purposes.
+    const days = CARS[vehicleId].hourlyTiers ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
     const preTaxAmount = computedAmount + protectionCost;
 
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
         vehicle_name: carData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        ...(vehicleId === "slingshot" ? { rental_duration: `${slingshotDuration} hours` } : {}),
+        ...(CARS[vehicleId].hourlyTiers ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         tax_jurisdiction: "Los Angeles, CA",
         tax_rate:         (LA_TAX_RATE * 100).toFixed(2) + "%",
