@@ -725,7 +725,7 @@ body {
 .slider img.slide {
   width: 100%;
   height: 550px;
-  object-fit: cover;
+  object-fit: contain;
   display: none;
 }
 .slider img.slide.active { display: block; }
