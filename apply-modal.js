@@ -286,8 +286,7 @@
       }
 
       // Read the pre-approval decision returned by the API.
-      const data = await resp.json().catch(function () { return {}; });
-      const decision = data.decision || "review";
+      const decision = result.decision || "review";
 
       // Persist name, phone & approval decision so that subsequent pages
       // (cars.html, booking flow) can gate access until the applicant is approved.
