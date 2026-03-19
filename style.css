@@ -121,23 +121,14 @@ body {
 
 /* HERO */
 .hero {
-  display: flex;
-  align-items: stretch;
-  background: linear-gradient(135deg, #0d0d0d 0%, #1c1c1c 100%);
   overflow: hidden;
   color: #fff;
 }
 
-/* Dark left panel — fills remaining space beside the image */
-.hero-left {
-  flex: 1;
-}
-
-/* Right portrait image column — natural height, no cropping */
+/* Full-width portrait image, no cropping */
 .hero-image {
   position: relative;
-  width: 42%;
-  flex-shrink: 0;
+  width: 100%;
 }
 
 .hero-image img {
@@ -146,7 +137,7 @@ body {
   display: block;
 }
 
-/* Button overlaid right after where text ends (~79% down the image) */
+/* Button overlaid right after where image text ends (~79% down) */
 .hero-image .hero-btn {
   position: absolute;
   top: 80%;
@@ -1686,21 +1677,6 @@ footer {
 
   .site-nav a {
     font-size: 14px;
-  }
-
-  .hero {
-    flex-direction: column;
-    height: auto;
-    min-height: unset;
-    max-height: unset;
-  }
-
-  .hero-left {
-    display: none;
-  }
-
-  .hero-image {
-    width: 100%;
   }
 
   .hero-image .hero-btn {
