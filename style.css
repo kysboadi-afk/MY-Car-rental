@@ -121,47 +121,43 @@ body {
 
 /* HERO */
 .hero {
-  min-height: 500px;
-  height: 75vh;
-  background: linear-gradient(135deg, #0d0d0d 0%, #1c1c1c 100%);
   display: flex;
   align-items: stretch;
+  background: linear-gradient(135deg, #0d0d0d 0%, #1c1c1c 100%);
   overflow: hidden;
   color: #fff;
 }
 
-.hero-content {
+/* Dark left panel — fills remaining space beside the image */
+.hero-left {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 40px 60px;
 }
 
+/* Right portrait image column — natural height, no cropping */
 .hero-image {
+  position: relative;
   width: 42%;
   flex-shrink: 0;
-  overflow: hidden;
 }
 
 .hero-image img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center top;
+  height: auto;
   display: block;
 }
 
-.hero-content h1 {
-  font-size: 40px;
-  margin-bottom: 15px;
-}
-
-.hero-content p {
+/* Button overlaid right after where text ends (~79% down the image) */
+.hero-image .hero-btn {
+  position: absolute;
+  top: 80%;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 18px;
-  margin-bottom: 25px;
+  font-weight: 900;
+  padding: 14px 48px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .hero-btn {
@@ -177,19 +173,6 @@ body {
 .hero-btn:hover {
   background: #e0a000;
   transform: scale(1.04);
-}
-
-.hero-benefits {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 25px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  font-size: 16px;
-  font-weight: 600;
-  color: #fff;
 }
 
 /* STATS SECTION */
@@ -1706,25 +1689,25 @@ footer {
   }
 
   .hero {
+    flex-direction: column;
     height: auto;
     min-height: unset;
-    flex-direction: column;
+    max-height: unset;
   }
 
-  .hero-content {
-    padding: 50px 24px 30px;
-    width: 100%;
+  .hero-left {
+    display: none;
   }
 
   .hero-image {
     width: 100%;
-    max-height: 340px;
   }
 
-  .hero-content h1 {
-    font-size: 28px;
+  .hero-image .hero-btn {
+    font-size: 15px;
+    padding: 11px 32px;
   }
-  
+
   .hiw-steps {
     grid-template-columns: 1fr;
     gap: 20px;
