@@ -121,26 +121,34 @@ body {
 
 /* HERO */
 .hero {
-  min-height: 500px;
-  height: 75vh;
-  background: linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)),
-    url("images/sly-hero.jpg") center/cover no-repeat;
-  background-attachment: scroll;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  overflow: hidden;
   color: #fff;
 }
 
-.hero-content h1 {
-  font-size: 40px;
-  margin-bottom: 15px;
+/* Full-width portrait image, no cropping */
+.hero-image {
+  position: relative;
+  width: 100%;
 }
 
-.hero-content p {
+.hero-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Button overlaid right after where image text ends (~79% down) */
+.hero-image .hero-btn {
+  position: absolute;
+  top: 80%;
+  left: 50%;
+  transform: translateX(-50%);
   font-size: 18px;
-  margin-bottom: 25px;
+  font-weight: 900;
+  padding: 14px 48px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .hero-btn {
@@ -156,19 +164,6 @@ body {
 .hero-btn:hover {
   background: #e0a000;
   transform: scale(1.04);
-}
-
-.hero-benefits {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 25px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  font-size: 16px;
-  font-weight: 600;
-  color: #fff;
 }
 
 /* STATS SECTION */
@@ -1684,16 +1679,11 @@ footer {
     font-size: 14px;
   }
 
-  .hero {
-    height: 60vh;
-    min-height: 420px;
-    background-position: center center;
+  .hero-image .hero-btn {
+    font-size: 15px;
+    padding: 11px 32px;
   }
 
-  .hero-content h1 {
-    font-size: 28px;
-  }
-  
   .hiw-steps {
     grid-template-columns: 1fr;
     gap: 20px;
