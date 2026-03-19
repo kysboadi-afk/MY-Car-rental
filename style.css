@@ -2508,3 +2508,125 @@ button.hero-btn {
 @media (max-width: 540px) {
   .apply-modal-box { padding: 30px 20px; }
 }
+
+/* ── Approval gate overlay (cars.html) ─────────────────────────────────────── */
+.approval-gate-overlay {
+  position: fixed;
+  inset: 0;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px 16px;
+}
+
+.approval-gate-box {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 48px 40px;
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+}
+
+.approval-gate-box .gate-icon {
+  font-size: 52px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.approval-gate-box h2 {
+  color: #ffb400;
+  font-size: 26px;
+  margin-bottom: 12px;
+}
+
+.approval-gate-box p {
+  color: #ccc;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.approval-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.approval-gate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 28px;
+  background: #ffb400;
+  color: #000;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 15px;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.approval-gate-btn:hover {
+  background: #e0a000;
+  transform: scale(1.04);
+}
+
+.approval-gate-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 28px;
+  background: transparent;
+  color: #ffb400;
+  border: 2px solid #ffb400;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 15px;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
+}
+
+.approval-gate-btn-secondary:hover {
+  background: #ffb400;
+  color: #000;
+  transform: scale(1.04);
+}
+
+@media (max-width: 520px) {
+  .approval-gate-box { padding: 36px 22px; }
+  .approval-gate-box h2 { font-size: 22px; }
+  .approval-gate-btn,
+  .approval-gate-btn-secondary { width: 100%; justify-content: center; }
+}
+
+/* ── Browse-gate toast (index.html / thank-you.html) ───────────────────────── */
+.browse-gate-toast {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid #ffb400;
+  border-radius: 10px;
+  padding: 14px 22px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  max-width: 400px;
+  width: calc(100% - 40px);
+  z-index: 9000;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  animation: browseGateToastIn 0.3s ease;
+}
+
+@keyframes browseGateToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

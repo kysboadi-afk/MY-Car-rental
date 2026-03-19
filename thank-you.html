@@ -108,7 +108,7 @@
   <header class="site-header">
     <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
     <nav class="site-nav">
-      <a href="cars.html">Browse Cars</a>
+      <a href="cars.html" id="browseCarsNavLink">Browse Cars</a>
       <a href="index.html#how-it-works">How It Works</a>
       <a href="index.html#reviews">Reviews</a>
       <a href="index.html#about">About</a>
@@ -149,6 +149,33 @@
     &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
   </footer>
   <script src="chatbot.js"></script>
+  <script>
+    // Gate the "Browse Cars" nav link — only approved applicants may navigate there.
+    (function () {
+      var link = document.getElementById("browseCarsNavLink");
+      if (!link) return;
+      link.addEventListener("click", function (e) {
+        var stored = null;
+        try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
+        if (stored && stored.decision === "approved") return; // allow
+
+        e.preventDefault();
+
+        var msg = (stored && stored.decision === "review")
+          ? "Your application is still under review. You\u2019ll receive an SMS once you\u2019re approved."
+          : "Please complete and submit an application before browsing our vehicles.";
+
+        var existing = document.getElementById("browseGateToast");
+        if (existing) existing.remove();
+        var toast = document.createElement("div");
+        toast.id = "browseGateToast";
+        toast.className = "browse-gate-toast";
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+      });
+    }());
+  </script>
   <script>
     // If the user arrived from the contact form, "Fill Again" should go back there.
     // "Fill Again" destination depends on which form brought the user here.
