@@ -36,7 +36,7 @@
       <li>✅ Unlimited Mileage</li>
       <li>✅ Fast Same-Day Approval</li>
     </ul>
-    <a href="cars.html" class="hero-btn">Apply Now</a>
+    <button id="applyNowBtn" class="hero-btn">Apply Now</button>
   </div>
 </section>
 
@@ -206,6 +206,52 @@
   &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a>
 </footer>
 
+<!-- APPLY NOW MODAL -->
+<div id="applyModal" class="apply-modal-overlay" style="display:none" role="dialog" aria-modal="true" aria-labelledby="applyModalTitle">
+  <div class="apply-modal-box">
+    <button class="apply-modal-close" id="applyModalClose" aria-label="Close application form">&times;</button>
+    <h2 id="applyModalTitle">Apply to Rent</h2>
+    <p class="apply-modal-sub">Fill out the form below to start your application. We&rsquo;ll review your information and contact you shortly.</p>
+    <form id="applyForm" novalidate>
+
+      <div class="apply-field">
+        <label for="applyName">Full Name <span class="apply-required">*</span></label>
+        <input type="text" id="applyName" name="name" placeholder="First and last name" required autocomplete="name">
+      </div>
+
+      <div class="apply-field">
+        <label for="applyPhone">Phone Number <span class="apply-required">*</span></label>
+        <input type="tel" id="applyPhone" name="phone" placeholder="(213) 555-0100" required autocomplete="tel">
+      </div>
+
+      <div class="apply-field">
+        <label for="applyLicense">Driver&rsquo;s License <span class="apply-required">*</span></label>
+        <label class="apply-file-label" for="applyLicense">
+          📷 Upload License (JPG, PNG, or PDF &middot; max 5&nbsp;MB)
+        </label>
+        <input type="file" id="applyLicense" name="license" accept=".jpg,.jpeg,.png,.pdf" required>
+        <span id="applyLicenseInfo" class="apply-file-info"></span>
+      </div>
+
+      <div class="apply-field">
+        <label for="applyExperience">Driving Experience <span class="apply-required">*</span></label>
+        <select id="applyExperience" name="experience" required>
+          <option value="">-- Select your experience --</option>
+          <option value="Less than 1 year">Less than 1 year</option>
+          <option value="1–2 years">1&ndash;2 years</option>
+          <option value="3–5 years">3&ndash;5 years</option>
+          <option value="6–10 years">6&ndash;10 years</option>
+          <option value="More than 10 years">More than 10 years</option>
+        </select>
+      </div>
+
+      <p id="applyStatus" class="apply-status" role="status"></p>
+      <button type="submit" id="applySubmitBtn" class="apply-submit-btn">Submit Application</button>
+    </form>
+  </div>
+</div>
+
 <script src="chatbot.js"></script>
+<script src="apply-modal.js"></script>
 </body>
 </html>
