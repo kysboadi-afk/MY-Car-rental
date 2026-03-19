@@ -12,11 +12,13 @@
 //   SMTP_PASS    — email password or app password
 //   OWNER_EMAIL  — business email that receives all applications
 //                  (defaults to slyservices@supports-info.com)
+//   OTP_SECRET   — shared secret used to sign/verify phone OTP tokens
 //   TWILIO_ACCOUNT_SID  — Twilio Account SID (optional; SMS skipped if absent)
 //   TWILIO_AUTH_TOKEN   — Twilio Auth Token
 //   TWILIO_PHONE_NUMBER — Twilio sending phone number (E.164, e.g. +18773155034)
 import nodemailer from "nodemailer";
 import twilio from "twilio";
+import { verifyPhoneOtpToken } from "./_otp.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -109,6 +111,7 @@ export default async function handler(req, res) {
 
   const {
     name, phone, email, age, experience, apps, agreeTerms,
+    phoneOtpToken, phoneOtpCode,
     licenseFileName, licenseMimeType, licenseBase64,
   } = req.body || {};
 
@@ -116,6 +119,20 @@ export default async function handler(req, res) {
     return res
       .status(400)
       .json({ error: "Missing required fields: name, phone, experience." });
+  }
+
+  // Verify phone OTP — normalise phone to E.164 the same way send-phone-otp.js does
+  if (!phoneOtpToken || !phoneOtpCode) {
+    return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
+  }
+  const phoneDigits = String(phone).replace(/\D/g, "");
+  const phoneE164 = phoneDigits.length === 10
+    ? "+1" + phoneDigits
+    : phoneDigits.length === 11 && phoneDigits.startsWith("1")
+      ? "+" + phoneDigits
+      : phone.startsWith("+") ? phone : null;
+  if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
+    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
   }
 
   // Build attachment if a license image/PDF was provided

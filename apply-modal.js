@@ -21,6 +21,11 @@
 
   let licenseFile = null;
 
+  // ─── Phone OTP state ─────────────────────────────────────────────────────────
+  let phoneOtpToken  = null;   // signed token returned by /api/send-phone-otp
+  let phoneVerified  = false;  // true once renter enters the correct 6-digit code
+  let resendTimer    = null;
+
   // ─── Open / close ────────────────────────────────────────────────────────────
 
   function openModal() {
@@ -79,6 +84,113 @@
     licenseInfo.style.color = "#4caf50";
   });
 
+  // ─── Phone OTP wiring ────────────────────────────────────────────────────────
+
+  var phoneInput          = document.getElementById("applyPhone");
+  var sendPhoneOtpBtn     = document.getElementById("applySendPhoneOtpBtn");
+  var phoneOtpGroup       = document.getElementById("applyPhoneOtpGroup");
+  var phoneOtpInput       = document.getElementById("applyPhoneOtpInput");
+  var resendPhoneOtpBtn   = document.getElementById("applyResendPhoneOtpBtn");
+  var phoneVerifiedBadge  = document.getElementById("applyPhoneVerifiedBadge");
+
+  function startResendCooldown() {
+    resendPhoneOtpBtn.disabled = true;
+    var secs = 30;
+    resendPhoneOtpBtn.textContent = "Resend (" + secs + "s)";
+    clearInterval(resendTimer);
+    resendTimer = setInterval(function () {
+      secs -= 1;
+      if (secs <= 0) {
+        clearInterval(resendTimer);
+        resendPhoneOtpBtn.disabled = false;
+        resendPhoneOtpBtn.textContent = "Resend";
+      } else {
+        resendPhoneOtpBtn.textContent = "Resend (" + secs + "s)";
+      }
+    }, 1000);
+  }
+
+  async function sendPhoneOtp() {
+    var phone = phoneInput.value.trim();
+    if (!phone) {
+      statusEl.textContent = "Please enter your phone number first.";
+      statusEl.className = "apply-status error";
+      phoneInput.focus();
+      return;
+    }
+    sendPhoneOtpBtn.disabled = true;
+    sendPhoneOtpBtn.textContent = "Sending\u2026";
+    statusEl.textContent = "";
+    statusEl.className = "apply-status";
+
+    try {
+      var resp = await fetch(API_BASE + "/api/send-phone-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phone }),
+      });
+      var data = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) {
+        statusEl.textContent = data.error || "Failed to send verification code. Please try again.";
+        statusEl.className = "apply-status error";
+        sendPhoneOtpBtn.disabled = false;
+        sendPhoneOtpBtn.textContent = "Send Code";
+        return;
+      }
+      phoneOtpToken = data.token;
+      phoneVerified = false;
+      phoneOtpGroup.style.display = "block";
+      phoneVerifiedBadge.style.display = "none";
+      phoneOtpInput.value = "";
+      phoneOtpInput.focus();
+      sendPhoneOtpBtn.textContent = "Sent \u2713";
+      startResendCooldown();
+      statusEl.textContent = "A 6-digit code was sent to your phone.";
+      statusEl.className = "apply-status sending";
+    } catch (err) {
+      console.error("Send phone OTP error:", err);
+      statusEl.textContent = "Network error. Please check your connection and try again.";
+      statusEl.className = "apply-status error";
+      sendPhoneOtpBtn.disabled = false;
+      sendPhoneOtpBtn.textContent = "Send Code";
+    }
+  }
+
+  sendPhoneOtpBtn.addEventListener("click", sendPhoneOtp);
+
+  resendPhoneOtpBtn.addEventListener("click", function () {
+    sendPhoneOtpBtn.textContent = "Send Code";
+    sendPhoneOtpBtn.disabled = false;
+    sendPhoneOtp();
+  });
+
+  // Mark phone as verified as soon as all 6 digits are entered
+  phoneOtpInput.addEventListener("input", function () {
+    var code = phoneOtpInput.value.trim();
+    if (code.length === 6) {
+      phoneVerified = true;
+      phoneVerifiedBadge.style.display = "block";
+      phoneOtpGroup.style.display = "none";
+      statusEl.textContent = "";
+      statusEl.className = "apply-status";
+    } else {
+      phoneVerified = false;
+      phoneVerifiedBadge.style.display = "none";
+    }
+  });
+
+  // Reset OTP state when the phone number is edited
+  phoneInput.addEventListener("input", function () {
+    phoneOtpToken = null;
+    phoneVerified = false;
+    phoneOtpGroup.style.display = "none";
+    phoneVerifiedBadge.style.display = "none";
+    phoneOtpInput.value = "";
+    sendPhoneOtpBtn.disabled = false;
+    sendPhoneOtpBtn.textContent = "Send Code";
+    clearInterval(resendTimer);
+  });
+
   // ─── Form submission ──────────────────────────────────────────────────────────
 
   form.addEventListener("submit", async function (e) {
@@ -125,6 +237,13 @@
       return;
     }
 
+    if (!phoneVerified || !phoneOtpToken) {
+      statusEl.textContent = "Please verify your phone number before submitting.";
+      statusEl.className = "apply-status error";
+      phoneInput.focus();
+      return;
+    }
+
     submitBtn.disabled = true;
     statusEl.textContent = "Submitting your application\u2026";
     statusEl.className = "apply-status sending";
@@ -153,6 +272,8 @@
           apps,
           agreeTerms,
           agreeSmsConsent,
+          phoneOtpToken,
+          phoneOtpCode: phoneOtpInput.value.trim(),
           licenseFileName: licenseFile.name,
           licenseMimeType: licenseFile.type,
           licenseBase64,

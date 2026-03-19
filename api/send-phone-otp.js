@@ -19,7 +19,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Accept E.164 (+1XXXXXXXXXX) or a 10–11 digit US number (digits only).
 // Normalises to E.164 before sending so Twilio is happy.
-function normalizePhone(raw) {
+function normalizePhoneNumber(raw) {
   if (typeof raw !== "string") return null;
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) return "+1" + digits;
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
   }
 
   const { phone } = req.body || {};
-  const e164 = normalizePhone(phone);
+  const e164 = normalizePhoneNumber(phone);
 
   if (!e164) {
     return res.status(400).json({ error: "A valid US phone number is required." });
