@@ -36,6 +36,9 @@
   document.getElementById("applyNowBtn").addEventListener("click", openModal);
   closeBtn.addEventListener("click", closeModal);
 
+  // Expose openModal globally so other scripts (e.g. chatbot) can trigger it.
+  window.openApplyModal = openModal;
+
   // Close when clicking the dark backdrop
   overlay.addEventListener("click", function (e) {
     if (e.target === overlay) closeModal();
@@ -85,7 +88,28 @@
 
     const name       = document.getElementById("applyName").value.trim();
     const phone      = document.getElementById("applyPhone").value.trim();
+    const age        = parseInt(document.getElementById("applyAge").value, 10);
     const experience = document.getElementById("applyExperience").value;
+    const apps       = Array.from(form.querySelectorAll('input[name="apps"]:checked')).map(function (cb) { return cb.value; });
+    const agreeTerms = document.getElementById("applyTerms").checked;
+
+    if (isNaN(age) || age < 18 || age > 100) {
+      statusEl.textContent = "Please enter a valid age.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (apps.length === 0) {
+      statusEl.textContent = "Please select at least one delivery app.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!agreeTerms) {
+      statusEl.textContent = "You must agree to the Rental Terms & Conditions.";
+      statusEl.className = "apply-status error";
+      return;
+    }
 
     if (!licenseFile) {
       statusEl.textContent = "Please upload a copy of your driver\u2019s license.";
@@ -115,7 +139,10 @@
         body: JSON.stringify({
           name,
           phone,
+          age,
           experience,
+          apps,
+          agreeTerms,
           licenseFileName: licenseFile.name,
           licenseMimeType: licenseFile.type,
           licenseBase64,

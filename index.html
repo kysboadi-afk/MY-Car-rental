@@ -234,15 +234,39 @@
       </div>
 
       <div class="apply-field">
+        <label for="applyAge">Age <span class="apply-required">*</span></label>
+        <input type="number" id="applyAge" name="age" placeholder="Your age" min="18" max="100" required autocomplete="bday-year">
+      </div>
+
+      <div class="apply-field">
         <label for="applyExperience">Driving Experience <span class="apply-required">*</span></label>
         <select id="applyExperience" name="experience" required>
           <option value="">-- Select your experience --</option>
-          <option value="Less than 1 year">Less than 1 year</option>
+          <option value="Less than 3 months">Less than 3 months</option>
+          <option value="3 months – 1 year">3 months &ndash; 1 year</option>
           <option value="1–2 years">1&ndash;2 years</option>
           <option value="3–5 years">3&ndash;5 years</option>
           <option value="6–10 years">6&ndash;10 years</option>
           <option value="More than 10 years">More than 10 years</option>
         </select>
+      </div>
+
+      <div class="apply-field">
+        <label>Delivery App(s) <span class="apply-required">*</span></label>
+        <div class="apply-checkboxes">
+          <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="DoorDash"> DoorDash</label>
+          <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Uber Eats"> Uber Eats</label>
+          <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Instacart"> Instacart</label>
+          <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Amazon Flex"> Amazon Flex</label>
+          <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Other"> Other</label>
+        </div>
+      </div>
+
+      <div class="apply-field">
+        <label class="apply-checkbox-label apply-terms-label">
+          <input type="checkbox" id="applyTerms" name="terms" required>
+          I agree to the <a href="cars.html" target="_blank" rel="noopener" class="apply-terms-link">Rental Terms &amp; Conditions</a> <span class="apply-required">*</span>
+        </label>
       </div>
 
       <p id="applyStatus" class="apply-status" role="status"></p>
