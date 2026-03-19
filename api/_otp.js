@@ -95,3 +95,69 @@ export function verifyOtpToken(token, email, otp) {
     return false;
   }
 }
+
+/**
+ * Create a signed, expiring token that binds a phone number to a hashed OTP.
+ * Mirrors createOtpToken() but uses the phone number as the identifier.
+ *
+ * @param {string} phone - The phone number to bind the OTP to.
+ * @param {string} otp   - The plain-text OTP to embed (hashed).
+ * @returns {string} A URL-safe token string "payload.signature".
+ */
+export function createPhoneOtpToken(phone, otp) {
+  const secret = getSecret();
+  const hashedOtp = crypto.createHmac("sha256", secret).update(otp).digest("hex");
+  const payload = Buffer.from(
+    JSON.stringify({ phone, hashedOtp, expiresAt: Date.now() + OTP_TTL_MS })
+  ).toString("base64url");
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+/**
+ * Verify a signed phone OTP token.
+ * Returns true only when the token signature is valid, the embedded phone
+ * matches the supplied phone, the OTP matches, and the token has not expired.
+ *
+ * @param {string} token - Token previously returned by createPhoneOtpToken().
+ * @param {string} phone - The phone number to verify against.
+ * @param {string} otp   - The OTP the user entered.
+ * @returns {boolean}
+ */
+export function verifyPhoneOtpToken(token, phone, otp) {
+  if (!token || !phone || !otp) return false;
+  try {
+    const secret = getSecret();
+    const dotIdx = token.lastIndexOf(".");
+    if (dotIdx < 0) return false;
+    const payload = token.slice(0, dotIdx);
+    const sig = token.slice(dotIdx + 1);
+
+    const expectedSig = crypto
+      .createHmac("sha256", secret)
+      .update(payload)
+      .digest("base64url");
+
+    const sigBuf = Buffer.from(sig, "utf8");
+    const expectedBuf = Buffer.from(expectedSig, "utf8");
+    if (sigBuf.length !== expectedBuf.length) return false;
+    if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return false;
+
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (data.phone !== phone) return false;
+    if (Date.now() > data.expiresAt) return false;
+
+    const expectedHash = crypto
+      .createHmac("sha256", secret)
+      .update(otp)
+      .digest("hex");
+    const storedBuf = Buffer.from(data.hashedOtp, "hex");
+    const expectedHashBuf = Buffer.from(expectedHash, "hex");
+    if (storedBuf.length !== expectedHashBuf.length) return false;
+    if (!crypto.timingSafeEqual(storedBuf, expectedHashBuf)) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}

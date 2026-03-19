@@ -220,7 +220,29 @@
 
       <div class="apply-field">
         <label for="applyPhone">Phone Number <span class="apply-required">*</span></label>
-        <input type="tel" id="applyPhone" name="phone" placeholder="(213) 555-0100" required autocomplete="tel">
+        <div class="apply-phone-row">
+          <input type="tel" id="applyPhone" name="phone" placeholder="(213) 555-0100" required autocomplete="tel">
+          <button type="button" class="apply-send-code-btn" id="applySendPhoneOtpBtn">Send Code</button>
+        </div>
+        <div id="applyPhoneOtpGroup" style="display:none;margin-top:8px">
+          <input
+            type="text"
+            id="applyPhoneOtpInput"
+            placeholder="Enter 6-digit code"
+            maxlength="6"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            autocomplete="one-time-code"
+            style="width:100%;box-sizing:border-box;letter-spacing:4px;font-size:18px;text-align:center;padding:10px;background:#1a1a1a;border:1px solid #444;border-radius:8px;color:#fff"
+          >
+          <p style="font-size:12px;color:#777;margin:6px 0 0">Code sent to your phone — valid 10 min. <button type="button" id="applyResendPhoneOtpBtn" disabled style="background:none;border:none;color:#ffb400;font-size:12px;cursor:pointer;padding:0;margin-left:4px;font-weight:600;text-decoration:underline">Resend</button></p>
+        </div>
+        <p id="applyPhoneVerifiedBadge" style="display:none;margin:6px 0 0;font-size:13px;font-weight:600;color:#4caf50">✓ Phone verified</p>
+      </div>
+
+      <div class="apply-field">
+        <label for="applyEmail">Email Address <span class="apply-required">*</span></label>
+        <input type="email" id="applyEmail" name="email" placeholder="you@example.com" required autocomplete="email">
       </div>
 
       <div class="apply-field">
