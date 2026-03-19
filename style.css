@@ -2170,10 +2170,10 @@ span.flatpickr-weekday {
   margin-bottom: 40px;
 }
 
-/* Three-column grid for portrait videos */
+/* Two-column grid for portrait videos */
 .video-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
 
@@ -2209,7 +2209,7 @@ span.flatpickr-weekday {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 540px) {
   .video-grid {
     grid-template-columns: 1fr;
   }
