@@ -5,8 +5,8 @@
   var stored = null;
   try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
 
-  // Approved applicants may proceed — exit early so the page renders normally.
-  if (stored && stored.decision === "approved") return;
+  // Approval gate temporarily disabled — Twilio setup pending. All visitors may proceed.
+  return;
 
   // ── Build a full-screen overlay that blocks the page content ──────────────
   var isReview  = stored && stored.decision === "review";
