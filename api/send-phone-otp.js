@@ -1,0 +1,81 @@
+// api/send-phone-otp.js
+// Vercel serverless function — sends a 6-digit OTP to the supplied phone number
+// via Twilio SMS so the booking form can verify the renter controls that number
+// before the payment flow begins.
+//
+// Required environment variables (set in Vercel dashboard):
+//   TWILIO_ACCOUNT_SID   — Twilio Account SID
+//   TWILIO_AUTH_TOKEN    — Twilio Auth Token
+//   TWILIO_PHONE_NUMBER  — Twilio sending phone number (E.164, e.g. +18773155034)
+//   OTP_SECRET           — long random string used to sign OTP tokens
+//
+// POST /api/send-phone-otp
+//   Body:    { phone }   ← E.164 or US 10-digit format
+//   Returns: { token }   ← opaque signed token; client passes it back on submit
+import twilio from "twilio";
+import { generateOtp, createPhoneOtpToken } from "./_otp.js";
+
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+// Accept E.164 (+1XXXXXXXXXX) or a 10–11 digit US number (digits only).
+// Normalises to E.164 before sending so Twilio is happy.
+function normalizePhone(raw) {
+  if (typeof raw !== "string") return null;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return "+1" + digits;
+  if (digits.length === 11 && digits.startsWith("1")) return "+" + digits;
+  if (raw.startsWith("+") && digits.length >= 7 && digits.length <= 15) return "+" + digits;
+  return null;
+}
+
+export default async function handler(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  if (
+    !process.env.TWILIO_ACCOUNT_SID ||
+    !process.env.TWILIO_AUTH_TOKEN ||
+    !process.env.TWILIO_PHONE_NUMBER
+  ) {
+    console.error(
+      "Missing Twilio environment variables (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)."
+    );
+    return res
+      .status(500)
+      .json({ error: "Server configuration error: Twilio credentials are not set." });
+  }
+
+  const { phone } = req.body || {};
+  const e164 = normalizePhone(phone);
+
+  if (!e164) {
+    return res.status(400).json({ error: "A valid US phone number is required." });
+  }
+
+  const otp = generateOtp();
+  const token = createPhoneOtpToken(e164, otp);
+
+  try {
+    const client = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    await client.messages.create({
+      body: `Your Sly Transportation verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: e164,
+    });
+
+    return res.status(200).json({ token });
+  } catch (err) {
+    console.error("Phone OTP SMS failed:", err);
+    return res.status(500).json({ error: "Failed to send verification SMS." });
+  }
+}

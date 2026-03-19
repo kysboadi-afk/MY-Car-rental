@@ -88,6 +88,7 @@
 
     const name       = document.getElementById("applyName").value.trim();
     const phone      = document.getElementById("applyPhone").value.trim();
+    const email      = document.getElementById("applyEmail").value.trim();
     const age        = parseInt(document.getElementById("applyAge").value, 10);
     const experience = document.getElementById("applyExperience").value;
     const apps       = Array.from(form.querySelectorAll('input[name="apps"]:checked')).map(function (cb) { return cb.value; });
@@ -146,6 +147,7 @@
         body: JSON.stringify({
           name,
           phone,
+          email,
           age,
           experience,
           apps,
@@ -157,17 +159,21 @@
         }),
       });
 
+      const result = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        const err = await resp.json().catch(function () { return {}; });
-        throw new Error(err.error || "Submission failed. Please try again.");
+        throw new Error(result.error || "Submission failed. Please try again.");
       }
 
-      // Persist name & phone so the booking page can pre-fill them when the
-      // applicant returns after approval.  localStorage is used (vs sessionStorage)
-      // so the data survives if the browser is closed and reopened.
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, phone }));
-      } catch (_) { /* storage may be blocked in private mode */ }
+      // Persist name, phone, and email to localStorage ONLY when the
+      // applicant is approved, so the booking page can pre-fill those fields
+      // when they return to complete their reservation.  localStorage is used
+      // (vs sessionStorage) so the data survives if the browser is closed and
+      // reopened.
+      if (result.decision === "approved") {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, phone, email }));
+        } catch (_) { /* storage may be blocked in private mode */ }
+      }
 
       // Redirect to the thank-you page
       window.location.href = "thank-you.html?from=apply";

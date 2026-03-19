@@ -2505,6 +2505,41 @@ button.hero-btn {
   cursor: not-allowed;
 }
 
+.apply-phone-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.apply-phone-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.apply-send-code-btn {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  background: #1a1a1a;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+
+.apply-send-code-btn:hover:not(:disabled) {
+  background: #ffb400;
+  color: #000;
+}
+
+.apply-send-code-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 540px) {
   .apply-modal-box { padding: 30px 20px; }
 }

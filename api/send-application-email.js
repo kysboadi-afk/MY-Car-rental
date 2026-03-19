@@ -108,7 +108,7 @@ export default async function handler(req, res) {
   }
 
   const {
-    name, phone, age, experience, apps, agreeTerms,
+    name, phone, email, age, experience, apps, agreeTerms,
     licenseFileName, licenseMimeType, licenseBase64,
   } = req.body || {};
 
@@ -155,6 +155,7 @@ export default async function handler(req, res) {
         "",
         `Name              : ${name}`,
         `Phone             : ${phone}`,
+        `Email             : ${email || "Not provided"}`,
         `Age               : ${age ?? "Not provided"}`,
         `Driving Experience: ${experience}`,
         `Delivery Apps     : ${appsLabel}`,
