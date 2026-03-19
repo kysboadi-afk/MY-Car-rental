@@ -1,3 +1,46 @@
+// ─── Approval gate ────────────────────────────────────────────────────────────
+// Prevent unapproved visitors from viewing the car grid.  The gate checks the
+// "slyApplicant" entry written by apply-modal.js after a successful submission.
+(function () {
+  var stored = null;
+  try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
+
+  // Approved applicants may proceed — exit early so the page renders normally.
+  if (stored && stored.decision === "approved") return;
+
+  // ── Build a full-screen overlay that blocks the page content ──────────────
+  var isReview  = stored && stored.decision === "review";
+  var isDeclined = stored && stored.decision === "declined";
+
+  var icon    = isReview ? "⏳" : "🔒";
+  var heading = isReview ? "Application Under Review" : "Approval Required";
+  var message = isReview
+    ? "Your application is currently under review. Our team will contact you within 24\u00a0hours. You\u2019ll receive an SMS message once you\u2019re approved."
+    : "You must complete and be approved through our application process before you can browse or rent a vehicle.";
+
+  var actions =
+    '<a href="index.html" class="approval-gate-btn">\u2190 Go Back &amp; Apply</a>' +
+    (isReview || isDeclined
+      ? '<a href="tel:+12139166606" class="approval-gate-btn-secondary">\uD83D\uDCDE\u00a0Call Us</a>'
+      : '');
+
+  var overlay = document.createElement("div");
+  overlay.className = "approval-gate-overlay";
+  overlay.innerHTML =
+    '<div class="approval-gate-box">' +
+      '<div class="gate-icon">' + icon + '</div>' +
+      '<h2>' + heading + '</h2>' +
+      '<p>' + message + '</p>' +
+      '<div class="approval-gate-actions">' + actions + '</div>' +
+    '</div>';
+
+  // Inject immediately — cars.js runs after the body is in the DOM.
+  document.body.appendChild(overlay);
+  document.body.style.overflow = "hidden";
+}());
+
+// ─── Filter buttons ───────────────────────────────────────────────────────────
+
 const filterBtns = document.querySelectorAll('.sidebar-btn');
 const carCards = document.querySelectorAll('#car-grid .car-card');
 
