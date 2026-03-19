@@ -459,6 +459,35 @@ body {
   font-size: 14px;
 }
 
+/* SLINGSHOT MARKETING DESCRIPTION */
+.slingshot-desc {
+  margin: 10px 0;
+  font-size: 13px;
+}
+.slingshot-desc-tagline {
+  font-weight: bold;
+  color: #fff;
+  margin: 0 0 2px;
+}
+.slingshot-desc-sub {
+  color: #ccc;
+  margin: 0 0 8px;
+}
+.slingshot-desc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  color: #ddd;
+}
+.slingshot-desc-list li {
+  margin-bottom: 3px;
+}
+.slingshot-desc-cta {
+  color: #ff7a00;
+  font-weight: bold;
+  margin: 0;
+}
+
 /* EARNINGS BLOCK — car booking page */
 .earnings-block {
   margin: 12px 0;
