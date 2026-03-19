@@ -2389,6 +2389,7 @@ button.hero-btn {
 
 .apply-field input[type="text"],
 .apply-field input[type="tel"],
+.apply-field input[type="number"],
 .apply-field select {
   background: #111;
   border: 1px solid #333;
@@ -2402,6 +2403,7 @@ button.hero-btn {
 
 .apply-field input[type="text"]:focus,
 .apply-field input[type="tel"]:focus,
+.apply-field input[type="number"]:focus,
 .apply-field select:focus {
   border-color: #ffb400;
   outline: none;
@@ -2428,6 +2430,45 @@ button.hero-btn {
 
 /* Hide the native file picker — the styled label above triggers it */
 .apply-field input[type="file"] { display: none; }
+
+.apply-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 2px;
+}
+
+.apply-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 400;
+  color: #ddd;
+  cursor: pointer;
+  user-select: none;
+}
+
+.apply-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #ffb400;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.apply-terms-label {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.5;
+}
+
+.apply-terms-link {
+  color: #ffb400;
+  text-decoration: underline;
+}
+
+.apply-terms-link:hover { color: #fff; }
 
 .apply-file-info {
   font-size: 13px;

@@ -1,6 +1,7 @@
 // Tests for api/send-application-email.js
 // Validates that driver applications are emailed to the owner with the
-// license as an attachment, and that XSS/oversized payload guards work.
+// license as an attachment, pre-approval logic, SMS dispatch, and
+// XSS/oversized payload guards.
 //
 // Run with: npm test
 import { test, mock } from "node:test";
@@ -13,6 +14,11 @@ process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
 process.env.OWNER_EMAIL = "owner@test.invalid";
 
+// ─── Twilio env vars ──────────────────────────────────────────────────────────
+process.env.TWILIO_ACCOUNT_SID  = "ACtest00000000000000000000000000000";
+process.env.TWILIO_AUTH_TOKEN   = "test_auth_token_00000000000000000000";
+process.env.TWILIO_PHONE_NUMBER = "+18773155034";
+
 // ─── Nodemailer mock ──────────────────────────────────────────────────────────
 const sentMails = [];
 const mockSendMail = mock.fn(async (opts) => { sentMails.push(opts); });
@@ -21,6 +27,16 @@ mock.module("nodemailer", {
   defaultExport: {
     createTransport: () => ({ sendMail: mockSendMail }),
   },
+});
+
+// ─── Twilio mock ──────────────────────────────────────────────────────────────
+const sentMessages = [];
+const mockCreate = mock.fn(async (opts) => { sentMessages.push(opts); return {}; });
+
+mock.module("twilio", {
+  defaultExport: () => ({
+    messages: { create: mockCreate },
+  }),
 });
 
 const { default: handler } = await import("./send-application-email.js");
@@ -47,7 +63,10 @@ function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
 const VALID_BODY = {
   name: "Jane Driver",
   phone: "3105550199",
+  age: 25,
   experience: "3–5 years",
+  apps: ["DoorDash", "Uber Eats"],
+  agreeTerms: true,
   licenseFileName: "license.jpg",
   licenseMimeType: "image/jpeg",
   licenseBase64: Buffer.from("fake-image-data").toString("base64"),
@@ -112,14 +131,16 @@ test("email subject contains applicant name", async () => {
   );
 });
 
-test("email html contains all application fields", async () => {
+test("email html contains all application fields including age and apps", async () => {
   sentMails.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
   const html = sentMails[0].html;
   assert.ok(html.includes("Jane Driver"));
   assert.ok(html.includes("3105550199"));
+  assert.ok(html.includes("25"));
   assert.ok(html.includes("3\u20135 years"));
+  assert.ok(html.includes("DoorDash"));
   assert.ok(html.includes("license.jpg"));
 });
 
@@ -135,7 +156,7 @@ test("attaches license file when base64 data is provided", async () => {
 test("sends without attachment when license fields are omitted", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: "3105550199", experience: "Less than 1 year" };
+  const body = { name: "Jane Driver", phone: "3105550199", age: 25, experience: "3–5 years", agreeTerms: true };
   await handler(makeReq("POST", body), res);
   assert.equal(res._status, 200);
   assert.equal(sentMails[0].attachments.length, 0);
@@ -147,7 +168,9 @@ test("html-escapes special characters to prevent XSS", async () => {
   await handler(makeReq("POST", {
     name: "<script>alert(1)</script>",
     phone: "1234567",
+    age: 25,
     experience: "<img src=x onerror=alert(1)>",
+    agreeTerms: true,
   }), res);
   assert.equal(res._status, 200);
   const html = sentMails[0].html;
@@ -165,3 +188,106 @@ test("rejects oversized license base64 payload", async () => {
   assert.equal(res._status, 400);
   assert.ok(res._body.error);
 });
+
+// ─── Pre-approval decision tests ─────────────────────────────────────────────
+
+test("decision is 'approved' for qualified applicant", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.equal(res._body.decision, "approved");
+});
+
+test("decision is 'declined' when age is under 21", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, age: 19 }), res);
+  assert.equal(res._body.decision, "declined");
+});
+
+test("decision is 'declined' when experience is less than 3 months", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, experience: "Less than 3 months" }), res);
+  assert.equal(res._body.decision, "declined");
+});
+
+test("decision is 'review' when license is missing", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  const body = { name: "Jane Driver", phone: "3105550199", age: 25, experience: "3–5 years", agreeTerms: true };
+  await handler(makeReq("POST", body), res);
+  assert.equal(res._body.decision, "review");
+});
+
+test("decision is 'review' when terms are not agreed", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, agreeTerms: false }), res);
+  assert.equal(res._body.decision, "review");
+});
+
+test("email subject contains decision label", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.ok(
+    sentMails[0].subject.toLowerCase().includes("approved"),
+    `Expected subject to contain decision, got: ${sentMails[0].subject}`
+  );
+});
+
+// ─── SMS dispatch tests ───────────────────────────────────────────────────────
+
+test("sends approved SMS for qualified applicant", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.equal(sentMessages.length, 1);
+  assert.ok(
+    sentMessages[0].body.includes("approved"),
+    `Expected approved SMS body, got: ${sentMessages[0].body}`
+  );
+  assert.ok(sentMessages[0].body.includes("www.slytrans.com/cars"));
+});
+
+test("sends declined SMS when age is under 21", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
+  assert.equal(sentMessages.length, 1);
+  assert.ok(
+    sentMessages[0].body.includes("does not meet our current rental requirements"),
+    `Expected declined SMS body, got: ${sentMessages[0].body}`
+  );
+});
+
+test("sends review SMS when license is missing", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  const body = { name: "Jane Driver", phone: "3105550199", age: 25, experience: "3–5 years", agreeTerms: true };
+  await handler(makeReq("POST", body), res);
+  assert.equal(sentMessages.length, 1);
+  assert.ok(
+    sentMessages[0].body.includes("under review"),
+    `Expected review SMS body, got: ${sentMessages[0].body}`
+  );
+});
+
+test("SMS is sent to applicant phone number", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.equal(sentMessages[0].to, "3105550199");
+});
+
+test("SMS contains first name in review/declined messages", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
+  assert.ok(
+    sentMessages[0].body.includes("Jane"),
+    `Expected first name in SMS, got: ${sentMessages[0].body}`
+  );
+});
+
