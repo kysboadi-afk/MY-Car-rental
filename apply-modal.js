@@ -91,7 +91,8 @@
     const age        = parseInt(document.getElementById("applyAge").value, 10);
     const experience = document.getElementById("applyExperience").value;
     const apps       = Array.from(form.querySelectorAll('input[name="apps"]:checked')).map(function (cb) { return cb.value; });
-    const agreeTerms = document.getElementById("applyTerms").checked;
+    const agreeTerms      = document.getElementById("applyTerms").checked;
+    const agreeSmsConsent = document.getElementById("applySmsConsent").checked;
 
     if (isNaN(age) || age < 18 || age > 100) {
       statusEl.textContent = "Please enter a valid age.";
@@ -107,6 +108,12 @@
 
     if (!agreeTerms) {
       statusEl.textContent = "You must agree to the Rental Terms & Conditions.";
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!agreeSmsConsent) {
+      statusEl.textContent = "You must agree to receive SMS booking notifications.";
       statusEl.className = "apply-status error";
       return;
     }
@@ -143,6 +150,7 @@
           experience,
           apps,
           agreeTerms,
+          agreeSmsConsent,
           licenseFileName: licenseFile.name,
           licenseMimeType: licenseFile.type,
           licenseBase64,
