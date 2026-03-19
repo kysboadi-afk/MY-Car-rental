@@ -1967,6 +1967,49 @@ span.flatpickr-weekday {
 
 #chat-send:hover { background: #e0a000; }
 
+/* Quick-reply chip row shown after the welcome message */
+.chat-quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.chat-chip {
+  background: #222;
+  border: 1px solid #ffb400;
+  color: #ffb400;
+  border-radius: 20px;
+  padding: 5px 11px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.chat-chip:hover {
+  background: #ffb400;
+  color: #000;
+}
+
+/* "Apply Now" link embedded inside bot messages */
+.chat-apply-link {
+  display: inline-block;
+  margin-top: 6px;
+  background: #ffb400;
+  color: #000;
+  font-weight: bold;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.chat-apply-link:hover {
+  background: #e0a000;
+}
+
 @media (max-width: 600px) {
   .vehicle-promo-banner {
     padding: 20px 16px 16px;
