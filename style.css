@@ -2505,6 +2505,26 @@ button.hero-btn {
   cursor: not-allowed;
 }
 
+.apply-back-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: transparent;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.apply-back-btn:hover {
+  background: #ffb400;
+  color: #000;
+}
+
 .apply-phone-row {
   display: flex;
   gap: 8px;

@@ -43,6 +43,7 @@
 
   document.getElementById("applyNowBtn").addEventListener("click", openModal);
   closeBtn.addEventListener("click", closeModal);
+  document.getElementById("applyBackBtn").addEventListener("click", closeModal);
 
   // Expose openModal globally so other scripts (e.g. chatbot) can trigger it.
   window.openApplyModal = openModal;
