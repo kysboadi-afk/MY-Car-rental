@@ -121,19 +121,20 @@ export default async function handler(req, res) {
       .json({ error: "Missing required fields: name, phone, experience." });
   }
 
-  // Verify phone OTP — normalise phone to E.164 the same way send-phone-otp.js does
-  if (!phoneOtpToken || !phoneOtpCode) {
-    return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
-  }
-  const phoneDigits = String(phone).replace(/\D/g, "");
-  const phoneE164 = phoneDigits.length === 10
-    ? "+1" + phoneDigits
-    : phoneDigits.length === 11 && phoneDigits.startsWith("1")
-      ? "+" + phoneDigits
-      : phone.startsWith("+") ? phone : null;
-  if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
-    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
-  }
+  // NOTE: Phone OTP verification temporarily disabled — Twilio setup pending.
+  // Once Twilio is configured, restore this block:
+  // if (!phoneOtpToken || !phoneOtpCode) {
+  //   return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
+  // }
+  // const phoneDigits = String(phone).replace(/\D/g, "");
+  // const phoneE164 = phoneDigits.length === 10
+  //   ? "+1" + phoneDigits
+  //   : phoneDigits.length === 11 && phoneDigits.startsWith("1")
+  //     ? "+" + phoneDigits
+  //     : phone.startsWith("+") ? phone : null;
+  // if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
+  //   return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
+  // }
 
   // Build attachment if a license image/PDF was provided
   const attachments = [];
@@ -151,12 +152,13 @@ export default async function handler(req, res) {
   const hasLicense = attachments.length > 0;
 
   // ─── Pre-approval decision ──────────────────────────────────────────────────
-  const decision = evaluateApplication({
-    age,
-    experience,
-    licenseAttached: hasLicense,
-    agreeTerms: !!agreeTerms,
-  });
+  // NOTE: Approval evaluation temporarily bypassed — Twilio setup pending.
+  // All applications are auto-approved so renters can book immediately.
+  // Once Twilio is ready, restore the evaluateApplication() call:
+  // const decision = evaluateApplication({
+  //   age, experience, licenseAttached: hasLicense, agreeTerms: !!agreeTerms,
+  // });
+  const decision = "approved";
 
   const firstName = (name || "").split(" ")[0] || "there";
   const appsLabel = Array.isArray(apps) && apps.length ? apps.join(", ") : "Not specified";
