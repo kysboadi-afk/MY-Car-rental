@@ -245,6 +245,30 @@ function isValidName(val) {
   });
 }());
 
+// ----- Pre-fill from Apply Now application (localStorage) -----
+// When an applicant submits the "Apply Now" form on index.html their name and
+// phone are stored in localStorage under "slyApplicant".  If that data exists
+// we pre-fill the corresponding booking-form fields so they don't have to
+// re-type the same information after they are approved.
+(function prefillFromApplication() {
+  try {
+    const stored = localStorage.getItem("slyApplicant");
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    const nameField  = document.getElementById("name");
+    const phoneField = document.getElementById("phone");
+    if (data.name && nameField && !nameField.value) {
+      nameField.value = data.name;
+      // updatePayBtn is hoisted (function declaration) so it is safe to call here
+      updatePayBtn();
+    }
+    if (data.phone && phoneField && !phoneField.value) {
+      phoneField.value = data.phone;
+      updatePayBtn();
+    }
+  } catch (_) { /* localStorage may be blocked in private mode */ }
+}());
+
 // Also sanitize the signature input so it only accepts valid name characters
 (function setupSignatureField() {
   const sigInput = document.getElementById('signatureInput');

@@ -2281,3 +2281,164 @@ span.flatpickr-weekday {
     font-size: 28px;
   }
 }
+
+/* ─── APPLY NOW MODAL ─────────────────────────────────────────────────────── */
+
+/* Allow the hero "Apply Now" to work as a <button> element */
+button.hero-btn {
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.apply-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.apply-modal-box {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 500px;
+  position: relative;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+}
+
+.apply-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 26px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.apply-modal-close:hover { color: #fff; }
+
+.apply-modal-box h2 {
+  font-size: 26px;
+  color: #ffb400;
+  margin-bottom: 8px;
+}
+
+.apply-modal-sub {
+  font-size: 14px;
+  color: #aaa;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.apply-field {
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apply-field label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.apply-required { color: #f44336; }
+
+.apply-field input[type="text"],
+.apply-field input[type="tel"],
+.apply-field select {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px 12px;
+  font-size: 15px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.apply-field input[type="text"]:focus,
+.apply-field input[type="tel"]:focus,
+.apply-field select:focus {
+  border-color: #ffb400;
+  outline: none;
+}
+
+.apply-field select option { background: #1a1a1a; }
+
+.apply-file-label {
+  display: inline-block;
+  background: #222;
+  border: 1px dashed #555;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #ccc;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.apply-file-label:hover {
+  border-color: #ffb400;
+  color: #ffb400;
+}
+
+/* Hide the native file picker — the styled label above triggers it */
+.apply-field input[type="file"] { display: none; }
+
+.apply-file-info {
+  font-size: 13px;
+  min-height: 18px;
+  display: block;
+}
+
+.apply-status {
+  font-size: 14px;
+  min-height: 20px;
+  text-align: center;
+  margin: 0 0 12px;
+}
+
+.apply-status.error   { color: #f44336; }
+.apply-status.sending { color: #aaa; }
+
+.apply-submit-btn {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.apply-submit-btn:hover:not(:disabled) {
+  background: #e0a000;
+  transform: scale(1.02);
+}
+
+.apply-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 540px) {
+  .apply-modal-box { padding: 30px 20px; }
+}

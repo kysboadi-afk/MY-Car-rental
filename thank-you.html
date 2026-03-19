@@ -151,10 +151,12 @@
   <script src="chatbot.js"></script>
   <script>
     // If the user arrived from the contact form, "Fill Again" should go back there.
-    const fromContact = new URLSearchParams(window.location.search).get("from") === "contact";
-    if (fromContact) {
-      const btn = document.getElementById("fillAgainBtn");
-      if (btn) { btn.href = "contact.html"; }
+    // "Fill Again" destination depends on which form brought the user here.
+    const fromParam = new URLSearchParams(window.location.search).get("from");
+    const btn = document.getElementById("fillAgainBtn");
+    if (btn) {
+      if (fromParam === "contact") btn.href = "contact.html";
+      else if (fromParam === "apply") btn.href = "index.html";
     }
   </script>
 </body>
