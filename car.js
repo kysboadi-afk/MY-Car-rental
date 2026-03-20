@@ -432,7 +432,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     const carPart    = `<strong>${carData.name}</strong>`;
     const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
     const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
-    intro.innerHTML  = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
+    const lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+    if (lang === "es") {
+      intro.innerHTML = `Este Contrato de Alquiler es celebrado entre SLY Transportation Services ("Empresa") y ${namePart} ("Arrendatario") para el alquiler de ${carPart} desde ${pickPart} hasta ${retPart}.`;
+    } else {
+      intro.innerHTML = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
+    }
   }
 
   // Populate vehicle details section
@@ -457,27 +462,47 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  const depositLang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
   if (carData.hourlyTiers) {
     if (depositHeadingEl) depositHeadingEl.style.display = "";
-    if (depositIntroEl) depositIntroEl.innerHTML =
-      `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
-      `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
-      `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
-    if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
-    if (depositNeitherEl) {
-      const rateList = carData.hourlyTiers
-        ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
-        : "";
-      depositNeitherEl.innerHTML =
-        `<strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${carData.deposit} refundable security deposit (included in payment)`;
+    if (depositLang === "es") {
+      if (depositIntroEl) depositIntroEl.innerHTML =
+        `Se incluye un <strong>dep\u00F3sito de seguridad reembolsable de $${carData.deposit}</strong> en el pago del alquiler ` +
+        `y se devuelve tras la inspecci\u00F3n del veh\u00EDculo al devolverlo (normalmente en 5\u20137 d\u00EDas h\u00E1biles). ` +
+        `El dep\u00F3sito cubre da\u00F1os, p\u00E9rdida de uso, limpieza, peajes y combustible.`;
+      if (depositDppEl) { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Plan de Protecci\u00F3n de Da\u00F1os ($13/d\u00EDa &bull; $85/semana &bull; $150/2 sem &bull; $295/mes):</strong> complemento opcional &mdash; reduce tu responsabilidad por da\u00F1os a $1,000"; }
+      if (depositNeitherEl) {
+        const rateList = carData.hourlyTiers
+          ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
+          : "";
+        depositNeitherEl.innerHTML =
+          `<strong>Tarifas de Alquiler Slingshot:</strong> ${rateList} &mdash; m\u00E1s dep\u00F3sito de seguridad reembolsable de $${carData.deposit} (incluido en el pago)`;
+      }
+    } else {
+      if (depositIntroEl) depositIntroEl.innerHTML =
+        `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
+        `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
+        `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
+      if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+      if (depositNeitherEl) {
+        const rateList = carData.hourlyTiers
+          ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
+          : "";
+        depositNeitherEl.innerHTML =
+          `<strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${carData.deposit} refundable security deposit (included in payment)`;
+      }
     }
+    if (depositInsEl) depositInsEl.style.display = "none";
   } else {
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
-    if (depositIntroEl) depositIntroEl.textContent =
-      "No security deposit is required for this vehicle.";
+    if (depositLang === "es") {
+      if (depositIntroEl) depositIntroEl.textContent = "No se requiere dep\u00F3sito de seguridad para este veh\u00EDculo.";
+      if (depositDppEl) { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Plan de Protecci\u00F3n de Da\u00F1os ($13/d\u00EDa &bull; $85/semana &bull; $150/2 sem &bull; $295/mes):</strong> complemento opcional &mdash; reduce tu responsabilidad por da\u00F1os a $1,000"; }
+    } else {
+      if (depositIntroEl) depositIntroEl.textContent = "No security deposit is required for this vehicle.";
+      if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    }
     if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
   }
 
@@ -492,6 +517,9 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   }
 
   document.getElementById("rentalAgreementBox").style.display = "";
+  if (window.slyI18n && typeof window.slyI18n.applyTranslations === "function") {
+    window.slyI18n.applyTranslations();
+  }
   this.style.display = "none";
   document.getElementById("signAgreementStatus").style.display = "none";
 });
