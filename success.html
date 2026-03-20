@@ -7,6 +7,7 @@
   <title>Payment Successful | Sly Transportation Services LLC</title>
   <link rel="icon" href="images/logo.jpg" type="image/jpeg">
   <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
   <style>
     .message-box {
       max-width: 600px;
@@ -49,9 +50,9 @@
     <h1 id="messageTitle" data-i18n="success.title">✅ Payment Successful!</h1>
     <p id="messageBody" data-i18n="success.body">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
     <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px" data-i18n="success.sending">Sending confirmation…</p>
-    <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5" data-i18n="success.homeBtn">Back to Homepage</a>
+    <a id="homeBtn" href="cars.html" style="pointer-events:none;opacity:0.5" data-i18n="success.homeBtn">Return to Checkout</a>
     <br><br>
-    <a id="homeLinkSecondary" href="index.html" style="display:none;background:#333;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="success.homeBtn">Back to Homepage</a>
+    <a id="homeLinkSecondary" href="index.html" style="display:none;background:#333;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="nav.home">Back to Homepage</a>
   </div>
   <footer>
     &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
@@ -69,24 +70,45 @@
     //  1. Checkout Session flow (session_id in URL):
     //       Call /api/verify-session?session_id=cs_... server-side to retrieve
     //       the actual payment_status from Stripe.  Only proceed on "paid".
-    //       This prevents Cash App Pay QR-scan-but-not-pay false positives.
     //
-    //  2. Payment Elements flow (redirect_status in URL, no session_id):
-    //       Check Stripe's redirect_status URL param:
-    //         succeeded  → proceed (normal happy path)
-    //         processing → payment is pending; do NOT send confirmation
-    //         failed / requires_payment_method → payment failed
-    //         any other / absent → treat as failed
+    //  2. Payment Elements flow (payment_intent_client_secret in URL):
+    //       Use stripe.retrievePaymentIntent(clientSecret) via Stripe.js to
+    //       get the authoritative paymentIntent.status from Stripe.
+    //         succeeded                → proceed
+    //         processing               → payment pending; do NOT send confirmation
+    //         requires_payment_method  → payment failed
+    //         any other                → treat as failed
+    //       Falls back to redirect_status URL param if the publishable key is
+    //       not available in sessionStorage.
+    //
+    //  3. Direct redirect for all payment methods (slyPiSecret in sessionStorage):
+    //       car.js saves the PaymentIntent client secret for ALL payment methods
+    //       (Apple Pay, Google Pay, card, Cash App, etc.) that redirect to this
+    //       page without Stripe appending URL params.  The same
+    //       stripe.retrievePaymentIntent() check is performed using the stored secret.
+    //
+    //  4. redirect_status fallback:
+    //       Checked last; used when the publishable key was not cached and no
+    //       Stripe.js verification could be performed.
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
 
-      // Build a "Try Again" href using the vehicle query param so we can send
-      // the user straight back to their booking.
+      // Build a "Return to Checkout" / "Try Again" href using the vehicle query
+      // param so we can send the user straight back to their booking.
       var urlParams = new URLSearchParams(window.location.search);
       var vehicleId = urlParams.get("vehicle");
       var tryAgainHref = vehicleId
         ? "car.html?vehicle=" + encodeURIComponent(vehicleId)
         : "cars.html";
+
+      // Read and immediately clear the stored PaymentIntent client secret so it
+      // cannot be replayed.  Used by Path 3 when Stripe did not append URL params.
+      var storedPiSecret = sessionStorage.getItem("slyPiSecret");
+      sessionStorage.removeItem("slyPiSecret");
+
+      function getT() {
+        return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+      }
 
       function enableHomeBtn(isRetry) {
         var btn = document.getElementById("homeBtn");
@@ -95,19 +117,22 @@
         if (btn) {
           btn.style.pointerEvents = "";
           btn.style.opacity = "";
+          // Always link back to the checkout/booking page (success or retry).
+          btn.href = tryAgainHref;
+          var t = getT();
           if (isRetry) {
-            var t = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
-            btn.href = tryAgainHref;
             btn.textContent = t("success.tryAgain");
-            // Show the secondary "Back to Homepage" link so the user has both options
+            // Show secondary "Back to Homepage" link for both options.
             if (secondary) { secondary.style.display = ""; }
+          } else {
+            btn.textContent = t("success.homeBtn"); // "Return to Checkout"
           }
         }
         if (status) { status.style.display = "none"; }
       }
 
       function showPaymentFailed() {
-        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+        var t      = getT();
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
@@ -117,7 +142,7 @@
       }
 
       function showPaymentProcessing() {
-        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+        var t      = getT();
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
@@ -127,7 +152,7 @@
       }
 
       function showEmailError() {
-        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+        var t      = getT();
         var status = document.getElementById("emailStatus");
         if (status) {
           status.textContent = t("success.emailError");
@@ -154,9 +179,6 @@
 
       // Retrieve the ID and insurance attachments from IndexedDB, merge into the
       // payload, then call sendEmail() exactly once.
-      // car.js saves both files together under the "pendingId" key so a single
-      // read is sufficient.  Any leftover "pendingInsurance" key is also deleted
-      // as part of cleanup to keep the store tidy.
       function loadFilesAndSendEmail(data) {
         try {
           var openReq = indexedDB.open("slyRidesDB", 1);
@@ -207,29 +229,42 @@
         loadFilesAndSendEmail(data);
       }
 
+      // Shared handler for redirect_status URL parameter (fallback path).
+      function handleRedirectStatus() {
+        var redirectStatus = urlParams.get("redirect_status");
+        if (redirectStatus === "succeeded") {
+          proceedWithConfirmation();
+        } else if (redirectStatus === "processing") {
+          sessionStorage.removeItem("slyRidesBooking");
+          showPaymentProcessing();
+          enableHomeBtn(true);
+        } else {
+          // failed, requires_payment_method, absent, or unknown → treat as failure.
+          sessionStorage.removeItem("slyRidesBooking");
+          showPaymentFailed();
+          enableHomeBtn(true);
+        }
+      }
+
       // ── Path 1: Checkout Session flow ─────────────────────────────────────
       // When session_id is present, verify payment status server-side via
       // /api/verify-session.  This is the authoritative check and cannot be
       // forged by manipulating URL parameters.
       var sessionId = urlParams.get("session_id");
       if (sessionId) {
-        var t = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
         var statusEl = document.getElementById("emailStatus");
-        if (statusEl) { statusEl.textContent = t("success.verifying"); }
+        if (statusEl) { statusEl.textContent = getT()("success.verifying"); }
 
         fetch(API_BASE + "/api/verify-session?session_id=" + encodeURIComponent(sessionId))
           .then(function (res) { return res.json(); })
           .then(function (body) {
             if (body.payment_status === "paid") {
-              // Confirmed paid — show success UI and send confirmation email.
               proceedWithConfirmation();
             } else if (body.payment_status === "unpaid" || body.payment_status === "no_payment_required") {
-              // Payment was not completed (e.g. Cash App QR scanned but abandoned).
               sessionStorage.removeItem("slyRidesBooking");
               showPaymentFailed();
               enableHomeBtn(true);
             } else {
-              // Any other status (e.g. "processing" for delayed methods).
               sessionStorage.removeItem("slyRidesBooking");
               showPaymentProcessing();
               enableHomeBtn(true);
@@ -237,40 +272,114 @@
           })
           .catch(function (err) {
             console.error("verify-session error:", err);
-            // Network/server error — fall back to showing the pending state so
-            // the customer is not incorrectly shown a success or failure page.
             sessionStorage.removeItem("slyRidesBooking");
             showPaymentProcessing();
             enableHomeBtn(true);
           });
-        return; // ← Checkout Session path handled; do not fall through
+        return;
       }
 
-      // ── Path 2: Payment Elements flow (redirect_status) ───────────────────
-      // Check Stripe's redirect_status param before doing anything else.
-      // IMPORTANT: emails and date-blocking must ONLY happen on "succeeded".
-      // Any other value — including absent — must never trigger confirmation
-      // emails, because redirect-based methods (CashApp, Apple Pay, etc.) always
-      // include redirect_status; an absent value means the user navigated here
-      // directly or an unexpected state occurred.
-      var redirectStatus = urlParams.get("redirect_status");
+      // ── Path 2: Payment Elements flow (payment_intent_client_secret) ──────
+      // Use stripe.retrievePaymentIntent() for the authoritative status instead
+      // of trusting the redirect_status URL param alone, which could be
+      // manipulated.  Falls back to redirect_status if the publishable key is
+      // unavailable (e.g. user opened the link in a new tab).
+      var piClientSecret = urlParams.get("payment_intent_client_secret");
+      if (piClientSecret) {
+        var statusEl2 = document.getElementById("emailStatus");
+        if (statusEl2) { statusEl2.textContent = getT()("success.verifying"); }
 
-      if (redirectStatus !== "succeeded") {
-        sessionStorage.removeItem("slyRidesBooking");
-        if (redirectStatus === "processing") {
-          // Payment is not yet confirmed — show pending message, no email sent.
-          showPaymentProcessing();
-          enableHomeBtn(true);
-        } else {
-          // failed, requires_payment_method, absent, or any unknown value
-          // → treat as failure; offer "Try Again" back to the booking page.
-          showPaymentFailed();
-          enableHomeBtn(true);
+        var pubKey = sessionStorage.getItem("slyStripePublishable");
+        // storedPiSecret was already cleared at the top of this IIFE;
+        // Path 3 only runs when payment_intent_client_secret is absent from the
+        // URL, so there is no double-use concern.
+        if (pubKey && typeof Stripe !== "undefined") {
+          var stripe = Stripe(pubKey);
+          stripe.retrievePaymentIntent(piClientSecret).then(function (result) {
+            if (result.error) {
+              console.error("retrievePaymentIntent error:", result.error);
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+              return;
+            }
+            var piStatus = result.paymentIntent.status;
+            if (piStatus === "succeeded") {
+              proceedWithConfirmation();
+            } else if (piStatus === "processing") {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            } else {
+              // requires_payment_method, requires_action, canceled, etc.
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            }
+          }).catch(function (err) {
+            console.error("retrievePaymentIntent network error:", err);
+            // Network failure — fall back to the redirect_status param.
+            handleRedirectStatus();
+          });
+          return;
         }
-        return; // ← exits here; sendEmail() is never called
+        // Publishable key not cached (e.g. direct link); fall back to
+        // redirect_status which Stripe also includes in the URL.
+        handleRedirectStatus();
+        return;
       }
-      // redirectStatus === "succeeded" → proceed
-      proceedWithConfirmation();
+
+      // ── Path 3: Direct success redirect (all payment methods) ─────────────
+      // car.js saves the PaymentIntent client secret to sessionStorage as
+      // "slyPiSecret" for ALL payment methods (Apple Pay, Google Pay, card,
+      // Cash App, etc.) that redirect to this page without Stripe appending
+      // URL params.  The secret was read and cleared at the top of this IIFE.
+      if (storedPiSecret) {
+        var statusEl3 = document.getElementById("emailStatus");
+        if (statusEl3) { statusEl3.textContent = getT()("success.verifying"); }
+
+        var pubKey3 = sessionStorage.getItem("slyStripePublishable");
+        if (pubKey3 && typeof Stripe !== "undefined") {
+          var stripe3 = Stripe(pubKey3);
+          stripe3.retrievePaymentIntent(storedPiSecret).then(function (result) {
+            if (result.error) {
+              console.error("retrievePaymentIntent (stored) error:", result.error);
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+              return;
+            }
+            var piStatus3 = result.paymentIntent.status;
+            if (piStatus3 === "succeeded") {
+              proceedWithConfirmation();
+            } else if (piStatus3 === "processing") {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            }
+          }).catch(function (err) {
+            console.error("retrievePaymentIntent (stored) network error:", err);
+            sessionStorage.removeItem("slyRidesBooking");
+            showPaymentFailed();
+            enableHomeBtn(true);
+          });
+          return;
+        }
+        // Publishable key unavailable — treat as failure (cannot verify).
+        sessionStorage.removeItem("slyRidesBooking");
+        showPaymentFailed();
+        enableHomeBtn(true);
+        return;
+      }
+
+      // ── Path 4: redirect_status fallback ──────────────────────────────────
+      // Used when none of the above paths matched (e.g. user navigated directly
+      // to this page).  Treat absent redirect_status as a failed payment.
+      handleRedirectStatus();
     })();
   </script>
 </body>
