@@ -24,7 +24,7 @@
 
 <div class="container">
 
-  <button id="backBtn" class="back-btn">⬅ Back to Cars</button>
+  <button id="backBtn" class="back-btn" data-i18n="booking.backToCars">⬅ Back to Cars</button>
 
   <div class="car-slider" id="carSlider">
     <div class="slider" id="sliderContainer">
@@ -61,7 +61,7 @@
   <section class="booking">
     <h2>Complete Your Reservation</h2>
 
-    <label for="pickup">Pickup Date</label>
+    <label for="pickup" data-i18n="booking.pickupDate">Pickup Date</label>
     <input type="date" id="pickup">
 
     <label for="pickupTime">Pickup Time</label>
@@ -75,27 +75,27 @@
 
     <!-- Return date/time: user-selected for daily vehicles; auto-computed for Slingshot -->
     <div id="returnDateSection">
-      <label for="return">Return Date</label>
+      <label for="return" data-i18n="booking.returnDate">Return Date</label>
       <input type="date" id="return">
 
       <label for="returnTime">Return Time <span class="field-note" id="returnTimeNote">(same as pickup time)</span></label>
       <input type="time" id="returnTime" readonly>
     </div>
 
-    <label for="name">Full Name</label>
+    <label for="name" data-i18n="booking.fullName">Full Name</label>
     <input type="text" id="name" placeholder="Enter your full name" autocomplete="off" required>
     <span class="field-error" id="nameError" style="display:none"></span>
 
-    <label for="email">Email Address</label>
+    <label for="email" data-i18n="booking.email">Email Address</label>
     <input type="email" id="email" placeholder="Enter your email" autocomplete="email">
 
-    <label for="phone">Phone Number</label>
+    <label for="phone" data-i18n="booking.phone">Phone Number</label>
     <input type="tel" id="phone" placeholder="Enter your phone number" autocomplete="tel">
 
     <p class="sms-consent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
 
     <div class="id-upload-section">
-      <label for="idUpload">📎 Upload Driver's License / ID <span class="required">*</span></label>
+      <label for="idUpload"><span data-i18n="booking.uploadId">📎 Upload Driver's License / ID</span> <span class="required">*</span></label>
       <p class="id-note">A valid government-issued ID is required to confirm your rental.</p>
       <input type="file" id="idUpload" accept=".jpg,.jpeg,.png,.pdf">
       <div id="fileInfo">
@@ -248,8 +248,8 @@
         </div>
 
         <div class="signature-area">
-          <label for="signatureInput">Type your full legal name to sign:</label>
-          <input type="text" id="signatureInput" class="signature-input" placeholder="Your full name" autocomplete="off">
+          <label for="signatureInput" data-i18n="booking.signaturePh">Type your full legal name to sign:</label>
+          <input type="text" id="signatureInput" class="signature-input" placeholder="Your full name" data-i18n-placeholder="booking.signaturePh" autocomplete="off">
           <p id="signatureError" class="signature-error" style="display:none"></p>
           <p class="signature-note">Typing your name above constitutes your legal electronic signature.</p>
           <div class="agreement-btn-row">

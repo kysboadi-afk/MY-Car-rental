@@ -130,3 +130,70 @@ export function computeAmount(vehicleId, pickup, returnDate) {
   cost += remaining * car.pricePerDay;
   return cost + (car.deposit || 0);
 }
+
+/**
+ * Compute human-readable pricing breakdown lines for a daily/weekly rental.
+ * Uses the same greedy tier logic as computeAmount.
+ * @param {string} vehicleId   - key from CARS
+ * @param {string} pickup      - ISO date string
+ * @param {string} returnDate  - ISO date string
+ * @param {boolean} [protectionPlan=false] - whether the renter opted in to DPP
+ * @returns {string[]|null} array of plain-text line items, or null if vehicleId unknown
+ *
+ * Example output for a 10-day camry rental with DPP:
+ *   ["1 × Weekly ($350/week): $350", "3 × Daily ($50/day): $150",
+ *    "Damage Protection Plan: $98", "Total: $598"]
+ */
+export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionPlan = false) {
+  const car = CARS[vehicleId];
+  if (!car) return null;
+  // Hourly-tier vehicles (Slingshot) do not use daily/weekly pricing
+  if (car.hourlyTiers) return null;
+
+  const lines = [];
+  let remaining = computeRentalDays(pickup, returnDate);
+
+  if (car.monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    const subtotal = months * car.monthly;
+    lines.push(`${months} × Monthly ($${car.monthly}/month): $${subtotal}`);
+    remaining = remaining % 30;
+  }
+  if (car.biweekly && remaining >= 14) {
+    const twoWeeks = Math.floor(remaining / 14);
+    const subtotal = twoWeeks * car.biweekly;
+    lines.push(`${twoWeeks} × Bi-weekly ($${car.biweekly}/2 weeks): $${subtotal}`);
+    remaining = remaining % 14;
+  }
+  if (car.weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    const subtotal = weeks * car.weekly;
+    lines.push(`${weeks} × Weekly ($${car.weekly}/week): $${subtotal}`);
+    remaining = remaining % 7;
+  }
+  if (remaining > 0) {
+    const subtotal = remaining * car.pricePerDay;
+    lines.push(`${remaining} × Daily ($${car.pricePerDay}/day): $${subtotal}`);
+  }
+
+  if (car.deposit) {
+    lines.push(`Security Deposit: $${car.deposit}`);
+  }
+
+  if (protectionPlan) {
+    const days = computeRentalDays(pickup, returnDate);
+    const dppCost = computeProtectionPlanCost(days);
+    lines.push(`Damage Protection Plan: $${dppCost}`);
+  }
+
+  const totalDays = computeRentalDays(pickup, returnDate);
+  const rentalCost = computeAmount(vehicleId, pickup, returnDate);
+  const dppCost = protectionPlan ? computeProtectionPlanCost(totalDays) : 0;
+  const preTax = rentalCost + dppCost;
+  const tax = Math.round(preTax * LA_TAX_RATE * 100) / 100;
+  const total = Math.round((preTax + tax) * 100) / 100;
+  lines.push(`Tax (${(LA_TAX_RATE * 100).toFixed(2)}% LA): $${tax.toFixed(2)}`);
+  lines.push(`Total: $${total.toFixed(2)}`);
+
+  return lines;
+}
