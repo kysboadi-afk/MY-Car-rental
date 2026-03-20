@@ -1084,19 +1084,6 @@ function updateTotal() {
 
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
-  // Guard: only approved renters may proceed to payment (including Apple Pay).
-  let applicant = null;
-  try { applicant = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
-  if (!applicant || applicant.decision !== "approved") {
-    const msg = applicant && applicant.decision === "review"
-      ? "Your application is still under review. You\u2019ll receive an SMS once you\u2019re approved."
-      : applicant && applicant.decision === "declined"
-        ? "Your application was not approved. Please call (213)\u00a0916-6606 for more information."
-        : "You must be an approved renter before booking. Please apply on our home page.";
-    alert(msg);
-    return;
-  }
-
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
   const phone = document.getElementById("phone").value.trim();
