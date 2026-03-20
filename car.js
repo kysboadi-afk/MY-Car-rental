@@ -45,7 +45,7 @@ const cars = {
     name: "Camry 2012",
     subtitle: "",
     pricePerDay: 50,
-    minRentalDays: 7,
+    minRentalDays: 1,
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
@@ -60,7 +60,7 @@ const cars = {
     name: "Camry 2013 SE",
     subtitle: "",
     pricePerDay: 55,
-    minRentalDays: 7,
+    minRentalDays: 1,
     weekly: 350,
     biweekly: 650,
     monthly: 1300,
@@ -108,8 +108,8 @@ document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent = carData.subtitle;
 document.getElementById("carPrice").textContent = (carData.hourlyTiers)
   ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours}hrs`).join(" \u2022 ")
-  : (carData.minRentalDays > 1)
-    ? `from $${carData.weekly} / week`
+  : (carData.weekly)
+    ? `$${carData.pricePerDay} / day \u2022 from $${carData.weekly} / week`
     : `$${carData.pricePerDay} / day`;
 
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block

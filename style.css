@@ -119,6 +119,59 @@ body {
   color: #fff;
 }
 
+/* LANGUAGE SWITCHER */
+.lang-switcher {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #aaa;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+
+.lang-btn:hover {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #ffb400;
+}
+
+.lang-btn.active {
+  background: #ffb400;
+  color: #000;
+  border-color: #ffb400;
+}
+
+.lang-flag {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.lang-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 480px) {
+  .lang-label { display: none; }
+  .lang-btn { padding: 5px 7px; }
+}
+
 /* HERO */
 .hero {
   overflow: hidden;
