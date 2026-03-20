@@ -59,8 +59,19 @@ export default async function handler(req, res) {
       ],
       mode: "payment",
       customer_email: email,
-      success_url: "https://www.slytrans.com/success.html",
-      cancel_url: "https://www.slytrans.com/cancel.html",
+      // {CHECKOUT_SESSION_ID} is replaced by Stripe with the actual session ID so
+      // success.html can retrieve the session and verify payment_status server-side.
+      success_url: `https://www.slytrans.com/success.html?session_id={CHECKOUT_SESSION_ID}&vehicle=${encodeURIComponent(vehicleId)}`,
+      cancel_url: `https://www.slytrans.com/cancel.html?vehicle=${encodeURIComponent(vehicleId)}`,
+      // Store booking metadata so the Stripe dashboard is auditable and the
+      // stripe-webhook handler can identify the booking.
+      metadata: {
+        vehicle_id:   vehicleId,
+        vehicle_name: carData.name,
+        pickup_date:  pickup,
+        return_date:  returnDate,
+        email,
+      },
     });
 
     res.status(200).json({ url: session.url });

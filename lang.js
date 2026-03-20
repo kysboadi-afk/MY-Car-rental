@@ -307,7 +307,8 @@
         pendingTitle: "\u23F3 Payment Processing",
         pendingBody:  "Your payment is being processed. We will email you once it is confirmed. Please do not re-submit.",
         emailError: "We couldn\u2019t send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.",
-        tryAgain:  "Try Booking Again"
+        tryAgain:  "Try Booking Again",
+        verifying: "Verifying payment\u2026"
       },
       // cancel.html
       cancel: {
@@ -637,7 +638,8 @@
         pendingTitle: "\u23F3 Pago en Proceso",
         pendingBody:  "Tu pago est\u00E1 siendo procesado. Te enviaremos un correo una vez que sea confirmado. Por favor no vuelvas a enviar.",
         emailError: "No pudimos enviar tu correo de confirmaci\u00F3n autom\u00E1ticamente. Por favor cont\u00E1ctanos en slyservices@supports-info.com para confirmar tu reserva.",
-        tryAgain:  "Intentar Reservar de Nuevo"
+        tryAgain:  "Intentar Reservar de Nuevo",
+        verifying: "Verificando pago\u2026"
       },
       cancel: {
         title:   "\u274C Pago Cancelado",

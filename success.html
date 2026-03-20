@@ -62,16 +62,24 @@
     // redirect; the large ID binary was saved separately in IndexedDB to avoid
     // sessionStorage's ~5 MB size cap.
     //
-    // Always check Stripe's redirect_status URL param first:
-    //   succeeded  → proceed (normal happy path)
-    //   processing → payment is pending; do NOT block dates or send confirmation
-    //   failed / requires_payment_method → payment failed; clear sessionStorage
-    //   any other / absent → treat as failed; do NOT send email
+    // Payment verification strategy (in order):
+    //
+    //  1. Checkout Session flow (session_id in URL):
+    //       Call /api/verify-session?session_id=cs_... server-side to retrieve
+    //       the actual payment_status from Stripe.  Only proceed on "paid".
+    //       This prevents Cash App Pay QR-scan-but-not-pay false positives.
+    //
+    //  2. Payment Elements flow (redirect_status in URL, no session_id):
+    //       Check Stripe's redirect_status URL param:
+    //         succeeded  → proceed (normal happy path)
+    //         processing → payment is pending; do NOT send confirmation
+    //         failed / requires_payment_method → payment failed
+    //         any other / absent → treat as failed
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
 
-      // Build a "Try Again" href using the vehicle query param car.js embeds in
-      // the return_url so we can send the user straight back to their booking.
+      // Build a "Try Again" href using the vehicle query param so we can send
+      // the user straight back to their booking.
       var urlParams = new URLSearchParams(window.location.search);
       var vehicleId = urlParams.get("vehicle");
       var tryAgainHref = vehicleId
@@ -113,6 +121,127 @@
         if (status) status.style.display = "none";
       }
 
+      function showEmailError() {
+        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+        var status = document.getElementById("emailStatus");
+        if (status) {
+          status.textContent = t("success.emailError");
+          status.style.color = "#ff9800";
+          status.style.display = "";
+        }
+      }
+
+      function sendEmail(data) {
+        if (!data || typeof data !== "object") { enableHomeBtn(); return; }
+        fetch(API_BASE + "/api/send-reservation-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        }).then(function (res) {
+          if (!res.ok) { showEmailError(); }
+          enableHomeBtn();
+        }).catch(function (err) {
+          console.error("Reservation email error:", err);
+          showEmailError();
+          enableHomeBtn();
+        });
+      }
+
+      // Retrieve the ID and insurance attachments from IndexedDB, merge into the
+      // payload, then call sendEmail() exactly once.
+      // car.js saves both files together under the "pendingId" key so a single
+      // read is sufficient.  Any leftover "pendingInsurance" key is also deleted
+      // as part of cleanup to keep the store tidy.
+      function loadFilesAndSendEmail(data) {
+        try {
+          var openReq = indexedDB.open("slyRidesDB", 1);
+          openReq.onupgradeneeded = function (e) {
+            e.target.result.createObjectStore("files");
+          };
+          openReq.onsuccess = function (e) {
+            var db = e.target.result;
+            try {
+              var tx = db.transaction("files", "readonly");
+              var getReq = tx.objectStore("files").get("pendingId");
+              getReq.onsuccess = function (ev) {
+                var fileData = ev.target.result;
+                if (fileData) {
+                  Object.assign(data, {
+                    idBase64:          fileData.idBase64,
+                    idFileName:        fileData.idFileName,
+                    idMimeType:        fileData.idMimeType,
+                    insuranceBase64:   fileData.insuranceBase64,
+                    insuranceFileName: fileData.insuranceFileName,
+                    insuranceMimeType: fileData.insuranceMimeType,
+                  });
+                }
+                // Clean up both keys, then send exactly one email.
+                try {
+                  var cleanTx = db.transaction("files", "readwrite");
+                  var store = cleanTx.objectStore("files");
+                  store.delete("pendingId");
+                  store.delete("pendingInsurance");
+                  cleanTx.oncomplete = function () { db.close(); sendEmail(data); };
+                  cleanTx.onerror   = function () { db.close(); sendEmail(data); };
+                } catch (err) { db.close(); sendEmail(data); }
+              };
+              getReq.onerror = function () { db.close(); sendEmail(data); };
+            } catch (err) { db.close(); sendEmail(data); }
+          };
+          openReq.onerror = function () { sendEmail(data); };
+        } catch (err) { sendEmail(data); }
+      }
+
+      // Proceed with sending the confirmation email after payment is verified.
+      function proceedWithConfirmation() {
+        var raw = sessionStorage.getItem("slyRidesBooking");
+        if (!raw) { enableHomeBtn(); return; }
+        sessionStorage.removeItem("slyRidesBooking");
+        var data;
+        try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
+        loadFilesAndSendEmail(data);
+      }
+
+      // ── Path 1: Checkout Session flow ─────────────────────────────────────
+      // When session_id is present, verify payment status server-side via
+      // /api/verify-session.  This is the authoritative check and cannot be
+      // forged by manipulating URL parameters.
+      var sessionId = urlParams.get("session_id");
+      if (sessionId) {
+        var t = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+        var statusEl = document.getElementById("emailStatus");
+        if (statusEl) { statusEl.textContent = t("success.verifying"); }
+
+        fetch(API_BASE + "/api/verify-session?session_id=" + encodeURIComponent(sessionId))
+          .then(function (res) { return res.json(); })
+          .then(function (body) {
+            if (body.payment_status === "paid") {
+              // Confirmed paid — show success UI and send confirmation email.
+              proceedWithConfirmation();
+            } else if (body.payment_status === "unpaid" || body.payment_status === "no_payment_required") {
+              // Payment was not completed (e.g. Cash App QR scanned but abandoned).
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            } else {
+              // Any other status (e.g. "processing" for delayed methods).
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            }
+          })
+          .catch(function (err) {
+            console.error("verify-session error:", err);
+            // Network/server error — fall back to showing the pending state so
+            // the customer is not incorrectly shown a success or failure page.
+            sessionStorage.removeItem("slyRidesBooking");
+            showPaymentProcessing();
+            enableHomeBtn(true);
+          });
+        return; // ← Checkout Session path handled; do not fall through
+      }
+
+      // ── Path 2: Payment Elements flow (redirect_status) ───────────────────
       // Check Stripe's redirect_status param before doing anything else.
       // IMPORTANT: emails and date-blocking must ONLY happen on "succeeded".
       // Any other value — including absent — must never trigger confirmation
@@ -136,80 +265,7 @@
         return; // ← exits here; sendEmail() is never called
       }
       // redirectStatus === "succeeded" → proceed
-
-      var raw = sessionStorage.getItem("slyRidesBooking");
-      if (!raw) { enableHomeBtn(); return; }
-      sessionStorage.removeItem("slyRidesBooking");
-      var data;
-      try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
-
-      function showEmailError() {
-        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
-        var status = document.getElementById("emailStatus");
-        if (status) {
-          status.textContent = t("success.emailError");
-          status.style.color = "#ff9800";
-          status.style.display = "";
-        }
-      }
-
-      function sendEmail() {
-        fetch(API_BASE + "/api/send-reservation-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        }).then(function (res) {
-          if (!res.ok) { showEmailError(); }
-          enableHomeBtn();
-        }).catch(function (err) {
-          console.error("Reservation email error:", err);
-          showEmailError();
-          enableHomeBtn();
-        });
-      }
-
-      // Retrieve the ID and insurance attachments from IndexedDB, merge into the payload,
-      // then call sendEmail() exactly once.
-      // car.js saves both files together under the "pendingId" key so a single
-      // read is sufficient.  Any leftover "pendingInsurance" key is also deleted
-      // as part of cleanup to keep the store tidy.
-      try {
-        var openReq = indexedDB.open("slyRidesDB", 1);
-        openReq.onupgradeneeded = function (e) {
-          e.target.result.createObjectStore("files");
-        };
-        openReq.onsuccess = function (e) {
-          var db = e.target.result;
-          try {
-            var tx = db.transaction("files", "readonly");
-            var getReq = tx.objectStore("files").get("pendingId");
-            getReq.onsuccess = function (ev) {
-              var fileData = ev.target.result;
-              if (fileData) {
-                Object.assign(data, {
-                  idBase64:          fileData.idBase64,
-                  idFileName:        fileData.idFileName,
-                  idMimeType:        fileData.idMimeType,
-                  insuranceBase64:   fileData.insuranceBase64,
-                  insuranceFileName: fileData.insuranceFileName,
-                  insuranceMimeType: fileData.insuranceMimeType,
-                });
-              }
-              // Clean up both keys, then send exactly one email.
-              try {
-                var cleanTx = db.transaction("files", "readwrite");
-                var store = cleanTx.objectStore("files");
-                store.delete("pendingId");
-                store.delete("pendingInsurance");
-                cleanTx.oncomplete = function () { db.close(); sendEmail(); };
-                cleanTx.onerror   = function () { db.close(); sendEmail(); };
-              } catch (err) { db.close(); sendEmail(); }
-            };
-            getReq.onerror = function () { db.close(); sendEmail(); };
-          } catch (err) { db.close(); sendEmail(); }
-        };
-        openReq.onerror = function () { sendEmail(); };
-      } catch (err) { sendEmail(); }
+      proceedWithConfirmation();
     })();
   </script>
 </body>
