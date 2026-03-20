@@ -50,6 +50,8 @@
     <p id="messageBody" data-i18n="success.body">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
     <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px" data-i18n="success.sending">Sending confirmation…</p>
     <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5" data-i18n="success.homeBtn">Back to Homepage</a>
+    <br><br>
+    <a id="homeLinkSecondary" href="index.html" style="display:none;background:#333;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="success.homeBtn">Back to Homepage</a>
   </div>
   <footer>
     &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
@@ -89,6 +91,7 @@
       function enableHomeBtn(isRetry) {
         var btn = document.getElementById("homeBtn");
         var status = document.getElementById("emailStatus");
+        var secondary = document.getElementById("homeLinkSecondary");
         if (btn) {
           btn.style.pointerEvents = "";
           btn.style.opacity = "";
@@ -96,6 +99,8 @@
             var t = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
             btn.href = tryAgainHref;
             btn.textContent = t("success.tryAgain");
+            // Show the secondary "Back to Homepage" link so the user has both options
+            if (secondary) { secondary.style.display = ""; }
           }
         }
         if (status) { status.style.display = "none"; }
@@ -132,7 +137,7 @@
       }
 
       function sendEmail(data) {
-        if (!data || typeof data !== "object") { enableHomeBtn(); return; }
+        if (!data || typeof data !== "object" || Array.isArray(data)) { enableHomeBtn(); return; }
         fetch(API_BASE + "/api/send-reservation-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
