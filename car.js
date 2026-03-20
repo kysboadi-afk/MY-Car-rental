@@ -1269,7 +1269,7 @@ stripeBtn.addEventListener("click", async () => {
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://www.slytrans.com/success.html",
+          return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
           receipt_email: email,
           payment_method_data: {
             billing_details: {
