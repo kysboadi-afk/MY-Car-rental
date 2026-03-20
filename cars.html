@@ -14,11 +14,11 @@
 <header class="site-header">
   <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
   <nav class="site-nav">
-    <a href="cars.html">Browse Cars</a>
-    <a href="index.html#how-it-works">How It Works</a>
-    <a href="index.html#reviews">Reviews</a>
-    <a href="index.html#about">About</a>
-    <a href="contact.html">Contact</a>
+    <a href="cars.html" data-i18n="nav.browseCars">Browse Cars</a>
+    <a href="index.html#how-it-works" data-i18n="nav.howItWorks">How It Works</a>
+    <a href="index.html#reviews" data-i18n="nav.reviews">Reviews</a>
+    <a href="index.html#about" data-i18n="nav.about">About</a>
+    <a href="contact.html" data-i18n="nav.contact">Contact</a>
   </nav>
   <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
 </header>
@@ -38,18 +38,18 @@
 
 <!-- CARS -->
 <div class="container" id="cars">
-  <h2 class="fleet-heading">Uber &amp; Lyft Rental Cars in Los Angeles</h2>
-  <p class="fleet-subheading">Reliable weekly rideshare rentals for Uber, Lyft, and delivery drivers. All vehicles are fully rideshare&#8209;ready with unlimited miles.</p>
+  <h2 class="fleet-heading" data-i18n="fleet.heading">Uber &amp; Lyft Rental Cars in Los Angeles</h2>
+  <p class="fleet-subheading" data-i18n="fleet.subheading">Reliable weekly rideshare rentals for Uber, Lyft, and delivery drivers. All vehicles are fully rideshare&#8209;ready with unlimited miles.</p>
 
   <div class="cars-page-layout">
 
     <!-- SIDEBAR -->
     <aside class="cars-sidebar">
-      <h3 class="sidebar-title">Browse by Type</h3>
+      <h3 class="sidebar-title" data-i18n="fleet.sidebarTitle">Browse by Type</h3>
       <nav class="sidebar-nav">
-        <button class="sidebar-btn active" data-filter="all">All Cars</button>
-        <button class="sidebar-btn" data-filter="economy">Economy / Ridesharing</button>
-        <button class="sidebar-btn" data-filter="slingshot">Slingshots</button>
+        <button class="sidebar-btn active" data-filter="all" data-i18n="fleet.filterAll">All Cars</button>
+        <button class="sidebar-btn" data-filter="economy" data-i18n="fleet.filterEconomy">Economy / Ridesharing</button>
+        <button class="sidebar-btn" data-filter="slingshot" data-i18n="fleet.filterSlingshot">Slingshots</button>
       </nav>
     </aside>
 
@@ -117,6 +117,7 @@
           </div>
           <p class="price-list-label">Rental Plans</p>
           <div class="price-list">
+            <div class="price-item">$50 / day</div>
             <div class="price-item price-item--popular">$350 / week <span class="popular-tag">Most Popular</span></div>
             <div class="price-item">$650 / 2 weeks</div>
             <div class="price-item">$1,300 / month <span class="best-value-tag">Best Value</span></div>
@@ -149,6 +150,7 @@
           </div>
           <p class="price-list-label">Rental Plans</p>
           <div class="price-list">
+            <div class="price-item">$55 / day</div>
             <div class="price-item price-item--popular">$350 / week <span class="popular-tag">Most Popular</span></div>
             <div class="price-item">$650 / 2 weeks</div>
             <div class="price-item">$1,300 / month <span class="best-value-tag">Best Value</span></div>
@@ -213,6 +215,7 @@
 </footer>
 
 <script src="cars.js"></script>
+<script src="lang.js"></script>
 <script src="chatbot.js"></script>
 </body>
 </html>

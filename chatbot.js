@@ -12,11 +12,11 @@ var botResponses = {
     },
     {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
-      reply: "Here are the Camry rates 🔵🟢\n\n🔵 Camry 2012\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • Daily       — $50 / day\n\n🟢 Camry 2013 SE\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • Daily       — $55 / day\n\n✅ No security deposit required\n\nMinimum rental is 7 days. Ready to book? Visit our Cars page!\n\n📋 Do you have a valid driving license?"
+      reply: "Here are the Camry rates 🔵🟢\n\n🔵 Camry 2012\n  • Daily       — $50 / day\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n\n🟢 Camry 2013 SE\n  • Daily       — $55 / day\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n\n✅ No security deposit required\n\nReady to book? Visit our Cars page!\n\n📋 Do you have a valid driving license?"
     },
     {
       patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
-      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • + $150 deposit\n\n🔵 Camry 2012\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
+      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • + $150 deposit\n\n🔵 Camry 2012\n  • Daily     — $50 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
     },
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
@@ -24,7 +24,7 @@ var botResponses = {
     },
     {
       patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
-      reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 deposit)\n\n🔵 Camry 2012 — $350/week, Unlimited Miles (no deposit)\n\n🟢 Camry 2013 SE — $350/week, Unlimited Miles (no deposit)\n\nVisit our Cars page to browse and book!"
+      reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 deposit)\n\n🔵 Camry 2012 — $50/day or $350/week, Unlimited Miles (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)\n\nVisit our Cars page to browse and book!"
     },
     {
       patterns: ["book","booking","reserve","reservation","how do i","how to"],
@@ -79,11 +79,11 @@ var botResponses = {
     },
     {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
-      reply: "Aquí están las tarifas del Camry 🔵🟢\n\n🔵 Camry 2012\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Diario    — $50 / día\n\n🟢 Camry 2013 SE\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Diario    — $55 / día\n\n✅ No se requiere depósito de seguridad\n\nEl alquiler mínimo es de 7 días. ¿Listo para reservar?\n\n📋 ¿Tienes una licencia de conducir válida?"
+      reply: "Aquí están las tarifas del Camry 🔵🟢\n\n🔵 Camry 2012\n  • Diario    — $50 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n\n✅ No se requiere depósito de seguridad\n\n¿Listo para reservar?\n\n📋 ¿Tienes una licencia de conducir válida?"
     },
     {
       patterns: ["precio","costo","cuánto cuesta","cuanto cuesta","cuánto es","cuanto es","tarifa","tarifas","cobran","cobras","diario","semanal","mensual"],
-      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • + $150 depósito\n\n🔵 Camry 2012\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
+      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • + $150 depósito\n\n🔵 Camry 2012\n  • Diario    — $50 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
     },
     {
       patterns: ["ganar","ganancias","ingresos","cuánto puedo ganar","cuanto puedo ganar","dinero"],
@@ -91,7 +91,7 @@ var botResponses = {
     },
     {
       patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","slingshot","camry"],
-      reply: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 depósito)\n\n🔵 Camry 2012 — $350/semana, Millaje Ilimitado (sin depósito)\n\n🟢 Camry 2013 SE — $350/semana, Millaje Ilimitado (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+      reply: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 depósito)\n\n🔵 Camry 2012 — $50/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
     },
     {
       patterns: ["reservar","reserva","reservación","reservacion","cómo reservo","como reservo","cómo alquilo","como alquilo","cómo rento","como rento","cómo funciona","como funciona"],
