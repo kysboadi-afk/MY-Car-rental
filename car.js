@@ -44,7 +44,7 @@ const cars = {
   camry: {
     name: "Camry 2012",
     subtitle: "",
-    pricePerDay: 50,
+    pricePerDay: 55,
     minRentalDays: 1,
     weekly: 350,
     biweekly: 650,

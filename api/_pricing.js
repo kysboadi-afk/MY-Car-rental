@@ -31,7 +31,7 @@ export const CARS = {
       { hours: 24, price: 350 },
     ],
   },
-  camry:      { name: "Camry 2012",     pricePerDay: 50,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
+  camry:      { name: "Camry 2012",     pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };
 
@@ -141,8 +141,8 @@ export function computeAmount(vehicleId, pickup, returnDate) {
  * @returns {string[]|null} array of plain-text line items, or null if vehicleId unknown
  *
  * Example output for a 10-day camry rental with DPP:
- *   ["1 × Weekly ($350/week): $350", "3 × Daily ($50/day): $150",
- *    "Damage Protection Plan: $98", "Total: $598"]
+ *   ["1 × Weekly ($350/week): $350", "3 × Daily ($55/day): $165",
+ *    "Damage Protection Plan: $98", "Total: $613"]
  */
 export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionPlan = false) {
   const car = CARS[vehicleId];
