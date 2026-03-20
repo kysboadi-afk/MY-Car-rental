@@ -7,12 +7,12 @@ import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, compu
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
-test("camry: 1 day = $50", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-02"), 50);
+test("camry: 1 day = $55", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-02"), 55);
 });
 
-test("camry: 6 days = 6 × $50 = $300", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-07"), 300);
+test("camry: 6 days = 6 × $55 = $330", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-07"), 330);
 });
 
 // ─── Camry weekly ($350/week) ────────────────────────────────────────────────
@@ -21,12 +21,12 @@ test("camry: 7 days = 1 × $350 weekly = $350", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-07-08"), 350);
 });
 
-test("camry: 10 days = 1 × $350 + 3 × $50 = $500", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-11"), 500);
+test("camry: 10 days = 1 × $350 + 3 × $55 = $515", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-11"), 515);
 });
 
-test("camry: 13 days = 1 × $350 + 6 × $50 = $650", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-14"), 650);
+test("camry: 13 days = 1 × $350 + 6 × $55 = $680", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-14"), 680);
 });
 
 // ─── Camry biweekly ($650/2 weeks) ───────────────────────────────────────────
@@ -35,16 +35,16 @@ test("camry: 14 days = 1 × $650 biweekly = $650", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-07-15"), 650);
 });
 
-test("camry: 16 days = 1 × $650 + 2 × $50 = $750", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-17"), 750);
+test("camry: 16 days = 1 × $650 + 2 × $55 = $760", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-17"), 760);
 });
 
 test("camry: 28 days = 2 × $650 biweekly = $1300", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-07-29"), 1300);
 });
 
-test("camry: 29 days = 2 × $650 + 1 × $50 = $1350", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-30"), 1350);
+test("camry: 29 days = 2 × $650 + 1 × $55 = $1355", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-30"), 1355);
 });
 
 // ─── Camry monthly ($1300/month) ─────────────────────────────────────────────
@@ -53,8 +53,8 @@ test("camry: 30 days = 1 × $1300 monthly = $1300", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-07-31"), 1300);
 });
 
-test("camry: 31 days = 1 × $1300 + 1 × $50 = $1350", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-08-01"), 1350);
+test("camry: 31 days = 1 × $1300 + 1 × $55 = $1355", () => {
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-08-01"), 1355);
 });
 
 test("camry: 37 days = 1 × $1300 + 1 × $350 weekly = $1650", () => {
@@ -88,7 +88,7 @@ test("slingshot: invalid duration returns null", () => {
 // ─── Edge cases ───────────────────────────────────────────────────────────────
 
 test("same-day (0-day gap) treated as 1 day minimum", () => {
-  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-01"), 50);
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-01"), 55);
 });
 
 test("unknown vehicleId returns null", () => {
