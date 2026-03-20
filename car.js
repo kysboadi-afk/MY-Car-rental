@@ -851,6 +851,8 @@ window.addEventListener("pageshow", function(e) {
   agreeCheckbox.checked = false;
   const paymentForm = document.getElementById("payment-form");
   paymentForm.style.display = "none";
+  const prBtnContainer = document.getElementById("payment-request-button");
+  if (prBtnContainer) prBtnContainer.style.display = "none";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
   stripeBtn.textContent = window.slyI18n.t("booking.payNow");
@@ -1084,6 +1086,7 @@ function updateTotal() {
 stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
+  const phone = document.getElementById("phone").value.trim();
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
@@ -1174,6 +1177,122 @@ stripeBtn.addEventListener("click", async () => {
         },
       },
     });
+
+    // ----- Payment Request Button (Apple Pay / Google Pay) -----
+    // Build a paymentRequest with a valid country ('US'), currency ('usd'), and
+    // the confirmed total in whole cents.  canMakePayment() returns null when
+    // the browser / device does not support any express wallet, so we guard
+    // before mounting the button — this is what prevents the "Unable to show
+    // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
+    // browsers or when the domain association file has not yet been verified.
+    const totalCents = Math.round(parseFloat(totalEl.textContent) * 100);
+    const paymentReq = stripe.paymentRequest({
+      country: "US",
+      currency: "usd",
+      total: {
+        label: carData.name + " Rental",
+        amount: totalCents,
+      },
+      requestPayerName: true,
+      requestPayerEmail: true,
+    });
+
+    const prContainer = document.getElementById("payment-request-button");
+    let prButton = null;
+
+    const canPay = await paymentReq.canMakePayment();
+    if (canPay && prContainer) {
+      prButton = elements.create("paymentRequestButton", { paymentRequest: paymentReq });
+      prButton.mount("#payment-request-button");
+      prContainer.style.display = "block";
+
+      // Handle the payment authorization from Apple Pay / Google Pay.
+      // We use handleActions:false so that Stripe does not attempt to render
+      // its own confirmation UI inside the native wallet sheet.
+      paymentReq.on("paymentmethod", async (ev) => {
+        const prBookingPayload = {
+          vehicleId,
+          car: carData.name,
+          vehicleMake: carData.make || null,
+          vehicleModel: carData.model || null,
+          vehicleYear: carData.year || null,
+          vehicleVin: carData.vin || null,
+          vehicleColor: carData.color || null,
+          name: nameVal,
+          pickup: pickup.value,
+          pickupTime: pickupTime.value,
+          returnDate: returnDate.value,
+          returnTime: returnTime.value,
+          email,
+          phone,
+          total: totalEl.textContent,
+          pricePerDay: carData.pricePerDay || null,
+          pricePerWeek: carData.weekly || null,
+          pricePerBiWeekly: carData.biweekly || null,
+          pricePerMonthly: carData.monthly || null,
+          deposit: carData.deposit || 0,
+          days: currentDayCount,
+          ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+          idFileName,
+          idMimeType,
+          insuranceFileName,
+          insuranceMimeType,
+          protectionPlan: insuranceCoverageChoice === "no",
+          signature: agreementSignature || null,
+        };
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
+
+        if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
+          try {
+            await new Promise((resolve) => {
+              const idbReq = indexedDB.open("slyRidesDB", 1);
+              idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+              idbReq.onsuccess = e => {
+                const db = e.target.result;
+                try {
+                  const tx = db.transaction("files", "readwrite");
+                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+                  tx.oncomplete = () => { db.close(); resolve(); };
+                  tx.onerror = () => { db.close(); resolve(); };
+                } catch (idbErr) { db.close(); resolve(); }
+              };
+              idbReq.onerror = () => resolve();
+            });
+          } catch (idbErr) {
+            console.warn("Could not save ID to IndexedDB:", idbErr);
+          }
+        }
+
+        const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
+          clientSecret,
+          { payment_method: ev.paymentMethod.id },
+          { handleActions: false }
+        );
+
+        if (confirmError) {
+          ev.complete("fail");
+          sessionStorage.removeItem("slyRidesBooking");
+          document.getElementById("payment-message").textContent = confirmError.message;
+        } else {
+          ev.complete("success");
+          if (paymentIntent.status === "requires_action") {
+            // The payment requires additional action (e.g. 3D Secure).
+            const { error: actionError } = await stripe.confirmCardPayment(clientSecret, {
+              payment_method: ev.paymentMethod.id,
+            });
+            if (actionError) {
+              sessionStorage.removeItem("slyRidesBooking");
+              document.getElementById("payment-message").textContent = actionError.message;
+            } else {
+              window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+            }
+          } else {
+            window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+          }
+        }
+      });
+    }
+
     // Collect the cardholder name from our booking form (already validated).
     // Hide the duplicate name field inside the Stripe Payment Element so the
     // customer cannot accidentally clear or override it.
@@ -1210,7 +1329,6 @@ stripeBtn.addEventListener("click", async () => {
       // Store booking data in sessionStorage so success.html can send the
       // confirmation email AFTER the payment redirect completes.
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
-      const phone = document.getElementById("phone").value.trim();
       const bookingPayload = {
         vehicleId,
         car: carData.name,
@@ -1312,6 +1430,11 @@ stripeBtn.addEventListener("click", async () => {
       paymentSubmitting = false; // reset in case cancelled mid-processing
       document.getElementById("submit-payment").removeEventListener("click", submitHandler);
       paymentElement.unmount();
+      if (prButton) {
+        prButton.unmount();
+        prButton = null;
+      }
+      if (prContainer) prContainer.style.display = "none";
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
