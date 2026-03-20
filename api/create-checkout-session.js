@@ -41,7 +41,10 @@ export default async function handler(req, res) {
     const carData = CARS[vehicleId];
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
+      // Omitting payment_method_types (and using automatic_payment_methods instead)
+      // lets Stripe surface Apple Pay, Google Pay, and other wallets on compatible
+      // devices in addition to card — without maintaining a manual allowlist.
+      automatic_payment_methods: { enabled: true },
       line_items: [
         {
           price_data: {

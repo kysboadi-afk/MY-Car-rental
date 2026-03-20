@@ -197,7 +197,17 @@
         earningsRow2Html: "Weekly rental: <span class=\"earnings-yellow\">$350</span>",
         earningsRow3Html: "<span class=\"earnings-green\">Estimated take-home:</span> $850 \u2013 $1,250",
         earningsCtaHtml: "<span class=\"earnings-yellow\">Limited vehicles available</span> \u2014 reserve today",
-        slingshotTagline: "\uD83C\uDFCE\uFE0F Built for Thrills \u2022 Pure Fun"
+        slingshotTagline: "\uD83C\uDFCE\uFE0F Built for Thrills \u2022 Pure Fun",
+        payPrefix:            "Pay $",
+        loadingPayment:       "Loading payment form\u2026",
+        processingPayment:    "Processing\u2026",
+        alertVehicleNotFound: "Vehicle not found.",
+        alertIdType:          "Please upload a valid ID document (JPG, PNG, or PDF)",
+        alertFileSize:        "File size must be less than 5MB",
+        alertInsuranceType:   "Please upload a valid insurance document (JPG, PNG, or PDF)",
+        alertEmail:           "Please enter your email address.",
+        alertName:            "Please enter your full name.",
+        loadError:            "Could not load the payment form. Please refresh the page and try again, or contact support."
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
@@ -517,7 +527,17 @@
         earningsRow2Html: "Alquiler semanal: <span class=\"earnings-yellow\">$350</span>",
         earningsRow3Html: "<span class=\"earnings-green\">Ingreso estimado:</span> $850 \u2013 $1,250",
         earningsCtaHtml: "<span class=\"earnings-yellow\">Veh\u00EDculos limitados disponibles</span> \u2014 reserva hoy",
-        slingshotTagline: "\uD83C\uDFCE\uFE0F Dise\u00F1ado para Emociones \u2022 Pura Diversi\u00F3n"
+        slingshotTagline: "\uD83C\uDFCE\uFE0F Dise\u00F1ado para Emociones \u2022 Pura Diversi\u00F3n",
+        payPrefix:            "Pagar $",
+        loadingPayment:       "Cargando formulario de pago\u2026",
+        processingPayment:    "Procesando\u2026",
+        alertVehicleNotFound: "Veh\u00EDculo no encontrado.",
+        alertIdType:          "Por favor sube un documento de identidad v\u00E1lido (JPG, PNG o PDF)",
+        alertFileSize:        "El archivo debe ser menor de 5MB",
+        alertInsuranceType:   "Por favor sube un documento de seguro v\u00E1lido (JPG, PNG o PDF)",
+        alertEmail:           "Por favor ingresa tu correo electr\u00F3nico.",
+        alertName:            "Por favor ingresa tu nombre completo.",
+        loadError:            "No se pudo cargar el formulario de pago. Por favor recarga la p\u00E1gina e int\u00E9ntalo de nuevo, o cont\u00E1ctanos."
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",

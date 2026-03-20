@@ -99,7 +99,7 @@ function getVehicleFromURL() {
 // ----- Load Car Data -----
 const vehicleId = getVehicleFromURL();
 if (!vehicleId || !cars[vehicleId]) {
-  alert("Vehicle not found.");
+  alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
   window.location.href = "index.html";
 }
 
@@ -340,7 +340,7 @@ idUpload.addEventListener("change", function(e) {
   // Validate file type
   const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
   if (!allowedTypes.includes(file.type)) {
-    alert("Please upload a valid ID document (JPG, PNG, or PDF)");
+    alert(window.slyI18n.t("booking.alertIdType"));
     e.target.value = '';
     uploadedFile = null;
     resetFileInfo();
@@ -351,7 +351,7 @@ idUpload.addEventListener("change", function(e) {
   // Validate file size (5MB max)
   const maxSize = 5 * 1024 * 1024; // 5MB in bytes
   if (file.size > maxSize) {
-    alert("File size must be less than 5MB");
+    alert(window.slyI18n.t("booking.alertFileSize"));
     e.target.value = '';
     uploadedFile = null;
     resetFileInfo();
@@ -379,7 +379,7 @@ insuranceUpload.addEventListener("change", function(e) {
 
   const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
   if (!allowedTypes.includes(file.type)) {
-    alert("Please upload a valid insurance document (JPG, PNG, or PDF)");
+    alert(window.slyI18n.t("booking.alertInsuranceType"));
     e.target.value = '';
     uploadedInsurance = null;
     resetInsuranceFileInfo();
@@ -389,7 +389,7 @@ insuranceUpload.addEventListener("change", function(e) {
 
   const maxSize = 5 * 1024 * 1024;
   if (file.size > maxSize) {
-    alert("File size must be less than 5MB");
+    alert(window.slyI18n.t("booking.alertFileSize"));
     e.target.value = '';
     uploadedInsurance = null;
     resetInsuranceFileInfo();
@@ -853,7 +853,7 @@ window.addEventListener("pageshow", function(e) {
   paymentForm.style.display = "none";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
-  stripeBtn.textContent = "💳 Pay Now";
+  stripeBtn.textContent = window.slyI18n.t("booking.payNow");
   totalEl.textContent = "0";
   document.getElementById("subtotal").textContent = "0";
   document.getElementById("taxLine").style.display = "none";
@@ -950,7 +950,7 @@ function updateTotal() {
       if (taxNoteEl) taxNoteEl.style.display = "";
       totalEl.textContent = rentalSubtotal;
     }
-    stripeBtn.textContent = `Pay $${displayTotal.toFixed(2)}`;
+    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
     updatePayBtn();
     return;
   }
@@ -1076,7 +1076,7 @@ function updateTotal() {
     if (taxNoteEl) taxNoteEl.style.display = "";
     totalEl.textContent = rentalSubtotal;
   }
-  stripeBtn.textContent = `Pay $${displayTotal.toFixed(2)}`;
+  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
   updatePayBtn();
 }
 
@@ -1084,11 +1084,11 @@ function updateTotal() {
 stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
-  if (!email) { alert("Please enter your email address."); return; }
-  if (!nameVal) { alert("Please enter your full name."); return; }
+  if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
+  if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
   stripeBtn.disabled = true;
-  stripeBtn.textContent = "Loading payment form…";
+  stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
 
   // Pre-encode the ID file so it's ready when the user submits payment
   let idBase64 = null;
@@ -1164,6 +1164,9 @@ stripeBtn.addEventListener("click", async () => {
     const stripe = Stripe(publishableKey);
     const elements = stripe.elements({
       clientSecret,
+      // Pass the user's selected language so the Payment Element (including
+      // the Apple Pay sheet and Google Pay button) renders in the right locale.
+      locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
       defaultValues: {
         billingDetails: {
           name: nameVal,
@@ -1182,6 +1185,7 @@ stripeBtn.addEventListener("click", async () => {
 
     const paymentForm = document.getElementById("payment-form");
     document.getElementById("payAmount").textContent = totalEl.textContent;
+    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + totalEl.textContent;
     paymentForm.style.display = "block";
     stripeBtn.style.display = "none";
     const payHint = document.getElementById("payHint");
@@ -1200,7 +1204,7 @@ stripeBtn.addEventListener("click", async () => {
       const submitBtn = document.getElementById("submit-payment");
       const msgEl = document.getElementById("payment-message");
       submitBtn.disabled = true;
-      submitBtn.textContent = "Processing…";
+      submitBtn.textContent = window.slyI18n.t("booking.processingPayment");
       msgEl.textContent = "";
 
       // Store booking data in sessionStorage so success.html can send the
@@ -1297,7 +1301,7 @@ stripeBtn.addEventListener("click", async () => {
         sessionStorage.removeItem("slyRidesBooking");
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
-        submitBtn.textContent = "Pay $" + totalEl.textContent;
+        submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + totalEl.textContent;
         paymentSubmitting = false;
       }
     };
@@ -1311,14 +1315,14 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      stripeBtn.textContent = "💳 Pay Now";
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
       updatePayBtn();
     }, { once: true });
 
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    stripeBtn.textContent = "💳 Pay Now";
+    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
       alert(err.message);
@@ -1334,7 +1338,7 @@ stripeBtn.addEventListener("click", async () => {
     );
     const userMessage = isSetupError
       ? "Payment setup error:\n\n" + err.message
-      : "Could not load the payment form. Please refresh the page and try again, or contact support.";
+      : window.slyI18n.t("booking.loadError");
     alert(userMessage);
   }
 });
