@@ -1376,51 +1376,34 @@ stripeBtn.addEventListener("click", async () => {
       // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
       sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
 
-      // Kick off the IndexedDB write as a background task — do NOT await it
-      // before calling stripe.confirmPayment().  On iOS Safari, any `await`
-      // before confirmPayment() consumes the transient user-activation window,
-      // which prevents the Apple Pay sheet from opening.  We start the write
-      // here and await the promise in parallel with confirmPayment() below so
-      // the data is guaranteed to land in IDB before Stripe's redirect fires.
-      let idbWritePromise = Promise.resolve();
       if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
-        idbWritePromise = new Promise((resolve) => {
-          const idbReq = indexedDB.open("slyRidesDB", 1);
-          idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
-          idbReq.onsuccess = e => {
-            const db = e.target.result;
-            try {
-              const tx = db.transaction("files", "readwrite");
-              tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
-              tx.oncomplete = () => { db.close(); resolve(); };
-              tx.onerror = () => { db.close(); resolve(); };
-            } catch (idbErr) { db.close(); console.warn("IndexedDB write failed:", idbErr); resolve(); }
-          };
-          idbReq.onerror = () => { console.warn("IndexedDB open failed"); resolve(); };
-        });
+        const idbReq = indexedDB.open("slyRidesDB", 1);
+        idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+        idbReq.onsuccess = e => {
+          const db = e.target.result;
+          try {
+            const tx = db.transaction("files", "readwrite");
+            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+            tx.oncomplete = () => db.close();
+            tx.onerror = () => db.close();
+          } catch (idbErr) { db.close(); }
+        };
+        idbReq.onerror = () => {};
       }
 
-      // confirmPayment() is called immediately (no preceding await) so that
-      // the Apple Pay / Google Pay sheet opens within the user-gesture window.
-      // The IndexedDB write runs concurrently and will complete during the
-      // time the user spends reviewing the Apple Pay sheet, well before the
-      // Stripe redirect fires.
-      const [{ error }] = await Promise.all([
-        stripe.confirmPayment({
-          elements,
-          confirmParams: {
-            return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
-            receipt_email: email,
-            payment_method_data: {
-              billing_details: {
-                name: nameVal,
-                email: email,
-              },
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
+          receipt_email: email,
+          payment_method_data: {
+            billing_details: {
+              name: nameVal,
+              email: email,
             },
           },
-        }),
-        idbWritePromise,
-      ]);
+        },
+      });
 
       if (error) {
         // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
