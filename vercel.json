@@ -21,6 +21,12 @@
     "api/create-checkout-session.js": {
       "maxDuration": 15
     },
+    "api/verify-session.js": {
+      "maxDuration": 15
+    },
+    "api/stripe-webhook.js": {
+      "maxDuration": 30
+    },
     "api/booked-dates.js": {
       "maxDuration": 15
     },
