@@ -61,6 +61,11 @@
   <section class="booking">
     <h2 data-i18n="booking.completeReservation">Complete Your Reservation</h2>
 
+    <!-- Shown when the user returns after a failed payment so they know their info is pre-filled -->
+    <div id="paymentRetryBanner" class="payment-retry-banner" style="display:none" role="alert">
+      <strong>⚠️ Payment not completed.</strong> Your booking details have been pre-filled below. Please review and try again with a different payment method.
+    </div>
+
     <label for="pickup" data-i18n="booking.pickupDate">Pickup Date</label>
     <input type="date" id="pickup">
 
