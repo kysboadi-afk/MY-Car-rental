@@ -302,7 +302,7 @@
             pattern="[0-9]{6}"
             autocomplete="one-time-code"
           >
-          <p class="otp-hint">Check your inbox for a 6-digit code (valid 10 min).<button type="button" id="resendOtpBtn" disabled data-i18n="contact.resend">Resend</button></p>
+          <p class="otp-hint"><span data-i18n="contact.otpHint">Check your inbox for a 6-digit code (valid 10 min).</span><button type="button" id="resendOtpBtn" disabled data-i18n="contact.resend">Resend</button></p>
         </div>
         <p class="email-verified-badge" id="emailVerifiedBadge" style="display:none" data-i18n="contact.emailVerified">✓ Email verified</p>
       </div>
@@ -350,7 +350,7 @@
 </div>
 
 <footer>
-  &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
+  <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a>
 </footer>
 
 <script src="lang.js"></script>
@@ -369,6 +369,10 @@
     const resendBtn  = document.getElementById("resendOtpBtn");
     const verifiedBadge = document.getElementById("emailVerifiedBadge");
 
+    function ct(key, fallback) {
+      return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
+    }
+
     let otpToken = null;          // signed token returned by /api/send-otp
     let resendTimer = null;
 
@@ -376,16 +380,17 @@
     function startResendCooldown() {
       resendBtn.disabled = true;
       let secs = 30;
-      resendBtn.textContent = `Resend (${secs}s)`;
+      const resendFmt = ct("contact.resendFmt", "Resend ({secs}s)");
+      resendBtn.textContent = resendFmt.replace("{secs}", secs);
       clearInterval(resendTimer);
       resendTimer = setInterval(() => {
         secs -= 1;
         if (secs <= 0) {
           clearInterval(resendTimer);
           resendBtn.disabled = false;
-          resendBtn.textContent = "Resend";
+          resendBtn.textContent = ct("contact.resend", "Resend");
         } else {
-          resendBtn.textContent = `Resend (${secs}s)`;
+          resendBtn.textContent = ct("contact.resendFmt", "Resend ({secs}s)").replace("{secs}", secs);
         }
       }, 1000);
     }
@@ -394,20 +399,20 @@
     async function sendOtp() {
       const email = emailInput.value.trim();
       if (!email) {
-        status.textContent = "Please enter your email address first.";
+        status.textContent = ct("contact.enterEmailFirst", "Please enter your email address first.");
         status.className = "contact-status error";
         emailInput.focus();
         return;
       }
       if (!emailInput.checkValidity()) {
-        status.textContent = "Please enter a valid email address.";
+        status.textContent = ct("contact.enterValidEmail", "Please enter a valid email address.");
         status.className = "contact-status error";
         emailInput.focus();
         return;
       }
 
       sendOtpBtn.disabled = true;
-      sendOtpBtn.textContent = "Sending…";
+      sendOtpBtn.textContent = ct("contact.sendingCode", "Sending\u2026");
       status.textContent = "";
       status.className = "contact-status";
 
@@ -419,10 +424,10 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          status.textContent = data.error || "Failed to send verification email. Please try again.";
+          status.textContent = data.error || ct("contact.otpSentError", "Failed to send verification email. Please try again.");
           status.className = "contact-status error";
           sendOtpBtn.disabled = false;
-          sendOtpBtn.textContent = "Send Code";
+          sendOtpBtn.textContent = ct("contact.sendCodeBtn", "Send Code");
           return;
         }
 
@@ -431,22 +436,22 @@
         verifiedBadge.style.display = "none";
         otpInput.value = "";
         otpInput.focus();
-        sendOtpBtn.textContent = "Sent ✓";
+        sendOtpBtn.textContent = ct("contact.sentDone", "Sent \u2713");
         startResendCooldown();
-        status.textContent = "Verification code sent! Check your inbox.";
+        status.textContent = ct("contact.otpSent", "Verification code sent! Check your inbox.");
         status.className = "contact-status sending";
       } catch (err) {
         console.error("Send OTP error:", err);
-        status.textContent = "Network error. Please check your connection and try again.";
+        status.textContent = ct("contact.networkError", "Network error. Please check your connection and try again.");
         status.className = "contact-status error";
         sendOtpBtn.disabled = false;
-        sendOtpBtn.textContent = "Send Code";
+        sendOtpBtn.textContent = ct("contact.sendCodeBtn", "Send Code");
       }
     }
 
     sendOtpBtn.addEventListener("click", sendOtp);
     resendBtn.addEventListener("click", async () => {
-      sendOtpBtn.textContent = "Send Code";
+      sendOtpBtn.textContent = ct("contact.sendCodeBtn", "Send Code");
       sendOtpBtn.disabled = false;
       await sendOtp();
     });
@@ -458,7 +463,7 @@
       verifiedBadge.style.display = "none";
       otpInput.value = "";
       sendOtpBtn.disabled = false;
-      sendOtpBtn.textContent = "Send Code";
+      sendOtpBtn.textContent = ct("contact.sendCodeBtn", "Send Code");
       status.textContent = "";
       status.className = "contact-status";
     });
@@ -475,27 +480,27 @@
       const honeypot = document.getElementById("cf-website").value;
 
       if (!name || !email || !phone || !message) {
-        status.textContent = "Please fill in all required fields.";
+        status.textContent = ct("contact.fillAllFields", "Please fill in all required fields.");
         status.className = "contact-status error";
         return;
       }
 
       if (!otpToken) {
-        status.textContent = "Please verify your email address before submitting.";
+        status.textContent = ct("contact.verifyEmailFirst", "Please verify your email address before submitting.");
         status.className = "contact-status error";
         emailInput.focus();
         return;
       }
 
       if (!otpCode) {
-        status.textContent = "Please enter the verification code sent to your email.";
+        status.textContent = ct("contact.enterOtpCode", "Please enter the verification code sent to your email.");
         status.className = "contact-status error";
         otpInput.focus();
         return;
       }
 
       btn.disabled = true;
-      status.textContent = "Sending…";
+      status.textContent = ct("contact.sending", "Sending\u2026");
       status.className = "contact-status sending";
 
       try {
@@ -509,13 +514,13 @@
           window.location.href = "thank-you.html?from=contact";
         } else {
           const data = await res.json().catch(() => ({}));
-          status.textContent = data.error || "Something went wrong. Please try again or call us at (213) 916-6606.";
+          status.textContent = data.error || ct("contact.generalError", "Something went wrong. Please try again or call us at (213) 916-6606.");
           status.className = "contact-status error";
           btn.disabled = false;
         }
       } catch (err) {
         console.error("Contact form error:", err);
-        status.textContent = "Network error. Please check your connection or call us at (213) 916-6606.";
+        status.textContent = ct("contact.networkErrorFull", "Network error. Please check your connection or call us at (213) 916-6606.");
         status.className = "contact-status error";
         btn.disabled = false;
       }

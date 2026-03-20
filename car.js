@@ -8,7 +8,8 @@ const API_BASE = "https://sly-rides.vercel.app";
 const cars = {
   slingshot: {
     name: "Slingshot R",
-    subtitle: "Sports • 2-Seater",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
     // Slingshot uses hourly tier pricing — no daily/weekly/monthly rates.
     hourlyTiers: [
       { hours: 3,  price: 200, label: "3 Hours" },
@@ -27,7 +28,8 @@ const cars = {
   // TODO: update vin once available.
   slingshot2: {
     name: "Slingshot R",
-    subtitle: "Sports • 2-Seater",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
     hourlyTiers: [
       { hours: 3,  price: 200, label: "3 Hours" },
       { hours: 6,  price: 250, label: "6 Hours" },
@@ -44,6 +46,7 @@ const cars = {
   camry: {
     name: "Camry 2012",
     subtitle: "",
+    subtitleKey: "fleet.sedan5seater",
     pricePerDay: 55,
     minRentalDays: 1,
     weekly: 350,
@@ -59,6 +62,7 @@ const cars = {
   camry2013: {
     name: "Camry 2013 SE",
     subtitle: "",
+    subtitleKey: "fleet.sedan5seater",
     pricePerDay: 55,
     minRentalDays: 1,
     weekly: 350,
@@ -96,6 +100,22 @@ function getVehicleFromURL() {
   return params.get("vehicle");
 }
 
+// i18n helper — translates a key using lang.js if available, else returns fallback.
+function _t(key, fallback) {
+  return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
+}
+
+// Format helper — replaces {placeholder} tokens in a translated string.
+function _fmt(key, vars, fallback) {
+  let s = _t(key, fallback || key);
+  if (vars) {
+    Object.keys(vars).forEach(function(k) {
+      s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+    });
+  }
+  return s;
+}
+
 // ----- Load Car Data -----
 const vehicleId = getVehicleFromURL();
 if (!vehicleId || !cars[vehicleId]) {
@@ -105,12 +125,13 @@ if (!vehicleId || !cars[vehicleId]) {
 
 const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
-document.getElementById("carSubtitle").textContent = carData.subtitle;
+document.getElementById("carSubtitle").textContent =
+  (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
 document.getElementById("carPrice").textContent = (carData.hourlyTiers)
-  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours}hrs`).join(" \u2022 ")
+  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours}${_t("fleet.unitHrs","hrs")}`).join(" \u2022 ")
   : (carData.weekly)
-    ? `$${carData.pricePerDay} / day \u2022 from $${carData.weekly} / week`
-    : `$${carData.pricePerDay} / day`;
+    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
+    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
 
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block
 if (carData.hourlyTiers) {
@@ -127,7 +148,7 @@ if (carData.hourlyTiers) {
       radio.name = "slingshotDuration";
       radio.value = String(tier.hours);
       const span = document.createElement("span");
-      span.textContent = `${tier.label} \u2014 $${tier.price}`;
+      span.textContent = `${tier.hours} ${_t("fleet.hours","Hours")} \u2014 $${tier.price}`;
       lbl.appendChild(radio);
       lbl.appendChild(span);
       optionsContainer.appendChild(lbl);
@@ -235,7 +256,7 @@ function isValidName(val) {
     if (nameError) {
       const val = this.value.trim();
       if (val && !isValidName(val)) {
-        nameError.textContent = 'Please enter at least a first and last name.';
+        nameError.textContent = window.slyI18n ? window.slyI18n.t("booking.nameError") : 'Please enter at least a first and last name.';
         nameError.style.display = '';
       } else {
         nameError.style.display = 'none';
@@ -287,14 +308,14 @@ function isValidName(val) {
 // ----- File Upload Handling -----
 function resetFileInfo() {
   const fileInfoEl = document.getElementById("fileInfo");
-  fileInfoEl.querySelector(".file-name").textContent = "No file selected";
+  fileInfoEl.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   fileInfoEl.querySelector(".file-size").textContent = "";
   fileInfoEl.classList.remove("has-file");
 }
 
 function resetInsuranceFileInfo() {
   const el = document.getElementById("insuranceFileInfo");
-  el.querySelector(".file-name").textContent = "No file selected";
+  el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
   el.querySelector(".file-size").textContent = "";
   el.classList.remove("has-file");
 }
@@ -541,7 +562,7 @@ document.getElementById("confirmSignBtn").addEventListener("click", function () 
   const sigError = document.getElementById("signatureError");
   if (renterName && sig.toLowerCase() !== renterName.toLowerCase()) {
     if (sigError) {
-      sigError.textContent = "Signature must match the full name entered in the booking form.";
+      sigError.textContent = window.slyI18n ? window.slyI18n.t("booking.sigError") : "Signature must match the full name entered in the booking form.";
       sigError.style.display = "";
     }
     return;
@@ -555,11 +576,12 @@ document.getElementById("confirmSignBtn").addEventListener("click", function () 
   const btn    = document.getElementById("signAgreementBtn");
   const status = document.getElementById("signAgreementStatus");
   btn.classList.add("signed");
-  btn.textContent = "✅ Rental Agreement Signed";
+  btn.textContent = window.slyI18n ? window.slyI18n.t("booking.signedBtn") : "✅ Rental Agreement Signed";
 
   status.style.display = "";
   status.style.color   = "#4caf50";
-  status.textContent   = `Signed by ${sig}. Check the box below to confirm.`;
+  const signedByTpl = window.slyI18n ? window.slyI18n.t("booking.signedByNote") : "Signed by {name}. Check the box below to confirm.";
+  status.textContent   = signedByTpl.replace("{name}", sig);
 
   const checkbox = document.getElementById("agree");
   checkbox.disabled = false;
@@ -896,13 +918,14 @@ function restoreFailedBooking() {
       const signStatus = document.getElementById("signAgreementStatus");
       if (signBtn) {
         signBtn.classList.add("signed");
-        signBtn.textContent = "✅ Rental Agreement Signed";
+        signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signedBtn") : "✅ Rental Agreement Signed";
         signBtn.style.display = "";
       }
       if (signStatus) {
         signStatus.style.display = "";
         signStatus.style.color   = "#4caf50";
-        signStatus.textContent   = `Signed by ${data.signature}. Check the box below to confirm.`;
+        const tpl = window.slyI18n ? window.slyI18n.t("booking.signedByNote") : "Signed by {name}. Check the box below to confirm.";
+        signStatus.textContent   = tpl.replace("{name}", data.signature);
       }
       agreeCheckbox.disabled = false;
       agreeCheckbox.checked  = true;
@@ -998,7 +1021,7 @@ window.addEventListener("pageshow", function(e) {
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
-  signBtn.textContent = "✍ Review & Sign Rental Agreement";
+  signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signAgreementBtn") : "✍ Review & Sign Rental Agreement";
   signBtn.style.display = "";
   const agreementBox = document.getElementById("rentalAgreementBox");
   if (agreementBox) agreementBox.style.display = "none";
@@ -1065,12 +1088,12 @@ function updateTotal() {
     currentDayCount = 1; // DPP uses 1 day for any slingshot rental
 
     const lines = [];
-    lines.push({ label: `${tier.label} rental`, amount: tier.price });
-    lines.push({ label: "Security deposit (refundable)", amount: carData.deposit });
+    lines.push({ label: _fmt("booking.tierRentalFmt", { label: `${tier.hours} ${_t("fleet.hours","Hours")}` }, `${tier.label} rental`), amount: tier.price });
+    lines.push({ label: _t("booking.securityDepositRef", "Security deposit (refundable)"), amount: carData.deposit });
 
     // DPP for slingshot is always 1 day ($13) if chosen
     if (insuranceCoverageChoice === "no") {
-      lines.push({ label: `Damage Protection Plan (1 day × $${PROTECTION_PLAN_DAILY}/day)`, amount: PROTECTION_PLAN_DAILY });
+      lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
     }
 
     let cost = tier.price + (insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0);
@@ -1081,9 +1104,9 @@ function updateTotal() {
 
     if (currentTaxRate > 0) {
       const pct = +((currentTaxRate * 100).toFixed(4));
-      lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+      lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: taxAmount.toFixed(2) });
     } else {
-      lines.push({ label: "Sales tax", amount: null });
+      lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
     }
 
     const rowsEl = document.getElementById("breakdownRows");
@@ -1096,7 +1119,7 @@ function updateTotal() {
       labelSpan.textContent = l.label;
       const valueSpan = document.createElement("span");
       valueSpan.className = "breakdown-value";
-      valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
+      valueSpan.textContent = l.amount !== null ? "$" + l.amount : _t("booking.calcAtCheckout","Calculated at checkout");
       row.appendChild(labelSpan);
       row.appendChild(valueSpan);
       frag.appendChild(row);
@@ -1141,30 +1164,30 @@ function updateTotal() {
     const subtotal = months * carData.monthly;
     cost += subtotal;
     remaining = remaining % 30;
-    lines.push({ label: `${months} month${months > 1 ? "s" : ""} × $${carData.monthly}/mo`, amount: subtotal });
+    lines.push({ label: months === 1 ? _fmt("booking.fmtMonth1", { price: carData.monthly }, `1 month \u00D7 $${carData.monthly}/mo`) : _fmt("booking.fmtMonthN", { n: months, price: carData.monthly }, `${months} months \u00D7 $${carData.monthly}/mo`), amount: subtotal });
   }
   if (carData.biweekly && remaining >= 14) {
     const twoWeekPeriods = Math.floor(remaining / 14);
     const subtotal = twoWeekPeriods * carData.biweekly;
     cost += subtotal;
     remaining = remaining % 14;
-    lines.push({ label: `${twoWeekPeriods} 2-week period${twoWeekPeriods > 1 ? "s" : ""} × $${carData.biweekly}`, amount: subtotal });
+    lines.push({ label: twoWeekPeriods === 1 ? _fmt("booking.fmtTwoWeeks1", { price: carData.biweekly }, `1 2-week period \u00D7 $${carData.biweekly}`) : _fmt("booking.fmtTwoWeeksN", { n: twoWeekPeriods, price: carData.biweekly }, `${twoWeekPeriods} 2-week periods \u00D7 $${carData.biweekly}`), amount: subtotal });
   }
   if (carData.weekly && remaining >= 7) {
     const weeks = Math.floor(remaining / 7);
     const subtotal = weeks * carData.weekly;
     cost += subtotal;
     remaining = remaining % 7;
-    lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
+    lines.push({ label: weeks === 1 ? _fmt("booking.fmtWeek1", { price: carData.weekly }, `1 week \u00D7 $${carData.weekly}/wk`) : _fmt("booking.fmtWeekN", { n: weeks, price: carData.weekly }, `${weeks} weeks \u00D7 $${carData.weekly}/wk`), amount: subtotal });
   }
   if (remaining > 0) {
     const subtotal = remaining * carData.pricePerDay;
     cost += subtotal;
-    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    lines.push({ label: remaining === 1 ? _fmt("booking.fmtDay1", { price: carData.pricePerDay }, `1 day \u00D7 $${carData.pricePerDay}/day`) : _fmt("booking.fmtDayN", { n: remaining, price: carData.pricePerDay }, `${remaining} days \u00D7 $${carData.pricePerDay}/day`), amount: subtotal });
   }
   // Security deposit is always charged (never waived)
   if (carData.deposit) {
-    lines.push({ label: "Security deposit", amount: carData.deposit });
+    lines.push({ label: _t("booking.securityDeposit", "Security deposit"), amount: carData.deposit });
   }
   // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
   if (insuranceCoverageChoice === "no") {
@@ -1174,27 +1197,27 @@ function updateTotal() {
     if (protDays >= 30) {
       const months = Math.floor(protDays / 30);
       protectionCost += months * PROTECTION_PLAN_MONTHLY;
-      protLines.push(`${months} month${months > 1 ? "s" : ""} × $${PROTECTION_PLAN_MONTHLY}/mo`);
+      protLines.push(months === 1 ? _fmt("booking.fmtMonth1", { price: PROTECTION_PLAN_MONTHLY }, `1 month \u00D7 $${PROTECTION_PLAN_MONTHLY}/mo`) : _fmt("booking.fmtMonthN", { n: months, price: PROTECTION_PLAN_MONTHLY }, `${months} months \u00D7 $${PROTECTION_PLAN_MONTHLY}/mo`));
       protDays = protDays % 30;
     }
     if (protDays >= 14) {
       const twoWeeks = Math.floor(protDays / 14);
       protectionCost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
-      protLines.push(`${twoWeeks} 2-week period${twoWeeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_BIWEEKLY}`);
+      protLines.push(twoWeeks === 1 ? _fmt("booking.fmtTwoWeeks1", { price: PROTECTION_PLAN_BIWEEKLY }, `1 2-week period \u00D7 $${PROTECTION_PLAN_BIWEEKLY}`) : _fmt("booking.fmtTwoWeeksN", { n: twoWeeks, price: PROTECTION_PLAN_BIWEEKLY }, `${twoWeeks} 2-week periods \u00D7 $${PROTECTION_PLAN_BIWEEKLY}`));
       protDays = protDays % 14;
     }
     if (protDays >= 7) {
       const weeks = Math.floor(protDays / 7);
       protectionCost += weeks * PROTECTION_PLAN_WEEKLY;
-      protLines.push(`${weeks} week${weeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_WEEKLY}/wk`);
+      protLines.push(weeks === 1 ? _fmt("booking.fmtWeek1", { price: PROTECTION_PLAN_WEEKLY }, `1 week \u00D7 $${PROTECTION_PLAN_WEEKLY}/wk`) : _fmt("booking.fmtWeekN", { n: weeks, price: PROTECTION_PLAN_WEEKLY }, `${weeks} weeks \u00D7 $${PROTECTION_PLAN_WEEKLY}/wk`));
       protDays = protDays % 7;
     }
     if (protDays > 0) {
       protectionCost += protDays * PROTECTION_PLAN_DAILY;
-      protLines.push(`${protDays} day${protDays > 1 ? "s" : ""} × $${PROTECTION_PLAN_DAILY}/day`);
+      protLines.push(protDays === 1 ? _fmt("booking.fmtDay1", { price: PROTECTION_PLAN_DAILY }, `1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day`) : _fmt("booking.fmtDayN", { n: protDays, price: PROTECTION_PLAN_DAILY }, `${protDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day`));
     }
     cost += protectionCost;
-    lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
+    lines.push({ label: _fmt("booking.dppFmt", { detail: protLines.join(" + ") }, `Damage Protection Plan (${protLines.join(" + ")})`), amount: protectionCost });
   }
 
   const rentalSubtotal = cost + (carData.deposit || 0);
@@ -1206,9 +1229,9 @@ function updateTotal() {
   // otherwise indicate it will be calculated at checkout.
   if (currentTaxRate > 0) {
     const pct = +((currentTaxRate * 100).toFixed(4));
-    lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: taxAmount.toFixed(2) });
   } else {
-    lines.push({ label: "Sales tax", amount: null });
+    lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
   }
 
   const rowsEl = document.getElementById("breakdownRows");
@@ -1221,7 +1244,7 @@ function updateTotal() {
     labelSpan.textContent = l.label;
     const valueSpan = document.createElement("span");
     valueSpan.className = "breakdown-value";
-    valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
+    valueSpan.textContent = l.amount !== null ? "$" + l.amount : _t("booking.calcAtCheckout","Calculated at checkout");
     row.appendChild(labelSpan);
     row.appendChild(valueSpan);
     frag.appendChild(row);

@@ -6,12 +6,14 @@
   var TRANSLATIONS = {
     en: {
       nav: {
-        browseCars:  "Browse Cars",
-        howItWorks:  "How It Works",
-        about:       "About",
-        contact:     "Contact",
-        reviews:     "Reviews",
-        callNow:     "Call Now to Get Approved Today"
+        browseCars:   "Browse Cars",
+        howItWorks:   "How It Works",
+        about:        "About",
+        contact:      "Contact",
+        reviews:      "Reviews",
+        callNow:      "Call Now to Get Approved Today",
+        home:         "Back to Homepage",
+        backToHome:   "\u2190 Back to Homepage"
       },
       // index.html
       hero: {
@@ -79,7 +81,23 @@
         uploadLicense: "\uD83D\uDCF7 Upload License (JPG, PNG, or PDF \u00B7 max 5\u00A0MB)",
         phoneVerified: "\u2713 Phone verified",
         codeSentNote: "Code sent to your phone \u2014 valid 10 min.",
-        resendBtn:   "Resend"
+        resendBtn:   "Resend",
+        resendFmt:   "Resend ({secs}s)",
+        sendingCode: "Sending\u2026",
+        sentDone:    "Sent \u2713",
+        licenseTypeError:   "Only JPG, PNG, or PDF files are accepted.",
+        licenseSizeError:   "File must be under 5\u00a0MB.",
+        invalidAge:         "Please enter a valid age.",
+        selectApp:          "Please select at least one delivery app.",
+        agreeTermsRequired: "You must agree to the Rental Terms & Conditions.",
+        agreeSmsRequired:   "You must agree to receive SMS booking notifications.",
+        uploadLicenseReq:   "Please upload a copy of your driver\u2019s license.",
+        submitting:         "Submitting your application\u2026",
+        enterPhoneFirst:    "Please enter your phone number first.",
+        codeSentPhone:      "A 6-digit code was sent to your phone.",
+        networkError:       "Network error. Please check your connection and try again.",
+        otpSentError:       "Failed to send verification code. Please try again.",
+        generalError:       "Something went wrong. Please try again."
       },
       // cars.html
       fleet: {
@@ -129,6 +147,9 @@
         unitWeek: "week",
         unitBiweek: "2 weeks",
         unitMonth: "month",
+        unitHrs: "hrs",
+        priceFrom: "from",
+        hours: "Hours",
         slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 deposit"
       },
       // car.html (booking page)
@@ -207,7 +228,27 @@
         alertInsuranceType:   "Please upload a valid insurance document (JPG, PNG, or PDF)",
         alertEmail:           "Please enter your email address.",
         alertName:            "Please enter your full name.",
-        loadError:            "Could not load the payment form. Please refresh the page and try again, or contact support."
+        loadError:            "Could not load the payment form. Please refresh the page and try again, or contact support.",
+        signedBtn:            "\u2705 Rental Agreement Signed",
+        signedByNote:         "Signed by {name}. Check the box below to confirm.",
+        nameError:            "Please enter at least a first and last name.",
+        sigError:             "Signature must match the full name entered in the booking form.",
+        calcAtCheckout:       "Calculated at checkout",
+        tierRentalFmt:        "{label} rental",
+        securityDepositRef:   "Security deposit (refundable)",
+        securityDeposit:      "Security deposit",
+        salesTaxFmt:          "Sales tax ({rate}%)",
+        salesTax:             "Sales tax",
+        dppSlingshotFmt:      "Damage Protection Plan (1 day \u00D7 ${price}/day)",
+        dppFmt:               "Damage Protection Plan ({detail})",
+        fmtMonth1:            "1 month \u00D7 ${price}/mo",
+        fmtMonthN:            "{n} months \u00D7 ${price}/mo",
+        fmtTwoWeeks1:         "1 2-week period \u00D7 ${price}",
+        fmtTwoWeeksN:         "{n} 2-week periods \u00D7 ${price}",
+        fmtWeek1:             "1 week \u00D7 ${price}/wk",
+        fmtWeekN:             "{n} weeks \u00D7 ${price}/wk",
+        fmtDay1:              "1 day \u00D7 ${price}/day",
+        fmtDayN:              "{n} days \u00D7 ${price}/day"
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
@@ -294,7 +335,23 @@
         otpPh:    "Enter 6-digit code",
         sendOtp:  "Send Code",
         resend:   "Resend",
-        emailVerified: "\u2713 Email verified"
+        emailVerified: "\u2713 Email verified",
+        otpHint:      "Check your inbox for a 6-digit code (valid 10 min).",
+        otpSent:      "Verification code sent! Check your inbox.",
+        otpSentError: "Failed to send verification email. Please try again.",
+        networkError: "Network error. Please check your connection and try again.",
+        sendCodeBtn:  "Send Code",
+        sentDone:     "Sent \u2713",
+        sendingCode:  "Sending\u2026",
+        resendFmt:    "Resend ({secs}s)",
+        enterEmailFirst:   "Please enter your email address first.",
+        enterValidEmail:   "Please enter a valid email address.",
+        fillAllFields:     "Please fill in all required fields.",
+        verifyEmailFirst:  "Please verify your email address before submitting.",
+        enterOtpCode:      "Please enter the verification code sent to your email.",
+        sending:           "Sending\u2026",
+        generalError:      "Something went wrong. Please try again or call us at (213) 916-6606.",
+        networkErrorFull:  "Network error. Please check your connection or call us at (213) 916-6606."
       },
       // success.html
       success: {
@@ -336,7 +393,8 @@
         fallback:     "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 Sly Transportation Services LLC. All rights reserved."
+        copy: "\u00A9 2026 Sly Transportation Services LLC. All rights reserved.",
+        privacyPolicy: "Privacy Policy"
       }
     },
 
@@ -347,7 +405,9 @@
         about:       "Nosotros",
         contact:     "Contacto",
         reviews:     "Rese\u00F1as",
-        callNow:     "Llama Ahora para Obtener Aprobaci\u00F3n Hoy"
+        callNow:     "Llama Ahora para Obtener Aprobaci\u00F3n Hoy",
+        home:        "Volver al Inicio",
+        backToHome:  "\u2190 Volver al Inicio"
       },
       hero: {
         applyNow: "Solicitar Ahora"
@@ -414,7 +474,23 @@
         uploadLicense: "\uD83D\uDCF7 Subir Licencia (JPG, PNG o PDF \u00B7 m\u00E1x 5\u00A0MB)",
         phoneVerified: "\u2713 Tel\u00E9fono verificado",
         codeSentNote: "C\u00F3digo enviado a tu tel\u00E9fono \u2014 v\u00E1lido 10 min.",
-        resendBtn:   "Reenviar"
+        resendBtn:   "Reenviar",
+        resendFmt:   "Reenviar ({secs}s)",
+        sendingCode: "Enviando\u2026",
+        sentDone:    "Enviado \u2713",
+        licenseTypeError:   "Solo se aceptan archivos JPG, PNG o PDF.",
+        licenseSizeError:   "El archivo debe ser menor de 5\u00a0MB.",
+        invalidAge:         "Por favor ingresa una edad v\u00E1lida.",
+        selectApp:          "Por favor selecciona al menos una aplicaci\u00F3n de entrega.",
+        agreeTermsRequired: "Debes aceptar los T\u00E9rminos y Condiciones del Alquiler.",
+        agreeSmsRequired:   "Debes aceptar recibir notificaciones SMS de reservas.",
+        uploadLicenseReq:   "Por favor sube una copia de tu licencia de conducir.",
+        submitting:         "Enviando tu solicitud\u2026",
+        enterPhoneFirst:    "Por favor ingresa tu n\u00FAmero de tel\u00E9fono primero.",
+        codeSentPhone:      "Se envi\u00F3 un c\u00F3digo de 6 d\u00EDgitos a tu tel\u00E9fono.",
+        networkError:       "Error de red. Por favor verifica tu conexi\u00F3n e int\u00E9ntalo de nuevo.",
+        otpSentError:       "No se pudo enviar el c\u00F3digo de verificaci\u00F3n. Por favor int\u00E9ntalo de nuevo.",
+        generalError:       "Algo sali\u00F3 mal. Por favor int\u00E9ntalo de nuevo."
       },
       fleet: {
         heading:    "Autos de Alquiler para Uber y Lyft en Los \u00C1ngeles",
@@ -463,6 +539,9 @@
         unitWeek: "semana",
         unitBiweek: "2 semanas",
         unitMonth: "mes",
+        unitHrs: "hrs",
+        priceFrom: "desde",
+        hours: "Horas",
         slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 dep\u00F3sito"
       },
       booking: {
@@ -540,7 +619,27 @@
         alertInsuranceType:   "Por favor sube un documento de seguro v\u00E1lido (JPG, PNG o PDF)",
         alertEmail:           "Por favor ingresa tu correo electr\u00F3nico.",
         alertName:            "Por favor ingresa tu nombre completo.",
-        loadError:            "No se pudo cargar el formulario de pago. Por favor recarga la p\u00E1gina e int\u00E9ntalo de nuevo, o cont\u00E1ctanos."
+        loadError:            "No se pudo cargar el formulario de pago. Por favor recarga la p\u00E1gina e int\u00E9ntalo de nuevo, o cont\u00E1ctanos.",
+        signedBtn:            "\u2705 Contrato de Alquiler Firmado",
+        signedByNote:         "Firmado por {name}. Marca la casilla abajo para confirmar.",
+        nameError:            "Por favor ingresa al menos nombre y apellido.",
+        sigError:             "La firma debe coincidir con el nombre completo ingresado en el formulario de reserva.",
+        calcAtCheckout:       "Calculado al pagar",
+        tierRentalFmt:        "Alquiler de {label}",
+        securityDepositRef:   "Dep\u00F3sito de seguridad (reembolsable)",
+        securityDeposit:      "Dep\u00F3sito de seguridad",
+        salesTaxFmt:          "Impuesto sobre ventas ({rate}%)",
+        salesTax:             "Impuesto sobre ventas",
+        dppSlingshotFmt:      "Plan de Protecci\u00F3n de Da\u00F1os (1 d\u00EDa \u00D7 ${price}/d\u00EDa)",
+        dppFmt:               "Plan de Protecci\u00F3n de Da\u00F1os ({detail})",
+        fmtMonth1:            "1 mes \u00D7 ${price}/mes",
+        fmtMonthN:            "{n} meses \u00D7 ${price}/mes",
+        fmtTwoWeeks1:         "1 per\u00EDodo de 2 semanas \u00D7 ${price}",
+        fmtTwoWeeksN:         "{n} per\u00EDodos de 2 semanas \u00D7 ${price}",
+        fmtWeek1:             "1 semana \u00D7 ${price}/sem",
+        fmtWeekN:             "{n} semanas \u00D7 ${price}/sem",
+        fmtDay1:              "1 d\u00EDa \u00D7 ${price}/d\u00EDa",
+        fmtDayN:              "{n} d\u00EDas \u00D7 ${price}/d\u00EDa"
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
@@ -626,7 +725,23 @@
         otpPh:    "Ingresa el c\u00F3digo de 6 d\u00EDgitos",
         sendOtp:  "Enviar C\u00F3digo",
         resend:   "Reenviar",
-        emailVerified: "\u2713 Correo verificado"
+        emailVerified: "\u2713 Correo verificado",
+        otpHint:      "Revisa tu bandeja de entrada para un c\u00F3digo de 6 d\u00EDgitos (v\u00E1lido 10 min).",
+        otpSent:      "\u00A1C\u00F3digo de verificaci\u00F3n enviado! Revisa tu bandeja de entrada.",
+        otpSentError: "No se pudo enviar el correo de verificaci\u00F3n. Por favor int\u00E9ntalo de nuevo.",
+        networkError: "Error de red. Por favor verifica tu conexi\u00F3n e int\u00E9ntalo de nuevo.",
+        sendCodeBtn:  "Enviar C\u00F3digo",
+        sentDone:     "Enviado \u2713",
+        sendingCode:  "Enviando\u2026",
+        resendFmt:    "Reenviar ({secs}s)",
+        enterEmailFirst:   "Por favor ingresa tu correo electr\u00F3nico primero.",
+        enterValidEmail:   "Por favor ingresa una direcci\u00F3n de correo electr\u00F3nico v\u00E1lida.",
+        fillAllFields:     "Por favor completa todos los campos requeridos.",
+        verifyEmailFirst:  "Por favor verifica tu correo electr\u00F3nico antes de enviar.",
+        enterOtpCode:      "Por favor ingresa el c\u00F3digo de verificaci\u00F3n enviado a tu correo.",
+        sending:           "Enviando\u2026",
+        generalError:      "Algo sali\u00F3 mal. Por favor int\u00E9ntalo de nuevo o ll\u00E1manos al (213) 916-6606.",
+        networkErrorFull:  "Error de red. Por favor verifica tu conexi\u00F3n o ll\u00E1manos al (213) 916-6606."
       },
       success: {
         title:      "\u2705 \u00A1Pago Exitoso!",
@@ -664,7 +779,8 @@
         fallback:     "No estoy seguro de eso \uD83E\uDD14\n\nIntenta preguntar sobre:\n\u2022 Precios\n\u2022 Autos disponibles\n\u2022 C\u00F3mo reservar\n\u2022 Aplicaciones de entrega\n\u2022 Informaci\u00F3n de contacto\n\nO env\u00EDanos un correo a slyservices@supports-info.com"
       },
       footer: {
-        copy: "\u00A9 2026 Sly Transportation Services LLC. Todos los derechos reservados."
+        copy: "\u00A9 2026 Sly Transportation Services LLC. Todos los derechos reservados.",
+        privacyPolicy: "Pol\u00EDtica de Privacidad"
       }
     }
   };
