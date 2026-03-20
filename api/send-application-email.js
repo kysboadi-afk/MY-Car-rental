@@ -152,13 +152,9 @@ export default async function handler(req, res) {
   const hasLicense = attachments.length > 0;
 
   // ─── Pre-approval decision ──────────────────────────────────────────────────
-  // NOTE: Approval evaluation temporarily bypassed — Twilio setup pending.
-  // All applications are auto-approved so renters can book immediately.
-  // Once Twilio is ready, restore the evaluateApplication() call:
-  // const decision = evaluateApplication({
-  //   age, experience, licenseAttached: hasLicense, agreeTerms: !!agreeTerms,
-  // });
-  const decision = "approved";
+  const decision = evaluateApplication({
+    age, experience, licenseAttached: hasLicense, agreeTerms: !!agreeTerms,
+  });
 
   const firstName = (name || "").split(" ")[0] || "there";
   const appsLabel = Array.isArray(apps) && apps.length ? apps.join(", ") : "Not specified";
