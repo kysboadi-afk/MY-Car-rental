@@ -60,7 +60,7 @@ filterBtns.forEach(btn => {
   });
 });
 
-// ----- Fleet Status & Availability -----
+// ─── Fleet Status & Availability -----
 const API_BASE = "https://sly-rides.vercel.app";
 
 function todayISO() {
@@ -72,16 +72,19 @@ function isBookedToday(ranges) {
   return (ranges || []).some(r => today >= r.from && today <= r.to);
 }
 
-// Capture the original button label for each vehicle from the HTML before any
-// fleet-status override so that re-applying "available" restores the correct
-// per-vehicle text (e.g. "Reserve This Vehicle" for Camry vs "Book Now" for Slingshot).
-const originalBtnText = {};
+// Capture the original i18n key for each vehicle button so re-applying
+// "available" restores the correct per-vehicle translated label.
+const originalBtnI18nKey = {};
 carCards.forEach(card => {
   const vehicleId = card.dataset.vehicle;
   if (!vehicleId) return;
   const btn = document.getElementById("select-btn-" + vehicleId);
-  if (btn) originalBtnText[vehicleId] = btn.textContent;
+  if (btn) originalBtnI18nKey[vehicleId] = btn.getAttribute("data-i18n") || null;
 });
+
+function t(key) {
+  return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : key;
+}
 
 function applyFleetStatus(fleetStatus, bookedDates) {
   carCards.forEach(card => {
@@ -101,10 +104,17 @@ function applyFleetStatus(fleetStatus, bookedDates) {
     if (oldTodayBadge) oldTodayBadge.remove();
 
     if (available) {
-      badge.textContent = "● Available";
+      badge.setAttribute("data-i18n", "fleet.available");
+      badge.textContent = t("fleet.available");
       badge.className = "status-badge available";
 
-      btn.textContent = originalBtnText[vehicleId] || "Book Now";
+      const key = originalBtnI18nKey[vehicleId];
+      if (key) {
+        btn.setAttribute("data-i18n", key);
+        btn.textContent = t(key);
+      } else {
+        btn.textContent = t("fleet.bookNow");
+      }
       btn.disabled = false;
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
@@ -114,14 +124,17 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       if (!bookedToday) {
         const todayBadge = document.createElement("span");
         todayBadge.className = "available-today-badge";
-        todayBadge.textContent = "✓ Available Today";
+        todayBadge.setAttribute("data-i18n", "fleet.availableToday");
+        todayBadge.textContent = t("fleet.availableToday");
         badge.insertAdjacentElement("afterend", todayBadge);
       }
     } else {
-      badge.textContent = "● Unavailable";
+      badge.setAttribute("data-i18n", "fleet.unavailable");
+      badge.textContent = t("fleet.unavailable");
       badge.className = "status-badge unavailable";
 
-      btn.textContent = "Booked";
+      btn.setAttribute("data-i18n", "fleet.booked");
+      btn.textContent = t("fleet.booked");
       btn.disabled = true;
       btn.classList.add("btn-booked");
       link.style.pointerEvents = "none";

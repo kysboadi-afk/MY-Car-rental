@@ -4,6 +4,21 @@
 // Because they are on different domains, the full Vercel URL must be used here.
 const API_BASE = "https://sly-rides.vercel.app";
 
+// i18n helper — safe to call before lang.js is fully executed because lang.js
+// is loaded before car.js and sets window.slyI18n synchronously.
+function t(key) {
+  return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : key;
+}
+
+// Fill a translation template string: replace {placeholder} tokens.
+function tFmt(key, vars) {
+  var str = t(key);
+  Object.keys(vars).forEach(function(k) {
+    str = str.replace("{" + k + "}", vars[k]);
+  });
+  return str;
+}
+
 // ----- Car Data -----
 const cars = {
   slingshot: {
@@ -99,7 +114,7 @@ function getVehicleFromURL() {
 // ----- Load Car Data -----
 const vehicleId = getVehicleFromURL();
 if (!vehicleId || !cars[vehicleId]) {
-  alert("Vehicle not found.");
+  alert(t("booking.alertVehicleNotFound"));
   window.location.href = "index.html";
 }
 
@@ -235,7 +250,7 @@ function isValidName(val) {
     if (nameError) {
       const val = this.value.trim();
       if (val && !isValidName(val)) {
-        nameError.textContent = 'Please enter at least a first and last name.';
+        nameError.textContent = t('booking.nameError');
         nameError.style.display = '';
       } else {
         nameError.style.display = 'none';
@@ -432,7 +447,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     const carPart    = `<strong>${carData.name}</strong>`;
     const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
     const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
-    intro.innerHTML  = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
+    intro.innerHTML  = tFmt("booking.agreementIntroTpl", { name: namePart, car: carPart, pickup: pickPart, returnDate: retPart });
   }
 
   // Populate vehicle details section
@@ -460,24 +475,22 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (carData.hourlyTiers) {
     if (depositHeadingEl) depositHeadingEl.style.display = "";
     if (depositIntroEl) depositIntroEl.innerHTML =
-      `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
-      `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
-      `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
+      tFmt("booking.depositSlingshotIntroTpl", { amount: carData.deposit });
     if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = t("booking.depositDppHtml"); }
     if (depositNeitherEl) {
       const rateList = carData.hourlyTiers
-        ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
+        ? carData.hourlyTiers.map(tr => `$${tr.price} / ${tr.hours} hrs`).join(" &bull; ")
         : "";
       depositNeitherEl.innerHTML =
-        `<strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${carData.deposit} refundable security deposit (included in payment)`;
+        tFmt("booking.depositSlingshotRatesTpl", { rates: rateList, deposit: carData.deposit });
     }
   } else {
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositIntroEl) depositIntroEl.textContent =
-      "No security deposit is required for this vehicle.";
+      t("booking.depositNoDeposit");
     if (depositInsEl)     depositInsEl.style.display = "none";
-    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
+    if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = t("booking.depositDppHtml"); }
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
   }
 
@@ -513,7 +526,7 @@ document.getElementById("confirmSignBtn").addEventListener("click", function () 
   const sigError = document.getElementById("signatureError");
   if (renterName && sig.toLowerCase() !== renterName.toLowerCase()) {
     if (sigError) {
-      sigError.textContent = "Signature must match the full name entered in the booking form.";
+      sigError.textContent = t("booking.sigMatchError");
       sigError.style.display = "";
     }
     return;
@@ -527,11 +540,11 @@ document.getElementById("confirmSignBtn").addEventListener("click", function () 
   const btn    = document.getElementById("signAgreementBtn");
   const status = document.getElementById("signAgreementStatus");
   btn.classList.add("signed");
-  btn.textContent = "✅ Rental Agreement Signed";
+  btn.textContent = t("booking.signedBtn");
 
   status.style.display = "";
   status.style.color   = "#4caf50";
-  status.textContent   = `Signed by ${sig}. Check the box below to confirm.`;
+  status.textContent   = tFmt("booking.signedByTpl", { name: sig });
 
   const checkbox = document.getElementById("agree");
   checkbox.disabled = false;
@@ -807,7 +820,7 @@ window.addEventListener("pageshow", function(e) {
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
-  signBtn.textContent = "✍ Review & Sign Rental Agreement";
+  signBtn.textContent = t("booking.reviewSignBtn");
   signBtn.style.display = "";
   const agreementBox = document.getElementById("rentalAgreementBox");
   if (agreementBox) agreementBox.style.display = "none";
@@ -825,7 +838,7 @@ window.addEventListener("pageshow", function(e) {
   paymentForm.style.display = "none";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
-  stripeBtn.textContent = "💳 Pay Now";
+  stripeBtn.textContent = t("booking.payNow");
   totalEl.textContent = "0";
   document.getElementById("subtotal").textContent = "0";
   document.getElementById("taxLine").style.display = "none";
@@ -869,11 +882,11 @@ function updateTotal() {
 
     const lines = [];
     lines.push({ label: `${tier.label} rental`, amount: tier.price });
-    lines.push({ label: "Security deposit (refundable)", amount: carData.deposit });
+    lines.push({ label: t("booking.lineDeposit"), amount: carData.deposit });
 
     // DPP for slingshot is always 1 day ($13) if chosen
     if (insuranceCoverageChoice === "no") {
-      lines.push({ label: `Damage Protection Plan (1 day × $${PROTECTION_PLAN_DAILY}/day)`, amount: PROTECTION_PLAN_DAILY });
+      lines.push({ label: tFmt("booking.lineDppDayTpl", { days: 1, rate: PROTECTION_PLAN_DAILY }), amount: PROTECTION_PLAN_DAILY });
     }
 
     let cost = tier.price + (insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0);
@@ -884,9 +897,9 @@ function updateTotal() {
 
     if (currentTaxRate > 0) {
       const pct = +((currentTaxRate * 100).toFixed(4));
-      lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+      lines.push({ label: tFmt("booking.lineSalesTaxPctTpl", { pct }), amount: taxAmount.toFixed(2) });
     } else {
-      lines.push({ label: "Sales tax", amount: null });
+      lines.push({ label: t("booking.lineSalesTax"), amount: null });
     }
 
     const rowsEl = document.getElementById("breakdownRows");
@@ -899,7 +912,7 @@ function updateTotal() {
       labelSpan.textContent = l.label;
       const valueSpan = document.createElement("span");
       valueSpan.className = "breakdown-value";
-      valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
+      valueSpan.textContent = l.amount !== null ? "$" + l.amount : t("booking.calcAtCheckout");
       row.appendChild(labelSpan);
       row.appendChild(valueSpan);
       frag.appendChild(row);
@@ -944,30 +957,30 @@ function updateTotal() {
     const subtotal = months * carData.monthly;
     cost += subtotal;
     remaining = remaining % 30;
-    lines.push({ label: `${months} month${months > 1 ? "s" : ""} × $${carData.monthly}/mo`, amount: subtotal });
+    lines.push({ label: tFmt("booking.lineMonthTpl", { months }) + ` × $${carData.monthly}/mo`, amount: subtotal });
   }
   if (carData.biweekly && remaining >= 14) {
     const twoWeekPeriods = Math.floor(remaining / 14);
     const subtotal = twoWeekPeriods * carData.biweekly;
     cost += subtotal;
     remaining = remaining % 14;
-    lines.push({ label: `${twoWeekPeriods} 2-week period${twoWeekPeriods > 1 ? "s" : ""} × $${carData.biweekly}`, amount: subtotal });
+    lines.push({ label: tFmt("booking.lineBiweekTpl", { count: twoWeekPeriods }) + ` × $${carData.biweekly}`, amount: subtotal });
   }
   if (carData.weekly && remaining >= 7) {
     const weeks = Math.floor(remaining / 7);
     const subtotal = weeks * carData.weekly;
     cost += subtotal;
     remaining = remaining % 7;
-    lines.push({ label: `${weeks} week${weeks > 1 ? "s" : ""} × $${carData.weekly}/wk`, amount: subtotal });
+    lines.push({ label: tFmt("booking.lineWeekTpl", { weeks }) + ` × $${carData.weekly}/wk`, amount: subtotal });
   }
   if (remaining > 0) {
     const subtotal = remaining * carData.pricePerDay;
     cost += subtotal;
-    lines.push({ label: `${remaining} day${remaining > 1 ? "s" : ""} × $${carData.pricePerDay}/day`, amount: subtotal });
+    lines.push({ label: `${remaining} ${t("booking.days")} × $${carData.pricePerDay}/day`, amount: subtotal });
   }
   // Security deposit is always charged (never waived)
   if (carData.deposit) {
-    lines.push({ label: "Security deposit", amount: carData.deposit });
+    lines.push({ label: t("booking.lineDeposit"), amount: carData.deposit });
   }
   // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
   if (insuranceCoverageChoice === "no") {
@@ -977,27 +990,27 @@ function updateTotal() {
     if (protDays >= 30) {
       const months = Math.floor(protDays / 30);
       protectionCost += months * PROTECTION_PLAN_MONTHLY;
-      protLines.push(`${months} month${months > 1 ? "s" : ""} × $${PROTECTION_PLAN_MONTHLY}/mo`);
+      protLines.push(`${months} ${t("booking.days")} × $${PROTECTION_PLAN_MONTHLY}/mo`);
       protDays = protDays % 30;
     }
     if (protDays >= 14) {
       const twoWeeks = Math.floor(protDays / 14);
       protectionCost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
-      protLines.push(`${twoWeeks} 2-week period${twoWeeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_BIWEEKLY}`);
+      protLines.push(`${twoWeeks} × $${PROTECTION_PLAN_BIWEEKLY}`);
       protDays = protDays % 14;
     }
     if (protDays >= 7) {
       const weeks = Math.floor(protDays / 7);
       protectionCost += weeks * PROTECTION_PLAN_WEEKLY;
-      protLines.push(`${weeks} week${weeks > 1 ? "s" : ""} × $${PROTECTION_PLAN_WEEKLY}/wk`);
+      protLines.push(`${weeks} × $${PROTECTION_PLAN_WEEKLY}/wk`);
       protDays = protDays % 7;
     }
     if (protDays > 0) {
       protectionCost += protDays * PROTECTION_PLAN_DAILY;
-      protLines.push(`${protDays} day${protDays > 1 ? "s" : ""} × $${PROTECTION_PLAN_DAILY}/day`);
+      protLines.push(`${protDays} ${t("booking.days")} × $${PROTECTION_PLAN_DAILY}/day`);
     }
     cost += protectionCost;
-    lines.push({ label: `Damage Protection Plan (${protLines.join(" + ")})`, amount: protectionCost });
+    lines.push({ label: tFmt("booking.lineDppTpl", { days: currentDayCount }) + ` (${protLines.join(" + ")})`, amount: protectionCost });
   }
 
   const rentalSubtotal = cost + (carData.deposit || 0);
@@ -1009,9 +1022,9 @@ function updateTotal() {
   // otherwise indicate it will be calculated at checkout.
   if (currentTaxRate > 0) {
     const pct = +((currentTaxRate * 100).toFixed(4));
-    lines.push({ label: `Sales tax (${pct}%)`, amount: taxAmount.toFixed(2) });
+    lines.push({ label: tFmt("booking.lineSalesTaxPctTpl", { pct }), amount: taxAmount.toFixed(2) });
   } else {
-    lines.push({ label: "Sales tax", amount: null });
+    lines.push({ label: t("booking.lineSalesTax"), amount: null });
   }
 
   const rowsEl = document.getElementById("breakdownRows");
@@ -1024,7 +1037,7 @@ function updateTotal() {
     labelSpan.textContent = l.label;
     const valueSpan = document.createElement("span");
     valueSpan.className = "breakdown-value";
-    valueSpan.textContent = l.amount !== null ? "$" + l.amount : "Calculated at checkout";
+    valueSpan.textContent = l.amount !== null ? "$" + l.amount : t("booking.calcAtCheckout");
     row.appendChild(labelSpan);
     row.appendChild(valueSpan);
     frag.appendChild(row);
@@ -1056,11 +1069,11 @@ function updateTotal() {
 stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
-  if (!email) { alert("Please enter your email address."); return; }
-  if (!nameVal) { alert("Please enter your full name."); return; }
+  if (!email) { alert(t("booking.alertEnterEmail")); return; }
+  if (!nameVal) { alert(t("booking.alertEnterName")); return; }
 
   stripeBtn.disabled = true;
-  stripeBtn.textContent = "Loading payment form…";
+  stripeBtn.textContent = t("booking.loadingPayment");
 
   // Pre-encode the ID file so it's ready when the user submits payment
   let idBase64 = null;
@@ -1172,7 +1185,7 @@ stripeBtn.addEventListener("click", async () => {
       const submitBtn = document.getElementById("submit-payment");
       const msgEl = document.getElementById("payment-message");
       submitBtn.disabled = true;
-      submitBtn.textContent = "Processing…";
+      submitBtn.textContent = t("booking.processing");
       msgEl.textContent = "";
 
       // Store booking data in sessionStorage so success.html can send the
@@ -1283,14 +1296,14 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      stripeBtn.textContent = "💳 Pay Now";
+      stripeBtn.textContent = t("booking.payNow");
       updatePayBtn();
     }, { once: true });
 
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    stripeBtn.textContent = "💳 Pay Now";
+    stripeBtn.textContent = t("booking.payNow");
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
       alert(err.message);

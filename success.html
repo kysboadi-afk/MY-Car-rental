@@ -46,29 +46,24 @@
     <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
   </header>
   <div class="message-box" id="messageBox">
-    <h1 id="messageTitle">✅ Payment Successful!</h1>
-    <p id="messageBody">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
-    <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px">Sending confirmation…</p>
-    <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5">Back to Homepage</a>
+    <h1 id="messageTitle" data-i18n="success.title">✅ Payment Successful!</h1>
+    <p id="messageBody" data-i18n="success.body">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
+    <p id="emailStatus" data-i18n="success.sending" style="font-size:15px;color:#aaa;margin-bottom:16px">Sending confirmation…</p>
+    <a id="homeBtn" href="index.html" data-i18n="success.homeBtn" style="pointer-events:none;opacity:0.5">Back to Homepage</a>
   </div>
   <footer>
-    &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
+    <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a>
   </footer>
   <script src="lang.js"></script>
   <script src="chatbot.js"></script>
   <script>
     // Send the reservation notification email now that payment is confirmed.
-    // Booking metadata was saved to sessionStorage by car.js before the Stripe
-    // redirect; the large ID binary was saved separately in IndexedDB to avoid
-    // sessionStorage's ~5 MB size cap.
-    //
-    // Always check Stripe's redirect_status URL param first:
-    //   succeeded  → proceed (normal happy path)
-    //   processing → payment is pending; do NOT block dates or send confirmation
-    //   failed / requires_payment_method → payment failed; clear sessionStorage
-    //   absent     → synchronous confirmation (no redirect needed); proceed
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
+
+      function t(key) {
+        return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : key;
+      }
 
       function enableHomeBtn() {
         var btn = document.getElementById("homeBtn");
@@ -81,8 +76,8 @@
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
-        if (title)  { title.textContent  = "❌ Payment Failed"; title.style.color = "#f44336"; }
-        if (body)   body.textContent  = "Your payment was not completed. No charge was made. Please try booking again or contact us if you need help.";
+        if (title)  { title.textContent  = t("success.failTitle"); title.style.color = "#f44336"; }
+        if (body)   body.textContent  = t("success.failBody");
         if (status) status.style.display = "none";
       }
 
@@ -90,31 +85,24 @@
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
-        if (title)  { title.textContent  = "⏳ Payment Processing"; title.style.color = "#ffb400"; }
-        if (body)   body.textContent  = "Your payment is being processed. We will email you once it is confirmed. Please do not re-submit.";
+        if (title)  { title.textContent  = t("success.pendingTitle"); title.style.color = "#ffb400"; }
+        if (body)   body.textContent  = t("success.pendingBody");
         if (status) status.style.display = "none";
       }
 
-      // Check Stripe's redirect_status param before doing anything else.
-      // The early `return` below is what prevents date-blocking and confirmation
-      // emails from being sent for non-succeeded states — execution never reaches
-      // the sendEmail() call below for these cases.
       var redirectStatus = new URLSearchParams(window.location.search).get("redirect_status");
       if (redirectStatus === "failed" || redirectStatus === "requires_payment_method") {
         sessionStorage.removeItem("slyRidesBooking");
         showPaymentFailed();
         enableHomeBtn();
-        return; // ← exits here; sendEmail() is never called
+        return;
       }
       if (redirectStatus === "processing") {
-        // Payment is not yet confirmed — clear staging data so it is never sent
-        // accidentally and show a "pending" message. sendEmail() is never called.
         sessionStorage.removeItem("slyRidesBooking");
         showPaymentProcessing();
         enableHomeBtn();
-        return; // ← exits here; sendEmail() is never called
+        return;
       }
-      // redirectStatus === "succeeded" or absent (synchronous confirmation) → proceed
 
       var raw = sessionStorage.getItem("slyRidesBooking");
       if (!raw) { enableHomeBtn(); return; }
@@ -125,7 +113,7 @@
       function showEmailError() {
         var status = document.getElementById("emailStatus");
         if (status) {
-          status.textContent = "We couldn't send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.";
+          status.textContent = t("success.emailError");
           status.style.color = "#ff9800";
           status.style.display = "";
         }
@@ -146,11 +134,6 @@
         });
       }
 
-      // Retrieve the ID and insurance attachments from IndexedDB, merge into the payload,
-      // then call sendEmail() exactly once.
-      // car.js saves both files together under the "pendingId" key so a single
-      // read is sufficient.  Any leftover "pendingInsurance" key is also deleted
-      // as part of cleanup to keep the store tidy.
       try {
         var openReq = indexedDB.open("slyRidesDB", 1);
         openReq.onupgradeneeded = function (e) {
@@ -173,7 +156,6 @@
                   insuranceMimeType: fileData.insuranceMimeType,
                 });
               }
-              // Clean up both keys, then send exactly one email.
               try {
                 var cleanTx = db.transaction("files", "readwrite");
                 var store = cleanTx.objectStore("files");
