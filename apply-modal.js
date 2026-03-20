@@ -21,6 +21,22 @@
 
   let licenseFile = null;
 
+  // i18n helper
+  function mt(key, fallback) {
+    return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
+  }
+
+  // Format helper with {placeholder} replacement
+  function mfmt(key, vars, fallback) {
+    var s = mt(key, fallback || key);
+    if (vars) {
+      Object.keys(vars).forEach(function(k) {
+        s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+      });
+    }
+    return s;
+  }
+
   // ─── Phone OTP state ─────────────────────────────────────────────────────────
   // NOTE: Phone OTP verification is temporarily disabled while Twilio is being
   // set up. phoneVerified is pre-set to true and a placeholder token is used
@@ -70,14 +86,14 @@
 
     const allowed = ["image/jpeg", "image/png", "application/pdf"];
     if (!allowed.includes(file.type)) {
-      licenseInfo.textContent = "Only JPG, PNG, or PDF files are accepted.";
+      licenseInfo.textContent = mt("applyModal.licenseTypeError", "Only JPG, PNG, or PDF files are accepted.");
       licenseInfo.style.color = "#f44336";
       this.value = "";
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      licenseInfo.textContent = "File must be under 5\u00a0MB.";
+      licenseInfo.textContent = mt("applyModal.licenseSizeError", "File must be under 5\u00a0MB.");
       licenseInfo.style.color = "#f44336";
       this.value = "";
       return;
@@ -105,16 +121,16 @@
   function startResendCooldown() {
     resendPhoneOtpBtn.disabled = true;
     var secs = 30;
-    resendPhoneOtpBtn.textContent = "Resend (" + secs + "s)";
+    resendPhoneOtpBtn.textContent = mfmt("applyModal.resendFmt", { secs: secs }, "Resend (" + secs + "s)");
     clearInterval(resendTimer);
     resendTimer = setInterval(function () {
       secs -= 1;
       if (secs <= 0) {
         clearInterval(resendTimer);
         resendPhoneOtpBtn.disabled = false;
-        resendPhoneOtpBtn.textContent = "Resend";
+        resendPhoneOtpBtn.textContent = mt("applyModal.resendBtn", "Resend");
       } else {
-        resendPhoneOtpBtn.textContent = "Resend (" + secs + "s)";
+        resendPhoneOtpBtn.textContent = mfmt("applyModal.resendFmt", { secs: secs }, "Resend (" + secs + "s)");
       }
     }, 1000);
   }
@@ -122,13 +138,13 @@
   async function sendPhoneOtp() {
     var phone = phoneInput.value.trim();
     if (!phone) {
-      statusEl.textContent = "Please enter your phone number first.";
+      statusEl.textContent = mt("applyModal.enterPhoneFirst", "Please enter your phone number first.");
       statusEl.className = "apply-status error";
       phoneInput.focus();
       return;
     }
     sendPhoneOtpBtn.disabled = true;
-    sendPhoneOtpBtn.textContent = "Sending\u2026";
+    sendPhoneOtpBtn.textContent = mt("applyModal.sendingCode", "Sending\u2026");
     statusEl.textContent = "";
     statusEl.className = "apply-status";
 
@@ -140,10 +156,10 @@
       });
       var data = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        statusEl.textContent = data.error || "Failed to send verification code. Please try again.";
+        statusEl.textContent = data.error || mt("applyModal.otpSentError", "Failed to send verification code. Please try again.");
         statusEl.className = "apply-status error";
         sendPhoneOtpBtn.disabled = false;
-        sendPhoneOtpBtn.textContent = "Send Code";
+        sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
         return;
       }
       phoneOtpToken = data.token;
@@ -152,23 +168,23 @@
       phoneVerifiedBadge.style.display = "none";
       phoneOtpInput.value = "";
       phoneOtpInput.focus();
-      sendPhoneOtpBtn.textContent = "Sent \u2713";
+      sendPhoneOtpBtn.textContent = mt("applyModal.sentDone", "Sent \u2713");
       startResendCooldown();
-      statusEl.textContent = "A 6-digit code was sent to your phone.";
+      statusEl.textContent = mt("applyModal.codeSentPhone", "A 6-digit code was sent to your phone.");
       statusEl.className = "apply-status sending";
     } catch (err) {
       console.error("Send phone OTP error:", err);
-      statusEl.textContent = "Network error. Please check your connection and try again.";
+      statusEl.textContent = mt("applyModal.networkError", "Network error. Please check your connection and try again.");
       statusEl.className = "apply-status error";
       sendPhoneOtpBtn.disabled = false;
-      sendPhoneOtpBtn.textContent = "Send Code";
+      sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
     }
   }
 
   sendPhoneOtpBtn.addEventListener("click", sendPhoneOtp);
 
   resendPhoneOtpBtn.addEventListener("click", function () {
-    sendPhoneOtpBtn.textContent = "Send Code";
+    sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
     sendPhoneOtpBtn.disabled = false;
     sendPhoneOtp();
   });
@@ -196,7 +212,7 @@
     phoneVerifiedBadge.style.display = "none";
     phoneOtpInput.value = "";
     sendPhoneOtpBtn.disabled = false;
-    sendPhoneOtpBtn.textContent = "Send Code";
+    sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
     clearInterval(resendTimer);
   });
 
@@ -217,31 +233,31 @@
     const agreeSmsConsent = document.getElementById("applySmsConsent").checked;
 
     if (isNaN(age) || age < 18 || age > 100) {
-      statusEl.textContent = "Please enter a valid age.";
+      statusEl.textContent = mt("applyModal.invalidAge", "Please enter a valid age.");
       statusEl.className = "apply-status error";
       return;
     }
 
     if (apps.length === 0) {
-      statusEl.textContent = "Please select at least one delivery app.";
+      statusEl.textContent = mt("applyModal.selectApp", "Please select at least one delivery app.");
       statusEl.className = "apply-status error";
       return;
     }
 
     if (!agreeTerms) {
-      statusEl.textContent = "You must agree to the Rental Terms & Conditions.";
+      statusEl.textContent = mt("applyModal.agreeTermsRequired", "You must agree to the Rental Terms & Conditions.");
       statusEl.className = "apply-status error";
       return;
     }
 
     if (!agreeSmsConsent) {
-      statusEl.textContent = "You must agree to receive SMS booking notifications.";
+      statusEl.textContent = mt("applyModal.agreeSmsRequired", "You must agree to receive SMS booking notifications.");
       statusEl.className = "apply-status error";
       return;
     }
 
     if (!licenseFile) {
-      statusEl.textContent = "Please upload a copy of your driver\u2019s license.";
+      statusEl.textContent = mt("applyModal.uploadLicenseReq", "Please upload a copy of your driver\u2019s license.");
       statusEl.className = "apply-status error";
       return;
     }
@@ -255,7 +271,7 @@
     // }
 
     submitBtn.disabled = true;
-    statusEl.textContent = "Submitting your application\u2026";
+    statusEl.textContent = mt("applyModal.submitting", "Submitting your application\u2026");
     statusEl.className = "apply-status sending";
 
     try {
@@ -292,7 +308,7 @@
 
       const result = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        throw new Error(result.error || "Submission failed. Please try again.");
+        throw new Error(result.error || mt("applyModal.generalError", "Something went wrong. Please try again."));
       }
 
       // Read the pre-approval decision returned by the API.
@@ -309,7 +325,7 @@
       window.location.href = "thank-you.html?from=apply";
 
     } catch (err) {
-      statusEl.textContent = err.message || "Something went wrong. Please try again.";
+      statusEl.textContent = err.message || mt("applyModal.generalError", "Something went wrong. Please try again.");
       statusEl.className = "apply-status error";
       submitBtn.disabled = false;
     }
