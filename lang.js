@@ -124,7 +124,12 @@
         why5: "\uD83D\uDD11 Keep the same vehicle as long as payments stay current",
         ctaHeading: "Start Driving Today",
         ctaSub: "Reserve your rideshare vehicle and begin earning with Uber, Lyft, or delivery apps immediately.",
-        ctaBtn: "Browse Available Vehicles \u2191"
+        ctaBtn: "Browse Available Vehicles \u2191",
+        unitDay: "day",
+        unitWeek: "week",
+        unitBiweek: "2 weeks",
+        unitMonth: "month",
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 deposit"
       },
       // car.html (booking page)
       booking: {
@@ -185,7 +190,14 @@
         salesTaxLabel: "Sales Tax:",
         taxNote: "(+ applicable sales tax)",
         payHint: "Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign & agree to terms to enable payment.",
-        cancelPayment: "\u2190 Change booking details"
+        cancelPayment: "\u2190 Change booking details",
+        earningsTagline: "Uber & Lyft Ready \u2022 Unlimited Miles",
+        earningsTitle: "Driver Earnings Example (Los Angeles)",
+        earningsRow1: "Average weekly earnings: $1,200 \u2013 $1,600",
+        earningsRow2Html: "Weekly rental: <span class=\"earnings-yellow\">$350</span>",
+        earningsRow3Html: "<span class=\"earnings-green\">Estimated take-home:</span> $850 \u2013 $1,250",
+        earningsCtaHtml: "<span class=\"earnings-yellow\">Limited vehicles available</span> \u2014 reserve today",
+        slingshotTagline: "\uD83C\uDFCE\uFE0F Built for Thrills \u2022 Pure Fun"
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CAR RENTAL AGREEMENT",
@@ -271,7 +283,8 @@
         otpLabel: "Verification Code",
         otpPh:    "Enter 6-digit code",
         sendOtp:  "Send Code",
-        resend:   "Resend"
+        resend:   "Resend",
+        emailVerified: "\u2713 Email verified"
       },
       // success.html
       success: {
@@ -432,7 +445,12 @@
         why5: "\uD83D\uDD11 Mant\u00E9n el mismo veh\u00EDculo mientras los pagos est\u00E9n al d\u00EDa",
         ctaHeading: "Comienza a Manejar Hoy",
         ctaSub: "Reserva tu veh\u00EDculo de viaje compartido y comienza a ganar con Uber, Lyft o aplicaciones de entrega de inmediato.",
-        ctaBtn: "Ver Veh\u00EDculos Disponibles \u2191"
+        ctaBtn: "Ver Veh\u00EDculos Disponibles \u2191",
+        unitDay: "d\u00EDa",
+        unitWeek: "semana",
+        unitBiweek: "2 semanas",
+        unitMonth: "mes",
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 dep\u00F3sito"
       },
       booking: {
         backToCars:    "\u2B05 Volver a Autos",
@@ -492,7 +510,14 @@
         salesTaxLabel: "Impuesto sobre Ventas:",
         taxNote: "(+ impuesto sobre ventas aplicable)",
         payHint: "Completa las fechas, ingresa tu nombre y correo, sube tu identificaci\u00F3n, selecciona tu opci\u00F3n de seguro (y sube el comprobante si tienes cobertura), y firma y acepta los t\u00E9rminos para activar el pago.",
-        cancelPayment: "\u2190 Cambiar detalles de reserva"
+        cancelPayment: "\u2190 Cambiar detalles de reserva",
+        earningsTagline: "Listo para Uber y Lyft \u2022 Millaje Ilimitado",
+        earningsTitle: "Ejemplo de Ganancias del Conductor (Los \u00C1ngeles)",
+        earningsRow1: "Ganancias semanales promedio: $1,200 \u2013 $1,600",
+        earningsRow2Html: "Alquiler semanal: <span class=\"earnings-yellow\">$350</span>",
+        earningsRow3Html: "<span class=\"earnings-green\">Ingreso estimado:</span> $850 \u2013 $1,250",
+        earningsCtaHtml: "<span class=\"earnings-yellow\">Veh\u00EDculos limitados disponibles</span> \u2014 reserva hoy",
+        slingshotTagline: "\uD83C\uDFCE\uFE0F Dise\u00F1ado para Emociones \u2022 Pura Diversi\u00F3n"
       },
       agreement: {
         title: "SLY TRANSPORTATION SERVICES \u2014 CONTRATO DE ALQUILER DE VEH\u00CDCULO",
@@ -577,7 +602,8 @@
         otpLabel: "C\u00F3digo de Verificaci\u00F3n",
         otpPh:    "Ingresa el c\u00F3digo de 6 d\u00EDgitos",
         sendOtp:  "Enviar C\u00F3digo",
-        resend:   "Reenviar"
+        resend:   "Reenviar",
+        emailVerified: "\u2713 Correo verificado"
       },
       success: {
         title:      "\u2705 \u00A1Pago Exitoso!",
