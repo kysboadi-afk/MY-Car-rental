@@ -306,13 +306,15 @@
         failBody:   "Your payment was not completed. No charge was made. Please try booking again or contact us if you need help.",
         pendingTitle: "\u23F3 Payment Processing",
         pendingBody:  "Your payment is being processed. We will email you once it is confirmed. Please do not re-submit.",
-        emailError: "We couldn\u2019t send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking."
+        emailError: "We couldn\u2019t send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.",
+        tryAgain:  "Try Booking Again"
       },
       // cancel.html
       cancel: {
         title:   "\u274C Payment Canceled",
         body:    "Your payment was not completed. No charge was made. You can try again anytime!",
-        homeBtn: "Back to Homepage"
+        homeBtn: "Back to Homepage",
+        tryAgain: "Try Booking Again"
       },
       // thank-you.html
       thankyou: {
@@ -634,12 +636,14 @@
         failBody:   "Tu pago no fue completado. No se realiz\u00F3 ning\u00FAn cargo. Por favor intenta reservar de nuevo o cont\u00E1ctanos si necesitas ayuda.",
         pendingTitle: "\u23F3 Pago en Proceso",
         pendingBody:  "Tu pago est\u00E1 siendo procesado. Te enviaremos un correo una vez que sea confirmado. Por favor no vuelvas a enviar.",
-        emailError: "No pudimos enviar tu correo de confirmaci\u00F3n autom\u00E1ticamente. Por favor cont\u00E1ctanos en slyservices@supports-info.com para confirmar tu reserva."
+        emailError: "No pudimos enviar tu correo de confirmaci\u00F3n autom\u00E1ticamente. Por favor cont\u00E1ctanos en slyservices@supports-info.com para confirmar tu reserva.",
+        tryAgain:  "Intentar Reservar de Nuevo"
       },
       cancel: {
         title:   "\u274C Pago Cancelado",
         body:    "Tu pago no fue completado. No se realiz\u00F3 ning\u00FAn cargo. \u00A1Puedes intentarlo de nuevo en cualquier momento!",
-        homeBtn: "Volver al Inicio"
+        homeBtn: "Volver al Inicio",
+        tryAgain: "Intentar Reservar de Nuevo"
       },
       thankyou: {
         title:    "\uD83C\uDF89 \u00A1Gracias!",

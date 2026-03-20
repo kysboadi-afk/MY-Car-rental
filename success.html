@@ -66,14 +66,30 @@
     //   succeeded  → proceed (normal happy path)
     //   processing → payment is pending; do NOT block dates or send confirmation
     //   failed / requires_payment_method → payment failed; clear sessionStorage
-    //   absent     → synchronous confirmation (no redirect needed); proceed
+    //   any other / absent → treat as failed; do NOT send email
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
 
-      function enableHomeBtn() {
+      // Build a "Try Again" href using the vehicle query param car.js embeds in
+      // the return_url so we can send the user straight back to their booking.
+      var urlParams = new URLSearchParams(window.location.search);
+      var vehicleId = urlParams.get("vehicle");
+      var tryAgainHref = vehicleId
+        ? "car.html?vehicle=" + encodeURIComponent(vehicleId)
+        : "cars.html";
+
+      function enableHomeBtn(isRetry) {
         var btn = document.getElementById("homeBtn");
         var status = document.getElementById("emailStatus");
-        if (btn) { btn.style.pointerEvents = ""; btn.style.opacity = ""; }
+        if (btn) {
+          btn.style.pointerEvents = "";
+          btn.style.opacity = "";
+          if (isRetry) {
+            var t = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+            btn.href = tryAgainHref;
+            btn.textContent = t("success.tryAgain");
+          }
+        }
         if (status) { status.style.display = "none"; }
       }
 
@@ -98,25 +114,28 @@
       }
 
       // Check Stripe's redirect_status param before doing anything else.
-      // The early `return` below is what prevents date-blocking and confirmation
-      // emails from being sent for non-succeeded states — execution never reaches
-      // the sendEmail() call below for these cases.
-      var redirectStatus = new URLSearchParams(window.location.search).get("redirect_status");
-      if (redirectStatus === "failed" || redirectStatus === "requires_payment_method") {
+      // IMPORTANT: emails and date-blocking must ONLY happen on "succeeded".
+      // Any other value — including absent — must never trigger confirmation
+      // emails, because redirect-based methods (CashApp, Apple Pay, etc.) always
+      // include redirect_status; an absent value means the user navigated here
+      // directly or an unexpected state occurred.
+      var redirectStatus = urlParams.get("redirect_status");
+
+      if (redirectStatus !== "succeeded") {
         sessionStorage.removeItem("slyRidesBooking");
-        showPaymentFailed();
-        enableHomeBtn();
+        if (redirectStatus === "processing") {
+          // Payment is not yet confirmed — show pending message, no email sent.
+          showPaymentProcessing();
+          enableHomeBtn(true);
+        } else {
+          // failed, requires_payment_method, absent, or any unknown value
+          // → treat as failure; offer "Try Again" back to the booking page.
+          showPaymentFailed();
+          enableHomeBtn(true);
+        }
         return; // ← exits here; sendEmail() is never called
       }
-      if (redirectStatus === "processing") {
-        // Payment is not yet confirmed — clear staging data so it is never sent
-        // accidentally and show a "pending" message. sendEmail() is never called.
-        sessionStorage.removeItem("slyRidesBooking");
-        showPaymentProcessing();
-        enableHomeBtn();
-        return; // ← exits here; sendEmail() is never called
-      }
-      // redirectStatus === "succeeded" or absent (synchronous confirmation) → proceed
+      // redirectStatus === "succeeded" → proceed
 
       var raw = sessionStorage.getItem("slyRidesBooking");
       if (!raw) { enableHomeBtn(); return; }
