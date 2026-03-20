@@ -1,9 +1,9 @@
-// Tests for api/_pricing.js — computeAmount, computeSlingshotAmount, and computeProtectionPlanCost
+// Tests for api/_pricing.js — computeAmount, computeSlingshotAmount, computeProtectionPlanCost, and computeBreakdownLines
 //
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -176,4 +176,49 @@ test("protection plan: 31 days = 1 × $295 + 1 × $13 = $308", () => {
 
 test("protection plan: 37 days = 1 × $295 + 1 × $85 weekly = $380", () => {
   assert.equal(computeProtectionPlanCost(37), 380);
+});
+
+// ─── computeBreakdownLines ────────────────────────────────────────────────────
+
+test("breakdown: camry 1 day has daily line + tax + total", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-02");
+  assert.ok(lines.some(l => l.includes("1 × Daily")), "should have a daily line");
+  assert.ok(lines.some(l => l.startsWith("Tax")), "should have a tax line");
+  assert.ok(lines.some(l => l.startsWith("Total:")), "should have a total line");
+});
+
+test("breakdown: camry 7 days has weekly line", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-08");
+  assert.ok(lines.some(l => l.includes("1 × Weekly")), "should have a weekly line");
+  assert.ok(!lines.some(l => l.includes("Daily")), "should not have a daily line for exactly 7 days");
+});
+
+test("breakdown: camry 10 days has weekly + daily lines", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-11");
+  assert.ok(lines.some(l => l.includes("1 × Weekly")));
+  assert.ok(lines.some(l => l.includes("3 × Daily")));
+});
+
+test("breakdown: camry 30 days has monthly line", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-31");
+  assert.ok(lines.some(l => l.includes("1 × Monthly")));
+});
+
+test("breakdown: camry with DPP includes DPP line", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-08", true);
+  assert.ok(lines.some(l => l.includes("Damage Protection Plan")));
+});
+
+test("breakdown: camry without DPP has no DPP line", () => {
+  const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-08", false);
+  assert.ok(!lines.some(l => l.includes("Damage Protection Plan")));
+});
+
+test("breakdown: unknown vehicleId returns null", () => {
+  assert.equal(computeBreakdownLines("unknown", "2025-07-01", "2025-07-05"), null);
+});
+
+test("breakdown: slingshot returns null (hourly tier, not daily)", () => {
+  // slingshot has no pricePerDay — computeBreakdownLines returns null for hourly-only vehicles
+  assert.equal(computeBreakdownLines("slingshot", "2025-07-01", "2025-07-02"), null);
 });

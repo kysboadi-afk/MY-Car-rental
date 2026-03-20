@@ -1936,9 +1936,127 @@ span.flatpickr-weekday {
   align-items: center;
   justify-content: center;
   transition: transform 0.2s;
+  position: relative;
 }
 
 #chat-toggle:hover { transform: scale(1.1); }
+
+/* Red notification dot on the chat toggle */
+#chat-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  background: #e53935;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  animation: chat-badge-pulse 1.5s infinite;
+}
+
+@keyframes chat-badge-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.3); opacity: 0.8; }
+}
+
+/* Pulsing ring animation on the toggle button when badge is shown */
+.chat-toggle-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 3px solid #ffb400;
+  animation: chat-toggle-ring 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes chat-toggle-ring {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Reminder popup card */
+#chat-reminder {
+  position: fixed;
+  bottom: 96px;
+  right: 24px;
+  width: 270px;
+  background: #1a1a1a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px 16px 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  z-index: 9998;
+  animation: chat-slide-in 0.4s ease;
+}
+
+@keyframes chat-slide-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+#chat-reminder p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#chat-reminder-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+#chat-reminder-close:hover { color: #fff; }
+
+#chat-reminder-cta {
+  display: block;
+  width: 100%;
+  padding: 9px 0;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: background 0.2s;
+}
+
+#chat-reminder-cta:hover { background: #e0a000; }
+
+/* Chat chips (quick-reply buttons below messages) */
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px 10px;
+}
+
+.chat-chip {
+  background: #2a2a2a;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.chat-chip:hover {
+  background: #ffb400;
+  color: #000;
+}
 
 #chat-box {
   width: 320px;

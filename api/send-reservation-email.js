@@ -10,6 +10,7 @@
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 import { hasOverlap } from "./_availability.js";
+import { computeBreakdownLines } from "./_pricing.js";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -185,6 +186,21 @@ export default async function handler(req, res) {
 
   const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus } = req.body;
 
+  // Compute server-side pricing breakdown lines for daily/weekly rentals.
+  // Slingshot (hourly tier) or missing dates fall back gracefully to null.
+  const breakdownLines = (vehicleId && pickup && returnDate && !req.body.slingshotDuration)
+    ? computeBreakdownLines(vehicleId, pickup, returnDate, !!protectionPlan)
+    : null;
+  const breakdownText = breakdownLines ? breakdownLines.join("\n") : null;
+  const breakdownHtml = breakdownLines
+    ? `<table style="border-collapse:collapse;width:100%;margin-top:4px">
+        ${breakdownLines.map(line => {
+          const isTotal = line.startsWith("Total:");
+          return `<tr><td style="padding:6px 8px;border:1px solid #ddd${isTotal ? ";font-weight:bold" : ""}">${esc(line)}</td></tr>`;
+        }).join("")}
+      </table>`
+    : null;
+
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
   const ownerSubject = isConfirmed
@@ -250,6 +266,7 @@ export default async function handler(req, res) {
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
         `Total Charged  : $${total || "TBD"}`,
+        breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : "Own insurance (proof uploaded)"}` : "",
         signature ? `Digital Signature: ${signature}` : "",
         "",
@@ -286,6 +303,7 @@ export default async function handler(req, res) {
           ${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
+        ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
         ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : (protectionPlan ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`)}
         <p>${footerText}</p>
@@ -334,12 +352,13 @@ export default async function handler(req, res) {
             `Return Date    : ${returnDate || ""}`,
             `Return Time    : ${returnTime || "Not specified"}`,
             `Total Charged  : $${total || "TBD"}`,
+            breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
             "",
             "We will be in touch shortly to confirm your rental pick-up details.",
-            "If you have any questions, reply to this email or reach us at slyservices@supports-info.com.",
+            `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
             "",
             "Sly Transportation Services LLC Team",
-          ].join("\n"),
+          ].filter(line => line !== undefined).join("\n"),
           html: `
             <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
             <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
@@ -357,7 +376,8 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
             </table>
-            <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a>.</p>
+            ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
+            <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
             <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
         });

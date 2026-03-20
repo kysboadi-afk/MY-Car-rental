@@ -46,10 +46,10 @@
     <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
   </header>
   <div class="message-box" id="messageBox">
-    <h1 id="messageTitle">✅ Payment Successful!</h1>
-    <p id="messageBody">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
-    <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px">Sending confirmation…</p>
-    <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5">Back to Homepage</a>
+    <h1 id="messageTitle" data-i18n="success.title">✅ Payment Successful!</h1>
+    <p id="messageBody" data-i18n="success.body">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
+    <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px" data-i18n="success.sending">Sending confirmation…</p>
+    <a id="homeBtn" href="index.html" style="pointer-events:none;opacity:0.5" data-i18n="success.homeBtn">Back to Homepage</a>
   </div>
   <footer>
     &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
@@ -78,20 +78,22 @@
       }
 
       function showPaymentFailed() {
+        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
-        if (title)  { title.textContent  = "❌ Payment Failed"; title.style.color = "#f44336"; }
-        if (body)   body.textContent  = "Your payment was not completed. No charge was made. Please try booking again or contact us if you need help.";
+        if (title)  { title.textContent  = t("success.failTitle"); title.style.color = "#f44336"; }
+        if (body)   body.textContent  = t("success.failBody");
         if (status) status.style.display = "none";
       }
 
       function showPaymentProcessing() {
+        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
-        if (title)  { title.textContent  = "⏳ Payment Processing"; title.style.color = "#ffb400"; }
-        if (body)   body.textContent  = "Your payment is being processed. We will email you once it is confirmed. Please do not re-submit.";
+        if (title)  { title.textContent  = t("success.pendingTitle"); title.style.color = "#ffb400"; }
+        if (body)   body.textContent  = t("success.pendingBody");
         if (status) status.style.display = "none";
       }
 
@@ -123,9 +125,10 @@
       try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
 
       function showEmailError() {
+        var t      = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
         var status = document.getElementById("emailStatus");
         if (status) {
-          status.textContent = "We couldn't send your confirmation email automatically. Please contact us at slyservices@supports-info.com to confirm your booking.";
+          status.textContent = t("success.emailError");
           status.style.color = "#ff9800";
           status.style.display = "";
         }

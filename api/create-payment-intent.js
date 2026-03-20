@@ -103,7 +103,9 @@ export default async function handler(req, res) {
       currency: "usd",
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name}`,
-      payment_method_types: ["card"],
+      // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
+      // other wallets in addition to cards — without maintaining an explicit list.
+      automatic_payment_methods: { enabled: true },
       // Store full booking context so every payment is auditable from the
       // Stripe dashboard and can be reconciled with booked-dates.json if needed.
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is

@@ -1,5 +1,15 @@
 // ===== Sly Transportation Services LLC CHATBOT =====
 
+// Safely escape user-supplied text before embedding it into bot HTML
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 var botResponses = {
   en: [
     {
@@ -162,10 +172,12 @@ function getBotReply(input) {
 function buildChatbot() {
   var tFn = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
 
-  // Inject HTML
+  // ── Inject chat widget HTML ────────────────────────────────────────────────
   document.body.insertAdjacentHTML("beforeend",
     '<div id="chat-widget">' +
-      '<button id="chat-toggle" aria-label="Open chat">\uD83D\uDCAC</button>' +
+      '<button id="chat-toggle" aria-label="Open chat">\uD83D\uDCAC' +
+        '<span id="chat-badge" hidden aria-hidden="true"></span>' +
+      '</button>' +
       '<div id="chat-box" hidden>' +
         '<div id="chat-header">' +
           '<span id="chat-header-title">' + tFn("chatbot.headerTitle") + '</span>' +
@@ -177,24 +189,42 @@ function buildChatbot() {
           '<button id="chat-send">' + tFn("chatbot.sendBtn") + '</button>' +
         '</div>' +
       '</div>' +
+    '</div>' +
+    // Reminder popup (shown 12 s after badge appears with no interaction)
+    '<div id="chat-reminder" hidden role="alertdialog" aria-label="Chat reminder">' +
+      '<button id="chat-reminder-close" aria-label="Dismiss reminder">\u2715</button>' +
+      '<p>\uD83D\uDE97 <strong>$350/week — Unlimited Miles!</strong></p>' +
+      '<p>Rent a car for DoorDash or Uber Eats and start earning today.</p>' +
+      '<button id="chat-reminder-cta">Apply Now \u2192</button>' +
     '</div>'
   );
 
-  var toggle   = document.getElementById("chat-toggle");
-  var closeBtn = document.getElementById("chat-close");
-  var chatBox  = document.getElementById("chat-box");
-  var input    = document.getElementById("chat-input");
-  var sendBtn  = document.getElementById("chat-send");
-  var messages = document.getElementById("chat-messages");
+  var toggle      = document.getElementById("chat-toggle");
+  var badge       = document.getElementById("chat-badge");
+  var closeBtn    = document.getElementById("chat-close");
+  var chatBox     = document.getElementById("chat-box");
+  var input       = document.getElementById("chat-input");
+  var sendBtn     = document.getElementById("chat-send");
+  var messages    = document.getElementById("chat-messages");
+  var reminder    = document.getElementById("chat-reminder");
+  var reminderClose = document.getElementById("chat-reminder-close");
+  var reminderCta   = document.getElementById("chat-reminder-cta");
 
-  // Track whether the user has ever manually dismissed the chat
-  var userDismissed = false;
+  // ── State ──────────────────────────────────────────────────────────────────
+  // mode: "greeting" | "faq" | "qualify" | "free"
+  var mode         = "greeting";
+  var qualifyStep  = 0;
+  var qualifyData  = {};
+  var userInteracted = false;    // true once the user sends any message or clicks a chip
+  var userDismissed  = false;    // true once the user manually closes the chat
+  var reminderTimer  = null;
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
   function addMessage(text, sender) {
     var msg = document.createElement("div");
     msg.className = "chat-msg " + sender;
     if (sender === "bot") {
-      // Bot replies are hardcoded static strings (never user input), so innerHTML is safe.
+      // Bot replies are hardcoded static strings (never raw user input), innerHTML is safe.
       // Convert \n to <br> so plain-text replies keep their line breaks.
       msg.innerHTML = text.replace(/\n/g, "<br>");
       // Wire up any "Apply Now" links injected into bot replies so they open the
@@ -216,12 +246,385 @@ function buildChatbot() {
     messages.scrollTop = messages.scrollHeight;
   }
 
+  function addChips(chips) {
+    var row = document.createElement("div");
+    row.className = "chat-chips";
+    chips.forEach(function(chip) {
+      var btn = document.createElement("button");
+      btn.className = "chat-chip";
+      btn.textContent = chip.label;
+      btn.addEventListener("click", function() {
+        // Remove chips once one is selected
+        if (row.parentNode) row.parentNode.removeChild(row);
+        userInteracted = true;
+        addMessage(chip.label, "user");
+        chip.action();
+      });
+      row.appendChild(btn);
+    });
+    messages.appendChild(row);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ── Entry point chips ──────────────────────────────────────────────────────
+  function showEntryChips() {
+    addChips([
+      { label: "✅ Yes, I want to apply",   action: startQualify },
+      { label: "❓ I have a question",       action: startFAQ    }
+    ]);
+  }
+
+  // ── FAQ chip path ──────────────────────────────────────────────────────────
+  function startFAQ() {
+    mode = "faq";
+    setTimeout(function() {
+      var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+      if (lang === "es") {
+        addMessage("¿Sobre qué te gustaría saber más? 👇", "bot");
+      } else {
+        addMessage("What would you like to know? 👇", "bot");
+      }
+      addFAQChips();
+    }, 400);
+  }
+
+  function addFAQChips() {
+    var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+    var chips;
+    if (lang === "es") {
+      chips = [
+        { label: "💰 Precios",           action: function() { showFAQAnswer("pricing"); } },
+        { label: "🚗 Autos Disponibles", action: function() { showFAQAnswer("cars");    } },
+        { label: "📋 Requisitos",        action: function() { showFAQAnswer("reqs");    } },
+        { label: "📞 Contacto",          action: function() { showFAQAnswer("contact"); } },
+        { label: "✅ Solicitar Ahora",    action: startQualify }
+      ];
+    } else {
+      chips = [
+        { label: "💰 Pricing",           action: function() { showFAQAnswer("pricing"); } },
+        { label: "🚗 Available Cars",    action: function() { showFAQAnswer("cars");    } },
+        { label: "📋 Requirements",      action: function() { showFAQAnswer("reqs");    } },
+        { label: "📞 Contact",           action: function() { showFAQAnswer("contact"); } },
+        { label: "✅ Apply Now",          action: startQualify }
+      ];
+    }
+    addChips(chips);
+  }
+
+  function showFAQAnswer(topic) {
+    var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+    var replies = {
+      pricing: {
+        en: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • + $150 deposit\n\n🔵 Camry 2012\n  • Daily — $50 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
+        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • + $150 depósito\n\n🔵 Camry 2012\n  • Diario — $50 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
+      },
+      cars: {
+        en: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 deposit)\n\n🔵 Camry 2012 — $50/day or $350/week (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week (no deposit)\n\nVisit our Cars page to browse and book!",
+        es: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 depósito)\n\n🔵 Camry 2012 — $50/día o $350/semana (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+      },
+      reqs: {
+        en: "📋 Requirements to Rent\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • At least 3 months of driving experience\n  • License must not be expired\n  • Upload a photo of your license during booking",
+        es: "📋 Requisitos para Alquilar\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • Al menos 3 meses de experiencia al volante\n  • La licencia no debe estar vencida\n  • Subir una foto de tu licencia durante la reserva"
+      },
+      contact: {
+        en: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
+        es: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
+      }
+    };
+    var msg = (replies[topic] && replies[topic][lang]) || (replies[topic] && replies[topic]["en"]) || "";
+    setTimeout(function() {
+      addMessage(msg, "bot");
+      // Show back-to-apply chip after FAQ answer
+      setTimeout(function() {
+        var lang2 = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        addChips([
+          { label: lang2 === "es" ? "🔙 Más preguntas"  : "🔙 More questions",  action: startFAQ    },
+          { label: lang2 === "es" ? "✅ Solicitar Ahora" : "✅ Apply Now",        action: startQualify }
+        ]);
+      }, 600);
+    }, 400);
+  }
+
+  // ── Guided qualification flow ──────────────────────────────────────────────
+  var QUALIFY_STEPS = ["name", "phone", "license", "app", "experience", "terms"];
+
+  function startQualify() {
+    mode        = "qualify";
+    qualifyStep = 0;
+    qualifyData = {};
+    setTimeout(function() {
+      var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+      if (lang === "es") {
+        addMessage("¡Vamos a comenzar! 🚀\n\n¿Cuál es tu nombre completo?", "bot");
+      } else {
+        addMessage("Let's get you approved! 🚀\n\nWhat's your full name?", "bot");
+      }
+    }, 400);
+  }
+
+  function handleQualifyInput(text) {
+    var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+    var step = QUALIFY_STEPS[qualifyStep];
+
+    if (step === "name") {
+      qualifyData.name = text.trim();
+      qualifyStep++;
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("¡Mucho gusto, <strong>" + escHtml(qualifyData.name) + "</strong>! 👋\n\n¿Cuál es tu número de teléfono? (Necesitamos contactarte para completar la aprobación)", "bot");
+        } else {
+          addMessage("Nice to meet you, <strong>" + escHtml(qualifyData.name) + "</strong>! 👋\n\nWhat's your phone number? (We need it to contact you for approval)", "bot");
+        }
+      }, 400);
+      return;
+    }
+
+    if (step === "phone") {
+      qualifyData.phone = text.trim();
+      qualifyStep++;
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("Perfecto 📞\n\n¿Tienes una licencia de conducir válida y vigente?", "bot");
+          addChips([
+            { label: "✅ Sí, tengo licencia", action: function() { handleQualifyChip("license", "yes"); } },
+            { label: "❌ No tengo licencia",  action: function() { handleQualifyChip("license", "no");  } }
+          ]);
+        } else {
+          addMessage("Got it 📞\n\nDo you have a valid, non-expired driver's license?", "bot");
+          addChips([
+            { label: "✅ Yes, I have a license", action: function() { handleQualifyChip("license", "yes"); } },
+            { label: "❌ No license",             action: function() { handleQualifyChip("license", "no");  } }
+          ]);
+        }
+      }, 400);
+      return;
+    }
+
+    if (step === "app") {
+      qualifyData.app = text.trim();
+      qualifyStep++;
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("¿Cuántos meses tienes de experiencia manejando?", "bot");
+          addChips([
+            { label: "Menos de 3 meses",  action: function() { handleQualifyChip("experience", "lt3");  } },
+            { label: "3–12 meses",        action: function() { handleQualifyChip("experience", "3to12"); } },
+            { label: "Más de 1 año",      action: function() { handleQualifyChip("experience", "gt1y"); } }
+          ]);
+        } else {
+          addMessage("How many months of driving experience do you have?", "bot");
+          addChips([
+            { label: "Less than 3 months", action: function() { handleQualifyChip("experience", "lt3");  } },
+            { label: "3–12 months",        action: function() { handleQualifyChip("experience", "3to12"); } },
+            { label: "More than 1 year",   action: function() { handleQualifyChip("experience", "gt1y"); } }
+          ]);
+        }
+      }, 400);
+      return;
+    }
+
+    // Free-text fallback for other steps (shouldn't normally be reached)
+    setTimeout(function() {
+      addMessage(getBotReply(text), "bot");
+    }, 400);
+  }
+
+  function handleQualifyChip(field, value) {
+    var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+
+    if (field === "license") {
+      qualifyData.license = value;
+      qualifyStep++;
+
+      if (value === "no") {
+        // Cannot proceed without license
+        setTimeout(function() {
+          if (lang === "es") {
+            addMessage("Lo sentimos — se requiere una licencia de conducir válida para alquilar con nosotros. 😔\n\nCuando obtengas tu licencia, ¡estaremos aquí! Puedes preguntar sobre nuestros autos o tarifas mientras tanto.", "bot");
+            addChips([{ label: "🔙 Más preguntas", action: startFAQ }]);
+          } else {
+            addMessage("Sorry — a valid driver's license is required to rent with us. 😔\n\nWhen you get your license, we'll be here! You can ask about our cars or rates in the meantime.", "bot");
+            addChips([{ label: "🔙 Ask a question", action: startFAQ }]);
+          }
+          mode = "free";
+        }, 400);
+        return;
+      }
+
+      // Has license — ask about delivery app
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("¡Excelente! 🎉\n\n¿Para qué aplicación(es) de entrega planeas manejar?", "bot");
+          addChips([
+            { label: "DoorDash",      action: function() { handleQualifyChip("app", "DoorDash");     } },
+            { label: "Uber Eats",     action: function() { handleQualifyChip("app", "Uber Eats");    } },
+            { label: "Instacart",     action: function() { handleQualifyChip("app", "Instacart");    } },
+            { label: "Amazon Flex",   action: function() { handleQualifyChip("app", "Amazon Flex");  } },
+            { label: "Otra",          action: function() { handleQualifyChip("app", "Other");        } }
+          ]);
+        } else {
+          addMessage("Great! 🎉\n\nWhich delivery app(s) are you planning to drive for?", "bot");
+          addChips([
+            { label: "DoorDash",      action: function() { handleQualifyChip("app", "DoorDash");     } },
+            { label: "Uber Eats",     action: function() { handleQualifyChip("app", "Uber Eats");    } },
+            { label: "Instacart",     action: function() { handleQualifyChip("app", "Instacart");    } },
+            { label: "Amazon Flex",   action: function() { handleQualifyChip("app", "Amazon Flex");  } },
+            { label: "Other",         action: function() { handleQualifyChip("app", "Other");        } }
+          ]);
+        }
+      }, 400);
+      return;
+    }
+
+    if (field === "app") {
+      qualifyData.app = value;
+      qualifyStep++;
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("¿Cuántos meses tienes de experiencia manejando?", "bot");
+          addChips([
+            { label: "Menos de 3 meses",  action: function() { handleQualifyChip("experience", "lt3");  } },
+            { label: "3–12 meses",        action: function() { handleQualifyChip("experience", "3to12"); } },
+            { label: "Más de 1 año",      action: function() { handleQualifyChip("experience", "gt1y"); } }
+          ]);
+        } else {
+          addMessage("How many months of driving experience do you have?", "bot");
+          addChips([
+            { label: "Less than 3 months", action: function() { handleQualifyChip("experience", "lt3");  } },
+            { label: "3–12 months",        action: function() { handleQualifyChip("experience", "3to12"); } },
+            { label: "More than 1 year",   action: function() { handleQualifyChip("experience", "gt1y"); } }
+          ]);
+        }
+      }, 400);
+      return;
+    }
+
+    if (field === "experience") {
+      qualifyData.experience = value;
+      qualifyStep++;
+      setTimeout(function() {
+        if (lang === "es") {
+          addMessage("¡Casi listo! 🏁\n\n¿Aceptas los <a href=\"rental-agreement.html\" target=\"_blank\">Términos del Contrato de Alquiler</a>?", "bot");
+          addChips([
+            { label: "✅ Acepto los términos", action: function() { handleQualifyChip("terms", "yes"); } },
+            { label: "📄 Leer primero",        action: function() { handleQualifyChip("terms", "read"); } }
+          ]);
+        } else {
+          addMessage("Almost done! 🏁\n\nDo you agree to the <a href=\"rental-agreement.html\" target=\"_blank\">Rental Agreement Terms</a>?", "bot");
+          addChips([
+            { label: "✅ I agree to the terms", action: function() { handleQualifyChip("terms", "yes"); } },
+            { label: "📄 Read first",            action: function() { handleQualifyChip("terms", "read"); } }
+          ]);
+        }
+      }, 400);
+      return;
+    }
+
+    if (field === "terms") {
+      if (value === "read") {
+        setTimeout(function() {
+          if (lang === "es") {
+            addMessage("Por supuesto — puedes leer el contrato completo en <a href=\"rental-agreement.html\" target=\"_blank\">esta página</a>.\n\n¿Aceptas los términos?", "bot");
+            addChips([
+              { label: "✅ Acepto los términos", action: function() { handleQualifyChip("terms", "yes"); } }
+            ]);
+          } else {
+            addMessage("Of course — you can read the full agreement on <a href=\"rental-agreement.html\" target=\"_blank\">this page</a>.\n\nDo you agree to the terms?", "bot");
+            addChips([
+              { label: "✅ I agree to the terms", action: function() { handleQualifyChip("terms", "yes"); } }
+            ]);
+          }
+        }, 400);
+        return;
+      }
+
+      // terms = yes → run pre-approval logic
+      qualifyData.terms = true;
+      qualifyStep++;
+      runPreApproval();
+      return;
+    }
+  }
+
+  // ── Pre-approval logic ─────────────────────────────────────────────────────
+  function runPreApproval() {
+    var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+    var hasLicense  = qualifyData.license === "yes";
+    var enoughExp   = qualifyData.experience === "3to12" || qualifyData.experience === "gt1y";
+    var agreedTerms = !!qualifyData.terms;
+
+    setTimeout(function() {
+      if (hasLicense && enoughExp && agreedTerms) {
+        // APPROVED
+        if (lang === "es") {
+          addMessage(
+            "🎉 <strong>¡Parece que cumples los requisitos, " + escHtml(qualifyData.name || "amigo") + "!</strong>\n\n" +
+            "✅ Licencia de conducir: Válida\n✅ Experiencia: Suficiente\n✅ Términos: Aceptados\n\n" +
+            "El siguiente paso es completar tu solicitud oficial para que nuestro equipo pueda contactarte.\n\n" +
+            "<a href=\"index.html\" id=\"chatApplyLink\">👉 Completar solicitud ahora</a>",
+            "bot"
+          );
+        } else {
+          addMessage(
+            "🎉 <strong>Great news, " + escHtml(qualifyData.name || "there") + "! You appear to qualify!</strong>\n\n" +
+            "✅ Driver's license: Valid\n✅ Experience: Sufficient\n✅ Terms: Agreed\n\n" +
+            "The next step is completing your official application so our team can reach out to you.\n\n" +
+            "<a href=\"index.html\" id=\"chatApplyLink\">👉 Complete your application now</a>",
+            "bot"
+          );
+        }
+      } else if (hasLicense && !enoughExp) {
+        // NEEDS REVIEW — license but limited experience
+        if (lang === "es") {
+          addMessage(
+            "⚠️ <strong>" + escHtml(qualifyData.name || "Amigo") + ", necesitamos revisar tu solicitud.</strong>\n\n" +
+            "Requerimos al menos 3 meses de experiencia al volante.\n\n" +
+            "Sin embargo, puedes enviar tu solicitud y nuestro equipo la revisará personalmente. " +
+            "¡A veces hacemos excepciones!\n\n" +
+            "<a href=\"index.html\" id=\"chatApplyLink\">👉 Enviar solicitud de todas formas</a>",
+            "bot"
+          );
+        } else {
+          addMessage(
+            "⚠️ <strong>" + escHtml(qualifyData.name || "Hi") + ", your application needs review.</strong>\n\n" +
+            "We typically require at least 3 months of driving experience.\n\n" +
+            "However, you can still submit your application and our team will review it personally — we sometimes make exceptions!\n\n" +
+            "<a href=\"index.html\" id=\"chatApplyLink\">👉 Submit application anyway</a>",
+            "bot"
+          );
+        }
+      } else {
+        // REJECTED — no license
+        if (lang === "es") {
+          addMessage(
+            "😔 <strong>Lo sentimos, " + escHtml(qualifyData.name || "amigo") + ".</strong>\n\n" +
+            "Una licencia de conducir válida es un requisito estricto.\n\n" +
+            "Cuando obtengas tu licencia, ¡estaremos aquí para ayudarte!",
+            "bot"
+          );
+        } else {
+          addMessage(
+            "😔 <strong>Sorry, " + escHtml(qualifyData.name || "there") + ".</strong>\n\n" +
+            "A valid driver's license is a strict requirement.\n\n" +
+            "When you get your license, come back and we'll be happy to help!",
+            "bot"
+          );
+        }
+      }
+      mode = "free";
+    }, 600);
+  }
+
+  // ── Open / close ──────────────────────────────────────────────────────────
   function openChat() {
     chatBox.hidden = false;
     toggle.hidden  = true;
+    badge.hidden   = true;
+    dismissReminder();
     if (!messages.children.length) {
       var welcome = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.welcome") : "Hi! 👋";
       addMessage(welcome, "bot");
+      setTimeout(showEntryChips, 600);
     }
     input.focus();
   }
@@ -232,29 +635,104 @@ function buildChatbot() {
     userDismissed  = true;
   }
 
+  function dismissReminder() {
+    reminder.hidden = true;
+    if (reminderTimer) { clearTimeout(reminderTimer); reminderTimer = null; }
+  }
+
+  // ── Send message ──────────────────────────────────────────────────────────
   function sendMessage() {
     var text = input.value.trim();
     if (!text) return;
+    userInteracted = true;
     addMessage(text, "user");
     input.value = "";
-    setTimeout(function() { addMessage(getBotReply(text), "bot"); }, 400);
+
+    if (mode === "qualify") {
+      handleQualifyInput(text);
+    } else {
+      setTimeout(function() {
+        var reply = getBotReply(text);
+        addMessage(reply, "bot");
+        // After any free-text reply in non-qualify mode, offer to apply
+        if (mode === "free" || mode === "faq") {
+          setTimeout(function() {
+            var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+            addChips([
+              { label: lang === "es" ? "✅ Solicitar Ahora" : "✅ Apply Now",  action: startQualify },
+              { label: lang === "es" ? "❓ Más preguntas"  : "❓ More questions", action: startFAQ }
+            ]);
+          }, 800);
+        }
+      }, 400);
+    }
   }
 
+  // ── Event wiring ───────────────────────────────────────────────────────────
   toggle.addEventListener("click", openChat);
   closeBtn.addEventListener("click", closeChat);
   sendBtn.addEventListener("click", sendMessage);
   input.addEventListener("keydown", function(e) { if (e.key === "Enter") sendMessage(); });
 
-  // Auto-open the chatbot after a random delay between 10 and 20 seconds,
-  // unless the user has already opened or dismissed it themselves.
+  reminderClose.addEventListener("click", function() {
+    dismissReminder();
+    userDismissed = true;
+  });
+  reminderCta.addEventListener("click", function() {
+    dismissReminder();
+    openChat();
+  });
+
+  // ── Badge + reminder logic ─────────────────────────────────────────────────
+  // Show badge on toggle after scroll-halfway AND 10–20 s delay.
+  // Then show reminder popup 12 s after badge appears if still no interaction.
+  var badgeShown  = false;
+  var scrolledHalf = false;
+
+  function maybeShowBadge() {
+    if (badgeShown || userInteracted || !chatBox.hidden) return;
+    badge.hidden = false;
+    badge.setAttribute("aria-hidden", "false");
+    toggle.classList.add("chat-toggle-pulse");
+    badgeShown = true;
+    // Show reminder 12 s after badge if user hasn't interacted yet
+    reminderTimer = setTimeout(function() {
+      if (!userInteracted && chatBox.hidden && !userDismissed) {
+        reminder.hidden = false;
+      }
+    }, 12000);
+  }
+
+  // Single scroll listener: sets scrolledHalf flag and shows badge if delay has already passed.
+  window.addEventListener("scroll", function() {
+    if (scrolledHalf) return;
+    var halfwayPoint = document.documentElement.scrollHeight / 2;
+    if (window.scrollY + window.innerHeight >= halfwayPoint) {
+      scrolledHalf = true;
+      // If the auto-open delay has already fired (badgeShown not set yet and chat still hidden)
+      // show the badge now; otherwise the delay timer will call maybeShowBadge() when it fires.
+      if (!badgeShown && !userInteracted && chatBox.hidden) {
+        maybeShowBadge();
+      }
+    }
+  }, { passive: true });
+
+  // Auto-open OR show badge after 10–20 s random delay
   var autoDelay = Math.floor(Math.random() * 10000) + 10000; // 10–20 s
-  setTimeout(function () {
-    if (!userDismissed && chatBox.hidden) {
-      openChat();
+  setTimeout(function() {
+    if (userInteracted || !chatBox.hidden) return;
+    if (scrolledHalf) {
+      // User has scrolled halfway — show badge+pulse instead of auto-opening
+      maybeShowBadge();
+    } else {
+      // Auto-open the chatbot (original behavior)
+      if (!userDismissed) {
+        openChat();
+      }
     }
   }, autoDelay);
 
-  // Update chatbot UI text when language changes (called by lang.js)
+  // ── Language change hook ──────────────────────────────────────────────────
   window.updateChatbotLang = function() {
     var newT = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
     var headerTitle = document.getElementById("chat-header-title");
