@@ -327,8 +327,6 @@
       try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (_) {}
 
       if (stored && stored.decision === "approved") return; // allow navigation
-      // NOTE: nav gate temporarily disabled — Twilio setup pending. All visitors may proceed.
-      return;
 
       e.preventDefault();
 
