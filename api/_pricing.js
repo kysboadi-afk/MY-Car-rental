@@ -193,6 +193,8 @@ export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionP
   const tax = Math.round(preTax * LA_TAX_RATE * 100) / 100;
   const total = Math.round((preTax + tax) * 100) / 100;
   lines.push(`Tax (${(LA_TAX_RATE * 100).toFixed(2)}% LA): $${tax.toFixed(2)}`);
+  // NOTE: send-reservation-email.js checks startsWith("Total:") to apply bold styling.
+  // Keep this prefix consistent if the format ever changes.
   lines.push(`Total: $${total.toFixed(2)}`);
 
   return lines;

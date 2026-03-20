@@ -371,7 +371,7 @@ function buildChatbot() {
       qualifyStep++;
       setTimeout(function() {
         if (lang === "es") {
-          addMessage("¡Encantado, <strong>" + escHtml(qualifyData.name) + "</strong>! 👋\n\n¿Cuál es tu número de teléfono? (Necesitamos contactarte para completar la aprobación)", "bot");
+          addMessage("¡Mucho gusto, <strong>" + escHtml(qualifyData.name) + "</strong>! 👋\n\n¿Cuál es tu número de teléfono? (Necesitamos contactarte para completar la aprobación)", "bot");
         } else {
           addMessage("Nice to meet you, <strong>" + escHtml(qualifyData.name) + "</strong>! 👋\n\nWhat's your phone number? (We need it to contact you for approval)", "bot");
         }
@@ -703,12 +703,17 @@ function buildChatbot() {
     }, 12000);
   }
 
+  // Single scroll listener: sets scrolledHalf flag and shows badge if delay has already passed.
   window.addEventListener("scroll", function() {
     if (scrolledHalf) return;
     var halfwayPoint = document.documentElement.scrollHeight / 2;
     if (window.scrollY + window.innerHeight >= halfwayPoint) {
       scrolledHalf = true;
-      // Still need to wait for the delay timer before showing badge
+      // If the auto-open delay has already fired (badgeShown not set yet and chat still hidden)
+      // show the badge now; otherwise the delay timer will call maybeShowBadge() when it fires.
+      if (!badgeShown && !userInteracted && chatBox.hidden) {
+        maybeShowBadge();
+      }
     }
   }, { passive: true });
 
@@ -726,13 +731,6 @@ function buildChatbot() {
       }
     }
   }, autoDelay);
-
-  // Also watch for scroll-halfway after the delay has already passed
-  window.addEventListener("scroll", function() {
-    if (scrolledHalf && !badgeShown && !userInteracted && chatBox.hidden) {
-      maybeShowBadge();
-    }
-  }, { passive: true });
 
   // ── Language change hook ──────────────────────────────────────────────────
   window.updateChatbotLang = function() {
