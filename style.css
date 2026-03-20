@@ -691,6 +691,21 @@ body {
   color: #999 !important;
 }
 
+/* Payment retry banner — shown when a renter returns after a failed payment */
+.payment-retry-banner {
+  background: #2a1f00;
+  border: 2px solid #ffb400;
+  border-radius: 12px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  color: #ffe08a;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.payment-retry-banner strong {
+  color: #ffb400;
+}
+
 /* Vehicle Unavailable notice on the booking page (car.html) */
 .vehicle-unavailable-notice {
   background: #3a0000;

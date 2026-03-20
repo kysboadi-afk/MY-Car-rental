@@ -799,6 +799,169 @@ function showVehicleUnavailable() {
 }
 
 
+// ----- Payment Retry Pre-fill -----
+// Converts a Base64 string (stored in IndexedDB) back into a Blob.
+function base64ToBlob(base64, mimeType) {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    bytes[i] = byteChars.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+// Restores all form fields, insurance choice, signature, and uploaded files
+// from a previous payment attempt that ended in failure.  Called on every
+// pageshow so it works for both fresh page loads and bfcache restores.
+function restoreFailedBooking() {
+  try {
+    const stored = sessionStorage.getItem("slyRidesBooking");
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    if (!data.paymentFailed) return;
+
+    // Helper: set a date/time input respecting Flatpickr when active.
+    // For native <input type="time"> fallback, converts "h:i K" (e.g. "2:30 PM")
+    // to "HH:MM" which is the format the native input requires.
+    function fpSet(input, value) {
+      if (!value || !input) return;
+      if (flatpickrActive && input._flatpickr) {
+        input._flatpickr.setDate(value, true);
+      } else {
+        // Normalize Flatpickr "h:i K" time format → "HH:MM" for native time inputs
+        const ampm = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (ampm) {
+          let h = parseInt(ampm[1], 10);
+          const mins = ampm[2];
+          const period = ampm[3].toUpperCase();
+          if (period === "PM" && h !== 12) h += 12;
+          if (period === "AM" && h === 12) h = 0;
+          input.value = String(h).padStart(2, "0") + ":" + mins;
+        } else {
+          input.value = value;
+        }
+      }
+    }
+
+    // Restore personal details
+    const nameField  = document.getElementById("name");
+    const emailField = document.getElementById("email");
+    const phoneField = document.getElementById("phone");
+    if (data.name  && nameField)  nameField.value  = data.name;
+    if (data.email && emailField) emailField.value = data.email;
+    if (data.phone && phoneField) phoneField.value = data.phone;
+
+    // Restore dates / times
+    fpSet(pickup, data.pickup);
+    fpSet(pickupTime, data.pickupTime);
+    if (!carData.hourlyTiers) {
+      fpSet(returnDate, data.returnDate);
+    }
+
+    // Restore Slingshot hourly-duration selection
+    if (data.slingshotDuration && carData.hourlyTiers) {
+      currentSlingshotDuration = data.slingshotDuration;
+      const radio = document.querySelector(`input[name="slingshotDuration"][value="${data.slingshotDuration}"]`);
+      if (radio) radio.checked = true;
+      applySlingshotDuration();
+    }
+
+    // Restore insurance / protection-plan choice.
+    // insuranceCoverageChoice is saved explicitly in the failed-payment entry
+    // since v2 of this feature.  The legacy fallback (from protectionPlan /
+    // insuranceFileName) handles entries persisted by an earlier release.
+    const choice = data.insuranceCoverageChoice ||
+      (data.protectionPlan === true ? "no" : (data.insuranceFileName ? "yes" : null));
+    if (choice) {
+      insuranceCoverageChoice = choice;
+      const hasInsuranceRadio   = document.getElementById("hasInsurance");
+      const noInsuranceRadio    = document.getElementById("noInsurance");
+      const insuranceSection    = document.getElementById("insuranceUploadSection");
+      const protectionSection   = document.getElementById("protectionPlanSection");
+      if (choice === "yes") {
+        if (hasInsuranceRadio) hasInsuranceRadio.checked = true;
+        if (insuranceSection)  insuranceSection.style.display  = "";
+        if (protectionSection) protectionSection.style.display = "none";
+      } else {
+        if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
+        if (insuranceSection)  insuranceSection.style.display  = "none";
+        if (protectionSection) protectionSection.style.display = "";
+      }
+    }
+
+    // Restore signed-agreement state
+    if (data.signature) {
+      agreementSignature = data.signature;
+      const signBtn    = document.getElementById("signAgreementBtn");
+      const signStatus = document.getElementById("signAgreementStatus");
+      if (signBtn) {
+        signBtn.classList.add("signed");
+        signBtn.textContent = "✅ Rental Agreement Signed";
+        signBtn.style.display = "";
+      }
+      if (signStatus) {
+        signStatus.style.display = "";
+        signStatus.style.color   = "#4caf50";
+        signStatus.textContent   = `Signed by ${data.signature}. Check the box below to confirm.`;
+      }
+      agreeCheckbox.disabled = false;
+      agreeCheckbox.checked  = true;
+    }
+
+    // Show the retry banner so the renter knows the form was pre-filled
+    const retryBanner = document.getElementById("paymentRetryBanner");
+    if (retryBanner) retryBanner.style.display = "";
+
+    updateTotal();
+    // Defer updatePayBtn until after the async IndexedDB file restoration
+    // finishes so it only runs once with a complete picture of the form state.
+
+    // Restore uploaded files from IndexedDB (async, finishes with updatePayBtn)
+    try {
+      const idbReq = indexedDB.open("slyRidesDB", 1);
+      idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+      idbReq.onsuccess = function(e) {
+        const db = e.target.result;
+        try {
+          const tx  = db.transaction("files", "readonly");
+          const req = tx.objectStore("files").get("pendingId");
+          req.onsuccess = function(ev) {
+            const fileData = ev.target.result;
+            db.close();
+            if (!fileData) { updatePayBtn(); return; }
+
+            if (fileData.idBase64 && fileData.idFileName && fileData.idMimeType) {
+              const blob = base64ToBlob(fileData.idBase64, fileData.idMimeType);
+              uploadedFile = new File([blob], fileData.idFileName, { type: fileData.idMimeType });
+              const fileInfoEl = document.getElementById("fileInfo");
+              if (fileInfoEl) {
+                fileInfoEl.querySelector(".file-name").textContent = fileData.idFileName;
+                fileInfoEl.querySelector(".file-size").textContent = `(${(blob.size / 1024).toFixed(1)} KB)`;
+                fileInfoEl.classList.add("has-file");
+              }
+            }
+
+            if (choice === "yes" && fileData.insuranceBase64 && fileData.insuranceFileName && fileData.insuranceMimeType) {
+              const blob = base64ToBlob(fileData.insuranceBase64, fileData.insuranceMimeType);
+              uploadedInsurance = new File([blob], fileData.insuranceFileName, { type: fileData.insuranceMimeType });
+              const insEl = document.getElementById("insuranceFileInfo");
+              if (insEl) {
+                insEl.querySelector(".file-name").textContent = fileData.insuranceFileName;
+                insEl.querySelector(".file-size").textContent = `(${(blob.size / 1024).toFixed(1)} KB)`;
+                insEl.classList.add("has-file");
+              }
+            }
+
+            updatePayBtn();
+          };
+          req.onerror = function() { db.close(); updatePayBtn(); };
+        } catch (idbErr) { console.warn("restoreFailedBooking: IDB transaction error:", idbErr); db.close(); updatePayBtn(); }
+      };
+      idbReq.onerror = function() { console.warn("restoreFailedBooking: IDB open error"); updatePayBtn(); };
+    } catch (idbErr) { console.warn("restoreFailedBooking: IDB unavailable:", idbErr); updatePayBtn(); }
+  } catch (err) { console.warn("restoreFailedBooking: could not restore booking data:", err); }
+}
+
 // When the browser restores this page from bfcache (e.g. user hits "back"
 // after the Stripe redirect), all field values and UI state from the previous
 // renter's session would still be visible.  Resetting here ensures each new
@@ -870,20 +1033,24 @@ window.addEventListener("pageshow", function(e) {
   // ranges from the API.
   initDatePickers();
   }
+  // After any page restoration (bfcache or fresh load), check whether a
+  // previous payment attempt failed and pre-fill the form if so.
+  restoreFailedBooking();
 });
 
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload)
-  const insuranceReady = (insuranceCoverageChoice === "yes" && insuranceUpload.files.length > 0) ||
+  // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload).
+  // Also accept pre-filled variables restored from a previous failed-payment attempt.
+  const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
                           insuranceCoverageChoice === "no";
   const nameValid = isValidName(nameVal);
   // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
   const datesReady = carData.hourlyTiers
     ? pickup.value && currentSlingshotDuration
     : pickup.value && returnDate.value;
-  const ready = datesReady && agreeCheckbox.checked && idUpload.files.length > 0 && insuranceReady && nameValid && emailVal;
+  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
@@ -1279,7 +1446,11 @@ stripeBtn.addEventListener("click", async () => {
 
         if (confirmError) {
           ev.complete("fail");
-          sessionStorage.removeItem("slyRidesBooking");
+          sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+            ...prBookingPayload,
+            paymentFailed: true,
+            insuranceCoverageChoice,
+          }));
           document.getElementById("payment-message").textContent = confirmError.message;
         } else {
           ev.complete("success");
@@ -1289,7 +1460,11 @@ stripeBtn.addEventListener("click", async () => {
               payment_method: ev.paymentMethod.id,
             });
             if (actionError) {
-              sessionStorage.removeItem("slyRidesBooking");
+              sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+                ...prBookingPayload,
+                paymentFailed: true,
+                insuranceCoverageChoice,
+              }));
               document.getElementById("payment-message").textContent = actionError.message;
             } else {
               window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
@@ -1402,8 +1577,8 @@ stripeBtn.addEventListener("click", async () => {
 
       if (error) {
         // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
-        // Clear staged sessionStorage so stale data is not re-sent on retry or
-        // accidentally picked up by success.html.
+        // Keep booking data in sessionStorage with paymentFailed:true so the form
+        // can be pre-filled automatically when the renter returns to try again.
         fetch(API_BASE + "/api/send-reservation-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1418,7 +1593,11 @@ stripeBtn.addEventListener("click", async () => {
             insuranceMimeType,
           }),
         }).catch(function (err) { console.error("Failed to notify owner of payment failure:", err); });
-        sessionStorage.removeItem("slyRidesBooking");
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+          ...bookingPayload,
+          paymentFailed: true,
+          insuranceCoverageChoice,
+        }));
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
         submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + totalEl.textContent;
