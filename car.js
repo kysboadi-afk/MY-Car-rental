@@ -4,16 +4,10 @@
 // Because they are on different domains, the full Vercel URL must be used here.
 const API_BASE = "https://sly-rides.vercel.app";
 
-// ----- Booking Deposit Constants -----
 // Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
 // The full rental balance (rental fee + $150 security deposit) is due at pickup.
 // Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
 const SLINGSHOT_BOOKING_DEPOSIT = 50;
-
-// Non-refundable reservation deposit for Camry "Reserve Now" mode.
-// Renters who choose "Reserve Now" pay this upfront; the remaining rental balance is due at pickup.
-// Must mirror CAMRY_BOOKING_DEPOSIT in api/_pricing.js.
-const CAMRY_BOOKING_DEPOSIT = 50;
 
 // ----- Car Data -----
 const cars = {
