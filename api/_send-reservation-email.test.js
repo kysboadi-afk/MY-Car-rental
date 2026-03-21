@@ -826,3 +826,169 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
   const fleetStatusPuts = putCalls.filter(u => u.includes("fleet-status.json"));
   assert.equal(fleetStatusPuts.length, 0, "Should not PUT fleet-status.json when vehicle is already unavailable");
 });
+
+// ─── Balance payment (paymentType: 'balance_payment') tests ──────────────────
+
+// A booking payload that simulates the final balance payment after a $50 deposit.
+const BALANCE_PAYMENT_BODY = {
+  vehicleId:          "camry",
+  car:                "Camry 2012",
+  name:               "Jane Doe",
+  email:              "jane@example.com",
+  phone:              "555-1234",
+  pickup:             "2026-04-01",
+  pickupTime:         "10:00",
+  returnDate:         "2026-04-05",
+  returnTime:         "10:00",
+  total:              "169.03",   // balance amount (full – deposit)
+  days:               4,
+  protectionPlan:     false,
+  paymentType:        "balance_payment",
+  depositAlreadyPaid: "50.00",
+  fullRentalTotal:    "219.03",
+};
+
+test("balance payment: owner email subject contains 'Balance Paid'", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", BALANCE_PAYMENT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should be sent");
+  assert.ok(
+    ownerMail.subject.includes("Balance Paid"),
+    `Owner subject should include 'Balance Paid', got: ${ownerMail.subject}`
+  );
+});
+
+test("balance payment: customer email subject contains 'Balance Paid'", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", BALANCE_PAYMENT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.ok(
+    customerMail.subject.includes("Balance Paid"),
+    `Customer subject should include 'Balance Paid', got: ${customerMail.subject}`
+  );
+});
+
+test("balance payment: blockBookedDates and markVehicleUnavailable are NOT called", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { fetchCalls.push({ url, opts }); return { ok: true }; };
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", BALANCE_PAYMENT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(res._status, 200);
+  assert.equal(
+    fetchCalls.length, 0,
+    "GitHub API must not be called for a balance payment (dates already blocked at deposit time)"
+  );
+});
+
+test("balance payment: response is 200 and two emails are sent", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", BALANCE_PAYMENT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { success: true });
+  assert.equal(mockSendMail.mock.callCount(), 2, "Both owner and customer emails should be sent");
+});
+
+// ─── Deposit email includes 'Pay Balance Online' link ────────────────────────
+
+const DEPOSIT_BOOKING_BODY = {
+  vehicleId:      "camry",
+  car:            "Camry 2012",
+  name:           "Jane Doe",
+  email:          "jane@example.com",
+  phone:          "555-1234",
+  pickup:         "2026-05-01",
+  pickupTime:     "09:00",
+  returnDate:     "2026-05-05",
+  returnTime:     "09:00",
+  total:          "50",           // deposit amount charged
+  days:           4,
+  protectionPlan: false,
+  fullRentalCost: "200",          // signals this is a deposit payment
+  balanceAtPickup: "150",
+};
+
+test("deposit confirmation email includes 'Pay Balance Online' link pointing to balance.html", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", DEPOSIT_BOOKING_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.ok(
+    customerMail.html.includes("balance.html"),
+    "Customer deposit email HTML should include a link to balance.html"
+  );
+  assert.ok(
+    customerMail.html.includes("Pay Balance Online"),
+    "Customer deposit email HTML should include 'Pay Balance Online' button text"
+  );
+});
+
+test("deposit confirmation plain-text email includes pay balance URL", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", DEPOSIT_BOOKING_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.ok(
+    customerMail.text.includes("balance.html"),
+    "Customer deposit plain-text email should include a link to balance.html"
+  );
+});
+
+test("non-deposit full-payment email does NOT include 'Pay Balance Online' link", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  // fullRentalCost absent → full payment, no balance link expected
+  const req = makeReq("POST", VALID_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.ok(
+    !customerMail.html.includes("Pay Balance Online"),
+    "Full-payment email should NOT include a 'Pay Balance Online' link"
+  );
+});

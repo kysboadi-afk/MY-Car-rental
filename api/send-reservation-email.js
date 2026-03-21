@@ -390,11 +390,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType } = req.body;
 
   // Compute server-side pricing breakdown lines for daily/weekly rentals.
   // Slingshot (hourly tier) or missing dates fall back gracefully to null.
-  const breakdownLines = (vehicleId && pickup && returnDate && !req.body.slingshotDuration)
+  const breakdownLines = (vehicleId && pickup && returnDate && !slingshotDuration)
     ? computeBreakdownLines(vehicleId, pickup, returnDate, !!protectionPlan)
     : null;
   const breakdownText = breakdownLines ? breakdownLines.join("\n") : null;
@@ -409,21 +409,56 @@ export default async function handler(req, res) {
 
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
+
+  // isBalancePayment: true when the renter is paying the remaining balance after
+  // having already paid the $50 reservation deposit.
+  const isBalancePayment = paymentType === "balance_payment";
+
+  // For deposit bookings, build a "Pay Balance Online" URL so the renter can
+  // complete their final payment without re-filling the form.
+  // The link encodes only booking params — amounts are always recomputed server-side.
+  let balancePayUrl = null;
+  if (isConfirmed && !isBalancePayment && fullRentalCost && vehicleId && pickup && returnDate && email) {
+    const bpParts = [
+      ["v",   vehicleId],
+      ["p",   pickup],
+      ["r",   returnDate],
+      ["pp",  protectionPlan ? "1" : "0"],
+      ...(name      ? [["n",   name]]      : []),
+      ...(email     ? [["e",   email]]     : []),
+      ...(phone     ? [["ph",  phone]]     : []),
+      ...(pickupTime  ? [["pt", pickupTime]]  : []),
+      ...(returnTime  ? [["rt", returnTime]]  : []),
+      ...(car       ? [["car", car]]       : []),
+      ...(slingshotDuration ? [["d", String(slingshotDuration)]] : []),
+    ];
+    balancePayUrl = "https://www.slytrans.com/balance.html?" +
+      bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
+  }
+
   // For Slingshot bookings, 'total' is the $50 reservation deposit (the only amount
   // charged online); the presence of fullRentalCost in the payload signals this.
   // fullRentalCost holds the full rental value (computed server-side at booking time).
-  const totalChargedLabel = fullRentalCost ? "Booking Deposit Charged" : "Total Charged";
-  const ownerSubject = isConfirmed
-    ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
-    : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`;
+  const totalChargedLabel = isBalancePayment
+    ? "Balance Paid"
+    : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
+  const ownerSubject = isBalancePayment
+    ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
+    : (isConfirmed
+        ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
+        : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`);
   const statusLabel  = isConfirmed ? "✅ CONFIRMED" : "❌ FAILED";
   const statusColor  = isConfirmed ? "green" : "red";
-  const introText    = isConfirmed
-    ? "A customer has completed payment. Their rental details are below."
-    : "A customer attempted payment but it did not go through. Details below.";
-  const footerText   = isConfirmed
-    ? "Payment has been received. Please contact the customer to confirm rental details."
-    : "NOTE: Payment was NOT completed. The customer may retry or need assistance.";
+  const introText    = isBalancePayment
+    ? "The renter has paid the remaining balance online. The booking is now fully paid."
+    : (isConfirmed
+        ? "A customer has completed payment. Their rental details are below."
+        : "A customer attempted payment but it did not go through. Details below.");
+  const footerText   = isBalancePayment
+    ? "The remaining balance has been received. The booking is now fully paid — no further action required."
+    : (isConfirmed
+        ? "Payment has been received. Please contact the customer to confirm rental details."
+        : "NOTE: Payment was NOT completed. The customer may retry or need assistance.");
 
   try {
     // Build attachment list for the owner email
@@ -558,15 +593,21 @@ export default async function handler(req, res) {
     // --- Confirmation to customer (only for successful payments) ---
     let customerEmailErr = null;
     if (isConfirmed && email) {
+      const customerSubject = isBalancePayment
+        ? "🎉 Balance Paid – Your Rental is Fully Confirmed"
+        : "✅ Your Sly Transportation Services LLC Payment Confirmed";
+      const customerIntro = isBalancePayment
+        ? "Great news! Your final balance payment has been received. Your rental is now fully paid and confirmed."
+        : "Hi there! Your payment has been received and your car rental is confirmed.";
       try {
         await transporter.sendMail({
           from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to: email,
-          subject: "✅ Your Sly Transportation Services LLC Payment Confirmed",
+          subject: customerSubject,
           text: [
-            "Payment Confirmed – Sly Transportation Services LLC",
+            isBalancePayment ? "Balance Paid – Sly Transportation Services LLC" : "Payment Confirmed – Sly Transportation Services LLC",
             "",
-            "Hi there! Your payment has been received and your car rental is confirmed.",
+            customerIntro,
             "Here are your booking details:",
             "",
             `Payment Status : CONFIRMED`,
@@ -580,9 +621,12 @@ export default async function handler(req, res) {
             `Pickup Time    : ${pickupTime || "Not specified"}`,
             `Return Date    : ${returnDate || ""}`,
             `Return Time    : ${returnTime || "Not specified"}`,
-            fullRentalCost  ? `Booking Deposit: $${total || "TBD"} (non-refundable — applied to your balance at pickup)` : `Total Charged  : $${total || "TBD"}`,
-            fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
-            balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
+            isBalancePayment
+              ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
+              : (fullRentalCost ? `Booking Deposit: $${total || "TBD"} (non-refundable — applied to your balance at pickup)` : `Total Charged  : $${total || "TBD"}`),
+            !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
+            !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
+            !isBalancePayment && balancePayUrl   ? `Pay balance online: ${balancePayUrl}` : "",
             breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
             "",
             "We will be in touch shortly to confirm your rental pick-up details.",
@@ -591,8 +635,8 @@ export default async function handler(req, res) {
             "Sly Transportation Services LLC Team",
           ].filter(line => line !== undefined).join("\n"),
           html: `
-            <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
-            <p>Hi there! Your payment has been received and your car rental is confirmed. Here are your booking details:</p>
+            <h2>${isBalancePayment ? "🎉 Balance Paid – Sly Transportation Services LLC" : "✅ Payment Confirmed – Sly Transportation Services LLC"}</h2>
+            <p>${esc(customerIntro)} Here are your booking details:</p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
@@ -605,9 +649,10 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : ""}</td></tr>
-              ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
-              ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${!isBalancePayment && fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : (isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : "")}</td></tr>
+              ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+              ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+              ${!isBalancePayment && balancePayUrl   ? `<tr><td colspan="2" style="padding:12px;border:1px solid #ddd;text-align:center"><a href="${esc(balancePayUrl)}" style="display:inline-block;padding:12px 28px;background:#c8a000;color:#000;border-radius:10px;text-decoration:none;font-weight:bold;font-size:15px">💳 Pay Balance Online</a><br><span style="font-size:12px;color:#888;display:block;margin-top:6px">Or pay in person at pickup — your choice</span></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
@@ -632,7 +677,7 @@ export default async function handler(req, res) {
     // Vercel terminates the serverless function as soon as res.json() is called,
     // so any async work scheduled after that is not guaranteed to run.
     // Failures are non-fatal (emails already sent) and only logged.
-    if (isConfirmed && vehicleId && pickup && returnDate) {
+    if (isConfirmed && !isBalancePayment && vehicleId && pickup && returnDate) {
       try {
         await blockBookedDates(vehicleId, pickup, returnDate);
       } catch (err) {
