@@ -483,6 +483,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  const speedSection      = document.getElementById("slingshotSpeedSection");
   const depositLang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
   if (carData.hourlyTiers) {
     if (depositHeadingEl) depositHeadingEl.style.display = "";
@@ -514,6 +515,9 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
       }
     }
     if (depositInsEl) depositInsEl.style.display = "none";
+
+    // Show Slingshot speed & strike policy
+    if (speedSection) speedSection.style.display = "";
   } else {
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositLang === "es") {
@@ -525,6 +529,8 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     }
     if (depositInsEl)     depositInsEl.style.display = "none";
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
+    // Hide Slingshot speed & strike policy for non-Slingshot vehicles
+    if (speedSection) speedSection.style.display = "none";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
