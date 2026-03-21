@@ -8,6 +8,8 @@ const API_BASE = "https://sly-rides.vercel.app";
 // The full rental balance (rental fee + $150 security deposit) is due at pickup.
 // Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
 const SLINGSHOT_BOOKING_DEPOSIT = 50;
+// Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
+const CAMRY_BOOKING_DEPOSIT = 50;
 
 // ----- Car Data -----
 const cars = {
