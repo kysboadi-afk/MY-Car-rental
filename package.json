@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "nodemailer": "^8.0.1",
+    "pdfkit": "^0.18.0",
     "stripe": "^20.3.1",
     "twilio": "^5.13.0"
   }
