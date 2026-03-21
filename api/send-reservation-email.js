@@ -10,7 +10,7 @@
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 import { hasOverlap } from "./_availability.js";
-import { computeBreakdownLines } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines } from "./_pricing.js";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -158,6 +158,207 @@ function esc(str) {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Build a self-contained HTML document representing the signed rental agreement.
+ * This is generated server-side from the verified booking data so it can be
+ * attached to the owner confirmation email as a permanent record.
+ *
+ * @param {object} body - the validated request body from the email handler
+ * @returns {string} complete HTML document as a string
+ */
+function generateRentalAgreementHtml(body) {
+  const {
+    vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor,
+    name, email, phone,
+    pickup, pickupTime, returnDate, returnTime,
+    total, deposit, days, protectionPlan, signature,
+    slingshotDuration,
+  } = body;
+
+  const signedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "long", timeStyle: "short" });
+
+  // Build the DPP rates label from server-side constants to avoid hardcoding
+  const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 wks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
+  const dppRatesTextLong = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 weeks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
+
+  // Deposit / pricing section — matches the logic in car.js openAgreement()
+  const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
+  const isHourly = !!(carInfo && carInfo.hourlyTiers);
+  let depositSection = "";
+  if (isHourly) {
+    const rateList = carInfo.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ");
+    depositSection = `
+      <h4>SECURITY DEPOSIT (Refundable)</h4>
+      <p>A <strong>$${esc(String(carInfo.deposit))} refundable security deposit</strong> is included in the rental payment and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
+      <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
+      <p><strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${esc(String(carInfo.deposit))} refundable security deposit (included in payment)</p>
+    `;
+  } else {
+    depositSection = `
+      <p>No security deposit is required for this vehicle.</p>
+      <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
+    `;
+  }
+
+  // Insurance / protection plan summary
+  const insuranceSummary = protectionPlan
+    ? "Damage Protection Plan selected"
+    : "Renter provided personal rental car insurance";
+
+  // Slingshot speed policy section
+  const speedSection = isHourly ? `
+    <h4>SLINGSHOT SPEED POLICY</h4>
+    <p><strong>Speed Limit:</strong> The posted speed limit is 65 mph. Renters may not exceed <strong>75 mph</strong> under any circumstances. Exceeding 75 mph at any time constitutes a violation of this agreement.</p>
+    <p><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
+  ` : "";
+
+  // Rental duration line
+  const durationLine = isHourly && slingshotDuration
+    ? `${esc(String(slingshotDuration))}-hour rental`
+    : (days ? `${esc(String(days))} day${Number(days) !== 1 ? "s" : ""}` : "");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Signed Rental Agreement — SLY Transportation Services LLC</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 14px; color: #111; margin: 40px; line-height: 1.6; }
+    h2 { text-align: center; border-bottom: 2px solid #111; padding-bottom: 8px; }
+    h4 { margin-top: 20px; margin-bottom: 4px; border-bottom: 1px solid #ccc; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+    td, th { padding: 7px 10px; border: 1px solid #999; }
+    th { background: #f0f0f0; text-align: left; width: 40%; }
+    .sig-block { background: #f9f9f9; border: 2px solid #111; padding: 16px 20px; margin-top: 30px; }
+    .sig-name { font-size: 22px; font-style: italic; font-family: Georgia, serif; border-bottom: 1px solid #555; padding-bottom: 4px; margin: 10px 0 4px; }
+    .watermark { color: green; font-size: 13px; font-weight: bold; }
+    ul { margin: 4px 0 4px 20px; }
+    p { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h2>SLY TRANSPORTATION SERVICES — CAR RENTAL AGREEMENT</h2>
+  <p style="text-align:center;font-size:13px;color:#555">Generated: ${esc(signedAt)} (Pacific Time)</p>
+
+  <h4>PARTIES</h4>
+  <p><strong>Owner:</strong> SLY Transportation Services &mdash; (213) 916-6606 &mdash; info@slytrans.com</p>
+  <p><strong>Renter:</strong> ${esc(name || "Not provided")}</p>
+
+  <h4>RENTER INFORMATION</h4>
+  <table>
+    <tr><th>Full Name</th><td>${esc(name || "Not provided")}</td></tr>
+    <tr><th>Email</th><td>${esc(email || "Not provided")}</td></tr>
+    <tr><th>Phone</th><td>${esc(phone || "Not provided")}</td></tr>
+  </table>
+
+  <h4>VEHICLE INFORMATION</h4>
+  <table>
+    <tr><th>Vehicle</th><td>${esc(car || "")}</td></tr>
+    ${vehicleMake  ? `<tr><th>Make</th><td>${esc(vehicleMake)}</td></tr>`  : ""}
+    ${vehicleModel ? `<tr><th>Model</th><td>${esc(vehicleModel)}</td></tr>` : ""}
+    ${vehicleYear  ? `<tr><th>Year</th><td>${esc(String(vehicleYear))}</td></tr>` : ""}
+    ${vehicleVin   ? `<tr><th>VIN / Plate</th><td>${esc(vehicleVin)}</td></tr>` : ""}
+    ${vehicleColor ? `<tr><th>Color</th><td>${esc(vehicleColor)}</td></tr>` : ""}
+  </table>
+  <p>Fuel Level at Pickup: Full &nbsp;&nbsp; Half &nbsp;&nbsp; Quarter &nbsp;&nbsp;&nbsp; Condition Photos Attached: Yes</p>
+
+  <h4>RENTAL PERIOD</h4>
+  <table>
+    <tr><th>Pickup Date</th><td>${esc(pickup || "")}</td></tr>
+    <tr><th>Pickup Time</th><td>${esc(pickupTime || "Not specified")}</td></tr>
+    <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
+    <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
+    ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
+    <tr><th>Total Charged</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
+    <tr><th>Insurance</th><td>${esc(insuranceSummary)}</td></tr>
+  </table>
+  <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
+
+  <h4>MILEAGE &amp; FUEL</h4>
+  <p><strong>Mileage Limit:</strong> Unlimited miles are included; however, all driving must remain within the state of California. Driving the vehicle out of state is strictly prohibited and will result in a <strong>$250 penalty charge</strong>.</p>
+  <p><strong>Fuel Policy:</strong> Return the vehicle with the same fuel level as at pickup, or pay a $5/gallon replacement fee.</p>
+
+  ${depositSection}
+
+  <h4>INSURANCE &amp; LIABILITY</h4>
+  <p>Renter must provide <strong>one of the following</strong> prior to vehicle release:</p>
+  <ul>
+    <li>Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
+    <li>Purchase of SLY Transportation Services Damage Protection Plan</li>
+  </ul>
+  <p><strong>Damage Protection Plan (Optional):</strong> ${dppRatesTextLong}</p>
+  <p>This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
+  <p><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
+  <ul>
+    <li>Full cost of vehicle repair or replacement</li>
+    <li>Loss of use (rental downtime)</li>
+    <li>Diminished value</li>
+    <li>Administrative, towing, and storage fees</li>
+  </ul>
+  <p><strong>With Protection Plan:</strong> Renter's responsibility is limited to the stated deductible, provided all terms of this agreement are followed.</p>
+  <p><strong>Exclusions (Protection Plan Void If):</strong></p>
+  <ul>
+    <li>Driver is under the influence of drugs or alcohol</li>
+    <li>Unauthorized driver operates the vehicle</li>
+    <li>Reckless, illegal, or negligent use</li>
+    <li>Off-road or prohibited use</li>
+    <li>Failure to report damage within 24 hours</li>
+    <li>Violation of rental agreement terms</li>
+  </ul>
+  <p><strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.</p>
+
+  <h4>USE RESTRICTIONS</h4>
+  <p>Renter agrees to all of the following restrictions:</p>
+  <p>No smoking &nbsp; No pets &nbsp; No off-road use &nbsp; No subleasing</p>
+  <p>Approved drivers only &nbsp; No racing or towing &nbsp; No commercial hauling</p>
+
+  ${speedSection}
+
+  <h4>CONDITION INSPECTION</h4>
+  <p>Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
+
+  <h4>TERMINATION</h4>
+  <p>SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
+
+  <h4>PAYMENT TERMS</h4>
+  <p>All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+  <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
+
+  <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
+  <p>By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed under this agreement, including but not limited to:</p>
+  <ul>
+    <li>Rental charges and extensions</li>
+    <li>Security deposit and any applicable deductions</li>
+    <li>Vehicle damage, repair, or replacement costs</li>
+    <li>Loss of use and diminished value</li>
+    <li>Fuel, cleaning, smoking, or excess wear fees</li>
+    <li>Towing, storage, tickets, tolls, and administrative fees</li>
+  </ul>
+  <p>Renter agrees that these charges may be processed after the rental period if additional costs are identified upon inspection or later discovery.</p>
+  <p>Renter acknowledges that all charges are valid, agreed upon, and authorized under this contract. Renter agrees not to dispute, reverse, or initiate a chargeback for any legitimate charge incurred in accordance with this agreement.</p>
+  <p><strong>In the event of a payment dispute or chargeback, renter agrees that:</strong></p>
+  <ul>
+    <li>This signed agreement serves as binding proof of authorization</li>
+    <li>SLY Transportation Services may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor</li>
+    <li>Renter remains financially responsible for all charges, including any fees resulting from the dispute</li>
+  </ul>
+  <p>If a chargeback is initiated without valid cause, SLY Transportation Services reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney's fees where permitted by law.</p>
+
+  <h4>GOVERNING LAW</h4>
+  <p>This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County. By signing, the renter acknowledges they have read, understood, and agreed to all terms above.</p>
+
+  <div class="sig-block">
+    <p><strong>ELECTRONIC SIGNATURE</strong></p>
+    <p>By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding.</p>
+    <p class="sig-name">${esc(signature || "")}</p>
+    <p class="watermark">&#10003; Digitally Signed</p>
+    <p style="font-size:13px;color:#555">Signed: ${esc(signedAt)} (Pacific Time)</p>
+    <p style="font-size:13px;color:#555">Renter: ${esc(name || "Not provided")} &nbsp;|&nbsp; Email: ${esc(email || "Not provided")} &nbsp;|&nbsp; Phone: ${esc(phone || "Not provided")}</p>
+  </div>
+</body>
+</html>`;
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || "587"),
@@ -234,6 +435,19 @@ export default async function handler(req, res) {
         contentType: insuranceMimeType || "application/octet-stream",
       });
     }
+    // Attach a signed rental agreement document for confirmed payments.
+    // Generated server-side from the verified booking data so the owner always
+    // receives a complete, timestamped copy regardless of the vehicle type.
+    if (isConfirmed && signature) {
+      const agreementHtml = generateRentalAgreementHtml(req.body);
+      const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
+      const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+      attachments.push({
+        filename: `rental-agreement-${safeName}-${safeDate}.html`,
+        content: Buffer.from(agreementHtml, "utf-8"),
+        contentType: "text/html",
+      });
+    }
 
     // --- Notify owner ---
     const ownerEmailOpts = {
@@ -272,6 +486,7 @@ export default async function handler(req, res) {
         "",
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
         insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter."),
+        isConfirmed && signature ? "Signed Rental Agreement: attached (rental-agreement-*.html)" : "",
         "",
         footerText,
       ].filter((line) => line !== undefined).join("\n"),
@@ -306,6 +521,7 @@ export default async function handler(req, res) {
         ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
         ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : (protectionPlan ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`)}
+        ${isConfirmed && signature ? `<p>📄 <strong>Signed Rental Agreement is attached</strong> to this email as an HTML file.</p>` : ""}
         <p>${footerText}</p>
         ${isConfirmed && vehicleId && pickup && returnDate ? `
         <hr style="margin:24px 0;border:none;border-top:1px solid #ddd">
