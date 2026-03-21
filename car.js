@@ -227,8 +227,17 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // For Slingshot: show deposit notice and initialize button text immediately
 if (carData.bookingDeposit) {
   const depositNotice = document.getElementById("slingshotDepositNotice");
-  if (depositNotice) depositNotice.style.display = "";
-  stripeBtn.textContent = `Reserve with $${carData.bookingDeposit} Deposit`;
+  if (depositNotice) {
+    // Populate deposit amounts dynamically from the constant so HTML stays in sync
+    depositNotice.querySelectorAll("[data-deposit-booking]").forEach(el => {
+      el.textContent = "$" + carData.bookingDeposit;
+    });
+    depositNotice.querySelectorAll("[data-deposit-security]").forEach(el => {
+      el.textContent = "$" + carData.deposit;
+    });
+    depositNotice.style.display = "";
+  }
+  stripeBtn.textContent = _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`);
 }
 
 // ----- Name Field Validation & Auto-correction -----
@@ -1068,7 +1077,7 @@ window.addEventListener("pageshow", function(e) {
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
   stripeBtn.textContent = carData.bookingDeposit
-    ? `Reserve with $${carData.bookingDeposit} Deposit`
+    ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
     : window.slyI18n.t("booking.payNow");
   totalEl.textContent = "0";
   document.getElementById("subtotal").textContent = "0";
@@ -1178,7 +1187,7 @@ function updateTotal() {
       totalEl.textContent = rentalSubtotal;
     }
     stripeBtn.textContent = carData.bookingDeposit
-      ? `Reserve with $${carData.bookingDeposit} Deposit`
+      ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
       : window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
     updatePayBtn();
     return;
@@ -1697,7 +1706,7 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
       stripeBtn.textContent = carData.bookingDeposit
-        ? `Reserve with $${carData.bookingDeposit} Deposit`
+        ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
         : window.slyI18n.t("booking.payNow");
       updatePayBtn();
     }, { once: true });
@@ -1706,7 +1715,7 @@ stripeBtn.addEventListener("click", async () => {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
     stripeBtn.textContent = carData.bookingDeposit
-      ? `Reserve with $${carData.bookingDeposit} Deposit`
+      ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
       : window.slyI18n.t("booking.payNow");
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user

@@ -409,6 +409,8 @@ export default async function handler(req, res) {
 
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
+  // For Slingshot bookings, 'total' is the $50 deposit; label reflects that in emails.
+  const totalChargedLabel = fullRentalCost ? "Booking Deposit Charged" : "Total Charged";
   const ownerSubject = isConfirmed
     ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
     : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`;
@@ -484,7 +486,7 @@ export default async function handler(req, res) {
         pricePerBiWeekly ? `Bi-Weekly Rate : $${pricePerBiWeekly} / 2 weeks` : "",
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
-        `Total Charged  : $${total || "TBD"}`,
+        `${totalChargedLabel.padEnd(15)}: $${total || "TBD"}`,
         fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
         balanceAtPickup  ? `Balance at Pickup: $${balanceAtPickup}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
@@ -521,7 +523,7 @@ export default async function handler(req, res) {
           ${pricePerBiWeekly ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Bi-Weekly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerBiWeekly))} / 2 weeks</td></tr>` : ""}
           ${pricePerMonthly  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Monthly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerMonthly))} / month</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>${fullRentalCost ? "Booking Deposit Charged" : "Total Charged"}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
           ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
           ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
           ${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}
@@ -601,7 +603,7 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${fullRentalCost ? "Booking Deposit Charged" : "Total Charged"}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : ""}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : ""}</td></tr>
               ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
               ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
             </table>
