@@ -665,15 +665,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Owner email is critical — surface a 500 so the operator knows.
-    // Customer email failure is non-fatal: it is already logged above and the
-    // owner received the booking alert so the booking is not lost.
-    if (ownerEmailErr) {
-      return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
-    }
-
     // Block the reserved dates in booked-dates.json and mark the vehicle
-    // unavailable in fleet-status.json BEFORE sending the response.
+    // unavailable in fleet-status.json BEFORE sending the response and BEFORE
+    // checking for email errors.  This ensures availability is always updated
+    // for confirmed bookings even when the owner notification email fails.
     // Vercel terminates the serverless function as soon as res.json() is called,
     // so any async work scheduled after that is not guaranteed to run.
     // Failures are non-fatal (emails already sent) and only logged.
@@ -688,6 +683,13 @@ export default async function handler(req, res) {
       } catch (err) {
         console.error("Failed to update fleet-status.json:", err.message);
       }
+    }
+
+    // Owner email is critical — surface a 500 so the operator knows.
+    // Customer email failure is non-fatal: it is already logged above and the
+    // owner received the booking alert so the booking is not lost.
+    if (ownerEmailErr) {
+      return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
     }
 
     res.status(200).json({ success: true });
