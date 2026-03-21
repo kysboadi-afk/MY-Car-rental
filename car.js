@@ -223,8 +223,14 @@ let currentSubtotal = 0;
 let currentTaxRate = LA_TAX_RATE;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
+// Payment mode for the current payment attempt: 'deposit' | 'full'.
+// Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
+// Slingshot always uses 'deposit' (driven by carData.bookingDeposit).
+// Camry renters choose via the two-button UI.
+let _pendingPaymentMode = null;
 
-// For Slingshot: show deposit notice and initialize button text immediately
+// For Slingshot: show deposit notice and reserve button.
+// stripeBtn becomes "Book Now" (full payment); reserveBtn is the $50-deposit option.
 if (carData.bookingDeposit) {
   const depositNotice = document.getElementById("slingshotDepositNotice");
   if (depositNotice) {
@@ -237,7 +243,25 @@ if (carData.bookingDeposit) {
     });
     depositNotice.style.display = "";
   }
-  stripeBtn.textContent = _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`);
+  // Show reserve button as the deposit option for Slingshot
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (reserveBtnEl) {
+    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${carData.bookingDeposit} Deposit`;
+    reserveBtnEl.style.display = "";
+  }
+  // stripeBtn text will be set to the full amount by updateTotal() once a duration is selected
+}
+
+// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
+// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
+if (!carData.hourlyTiers) {
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (reserveBtnEl) {
+    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
+    reserveBtnEl.style.display = "";
+  }
+  const camryDepNotice = document.getElementById("camryDepositNotice");
+  if (camryDepNotice) camryDepNotice.style.display = "";
 }
 
 // ----- Name Field Validation & Auto-correction -----
@@ -542,7 +566,15 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     // Show Slingshot speed & strike policy
     if (speedSection) speedSection.style.display = "";
   } else {
-    if (depositHeadingEl) depositHeadingEl.style.display = "none";
+    // For Camry: show the deposit/DPP section with a heading that accurately reflects no deposit.
+    // Removing data-i18n prevents applyTranslations() from overriding the heading text below.
+    if (depositHeadingEl) {
+      depositHeadingEl.removeAttribute("data-i18n");
+      depositHeadingEl.textContent = depositLang === "es"
+        ? "DEP\u00D3SITO DE SEGURIDAD Y PLAN DE PROTECCI\u00D3N DE DA\u00D1OS"
+        : "SECURITY DEPOSIT & DAMAGE PROTECTION PLAN";
+      depositHeadingEl.style.display = "";
+    }
     if (depositLang === "es") {
       if (depositIntroEl) depositIntroEl.textContent = "No se requiere dep\u00F3sito de seguridad para este veh\u00EDculo.";
       if (depositDppEl) { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Plan de Protecci\u00F3n de Da\u00F1os ($13/d\u00EDa &bull; $85/semana &bull; $150/2 sem &bull; $295/mes):</strong> complemento opcional &mdash; reduce tu responsabilidad por da\u00F1os a $1,000"; }
@@ -560,6 +592,24 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
   if (bookingDepositSection) {
     bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
+  }
+
+  // Update Payment Terms body to accurately describe when/how payment is collected.
+  // Removing data-i18n prevents applyTranslations() from overwriting the corrected text.
+  const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
+  if (paymentTermsBodyEl) {
+    paymentTermsBodyEl.removeAttribute("data-i18n");
+    if (carData.hourlyTiers) {
+      // Slingshot: $50 charged online at booking; rest at pickup
+      paymentTermsBodyEl.textContent = depositLang === "es"
+        ? "Un dep\u00F3sito de reserva no reembolsable de $50 se cobra en l\u00EDnea al momento de la reserva. El saldo restante (tarifa de alquiler + dep\u00F3sito de seguridad de $150) vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+        : "A $50 non-refundable reservation deposit is charged online at the time of booking. The remaining balance (rental fee + $150 security deposit) is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+    } else {
+      // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
+      paymentTermsBodyEl.textContent = depositLang === "es"
+        ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+        : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+    }
   }
 
   // Pre-fill the signature field with the renter's name if already typed
@@ -1076,9 +1126,13 @@ window.addEventListener("pageshow", function(e) {
   if (prBtnContainer) prBtnContainer.style.display = "none";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
-  stripeBtn.textContent = carData.bookingDeposit
-    ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
-    : window.slyI18n.t("booking.payNow");
+  stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+  const _reserveBtnReset = document.getElementById("reserveBtn");
+  if (_reserveBtnReset) {
+    _reserveBtnReset.style.display = ""; // shown for all vehicles
+    _reserveBtnReset.disabled = true;
+  }
+  _pendingPaymentMode = null;
   totalEl.textContent = "0";
   document.getElementById("subtotal").textContent = "0";
   document.getElementById("taxLine").style.display = "none";
@@ -1112,6 +1166,8 @@ function updatePayBtn() {
     : pickup.value && returnDate.value;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
+  const _reserveBtnPayBtn = document.getElementById("reserveBtn");
+  if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
   const hint = document.getElementById("payHint");
   if (hint) hint.style.display = ready ? "none" : "block";
 }
@@ -1124,7 +1180,7 @@ function updateTotal() {
     if (!tier) return;
     currentDayCount = 1; // DPP uses 1 day for any slingshot rental
 
-    // Compute the full rental cost internally (used for email payload only — never displayed).
+    // Compute the full rental cost for both the breakdown display and the booking payload.
     const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0;
     const fullRentalBase = tier.price + dppCost + carData.deposit;
     const fullRentalTax = fullRentalBase * currentTaxRate;
@@ -1133,42 +1189,8 @@ function updateTotal() {
     carData._fullRentalCost = fullRentalGrand.toFixed(2);
     carData._balanceAtPickup = (fullRentalGrand - (carData.bookingDeposit || 0)).toFixed(2);
 
-    if (carData.bookingDeposit) {
-      // ── Reservation-deposit mode: show only $50, no tax, no breakdown of full charges ──
-      // The full rental breakdown (rental fee, $150 security deposit, DPP, tax) is shown
-      // at pickup — not during the online reservation checkout.
-      const rowsEl = document.getElementById("breakdownRows");
-      const frag = document.createDocumentFragment();
-      const row = document.createElement("div");
-      row.className = "breakdown-row breakdown-deposit";
-      const labelSpan = document.createElement("span");
-      labelSpan.className = "breakdown-label";
-      labelSpan.textContent = `\uD83D\uDD12 ${_t("booking.reservationDepositLabel", "Reservation deposit (non-refundable)")}`;
-      const valueSpan = document.createElement("span");
-      valueSpan.className = "breakdown-value";
-      valueSpan.textContent = "$" + carData.bookingDeposit;
-      row.appendChild(labelSpan);
-      row.appendChild(valueSpan);
-      frag.appendChild(row);
-      rowsEl.innerHTML = "";
-      rowsEl.appendChild(frag);
-      document.getElementById("priceBreakdown").style.display = "";
-
-      // Subtotal = $50, no tax line, Total = $50
-      document.getElementById("subtotal").textContent = carData.bookingDeposit;
-      const taxLineEl = document.getElementById("taxLine");
-      const taxNoteEl = document.getElementById("taxNote");
-      taxLineEl.style.display = "none";
-      if (taxNoteEl) taxNoteEl.style.display = "none";
-      currentSubtotal = carData.bookingDeposit;
-      totalEl.textContent = carData.bookingDeposit;
-
-      stripeBtn.textContent = _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`);
-      updatePayBtn();
-      return;
-    }
-
-    // ── Full-charge mode (no booking deposit): show complete breakdown ──
+    // Always show the full rental breakdown so renters know the total cost.
+    // The two buttons (Reserve $50 / Book Now $X) let them choose how much to pay now.
     const lines = [];
     lines.push({ label: _fmt("booking.tierRentalFmt", { label: `${tier.hours} ${_t("fleet.hours","Hours")}` }, `${tier.label} rental`), amount: tier.price });
     lines.push({ label: _t("booking.securityDepositRef", "Security deposit (refundable)"), amount: carData.deposit });
@@ -1351,19 +1373,32 @@ function updateTotal() {
 
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
+  // Resolve payment mode: deposit when reserveBtn was clicked, full when stripeBtn clicked directly.
+  // _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
+  if (_pendingPaymentMode === null) {
+    _pendingPaymentMode = 'full'; // stripeBtn is always "Book Now" for all vehicles
+  }
+  const paymentMode = _pendingPaymentMode;
+  _pendingPaymentMode = null; // consume and reset
+
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
   const phone = document.getElementById("phone").value.trim();
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
+  // Determine the amount charged now: deposit = small upfront hold; full = complete rental payment.
+  const isDepositMode = paymentMode === 'deposit';
+  const depositAmount = carData.bookingDeposit || CAMRY_BOOKING_DEPOSIT;
   // For Slingshot: only $50 booking deposit is charged now; rest at pickup.
-  const displayPayNow = carData.bookingDeposit
-    ? carData.bookingDeposit.toFixed(2)
-    : totalEl.textContent;
+  // For Camry reserve mode: only CAMRY_BOOKING_DEPOSIT charged now; rest at pickup.
+  // For Camry full mode: full rental amount charged now.
+  const displayPayNow = isDepositMode ? depositAmount.toFixed(2) : totalEl.textContent;
 
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
+  const _reserveBtnLoading = document.getElementById("reserveBtn");
+  if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
 
   // Pre-encode the ID file so it's ready when the user submits payment
   let idBase64 = null;
@@ -1416,6 +1451,7 @@ stripeBtn.addEventListener("click", async () => {
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",
         ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+        paymentMode,
       })
     });
 
@@ -1465,14 +1501,14 @@ stripeBtn.addEventListener("click", async () => {
     // before mounting the button — this is what prevents the "Unable to show
     // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
     // browsers or when the domain association file has not yet been verified.
-    const totalCents = carData.bookingDeposit
-      ? carData.bookingDeposit * 100
+    const totalCents = isDepositMode
+      ? depositAmount * 100
       : Math.round(parseFloat(totalEl.textContent) * 100);
     const paymentReq = stripe.paymentRequest({
       country: "US",
       currency: "usd",
       total: {
-        label: carData.bookingDeposit
+        label: isDepositMode
           ? carData.name + " Reservation Deposit (Non-Refundable)"
           : carData.name + " Rental",
         amount: totalCents,
@@ -1509,10 +1545,10 @@ stripeBtn.addEventListener("click", async () => {
           returnTime: returnTime.value,
           email,
           phone,
-          total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
-          ...(carData.bookingDeposit ? {
+          total: isDepositMode ? String(depositAmount) : totalEl.textContent,
+          ...(isDepositMode ? {
             fullRentalCost: carData._fullRentalCost || totalEl.textContent,
-            balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+            balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - depositAmount).toFixed(2),
           } : {}),
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
@@ -1640,10 +1676,10 @@ stripeBtn.addEventListener("click", async () => {
         returnTime: returnTime.value,
         email,
         phone,
-        total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
-        ...(carData.bookingDeposit ? {
+        total: isDepositMode ? String(depositAmount) : totalEl.textContent,
+        ...(isDepositMode ? {
           fullRentalCost: carData._fullRentalCost || totalEl.textContent,
-          balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+          balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - depositAmount).toFixed(2),
         } : {}),
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
@@ -1736,18 +1772,20 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      stripeBtn.textContent = carData.bookingDeposit
-        ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
-        : window.slyI18n.t("booking.payNow");
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      const _reserveBtnCancel = document.getElementById("reserveBtn");
+      if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
+      _pendingPaymentMode = null;
       updatePayBtn();
     }, { once: true });
 
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    stripeBtn.textContent = carData.bookingDeposit
-      ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
-      : window.slyI18n.t("booking.payNow");
+    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    const _reserveBtnErr = document.getElementById("reserveBtn");
+    if (_reserveBtnErr) _reserveBtnErr.disabled = false;
+    _pendingPaymentMode = null;
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
       alert(err.message);
@@ -1767,4 +1805,15 @@ stripeBtn.addEventListener("click", async () => {
     alert(userMessage);
   }
 });
+
+// ----- Camry "Reserve with Deposit" button -----
+// Sets deposit payment mode then delegates to the main stripeBtn handler.
+(function setupReserveBtn() {
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (!reserveBtnEl) return;
+  reserveBtnEl.addEventListener("click", function () {
+    _pendingPaymentMode = 'deposit';
+    stripeBtn.click();
+  });
+}());
 

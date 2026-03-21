@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
+import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration } = req.body;
+    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration, paymentMode } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -95,11 +95,15 @@ export default async function handler(req, res) {
 
     // For Slingshot: charge only the $50 non-refundable reservation deposit now.
     // The full rental balance (rental fee + $150 security deposit – $50) is due at pickup.
-    // For all other vehicles: charge the full rental amount including LA sales tax.
+    // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
+    // For all other vehicles (Slingshot full mode or Camry full mode): charge full amount + LA tax.
     let totalAmount;
     let taxAmount;
-    if (isSlingshotVehicle) {
+    if (isSlingshotVehicle && paymentMode !== "full") {
       totalAmount = SLINGSHOT_BOOKING_DEPOSIT;
+      taxAmount = 0;
+    } else if (!isSlingshotVehicle && paymentMode === "deposit") {
+      totalAmount = CAMRY_BOOKING_DEPOSIT;
       taxAmount = 0;
     } else {
       const preTaxAmount = computedFullRental + protectionCost;
@@ -107,11 +111,14 @@ export default async function handler(req, res) {
       totalAmount = preTaxAmount + taxAmount;
     }
 
+    const isSlingshotDepositMode = isSlingshotVehicle && paymentMode !== "full";
+    const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
+    const isDepositPayment = isSlingshotDepositMode || isCamryDepositMode;
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
-      description: isSlingshotVehicle
+      description: isDepositPayment
         ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
         : `Sly Transportation Services LLC – ${carData.name}`,
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
@@ -130,13 +137,23 @@ export default async function handler(req, res) {
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         tax_jurisdiction: "Los Angeles, CA",
-        tax_rate:     isSlingshotVehicle ? "0% (deposit only)" : (LA_TAX_RATE * 100).toFixed(2) + "%",
+        tax_rate:     isDepositPayment ? "0% (deposit only)" : (LA_TAX_RATE * 100).toFixed(2) + "%",
         tax_amount:   taxAmount.toFixed(2),
-        ...(isSlingshotVehicle ? {
+        ...(isSlingshotDepositMode ? {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",
           full_rental_amount:  (computedFullRental + protectionCost).toFixed(2),
           balance_at_pickup:   (computedFullRental + protectionCost - SLINGSHOT_BOOKING_DEPOSIT).toFixed(2),
+        } : {}),
+        ...(isSlingshotVehicle && paymentMode === "full" ? {
+          payment_type:        "full_payment",
+          balance_at_pickup:   "0.00",
+        } : {}),
+        ...(isCamryDepositMode ? {
+          payment_type:        "reservation_deposit",
+          deposit_refundable:  "false",
+          full_rental_amount:  (computedFullRental + protectionCost).toFixed(2),
+          balance_at_pickup:   (computedFullRental + protectionCost - CAMRY_BOOKING_DEPOSIT).toFixed(2),
         } : {}),
       },
     });

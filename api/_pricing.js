@@ -13,6 +13,10 @@ export const LA_TAX_RATE = 0.1025;
 // The full rental balance (rental fee + $150 security deposit) is due at pickup.
 export const SLINGSHOT_BOOKING_DEPOSIT = 50;
 
+// Non-refundable reservation deposit for Camry "Reserve Now" mode.
+// Renters who choose "Reserve Now" pay this upfront; the remaining rental balance is due at pickup.
+export const CAMRY_BOOKING_DEPOSIT = 50;
+
 export const CARS = {
   slingshot:  {
     name: "Slingshot R",

@@ -244,7 +244,7 @@
           <p data-i18n="agreement.terminationBody">SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
 
           <h4 data-i18n="agreement.paymentTermsHeading">PAYMENT TERMS</h4>
-          <p data-i18n="agreement.paymentTermsBody">All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+          <p id="agreementPaymentTermsBody" data-i18n="agreement.paymentTermsBody">All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
           <p data-i18n-html="agreement.noRefundBody">&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
 
           <h4 data-i18n-html="agreement.chargebackHeading">PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
@@ -302,6 +302,17 @@
       </ul>
     </div>
 
+    <!-- Camry non-refundable deposit notice — shown by car.js for camry/camry2013 only -->
+    <div id="camryDepositNotice" class="deposit-notice" style="display:none">
+      <strong>🔒 $50 Non-Refundable Reservation Deposit</strong>
+      <ul>
+        <li>A <strong>$50 deposit</strong> is charged now to hold your vehicle.</li>
+        <li>The deposit is applied toward your total rental balance at pickup.</li>
+        <li>The deposit is <strong>NON-REFUNDABLE</strong> — forfeited if you cancel or no-show.</li>
+        <li>Remaining rental balance is due at pickup.</li>
+      </ul>
+    </div>
+
     <div id="priceBreakdown" class="price-breakdown" style="display:none">
       <div id="breakdownRows"></div>
     </div>
@@ -309,6 +320,9 @@
     <p class="total tax-line" id="taxLine" style="display:none"><span data-i18n="booking.salesTaxLabel">Sales Tax:</span> $<span id="tax">0.00</span></p>
     <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote" data-i18n="booking.taxNote">(+ applicable sales tax)</span></p>
     <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <!-- Reserve-deposit button — shown by car.js for all vehicles; allows renter to pay only a
+         $50 non-refundable deposit now and the remaining balance at pickup instead of paying in full -->
+    <button id="reserveBtn" class="reserve-btn" style="display:none" disabled aria-describedby="payHint">🔒 Reserve with $50 Deposit</button>
     <button id="stripePay" class="pay-button" disabled aria-describedby="payHint" data-i18n="booking.payNow">💳 Pay Now</button>
 
     <div id="payment-request-button" style="display:none"></div>

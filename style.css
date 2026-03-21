@@ -1111,6 +1111,24 @@ body {
 .booking #stripePay:hover:not(:disabled) { background: #e0a000; }
 .booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
 
+/* Reserve-deposit button (all vehicles) — appears above the Book Now button */
+.reserve-btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+.reserve-btn:hover:not(:disabled) { background: #1976d2; }
+.reserve-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
 
 /* STRIPE PAYMENT ELEMENT */
 #payment-form {

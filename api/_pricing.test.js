@@ -3,7 +3,7 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -237,4 +237,20 @@ test("Slingshot full rental (3 hours) minus booking deposit = balance at pickup"
 test("Slingshot full rental (24 hours) minus booking deposit = balance at pickup", () => {
   // 24hr full rental = $350 + $150 security = $500; minus $50 deposit = $450 balance
   assert.equal(computeSlingshotAmount(24) - SLINGSHOT_BOOKING_DEPOSIT, 450);
+});
+
+// ─── CAMRY_BOOKING_DEPOSIT constant ──────────────────────────────────────────
+
+test("CAMRY_BOOKING_DEPOSIT equals $50", () => {
+  assert.equal(CAMRY_BOOKING_DEPOSIT, 50);
+});
+
+test("Camry 1-week rental minus deposit = balance at pickup in Reserve mode", () => {
+  // 1-week Camry = $350; minus $50 deposit = $300 balance due at pickup
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-08") - CAMRY_BOOKING_DEPOSIT, 300);
+});
+
+test("Camry 30-day rental minus deposit = balance at pickup in Reserve mode", () => {
+  // 30-day Camry = $1300; minus $50 deposit = $1250 balance due at pickup
+  assert.equal(computeAmount("camry", "2025-07-01", "2025-07-31") - CAMRY_BOOKING_DEPOSIT, 1250);
 });
