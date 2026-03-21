@@ -124,6 +124,12 @@ export default async function handler(req, res) {
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
+      // Request 3D Secure authentication automatically for high-risk card payments.
+      // Stripe Radar decides when to trigger it; low-risk transactions flow through
+      // without extra friction.
+      payment_method_options: {
+        card: { request_three_d_secure: "automatic" },
+      },
       // Store full booking context so every payment is auditable from the
       // Stripe dashboard and can be reconciled with booked-dates.json if needed.
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
