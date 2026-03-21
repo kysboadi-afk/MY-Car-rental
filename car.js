@@ -1124,6 +1124,51 @@ function updateTotal() {
     if (!tier) return;
     currentDayCount = 1; // DPP uses 1 day for any slingshot rental
 
+    // Compute the full rental cost internally (used for email payload only — never displayed).
+    const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0;
+    const fullRentalBase = tier.price + dppCost + carData.deposit;
+    const fullRentalTax = fullRentalBase * currentTaxRate;
+    const fullRentalGrand = fullRentalBase + fullRentalTax;
+    // Store full rental total on carData for the booking payload
+    carData._fullRentalCost = fullRentalGrand.toFixed(2);
+    carData._balanceAtPickup = (fullRentalGrand - (carData.bookingDeposit || 0)).toFixed(2);
+
+    if (carData.bookingDeposit) {
+      // ── Reservation-deposit mode: show only $50, no tax, no breakdown of full charges ──
+      // The full rental breakdown (rental fee, $150 security deposit, DPP, tax) is shown
+      // at pickup — not during the online reservation checkout.
+      const rowsEl = document.getElementById("breakdownRows");
+      const frag = document.createDocumentFragment();
+      const row = document.createElement("div");
+      row.className = "breakdown-row breakdown-deposit";
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "breakdown-label";
+      labelSpan.textContent = `\uD83D\uDD12 ${_t("booking.reservationDepositLabel", "Reservation deposit (non-refundable)")}`;
+      const valueSpan = document.createElement("span");
+      valueSpan.className = "breakdown-value";
+      valueSpan.textContent = "$" + carData.bookingDeposit;
+      row.appendChild(labelSpan);
+      row.appendChild(valueSpan);
+      frag.appendChild(row);
+      rowsEl.innerHTML = "";
+      rowsEl.appendChild(frag);
+      document.getElementById("priceBreakdown").style.display = "";
+
+      // Subtotal = $50, no tax line, Total = $50
+      document.getElementById("subtotal").textContent = carData.bookingDeposit;
+      const taxLineEl = document.getElementById("taxLine");
+      const taxNoteEl = document.getElementById("taxNote");
+      taxLineEl.style.display = "none";
+      if (taxNoteEl) taxNoteEl.style.display = "none";
+      currentSubtotal = carData.bookingDeposit;
+      totalEl.textContent = carData.bookingDeposit;
+
+      stripeBtn.textContent = _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`);
+      updatePayBtn();
+      return;
+    }
+
+    // ── Full-charge mode (no booking deposit): show complete breakdown ──
     const lines = [];
     lines.push({ label: _fmt("booking.tierRentalFmt", { label: `${tier.hours} ${_t("fleet.hours","Hours")}` }, `${tier.label} rental`), amount: tier.price });
     lines.push({ label: _t("booking.securityDepositRef", "Security deposit (refundable)"), amount: carData.deposit });
@@ -1133,31 +1178,20 @@ function updateTotal() {
       lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
     }
 
-    let cost = tier.price + (insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0);
-    const rentalSubtotal = cost + carData.deposit;
-    currentSubtotal = rentalSubtotal;
-    const taxAmount = rentalSubtotal * currentTaxRate;
-    const grandTotal = rentalSubtotal + taxAmount;
-
+    currentSubtotal = fullRentalBase;
+    const displayTotal = currentTaxRate > 0 ? fullRentalGrand : fullRentalBase;
     if (currentTaxRate > 0) {
       const pct = +((currentTaxRate * 100).toFixed(4));
-      lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: taxAmount.toFixed(2) });
+      lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: fullRentalTax.toFixed(2) });
     } else {
       lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
-    }
-
-    // For Slingshot: add non-refundable deposit (pay now) and balance-at-pickup lines
-    if (carData.bookingDeposit) {
-      const balanceAtPickup = (currentTaxRate > 0 ? grandTotal : rentalSubtotal) - carData.bookingDeposit;
-      lines.push({ label: `\uD83D\uDD12 Non-refundable reservation deposit \u2014 pay now`, amount: carData.bookingDeposit.toFixed(2), depositHighlight: true });
-      lines.push({ label: `Balance due at pickup`, amount: balanceAtPickup.toFixed(2) });
     }
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
     lines.forEach(function(l) {
       const row = document.createElement("div");
-      row.className = "breakdown-row" + (l.depositHighlight ? " breakdown-deposit" : "");
+      row.className = "breakdown-row";
       const labelSpan = document.createElement("span");
       labelSpan.className = "breakdown-label";
       labelSpan.textContent = l.label;
@@ -1172,23 +1206,20 @@ function updateTotal() {
     rowsEl.appendChild(frag);
     document.getElementById("priceBreakdown").style.display = "";
 
-    document.getElementById("subtotal").textContent = rentalSubtotal;
+    document.getElementById("subtotal").textContent = fullRentalBase;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
-    const displayTotal = currentTaxRate > 0 ? grandTotal : rentalSubtotal;
     if (currentTaxRate > 0) {
-      document.getElementById("tax").textContent = taxAmount.toFixed(2);
+      document.getElementById("tax").textContent = fullRentalTax.toFixed(2);
       taxLineEl.style.display = "";
       if (taxNoteEl) taxNoteEl.style.display = "none";
-      totalEl.textContent = grandTotal.toFixed(2);
+      totalEl.textContent = fullRentalGrand.toFixed(2);
     } else {
       taxLineEl.style.display = "none";
       if (taxNoteEl) taxNoteEl.style.display = "";
-      totalEl.textContent = rentalSubtotal;
+      totalEl.textContent = fullRentalBase;
     }
-    stripeBtn.textContent = carData.bookingDeposit
-      ? _t("booking.reserveWithDeposit", `Reserve with $${carData.bookingDeposit} Deposit`)
-      : window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
+    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
     updatePayBtn();
     return;
   }
@@ -1480,8 +1511,8 @@ stripeBtn.addEventListener("click", async () => {
           phone,
           total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
           ...(carData.bookingDeposit ? {
-            fullRentalCost: totalEl.textContent,
-            balanceAtPickup: (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+            fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+            balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
           } : {}),
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
@@ -1611,8 +1642,8 @@ stripeBtn.addEventListener("click", async () => {
         phone,
         total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
         ...(carData.bookingDeposit ? {
-          fullRentalCost: totalEl.textContent,
-          balanceAtPickup: (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+          fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+          balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
         } : {}),
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,

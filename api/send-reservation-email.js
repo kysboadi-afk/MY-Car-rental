@@ -190,7 +190,7 @@ function generateRentalAgreementHtml(body) {
     const rateList = carInfo.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ");
     depositSection = `
       <h4>RESERVATION DEPOSIT (Non-Refundable)</h4>
-      <p>A <strong>$${SLINGSHOT_BOOKING_DEPOSIT} non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation. This deposit is applied toward the total rental balance at pickup and is forfeited upon cancellation or no-show.</p>
+      <p>A <strong>$${esc(String(SLINGSHOT_BOOKING_DEPOSIT))} non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation. This deposit is applied toward the total rental balance at pickup and is forfeited upon cancellation or no-show.</p>
       <h4>SECURITY DEPOSIT (Refundable)</h4>
       <p>A <strong>$${esc(String(carInfo.deposit))} refundable security deposit</strong> is due at pickup and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
       <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
@@ -409,7 +409,9 @@ export default async function handler(req, res) {
 
   // isConfirmed: true for successful payments (default), false for failed/cancelled
   const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
-  // For Slingshot bookings, 'total' is the $50 deposit; label reflects that in emails.
+  // For Slingshot bookings, 'total' is the $50 reservation deposit (the only amount
+  // charged online); the presence of fullRentalCost in the payload signals this.
+  // fullRentalCost holds the full rental value (computed server-side at booking time).
   const totalChargedLabel = fullRentalCost ? "Booking Deposit Charged" : "Total Charged";
   const ownerSubject = isConfirmed
     ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
