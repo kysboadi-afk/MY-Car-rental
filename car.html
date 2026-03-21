@@ -225,6 +225,18 @@
             <p data-i18n-html="agreement.slingshotStrikePolicy"><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
           </div>
 
+          <!-- Slingshot Reservation Deposit Policy (shown for Slingshot only) -->
+          <div id="slingshotBookingDepositSection" style="display:none">
+            <h4>RESERVATION DEPOSIT (Non-Refundable)</h4>
+            <p>A <strong>$50 non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation.</p>
+            <ul>
+              <li>The $50 deposit is applied toward the total rental balance at pickup.</li>
+              <li>The deposit is <strong>NON-REFUNDABLE</strong> under any circumstances.</li>
+              <li>If the renter cancels or fails to appear (no-show), the $50 deposit is forfeited.</li>
+              <li>The remaining balance (rental fee + $150 refundable security deposit) is due at pickup.</li>
+            </ul>
+          </div>
+
           <h4 data-i18n="agreement.conditionHeading">CONDITION INSPECTION</h4>
           <p data-i18n="agreement.conditionBody">Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
 
@@ -278,6 +290,17 @@
     </div>
 
     <p class="refund-notice" data-i18n-html="booking.refundNotice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
+
+    <!-- Slingshot non-refundable deposit notice — shown by car.js for slingshot/slingshot2 only -->
+    <div id="slingshotDepositNotice" class="deposit-notice" style="display:none">
+      <strong>🔒 <span data-deposit-booking>$50</span> Non-Refundable Reservation Deposit</strong>
+      <ul>
+        <li>A <strong><span data-deposit-booking>$50</span> deposit</strong> is charged now to secure your Slingshot reservation.</li>
+        <li>The deposit is applied toward your total rental balance at pickup.</li>
+        <li>The deposit is <strong>NON-REFUNDABLE</strong> — it is forfeited if you cancel or no-show.</li>
+        <li>Remaining balance (rental fee + <span data-deposit-security>$150</span> security deposit) is due at pickup.</li>
+      </ul>
+    </div>
 
     <div id="priceBreakdown" class="price-breakdown" style="display:none">
       <div id="breakdownRows"></div>

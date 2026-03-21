@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount } from "./_pricing.js";
+import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -82,27 +82,38 @@ export default async function handler(req, res) {
     // Compute amount server-side — never trust a client-supplied amount.
     // The security deposit is always charged regardless of insurance choice.
     // Hourly-tier vehicles (Slingshot) use computeSlingshotAmount; all others use daily/weekly/etc.
-    const computedAmount = CARS[vehicleId].hourlyTiers
+    const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
+    const computedFullRental = isSlingshotVehicle
       ? computeSlingshotAmount(Number(slingshotDuration), vehicleId)
       : computeAmount(vehicleId, pickup, returnDate);
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in.
     // Hourly-tier rentals are treated as 1 day for DPP purposes.
-    const days = CARS[vehicleId].hourlyTiers ? 1 : computeRentalDays(pickup, returnDate);
+    const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
-    const preTaxAmount = computedAmount + protectionCost;
 
-    // Apply Los Angeles, CA sales tax — business is operated in LA and tax is
-    // always collected at the combined City of Los Angeles rate.
-    const taxAmount = preTaxAmount * LA_TAX_RATE;
-    const totalAmount = preTaxAmount + taxAmount;
+    // For Slingshot: charge only the $50 non-refundable reservation deposit now.
+    // The full rental balance (rental fee + $150 security deposit – $50) is due at pickup.
+    // For all other vehicles: charge the full rental amount including LA sales tax.
+    let totalAmount;
+    let taxAmount;
+    if (isSlingshotVehicle) {
+      totalAmount = SLINGSHOT_BOOKING_DEPOSIT;
+      taxAmount = 0;
+    } else {
+      const preTaxAmount = computedFullRental + protectionCost;
+      taxAmount = preTaxAmount * LA_TAX_RATE;
+      totalAmount = preTaxAmount + taxAmount;
+    }
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${carData.name}`,
+      description: isSlingshotVehicle
+        ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
+        : `Sly Transportation Services LLC – ${carData.name}`,
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
@@ -116,11 +127,17 @@ export default async function handler(req, res) {
         vehicle_name: carData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        ...(CARS[vehicleId].hourlyTiers ? { rental_duration: `${slingshotDuration} hours` } : {}),
+        ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         tax_jurisdiction: "Los Angeles, CA",
-        tax_rate:         (LA_TAX_RATE * 100).toFixed(2) + "%",
-        tax_amount:       taxAmount.toFixed(2),
+        tax_rate:     isSlingshotVehicle ? "0% (deposit only)" : (LA_TAX_RATE * 100).toFixed(2) + "%",
+        tax_amount:   taxAmount.toFixed(2),
+        ...(isSlingshotVehicle ? {
+          payment_type:        "reservation_deposit",
+          deposit_refundable:  "false",
+          full_rental_amount:  (computedFullRental + protectionCost).toFixed(2),
+          balance_at_pickup:   (computedFullRental + protectionCost - SLINGSHOT_BOOKING_DEPOSIT).toFixed(2),
+        } : {}),
       },
     });
 

@@ -3,7 +3,7 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -221,4 +221,20 @@ test("breakdown: unknown vehicleId returns null", () => {
 test("breakdown: slingshot returns null (hourly tier, not daily)", () => {
   // slingshot has no pricePerDay — computeBreakdownLines returns null for hourly-only vehicles
   assert.equal(computeBreakdownLines("slingshot", "2025-07-01", "2025-07-02"), null);
+});
+
+// ─── SLINGSHOT_BOOKING_DEPOSIT constant ──────────────────────────────────────
+
+test("SLINGSHOT_BOOKING_DEPOSIT equals $50", () => {
+  assert.equal(SLINGSHOT_BOOKING_DEPOSIT, 50);
+});
+
+test("Slingshot full rental (3 hours) minus booking deposit = balance at pickup", () => {
+  // 3hr full rental = $200 + $150 security = $350; minus $50 deposit = $300 balance
+  assert.equal(computeSlingshotAmount(3) - SLINGSHOT_BOOKING_DEPOSIT, 300);
+});
+
+test("Slingshot full rental (24 hours) minus booking deposit = balance at pickup", () => {
+  // 24hr full rental = $350 + $150 security = $500; minus $50 deposit = $450 balance
+  assert.equal(computeSlingshotAmount(24) - SLINGSHOT_BOOKING_DEPOSIT, 450);
 });
