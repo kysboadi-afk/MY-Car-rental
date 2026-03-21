@@ -10,7 +10,7 @@
 //                  (defaults to slyservices@supports-info.com)
 import nodemailer from "nodemailer";
 import { hasOverlap } from "./_availability.js";
-import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -173,6 +173,7 @@ function generateRentalAgreementHtml(body) {
     pickup, pickupTime, returnDate, returnTime,
     total, deposit, days, protectionPlan, signature,
     slingshotDuration,
+    fullRentalCost, balanceAtPickup,
   } = body;
 
   const signedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "long", timeStyle: "short" });
@@ -188,10 +189,12 @@ function generateRentalAgreementHtml(body) {
   if (isHourly) {
     const rateList = carInfo.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ");
     depositSection = `
+      <h4>RESERVATION DEPOSIT (Non-Refundable)</h4>
+      <p>A <strong>$${SLINGSHOT_BOOKING_DEPOSIT} non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation. This deposit is applied toward the total rental balance at pickup and is forfeited upon cancellation or no-show.</p>
       <h4>SECURITY DEPOSIT (Refundable)</h4>
-      <p>A <strong>$${esc(String(carInfo.deposit))} refundable security deposit</strong> is included in the rental payment and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
+      <p>A <strong>$${esc(String(carInfo.deposit))} refundable security deposit</strong> is due at pickup and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
       <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
-      <p><strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${esc(String(carInfo.deposit))} refundable security deposit (included in payment)</p>
+      <p><strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${esc(String(carInfo.deposit))} refundable security deposit (due at pickup)</p>
     `;
   } else {
     depositSection = `
@@ -269,7 +272,9 @@ function generateRentalAgreementHtml(body) {
     <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
     <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
     ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
-    <tr><th>Total Charged</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
+    <tr><th>${isHourly ? "Booking Deposit Charged" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
+    ${isHourly && fullRentalCost ? `<tr><th>Full Rental Cost</th><td>$${esc(fullRentalCost)}</td></tr>` : ""}
+    ${isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
     <tr><th>Insurance</th><td>${esc(insuranceSummary)}</td></tr>
   </table>
   <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
@@ -385,7 +390,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup } = req.body;
 
   // Compute server-side pricing breakdown lines for daily/weekly rentals.
   // Slingshot (hourly tier) or missing dates fall back gracefully to null.
@@ -480,6 +485,8 @@ export default async function handler(req, res) {
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
         `Total Charged  : $${total || "TBD"}`,
+        fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
+        balanceAtPickup  ? `Balance at Pickup: $${balanceAtPickup}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : "Own insurance (proof uploaded)"}` : "",
         signature ? `Digital Signature: ${signature}` : "",
@@ -514,7 +521,9 @@ export default async function handler(req, res) {
           ${pricePerBiWeekly ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Bi-Weekly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerBiWeekly))} / 2 weeks</td></tr>` : ""}
           ${pricePerMonthly  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Monthly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerMonthly))} / month</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>${fullRentalCost ? "Booking Deposit Charged" : "Total Charged"}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
+          ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+          ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
           ${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
@@ -567,7 +576,9 @@ export default async function handler(req, res) {
             `Pickup Time    : ${pickupTime || "Not specified"}`,
             `Return Date    : ${returnDate || ""}`,
             `Return Time    : ${returnTime || "Not specified"}`,
-            `Total Charged  : $${total || "TBD"}`,
+            fullRentalCost  ? `Booking Deposit: $${total || "TBD"} (non-refundable — applied to your balance at pickup)` : `Total Charged  : $${total || "TBD"}`,
+            fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
+            balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
             breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
             "",
             "We will be in touch shortly to confirm your rental pick-up details.",
@@ -590,7 +601,9 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${fullRentalCost ? "Booking Deposit Charged" : "Total Charged"}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : ""}</td></tr>
+              ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+              ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>

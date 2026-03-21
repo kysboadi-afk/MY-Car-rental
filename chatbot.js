@@ -18,7 +18,7 @@ var botResponses = {
     },
     {
       patterns: ["slingshot price","slingshot cost","slingshot rate","slingshot how much","slingshot fee","how much is the slingshot","how much for the slingshot","how much slingshot","price of slingshot","cost of slingshot"],
-      reply: "Here are the Slingshot R rates 🔴\n\n⏱ Hourly Tiers (Sports 2-Seater):\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n\n💳 $150 security deposit required\n   (included in your payment at checkout)\n\nReady to book? Visit our Cars page!"
+      reply: "Here are the Slingshot R rates 🔴\n\n⏱ Hourly Tiers (Sports 2-Seater):\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n\n🔒 $50 non-refundable reservation deposit required to book\n   (applied toward your total at pickup)\n💳 $150 refundable security deposit due at pickup\n\nReady to book? Visit our Cars page!"
     },
     {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
@@ -26,7 +26,7 @@ var botResponses = {
     },
     {
       patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
-      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • + $150 deposit\n\n🔵 Camry 2012\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
+      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
     },
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
@@ -34,7 +34,7 @@ var botResponses = {
     },
     {
       patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
-      reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 deposit)\n\n🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)\n\nVisit our Cars page to browse and book!"
+      reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)\n\nVisit our Cars page to browse and book!"
     },
     {
       patterns: ["book","booking","reserve","reservation","how do i","how to"],
@@ -50,11 +50,11 @@ var botResponses = {
     },
     {
       patterns: ["deposit","security"],
-      reply: "Here's our deposit info 💰\n\n🔴 Slingshot R: $150 deposit\n🔵 Camry 2012: No deposit required\n🟢 Camry 2013 SE: No deposit required\n\nDeposits are refundable upon return of the vehicle in good condition."
+      reply: "Here's our deposit info 💰\n\n🔴 Slingshot R:\n  • $50 non-refundable reservation deposit (charged at booking to secure your reservation)\n  • $150 refundable security deposit (due at pickup)\n🔵 Camry 2012: No deposit required\n🟢 Camry 2013 SE: No deposit required\n\n⚠️ The Slingshot $50 deposit is NON-REFUNDABLE and forfeited if you cancel or no-show."
     },
     {
       patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
+      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Slingshot: the $50 reservation deposit is NON-REFUNDABLE and will be forfeited\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contact","phone","call","email","reach","support","help"],
@@ -85,7 +85,7 @@ var botResponses = {
     },
     {
       patterns: ["precio slingshot","costo slingshot","cuánto slingshot","cuanto slingshot","tarifa slingshot","slingshot precio","slingshot costo"],
-      reply: "Aquí están las tarifas del Slingshot R 🔴\n\n⏱ Tarifas por Horas (Deportivo 2 plazas):\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n\n💳 Se requiere depósito de seguridad de $150\n   (incluido en tu pago al finalizar)\n\n¿Listo para reservar? ¡Visita nuestra página de autos!"
+      reply: "Aquí están las tarifas del Slingshot R 🔴\n\n⏱ Tarifas por Horas (Deportivo 2 plazas):\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n\n🔒 $50 de depósito de reserva no reembolsable (para asegurar tu reserva)\n💳 $150 de depósito de seguridad reembolsable (a pagar al recoger)\n\n¿Listo para reservar? ¡Visita nuestra página de autos!"
     },
     {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
@@ -93,7 +93,7 @@ var botResponses = {
     },
     {
       patterns: ["precio","costo","cuánto cuesta","cuanto cuesta","cuánto es","cuanto es","tarifa","tarifas","cobran","cobras","diario","semanal","mensual"],
-      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • + $150 depósito\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
+      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
     },
     {
       patterns: ["ganar","ganancias","ingresos","cuánto puedo ganar","cuanto puedo ganar","dinero"],
@@ -101,7 +101,7 @@ var botResponses = {
     },
     {
       patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","slingshot","camry"],
-      reply: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 depósito)\n\n🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+      reply: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
     },
     {
       patterns: ["reservar","reserva","reservación","reservacion","cómo reservo","como reservo","cómo alquilo","como alquilo","cómo rento","como rento","cómo funciona","como funciona"],
@@ -117,11 +117,11 @@ var botResponses = {
     },
     {
       patterns: ["depósito","deposito","fianza","garantía","garantia","seguridad"],
-      reply: "Aquí está nuestra información de depósito 💰\n\n🔴 Slingshot R: $150 de depósito\n🔵 Camry 2012: No se requiere depósito\n🟢 Camry 2013 SE: No se requiere depósito\n\nLos depósitos son reembolsables al devolver el vehículo en buenas condiciones."
+      reply: "Aquí está nuestra información de depósito 💰\n\n🔴 Slingshot R:\n  • $50 depósito de reserva no reembolsable (cobrado al reservar)\n  • $150 depósito de seguridad reembolsable (a pagar al recoger)\n🔵 Camry 2012: No se requiere depósito\n🟢 Camry 2013 SE: No se requiere depósito\n\n⚠️ El depósito de $50 del Slingshot es NO REEMBOLSABLE y se pierde si cancelas o no te presentas."
     },
     {
       patterns: ["cancelar","cancelación","cancelacion","reembolso","reembolsar","no presentarse"],
-      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (213) 916-6606 o envía un correo a slyservices@supports-info.com 🙏"
+      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Slingshot: el depósito de $50 es NO REEMBOLSABLE y se pierde si cancelas\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (213) 916-6606 o envía un correo a slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contacto","teléfono","telefono","llamar","correo","comunicarme","ayuda","soporte","asistencia"],
@@ -315,12 +315,12 @@ function buildChatbot() {
     var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
     var replies = {
       pricing: {
-        en: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • + $150 deposit\n\n🔵 Camry 2012\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
-        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • + $150 depósito\n\n🔵 Camry 2012\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
+        en: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
+        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
       },
       cars: {
-        en: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 deposit)\n\n🔵 Camry 2012 — $55/day or $350/week (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week (no deposit)\n\nVisit our Cars page to browse and book!",
-        es: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350 (+ $150 depósito)\n\n🔵 Camry 2012 — $55/día o $350/semana (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+        en: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n🔵 Camry 2012 — $55/day or $350/week (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week (no deposit)\n\nVisit our Cars page to browse and book!",
+        es: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n🔵 Camry 2012 — $55/día o $350/semana (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
       },
       reqs: {
         en: "📋 Requirements to Rent\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • At least 3 months of driving experience\n  • License must not be expired\n  • Upload a photo of your license during booking",

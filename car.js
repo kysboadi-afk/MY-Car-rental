@@ -17,6 +17,7 @@ const cars = {
       { hours: 24, price: 350, label: "24 Hours" },
     ],
     deposit: 150,
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
     images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
@@ -36,6 +37,7 @@ const cars = {
       { hours: 24, price: 350, label: "24 Hours" },
     ],
     deposit: 150,
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
     images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg"],
     make: "Polaris",
     model: "Slingshot XR",
@@ -93,6 +95,11 @@ const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $
 // The api/ directory uses Node.js ES modules that cannot be imported directly
 // from browser scripts, so the rate must be declared in both places.
 const LA_TAX_RATE = 0.1025;
+
+// Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
+// The full rental balance (rental fee + $150 security deposit) is due at pickup.
+// Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
+const SLINGSHOT_BOOKING_DEPOSIT = 50;
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -216,6 +223,13 @@ let currentSubtotal = 0;
 let currentTaxRate = LA_TAX_RATE;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
+
+// For Slingshot: show deposit notice and initialize button text immediately
+if (carData.bookingDeposit) {
+  const depositNotice = document.getElementById("slingshotDepositNotice");
+  if (depositNotice) depositNotice.style.display = "";
+  stripeBtn.textContent = `Reserve with $${carData.bookingDeposit} Deposit`;
+}
 
 // ----- Name Field Validation & Auto-correction -----
 
@@ -531,6 +545,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
     // Hide Slingshot speed & strike policy for non-Slingshot vehicles
     if (speedSection) speedSection.style.display = "none";
+  }
+
+  // Show/hide the booking deposit policy section (Slingshot only)
+  const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
+  if (bookingDepositSection) {
+    bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
@@ -1047,7 +1067,9 @@ window.addEventListener("pageshow", function(e) {
   if (prBtnContainer) prBtnContainer.style.display = "none";
   document.getElementById("payment-message").textContent = "";
   stripeBtn.style.display = "";
-  stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+  stripeBtn.textContent = carData.bookingDeposit
+    ? `Reserve with $${carData.bookingDeposit} Deposit`
+    : window.slyI18n.t("booking.payNow");
   totalEl.textContent = "0";
   document.getElementById("subtotal").textContent = "0";
   document.getElementById("taxLine").style.display = "none";
@@ -1115,11 +1137,18 @@ function updateTotal() {
       lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
     }
 
+    // For Slingshot: add non-refundable deposit (pay now) and balance-at-pickup lines
+    if (carData.bookingDeposit) {
+      const balanceAtPickup = (currentTaxRate > 0 ? grandTotal : rentalSubtotal) - carData.bookingDeposit;
+      lines.push({ label: `\uD83D\uDD12 Non-refundable reservation deposit \u2014 pay now`, amount: carData.bookingDeposit.toFixed(2), depositHighlight: true });
+      lines.push({ label: `Balance due at pickup`, amount: balanceAtPickup.toFixed(2) });
+    }
+
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
     lines.forEach(function(l) {
       const row = document.createElement("div");
-      row.className = "breakdown-row";
+      row.className = "breakdown-row" + (l.depositHighlight ? " breakdown-deposit" : "");
       const labelSpan = document.createElement("span");
       labelSpan.className = "breakdown-label";
       labelSpan.textContent = l.label;
@@ -1148,7 +1177,9 @@ function updateTotal() {
       if (taxNoteEl) taxNoteEl.style.display = "";
       totalEl.textContent = rentalSubtotal;
     }
-    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
+    stripeBtn.textContent = carData.bookingDeposit
+      ? `Reserve with $${carData.bookingDeposit} Deposit`
+      : window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
     updatePayBtn();
     return;
   }
@@ -1286,6 +1317,11 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
+  // For Slingshot: only $50 booking deposit is charged now; rest at pickup.
+  const displayPayNow = carData.bookingDeposit
+    ? carData.bookingDeposit.toFixed(2)
+    : totalEl.textContent;
+
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
 
@@ -1389,12 +1425,16 @@ stripeBtn.addEventListener("click", async () => {
     // before mounting the button — this is what prevents the "Unable to show
     // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
     // browsers or when the domain association file has not yet been verified.
-    const totalCents = Math.round(parseFloat(totalEl.textContent) * 100);
+    const totalCents = carData.bookingDeposit
+      ? carData.bookingDeposit * 100
+      : Math.round(parseFloat(totalEl.textContent) * 100);
     const paymentReq = stripe.paymentRequest({
       country: "US",
       currency: "usd",
       total: {
-        label: carData.name + " Rental",
+        label: carData.bookingDeposit
+          ? carData.name + " Reservation Deposit (Non-Refundable)"
+          : carData.name + " Rental",
         amount: totalCents,
       },
       requestPayerName: true,
@@ -1429,7 +1469,11 @@ stripeBtn.addEventListener("click", async () => {
           returnTime: returnTime.value,
           email,
           phone,
-          total: totalEl.textContent,
+          total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
+          ...(carData.bookingDeposit ? {
+            fullRentalCost: totalEl.textContent,
+            balanceAtPickup: (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+          } : {}),
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
           pricePerBiWeekly: carData.biweekly || null,
@@ -1515,8 +1559,8 @@ stripeBtn.addEventListener("click", async () => {
     });
 
     const paymentForm = document.getElementById("payment-form");
-    document.getElementById("payAmount").textContent = totalEl.textContent;
-    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + totalEl.textContent;
+    document.getElementById("payAmount").textContent = displayPayNow;
+    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
     paymentForm.style.display = "block";
     stripeBtn.style.display = "none";
     const payHint = document.getElementById("payHint");
@@ -1556,7 +1600,11 @@ stripeBtn.addEventListener("click", async () => {
         returnTime: returnTime.value,
         email,
         phone,
-        total: totalEl.textContent,
+        total: carData.bookingDeposit ? String(carData.bookingDeposit) : totalEl.textContent,
+        ...(carData.bookingDeposit ? {
+          fullRentalCost: totalEl.textContent,
+          balanceAtPickup: (parseFloat(totalEl.textContent) - carData.bookingDeposit).toFixed(2),
+        } : {}),
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
         pricePerBiWeekly: carData.biweekly || null,
@@ -1629,7 +1677,7 @@ stripeBtn.addEventListener("click", async () => {
         }));
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
-        submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + totalEl.textContent;
+        submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
         paymentSubmitting = false;
       }
     };
@@ -1648,14 +1696,18 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      stripeBtn.textContent = carData.bookingDeposit
+        ? `Reserve with $${carData.bookingDeposit} Deposit`
+        : window.slyI18n.t("booking.payNow");
       updatePayBtn();
     }, { once: true });
 
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    stripeBtn.textContent = carData.bookingDeposit
+      ? `Reserve with $${carData.bookingDeposit} Deposit`
+      : window.slyI18n.t("booking.payNow");
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
       alert(err.message);
