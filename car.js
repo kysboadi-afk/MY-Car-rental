@@ -23,11 +23,15 @@ const cars = {
     name: "Slingshot R",
     subtitle: "Sports \u2022 2-Seater",
     subtitleKey: "fleet.sports2seater",
-    // Slingshot uses hourly tier pricing — no daily/weekly/monthly rates.
+    // Sub-day tiers (3 hr, 6 hr) and daily tiers (1–3 days at $350/day, max 3 days).
+    // Multi-day durations are stored as hours (days × 24) to stay consistent with
+    // the existing applySlingshotDuration() auto-return-date logic.
     hourlyTiers: [
-      { hours: 3,  price: 200, label: "3 Hours" },
-      { hours: 6,  price: 250, label: "6 Hours" },
-      { hours: 24, price: 350, label: "24 Hours" },
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
     ],
     deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
@@ -45,9 +49,11 @@ const cars = {
     subtitle: "Sports \u2022 2-Seater",
     subtitleKey: "fleet.sports2seater",
     hourlyTiers: [
-      { hours: 3,  price: 200, label: "3 Hours" },
-      { hours: 6,  price: 250, label: "6 Hours" },
-      { hours: 24, price: 350, label: "24 Hours" },
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
     ],
     deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
@@ -133,7 +139,7 @@ document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent =
   (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
 document.getElementById("carPrice").textContent = (carData.hourlyTiers)
-  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours}${_t("fleet.unitHrs","hrs")}`).join(" \u2022 ")
+  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.label}`).join(" \u2022 ")
   : (carData.weekly)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
@@ -153,7 +159,7 @@ if (carData.hourlyTiers) {
       radio.name = "slingshotDuration";
       radio.value = String(tier.hours);
       const span = document.createElement("span");
-      span.textContent = `${tier.hours} ${_t("fleet.hours","Hours")} \u2014 $${tier.price}`;
+      span.textContent = `${tier.label} \u2014 $${tier.price}`;
       lbl.appendChild(radio);
       lbl.appendChild(span);
       optionsContainer.appendChild(lbl);
@@ -1555,25 +1561,30 @@ function updateTotal() {
     if (!pickup.value || !currentSlingshotDuration) return;
     const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
     if (!tier) return;
-    currentDayCount = 1; // DPP uses 1 day for any slingshot rental
+    // For DPP and day-count purposes: 3hr/6hr = 1 day; 24hr = 1 day; 48hr = 2 days; 72hr = 3 days.
+    const slingshotDays = Math.max(1, Math.ceil(currentSlingshotDuration / 24));
+    currentDayCount = slingshotDays;
 
     // Compute the full rental cost: tier price + $150 security deposit + DPP (if Option B).
     // Everything is charged online at booking — no split payment.
-    const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0;
+    const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY * slingshotDays : 0;
     const rentalBase = tier.price + carData.deposit + dppCost;
     // Store full rental total on carData for the booking payload.
     carData._fullRentalCost = rentalBase.toFixed(2);
 
     // Show the rental breakdown so renters know exactly what they're paying.
     const lines = [];
-    lines.push({ label: _fmt("booking.tierRentalFmt", { label: `${tier.hours} ${_t("fleet.hours","Hours")}` }, `${tier.label} rental`), amount: tier.price });
+    lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
 
     // Security deposit — refundable after return with no damage
     lines.push({ label: "\uD83D\uDCB0 Security Deposit (refundable)", amount: carData.deposit });
 
-    // DPP for slingshot is 1 day ($13) when Option B is selected
+    // DPP scales with the number of rental days when Option B is selected
     if (insuranceCoverageChoice === "no") {
-      lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
+      const dppLabel = slingshotDays === 1
+        ? `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`
+        : `Damage Protection Plan (${slingshotDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day)`;
+      lines.push({ label: _fmt("booking.dppSlingshotFmt", { days: slingshotDays, price: PROTECTION_PLAN_DAILY }, dppLabel), amount: dppCost });
     }
 
     // Compute LA sales tax (10.25%) on the full rental base.

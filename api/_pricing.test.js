@@ -79,6 +79,14 @@ test("slingshot: 24 hours = $350 + $150 deposit = $500", () => {
   assert.equal(computeSlingshotAmount(24), 500);
 });
 
+test("slingshot: 48 hours (2 days) = $700 + $150 deposit = $850", () => {
+  assert.equal(computeSlingshotAmount(48), 850);
+});
+
+test("slingshot: 72 hours (3 days) = $1050 + $150 deposit = $1200", () => {
+  assert.equal(computeSlingshotAmount(72), 1200);
+});
+
 test("slingshot: invalid duration returns null", () => {
   assert.equal(computeSlingshotAmount(12), null);
   assert.equal(computeSlingshotAmount(0), null);

@@ -226,7 +226,9 @@ function generateRentalAgreementHtml(body) {
 
   // Rental duration line
   const durationLine = isHourly && slingshotDuration
-    ? `${esc(String(slingshotDuration))}-hour rental`
+    ? (Number(slingshotDuration) >= 48
+        ? `${esc(String(Number(slingshotDuration) / 24))}-day rental`
+        : `${esc(String(slingshotDuration))}-hour rental`)
     : (days ? `${esc(String(days))} day${Number(days) !== 1 ? "s" : ""}` : "");
 
   return `<!DOCTYPE html>
@@ -411,7 +413,9 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
           ? "Damage Protection Plan selected"
           : "Renter provided personal rental car insurance");
     const durationLine = isHourly && slingshotDuration
-      ? `${slingshotDuration}-hour rental`
+      ? (Number(slingshotDuration) >= 48
+          ? `${Number(slingshotDuration) / 24}-day rental`
+          : `${Number(slingshotDuration)}-hour rental`)
       : (days ? `${days} day${Number(days) !== 1 ? "s" : ""}` : "");
 
     const doc = new PDFDocument({ margin: 50, size: "LETTER" });
