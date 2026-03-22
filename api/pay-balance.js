@@ -99,11 +99,14 @@ export default async function handler(req, res) {
 
     const carData = CARS[vehicleId];
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(balanceAmount * 100), // Stripe expects whole cents
+      amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
+      // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
+      // based on the customer's billing address collected by the Payment Element.
+      automatic_tax: { enabled: true },
       metadata: {
         renter_name:           trimmedName,
         vehicle_id:            vehicleId,

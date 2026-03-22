@@ -111,7 +111,7 @@ export default async function handler(req, res) {
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
     const isDepositPayment = isSlingshotDepositMode || isCamryDepositMode;
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(totalAmount * 100), // Stripe expects whole cents
+      amount: Math.round(totalAmount * 100), // Stripe expects whole cents (pre-tax for full payments)
       currency: "usd",
       receipt_email: email,
       description: isDepositPayment
@@ -120,6 +120,10 @@ export default async function handler(req, res) {
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
+      // Stripe Tax calculates and adds the correct tax on top of the pre-tax amount
+      // based on the customer's billing address collected by the Payment Element.
+      // Only enable for full payments — deposit-only payments are not taxable.
+      ...(!isDepositPayment ? { automatic_tax: { enabled: true } } : {}),
       // Request 3D Secure authentication automatically for high-risk card payments.
       // Stripe Radar decides when to trigger it; low-risk transactions flow through
       // without extra friction.
