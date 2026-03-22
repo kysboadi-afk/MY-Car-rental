@@ -59,6 +59,40 @@ python3 -m http.server 8000
 # Visit http://localhost:8000
 ```
 
+## 📸 Adding Photos to a Vehicle (Booking Page)
+
+The booking page shows a photo slideshow for each vehicle. Here's how to add new photos:
+
+### Step 1 — Upload the image file
+
+Put your photo in the **`images/`** folder in the root of the repository.  
+Accepted formats: `.jpg`, `.jpeg`, `.png`, `.webp`  
+Example: `images/slingshot-front.jpg`
+
+### Step 2 — Reference the photo in `car.js`
+
+Open `car.js` and find the vehicle you want to update.  
+Add the new filename to that vehicle's `images` array:
+
+**Slingshot 1** (look for the comment `// TO ADD PHOTOS FOR SLINGSHOT 1:`):
+```js
+images: ["images/car2.jpg", "images/car1.jpg", "images/car3.jpg", "images/slingshot-front.jpg"],
+```
+
+**Slingshot 2** (look for the comment `// TO ADD PHOTOS FOR SLINGSHOT 2:`):
+```js
+images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg", "images/slingshot2-front.jpg"],
+```
+
+Photos appear in the slider in the order they are listed.  
+The first photo in the list is shown by default.
+
+### Step 3 — Push to `main`
+
+Commit and push your changes. The site deploys automatically.
+
+---
+
 ## 🎨 Customization
 
 ### Change Car Information
