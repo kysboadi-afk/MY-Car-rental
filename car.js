@@ -851,49 +851,298 @@ initDatePickers();
 // ----- Fleet Status Check -----
 // Fetch the vehicle's availability from fleet-status.json. If the vehicle is
 // globally marked unavailable (e.g. already booked or taken offline), show a
-// clear notice and disable all booking form fields so the customer cannot
-// attempt payment. Fails open on any API error so transient outages do not
-// lock out the form.
+// clear "Currently Booked" notice and replace the booking form with the
+// waitlist sign-up section.  Fails open on any API error so transient outages
+// do not lock out the form.
 (async function checkFleetStatus() {
   try {
-    const resp = await fetch(`${API_BASE}/api/fleet-status`);
-    if (!resp.ok) return;
-    const status = await resp.json();
+    const [fleetResp, datesResp] = await Promise.all([
+      fetch(`${API_BASE}/api/fleet-status`),
+      fetch(`${API_BASE}/api/booked-dates`),
+    ]);
+    if (!fleetResp.ok) return;
+    const status      = await fleetResp.json();
+    const bookedDates = datesResp.ok ? await datesResp.json() : {};
     const entry = status[vehicleId];
     if (entry && entry.available === false) {
-      showVehicleUnavailable();
+      // Compute next available date from booked-dates
+      const today  = new Date().toISOString().slice(0, 10);
+      const ranges = ((bookedDates[vehicleId] || []).slice().sort((a, b) =>
+        a.from < b.from ? -1 : 1
+      ));
+      let nextAvail = null;
+      for (const r of ranges) {
+        if (r.from <= today && today <= r.to) {
+          // Add one day after the booking ends
+          const d = new Date(r.to + "T00:00:00");
+          d.setDate(d.getDate() + 1);
+          nextAvail = d.toISOString().slice(0, 10);
+          break;
+        }
+      }
+      showVehicleUnavailable(nextAvail);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable() {
+function showVehicleUnavailable(nextAvailableISO) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
-  // Insert an unavailability notice at the top of the booking section
-  if (!document.getElementById("vehicleUnavailableNotice")) {
-    const notice = document.createElement("div");
+  // ── 1. Insert / update the "Currently Booked" notice at the top ──────────
+  let notice = document.getElementById("vehicleUnavailableNotice");
+  if (!notice) {
+    notice = document.createElement("div");
     notice.id = "vehicleUnavailableNotice";
     notice.className = "vehicle-unavailable-notice";
-    notice.innerHTML = `
-      <p>🚫 This vehicle is currently unavailable</p>
-      <p>This car is already booked. Please
-        <a href="cars.html">browse other available vehicles</a>
-        or check back later.</p>`;
     bookingSection.insertBefore(notice, bookingSection.firstChild);
   }
 
-  // Disable all interactive form elements inside the booking section
-  bookingSection.querySelectorAll("input, button, select, textarea").forEach(function (el) {
-    el.disabled = true;
+  let nextLine = "";
+  if (nextAvailableISO) {
+    const d = new Date(nextAvailableISO + "T00:00:00");
+    const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+
+    // Pre-fill the preferred pickup date in the waitlist form
+    const wlPickup = document.getElementById("waitlistPickup");
+    if (wlPickup) {
+      wlPickup.value = nextAvailableISO;
+      wlPickup.setAttribute("min", nextAvailableISO);
+    }
+    const wlReturn = document.getElementById("waitlistReturn");
+    if (wlReturn) wlReturn.setAttribute("min", nextAvailableISO);
+
+    // Also update the inline "next available" line inside the waitlist section
+    const nextLine2 = document.getElementById("waitlistNextAvailLine");
+    if (nextLine2) {
+      nextLine2.textContent = _fmt("fleet.waitlistNextLine", { date: formatted }, `Next available: ${formatted}`);
+      nextLine2.style.display = "";
+    }
+  }
+
+  notice.innerHTML = `
+    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Booked")}</strong></p>
+    ${nextLine}
+    <p><a href="cars.html">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
+
+  // ── 2. Hide the regular booking form elements ────────────────────────────
+  // Hide the heading and all regular form inputs/sections.  The waitlist
+  // section is shown below instead so there are no duplicate "reserve" CTAs.
+  const bookingHeading = bookingSection.querySelector("h2");
+  if (bookingHeading) bookingHeading.style.display = "none";
+
+  const regularIds = [
+    "paymentRetryBanner",
+    "pickup", "pickupTime", "slingshotDurationSection", "returnDateSection",
+    "name", "email", "phone",
+    "nameError",
+    "idSection", "idUpload", "fileInfo",
+    "insuranceSection",
+    "hasInsurance", "noInsurance",
+    "insuranceUploadSection", "protectionPlanSection",
+    "signAgreementBtn", "signAgreementStatus", "rentalAgreementBox",
+    "slingshotDepositNotice", "camryDepositNotice",
+    "priceBreakdown", "subtotal", "taxLine", "taxNote",
+    "payHint", "reserveBtn", "stripePay",
+    "payment-request-button", "payment-form",
+    "smsConsent",
+  ];
+  regularIds.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+  // Also hide labels and blocks that only have for= attributes, using a broader selector
+  bookingSection.querySelectorAll(
+    'label[for="pickup"], label[for="pickupTime"], label[for="return"], label[for="returnTime"], ' +
+    'label[for="name"], label[for="email"], label[for="phone"], label[for="idUpload"], ' +
+    'label[for="insuranceUpload"], ' +
+    '.sms-consent, .total, .pay-hint, .insurance-question, .insurance-options, ' +
+    '.id-section, .insurance-upload-section, .protection-plan-section, ' +
+    '#insuranceCoverage, .insurance-label'
+  ).forEach(function(el) { el.style.display = "none"; });
+
+  // Disable all remaining interactive elements so they cannot be submitted
+  bookingSection.querySelectorAll("input, button, select, textarea").forEach(function(el) {
+    if (!el.closest("#waitlistSection")) el.disabled = true;
   });
 
-  // Explicitly hide the pay button and its hint text
-  stripeBtn.style.display = "none";
-  const hint = document.getElementById("payHint");
-  if (hint) hint.style.display = "none";
+  // ── 3. Show the waitlist sign-up section ─────────────────────────────────
+  const waitlistSection = document.getElementById("waitlistSection");
+  if (waitlistSection) {
+    waitlistSection.style.display = "";
+    // Initialize the waitlist form interactions
+    initWaitlistForm();
+  }
+}
+
+// ----- Waitlist Form -----
+// Manages the waitlist sign-up form that is shown when the vehicle is booked.
+// Validates inputs and launches the Stripe $50 deposit payment flow.
+function initWaitlistForm() {
+  const wlName    = document.getElementById("waitlistName");
+  const wlEmail   = document.getElementById("waitlistEmail");
+  const wlPickup  = document.getElementById("waitlistPickup");
+  const wlReturn  = document.getElementById("waitlistReturn");
+  const wlJoinBtn = document.getElementById("waitlistJoinBtn");
+  const wlHint    = document.getElementById("waitlistPayHint");
+
+  // Set minimum dates
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (wlPickup && !wlPickup.value) wlPickup.setAttribute("min", todayISO);
+  if (wlReturn) wlReturn.setAttribute("min", todayISO);
+
+  function updateWaitlistBtn() {
+    const nameOk  = wlName  && isValidName(wlName.value.trim());
+    const emailOk = wlEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
+    const ready   = nameOk && emailOk;
+    if (wlJoinBtn) wlJoinBtn.disabled = !ready;
+    if (wlHint)    wlHint.style.display = ready ? "none" : "";
+  }
+
+  [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
+    if (el) el.addEventListener("input", updateWaitlistBtn);
+  });
+  updateWaitlistBtn();
+
+  // When pickup changes, keep return ≥ pickup
+  if (wlPickup) {
+    wlPickup.addEventListener("change", function() {
+      if (wlReturn) wlReturn.setAttribute("min", wlPickup.value || todayISO);
+      if (wlReturn && wlReturn.value && wlReturn.value < wlPickup.value) {
+        wlReturn.value = wlPickup.value;
+      }
+    });
+  }
+
+  if (wlJoinBtn) {
+    wlJoinBtn.addEventListener("click", launchWaitlistPayment);
+  }
+}
+
+async function launchWaitlistPayment() {
+  const wlName   = document.getElementById("waitlistName").value.trim();
+  const wlEmail  = document.getElementById("waitlistEmail").value.trim();
+  const wlPhone  = (document.getElementById("waitlistPhone") || {}).value || "";
+  const wlPickup = (document.getElementById("waitlistPickup") || {}).value || "";
+  const wlReturn = (document.getElementById("waitlistReturn") || {}).value || "";
+
+  const joinBtn = document.getElementById("waitlistJoinBtn");
+  if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/join-waitlist`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vehicleId,
+        name:            wlName,
+        email:           wlEmail,
+        phone:           wlPhone.trim(),
+        preferredPickup: wlPickup,
+        preferredReturn: wlReturn,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Server error");
+
+    const { clientSecret, publishableKey } = data;
+    if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
+
+    // Save waitlist data to sessionStorage so success.html can call save-waitlist-entry
+    sessionStorage.setItem("slyStripePublishable", publishableKey);
+    sessionStorage.setItem("slyPiSecret", clientSecret);
+    sessionStorage.setItem("slyWaitlistEntry", JSON.stringify({
+      isWaitlist:      true,
+      vehicleId,
+      car:             carData.name,
+      name:            wlName,
+      email:           wlEmail,
+      phone:           wlPhone.trim(),
+      preferredPickup: wlPickup,
+      preferredReturn: wlReturn,
+    }));
+
+    const stripe   = Stripe(publishableKey);
+    const elements = stripe.elements({
+      clientSecret,
+      locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
+      defaultValues: { billingDetails: { name: wlName, email: wlEmail } },
+    });
+
+    const paymentElement = elements.create("payment", {
+      fields: { billingDetails: { name: "never" } },
+    });
+
+    // Show the Stripe payment form; hide the sign-up form
+    document.getElementById("waitlistSection").querySelector(".waitlist-form").style.display = "none";
+    const wlPayForm = document.getElementById("waitlistPaymentForm");
+    wlPayForm.style.display = "";
+    paymentElement.mount("#waitlist-payment-element");
+
+    // Submit + cancel handlers for this payment attempt.
+    // { once: true } on submit prevents double-fire if the user clicks rapidly.
+    let submitting = false;
+    const submitBtn = document.getElementById("waitlist-submit-payment");
+    const cancelBtn = document.getElementById("waitlist-cancel-payment");
+    const msgEl     = document.getElementById("waitlist-payment-message");
+
+    const handleWaitlistSubmit = async function() {
+      if (submitting) return;
+      submitting = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = _t("booking.processingPayment", "Processing…");
+      msgEl.textContent = "";
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html?waitlist=1&vehicle=" + encodeURIComponent(vehicleId),
+          receipt_email: wlEmail,
+          payment_method_data: {
+            billing_details: { name: wlName, email: wlEmail },
+          },
+        },
+      });
+
+      if (error) {
+        msgEl.textContent = error.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Pay $50 Deposit";
+        submitting = false;
+      }
+      // On success Stripe redirects — no cleanup needed here
+    };
+    submitBtn.addEventListener("click", handleWaitlistSubmit);
+
+    const handleWaitlistCancel = function() {
+      submitting = false;
+      submitBtn.removeEventListener("click", handleWaitlistSubmit);
+      cancelBtn.removeEventListener("click", handleWaitlistCancel);
+      paymentElement.unmount();
+      msgEl.textContent = "";
+      wlPayForm.style.display = "none";
+      const wlForm = document.getElementById("waitlistSection").querySelector(".waitlist-form");
+      if (wlForm) wlForm.style.display = "";
+      const joinBtnReset = document.getElementById("waitlistJoinBtn");
+      if (joinBtnReset) {
+        joinBtnReset.disabled = false;
+        joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+      }
+    };
+    cancelBtn.addEventListener("click", handleWaitlistCancel);
+
+  } catch (err) {
+    console.error("Waitlist payment error:", err);
+    const joinBtn2 = document.getElementById("waitlistJoinBtn");
+    if (joinBtn2) {
+      joinBtn2.disabled = false;
+      joinBtn2.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+    }
+    alert(err.message || _t("booking.loadError", "Could not launch payment. Please try again."));
+  }
 }
 
 
