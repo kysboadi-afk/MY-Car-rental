@@ -3,7 +3,7 @@
 // containing the applicant's name, phone, age, driving experience, delivery
 // apps, and a copy of their driver's license as an email attachment.
 // Evaluates the application against pre-approval rules and sends the
-// applicant an SMS (via Twilio) with the appropriate outcome message.
+// applicant both an email and an SMS (via Twilio) with the appropriate outcome.
 //
 // Required environment variables (set in Vercel dashboard):
 //   SMTP_HOST    — SMTP server hostname  (e.g. smtp.gmail.com)
@@ -77,6 +77,97 @@ const SMS_MESSAGES = {
     `Unfortunately, your application does not meet our current rental requirements.\n\n` +
     `If you have any questions, feel free to reply to this message.`,
 };
+
+const EMAIL_SUBJECTS = {
+  approved: `\u2705 You\u2019re Approved! \u2014 SLY Transportation Services`,
+  review:   `\u23F3 Application Under Review \u2014 SLY Transportation Services`,
+  declined: `Application Update \u2014 SLY Transportation Services`,
+};
+
+function buildApplicantEmailHtml(decision, firstName) {
+  if (decision === "approved") {
+    return `
+      <h2>&#x1F389; Congratulations, ${esc(firstName)}!</h2>
+      <p>Your application to rent with <strong>Sly Transportation Services LLC</strong> has been reviewed and you are <strong>approved</strong>!</p>
+      <p style="background:#d4edda;padding:10px;border-left:4px solid #28a745;margin-bottom:16px">
+        <strong>&#x2705; Status: Approved</strong> &mdash; You are cleared to book a vehicle.
+      </p>
+      <h3 style="color:#333">Next steps:</h3>
+      <ul>
+        <li>Visit <a href="https://www.slytrans.com/cars">www.slytrans.com/cars</a> to browse available vehicles.</li>
+        <li>Select your preferred car and complete your booking online.</li>
+        <li>Our team will reach out if we need anything else before your rental begins.</li>
+      </ul>
+      <p>Questions? Call us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+      <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+    `;
+  }
+  if (decision === "review") {
+    return `
+      <h2>&#x23F3; Application Under Review</h2>
+      <p>Hi <strong>${esc(firstName)}</strong>,</p>
+      <p>Thank you for applying with <strong>Sly Transportation Services LLC</strong>! We have received your application and it is currently under review.</p>
+      <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
+        <strong>&#x26A0;&#xFE0F; Status: Under Review</strong> &mdash; Our team will get back to you within <strong>24 hours</strong>.
+      </p>
+      <p>Please keep an eye on your email and phone for updates from us.</p>
+      <p>Questions? Call us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+      <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+    `;
+  }
+  // declined
+  return `
+    <h2>Application Update</h2>
+    <p>Hi <strong>${esc(firstName)}</strong>,</p>
+    <p>Thank you for your interest in renting with <strong>Sly Transportation Services LLC</strong>.</p>
+    <p>After reviewing your application, we are unable to approve your request at this time as it does not meet our current rental requirements.</p>
+    <p>If you have questions or believe this was an error, please contact us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+    <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
+  `;
+}
+
+function buildApplicantEmailText(decision, firstName) {
+  if (decision === "approved") {
+    return [
+      `Congratulations, ${firstName}!`,
+      "",
+      "Your application to rent with Sly Transportation Services LLC has been reviewed and you are APPROVED!",
+      "",
+      "Next steps:",
+      "• Visit www.slytrans.com/cars to browse available vehicles.",
+      "• Select your preferred car and complete your booking online.",
+      "• Our team will reach out if we need anything else before your rental begins.",
+      "",
+      `Questions? Call us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+      "",
+      "— Sly Transportation Services LLC Team",
+    ].join("\n");
+  }
+  if (decision === "review") {
+    return [
+      `Hi ${firstName},`,
+      "",
+      "Thank you for applying with Sly Transportation Services LLC! We have received your application and it is currently under review.",
+      "",
+      "Our team will get back to you within 24 hours. Please keep an eye on your email and phone for updates.",
+      "",
+      `Questions? Call us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+      "",
+      "— Sly Transportation Services LLC Team",
+    ].join("\n");
+  }
+  // declined
+  return [
+    `Hi ${firstName},`,
+    "",
+    "Thank you for your interest in renting with Sly Transportation Services LLC.",
+    "After reviewing your application, we are unable to approve your request at this time as it does not meet our current rental requirements.",
+    "",
+    `If you have questions, please contact us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+    "",
+    "— Sly Transportation Services LLC Team",
+  ].join("\n");
+}
 
 const DECISION_LABELS = {
   approved: "\u2705 Approved",
@@ -195,6 +286,22 @@ export default async function handler(req, res) {
       `,
       attachments,
     });
+
+    // ─── Applicant email ──────────────────────────────────────────────────────
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      try {
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          to:      email,
+          subject: EMAIL_SUBJECTS[decision],
+          text:    buildApplicantEmailText(decision, firstName),
+          html:    buildApplicantEmailHtml(decision, firstName),
+        });
+      } catch (applicantEmailErr) {
+        // Applicant email failure is non-fatal — log it but don't fail the request
+        console.error("Applicant decision email failed:", applicantEmailErr);
+      }
+    }
 
     // ─── Applicant SMS ────────────────────────────────────────────────────────
     if (
