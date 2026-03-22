@@ -1129,7 +1129,7 @@ async function launchWaitlistPayment() {
       const joinBtnReset = document.getElementById("waitlistJoinBtn");
       if (joinBtnReset) {
         joinBtnReset.disabled = false;
-        joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔒 Reserve My Spot — $50 Deposit");
+        joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
       }
     };
     cancelBtn.addEventListener("click", handleWaitlistCancel);
@@ -1139,7 +1139,7 @@ async function launchWaitlistPayment() {
     const joinBtn2 = document.getElementById("waitlistJoinBtn");
     if (joinBtn2) {
       joinBtn2.disabled = false;
-      joinBtn2.textContent = _t("fleet.waitlistJoinBtn", "🔒 Reserve My Spot — $50 Deposit");
+      joinBtn2.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
     }
     alert(err.message || _t("booking.loadError", "Could not launch payment. Please try again."));
   }
