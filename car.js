@@ -93,16 +93,6 @@ const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
 // Daily rate auto-derived from weekly so it stays proportional
 const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
-// ----- Sales Tax — Los Angeles, CA -----
-// Business is operated in Los Angeles, California. Tax is always applied at
-// the current combined City of Los Angeles rate regardless of the renter's
-// home address.
-// Combined City of Los Angeles rate: CA state 7.25% + LA county 2.25% + LA city 0.75% = 10.25%
-// Note: this constant intentionally mirrors LA_TAX_RATE in api/_pricing.js.
-// The api/ directory uses Node.js ES modules that cannot be imported directly
-// from browser scripts, so the rate must be declared in both places.
-const LA_TAX_RATE = 0.1025;
-
 // ----- Helpers -----
 function getVehicleFromURL() {
   const params = new URLSearchParams(window.location.search);
@@ -222,7 +212,6 @@ let uploadedInsurance = null;
 let currentDayCount = 1;
 let currentSlingshotDuration = null; // selected hourly tier in hours (3 | 6 | 24) for Slingshot
 let currentSubtotal = 0;
-let currentTaxRate = LA_TAX_RATE;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Payment mode for the current payment attempt: 'deposit' | 'full'.
@@ -1141,7 +1130,6 @@ window.addEventListener("pageshow", function(e) {
   const taxNoteReset = document.getElementById("taxNote");
   if (taxNoteReset) taxNoteReset.style.display = "";
   currentSubtotal = 0;
-  currentTaxRate = LA_TAX_RATE;
   document.getElementById("priceBreakdown").style.display = "none";
   updatePayBtn();
   // Re-initialize Flatpickr so the calendar shows fresh state (no lingering
@@ -1185,11 +1173,10 @@ function updateTotal() {
     // Compute the full rental cost for both the breakdown display and the booking payload.
     const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0;
     const fullRentalBase = tier.price + dppCost + carData.deposit;
-    const fullRentalTax = fullRentalBase * currentTaxRate;
-    const fullRentalGrand = fullRentalBase + fullRentalTax;
-    // Store full rental total on carData for the booking payload
-    carData._fullRentalCost = fullRentalGrand.toFixed(2);
-    carData._balanceAtPickup = (fullRentalGrand - (carData.bookingDeposit || 0)).toFixed(2);
+    // Store full rental subtotal on carData for the booking payload.
+    // Tax is calculated by Stripe at checkout, so we store the pre-tax total.
+    carData._fullRentalCost = fullRentalBase.toFixed(2);
+    carData._balanceAtPickup = (fullRentalBase - (carData.bookingDeposit || 0)).toFixed(2);
 
     // Always show the full rental breakdown so renters know the total cost.
     // The two buttons (Reserve $50 / Book Now $X) let them choose how much to pay now.
@@ -1202,14 +1189,10 @@ function updateTotal() {
       lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
     }
 
+    // Tax is calculated by Stripe based on the customer's billing address.
+    lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
+
     currentSubtotal = fullRentalBase;
-    const displayTotal = currentTaxRate > 0 ? fullRentalGrand : fullRentalBase;
-    if (currentTaxRate > 0) {
-      const pct = +((currentTaxRate * 100).toFixed(4));
-      lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: fullRentalTax.toFixed(2) });
-    } else {
-      lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
-    }
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
@@ -1233,17 +1216,10 @@ function updateTotal() {
     document.getElementById("subtotal").textContent = fullRentalBase;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
-    if (currentTaxRate > 0) {
-      document.getElementById("tax").textContent = fullRentalTax.toFixed(2);
-      taxLineEl.style.display = "";
-      if (taxNoteEl) taxNoteEl.style.display = "none";
-      totalEl.textContent = fullRentalGrand.toFixed(2);
-    } else {
-      taxLineEl.style.display = "none";
-      if (taxNoteEl) taxNoteEl.style.display = "";
-      totalEl.textContent = fullRentalBase;
-    }
-    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
+    taxLineEl.style.display = "none";
+    if (taxNoteEl) taxNoteEl.style.display = "";
+    totalEl.textContent = fullRentalBase;
+    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + fullRentalBase.toFixed(2);
     updatePayBtn();
     return;
   }
@@ -1323,17 +1299,9 @@ function updateTotal() {
 
   const rentalSubtotal = cost + (carData.deposit || 0);
   currentSubtotal = rentalSubtotal;
-  const taxAmount = rentalSubtotal * currentTaxRate;
-  const grandTotal = rentalSubtotal + taxAmount;
 
-  // Sales tax breakdown row — show computed amount when ZIP has been resolved,
-  // otherwise indicate it will be calculated at checkout.
-  if (currentTaxRate > 0) {
-    const pct = +((currentTaxRate * 100).toFixed(4));
-    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: pct }, `Sales tax (${pct}%)`), amount: taxAmount.toFixed(2) });
-  } else {
-    lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
-  }
+  // Tax is calculated by Stripe based on the customer's billing address.
+  lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
 
   const rowsEl = document.getElementById("breakdownRows");
   const frag = document.createDocumentFragment();
@@ -1354,22 +1322,14 @@ function updateTotal() {
   rowsEl.appendChild(frag);
   document.getElementById("priceBreakdown").style.display = "";
 
-  // Update the subtotal / tax / total display rows
+  // Update the subtotal / total display rows; tax line is always hidden (Stripe handles tax)
   document.getElementById("subtotal").textContent = rentalSubtotal;
   const taxLineEl = document.getElementById("taxLine");
   const taxNoteEl = document.getElementById("taxNote");
-  const displayTotal = currentTaxRate > 0 ? grandTotal : rentalSubtotal;
-  if (currentTaxRate > 0) {
-    document.getElementById("tax").textContent = taxAmount.toFixed(2);
-    taxLineEl.style.display = "";
-    if (taxNoteEl) taxNoteEl.style.display = "none";
-    totalEl.textContent = grandTotal.toFixed(2);
-  } else {
-    taxLineEl.style.display = "none";
-    if (taxNoteEl) taxNoteEl.style.display = "";
-    totalEl.textContent = rentalSubtotal;
-  }
-  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayTotal.toFixed(2);
+  taxLineEl.style.display = "none";
+  if (taxNoteEl) taxNoteEl.style.display = "";
+  totalEl.textContent = rentalSubtotal;
+  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + rentalSubtotal.toFixed(2);
   updatePayBtn();
 }
 

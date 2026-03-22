@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, LA_TAX_RATE, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
+import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -96,26 +96,22 @@ export default async function handler(req, res) {
     // For Slingshot: charge only the $50 non-refundable reservation deposit now.
     // The full rental balance (rental fee + $150 security deposit – $50) is due at pickup.
     // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
-    // For all other vehicles (Slingshot full mode or Camry full mode): charge full amount + LA tax.
+    // For all other vehicles (Slingshot full mode or Camry full mode): charge pre-tax subtotal.
+    // Tax is calculated by Stripe automatically at checkout (no manual tax added here).
     let totalAmount;
-    let taxAmount;
     if (isSlingshotVehicle && paymentMode !== "full") {
       totalAmount = SLINGSHOT_BOOKING_DEPOSIT;
-      taxAmount = 0;
     } else if (!isSlingshotVehicle && paymentMode === "deposit") {
       totalAmount = CAMRY_BOOKING_DEPOSIT;
-      taxAmount = 0;
     } else {
-      const preTaxAmount = computedFullRental + protectionCost;
-      taxAmount = preTaxAmount * LA_TAX_RATE;
-      totalAmount = preTaxAmount + taxAmount;
+      totalAmount = computedFullRental + protectionCost;
     }
 
     const isSlingshotDepositMode = isSlingshotVehicle && paymentMode !== "full";
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
     const isDepositPayment = isSlingshotDepositMode || isCamryDepositMode;
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(totalAmount * 100), // Stripe expects whole cents
+      amount: Math.round(totalAmount * 100), // Stripe expects whole cents (pre-tax for full payments)
       currency: "usd",
       receipt_email: email,
       description: isDepositPayment
@@ -124,6 +120,10 @@ export default async function handler(req, res) {
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
+      // Stripe Tax calculates and adds the correct tax on top of the pre-tax amount
+      // based on the customer's billing address collected by the Payment Element.
+      // Only enable for full payments — deposit-only payments are not taxable.
+      ...(!isDepositPayment ? { automatic_tax: { enabled: true } } : {}),
       // Request 3D Secure authentication automatically for high-risk card payments.
       // Stripe Radar decides when to trigger it; low-risk transactions flow through
       // without extra friction.
@@ -142,9 +142,6 @@ export default async function handler(req, res) {
         return_date:  returnDate,
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
-        tax_jurisdiction: "Los Angeles, CA",
-        tax_rate:     isDepositPayment ? "0% (deposit only)" : (LA_TAX_RATE * 100).toFixed(2) + "%",
-        tax_amount:   taxAmount.toFixed(2),
         ...(isSlingshotDepositMode ? {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",

@@ -180,10 +180,10 @@ test("protection plan: 37 days = 1 × $295 + 1 × $85 weekly = $380", () => {
 
 // ─── computeBreakdownLines ────────────────────────────────────────────────────
 
-test("breakdown: camry 1 day has daily line + tax + total", () => {
+test("breakdown: camry 1 day has daily line + tax note + total", () => {
   const lines = computeBreakdownLines("camry", "2025-07-01", "2025-07-02");
   assert.ok(lines.some(l => l.includes("1 × Daily")), "should have a daily line");
-  assert.ok(lines.some(l => l.startsWith("Tax")), "should have a tax line");
+  assert.ok(lines.some(l => l.startsWith("Tax:")), "should have a tax note line");
   assert.ok(lines.some(l => l.startsWith("Total:")), "should have a total line");
 });
 

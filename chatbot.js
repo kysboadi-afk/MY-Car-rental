@@ -10,6 +10,216 @@ function escHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+// ── Live fleet status + booked dates (fetched at startup) ─────────────────────
+var CHATBOT_API_BASE = "https://sly-rides.vercel.app";
+var slyFleetStatus  = null;
+var slyBookedDates  = null;
+
+(function fetchChatbotFleetStatus() {
+  fetch(CHATBOT_API_BASE + "/api/fleet-status")
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) { if (data) slyFleetStatus = data; })
+    .catch(function() { /* fail silently — static fallback replies used instead */ });
+})();
+
+(function fetchChatbotBookedDates() {
+  fetch(CHATBOT_API_BASE + "/api/booked-dates")
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) { if (data) slyBookedDates = data; })
+    .catch(function() { /* fail silently */ });
+})();
+
+// ── Booking-info helpers ───────────────────────────────────────────────────────
+
+/** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". */
+function fmtDateChatbot(iso, locale) {
+  var p = iso.split("-");
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  return d.toLocaleDateString(locale || "en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+/** Return the ISO date of the day after the given ISO date. */
+function nextDayChatbot(iso) {
+  var p = iso.split("-");
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Return a human-readable booking-status string for a single vehicle.
+ * Checks slyBookedDates for the active rental and the next upcoming one.
+ */
+function getVehicleBookingInfo(vehicleId, lang) {
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
+  var vName = names[vehicleId] || vehicleId;
+
+  if (!slyBookedDates) {
+    return lang === "es"
+      ? "No pude obtener la información de reservas ahora mismo. Llámanos al 📞 (213) 916-6606 para información actualizada."
+      : "I couldn't load the latest booking info right now. Call us at 📞 (213) 916-6606 for up-to-date availability.";
+  }
+
+  var today  = new Date().toISOString().slice(0, 10);
+  var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
+    return a.from < b.from ? -1 : 1;
+  });
+
+  var active = null;
+  var next   = null;
+  for (var i = 0; i < ranges.length; i++) {
+    var r = ranges[i];
+    if (r.from <= today && today <= r.to) { active = r; }
+    else if (r.from > today && !next)     { next = r; }
+  }
+
+  if (active) {
+    var availBack = fmtDateChatbot(nextDayChatbot(active.to), locale);
+    if (lang === "es") {
+      return "🔴 El " + vName + " está actualmente alquilado\n\n" +
+        "📅 Periodo: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
+        "✅ Disponible nuevamente: " + availBack + "\n\n" +
+        (next ? "⚠️ Próxima reserva después: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
+        "¿Quieres reservar? Llámanos al 📞 (213) 916-6606";
+    }
+    return "🔴 The " + vName + " is currently rented out\n\n" +
+      "📅 Rental period: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
+      "✅ Available again: " + availBack + "\n\n" +
+      (next ? "⚠️ Next booking after that: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
+      "Want to book? Call us at 📞 (213) 916-6606";
+  }
+
+  if (next) {
+    if (lang === "es") {
+      return "✅ El " + vName + " está disponible ahora\n\n" +
+        "⚠️ Próxima reserva: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" +
+        "¡Reserva pronto para asegurar tu fecha!";
+    }
+    return "✅ The " + vName + " is available right now!\n\n" +
+      "⚠️ Next booking: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" +
+      "Book soon to secure your dates!";
+  }
+
+  // Fully open — no bookings
+  if (lang === "es") {
+    return "✅ El " + vName + " está disponible — ¡sin reservas próximas!\n\n¡Reserva hoy en nuestra página de Autos!";
+  }
+  return "✅ The " + vName + " is available — no upcoming bookings!\n\nBook today on our Cars page!";
+}
+
+/**
+ * Build a summary for ALL vehicles combining fleet-status + next-available info.
+ */
+function buildAvailabilityMessage(lang) {
+  var ids   = ["slingshot", "slingshot2", "camry", "camry2013"];
+  var icons = { slingshot: "🔴", slingshot2: "🔴", camry: "🔵", camry2013: "🟢" };
+  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var today  = new Date().toISOString().slice(0, 10);
+
+  var lines = [];
+  for (var k = 0; k < ids.length; k++) {
+    var id     = ids[k];
+    var vName  = names[id];
+    var icon   = icons[id];
+    var ranges = slyBookedDates ? ((slyBookedDates[id] || []).slice().sort(function(a, b) {
+      return a.from < b.from ? -1 : 1;
+    })) : [];
+
+    var active = null;
+    var next   = null;
+    for (var i = 0; i < ranges.length; i++) {
+      var r = ranges[i];
+      if (r.from <= today && today <= r.to) { active = r; }
+      else if (r.from > today && !next)     { next = r; }
+    }
+
+    if (active) {
+      var avail = fmtDateChatbot(nextDayChatbot(active.to), locale);
+      lines.push(icon + " " + vName + " — " +
+        (lang === "es" ? "🔴 Alquilado hasta " + fmtDateChatbot(active.to, locale) + " · libre: " + avail
+                       : "🔴 Rented until " + fmtDateChatbot(active.to, locale) + " · free: " + avail));
+    } else {
+      var statusSuffix = "";
+      if (next && slyBookedDates) {
+        statusSuffix = lang === "es"
+          ? " (próx. reserva: " + fmtDateChatbot(next.from, locale) + ")"
+          : " (next booking: " + fmtDateChatbot(next.from, locale) + ")";
+      }
+      lines.push(icon + " " + vName + " — " + (lang === "es" ? "✅ Disponible" : "✅ Available") + statusSuffix);
+    }
+  }
+
+  var header = lang === "es"
+    ? "📅 Estado actual de disponibilidad:\n\n"
+    : "📅 Current availability for all vehicles:\n\n";
+  var footer = lang === "es"
+    ? "\n\nPara reservar, visita nuestra página de Autos o llámanos al 📞 (213) 916-6606"
+    : "\n\nTo book, visit our Cars page or call 📞 (213) 916-6606";
+
+  return header + lines.join("\n") + footer;
+}
+
+/**
+ * Build a human-readable fleet listing with live availability status.
+ * When slyFleetStatus is null (fetch not yet returned or failed), status
+ * indicators are omitted and the static listing is shown as a clean fallback.
+ * When a vehicle is booked and slyBookedDates is loaded, also shows the
+ * next available date.
+ */
+function buildFleetMessage(lang) {
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var today  = new Date().toISOString().slice(0, 10);
+
+  function statusLine(vehicleId) {
+    if (!slyFleetStatus) return "";
+    var v = slyFleetStatus[vehicleId];
+    if (!v) return "";
+    if (v.available) return " ✅ Available";
+    // Vehicle unavailable — try to find when it frees up
+    if (slyBookedDates) {
+      var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
+        return a.from < b.from ? -1 : 1;
+      });
+      for (var i = 0; i < ranges.length; i++) {
+        if (ranges[i].from <= today && today <= ranges[i].to) {
+          var freeDate = fmtDateChatbot(nextDayChatbot(ranges[i].to), locale);
+          return lang === "es"
+            ? " 🔴 No Disponible · libre: " + freeDate
+            : " 🔴 Unavailable · free: " + freeDate;
+        }
+      }
+    }
+    return " 🔴 Currently Unavailable";
+  }
+
+  if (lang === "es") {
+    return "Contamos con <strong>4 vehículos</strong> en nuestra flota:\n\n" +
+      "🔴 Slingshot R #1 — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
+      "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
+      "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
+      "🔴 Slingshot R #2 — Deportivo 2 plazas" + statusLine("slingshot2") + "\n" +
+      "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
+      "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
+      "🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
+      "🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry2013") + "\n\n" +
+      "¡Visita nuestra página de Autos para ver y reservar!";
+  }
+  return "We have <strong>4 vehicles</strong> in our fleet:\n\n" +
+    "🔴 Slingshot R #1 — Sports 2-Seater" + statusLine("slingshot") + "\n" +
+    "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
+    "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
+    "🔴 Slingshot R #2 — Sports 2-Seater" + statusLine("slingshot2") + "\n" +
+    "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
+    "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
+    "🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +
+    "🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)" + statusLine("camry2013") + "\n\n" +
+    "Visit our Cars page to browse and book!";
+}
+
 var botResponses = {
   en: [
     {
@@ -18,7 +228,7 @@ var botResponses = {
     },
     {
       patterns: ["slingshot price","slingshot cost","slingshot rate","slingshot how much","slingshot fee","how much is the slingshot","how much for the slingshot","how much slingshot","price of slingshot","cost of slingshot"],
-      reply: "Here are the Slingshot R rates 🔴\n\n⏱ Hourly Tiers (Sports 2-Seater):\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n\n🔒 $50 non-refundable reservation deposit required to book\n   (applied toward your total at pickup)\n💳 $150 refundable security deposit due at pickup\n\nReady to book? Visit our Cars page!"
+      reply: "Here are the Slingshot R rates 🔴 (we have 2 units)\n\n⏱ Hourly Tiers (Sports 2-Seater):\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n\n🔒 $50 non-refundable reservation deposit required to book\n   (applied toward your total at pickup)\n💳 $150 refundable security deposit due at pickup\n\nReady to book? Visit our Cars page!"
     },
     {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
@@ -26,7 +236,7 @@ var botResponses = {
     },
     {
       patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
-      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
+      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R — Sports 2-Seater (2 units available)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
     },
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
@@ -34,7 +244,46 @@ var botResponses = {
     },
     {
       patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
-      reply: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)\n\nVisit our Cars page to browse and book!"
+      reply: function() { return buildFleetMessage("en"); }
+    },
+    {
+      patterns: ["when is slingshot","slingshot available","slingshot booked","how long slingshot","slingshot rented","when will slingshot","slingshot free","slingshot when available","slingshot when free","slingshot status","slingshot availability"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return "Here's the status of both Slingshot R units:\n\n" +
+          getVehicleBookingInfo("slingshot", lang) + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("slingshot2", lang);
+      }
+    },
+    {
+      patterns: ["camry 2012 available","2012 available","camry 2012 booked","how long camry 2012","when is camry 2012","camry 2012 rented","2012 booked","camry 2012 status","camry 2012 free"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return getVehicleBookingInfo("camry", lang);
+      }
+    },
+    {
+      patterns: ["camry 2013 available","2013 available","camry 2013 booked","how long camry 2013","when is camry 2013","camry 2013 rented","2013 booked","camry 2013 status","camry 2013 free"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return getVehicleBookingInfo("camry2013", lang);
+      }
+    },
+    {
+      patterns: ["when is camry","camry available","camry booked","camry rented","how long camry","camry free","camry status","camry availability"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return "Here's the status of both Camry vehicles:\n\n" +
+          getVehicleBookingInfo("camry", lang) + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("camry2013", lang);
+      }
+    },
+    {
+      patterns: ["when available","when booked","how long booked","when free","when can i get","availability","what's available","what is available","how long rented","how long is it rented","which cars are available"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return buildAvailabilityMessage(lang);
+      }
     },
     {
       patterns: ["book","booking","reserve","reservation","how do i","how to"],
@@ -85,7 +334,7 @@ var botResponses = {
     },
     {
       patterns: ["precio slingshot","costo slingshot","cuánto slingshot","cuanto slingshot","tarifa slingshot","slingshot precio","slingshot costo"],
-      reply: "Aquí están las tarifas del Slingshot R 🔴\n\n⏱ Tarifas por Horas (Deportivo 2 plazas):\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n\n🔒 $50 de depósito de reserva no reembolsable (para asegurar tu reserva)\n💳 $150 de depósito de seguridad reembolsable (a pagar al recoger)\n\n¿Listo para reservar? ¡Visita nuestra página de autos!"
+      reply: "Aquí están las tarifas del Slingshot R 🔴 (tenemos 2 unidades)\n\n⏱ Tarifas por Horas (Deportivo 2 plazas):\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n\n🔒 $50 de depósito de reserva no reembolsable (para asegurar tu reserva)\n💳 $150 de depósito de seguridad reembolsable (a pagar al recoger)\n\n¿Listo para reservar? ¡Visita nuestra página de autos!"
     },
     {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
@@ -93,7 +342,7 @@ var botResponses = {
     },
     {
       patterns: ["precio","costo","cuánto cuesta","cuanto cuesta","cuánto es","cuanto es","tarifa","tarifas","cobran","cobras","diario","semanal","mensual"],
-      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
+      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R — Deportivo 2 plazas (2 unidades disponibles)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
     },
     {
       patterns: ["ganar","ganancias","ingresos","cuánto puedo ganar","cuanto puedo ganar","dinero"],
@@ -101,7 +350,35 @@ var botResponses = {
     },
     {
       patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","slingshot","camry"],
-      reply: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+      reply: function() { return buildFleetMessage("es"); }
+    },
+    {
+      patterns: ["cuando slingshot","slingshot disponible","slingshot reservado","cuánto tiempo slingshot","cuanto tiempo slingshot","slingshot alquilado","cuando estará slingshot","slingshot libre","slingshot cuando disponible","disponibilidad slingshot"],
+      reply: function() {
+        return "Aquí está el estado de las dos unidades Slingshot R:\n\n" +
+          getVehicleBookingInfo("slingshot", "es") + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("slingshot2", "es");
+      }
+    },
+    {
+      patterns: ["camry 2012 disponible","2012 disponible","camry 2012 reservado","camry 2012 libre","cuando camry 2012","camry 2012 alquilado","disponibilidad camry 2012"],
+      reply: function() { return getVehicleBookingInfo("camry", "es"); }
+    },
+    {
+      patterns: ["camry 2013 disponible","2013 disponible","camry 2013 reservado","camry 2013 libre","cuando camry 2013","camry 2013 alquilado","disponibilidad camry 2013"],
+      reply: function() { return getVehicleBookingInfo("camry2013", "es"); }
+    },
+    {
+      patterns: ["cuando camry","camry disponible","camry reservado","camry alquilado","camry libre","disponibilidad camry"],
+      reply: function() {
+        return "Aquí está el estado de los dos vehículos Camry:\n\n" +
+          getVehicleBookingInfo("camry", "es") + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("camry2013", "es");
+      }
+    },
+    {
+      patterns: ["cuando disponible","cuándo disponible","cuando libre","cuándo libre","disponibilidad","qué está disponible","que esta disponible","cuándo puedo rentar","cuando puedo rentar","cuánto tiempo está rentado","cuanto tiempo esta rentado"],
+      reply: function() { return buildAvailabilityMessage("es"); }
     },
     {
       patterns: ["reservar","reserva","reservación","reservacion","cómo reservo","como reservo","cómo alquilo","como alquilo","cómo rento","como rento","cómo funciona","como funciona"],
@@ -153,7 +430,7 @@ function getBotReply(input) {
   for (var i = 0; i < responses.length; i++) {
     var item = responses[i];
     if (item.patterns.some(function(p) { return lower.includes(p); })) {
-      return item.reply;
+      return typeof item.reply === "function" ? item.reply() : item.reply;
     }
   }
   // Also try English responses as fallback for bilingual users
@@ -162,7 +439,7 @@ function getBotReply(input) {
     for (var j = 0; j < enResponses.length; j++) {
       var enItem = enResponses[j];
       if (enItem.patterns.some(function(p) { return lower.includes(p); })) {
-        return enItem.reply;
+        return typeof enItem.reply === "function" ? enItem.reply() : enItem.reply;
       }
     }
   }
@@ -293,19 +570,21 @@ function buildChatbot() {
     var chips;
     if (lang === "es") {
       chips = [
-        { label: "💰 Precios",           action: function() { showFAQAnswer("pricing"); } },
-        { label: "🚗 Autos Disponibles", action: function() { showFAQAnswer("cars");    } },
-        { label: "📋 Requisitos",        action: function() { showFAQAnswer("reqs");    } },
-        { label: "📞 Contacto",          action: function() { showFAQAnswer("contact"); } },
-        { label: "✅ Solicitar Ahora",    action: startQualify }
+        { label: "💰 Precios",              action: function() { showFAQAnswer("pricing");      } },
+        { label: "🚗 Autos Disponibles",    action: function() { showFAQAnswer("cars");         } },
+        { label: "📅 Disponibilidad",       action: function() { showFAQAnswer("availability"); } },
+        { label: "📋 Requisitos",           action: function() { showFAQAnswer("reqs");         } },
+        { label: "📞 Contacto",             action: function() { showFAQAnswer("contact");      } },
+        { label: "✅ Solicitar Ahora",       action: startQualify }
       ];
     } else {
       chips = [
-        { label: "💰 Pricing",           action: function() { showFAQAnswer("pricing"); } },
-        { label: "🚗 Available Cars",    action: function() { showFAQAnswer("cars");    } },
-        { label: "📋 Requirements",      action: function() { showFAQAnswer("reqs");    } },
-        { label: "📞 Contact",           action: function() { showFAQAnswer("contact"); } },
-        { label: "✅ Apply Now",          action: startQualify }
+        { label: "💰 Pricing",              action: function() { showFAQAnswer("pricing");      } },
+        { label: "🚗 Available Cars",       action: function() { showFAQAnswer("cars");         } },
+        { label: "📅 Check Availability",   action: function() { showFAQAnswer("availability"); } },
+        { label: "📋 Requirements",         action: function() { showFAQAnswer("reqs");         } },
+        { label: "📞 Contact",              action: function() { showFAQAnswer("contact");      } },
+        { label: "✅ Apply Now",             action: startQualify }
       ];
     }
     addChips(chips);
@@ -315,12 +594,12 @@ function buildChatbot() {
     var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
     var replies = {
       pricing: {
-        en: "Here are our current rates 🚗\n\n🔴 Slingshot R (Sports 2-Seater)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
-        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R (Deportivo 2 plazas)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
+        en: "Here are our current rates 🚗\n\n🔴 Slingshot R — Sports 2-Seater (2 units)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
+        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R — Deportivo 2 plazas (2 unidades)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
       },
       cars: {
-        en: "We currently have 3 vehicles available:\n\n🔴 Slingshot R — Sports 2-Seater\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n🔵 Camry 2012 — $55/day or $350/week (no deposit)\n\n🟢 Camry 2013 SE — $55/day or $350/week (no deposit)\n\nVisit our Cars page to browse and book!",
-        es: "Actualmente tenemos 3 vehículos disponibles:\n\n🔴 Slingshot R — Deportivo 2 plazas\n   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n🔵 Camry 2012 — $55/día o $350/semana (sin depósito)\n\n🟢 Camry 2013 SE — $55/día o $350/semana (sin depósito)\n\n¡Visita nuestra página de Autos para ver y reservar!"
+        en: function() { return buildFleetMessage("en"); },
+        es: function() { return buildFleetMessage("es"); }
       },
       reqs: {
         en: "📋 Requirements to Rent\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • At least 3 months of driving experience\n  • License must not be expired\n  • Upload a photo of your license during booking",
@@ -329,9 +608,14 @@ function buildChatbot() {
       contact: {
         en: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
         es: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
+      },
+      availability: {
+        en: function() { return buildAvailabilityMessage("en"); },
+        es: function() { return buildAvailabilityMessage("es"); }
       }
     };
-    var msg = (replies[topic] && replies[topic][lang]) || (replies[topic] && replies[topic]["en"]) || "";
+    var replyValue = (replies[topic] && replies[topic][lang]) || (replies[topic] && replies[topic]["en"]) || "";
+    var msg = typeof replyValue === "function" ? replyValue() : replyValue;
     setTimeout(function() {
       addMessage(msg, "bot");
       // Show back-to-apply chip after FAQ answer

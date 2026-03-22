@@ -12,7 +12,6 @@
 import Stripe from "stripe";
 import {
   CARS,
-  LA_TAX_RATE,
   computeAmount,
   computeProtectionPlanCost,
   computeRentalDays,
@@ -90,9 +89,9 @@ export default async function handler(req, res) {
 
     const depositPaid = isSlingshotVehicle ? SLINGSHOT_BOOKING_DEPOSIT : CAMRY_BOOKING_DEPOSIT;
     const preTaxAmount = computedFullRental + protectionCost;
-    const taxAmount = preTaxAmount * LA_TAX_RATE;
-    const fullTotal = preTaxAmount + taxAmount;
-    const balanceAmount = fullTotal - depositPaid;
+    // Balance = pre-tax rental amount minus the deposit already paid.
+    // Tax is calculated by Stripe automatically at checkout.
+    const balanceAmount = preTaxAmount - depositPaid;
 
     if (balanceAmount <= 0) {
       return res.status(400).json({ error: "No balance due for this booking." });
@@ -100,11 +99,14 @@ export default async function handler(req, res) {
 
     const carData = CARS[vehicleId];
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(balanceAmount * 100), // Stripe expects whole cents
+      amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${carData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
+      // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
+      // based on the customer's billing address collected by the Payment Element.
+      automatic_tax: { enabled: true },
       metadata: {
         renter_name:           trimmedName,
         vehicle_id:            vehicleId,
@@ -116,8 +118,6 @@ export default async function handler(req, res) {
         payment_type:          "balance_payment",
         deposit_already_paid:  depositPaid.toFixed(2),
         full_rental_amount:    (computedFullRental + protectionCost).toFixed(2),
-        tax_amount:            taxAmount.toFixed(2),
-        tax_rate:              (LA_TAX_RATE * 100).toFixed(2) + "%",
         balance_paid:          balanceAmount.toFixed(2),
       },
     });
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       clientSecret:   paymentIntent.client_secret,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
       balanceAmount:  balanceAmount.toFixed(2),
-      fullTotal:      fullTotal.toFixed(2),
+      preTaxAmount:   preTaxAmount.toFixed(2),
       depositPaid:    depositPaid.toFixed(2),
     });
   } catch (err) {

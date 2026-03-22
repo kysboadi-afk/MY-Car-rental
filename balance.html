@@ -200,7 +200,7 @@
         }
         rows.push(["Insurance", protectionPlan ? "Damage Protection Plan" : "Own insurance"]);
         rows.push(["Deposit Paid", "$" + depositPaid + " (non-refundable)"]);
-        rows.push(["Full Rental Total", "$" + fullTotal + " (incl. tax)"]);
+        rows.push(["Rental Subtotal", "$" + fullTotal + " (+ applicable tax)"]);
         rows.push(["Balance Remaining", "<strong style='color:#ffb400'>$" + escHtml(balanceAmount) + "</strong>"]);
 
         return rows.map(function (r) {
@@ -229,7 +229,7 @@
           var clientSecret   = data.clientSecret;
           var publishableKey = data.publishableKey;
           var balanceAmount  = data.balanceAmount;
-          var fullTotal      = data.fullTotal;
+          var fullTotal      = data.preTaxAmount;
           var depositPaid    = data.depositPaid;
 
           // Show main content now that we have the amounts
