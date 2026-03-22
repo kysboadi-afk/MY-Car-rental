@@ -27,22 +27,28 @@ export const CARS = {
   slingshot:  {
     name: "Slingshot R",
     deposit: 150,
-    // Slingshot uses hourly tier pricing — no daily/weekly/monthly rates.
-    // Tiers: $200 / 3 hrs · $250 / 6 hrs · $350 / 24 hrs
+    // Slingshot uses hourly/daily tier pricing.
+    // Sub-day tiers: $200 / 3 hrs · $250 / 6 hrs.
+    // Daily tiers: $350 / 1 day · $700 / 2 days · $1,050 / 3 days (max).
+    // Multi-day tiers use hours = days × 24 so the existing duration logic stays consistent.
     hourlyTiers: [
       { hours: 3,  price: 200 },
       { hours: 6,  price: 250 },
       { hours: 24, price: 350 },
+      { hours: 48, price: 700 },
+      { hours: 72, price: 1050 },
     ],
   },
   slingshot2: {
     name: "Slingshot R",
     deposit: 150,
-    // Same hourly tier pricing as slingshot — different unit with different photos.
+    // Same pricing tiers as slingshot — different unit with different photos.
     hourlyTiers: [
       { hours: 3,  price: 200 },
       { hours: 6,  price: 250 },
       { hours: 24, price: 350 },
+      { hours: 48, price: 700 },
+      { hours: 72, price: 1050 },
     ],
   },
   camry:      { name: "Camry 2012",     pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
@@ -57,9 +63,9 @@ export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
 export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 /**
- * Compute the total charge for an hourly-tier rental (Slingshot vehicles).
+ * Compute the total charge for an hourly/daily-tier rental (Slingshot vehicles).
  * The security deposit is always included.
- * @param {number} durationHours - rental duration in hours (must be 3, 6, or 24)
+ * @param {number} durationHours - rental duration in hours (must be 3, 6, 24, 48, or 72)
  * @param {string} [vehicleId="slingshot"] - key from CARS for the vehicle
  * @returns {number|null} total in dollars (rental + deposit), or null if invalid
  */

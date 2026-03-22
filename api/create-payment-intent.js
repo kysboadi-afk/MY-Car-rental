@@ -44,8 +44,8 @@ export default async function handler(req, res) {
 
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (CARS[vehicleId].hourlyTiers) {
-      if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
-        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
+      if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
+        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
       }
       // Slingshot now requires the renter to make an insurance/deposit choice
       if (!insuranceCoverageChoice || !["yes", "no"].includes(insuranceCoverageChoice)) {
@@ -91,8 +91,9 @@ export default async function handler(req, res) {
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in.
-    // Hourly-tier rentals are treated as 1 day for DPP purposes.
-    const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
+    // For Slingshot multi-day tiers (48 hr = 2 days, 72 hr = 3 days), DPP scales with days.
+    // Sub-day tiers (3 hr, 6 hr) are billed as 1 day for DPP purposes.
+    const days = isSlingshotVehicle ? Math.max(1, Math.ceil(Number(slingshotDuration) / 24)) : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
 
     // For Slingshot: charge the full rental amount (rental + $150 security deposit + DPP + tax)
@@ -145,7 +146,11 @@ export default async function handler(req, res) {
         vehicle_name: carData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
+        ...(isSlingshotVehicle ? {
+          rental_duration: Number(slingshotDuration) >= 48
+            ? `${Number(slingshotDuration) / 24} days`
+            : `${slingshotDuration} hours`,
+        } : {}),
         email,
         ...(isSlingshotVehicle ? {
           payment_type:       "full_payment",
