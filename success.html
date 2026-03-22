@@ -123,9 +123,9 @@
         var title  = document.getElementById("messageTitle");
         var body   = document.getElementById("messageBody");
         var status = document.getElementById("emailStatus");
-        if (title) { title.textContent = t("fleet.waitlistSuccess") || "🎉 You're on the Waitlist!"; title.style.color = "#4caf50"; }
+        if (title) { title.textContent = t("fleet.waitlistSuccess") || "⏳ Application Received!"; title.style.color = "#f0a500"; }
         if (body) {
-          var tpl = t("fleet.waitlistSuccessBody") || "You're confirmed on the waitlist. We'll email you when the {car} becomes available for your dates.";
+          var tpl = t("fleet.waitlistSuccessBody") || "Your waitlist application for the {car} is under review. We'll email you within 24–48 hours.";
           body.textContent = tpl.replace("{car}", waitlistData.car || "vehicle");
         }
         if (status) { status.textContent = t("success.sending") || "Sending confirmation…"; status.style.display = ""; }
@@ -133,21 +133,53 @@
         var payload = Object.assign({}, waitlistData);
         if (piId) payload.paymentIntentId = piId;
 
-        fetch(API_BASE + "/api/save-waitlist-entry", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }).then(function(res) {
-          if (!res.ok) { showEmailError(); }
-          enableHomeBtn();
-          // After waitlist confirmation, home button should go to cars page
-          var btn = document.getElementById("homeBtn");
-          if (btn) btn.href = "cars.html";
-        }).catch(function(err) {
-          console.error("save-waitlist-entry error:", err);
-          showEmailError();
-          enableHomeBtn();
-        });
+        // Read the driver's license from IndexedDB, then send to API
+        function dispatchSave(data) {
+          fetch(API_BASE + "/api/save-waitlist-entry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }).then(function(res) {
+            if (!res.ok) { showEmailError(); }
+            enableHomeBtn();
+            // After waitlist confirmation, home button should go to cars page
+            var btn = document.getElementById("homeBtn");
+            if (btn) btn.href = "cars.html";
+          }).catch(function(err) {
+            console.error("save-waitlist-entry error:", err);
+            showEmailError();
+            enableHomeBtn();
+          });
+        }
+
+        try {
+          var idbReq = indexedDB.open("slyRidesDB", 1);
+          idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+          idbReq.onsuccess = function(e) {
+            var db = e.target.result;
+            try {
+              var tx = db.transaction("files", "readonly");
+              var getReq = tx.objectStore("files").get("waitlistLicense");
+              getReq.onsuccess = function(ev) {
+                var fileData = ev.target.result;
+                if (fileData && fileData.licenseBase64) {
+                  payload.idBase64    = fileData.licenseBase64;
+                  payload.idMimeType  = fileData.licenseMimeType || "application/octet-stream";
+                  payload.idFileName  = fileData.licenseFileName || "drivers-license";
+                }
+                // Clean up the stored license
+                try {
+                  var cleanTx = db.transaction("files", "readwrite");
+                  cleanTx.objectStore("files").delete("waitlistLicense");
+                  cleanTx.oncomplete = function() { db.close(); dispatchSave(payload); };
+                  cleanTx.onerror   = function() { db.close(); dispatchSave(payload); };
+                } catch (cleanErr) { db.close(); dispatchSave(payload); }
+              };
+              getReq.onerror = function() { db.close(); dispatchSave(payload); };
+            } catch (txErr) { db.close(); dispatchSave(payload); }
+          };
+          idbReq.onerror = function() { dispatchSave(payload); };
+        } catch (idbErr) { dispatchSave(payload); }
       }
 
       function proceedWithWaitlistConfirmation(piId) {

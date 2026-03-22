@@ -368,10 +368,14 @@
         <label for="waitlistReturn" data-i18n="fleet.waitlistPrefReturn">Preferred Return Date</label>
         <input type="date" id="waitlistReturn">
 
+        <label for="waitlistLicense" data-i18n="fleet.waitlistIdUpload">Driver's License / State ID <span style="color:#dc3545">*</span></label>
+        <input type="file" id="waitlistLicense" accept="image/*,application/pdf" style="margin-bottom:4px">
+        <p class="pay-hint" id="waitlistLicenseHint" style="margin-top:0;margin-bottom:12px" data-i18n="fleet.waitlistIdHint">Upload a clear photo or scan of your driver's license or state ID (required).</p>
+
         <p class="waitlist-deposit-note">💰 <strong>$50 non-refundable deposit</strong> is charged now to secure your priority. It is applied toward your total rental price at pickup.</p>
 
         <button id="waitlistJoinBtn" class="waitlist-join-btn" disabled data-i18n="fleet.waitlistJoinBtn">🔔 Join Waitlist — Pay $50 Deposit</button>
-        <p class="pay-hint" id="waitlistPayHint">Enter your name, email, and preferred dates to reserve your spot.</p>
+        <p class="pay-hint" id="waitlistPayHint" data-i18n="fleet.waitlistPayHint">Enter your name, email, preferred dates, and upload your driver's license to reserve your spot.</p>
       </div>
 
       <!-- Stripe payment form for the $50 waitlist deposit -->
