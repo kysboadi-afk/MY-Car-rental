@@ -10,9 +10,10 @@ function escHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// ── Live fleet status (fetched at startup so availability is up-to-date) ──────
+// ── Live fleet status + booked dates (fetched at startup) ─────────────────────
 var CHATBOT_API_BASE = "https://sly-rides.vercel.app";
-var slyFleetStatus = null;
+var slyFleetStatus  = null;
+var slyBookedDates  = null;
 
 (function fetchChatbotFleetStatus() {
   fetch(CHATBOT_API_BASE + "/api/fleet-status")
@@ -21,17 +22,178 @@ var slyFleetStatus = null;
     .catch(function() { /* fail silently — static fallback replies used instead */ });
 })();
 
+(function fetchChatbotBookedDates() {
+  fetch(CHATBOT_API_BASE + "/api/booked-dates")
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) { if (data) slyBookedDates = data; })
+    .catch(function() { /* fail silently */ });
+})();
+
+// ── Booking-info helpers ───────────────────────────────────────────────────────
+
+/** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". */
+function fmtDateChatbot(iso, locale) {
+  var p = iso.split("-");
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  return d.toLocaleDateString(locale || "en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+/** Return the ISO date of the day after the given ISO date. */
+function nextDayChatbot(iso) {
+  var p = iso.split("-");
+  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Return a human-readable booking-status string for a single vehicle.
+ * Checks slyBookedDates for the active rental and the next upcoming one.
+ */
+function getVehicleBookingInfo(vehicleId, lang) {
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
+  var vName = names[vehicleId] || vehicleId;
+
+  if (!slyBookedDates) {
+    return lang === "es"
+      ? "No pude obtener la información de reservas ahora mismo. Llámanos al 📞 (213) 916-6606 para información actualizada."
+      : "I couldn't load the latest booking info right now. Call us at 📞 (213) 916-6606 for up-to-date availability.";
+  }
+
+  var today  = new Date().toISOString().slice(0, 10);
+  var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
+    return a.from < b.from ? -1 : 1;
+  });
+
+  var active = null;
+  var next   = null;
+  for (var i = 0; i < ranges.length; i++) {
+    var r = ranges[i];
+    if (r.from <= today && today <= r.to) { active = r; }
+    else if (r.from > today && !next)     { next = r; }
+  }
+
+  if (active) {
+    var availBack = fmtDateChatbot(nextDayChatbot(active.to), locale);
+    if (lang === "es") {
+      return "🔴 El " + vName + " está actualmente alquilado\n\n" +
+        "📅 Periodo: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
+        "✅ Disponible nuevamente: " + availBack + "\n\n" +
+        (next ? "⚠️ Próxima reserva después: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
+        "¿Quieres reservar? Llámanos al 📞 (213) 916-6606";
+    }
+    return "🔴 The " + vName + " is currently rented out\n\n" +
+      "📅 Rental period: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
+      "✅ Available again: " + availBack + "\n\n" +
+      (next ? "⚠️ Next booking after that: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
+      "Want to book? Call us at 📞 (213) 916-6606";
+  }
+
+  if (next) {
+    if (lang === "es") {
+      return "✅ El " + vName + " está disponible ahora\n\n" +
+        "⚠️ Próxima reserva: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" +
+        "¡Reserva pronto para asegurar tu fecha!";
+    }
+    return "✅ The " + vName + " is available right now!\n\n" +
+      "⚠️ Next booking: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" +
+      "Book soon to secure your dates!";
+  }
+
+  // Fully open — no bookings
+  if (lang === "es") {
+    return "✅ El " + vName + " está disponible — ¡sin reservas próximas!\n\n¡Reserva hoy en nuestra página de Autos!";
+  }
+  return "✅ The " + vName + " is available — no upcoming bookings!\n\nBook today on our Cars page!";
+}
+
+/**
+ * Build a summary for ALL vehicles combining fleet-status + next-available info.
+ */
+function buildAvailabilityMessage(lang) {
+  var ids   = ["slingshot", "slingshot2", "camry", "camry2013"];
+  var icons = { slingshot: "🔴", slingshot2: "🔴", camry: "🔵", camry2013: "🟢" };
+  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var today  = new Date().toISOString().slice(0, 10);
+
+  var lines = [];
+  for (var k = 0; k < ids.length; k++) {
+    var id     = ids[k];
+    var vName  = names[id];
+    var icon   = icons[id];
+    var ranges = slyBookedDates ? ((slyBookedDates[id] || []).slice().sort(function(a, b) {
+      return a.from < b.from ? -1 : 1;
+    })) : [];
+
+    var active = null;
+    var next   = null;
+    for (var i = 0; i < ranges.length; i++) {
+      var r = ranges[i];
+      if (r.from <= today && today <= r.to) { active = r; }
+      else if (r.from > today && !next)     { next = r; }
+    }
+
+    if (active) {
+      var avail = fmtDateChatbot(nextDayChatbot(active.to), locale);
+      lines.push(icon + " " + vName + " — " +
+        (lang === "es" ? "🔴 Alquilado hasta " + fmtDateChatbot(active.to, locale) + " · libre: " + avail
+                       : "🔴 Rented until " + fmtDateChatbot(active.to, locale) + " · free: " + avail));
+    } else {
+      var statusSuffix = "";
+      if (next && slyBookedDates) {
+        statusSuffix = lang === "es"
+          ? " (próx. reserva: " + fmtDateChatbot(next.from, locale) + ")"
+          : " (next booking: " + fmtDateChatbot(next.from, locale) + ")";
+      }
+      lines.push(icon + " " + vName + " — " + (lang === "es" ? "✅ Disponible" : "✅ Available") + statusSuffix);
+    }
+  }
+
+  var header = lang === "es"
+    ? "📅 Estado actual de disponibilidad:\n\n"
+    : "📅 Current availability for all vehicles:\n\n";
+  var footer = lang === "es"
+    ? "\n\nPara reservar, visita nuestra página de Autos o llámanos al 📞 (213) 916-6606"
+    : "\n\nTo book, visit our Cars page or call 📞 (213) 916-6606";
+
+  return header + lines.join("\n") + footer;
+}
+
 /**
  * Build a human-readable fleet listing with live availability status.
  * When slyFleetStatus is null (fetch not yet returned or failed), status
  * indicators are omitted and the static listing is shown as a clean fallback.
+ * When a vehicle is booked and slyBookedDates is loaded, also shows the
+ * next available date.
  */
 function buildFleetMessage(lang) {
+  var locale = lang === "es" ? "es-US" : "en-US";
+  var today  = new Date().toISOString().slice(0, 10);
+
   function statusLine(vehicleId) {
     if (!slyFleetStatus) return "";
     var v = slyFleetStatus[vehicleId];
     if (!v) return "";
-    return v.available ? " ✅ Available" : " 🔴 Currently Unavailable";
+    if (v.available) return " ✅ Available";
+    // Vehicle unavailable — try to find when it frees up
+    if (slyBookedDates) {
+      var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
+        return a.from < b.from ? -1 : 1;
+      });
+      for (var i = 0; i < ranges.length; i++) {
+        if (ranges[i].from <= today && today <= ranges[i].to) {
+          var freeDate = fmtDateChatbot(nextDayChatbot(ranges[i].to), locale);
+          return lang === "es"
+            ? " 🔴 No Disponible · libre: " + freeDate
+            : " 🔴 Unavailable · free: " + freeDate;
+        }
+      }
+    }
+    return " 🔴 Currently Unavailable";
   }
 
   if (lang === "es") {
@@ -83,6 +245,45 @@ var botResponses = {
     {
       patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
       reply: function() { return buildFleetMessage("en"); }
+    },
+    {
+      patterns: ["when is slingshot","slingshot available","slingshot booked","how long slingshot","slingshot rented","when will slingshot","slingshot free","slingshot when available","slingshot when free","slingshot status","slingshot availability"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return "Here's the status of both Slingshot R units:\n\n" +
+          getVehicleBookingInfo("slingshot", lang) + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("slingshot2", lang);
+      }
+    },
+    {
+      patterns: ["camry 2012 available","2012 available","camry 2012 booked","how long camry 2012","when is camry 2012","camry 2012 rented","2012 booked","camry 2012 status","camry 2012 free"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return getVehicleBookingInfo("camry", lang);
+      }
+    },
+    {
+      patterns: ["camry 2013 available","2013 available","camry 2013 booked","how long camry 2013","when is camry 2013","camry 2013 rented","2013 booked","camry 2013 status","camry 2013 free"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return getVehicleBookingInfo("camry2013", lang);
+      }
+    },
+    {
+      patterns: ["when is camry","camry available","camry booked","camry rented","how long camry","camry free","camry status","camry availability"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return "Here's the status of both Camry vehicles:\n\n" +
+          getVehicleBookingInfo("camry", lang) + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("camry2013", lang);
+      }
+    },
+    {
+      patterns: ["when available","when booked","how long booked","when free","when can i get","availability","what's available","what is available","how long rented","how long is it rented","which cars are available"],
+      reply: function() {
+        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+        return buildAvailabilityMessage(lang);
+      }
     },
     {
       patterns: ["book","booking","reserve","reservation","how do i","how to"],
@@ -150,6 +351,34 @@ var botResponses = {
     {
       patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","slingshot","camry"],
       reply: function() { return buildFleetMessage("es"); }
+    },
+    {
+      patterns: ["cuando slingshot","slingshot disponible","slingshot reservado","cuánto tiempo slingshot","cuanto tiempo slingshot","slingshot alquilado","cuando estará slingshot","slingshot libre","slingshot cuando disponible","disponibilidad slingshot"],
+      reply: function() {
+        return "Aquí está el estado de las dos unidades Slingshot R:\n\n" +
+          getVehicleBookingInfo("slingshot", "es") + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("slingshot2", "es");
+      }
+    },
+    {
+      patterns: ["camry 2012 disponible","2012 disponible","camry 2012 reservado","camry 2012 libre","cuando camry 2012","camry 2012 alquilado","disponibilidad camry 2012"],
+      reply: function() { return getVehicleBookingInfo("camry", "es"); }
+    },
+    {
+      patterns: ["camry 2013 disponible","2013 disponible","camry 2013 reservado","camry 2013 libre","cuando camry 2013","camry 2013 alquilado","disponibilidad camry 2013"],
+      reply: function() { return getVehicleBookingInfo("camry2013", "es"); }
+    },
+    {
+      patterns: ["cuando camry","camry disponible","camry reservado","camry alquilado","camry libre","disponibilidad camry"],
+      reply: function() {
+        return "Aquí está el estado de los dos vehículos Camry:\n\n" +
+          getVehicleBookingInfo("camry", "es") + "\n\n────────────────────\n\n" +
+          getVehicleBookingInfo("camry2013", "es");
+      }
+    },
+    {
+      patterns: ["cuando disponible","cuándo disponible","cuando libre","cuándo libre","disponibilidad","qué está disponible","que esta disponible","cuándo puedo rentar","cuando puedo rentar","cuánto tiempo está rentado","cuanto tiempo esta rentado"],
+      reply: function() { return buildAvailabilityMessage("es"); }
     },
     {
       patterns: ["reservar","reserva","reservación","reservacion","cómo reservo","como reservo","cómo alquilo","como alquilo","cómo rento","como rento","cómo funciona","como funciona"],
@@ -341,19 +570,21 @@ function buildChatbot() {
     var chips;
     if (lang === "es") {
       chips = [
-        { label: "💰 Precios",           action: function() { showFAQAnswer("pricing"); } },
-        { label: "🚗 Autos Disponibles", action: function() { showFAQAnswer("cars");    } },
-        { label: "📋 Requisitos",        action: function() { showFAQAnswer("reqs");    } },
-        { label: "📞 Contacto",          action: function() { showFAQAnswer("contact"); } },
-        { label: "✅ Solicitar Ahora",    action: startQualify }
+        { label: "💰 Precios",              action: function() { showFAQAnswer("pricing");      } },
+        { label: "🚗 Autos Disponibles",    action: function() { showFAQAnswer("cars");         } },
+        { label: "📅 Disponibilidad",       action: function() { showFAQAnswer("availability"); } },
+        { label: "📋 Requisitos",           action: function() { showFAQAnswer("reqs");         } },
+        { label: "📞 Contacto",             action: function() { showFAQAnswer("contact");      } },
+        { label: "✅ Solicitar Ahora",       action: startQualify }
       ];
     } else {
       chips = [
-        { label: "💰 Pricing",           action: function() { showFAQAnswer("pricing"); } },
-        { label: "🚗 Available Cars",    action: function() { showFAQAnswer("cars");    } },
-        { label: "📋 Requirements",      action: function() { showFAQAnswer("reqs");    } },
-        { label: "📞 Contact",           action: function() { showFAQAnswer("contact"); } },
-        { label: "✅ Apply Now",          action: startQualify }
+        { label: "💰 Pricing",              action: function() { showFAQAnswer("pricing");      } },
+        { label: "🚗 Available Cars",       action: function() { showFAQAnswer("cars");         } },
+        { label: "📅 Check Availability",   action: function() { showFAQAnswer("availability"); } },
+        { label: "📋 Requirements",         action: function() { showFAQAnswer("reqs");         } },
+        { label: "📞 Contact",              action: function() { showFAQAnswer("contact");      } },
+        { label: "✅ Apply Now",             action: startQualify }
       ];
     }
     addChips(chips);
@@ -377,6 +608,10 @@ function buildChatbot() {
       contact: {
         en: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
         es: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
+      },
+      availability: {
+        en: function() { return buildAvailabilityMessage("en"); },
+        es: function() { return buildAvailabilityMessage("es"); }
       }
     };
     var replyValue = (replies[topic] && replies[topic][lang]) || (replies[topic] && replies[topic]["en"]) || "";
