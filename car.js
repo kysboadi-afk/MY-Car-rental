@@ -10,6 +10,10 @@ const API_BASE = "https://sly-rides.vercel.app";
 const SLINGSHOT_BOOKING_DEPOSIT = 50;
 // Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
 const CAMRY_BOOKING_DEPOSIT = 50;
+// Slingshot authorization hold amounts — must mirror api/_pricing.js constants.
+// Option A (own insurance) → $500 hold; Option B (no insurance, DPP included) → $300 hold.
+const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
+const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
 const LA_TAX_RATE = 0.1025;
 
@@ -222,27 +226,34 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Camry renters choose via the two-button UI.
 let _pendingPaymentMode = null;
 
-// For Slingshot: show deposit notice and reserve button.
-// stripeBtn becomes "Book Now" (full payment); reserveBtn is the $50-deposit option.
-if (carData.bookingDeposit) {
-  const depositNotice = document.getElementById("slingshotDepositNotice");
-  if (depositNotice) {
-    // Populate deposit amounts dynamically from the constant so HTML stays in sync
-    depositNotice.querySelectorAll("[data-deposit-booking]").forEach(el => {
-      el.textContent = "$" + carData.bookingDeposit;
-    });
-    depositNotice.querySelectorAll("[data-deposit-security]").forEach(el => {
-      el.textContent = "$" + carData.deposit;
-    });
-    depositNotice.style.display = "";
+// ----- Slingshot: set up the new single-decision insurance/deposit UI -----
+// For Slingshot, replace the generic insurance question/options with the two-choice
+// deposit system: Option A (own insurance → $500 auth hold) or Option B (no insurance,
+// DPP included → $300 auth hold).  The old $50 non-refundable reserveBtn is removed.
+if (carData.hourlyTiers) {
+  // Update the question heading
+  const qEl = document.getElementById("insuranceQuestionText");
+  if (qEl) {
+    qEl.removeAttribute("data-i18n");
+    qEl.textContent = "\uD83D\uDEE1\uFE0F Insurance & Damage Protection — Choose One";
   }
-  // Show reserve button as the deposit option for Slingshot
+  // Update Option A label
+  const hasInsTextEl = document.getElementById("hasInsuranceText");
+  if (hasInsTextEl) {
+    hasInsTextEl.removeAttribute("data-i18n");
+    hasInsTextEl.innerHTML = `<strong>Option A:</strong> I have valid personal auto insurance<br><small style='color:#ffb400'>Upload required &rarr; <strong>$${SLINGSHOT_DEPOSIT_WITH_INSURANCE} refundable deposit</strong> (authorization hold)</small>`;
+  }
+  // Update Option B label
+  const noInsTextEl = document.getElementById("noInsuranceText");
+  if (noInsTextEl) {
+    noInsTextEl.removeAttribute("data-i18n");
+    noInsTextEl.innerHTML = `<strong>Option B:</strong> I do not have insurance &mdash; add Damage Protection Plan<br><small style='color:#ffb400'>No upload required &rarr; <strong>$${SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE} deposit</strong> + protection plan included</small>`;
+  }
+  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot any more
+  const oldDepositNotice = document.getElementById("slingshotDepositNotice");
+  if (oldDepositNotice) oldDepositNotice.style.display = "none";
   const reserveBtnEl = document.getElementById("reserveBtn");
-  if (reserveBtnEl) {
-    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${carData.bookingDeposit} Deposit`;
-    reserveBtnEl.style.display = "";
-  }
-  // stripeBtn text will be set to the full amount by updateTotal() once a duration is selected
+  if (reserveBtnEl) reserveBtnEl.style.display = "none";
 }
 
 // For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
@@ -371,7 +382,13 @@ document.getElementById("hasInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "yes";
   document.getElementById("insuranceUploadSection").style.display = "";
-  document.getElementById("protectionPlanSection").style.display = "none";
+  // For Slingshot: hide generic DPP notice, show auth-hold info box instead
+  if (carData.hourlyTiers) {
+    document.getElementById("protectionPlanSection").style.display = "none";
+    _updateSlingshotInsuranceInfo("yes");
+  } else {
+    document.getElementById("protectionPlanSection").style.display = "none";
+  }
   // Clear any protection-plan file state if previously "no"
   updateTotal();
   updatePayBtn();
@@ -381,12 +398,54 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-  document.getElementById("protectionPlanSection").style.display = "";
+  // For Slingshot: show auth-hold info box; for Camry: show generic DPP notice
+  if (carData.hourlyTiers) {
+    document.getElementById("protectionPlanSection").style.display = "none";
+    _updateSlingshotInsuranceInfo("no");
+  } else {
+    document.getElementById("protectionPlanSection").style.display = "";
+  }
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
   updateTotal();
   updatePayBtn();
 });
+
+// Update the Slingshot insurance info box (shown below the radio buttons)
+// to reflect the selected option and its associated deposit amount.
+function _updateSlingshotInsuranceInfo(choice) {
+  const infoEl = document.getElementById("slingshotInsuranceInfo");
+  if (!infoEl) return;
+  if (choice === "yes") {
+    infoEl.innerHTML = `
+      <div class="deposit-notice" style="margin-top:10px">
+        <strong>\uD83D\uDD12 Option A selected: $${SLINGSHOT_DEPOSIT_WITH_INSURANCE} Authorization Hold</strong>
+        <ul>
+          <li>A <strong>$${SLINGSHOT_DEPOSIT_WITH_INSURANCE} refundable hold</strong> is placed on your card to secure this reservation.</li>
+          <li>Upload your proof of insurance below (required before checkout).</li>
+          <li>The hold is <strong>released</strong> after the vehicle is returned and inspected with no issues.</li>
+          <li>Rental fee is due at pickup.</li>
+        </ul>
+      </div>`;
+    infoEl.style.display = "";
+  } else if (choice === "no") {
+    infoEl.innerHTML = `
+      <div class="deposit-notice" style="margin-top:10px">
+        <strong>\uD83D\uDD12 Option B selected: $${SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE} Authorization Hold + Damage Protection Plan</strong>
+        <ul>
+          <li>A <strong>$${SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE} refundable hold</strong> is placed on your card to secure this reservation.</li>
+          <li>The <strong>Damage Protection Plan ($${PROTECTION_PLAN_DAILY}/day)</strong> is automatically included in your rental.</li>
+          <li>No insurance upload required.</li>
+          <li>The hold is <strong>released</strong> after the vehicle is returned and inspected with no issues.</li>
+          <li>Rental fee is due at pickup.</li>
+        </ul>
+      </div>`;
+    infoEl.style.display = "";
+  } else {
+    infoEl.innerHTML = "";
+    infoEl.style.display = "none";
+  }
+}
 
 idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
@@ -516,7 +575,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Update the Security Deposit section to reflect actual vehicle pricing.
-  // All vehicles offer DPP. Slingshot always includes a $150 deposit in the rental payment.
+  // All vehicles offer DPP. Slingshot now uses an authorization hold based on insurance choice.
   // Camry vehicles have no security deposit.
   const depositHeadingEl = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
@@ -526,35 +585,33 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const speedSection      = document.getElementById("slingshotSpeedSection");
   const depositLang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
   if (carData.hourlyTiers) {
-    if (depositHeadingEl) depositHeadingEl.style.display = "";
-    if (depositLang === "es") {
-      if (depositIntroEl) depositIntroEl.innerHTML =
-        `Se incluye un <strong>dep\u00F3sito de seguridad reembolsable de $${carData.deposit}</strong> en el pago del alquiler ` +
-        `y se devuelve tras la inspecci\u00F3n del veh\u00EDculo al devolverlo (normalmente en 5\u20137 d\u00EDas h\u00E1biles). ` +
-        `El dep\u00F3sito cubre da\u00F1os, p\u00E9rdida de uso, limpieza, peajes y combustible.`;
-      if (depositDppEl) { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Plan de Protecci\u00F3n de Da\u00F1os ($13/d\u00EDa &bull; $85/semana &bull; $150/2 sem &bull; $295/mes):</strong> complemento opcional &mdash; reduce tu responsabilidad por da\u00F1os a $1,000"; }
-      if (depositNeitherEl) {
-        const rateList = carData.hourlyTiers
-          ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
-          : "";
-        depositNeitherEl.innerHTML =
-          `<strong>Tarifas de Alquiler Slingshot:</strong> ${rateList} &mdash; m\u00E1s dep\u00F3sito de seguridad reembolsable de $${carData.deposit} (incluido en el pago)`;
-      }
-    } else {
-      if (depositIntroEl) depositIntroEl.innerHTML =
-        `A <strong>$${carData.deposit} refundable security deposit</strong> is included in the rental payment ` +
-        `and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). ` +
-        `Deposit covers damages, loss of use, cleaning, tolls, and fuel.`;
-      if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
-      if (depositNeitherEl) {
-        const rateList = carData.hourlyTiers
-          ? carData.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ")
-          : "";
-        depositNeitherEl.innerHTML =
-          `<strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${carData.deposit} refundable security deposit (included in payment)`;
+    // Slingshot: update the generic deposit section to describe the auth-hold system
+    if (depositHeadingEl) {
+      depositHeadingEl.removeAttribute("data-i18n");
+      depositHeadingEl.textContent = "AUTHORIZATION HOLD (Refundable Deposit)";
+      depositHeadingEl.style.display = "";
+    }
+    // Use the deposit constant matching the renter's choice; default to Option A amount when
+    // the agreement is opened before a choice has been made (choice can be null at that point).
+    const holdAmt = insuranceCoverageChoice === "no"
+      ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE
+      : SLINGSHOT_DEPOSIT_WITH_INSURANCE; // includes null/undefined → defaults to Option A amount
+    if (depositIntroEl) {
+      depositIntroEl.innerHTML =
+        `A <strong>$${holdAmt} refundable authorization hold</strong> is placed on your card to secure this reservation. ` +
+        `The hold is released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). ` +
+        `The hold may be fully or partially captured to cover damages, loss of use, cleaning, tolls, or fuel.`;
+    }
+    if (depositDppEl) {
+      if (insuranceCoverageChoice === "no") {
+        depositDppEl.style.display = "";
+        depositDppEl.innerHTML = "<strong>Damage Protection Plan ($" + PROTECTION_PLAN_DAILY + "/day):</strong> automatically included &mdash; reduces your damage liability to $1,000";
+      } else {
+        depositDppEl.style.display = "none";
       }
     }
     if (depositInsEl) depositInsEl.style.display = "none";
+    if (depositNeitherEl) depositNeitherEl.style.display = "none";
 
     // Show Slingshot speed & strike policy
     if (speedSection) speedSection.style.display = "";
@@ -585,6 +642,13 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
   if (bookingDepositSection) {
     bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
+    if (carData.hourlyTiers) {
+      // Update option A / option B bullet visibility in the agreement section
+      const optAEl = document.getElementById("slingshotDepositAgreementOptionA");
+      const optBEl = document.getElementById("slingshotDepositAgreementOptionB");
+      if (optAEl) optAEl.style.display = insuranceCoverageChoice === "yes" ? "" : "none";
+      if (optBEl) optBEl.style.display = insuranceCoverageChoice === "no"  ? "" : "none";
+    }
   }
 
   // Update Payment Terms body to accurately describe when/how payment is collected.
@@ -593,10 +657,11 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
     if (carData.hourlyTiers) {
-      // Slingshot: $50 charged online at booking; rest at pickup
-      paymentTermsBodyEl.textContent = depositLang === "es"
-        ? "Un dep\u00F3sito de reserva no reembolsable de $50 se cobra en l\u00EDnea al momento de la reserva. El saldo restante (tarifa de alquiler + dep\u00F3sito de seguridad de $150) vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
-        : "A $50 non-refundable reservation deposit is charged online at the time of booking. The remaining balance (rental fee + $150 security deposit) is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+      // Slingshot: auth hold charged online at booking; rental fee due at pickup
+      const holdAmt2 = insuranceCoverageChoice === "no"
+        ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE
+        : SLINGSHOT_DEPOSIT_WITH_INSURANCE;
+      paymentTermsBodyEl.textContent = `A $${holdAmt2} refundable authorization hold is placed on your card online at the time of booking. The rental fee is due at pickup. The hold is released within 5–7 business days after the vehicle is returned and inspected. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
     } else {
       // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
       paymentTermsBodyEl.textContent = depositLang === "es"
@@ -1300,10 +1365,20 @@ function restoreFailedBooking() {
         if (hasInsuranceRadio) hasInsuranceRadio.checked = true;
         if (insuranceSection)  insuranceSection.style.display  = "";
         if (protectionSection) protectionSection.style.display = "none";
+        // For Slingshot: restore info box instead of generic DPP section
+        if (carData.hourlyTiers) {
+          if (protectionSection) protectionSection.style.display = "none";
+          _updateSlingshotInsuranceInfo("yes");
+        }
       } else {
         if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
         if (insuranceSection)  insuranceSection.style.display  = "none";
-        if (protectionSection) protectionSection.style.display = "";
+        if (carData.hourlyTiers) {
+          if (protectionSection) protectionSection.style.display = "none";
+          _updateSlingshotInsuranceInfo("no");
+        } else {
+          if (protectionSection) protectionSection.style.display = "";
+        }
       }
     }
 
@@ -1415,6 +1490,8 @@ window.addEventListener("pageshow", function(e) {
   const protectionPlanSection = document.getElementById("protectionPlanSection");
   if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
+  // Reset Slingshot insurance info box
+  if (carData.hourlyTiers) { _updateSlingshotInsuranceInfo(null); }
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signAgreementBtn") : "✍ Review & Sign Rental Agreement";
@@ -1440,7 +1517,8 @@ window.addEventListener("pageshow", function(e) {
   stripeBtn.textContent = window.slyI18n.t("booking.payNow");
   const _reserveBtnReset = document.getElementById("reserveBtn");
   if (_reserveBtnReset) {
-    _reserveBtnReset.style.display = ""; // shown for all vehicles
+    // reserveBtn is only shown for Camry (not Slingshot — Slingshot uses auth-hold system)
+    _reserveBtnReset.style.display = carData.hourlyTiers ? "none" : "";
     _reserveBtnReset.disabled = true;
   }
   _pendingPaymentMode = null;
@@ -1490,34 +1568,46 @@ function updateTotal() {
     if (!tier) return;
     currentDayCount = 1; // DPP uses 1 day for any slingshot rental
 
-    // Compute the full rental cost for both the breakdown display and the booking payload.
+    // Compute the full rental cost for the breakdown display.
+    // For Slingshot, the deposit is now an authorization hold (not included in rental fee).
+    // Show: rental fee + DPP (if option B) + sales tax on rental portion.
+    // The auth hold deposit is shown separately via slingshotInsuranceInfo.
     const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY : 0;
-    const fullRentalBase = tier.price + dppCost + carData.deposit;
+    const rentalBase = tier.price + dppCost;
     // Store full rental subtotal on carData for the booking payload.
-    // Tax is calculated by Stripe at checkout, so we store the pre-tax total.
-    carData._fullRentalCost = fullRentalBase.toFixed(2);
-    carData._balanceAtPickup = (fullRentalBase - (carData.bookingDeposit || 0)).toFixed(2);
+    carData._fullRentalCost = rentalBase.toFixed(2);
+    carData._balanceAtPickup = rentalBase.toFixed(2); // rental fee due at pickup
 
-    // Always show the full rental breakdown so renters know the total cost.
-    // The two buttons (Reserve $50 / Book Now $X) let them choose how much to pay now.
+    // Show the rental breakdown so renters know the full cost at pickup.
     const lines = [];
     lines.push({ label: _fmt("booking.tierRentalFmt", { label: `${tier.hours} ${_t("fleet.hours","Hours")}` }, `${tier.label} rental`), amount: tier.price });
-    lines.push({ label: _t("booking.securityDepositRef", "Security deposit (refundable)"), amount: carData.deposit });
 
-    // DPP for slingshot is always 1 day ($13) if chosen
+    // DPP for slingshot is 1 day ($13) when Option B is selected
     if (insuranceCoverageChoice === "no") {
       lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
     }
 
-    // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
-    const taxAmount = Math.round(fullRentalBase * LA_TAX_RATE * 100) / 100;
-    const afterTaxTotal = Math.round((fullRentalBase + taxAmount) * 100) / 100;
+    // Compute LA sales tax (10.25%) on the rental base.
+    const taxAmount = Math.round(rentalBase * LA_TAX_RATE * 100) / 100;
+    const afterTaxRental = Math.round((rentalBase + taxAmount) * 100) / 100;
     lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
-    currentSubtotal = fullRentalBase;
-    // Store after-tax totals so the booking payload sent on deposit mode reflects the correct balance.
-    carData._fullRentalCost = afterTaxTotal.toFixed(2);
-    carData._balanceAtPickup = (afterTaxTotal - (carData.bookingDeposit || 0)).toFixed(2);
+    currentSubtotal = rentalBase;
+    carData._fullRentalCost = afterTaxRental.toFixed(2);
+    carData._balanceAtPickup = afterTaxRental.toFixed(2);
+
+    // Compute the auth-hold deposit amount based on insurance choice
+    const depositHold = insuranceCoverageChoice === "yes"
+      ? SLINGSHOT_DEPOSIT_WITH_INSURANCE
+      : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : null);
+
+    // Show the auth-hold deposit as a separate line so it's clear
+    if (depositHold !== null) {
+      lines.push({ label: insuranceCoverageChoice === "yes"
+        ? "\uD83D\uDD12 Auth hold – Option A deposit (refundable)"
+        : "\uD83D\uDD12 Auth hold – Option B deposit (refundable)",
+        amount: depositHold });
+    }
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
@@ -1538,14 +1628,20 @@ function updateTotal() {
     rowsEl.appendChild(frag);
     document.getElementById("priceBreakdown").style.display = "";
 
-    document.getElementById("subtotal").textContent = fullRentalBase;
+    document.getElementById("subtotal").textContent = rentalBase;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
     document.getElementById("tax").textContent = taxAmount.toFixed(2);
     taxLineEl.style.display = "";
     if (taxNoteEl) taxNoteEl.style.display = "none";
-    totalEl.textContent = afterTaxTotal.toFixed(2);
-    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + afterTaxTotal.toFixed(2);
+    // "Total" display shows rental (what's due at pickup); deposit hold shown in info box
+    totalEl.textContent = afterTaxRental.toFixed(2);
+    // Button text: show the deposit hold amount when a choice is made
+    if (depositHold !== null) {
+      stripeBtn.textContent = "\uD83D\uDD12 Authorize $" + depositHold + " Deposit";
+    } else {
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    }
     updatePayBtn();
     return;
   }
@@ -1678,13 +1774,21 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
+  // Slingshot now uses an authorization hold based on the insurance choice.
+  // The hold amount ($500 or $300) is the only amount charged online.
+  const isSlingshotAuthHold = !!carData.hourlyTiers;
+  const slingshotDepositAmount = isSlingshotAuthHold
+    ? (insuranceCoverageChoice === "yes" ? SLINGSHOT_DEPOSIT_WITH_INSURANCE : SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE)
+    : 0;
+
   // Determine the amount charged now: deposit = small upfront hold; full = complete rental payment.
-  const isDepositMode = paymentMode === 'deposit';
-  const depositAmount = carData.bookingDeposit || CAMRY_BOOKING_DEPOSIT;
-  // For Slingshot: only $50 booking deposit is charged now; rest at pickup.
-  // For Camry reserve mode: only CAMRY_BOOKING_DEPOSIT charged now; rest at pickup.
-  // For Camry full mode: full rental amount charged now.
-  const displayPayNow = isDepositMode ? depositAmount.toFixed(2) : totalEl.textContent;
+  const isCamryDepositMode = !isSlingshotAuthHold && paymentMode === 'deposit';
+  const isDepositMode = isCamryDepositMode; // Slingshot no longer uses this flag for display
+  const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
+  // For Slingshot: show auth-hold amount; For Camry reserve: show deposit; For Camry full: full amount.
+  const displayPayNow = isSlingshotAuthHold
+    ? slingshotDepositAmount.toFixed(2)
+    : (isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent);
 
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
@@ -1742,6 +1846,8 @@ stripeBtn.addEventListener("click", async () => {
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",
         ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+        // Pass insurance choice for Slingshot auth-hold selection
+        ...(carData.hourlyTiers ? { insuranceCoverageChoice } : {}),
         paymentMode,
       })
     });
@@ -1792,16 +1898,18 @@ stripeBtn.addEventListener("click", async () => {
     // before mounting the button — this is what prevents the "Unable to show
     // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
     // browsers or when the domain association file has not yet been verified.
-    const totalCents = isDepositMode
-      ? depositAmount * 100
-      : Math.round(parseFloat(totalEl.textContent) * 100);
+    const totalCents = isSlingshotAuthHold
+      ? Math.round(slingshotDepositAmount * 100)
+      : (isCamryDepositMode
+        ? Math.round(camryDepositAmount * 100)
+        : Math.round(parseFloat(totalEl.textContent) * 100));
     const paymentReq = stripe.paymentRequest({
       country: "US",
       currency: "usd",
       total: {
-        label: isDepositMode
-          ? carData.name + " Reservation Deposit (Non-Refundable)"
-          : carData.name + " Rental",
+        label: isSlingshotAuthHold
+          ? carData.name + " Deposit (Authorization Hold – Refundable)"
+          : (isCamryDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental"),
         amount: totalCents,
       },
       requestPayerName: true,
@@ -1836,11 +1944,9 @@ stripeBtn.addEventListener("click", async () => {
           returnTime: returnTime.value,
           email,
           phone,
-          total: isDepositMode ? String(depositAmount) : totalEl.textContent,
-          ...(isDepositMode ? {
-            fullRentalCost: carData._fullRentalCost || totalEl.textContent,
-            balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - depositAmount).toFixed(2),
-          } : {}),
+          total: displayPayNow,
+          fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+          balanceAtPickup: carData._balanceAtPickup || totalEl.textContent,
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
           pricePerBiWeekly: carData.biweekly || null,
@@ -1852,7 +1958,9 @@ stripeBtn.addEventListener("click", async () => {
           idMimeType,
           insuranceFileName,
           insuranceMimeType,
+          insuranceCoverageChoice,
           protectionPlan: insuranceCoverageChoice === "no",
+          ...(isSlingshotAuthHold ? { slingshotDepositAmount } : {}),
           signature: agreementSignature || null,
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
@@ -1927,7 +2035,12 @@ stripeBtn.addEventListener("click", async () => {
 
     const paymentForm = document.getElementById("payment-form");
     document.getElementById("payAmount").textContent = displayPayNow;
-    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+    // For Slingshot auth holds, label the button clearly as an authorization hold
+    if (isSlingshotAuthHold) {
+      document.getElementById("submit-payment").textContent = "\uD83D\uDD12 Authorize $" + displayPayNow + " Deposit";
+    } else {
+      document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+    }
     paymentForm.style.display = "block";
     stripeBtn.style.display = "none";
     const payHint = document.getElementById("payHint");
@@ -1967,11 +2080,9 @@ stripeBtn.addEventListener("click", async () => {
         returnTime: returnTime.value,
         email,
         phone,
-        total: isDepositMode ? String(depositAmount) : totalEl.textContent,
-        ...(isDepositMode ? {
-          fullRentalCost: carData._fullRentalCost || totalEl.textContent,
-          balanceAtPickup: carData._balanceAtPickup || (parseFloat(totalEl.textContent) - depositAmount).toFixed(2),
-        } : {}),
+        total: displayPayNow,
+        fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+        balanceAtPickup: carData._balanceAtPickup || totalEl.textContent,
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
         pricePerBiWeekly: carData.biweekly || null,
@@ -1983,7 +2094,9 @@ stripeBtn.addEventListener("click", async () => {
         idMimeType,
         insuranceFileName,
         insuranceMimeType,
+        insuranceCoverageChoice,
         protectionPlan: insuranceCoverageChoice === "no",
+        ...(isSlingshotAuthHold ? { slingshotDepositAmount } : {}),
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
@@ -2063,7 +2176,13 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      // Restore the correct button text for Slingshot (auth-hold label) vs Camry
+      if (isSlingshotAuthHold && insuranceCoverageChoice) {
+        const holdAmt = insuranceCoverageChoice === "yes" ? SLINGSHOT_DEPOSIT_WITH_INSURANCE : SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE;
+        stripeBtn.textContent = "\uD83D\uDD12 Authorize $" + holdAmt + " Deposit";
+      } else {
+        stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      }
       const _reserveBtnCancel = document.getElementById("reserveBtn");
       if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
       _pendingPaymentMode = null;
@@ -2073,7 +2192,13 @@ stripeBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    // Restore the correct button text for Slingshot (auth-hold label) vs Camry
+    if (isSlingshotAuthHold && insuranceCoverageChoice) {
+      const holdAmt = insuranceCoverageChoice === "yes" ? SLINGSHOT_DEPOSIT_WITH_INSURANCE : SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE;
+      stripeBtn.textContent = "\uD83D\uDD12 Authorize $" + holdAmt + " Deposit";
+    } else {
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    }
     const _reserveBtnErr = document.getElementById("reserveBtn");
     if (_reserveBtnErr) _reserveBtnErr.disabled = false;
     _pendingPaymentMode = null;

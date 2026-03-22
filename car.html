@@ -112,17 +112,20 @@
     </div>
 
     <div class="id-upload-section insurance-coverage-section">
-      <p class="insurance-question" data-i18n="booking.insuranceQuestion">🛡️ Do you have auto insurance that covers rental vehicles?</p>
+      <p class="insurance-question" id="insuranceQuestionText" data-i18n="booking.insuranceQuestion">🛡️ Do you have auto insurance that covers rental vehicles?</p>
       <div class="insurance-options">
-        <label class="insurance-option">
+        <label class="insurance-option" id="hasInsuranceLabel">
           <input type="radio" name="insuranceCoverage" id="hasInsurance" value="yes">
-          <span data-i18n="booking.hasInsurance">Yes, I have rental car coverage</span>
+          <span id="hasInsuranceText" data-i18n="booking.hasInsurance">Yes, I have rental car coverage</span>
         </label>
-        <label class="insurance-option">
+        <label class="insurance-option" id="noInsuranceLabel">
           <input type="radio" name="insuranceCoverage" id="noInsurance" value="no">
-          <span data-i18n="booking.noInsurance">Add Damage Protection</span>
+          <span id="noInsuranceText" data-i18n="booking.noInsurance">Add Damage Protection</span>
         </label>
       </div>
+
+      <!-- Slingshot-only: deposit info box, updated dynamically based on the chosen option -->
+      <div id="slingshotInsuranceInfo" style="display:none"></div>
 
       <div id="insuranceUploadSection" style="display:none">
         <label for="insuranceUpload"><span data-i18n="booking.uploadInsuranceLabel">📎 Upload Proof of Insurance</span> <span class="required">*</span></label>
@@ -231,15 +234,16 @@
             <p data-i18n-html="agreement.slingshotStrikePolicy"><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
           </div>
 
-          <!-- Slingshot Reservation Deposit Policy (shown for Slingshot only) -->
+          <!-- Slingshot Authorization Hold / Deposit Policy (shown for Slingshot only) -->
           <div id="slingshotBookingDepositSection" style="display:none">
-            <h4>RESERVATION DEPOSIT (Non-Refundable)</h4>
-            <p>A <strong>$50 non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation.</p>
-            <ul>
-              <li>The $50 deposit is applied toward the total rental balance at pickup.</li>
-              <li>The deposit is <strong>NON-REFUNDABLE</strong> under any circumstances.</li>
-              <li>If the renter cancels or fails to appear (no-show), the $50 deposit is forfeited.</li>
-              <li>The remaining balance (rental fee + $150 refundable security deposit) is due at pickup.</li>
+            <h4 id="slingshotDepositAgreementHeading">AUTHORIZATION HOLD (Refundable)</h4>
+            <p id="slingshotDepositAgreementBody">A refundable authorization hold is placed on your card at the time of booking to secure this Slingshot reservation. The hold is released or applied upon return of the vehicle after inspection.</p>
+            <ul id="slingshotDepositAgreementList">
+              <li id="slingshotDepositAgreementOptionA" style="display:none">You selected <strong>Option A (own insurance)</strong>: a <strong>$500 refundable authorization hold</strong> is placed on your card. Proof of insurance must be provided at pickup.</li>
+              <li id="slingshotDepositAgreementOptionB" style="display:none">You selected <strong>Option B (no insurance)</strong>: a <strong>$300 refundable authorization hold</strong> is placed on your card. The Damage Protection Plan is automatically included in your rental.</li>
+              <li>The rental fee is due at pickup.</li>
+              <li>The hold is <strong>released</strong> within 5–7 business days after the vehicle is returned and inspected with no issues.</li>
+              <li>The hold may be <strong>fully or partially captured</strong> to cover damages, loss of use, cleaning, tolls, or fuel if applicable.</li>
             </ul>
           </div>
 
