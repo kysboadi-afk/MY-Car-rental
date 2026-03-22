@@ -986,6 +986,7 @@ function initWaitlistForm() {
   const wlEmail   = document.getElementById("waitlistEmail");
   const wlPickup  = document.getElementById("waitlistPickup");
   const wlReturn  = document.getElementById("waitlistReturn");
+  const wlLicense = document.getElementById("waitlistLicense");
   const wlJoinBtn = document.getElementById("waitlistJoinBtn");
   const wlHint    = document.getElementById("waitlistPayHint");
 
@@ -995,9 +996,10 @@ function initWaitlistForm() {
   if (wlReturn) wlReturn.setAttribute("min", todayISO);
 
   function updateWaitlistBtn() {
-    const nameOk  = wlName  && isValidName(wlName.value.trim());
-    const emailOk = wlEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
-    const ready   = nameOk && emailOk;
+    const nameOk    = wlName    && isValidName(wlName.value.trim());
+    const emailOk   = wlEmail   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
+    const licenseOk = wlLicense && wlLicense.files && wlLicense.files.length > 0;
+    const ready     = nameOk && emailOk && licenseOk;
     if (wlJoinBtn) wlJoinBtn.disabled = !ready;
     if (wlHint)    wlHint.style.display = ready ? "none" : "";
   }
@@ -1005,6 +1007,7 @@ function initWaitlistForm() {
   [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
     if (el) el.addEventListener("input", updateWaitlistBtn);
   });
+  if (wlLicense) wlLicense.addEventListener("change", updateWaitlistBtn);
   updateWaitlistBtn();
 
   // When pickup changes, keep return ≥ pickup
@@ -1023,14 +1026,68 @@ function initWaitlistForm() {
 }
 
 async function launchWaitlistPayment() {
-  const wlName   = document.getElementById("waitlistName").value.trim();
-  const wlEmail  = document.getElementById("waitlistEmail").value.trim();
-  const wlPhone  = (document.getElementById("waitlistPhone") || {}).value || "";
-  const wlPickup = (document.getElementById("waitlistPickup") || {}).value || "";
-  const wlReturn = (document.getElementById("waitlistReturn") || {}).value || "";
+  const wlName    = document.getElementById("waitlistName").value.trim();
+  const wlEmail   = document.getElementById("waitlistEmail").value.trim();
+  const wlPhone   = (document.getElementById("waitlistPhone") || {}).value || "";
+  const wlPickup  = (document.getElementById("waitlistPickup") || {}).value || "";
+  const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
+  const wlLicense = document.getElementById("waitlistLicense");
+
+  // Validate driver's license upload
+  if (!wlLicense || !wlLicense.files || !wlLicense.files[0]) {
+    alert(_t("fleet.waitlistIdRequired", "Please upload your Driver's License or State ID to join the waitlist."));
+    return;
+  }
+  const licenseFile = wlLicense.files[0];
 
   const joinBtn = document.getElementById("waitlistJoinBtn");
   if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
+
+  // Read license file as base64 before launching payment (must happen before redirect)
+  let licenseBase64 = null;
+  let licenseMimeType = licenseFile.type || "application/octet-stream";
+  let licenseFileName = licenseFile.name || "drivers-license";
+  try {
+    licenseBase64 = await new Promise(function(resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        // result is "data:<mime>;base64,<data>" — strip the prefix
+        const result = e.target.result;
+        const commaIdx = result.indexOf(",");
+        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(licenseFile);
+    });
+  } catch (fileErr) {
+    console.error("Failed to read license file:", fileErr);
+    if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit"); }
+    alert(_t("booking.loadError", "Could not read your ID file. Please try again."));
+    return;
+  }
+
+  // Store license in IndexedDB so it survives the Stripe redirect
+  try {
+    await new Promise(function(resolve) {
+      const idbReq = indexedDB.open("slyRidesDB", 1);
+      idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+      idbReq.onsuccess = function(e) {
+        const db = e.target.result;
+        try {
+          const tx = db.transaction("files", "readwrite");
+          tx.objectStore("files").put(
+            { licenseBase64, licenseMimeType, licenseFileName },
+            "waitlistLicense"
+          );
+          tx.oncomplete = function() { db.close(); resolve(); };
+          tx.onerror    = function() { db.close(); resolve(); };
+        } catch (err) { db.close(); resolve(); }
+      };
+      idbReq.onerror = function() { resolve(); };
+    });
+  } catch (idbErr) {
+    console.warn("Could not save license to IndexedDB:", idbErr);
+  }
 
   try {
     const res = await fetch(`${API_BASE}/api/join-waitlist`, {
@@ -1131,6 +1188,19 @@ async function launchWaitlistPayment() {
         joinBtnReset.disabled = false;
         joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
       }
+      // Clean up the stored license from IndexedDB on cancel
+      try {
+        const idbReq = indexedDB.open("slyRidesDB", 1);
+        idbReq.onsuccess = function(e) {
+          const db = e.target.result;
+          try {
+            const tx = db.transaction("files", "readwrite");
+            tx.objectStore("files").delete("waitlistLicense");
+            tx.oncomplete = function() { db.close(); };
+            tx.onerror    = function() { db.close(); };
+          } catch (err) { db.close(); }
+        };
+      } catch (idbErr) { /* ignore */ }
     };
     cancelBtn.addEventListener("click", handleWaitlistCancel);
 

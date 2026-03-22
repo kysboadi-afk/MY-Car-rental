@@ -9,8 +9,10 @@
 //   OWNER_EMAIL
 //   GITHUB_TOKEN  (contents:write — to update waitlist.json)
 //   GITHUB_REPO   (defaults to kysboadi-afk/SLY-RIDES)
+import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { CARS } from "./_pricing.js";
+import { createDecisionToken } from "./_waitlist-token.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -107,6 +109,7 @@ export default async function handler(req, res) {
       vehicleId, name, email, phone,
       preferredPickup, preferredReturn,
       paymentIntentId,
+      idBase64, idFileName, idMimeType,
     } = req.body;
 
     if (!vehicleId || !CARS[vehicleId]) {
@@ -118,11 +121,18 @@ export default async function handler(req, res) {
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Name is required" });
     }
+    if (!idBase64) {
+      return res.status(400).json({ error: "Driver's license upload is required" });
+    }
 
     const carData    = CARS[vehicleId];
     const trimmedName = name.trim();
 
+    // Generate a unique entry ID used for approve/decline token binding
+    const entryId = crypto.randomBytes(16).toString("hex");
+
     const entry = {
+      entryId,
       name:            trimmedName,
       email,
       phone:           phone || "",
@@ -130,9 +140,19 @@ export default async function handler(req, res) {
       preferredReturn: preferredReturn || "",
       depositPaid:     WAITLIST_DEPOSIT,
       paymentIntentId: paymentIntentId || "",
+      vehicleName:     carData.name,
+      status:          "pending",
     };
 
     const position = await appendWaitlistEntry(vehicleId, entry);
+
+    // ── Generate approve / decline action tokens ──────────────────────────────
+    const API_BASE = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "https://sly-rides.vercel.app";
+    const decisionToken = createDecisionToken(vehicleId, entryId);
+    const approveUrl = `${API_BASE}/api/waitlist-decision?action=approve&token=${encodeURIComponent(decisionToken)}`;
+    const declineUrl = `${API_BASE}/api/waitlist-decision?action=decline&token=${encodeURIComponent(decisionToken)}`;
 
     // ── Email notifications ───────────────────────────────────────────────────
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -145,13 +165,14 @@ export default async function handler(req, res) {
 
       // ── Admin alert ─────────────────────────────────────────────────────────
       try {
-        await transporter.sendMail({
+        const adminMailOpts = {
           from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
-          subject: `🔔 New Waitlist Sign-up #${position}: ${carData.name} — ${trimmedName}`,
+          subject: `🔔 New Waitlist Sign-up #${position}: ${carData.name} — ${trimmedName} [PENDING REVIEW]`,
           text: [
             `New waitlist sign-up for ${carData.name}`,
             `Queue Position : #${position}`,
+            `Status         : PENDING`,
             `Name           : ${trimmedName}`,
             `Email          : ${email}`,
             `Phone          : ${phone || "Not provided"}`,
@@ -159,9 +180,18 @@ export default async function handler(req, res) {
             `Preferred Return: ${preferredReturn || "Not specified"}`,
             `Deposit Paid   : $${WAITLIST_DEPOSIT} (non-refundable)`,
             `Payment Intent : ${paymentIntentId || "N/A"}`,
+            `Entry ID       : ${entryId}`,
+            "",
+            `Driver's License: attached`,
+            "",
+            `APPROVE: ${approveUrl}`,
+            `DECLINE: ${declineUrl}`,
           ].join("\n"),
           html: `
             <h2>🔔 New Waitlist Sign-up — ${esc(carData.name)}</h2>
+            <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
+              <strong>⏳ Status: PENDING REVIEW</strong> — Please review the driver's license (attached) and approve or decline below.
+            </p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Queue Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
@@ -172,9 +202,34 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredReturn || "Not specified")}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${WAITLIST_DEPOSIT} (non-refundable)</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Intent</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntentId || "N/A")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver's License</strong></td><td style="padding:8px;border:1px solid #ddd">📎 See attachment</td></tr>
             </table>
+            <div style="margin-top:24px;text-align:center">
+              <a href="${approveUrl}" style="display:inline-block;padding:14px 32px;background:#28a745;color:#fff;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold;margin-right:16px">
+                ✅ Approve
+              </a>
+              <a href="${declineUrl}" style="display:inline-block;padding:14px 32px;background:#dc3545;color:#fff;text-decoration:none;border-radius:6px;font-size:16px;font-weight:bold">
+                ❌ Decline
+              </a>
+            </div>
+            <p style="margin-top:16px;font-size:12px;color:#888">
+              Approving will send the customer a confirmation email.<br>
+              Declining will update their status to declined${paymentIntentId ? " and automatically refund their $50 deposit" : ""}.
+            </p>
           `,
-        });
+        };
+
+        // Attach the driver's license if provided
+        if (idBase64) {
+          const safeFileName = (idFileName || "drivers-license.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
+          adminMailOpts.attachments = [{
+            filename:    safeFileName,
+            content:     Buffer.from(idBase64, "base64"),
+            contentType: idMimeType || "application/octet-stream",
+          }];
+        }
+
+        await transporter.sendMail(adminMailOpts);
       } catch (err) {
         console.error("Admin waitlist email failed:", err);
       }
@@ -185,23 +240,27 @@ export default async function handler(req, res) {
           await transporter.sendMail({
             from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
             to:      email,
-            subject: `✅ You're #${position} on the Waitlist — ${carData.name} | SLY Transportation`,
+            subject: `⏳ Waitlist Application Received — ${carData.name} | SLY Transportation`,
             text: [
               `Hi ${trimmedName},`,
               "",
-              `Great news — you've secured your spot on the waitlist for the ${carData.name}!`,
+              `Thank you for joining the waitlist for the ${carData.name}!`,
               `You are #${position} in the queue.`,
+              "",
+              "Your application is now under review. Once we verify your driver's license, you'll receive a confirmation or decision email within 24–48 hours.",
               "",
               "Waitlist Details:",
               `Vehicle          : ${carData.name}`,
               `Your Position    : #${position}`,
+              `Status           : Pending Review`,
               `Preferred Pickup : ${preferredPickup || "Not specified"}`,
               `Preferred Return : ${preferredReturn || "Not specified"}`,
               `Deposit Paid     : $${WAITLIST_DEPOSIT} (non-refundable — applied toward your rental)`,
               "",
               "What happens next:",
-              "• When the vehicle becomes available for your preferred dates, we will contact you immediately.",
-              "• You will receive a payment link to complete the full booking.",
+              "• We will review your driver's license within 24–48 hours.",
+              "• If approved, you'll receive a confirmation email right away.",
+              "• When the vehicle becomes available for your preferred dates, we will contact you with a payment link to complete the full booking.",
               "• You will have 12–24 hours to complete payment. If you don't pay in time, the next person in the queue is contacted.",
               "• Your $50 deposit goes toward your total rental cost.",
               "",
@@ -210,20 +269,25 @@ export default async function handler(req, res) {
               "— Sly Transportation Services LLC Team",
             ].join("\n"),
             html: `
-              <h2>✅ You're #${position} on the Waitlist!</h2>
+              <h2>⏳ Waitlist Application Received</h2>
               <p>Hi <strong>${esc(trimmedName)}</strong>,</p>
-              <p>Great news — you've secured your spot on the waitlist for the <strong>${esc(carData.name)}</strong>. You are <strong>#${position}</strong> in the queue.</p>
+              <p>Thank you for joining the waitlist for the <strong>${esc(carData.name)}</strong>! You are <strong>#${position}</strong> in the queue.</p>
+              <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
+                <strong>⏳ Status: Pending Review</strong> — Your driver's license is under review. You'll hear back within 24–48 hours.
+              </p>
               <table style="border-collapse:collapse;width:100%;margin-bottom:16px">
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Your Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Status</strong></td><td style="padding:8px;border:1px solid #ddd">⏳ Pending Review</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredPickup || "Not specified")}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredReturn || "Not specified")}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${WAITLIST_DEPOSIT} <em style="font-size:12px;color:#888">(non-refundable — applied toward your rental)</em></td></tr>
               </table>
               <h3 style="color:#333">What happens next:</h3>
               <ul>
-                <li>When the vehicle becomes available for your preferred dates, we'll contact you right away.</li>
-                <li>You'll receive a payment link to complete the full booking.</li>
+                <li>We'll review your driver's license within <strong>24–48 hours</strong>.</li>
+                <li>If approved, you'll receive a confirmation email right away.</li>
+                <li>When the vehicle becomes available for your preferred dates, we'll contact you with a payment link to complete the full booking.</li>
                 <li>You have <strong>12–24 hours</strong> to complete payment — otherwise the next person in line is contacted.</li>
                 <li>Your <strong>$50 deposit goes toward your total rental cost</strong>.</li>
               </ul>

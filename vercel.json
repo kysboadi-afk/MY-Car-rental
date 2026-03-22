@@ -61,7 +61,10 @@
       "maxDuration": 15
     },
     "api/save-waitlist-entry.js": {
-      "maxDuration": 15
+      "maxDuration": 30
+    },
+    "api/waitlist-decision.js": {
+      "maxDuration": 30
     }
   }
 }
