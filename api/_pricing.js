@@ -9,8 +9,8 @@
 // Combined City of Los Angeles rate: CA state 7.25% + LA county 2.25% + LA city 0.75% = 10.25%
 export const LA_TAX_RATE = 0.1025;
 
-// Non-refundable reservation deposit charged upfront for Slingshot bookings.
-// The full rental balance (rental fee + $150 security deposit) is due at pickup.
+// Non-refundable reservation deposit for Slingshot bookings.
+// Retained for legacy compatibility but Slingshot now charges the full rental amount online.
 export const SLINGSHOT_BOOKING_DEPOSIT = 50;
 
 // Non-refundable reservation deposit for Camry "Reserve Now" mode.

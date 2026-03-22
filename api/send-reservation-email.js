@@ -191,16 +191,13 @@ function generateRentalAgreementHtml(body) {
   const isHourly = !!(carInfo && carInfo.hourlyTiers);
   let depositSection = "";
   if (isHourly) {
-    // New system: authorization hold based on insurance choice
-    const holdAmt = slingshotDepositAmount
-      ? Number(slingshotDepositAmount)
-      : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
+    // Full payment system: security deposit included in total, charged at booking
     const dppLine = protectionPlan
       ? `<p><strong>Damage Protection Plan (${dppRatesText}):</strong> automatically included &mdash; reduces your damage liability to $1,000</p>`
       : "";
     depositSection = `
-      <h4>AUTHORIZATION HOLD (Refundable)</h4>
-      <p>A <strong>$${holdAmt} refundable authorization hold</strong> was placed on your card at the time of booking to secure this Slingshot reservation. The hold is released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The hold may be fully or partially captured to cover damages, loss of use, cleaning, tolls, or fuel.</p>
+      <h4>SECURITY DEPOSIT (Refundable)</h4>
+      <p>A <strong>$150 refundable security deposit</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
       <p><strong>Insurance/Protection Choice:</strong> ${insuranceCoverageChoice === "no" ? "Option B — No personal insurance (Damage Protection Plan included)" : "Option A — Renter provided own insurance (proof required at pickup)"}</p>
       ${dppLine}
     `;
@@ -284,8 +281,7 @@ function generateRentalAgreementHtml(body) {
     <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
     <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
     ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
-    <tr><th>${isHourly ? "Authorization Hold Placed" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
-    ${isHourly && fullRentalCost ? `<tr><th>Rental Fee (Due at Pickup)</th><td>$${esc(fullRentalCost)}</td></tr>` : ""}
+    <tr><th>${isHourly ? "Total Charged" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
     ${!isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
     <tr><th>Insurance / Protection</th><td>${esc(insuranceSummary)}</td></tr>
   </table>
@@ -338,7 +334,7 @@ function generateRentalAgreementHtml(body) {
   <p>SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
 
   <h4>PAYMENT TERMS</h4>
-  <p>All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+  <p>${isHourly ? "Full payment (including a $150 refundable security deposit) was charged at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues." : "All fees are due at pickup."} Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
   <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
 
   <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
@@ -515,8 +511,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     tableRow("Return Date", returnDate || "");
     tableRow("Return Time", returnTime || "Not specified");
     if (durationLine) tableRow("Duration", durationLine);
-    tableRow(isHourly ? "Authorization Hold" : "Total Charged", `$${total || "TBD"}`);
-    if (isHourly && fullRentalCost) tableRow("Rental Fee (Due at Pickup)", `$${fullRentalCost}`);
+    tableRow("Total Charged", `$${total || "TBD"}`);
     if (!isHourly && balanceAtPickup) tableRow("Balance Due at Pickup", `$${balanceAtPickup}`);
     tableRow("Insurance / Protection", insuranceSummary);
     doc.moveDown(0.3);
@@ -531,11 +526,8 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     // ── Deposit / Pricing ──────────────────────────────────────────────────────
     sectionHeader("Deposit & Protection Plan");
     if (isHourly && carInfo) {
-      // New auth-hold system
-      const holdAmt = slingshotDepositAmount
-        ? Number(slingshotDepositAmount)
-        : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
-      bodyText(`Authorization Hold: A $${holdAmt} refundable hold was placed on your card at booking. Released within 5–7 business days after return and inspection with no issues. May be captured to cover damages, loss of use, cleaning, tolls, or fuel.`);
+      // Full payment system: security deposit included in total
+      bodyText(`Security Deposit: A $150 refundable security deposit is included in your total payment. Released within 5–7 business days after return and inspection with no issues. May be retained to cover damages, loss of use, cleaning, tolls, or fuel.`);
       doc.moveDown(0.2);
       if (insuranceCoverageChoice === "no") {
         bodyText(`Option B selected: No personal insurance — Damage Protection Plan automatically included.`);
@@ -606,10 +598,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     // ── Payment Terms ──────────────────────────────────────────────────────────
     sectionHeader("Payment Terms");
     if (isHourly) {
-      const holdAmt2 = slingshotDepositAmount
-        ? Number(slingshotDepositAmount)
-        : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
-      bodyText(`A $${holdAmt2} refundable authorization hold was placed on your card at the time of booking. The rental fee is due at pickup. The hold is released within 5–7 business days after return and inspection. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
+      bodyText(`Full payment (including a $150 refundable security deposit) was charged at the time of booking. The security deposit will be released within 5–7 business days after return and inspection with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
     } else {
       bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
     }
@@ -783,12 +772,13 @@ export default async function handler(req, res) {
       bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   }
 
-  // For Slingshot bookings, 'total' is the authorization hold amount ($500 or $300).
-  // fullRentalCost holds the rental fee due at pickup.
+  // For Slingshot bookings, 'total' is the full rental amount charged at booking (including $150 security deposit).
   const isHourlyEmail = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
   const totalChargedLabel = isBalancePayment
     ? "Balance Paid"
-    : (isHourlyEmail ? "Authorization Hold" : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged"));
+    // fullRentalCost is only set for Camry deposit-mode bookings (partial payment up front).
+    // Slingshot bookings set fullRentalCost to null since everything is charged at once.
+    : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
   const ownerSubject = isBalancePayment
     ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
     : (isConfirmed
@@ -877,13 +867,12 @@ export default async function handler(req, res) {
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
         `${totalChargedLabel.padEnd(15)}: $${total || "TBD"}`,
-        fullRentalCost   ? `${isHourlyEmail ? "Rental Fee (Pickup)" : "Full Rental Cost"}: $${fullRentalCost}` : "",
+        !isHourlyEmail && fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
         !isHourlyEmail && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
         isHourlyEmail
           ? `Insurance Option: ${insuranceCoverageChoice === "no" ? "Option B — No insurance (DPP included)" : "Option A — Own insurance (proof required at pickup)"}`
           : (protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : "Own insurance (proof uploaded)"}` : ""),
         isHourlyEmail ? `Insurance Uploaded: ${insuranceBase64 && insuranceFileName ? "Yes (" + insuranceFileName + ")" : "No"}` : "",
-        isHourlyEmail ? `Deposit Amt (Hold): $${slingshotDepositAmount || total || "?"}` : "",
         isHourlyEmail ? `Protection Plan: ${protectionPlan ? "Included (Option B)" : "Not included (Option A)"}` : "",
         signature ? `Digital Signature: ${signature}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
@@ -925,12 +914,11 @@ export default async function handler(req, res) {
           ${pricePerMonthly  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Monthly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerMonthly))} / month</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
-          ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>${isHourlyEmail ? "Rental Fee (Due at Pickup)" : "Full Rental Cost"}</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+          ${fullRentalCost && !isHourlyEmail  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
           ${!isHourlyEmail && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
           ${isHourlyEmail
             ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Option</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceCoverageChoice === "no" ? "⚠️ Option B — No personal insurance (DPP included)" : "✅ Option A — Renter has own insurance (proof required at pickup)"}</td></tr>
                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Uploaded</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceBase64 && insuranceFileName ? "✅ Yes (" + esc(insuranceFileName) + ")" : "❌ No"}</td></tr>
-               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Amount (Auth Hold)</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(String(slingshotDepositAmount || total || "?"))}</strong></td></tr>
                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "✅ Included (Option B)" : "❌ Not included (Option A)"}</td></tr>`
             : `${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}`
           }
@@ -1009,7 +997,7 @@ export default async function handler(req, res) {
             `Return Time    : ${returnTime || "Not specified"}`,
             isBalancePayment
               ? `Balance Paid   : $${total || "TBD"} (final payment — booking fully paid)`
-              : (fullRentalCost ? `Booking Deposit: $${total || "TBD"} (non-refundable — applied to your balance at pickup)` : `Total Charged  : $${total || "TBD"}`),
+              : `Total Charged  : $${total || "TBD"}`,
             !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
             !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
             !isBalancePayment && balancePayUrl   ? `Pay balance online: ${balancePayUrl}` : "",
@@ -1035,7 +1023,7 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupTime) || "Not specified"}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Time</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnTime) || "Not specified"}</td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${!isBalancePayment && fullRentalCost ? " <em style='font-size:12px;color:#888'>(non-refundable — applied to your balance at pickup)</em>" : (isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : "")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
               ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
               ${!isBalancePayment && balancePayUrl   ? `<tr><td colspan="2" style="padding:12px;border:1px solid #ddd;text-align:center"><a href="${esc(balancePayUrl)}" style="display:inline-block;padding:12px 28px;background:#c8a000;color:#000;border-radius:10px;text-decoration:none;font-weight:bold;font-size:15px">💳 Pay Balance Online</a><br><span style="font-size:12px;color:#888;display:block;margin-top:6px">Or pay in person at pickup — your choice</span></td></tr>` : ""}
