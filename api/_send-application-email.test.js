@@ -87,6 +87,11 @@ const VALID_BODY = {
   licenseBase64: Buffer.from("fake-image-data").toString("base64"),
 };
 
+const VALID_BODY_WITH_EMAIL = {
+  ...VALID_BODY,
+  email: "jane@example.com",
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 test("OPTIONS preflight returns 200", async () => {
@@ -305,6 +310,101 @@ test("SMS contains first name in review/declined messages", async () => {
   assert.ok(
     sentMessages[0].body.includes("Jane"),
     `Expected first name in SMS, got: ${sentMessages[0].body}`
+  );
+});
+
+// ─── Applicant decision email tests ──────────────────────────────────────────
+
+test("sends applicant email when email is provided", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMails.length, 2, "Expected 2 emails: owner + applicant");
+});
+
+test("does not send applicant email when email is omitted", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.equal(sentMails.length, 1, "Expected only 1 email (owner) when no applicant email");
+});
+
+test("does not send applicant email for invalid email address", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, email: "not-an-email" }), res);
+  assert.equal(sentMails.length, 1, "Expected only owner email for invalid applicant email");
+});
+
+test("applicant email is sent to applicant address", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.equal(sentMails[1].to, "jane@example.com");
+});
+
+test("owner email is still sent when applicant email is provided", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.equal(sentMails[0].to, "owner@test.invalid");
+});
+
+test("applicant approval email subject contains 'Approved'", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.equal(res._body.decision, "approved");
+  assert.ok(
+    sentMails[1].subject.toLowerCase().includes("approved"),
+    `Expected approval subject, got: ${sentMails[1].subject}`
+  );
+});
+
+test("applicant review email subject contains 'Review'", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  const body = { ...VALID_BODY_WITH_EMAIL, licenseBase64: undefined, licenseFileName: undefined, licenseMimeType: undefined };
+  await handler(makeReq("POST", body), res);
+  assert.equal(res._body.decision, "review");
+  assert.ok(
+    sentMails[1].subject.toLowerCase().includes("review"),
+    `Expected review subject, got: ${sentMails[1].subject}`
+  );
+});
+
+test("applicant declined email is sent when age is under 21", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY_WITH_EMAIL, age: 19 }), res);
+  assert.equal(res._body.decision, "declined");
+  assert.equal(sentMails.length, 2, "Expected owner + applicant decline emails");
+  assert.equal(sentMails[1].to, "jane@example.com");
+  assert.ok(
+    sentMails[1].html.includes("unable to approve"),
+    `Expected decline message in html, got: ${sentMails[1].html}`
+  );
+});
+
+test("applicant email html contains applicant first name", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.ok(
+    sentMails[1].html.includes("Jane"),
+    `Expected first name in applicant email html`
+  );
+});
+
+test("applicant approval email html contains booking link", async () => {
+  sentMails.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY_WITH_EMAIL), res);
+  assert.equal(res._body.decision, "approved");
+  assert.ok(
+    sentMails[1].html.includes("www.slytrans.com/cars"),
+    `Expected booking link in approval email`
   );
 });
 
