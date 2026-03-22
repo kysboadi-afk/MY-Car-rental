@@ -211,7 +211,6 @@ export default async function handler(req, res) {
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
         await stripe.refunds.create({
           payment_intent: entry.paymentIntentId,
-          reason:         "requested_by_customer",
         });
         refundNote = `<p style='color:#28a745'>💰 $${entry.depositPaid} deposit has been automatically refunded to the customer.</p>`;
       }

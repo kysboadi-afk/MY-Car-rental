@@ -1033,11 +1033,10 @@ async function launchWaitlistPayment() {
   const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
   const wlLicense = document.getElementById("waitlistLicense");
 
-  // Validate driver's license upload
-  if (!wlLicense || !wlLicense.files || !wlLicense.files[0]) {
-    alert(_t("fleet.waitlistIdRequired", "Please upload your Driver's License or State ID to join the waitlist."));
-    return;
-  }
+  // Defensive guard — the button should already be disabled when no file is
+  // selected (enforced by updateWaitlistBtn), but guard here in case this
+  // function is called programmatically.
+  if (!wlLicense || !wlLicense.files || !wlLicense.files[0]) return;
   const licenseFile = wlLicense.files[0];
 
   const joinBtn = document.getElementById("waitlistJoinBtn");
