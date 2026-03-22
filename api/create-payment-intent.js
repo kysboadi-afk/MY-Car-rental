@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
+import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT, LA_TAX_RATE } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -96,22 +96,24 @@ export default async function handler(req, res) {
     // For Slingshot: charge only the $50 non-refundable reservation deposit now.
     // The full rental balance (rental fee + $150 security deposit – $50) is due at pickup.
     // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
-    // For all other vehicles (Slingshot full mode or Camry full mode): charge pre-tax subtotal.
-    // Tax is calculated by Stripe automatically at checkout (no manual tax added here).
+    // For all other vehicles (Slingshot full mode or Camry full mode): charge the after-tax total.
+    // LA sales tax (10.25%) is applied to the full rental amount and included in the Stripe charge.
+    const preTaxFullRental = computedFullRental + protectionCost;
+    const afterTaxFullRental = Math.round(preTaxFullRental * (1 + LA_TAX_RATE) * 100) / 100;
     let totalAmount;
     if (isSlingshotVehicle && paymentMode !== "full") {
       totalAmount = SLINGSHOT_BOOKING_DEPOSIT;
     } else if (!isSlingshotVehicle && paymentMode === "deposit") {
       totalAmount = CAMRY_BOOKING_DEPOSIT;
     } else {
-      totalAmount = computedFullRental + protectionCost;
+      totalAmount = afterTaxFullRental;
     }
 
     const isSlingshotDepositMode = isSlingshotVehicle && paymentMode !== "full";
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
     const isDepositPayment = isSlingshotDepositMode || isCamryDepositMode;
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(totalAmount * 100), // Stripe expects whole cents (pre-tax for full payments)
+      amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
       description: isDepositPayment
@@ -120,10 +122,6 @@ export default async function handler(req, res) {
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
-      // Stripe Tax calculates and adds the correct tax on top of the pre-tax amount
-      // based on the customer's billing address collected by the Payment Element.
-      // Only enable for full payments — deposit-only payments are not taxable.
-      ...(!isDepositPayment ? { automatic_tax: { enabled: true } } : {}),
       // Request 3D Secure authentication automatically for high-risk card payments.
       // Stripe Radar decides when to trigger it; low-risk transactions flow through
       // without extra friction.
@@ -145,8 +143,8 @@ export default async function handler(req, res) {
         ...(isSlingshotDepositMode ? {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",
-          full_rental_amount:  (computedFullRental + protectionCost).toFixed(2),
-          balance_at_pickup:   (computedFullRental + protectionCost - SLINGSHOT_BOOKING_DEPOSIT).toFixed(2),
+          full_rental_amount:  afterTaxFullRental.toFixed(2),
+          balance_at_pickup:   (afterTaxFullRental - SLINGSHOT_BOOKING_DEPOSIT).toFixed(2),
         } : {}),
         ...(isSlingshotVehicle && paymentMode === "full" ? {
           payment_type:        "full_payment",
@@ -155,8 +153,8 @@ export default async function handler(req, res) {
         ...(isCamryDepositMode ? {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",
-          full_rental_amount:  (computedFullRental + protectionCost).toFixed(2),
-          balance_at_pickup:   (computedFullRental + protectionCost - CAMRY_BOOKING_DEPOSIT).toFixed(2),
+          full_rental_amount:  afterTaxFullRental.toFixed(2),
+          balance_at_pickup:   (afterTaxFullRental - CAMRY_BOOKING_DEPOSIT).toFixed(2),
         } : {}),
       },
     });
