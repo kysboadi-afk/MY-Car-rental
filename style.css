@@ -459,37 +459,6 @@ body {
   object-position: center center;
 }
 
-/* ─── Mini card slider (fleet listing page) ────────────────────────────────── */
-.card-slider {
-  position: relative;
-  overflow: hidden;
-}
-.card-slide {
-  display: none;
-  width: 100%;
-  height: 220px;
-  object-fit: cover;
-}
-.card-slide.active { display: block; }
-.card-slide-btn {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.55);
-  color: #ffb400;
-  border: none;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: bold;
-  border-radius: 4px;
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 2;
-}
-.card-slider:hover .card-slide-btn { opacity: 1; }
-.card-slide-prev { left: 6px; }
-.card-slide-next { right: 6px; }
 
 .car-info {
   padding: 20px;
