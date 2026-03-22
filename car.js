@@ -10,6 +10,8 @@ const API_BASE = "https://sly-rides.vercel.app";
 const SLINGSHOT_BOOKING_DEPOSIT = 50;
 // Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
 const CAMRY_BOOKING_DEPOSIT = 50;
+// Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
+const LA_TAX_RATE = 0.1025;
 
 // ----- Car Data -----
 const cars = {
@@ -1438,10 +1440,15 @@ function updateTotal() {
       lines.push({ label: _fmt("booking.dppSlingshotFmt", { price: PROTECTION_PLAN_DAILY }, `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`), amount: PROTECTION_PLAN_DAILY });
     }
 
-    // Tax is calculated by Stripe based on the customer's billing address.
-    lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
+    // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
+    const taxAmount = Math.round(fullRentalBase * LA_TAX_RATE * 100) / 100;
+    const afterTaxTotal = Math.round((fullRentalBase + taxAmount) * 100) / 100;
+    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
     currentSubtotal = fullRentalBase;
+    // Store after-tax totals so the booking payload sent on deposit mode reflects the correct balance.
+    carData._fullRentalCost = afterTaxTotal.toFixed(2);
+    carData._balanceAtPickup = (afterTaxTotal - (carData.bookingDeposit || 0)).toFixed(2);
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
@@ -1453,7 +1460,7 @@ function updateTotal() {
       labelSpan.textContent = l.label;
       const valueSpan = document.createElement("span");
       valueSpan.className = "breakdown-value";
-      valueSpan.textContent = l.amount !== null ? "$" + l.amount : _t("booking.calcAtCheckout","Calculated at checkout");
+      valueSpan.textContent = "$" + l.amount;
       row.appendChild(labelSpan);
       row.appendChild(valueSpan);
       frag.appendChild(row);
@@ -1465,10 +1472,11 @@ function updateTotal() {
     document.getElementById("subtotal").textContent = fullRentalBase;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
-    taxLineEl.style.display = "none";
-    if (taxNoteEl) taxNoteEl.style.display = "";
-    totalEl.textContent = fullRentalBase;
-    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + fullRentalBase.toFixed(2);
+    document.getElementById("tax").textContent = taxAmount.toFixed(2);
+    taxLineEl.style.display = "";
+    if (taxNoteEl) taxNoteEl.style.display = "none";
+    totalEl.textContent = afterTaxTotal.toFixed(2);
+    stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + afterTaxTotal.toFixed(2);
     updatePayBtn();
     return;
   }
@@ -1549,8 +1557,10 @@ function updateTotal() {
   const rentalSubtotal = cost + (carData.deposit || 0);
   currentSubtotal = rentalSubtotal;
 
-  // Tax is calculated by Stripe based on the customer's billing address.
-  lines.push({ label: _t("booking.salesTax", "Sales tax"), amount: null });
+  // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
+  const taxAmount = Math.round(rentalSubtotal * LA_TAX_RATE * 100) / 100;
+  const afterTaxTotal = Math.round((rentalSubtotal + taxAmount) * 100) / 100;
+  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
   const rowsEl = document.getElementById("breakdownRows");
   const frag = document.createDocumentFragment();
@@ -1562,7 +1572,7 @@ function updateTotal() {
     labelSpan.textContent = l.label;
     const valueSpan = document.createElement("span");
     valueSpan.className = "breakdown-value";
-    valueSpan.textContent = l.amount !== null ? "$" + l.amount : _t("booking.calcAtCheckout","Calculated at checkout");
+    valueSpan.textContent = "$" + l.amount;
     row.appendChild(labelSpan);
     row.appendChild(valueSpan);
     frag.appendChild(row);
@@ -1571,14 +1581,15 @@ function updateTotal() {
   rowsEl.appendChild(frag);
   document.getElementById("priceBreakdown").style.display = "";
 
-  // Update the subtotal / total display rows; tax line is always hidden (Stripe handles tax)
+  // Update the subtotal / tax / total display rows
   document.getElementById("subtotal").textContent = rentalSubtotal;
   const taxLineEl = document.getElementById("taxLine");
   const taxNoteEl = document.getElementById("taxNote");
-  taxLineEl.style.display = "none";
-  if (taxNoteEl) taxNoteEl.style.display = "";
-  totalEl.textContent = rentalSubtotal;
-  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + rentalSubtotal.toFixed(2);
+  document.getElementById("tax").textContent = taxAmount.toFixed(2);
+  taxLineEl.style.display = "";
+  if (taxNoteEl) taxNoteEl.style.display = "none";
+  totalEl.textContent = afterTaxTotal.toFixed(2);
+  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + afterTaxTotal.toFixed(2);
   updatePayBtn();
 }
 
