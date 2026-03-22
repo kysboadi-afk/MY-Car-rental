@@ -1,0 +1,245 @@
+// api/save-waitlist-entry.js
+// Saves a confirmed waitlist entry to waitlist.json on GitHub and sends
+// confirmation emails to the admin and the customer.
+//
+// Called by success.html after a waitlist deposit payment succeeds.
+//
+// Required environment variables:
+//   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+//   OWNER_EMAIL
+//   GITHUB_TOKEN  (contents:write — to update waitlist.json)
+//   GITHUB_REPO   (defaults to kysboadi-afk/SLY-RIDES)
+import nodemailer from "nodemailer";
+import { CARS } from "./_pricing.js";
+
+const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const GITHUB_REPO   = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const WAITLIST_PATH = "waitlist.json";
+const WAITLIST_DEPOSIT = 50;
+
+function esc(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Appends a new entry to waitlist.json in the GitHub repo.
+ * Returns the queue position (1-based) for the new entry.
+ */
+async function appendWaitlistEntry(vehicleId, entry) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn("GITHUB_TOKEN not set — waitlist.json will not be updated");
+    return 1;
+  }
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${WAITLIST_PATH}`;
+  const headers = {
+    Authorization:        `Bearer ${token}`,
+    Accept:               "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  let current = { slingshot: [], slingshot2: [], camry: [], camry2013: [] };
+  let sha = null;
+
+  const getResp = await fetch(apiUrl, { headers });
+  if (getResp.ok) {
+    const fileData = await getResp.json();
+    sha = fileData.sha;
+    try {
+      current = JSON.parse(
+        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
+      );
+    } catch (parseErr) {
+      console.error("waitlist: malformed JSON:", parseErr);
+    }
+  }
+
+  if (!current[vehicleId]) current[vehicleId] = [];
+  const position = current[vehicleId].length + 1;
+  current[vehicleId].push({
+    ...entry,
+    position,
+    joinedAt: new Date().toISOString(),
+  });
+
+  const updatedContent = Buffer.from(
+    JSON.stringify(current, null, 2) + "\n"
+  ).toString("base64");
+
+  const putBody = {
+    message: `Add waitlist entry for ${vehicleId}: ${entry.name} (#${position})`,
+    content: updatedContent,
+  };
+  if (sha) putBody.sha = sha;
+
+  const putResp = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(putBody),
+  });
+  if (!putResp.ok) {
+    const errText = await putResp.text();
+    console.error(`GitHub PUT failed: ${putResp.status} ${errText}`);
+  }
+
+  return position;
+}
+
+export default async function handler(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  try {
+    const {
+      vehicleId, name, email, phone,
+      preferredPickup, preferredReturn,
+      paymentIntentId,
+    } = req.body;
+
+    if (!vehicleId || !CARS[vehicleId]) {
+      return res.status(400).json({ error: "Invalid vehicle" });
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    const carData    = CARS[vehicleId];
+    const trimmedName = name.trim();
+
+    const entry = {
+      name:            trimmedName,
+      email,
+      phone:           phone || "",
+      preferredPickup: preferredPickup || "",
+      preferredReturn: preferredReturn || "",
+      depositPaid:     WAITLIST_DEPOSIT,
+      paymentIntentId: paymentIntentId || "",
+    };
+
+    const position = await appendWaitlistEntry(vehicleId, entry);
+
+    // ── Email notifications ───────────────────────────────────────────────────
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      const transporter = nodemailer.createTransport({
+        host:   process.env.SMTP_HOST,
+        port:   parseInt(process.env.SMTP_PORT || "587"),
+        secure: parseInt(process.env.SMTP_PORT || "587") === 465,
+        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+
+      // ── Admin alert ─────────────────────────────────────────────────────────
+      try {
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          subject: `🔔 New Waitlist Sign-up #${position}: ${carData.name} — ${trimmedName}`,
+          text: [
+            `New waitlist sign-up for ${carData.name}`,
+            `Queue Position : #${position}`,
+            `Name           : ${trimmedName}`,
+            `Email          : ${email}`,
+            `Phone          : ${phone || "Not provided"}`,
+            `Preferred Pickup: ${preferredPickup || "Not specified"}`,
+            `Preferred Return: ${preferredReturn || "Not specified"}`,
+            `Deposit Paid   : $${WAITLIST_DEPOSIT} (non-refundable)`,
+            `Payment Intent : ${paymentIntentId || "N/A"}`,
+          ].join("\n"),
+          html: `
+            <h2>🔔 New Waitlist Sign-up — ${esc(carData.name)}</h2>
+            <table style="border-collapse:collapse;width:100%">
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Queue Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(trimmedName)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone || "Not provided")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredPickup || "Not specified")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredReturn || "Not specified")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${WAITLIST_DEPOSIT} (non-refundable)</strong></td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Intent</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntentId || "N/A")}</td></tr>
+            </table>
+          `,
+        });
+      } catch (err) {
+        console.error("Admin waitlist email failed:", err);
+      }
+
+      // ── Customer confirmation ────────────────────────────────────────────────
+      if (email) {
+        try {
+          await transporter.sendMail({
+            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            to:      email,
+            subject: `✅ You're #${position} on the Waitlist — ${carData.name} | SLY Transportation`,
+            text: [
+              `Hi ${trimmedName},`,
+              "",
+              `Great news — you've secured your spot on the waitlist for the ${carData.name}!`,
+              `You are #${position} in the queue.`,
+              "",
+              "Waitlist Details:",
+              `Vehicle          : ${carData.name}`,
+              `Your Position    : #${position}`,
+              `Preferred Pickup : ${preferredPickup || "Not specified"}`,
+              `Preferred Return : ${preferredReturn || "Not specified"}`,
+              `Deposit Paid     : $${WAITLIST_DEPOSIT} (non-refundable — applied toward your rental)`,
+              "",
+              "What happens next:",
+              "• When the vehicle becomes available for your preferred dates, we will contact you immediately.",
+              "• You will receive a payment link to complete the full booking.",
+              "• You will have 12–24 hours to complete payment. If you don't pay in time, the next person in the queue is contacted.",
+              "• Your $50 deposit goes toward your total rental cost.",
+              "",
+              `Questions? Call us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+              "",
+              "— Sly Transportation Services LLC Team",
+            ].join("\n"),
+            html: `
+              <h2>✅ You're #${position} on the Waitlist!</h2>
+              <p>Hi <strong>${esc(trimmedName)}</strong>,</p>
+              <p>Great news — you've secured your spot on the waitlist for the <strong>${esc(carData.name)}</strong>. You are <strong>#${position}</strong> in the queue.</p>
+              <table style="border-collapse:collapse;width:100%;margin-bottom:16px">
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Your Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredPickup || "Not specified")}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredReturn || "Not specified")}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${WAITLIST_DEPOSIT} <em style="font-size:12px;color:#888">(non-refundable — applied toward your rental)</em></td></tr>
+              </table>
+              <h3 style="color:#333">What happens next:</h3>
+              <ul>
+                <li>When the vehicle becomes available for your preferred dates, we'll contact you right away.</li>
+                <li>You'll receive a payment link to complete the full booking.</li>
+                <li>You have <strong>12–24 hours</strong> to complete payment — otherwise the next person in line is contacted.</li>
+                <li>Your <strong>$50 deposit goes toward your total rental cost</strong>.</li>
+              </ul>
+              <p>Questions? Call us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+              <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
+            `,
+          });
+        } catch (err) {
+          console.error("Customer waitlist email failed:", err);
+        }
+      }
+    }
+
+    res.status(200).json({ success: true, position });
+  } catch (err) {
+    console.error("save-waitlist-entry error:", err);
+    res.status(500).json({ error: "Failed to save waitlist entry" });
+  }
+}

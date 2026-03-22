@@ -32,8 +32,7 @@ function isBookedToday(ranges) {
 }
 
 // Capture the original data-i18n key for each vehicle's button so that
-// re-applying "available" restores the correct per-vehicle label in any language
-// (e.g. "fleet.reserveVehicle" for Camry vs "fleet.bookNow" for Slingshot).
+// re-applying "available" restores the correct per-vehicle label in any language.
 const originalBtnI18nKey = {};
 carCards.forEach(card => {
   const vehicleId = card.dataset.vehicle;
@@ -43,7 +42,24 @@ carCards.forEach(card => {
 });
 
 function applyFleetStatus(fleetStatus, bookedDates) {
-  const i18n = window.slyI18n || { t: function(k) { return k; } };
+  const i18n  = window.slyI18n || { t: function(k) { return k; } };
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Helper: find the next available ISO date after the current booking ends
+  function getNextAvailDate(vehicleId) {
+    const ranges = ((bookedDates[vehicleId] || []).slice().sort(function(a, b) {
+      return a.from < b.from ? -1 : 1;
+    }));
+    for (var i = 0; i < ranges.length; i++) {
+      if (ranges[i].from <= today && today <= ranges[i].to) {
+        const d = new Date(ranges[i].to + "T00:00:00");
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().slice(0, 10);
+      }
+    }
+    return null;
+  }
+
   carCards.forEach(card => {
     const vehicleId = card.dataset.vehicle;
     if (!vehicleId) return;
@@ -53,12 +69,14 @@ function applyFleetStatus(fleetStatus, bookedDates) {
     const link    = document.getElementById("select-link-" + vehicleId);
     if (!badge || !btn || !link) return;
 
-    const status = fleetStatus[vehicleId];
+    const status    = fleetStatus[vehicleId];
     const available = status ? status.available !== false : true;
 
-    // Remove old today-badge if re-applying
+    // Remove old today-badge and next-available badge if re-applying
     const oldTodayBadge = card.querySelector(".available-today-badge");
     if (oldTodayBadge) oldTodayBadge.remove();
+    const oldNextBadge = card.querySelector(".next-available-badge");
+    if (oldNextBadge) oldNextBadge.remove();
 
     if (available) {
       const i18nKey = originalBtnI18nKey[vehicleId] || "fleet.bookNow";
@@ -82,15 +100,30 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", todayBadge);
       }
     } else {
-      badge.setAttribute("data-i18n", "fleet.unavailable");
-      badge.textContent = i18n.t("fleet.unavailable");
-      badge.className = "status-badge unavailable";
+      // ── Currently Booked state ──────────────────────────────────────────
+      badge.setAttribute("data-i18n", "fleet.currentlyBooked");
+      badge.textContent = i18n.t("fleet.currentlyBooked");
+      badge.className = "status-badge unavailable booked";
 
-      btn.setAttribute("data-i18n", "fleet.booked");
-      btn.textContent = i18n.t("fleet.booked");
-      btn.disabled = true;
+      // "Next Available: [date]" badge
+      const nextISO = getNextAvailDate(vehicleId);
+      if (nextISO) {
+        const d = new Date(nextISO + "T00:00:00");
+        const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        const nextBadge = document.createElement("span");
+        nextBadge.className = "next-available-badge";
+        const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
+        nextBadge.textContent = tpl.replace("{date}", formatted);
+        badge.insertAdjacentElement("afterend", nextBadge);
+      }
+
+      // "Join Waitlist" button — enabled so customers can click through to car.html
+      btn.setAttribute("data-i18n", "fleet.joinWaitlist");
+      btn.textContent = i18n.t("fleet.joinWaitlist");
+      btn.disabled = false;
       btn.classList.add("btn-booked");
-      link.style.pointerEvents = "none";
+      btn.classList.add("btn-waitlist");
+      link.style.pointerEvents = "";
     }
   });
 }

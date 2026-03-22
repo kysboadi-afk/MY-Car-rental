@@ -77,18 +77,21 @@ function getVehicleBookingInfo(vehicleId, lang) {
 
   if (active) {
     var availBack = fmtDateChatbot(nextDayChatbot(active.to), locale);
+    var waitlistNote = lang === "es"
+      ? "🔔 ¿Quieres reservar este auto cuando esté disponible? ¡Únete a la lista de espera por solo $50 de depósito no reembolsable (se aplica al alquiler)! Visita nuestra página de Autos y haz clic en 'Unirse a la Lista de Espera'."
+      : "🔔 Want to reserve this car when it's available? Join the waitlist for just a $50 non-refundable deposit (applied toward your rental)! Visit our Cars page and click 'Join Waitlist'.";
     if (lang === "es") {
       return "🔴 El " + vName + " está actualmente alquilado\n\n" +
         "📅 Periodo: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
         "✅ Disponible nuevamente: " + availBack + "\n\n" +
         (next ? "⚠️ Próxima reserva después: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
-        "¿Quieres reservar? Llámanos al 📞 (213) 916-6606";
+        waitlistNote;
     }
     return "🔴 The " + vName + " is currently rented out\n\n" +
       "📅 Rental period: " + fmtDateChatbot(active.from, locale) + " – " + fmtDateChatbot(active.to, locale) + "\n" +
       "✅ Available again: " + availBack + "\n\n" +
       (next ? "⚠️ Next booking after that: " + fmtDateChatbot(next.from, locale) + " – " + fmtDateChatbot(next.to, locale) + "\n\n" : "") +
-      "Want to book? Call us at 📞 (213) 916-6606";
+      waitlistNote;
   }
 
   if (next) {

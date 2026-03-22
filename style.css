@@ -691,6 +691,33 @@ body {
   color: #999 !important;
 }
 
+/* WAITLIST button — overrides the disabled/booked grey style so it looks clickable */
+.car-info button.btn-waitlist {
+  background: linear-gradient(135deg, #1a3a5c, #0f2540) !important;
+  color: #7ec8f8 !important;
+  border: 1px solid #2d6da8 !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+}
+.car-info button.btn-waitlist:hover {
+  background: linear-gradient(135deg, #1e4575, #163060) !important;
+  color: #aadcff !important;
+}
+
+/* NEXT AVAILABLE badge — shown below the "Currently Booked" status badge */
+.next-available-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+  margin-left: 6px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
 /* Payment retry banner — shown when a renter returns after a failed payment */
 .payment-retry-banner {
   background: #2a1f00;
@@ -721,14 +748,145 @@ body {
   font-weight: bold;
   margin: 0 0 8px;
 }
-.vehicle-unavailable-notice p:last-child {
+.vehicle-unavailable-notice p {
   color: #ccc;
   font-size: 15px;
-  margin: 0;
+  margin: 4px 0;
 }
 .vehicle-unavailable-notice a {
   color: #ffb400;
   text-decoration: underline;
+}
+
+/* ── Waitlist section (car.html) ─────────────────────────────────────────── */
+.waitlist-section {
+  background: #0d1f35;
+  border: 2px solid #2d6da8;
+  border-radius: 16px;
+  padding: 28px 24px;
+  margin-top: 8px;
+}
+
+.waitlist-heading {
+  color: #7ec8f8;
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+
+.waitlist-subtitle {
+  color: #ccc;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+
+.waitlist-next-line {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.waitlist-queue-note {
+  color: #aaa;
+  font-size: 13px;
+  font-style: italic;
+  margin: 0 0 20px;
+  border-left: 3px solid #2d6da8;
+  padding-left: 10px;
+}
+
+.waitlist-form label {
+  display: block;
+  color: #ccc;
+  font-size: 14px;
+  margin-bottom: 4px;
+  margin-top: 14px;
+}
+
+.waitlist-form input {
+  width: 100%;
+  padding: 10px 14px;
+  background: #0f1e2e;
+  border: 1px solid #2d6da8;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  box-sizing: border-box;
+}
+
+.waitlist-form input:focus {
+  outline: none;
+  border-color: #7ec8f8;
+}
+
+.waitlist-deposit-note {
+  color: #ffe08a;
+  font-size: 13px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 18px 0 14px;
+}
+
+.waitlist-join-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #1a3a5c, #0f2540);
+  color: #7ec8f8;
+  border: 1px solid #2d6da8;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  margin-bottom: 8px;
+}
+
+.waitlist-join-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e4575, #163060);
+  color: #aadcff;
+  transform: translateY(-1px);
+}
+
+.waitlist-join-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#waitlistPaymentForm #waitlist-submit-payment {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #1a3a5c, #0f2540);
+  color: #7ec8f8;
+  border: 1px solid #2d6da8;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 14px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+
+#waitlistPaymentForm #waitlist-submit-payment:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e4575, #163060);
+  color: #aadcff;
+}
+
+#waitlistPaymentForm #waitlist-cancel-payment {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+}
+
+#waitlistPaymentForm #waitlist-cancel-payment:hover {
+  color: #fff;
 }
 
 /* CHECK NOW WIDGET */

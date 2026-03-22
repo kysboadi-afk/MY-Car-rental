@@ -340,6 +340,49 @@
       <button id="cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change booking details</button>
     </div>
 
+    <!-- ── Waitlist section ──────────────────────────────────────────────────
+         Shown by car.js INSTEAD of the regular form when the vehicle is
+         currently booked (fleet-status available=false).
+         The existing #reserveBtn / #stripePay buttons are hidden in that state
+         so there is no duplication of "reserve" CTAs.
+    ─────────────────────────────────────────────────────────────────────── -->
+    <div id="waitlistSection" class="waitlist-section" style="display:none">
+      <h3 class="waitlist-heading" data-i18n="fleet.waitlistHeading">🔔 Reserve Next Availability</h3>
+      <p class="waitlist-subtitle" data-i18n="fleet.waitlistSubtitle">This vehicle is currently booked. Pay a $50 non-refundable deposit to lock your place in line — it goes toward your rental when the car becomes available.</p>
+      <p class="waitlist-next-line" id="waitlistNextAvailLine" style="display:none"></p>
+      <p class="waitlist-queue-note" data-i18n="fleet.waitlistQueueNote">First come, first served. You'll receive a payment link when the car is ready for your dates.</p>
+
+      <div class="waitlist-form">
+        <label for="waitlistName" data-i18n="booking.fullName">Full Name</label>
+        <input type="text" id="waitlistName" placeholder="Enter your full name" data-i18n-placeholder="booking.namePh" autocomplete="off">
+
+        <label for="waitlistEmail" data-i18n="booking.email">Email Address</label>
+        <input type="email" id="waitlistEmail" placeholder="Enter your email" data-i18n-placeholder="booking.emailPh" autocomplete="email">
+
+        <label for="waitlistPhone" data-i18n="booking.phone">Phone Number</label>
+        <input type="tel" id="waitlistPhone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel">
+
+        <label for="waitlistPickup" data-i18n="fleet.waitlistPrefPickup">Preferred Pickup Date</label>
+        <input type="date" id="waitlistPickup">
+
+        <label for="waitlistReturn" data-i18n="fleet.waitlistPrefReturn">Preferred Return Date</label>
+        <input type="date" id="waitlistReturn">
+
+        <p class="waitlist-deposit-note">💰 <strong>$50 non-refundable deposit</strong> is charged now to secure your priority. It is applied toward your total rental price at pickup.</p>
+
+        <button id="waitlistJoinBtn" class="waitlist-join-btn" disabled data-i18n="fleet.waitlistJoinBtn">🔒 Reserve My Spot — $50 Deposit</button>
+        <p class="pay-hint" id="waitlistPayHint">Enter your name, email, and preferred dates to reserve your spot.</p>
+      </div>
+
+      <!-- Stripe payment form for the $50 waitlist deposit -->
+      <div id="waitlistPaymentForm" style="display:none">
+        <div id="waitlist-payment-element"></div>
+        <div id="waitlist-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+        <button id="waitlist-submit-payment" type="button">Pay $50 Deposit</button>
+        <button id="waitlist-cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change details</button>
+      </div>
+    </div>
+
   </section>
 </div>
 

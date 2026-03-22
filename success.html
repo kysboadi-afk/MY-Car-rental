@@ -112,6 +112,108 @@
       // Path 3 it is captured from the retrievePaymentIntent result below.
       var confirmedPaymentIntentId = urlParams.get("payment_intent") || null;
 
+      // ── Waitlist flow ──────────────────────────────────────────────────────
+      // When ?waitlist=1 is present the customer paid a $50 waitlist deposit —
+      // call save-waitlist-entry instead of send-reservation-email and show a
+      // tailored confirmation message.
+      var isWaitlist = urlParams.get("waitlist") === "1";
+
+      function saveWaitlistEntry(waitlistData, piId) {
+        var t = getT();
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title) { title.textContent = t("fleet.waitlistSuccess") || "🎉 You're on the Waitlist!"; title.style.color = "#4caf50"; }
+        if (body) {
+          var tpl = t("fleet.waitlistSuccessBody") || "You're confirmed on the waitlist. We'll email you when the {car} becomes available for your dates.";
+          body.textContent = tpl.replace("{car}", waitlistData.car || "vehicle");
+        }
+        if (status) { status.textContent = t("success.sending") || "Sending confirmation…"; status.style.display = ""; }
+
+        var payload = Object.assign({}, waitlistData);
+        if (piId) payload.paymentIntentId = piId;
+
+        fetch(API_BASE + "/api/save-waitlist-entry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).then(function(res) {
+          if (!res.ok) { showEmailError(); }
+          enableHomeBtn();
+          // After waitlist confirmation, home button should go to cars page
+          var btn = document.getElementById("homeBtn");
+          if (btn) btn.href = "cars.html";
+        }).catch(function(err) {
+          console.error("save-waitlist-entry error:", err);
+          showEmailError();
+          enableHomeBtn();
+        });
+      }
+
+      function proceedWithWaitlistConfirmation(piId) {
+        var raw = sessionStorage.getItem("slyWaitlistEntry");
+        sessionStorage.removeItem("slyWaitlistEntry");
+        var waitlistData;
+        try { waitlistData = raw ? JSON.parse(raw) : {}; } catch(e) { waitlistData = {}; }
+        saveWaitlistEntry(waitlistData, piId || confirmedPaymentIntentId);
+      }
+
+      if (isWaitlist) {
+        // Reuse the same Stripe verification logic but call the waitlist endpoint on success.
+        var wlPiClientSecret = urlParams.get("payment_intent_client_secret");
+        var wlPiId = urlParams.get("payment_intent") || null;
+        var wlPubKey = sessionStorage.getItem("slyStripePublishable");
+        var wlSecret = storedPiSecret;
+
+        function handleWaitlistRedirectStatus() {
+          var redirectStatus = urlParams.get("redirect_status");
+          if (redirectStatus === "succeeded") {
+            proceedWithWaitlistConfirmation(wlPiId);
+          } else if (redirectStatus === "processing") {
+            sessionStorage.removeItem("slyWaitlistEntry");
+            showPaymentProcessing();
+            enableHomeBtn(true);
+          } else {
+            sessionStorage.removeItem("slyWaitlistEntry");
+            showPaymentFailed();
+            enableHomeBtn(true);
+          }
+        }
+
+        if (wlPiClientSecret && wlPubKey && typeof Stripe !== "undefined") {
+          var wlStripe = Stripe(wlPubKey);
+          wlStripe.retrievePaymentIntent(wlPiClientSecret).then(function(result) {
+            if (result.error) { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); return; }
+            var piStatus = result.paymentIntent.status;
+            if (piStatus === "succeeded") {
+              proceedWithWaitlistConfirmation(result.paymentIntent.id);
+            } else if (piStatus === "processing") {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentProcessing(); enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true);
+            }
+          }).catch(function() { handleWaitlistRedirectStatus(); });
+          return;
+        }
+        if (wlSecret && wlPubKey && typeof Stripe !== "undefined") {
+          var wlStripe2 = Stripe(wlPubKey);
+          wlStripe2.retrievePaymentIntent(wlSecret).then(function(result) {
+            if (result.error) { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); return; }
+            var piStatus2 = result.paymentIntent.status;
+            if (piStatus2 === "succeeded") {
+              proceedWithWaitlistConfirmation(result.paymentIntent.id);
+            } else if (piStatus2 === "processing") {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentProcessing(); enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true);
+            }
+          }).catch(function() { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); });
+          return;
+        }
+        handleWaitlistRedirectStatus();
+        return;
+      }
+
       function getT() {
         return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
       }

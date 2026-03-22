@@ -56,6 +56,12 @@
     },
     "api/update-fleet-status.js": {
       "maxDuration": 15
+    },
+    "api/join-waitlist.js": {
+      "maxDuration": 15
+    },
+    "api/save-waitlist-entry.js": {
+      "maxDuration": 15
     }
   }
 }
