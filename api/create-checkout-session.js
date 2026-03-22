@@ -45,6 +45,12 @@ export default async function handler(req, res) {
       // lets Stripe surface Apple Pay, Google Pay, and other wallets on compatible
       // devices in addition to card — without maintaining a manual allowlist.
       automatic_payment_methods: { enabled: true },
+      // Stripe calculates and collects the correct tax for the customer's billing
+      // address dynamically during checkout. Requires Stripe Tax to be enabled in
+      // the Stripe dashboard (Tax → Settings → Activate).
+      automatic_tax: { enabled: true },
+      // Collect billing address so Stripe Tax can determine the correct tax rate.
+      billing_address_collection: "auto",
       line_items: [
         {
           price_data: {
@@ -52,7 +58,10 @@ export default async function handler(req, res) {
             product_data: {
               name: carData.name,
             },
-            unit_amount: Math.round(computedAmount * 100), // Stripe expects whole cents
+            unit_amount: Math.round(computedAmount * 100), // Stripe expects whole cents (pre-tax)
+            // tax_behavior must be set so Stripe Tax knows whether tax is included
+            // or added on top. "exclusive" means tax is added on top of the price.
+            tax_behavior: "exclusive",
           },
           quantity: 1,
         },

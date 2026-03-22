@@ -198,12 +198,12 @@ export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionP
   const rentalCost = computeAmount(vehicleId, pickup, returnDate);
   const dppCost = protectionPlan ? computeProtectionPlanCost(totalDays) : 0;
   const preTax = rentalCost + dppCost;
-  const tax = Math.round(preTax * LA_TAX_RATE * 100) / 100;
-  const total = Math.round((preTax + tax) * 100) / 100;
-  lines.push(`Tax (${(LA_TAX_RATE * 100).toFixed(2)}% LA): $${tax.toFixed(2)}`);
+  const total = Math.round(preTax * 100) / 100;
+  // Tax is calculated by Stripe at checkout based on the customer's billing address.
+  lines.push(`Tax: calculated by Stripe at checkout`);
   // NOTE: send-reservation-email.js checks startsWith("Total:") to apply bold styling.
   // Keep this prefix consistent if the format ever changes.
-  lines.push(`Total: $${total.toFixed(2)}`);
+  lines.push(`Total: $${total.toFixed(2)} (+ applicable tax)`);
 
   return lines;
 }
