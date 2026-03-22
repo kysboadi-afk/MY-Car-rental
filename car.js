@@ -38,7 +38,7 @@ const cars = {
     // TO ADD PHOTOS FOR SLINGSHOT 1:
     // 1. Upload your image file to the /images folder in the repository.
     // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg"],
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg","images/photo_2026-03-22_11-38-56.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
@@ -63,7 +63,7 @@ const cars = {
     // TO ADD PHOTOS FOR SLINGSHOT 2:
     // 1. Upload your image file to the /images folder in the repository.
     // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg"],
+    images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg", "images/photo_2026-03-22_11-38-56.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
