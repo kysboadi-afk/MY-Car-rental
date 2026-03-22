@@ -6,7 +6,7 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT, LA_TAX_RATE } from "./_pricing.js";
+import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE, LA_TAX_RATE } from "./_pricing.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration, paymentMode } = req.body;
+    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -46,6 +46,10 @@ export default async function handler(req, res) {
     if (CARS[vehicleId].hourlyTiers) {
       if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
         return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
+      }
+      // Slingshot now requires the renter to make an insurance/deposit choice
+      if (!insuranceCoverageChoice || !["yes", "no"].includes(insuranceCoverageChoice)) {
+        return res.status(400).json({ error: "Please select an insurance or damage protection option." });
       }
     }
 
@@ -80,8 +84,6 @@ export default async function handler(req, res) {
     const trimmedName = name.trim();
 
     // Compute amount server-side — never trust a client-supplied amount.
-    // The security deposit is always charged regardless of insurance choice.
-    // Hourly-tier vehicles (Slingshot) use computeSlingshotAmount; all others use daily/weekly/etc.
     const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
     const computedFullRental = isSlingshotVehicle
       ? computeSlingshotAmount(Number(slingshotDuration), vehicleId)
@@ -93,32 +95,42 @@ export default async function handler(req, res) {
     const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
 
-    // For Slingshot: charge only the $50 non-refundable reservation deposit now.
-    // The full rental balance (rental fee + $150 security deposit – $50) is due at pickup.
+    // Slingshot uses an authorization hold (capture_method: "manual") instead of
+    // an immediate capture.  The hold amount depends on the renter's insurance choice:
+    //   Option A (own insurance) → $500 hold   (SLINGSHOT_DEPOSIT_WITH_INSURANCE)
+    //   Option B (no insurance)  → $300 hold   (SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE)
     // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
-    // For all other vehicles (Slingshot full mode or Camry full mode): charge the after-tax total.
-    // LA sales tax (10.25%) is applied to the full rental amount and included in the Stripe charge.
+    // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
     const afterTaxFullRental = Math.round(preTaxFullRental * (1 + LA_TAX_RATE) * 100) / 100;
+
     let totalAmount;
-    if (isSlingshotVehicle && paymentMode !== "full") {
-      totalAmount = SLINGSHOT_BOOKING_DEPOSIT;
-    } else if (!isSlingshotVehicle && paymentMode === "deposit") {
+    let captureMethod = "automatic";
+
+    if (isSlingshotVehicle) {
+      // New single-decision deposit system: auth hold based on insurance choice
+      totalAmount = insuranceCoverageChoice === "yes"
+        ? SLINGSHOT_DEPOSIT_WITH_INSURANCE    // $500 – renter has own insurance
+        : SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE; // $300 – DPP automatically included
+      captureMethod = "manual"; // authorization hold — captured or released at return
+    } else if (paymentMode === "deposit") {
       totalAmount = CAMRY_BOOKING_DEPOSIT;
     } else {
       totalAmount = afterTaxFullRental;
     }
 
-    const isSlingshotDepositMode = isSlingshotVehicle && paymentMode !== "full";
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
-    const isDepositPayment = isSlingshotDepositMode || isCamryDepositMode;
-    const paymentIntent = await stripe.paymentIntents.create({
+    const isDepositPayment = isSlingshotVehicle || isCamryDepositMode;
+
+    const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
-      description: isDepositPayment
-        ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
-        : `Sly Transportation Services LLC – ${carData.name}`,
+      description: isSlingshotVehicle
+        ? `Sly Transportation Services LLC – ${carData.name} Authorization Hold (Refundable Deposit)`
+        : (isCamryDepositMode
+            ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
+            : `Sly Transportation Services LLC – ${carData.name}`),
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
@@ -140,15 +152,14 @@ export default async function handler(req, res) {
         return_date:  returnDate,
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
-        ...(isSlingshotDepositMode ? {
-          payment_type:        "reservation_deposit",
-          deposit_refundable:  "false",
-          full_rental_amount:  afterTaxFullRental.toFixed(2),
-          balance_at_pickup:   (afterTaxFullRental - SLINGSHOT_BOOKING_DEPOSIT).toFixed(2),
-        } : {}),
-        ...(isSlingshotVehicle && paymentMode === "full" ? {
-          payment_type:        "full_payment",
-          balance_at_pickup:   "0.00",
+        ...(isSlingshotVehicle ? {
+          payment_type:           "authorization_hold",
+          deposit_refundable:     "true",
+          deposit_amount:         String(totalAmount),
+          insurance_status:       insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_dpp_included",
+          protection_plan:        insuranceCoverageChoice === "no" ? "included" : "not_included",
+          full_rental_amount:     preTaxFullRental.toFixed(2),
+          balance_at_pickup:      preTaxFullRental.toFixed(2),
         } : {}),
         ...(isCamryDepositMode ? {
           payment_type:        "reservation_deposit",
@@ -157,7 +168,14 @@ export default async function handler(req, res) {
           balance_at_pickup:   (afterTaxFullRental - CAMRY_BOOKING_DEPOSIT).toFixed(2),
         } : {}),
       },
-    });
+    };
+
+    // Apply manual capture for Slingshot auth holds
+    if (captureMethod === "manual") {
+      paymentIntentParams.capture_method = "manual";
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
 
     res.status(200).json({
       clientSecret: paymentIntent.client_secret,

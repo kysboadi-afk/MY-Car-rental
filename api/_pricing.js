@@ -17,6 +17,12 @@ export const SLINGSHOT_BOOKING_DEPOSIT = 50;
 // Renters who choose "Reserve Now" pay this upfront; the remaining rental balance is due at pickup.
 export const CAMRY_BOOKING_DEPOSIT = 50;
 
+// Slingshot insurance-based authorization hold amounts (capture_method: "manual").
+// Option A (renter has own insurance): $500 hold — no DPP charged.
+// Option B (renter has no insurance): $300 hold — Damage Protection Plan is automatically included.
+export const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
+export const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
+
 export const CARS = {
   slingshot:  {
     name: "Slingshot R",

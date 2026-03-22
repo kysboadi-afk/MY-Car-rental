@@ -13,7 +13,7 @@ import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
-import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -177,6 +177,7 @@ function generateRentalAgreementHtml(body) {
     total, deposit, days, protectionPlan, signature,
     slingshotDuration,
     fullRentalCost, balanceAtPickup,
+    insuranceCoverageChoice, slingshotDepositAmount,
   } = body;
 
   const signedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "long", timeStyle: "short" });
@@ -190,14 +191,18 @@ function generateRentalAgreementHtml(body) {
   const isHourly = !!(carInfo && carInfo.hourlyTiers);
   let depositSection = "";
   if (isHourly) {
-    const rateList = carInfo.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join(" &bull; ");
+    // New system: authorization hold based on insurance choice
+    const holdAmt = slingshotDepositAmount
+      ? Number(slingshotDepositAmount)
+      : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
+    const dppLine = protectionPlan
+      ? `<p><strong>Damage Protection Plan (${dppRatesText}):</strong> automatically included &mdash; reduces your damage liability to $1,000</p>`
+      : "";
     depositSection = `
-      <h4>RESERVATION DEPOSIT (Non-Refundable)</h4>
-      <p>A <strong>$${esc(String(SLINGSHOT_BOOKING_DEPOSIT))} non-refundable reservation deposit</strong> was charged at the time of booking to secure this Slingshot reservation. This deposit is applied toward the total rental balance at pickup and is forfeited upon cancellation or no-show.</p>
-      <h4>SECURITY DEPOSIT (Refundable)</h4>
-      <p>A <strong>$${esc(String(carInfo.deposit))} refundable security deposit</strong> is due at pickup and returned after the vehicle is inspected upon return (typically within 5&ndash;7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
-      <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
-      <p><strong>Slingshot Rental Rates:</strong> ${rateList} &mdash; plus $${esc(String(carInfo.deposit))} refundable security deposit (due at pickup)</p>
+      <h4>AUTHORIZATION HOLD (Refundable)</h4>
+      <p>A <strong>$${holdAmt} refundable authorization hold</strong> was placed on your card at the time of booking to secure this Slingshot reservation. The hold is released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The hold may be fully or partially captured to cover damages, loss of use, cleaning, tolls, or fuel.</p>
+      <p><strong>Insurance/Protection Choice:</strong> ${insuranceCoverageChoice === "no" ? "Option B — No personal insurance (Damage Protection Plan included)" : "Option A — Renter provided own insurance (proof required at pickup)"}</p>
+      ${dppLine}
     `;
   } else {
     depositSection = `
@@ -207,9 +212,13 @@ function generateRentalAgreementHtml(body) {
   }
 
   // Insurance / protection plan summary
-  const insuranceSummary = protectionPlan
-    ? "Damage Protection Plan selected"
-    : "Renter provided personal rental car insurance";
+  const insuranceSummary = isHourly
+    ? (insuranceCoverageChoice === "no"
+        ? "Option B: No personal insurance — Damage Protection Plan included"
+        : "Option A: Renter has own insurance (proof required at pickup)")
+    : (protectionPlan
+        ? "Damage Protection Plan selected"
+        : "Renter provided personal rental car insurance");
 
   // Slingshot speed policy section
   const speedSection = isHourly ? `
@@ -275,10 +284,10 @@ function generateRentalAgreementHtml(body) {
     <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
     <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
     ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
-    <tr><th>${isHourly ? "Booking Deposit Charged" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
-    ${isHourly && fullRentalCost ? `<tr><th>Full Rental Cost</th><td>$${esc(fullRentalCost)}</td></tr>` : ""}
-    ${isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-    <tr><th>Insurance</th><td>${esc(insuranceSummary)}</td></tr>
+    <tr><th>${isHourly ? "Authorization Hold Placed" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
+    ${isHourly && fullRentalCost ? `<tr><th>Rental Fee (Due at Pickup)</th><td>$${esc(fullRentalCost)}</td></tr>` : ""}
+    ${!isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+    <tr><th>Insurance / Protection</th><td>${esc(insuranceSummary)}</td></tr>
   </table>
   <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
 
@@ -385,6 +394,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       total, deposit, days, protectionPlan, signature,
       slingshotDuration,
       fullRentalCost, balanceAtPickup,
+      insuranceCoverageChoice, slingshotDepositAmount,
     } = body;
 
     const signedAt = new Date().toLocaleString("en-US", {
@@ -396,9 +406,14 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
     const isHourly = !!(carInfo && carInfo.hourlyTiers);
     const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day  •  $${PROTECTION_PLAN_WEEKLY}/week  •  $${PROTECTION_PLAN_BIWEEKLY}/2 wks  •  $${PROTECTION_PLAN_MONTHLY}/month`;
-    const insuranceSummary = protectionPlan
-      ? "Damage Protection Plan selected"
-      : "Renter provided personal rental car insurance";
+    // Slingshot: insurance choice is explicit; Camry: derive from protectionPlan flag
+    const insuranceSummary = isHourly
+      ? (insuranceCoverageChoice === "no"
+          ? "Option B: No personal insurance — Damage Protection Plan included"
+          : "Option A: Renter has own insurance (proof required at pickup)")
+      : (protectionPlan
+          ? "Damage Protection Plan selected"
+          : "Renter provided personal rental car insurance");
     const durationLine = isHourly && slingshotDuration
       ? `${slingshotDuration}-hour rental`
       : (days ? `${days} day${Number(days) !== 1 ? "s" : ""}` : "");
@@ -500,10 +515,10 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     tableRow("Return Date", returnDate || "");
     tableRow("Return Time", returnTime || "Not specified");
     if (durationLine) tableRow("Duration", durationLine);
-    tableRow(isHourly ? "Booking Deposit Charged" : "Total Charged", `$${total || "TBD"}`);
-    if (isHourly && fullRentalCost) tableRow("Full Rental Cost",     `$${fullRentalCost}`);
-    if (isHourly && balanceAtPickup) tableRow("Balance Due at Pickup", `$${balanceAtPickup}`);
-    tableRow("Insurance", insuranceSummary);
+    tableRow(isHourly ? "Authorization Hold" : "Total Charged", `$${total || "TBD"}`);
+    if (isHourly && fullRentalCost) tableRow("Rental Fee (Due at Pickup)", `$${fullRentalCost}`);
+    if (!isHourly && balanceAtPickup) tableRow("Balance Due at Pickup", `$${balanceAtPickup}`);
+    tableRow("Insurance / Protection", insuranceSummary);
     doc.moveDown(0.3);
     bodyText("Late Fee: $50/day after a 2-hour grace period.");
 
@@ -516,17 +531,26 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     // ── Deposit / Pricing ──────────────────────────────────────────────────────
     sectionHeader("Deposit & Protection Plan");
     if (isHourly && carInfo) {
-      const rateList = carInfo.hourlyTiers.map(t => `$${t.price} / ${t.hours} hrs`).join("  •  ");
-      bodyText(`A $${SLINGSHOT_BOOKING_DEPOSIT} non-refundable reservation deposit was charged at booking. Applied toward balance at pickup; forfeited on cancellation.`);
+      // New auth-hold system
+      const holdAmt = slingshotDepositAmount
+        ? Number(slingshotDepositAmount)
+        : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
+      bodyText(`Authorization Hold: A $${holdAmt} refundable hold was placed on your card at booking. Released within 5–7 business days after return and inspection with no issues. May be captured to cover damages, loss of use, cleaning, tolls, or fuel.`);
       doc.moveDown(0.2);
-      bodyText(`A $${carInfo.deposit} refundable security deposit is due at pickup and returned after inspection (typically within 5–7 business days).`);
-      doc.moveDown(0.2);
-      bodyText(`Slingshot Rental Rates: ${rateList}  — plus $${carInfo.deposit} refundable security deposit due at pickup.`);
+      if (insuranceCoverageChoice === "no") {
+        bodyText(`Option B selected: No personal insurance — Damage Protection Plan automatically included.`);
+        doc.moveDown(0.1);
+        bodyText(`Damage Protection Plan (${dppRatesText}): included — reduces your damage liability to $1,000.`);
+      } else {
+        bodyText(`Option A selected: Renter provided own insurance. Proof of insurance must be presented at pickup.`);
+      }
     } else {
       bodyText("No security deposit is required for this vehicle.");
     }
-    doc.moveDown(0.2);
-    bodyText(`Damage Protection Plan (${dppRatesText}): optional add-on — reduces your damage liability to $1,000.`);
+    if (!isHourly) {
+      doc.moveDown(0.2);
+      bodyText(`Damage Protection Plan (${dppRatesText}): optional add-on — reduces your damage liability to $1,000.`);
+    }
 
     // ── Insurance & Liability ──────────────────────────────────────────────────
     sectionHeader("Insurance & Liability");
@@ -581,7 +605,14 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     // ── Payment Terms ──────────────────────────────────────────────────────────
     sectionHeader("Payment Terms");
-    bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
+    if (isHourly) {
+      const holdAmt2 = slingshotDepositAmount
+        ? Number(slingshotDepositAmount)
+        : (insuranceCoverageChoice === "no" ? SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE : SLINGSHOT_DEPOSIT_WITH_INSURANCE);
+      bodyText(`A $${holdAmt2} refundable authorization hold was placed on your card at the time of booking. The rental fee is due at pickup. The hold is released within 5–7 business days after return and inspection. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
+    } else {
+      bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
+    }
     doc.moveDown(0.1);
     bodyText("⚠ No-Refund Policy: All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.");
 
@@ -703,7 +734,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
 
   // Extract the customer's IP address from reverse-proxy headers (Vercel sets x-forwarded-for).
   const customerIp = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || null;
@@ -752,12 +783,12 @@ export default async function handler(req, res) {
       bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   }
 
-  // For Slingshot bookings, 'total' is the $50 reservation deposit (the only amount
-  // charged online); the presence of fullRentalCost in the payload signals this.
-  // fullRentalCost holds the full rental value (computed server-side at booking time).
+  // For Slingshot bookings, 'total' is the authorization hold amount ($500 or $300).
+  // fullRentalCost holds the rental fee due at pickup.
+  const isHourlyEmail = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
   const totalChargedLabel = isBalancePayment
     ? "Balance Paid"
-    : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
+    : (isHourlyEmail ? "Authorization Hold" : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged"));
   const ownerSubject = isBalancePayment
     ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
     : (isConfirmed
@@ -846,14 +877,25 @@ export default async function handler(req, res) {
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
         `${totalChargedLabel.padEnd(15)}: $${total || "TBD"}`,
-        fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
-        balanceAtPickup  ? `Balance at Pickup: $${balanceAtPickup}` : "",
-        breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
-        protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : "Own insurance (proof uploaded)"}` : "",
+        fullRentalCost   ? `${isHourlyEmail ? "Rental Fee (Pickup)" : "Full Rental Cost"}: $${fullRentalCost}` : "",
+        !isHourlyEmail && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
+        isHourlyEmail
+          ? `Insurance Option: ${insuranceCoverageChoice === "no" ? "Option B — No insurance (DPP included)" : "Option A — Own insurance (proof required at pickup)"}`
+          : (protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : "Own insurance (proof uploaded)"}` : ""),
+        isHourlyEmail ? `Insurance Uploaded: ${insuranceBase64 && insuranceFileName ? "Yes (" + insuranceFileName + ")" : "No"}` : "",
+        isHourlyEmail ? `Deposit Amt (Hold): $${slingshotDepositAmount || total || "?"}` : "",
+        isHourlyEmail ? `Protection Plan: ${protectionPlan ? "Included (Option B)" : "Not included (Option A)"}` : "",
         signature ? `Digital Signature: ${signature}` : "",
+        breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         "",
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
-        insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter."),
+        isHourlyEmail
+          ? (insuranceBase64 && insuranceFileName
+              ? `Insurance attached: ${insuranceFileName}`
+              : (insuranceCoverageChoice === "no"
+                  ? "No insurance upload (renter chose Option B / DPP)."
+                  : "No insurance document uploaded — verify at pickup (renter chose Option A)."))
+          : (insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter.")),
         isConfirmed && signature ? `Signed Rental Agreement: attached (${agreementPdfFilename})` : "",
         "",
         footerText,
@@ -883,14 +925,29 @@ export default async function handler(req, res) {
           ${pricePerMonthly  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Monthly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerMonthly))} / month</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
-          ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
-          ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-          ${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}
+          ${fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>${isHourlyEmail ? "Rental Fee (Due at Pickup)" : "Full Rental Cost"}</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+          ${!isHourlyEmail && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+          ${isHourlyEmail
+            ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Option</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceCoverageChoice === "no" ? "⚠️ Option B — No personal insurance (DPP included)" : "✅ Option A — Renter has own insurance (proof required at pickup)"}</td></tr>
+               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Uploaded</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceBase64 && insuranceFileName ? "✅ Yes (" + esc(insuranceFileName) + ")" : "❌ No"}</td></tr>
+               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Amount (Auth Hold)</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(String(slingshotDepositAmount || total || "?"))}</strong></td></tr>
+               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "✅ Included (Option B)" : "❌ Not included (Option A)"}</td></tr>`
+            : `${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : "✅ Own insurance (proof uploaded)"}</td></tr>` : ""}`
+          }
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
-        ${insuranceBase64 && insuranceFileName ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>` : (protectionPlan ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>` : `<p>⚠️ No insurance document was uploaded by the renter.</p>`)}
+        ${insuranceBase64 && insuranceFileName
+          ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>`
+          : (isHourlyEmail
+              ? (insuranceCoverageChoice === "no"
+                  ? `<p>ℹ️ Renter chose Option B (Damage Protection Plan) — no personal insurance upload required.</p>`
+                  : `<p>⚠️ Renter chose Option A (own insurance) but did not upload proof — verify at pickup.</p>`)
+              : (protectionPlan
+                  ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>`
+                  : `<p>⚠️ No insurance document was uploaded by the renter.</p>`))
+        }
         ${isConfirmed && signature ? `<p>📄 <strong>Signed Rental Agreement is attached</strong> to this email as a PDF file.</p>` : ""}
         <p>${footerText}</p>
         ${isConfirmed && vehicleId && pickup && returnDate ? `
