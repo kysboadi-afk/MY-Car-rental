@@ -6,6 +6,21 @@
     "api/send-sms.js": {
       "maxDuration": 15
     },
+    "api/send-otp.js": {
+      "maxDuration": 15
+    },
+    "api/send-phone-otp.js": {
+      "maxDuration": 15
+    },
+    "api/send-contact-email.js": {
+      "maxDuration": 15
+    },
+    "api/send-application-email.js": {
+      "maxDuration": 15
+    },
+    "api/pay-balance.js": {
+      "maxDuration": 15
+    },
     "api/send-reservation-email.js": {
       "maxDuration": 30
     },
