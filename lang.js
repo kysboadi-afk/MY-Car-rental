@@ -6,14 +6,16 @@
   var TRANSLATIONS = {
     en: {
       nav: {
-        browseCars:   "Browse Cars",
-        howItWorks:   "How It Works",
-        about:        "About",
-        contact:      "Contact",
-        reviews:      "Reviews",
-        callNow:      "Call Now to Get Approved Today",
-        home:         "Back to Homepage",
-        backToHome:   "\u2190 Back to Homepage"
+        browseCars:        "Browse Cars",
+        howItWorks:        "How It Works",
+        about:             "About",
+        contact:           "Contact",
+        reviews:           "Reviews",
+        callNow:           "Call Now to Get Approved Today",
+        home:              "Back to Homepage",
+        backToHome:        "\u2190 Back to Homepage",
+        homeLink:          "Home",
+        videoTestimonial:  "Video Testimonial"
       },
       // index.html
       hero: {
@@ -411,14 +413,16 @@
 
     es: {
       nav: {
-        browseCars:  "Ver Autos",
-        howItWorks:  "C\u00F3mo Funciona",
-        about:       "Nosotros",
-        contact:     "Contacto",
-        reviews:     "Rese\u00F1as",
-        callNow:     "Llama Ahora para Obtener Aprobaci\u00F3n Hoy",
-        home:        "Volver al Inicio",
-        backToHome:  "\u2190 Volver al Inicio"
+        browseCars:        "Ver Autos",
+        howItWorks:        "C\u00F3mo Funciona",
+        about:             "Nosotros",
+        contact:           "Contacto",
+        reviews:           "Rese\u00F1as",
+        callNow:           "Llama Ahora para Obtener Aprobaci\u00F3n Hoy",
+        home:              "Volver al Inicio",
+        backToHome:        "\u2190 Volver al Inicio",
+        homeLink:          "Inicio",
+        videoTestimonial:  "Video Testimonial"
       },
       hero: {
         applyNow: "Solicitar Ahora"
