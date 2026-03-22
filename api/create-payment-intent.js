@@ -95,24 +95,20 @@ export default async function handler(req, res) {
     const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
 
-    // Slingshot uses an authorization hold (capture_method: "manual") instead of
-    // an immediate capture.  The hold amount depends on the renter's insurance choice:
-    //   Option A (own insurance) → $500 hold   (SLINGSHOT_DEPOSIT_WITH_INSURANCE)
-    //   Option B (no insurance)  → $300 hold   (SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE)
+    // For Slingshot: charge the full rental amount (rental + $150 security deposit + DPP + tax)
+    // upfront as a single automatic payment. No split payment or auth hold — everything is
+    // collected online at booking. The $150 security deposit is included in the total and
+    // will be refunded after the vehicle is returned and inspected with no issues.
     // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
     // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
     const afterTaxFullRental = Math.round(preTaxFullRental * (1 + LA_TAX_RATE) * 100) / 100;
 
     let totalAmount;
-    let captureMethod = "automatic";
 
     if (isSlingshotVehicle) {
-      // New single-decision deposit system: auth hold based on insurance choice
-      totalAmount = insuranceCoverageChoice === "yes"
-        ? SLINGSHOT_DEPOSIT_WITH_INSURANCE    // $500 – renter has own insurance
-        : SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE; // $300 – DPP automatically included
-      captureMethod = "manual"; // authorization hold — captured or released at return
+      // Full payment upfront — rental fee + $150 security deposit + DPP (if Option B) + tax
+      totalAmount = afterTaxFullRental;
     } else if (paymentMode === "deposit") {
       totalAmount = CAMRY_BOOKING_DEPOSIT;
     } else {
@@ -120,14 +116,13 @@ export default async function handler(req, res) {
     }
 
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
-    const isDepositPayment = isSlingshotVehicle || isCamryDepositMode;
 
     const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
       description: isSlingshotVehicle
-        ? `Sly Transportation Services LLC – ${carData.name} Authorization Hold (Refundable Deposit)`
+        ? `Sly Transportation Services LLC – ${carData.name} Rental`
         : (isCamryDepositMode
             ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
             : `Sly Transportation Services LLC – ${carData.name}`),
@@ -153,13 +148,10 @@ export default async function handler(req, res) {
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         ...(isSlingshotVehicle ? {
-          payment_type:           "authorization_hold",
-          deposit_refundable:     "true",
-          deposit_amount:         String(totalAmount),
-          insurance_status:       insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_dpp_included",
-          protection_plan:        insuranceCoverageChoice === "no" ? "included" : "not_included",
-          full_rental_amount:     preTaxFullRental.toFixed(2),
-          balance_at_pickup:      preTaxFullRental.toFixed(2),
+          payment_type:       "full_payment",
+          insurance_status:   insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_dpp_included",
+          protection_plan:    insuranceCoverageChoice === "no" ? "included" : "not_included",
+          full_rental_amount: afterTaxFullRental.toFixed(2),
         } : {}),
         ...(isCamryDepositMode ? {
           payment_type:        "reservation_deposit",
@@ -170,11 +162,7 @@ export default async function handler(req, res) {
       },
     };
 
-    // Apply manual capture for Slingshot auth holds
-    if (captureMethod === "manual") {
-      paymentIntentParams.capture_method = "manual";
-    }
-
+    // All payments use automatic capture
     const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
 
     res.status(200).json({
