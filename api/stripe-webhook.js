@@ -1,11 +1,10 @@
 // api/stripe-webhook.js
 // Vercel serverless function — Stripe webhook handler.
 //
-// Handles the checkout.session.completed event and verifies that
-// payment_status === "paid" before treating a booking as confirmed.
-// This is the server-side authoritative source of truth for payment
-// confirmation — redirect-based methods (Cash App Pay, etc.) should
-// NOT be relied upon alone.
+// Handles the payment_intent.succeeded event fired when a PaymentIntent
+// (created by create-payment-intent.js or pay-balance.js) is confirmed.
+// This is the server-side authoritative fallback for availability updates —
+// it runs even if the user closes the browser before success.html completes.
 //
 // Required environment variables (set in Vercel dashboard):
 //   STRIPE_SECRET_KEY      — starts with sk_live_ or sk_test_
@@ -15,7 +14,7 @@
 // Register this endpoint in the Stripe dashboard:
 //   Developers → Webhooks → Add endpoint
 //   URL: https://sly-rides.vercel.app/api/stripe-webhook
-//   Events: checkout.session.completed
+//   Events: payment_intent.succeeded
 
 import Stripe from "stripe";
 
@@ -27,6 +26,7 @@ export const config = {
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
+const FLEET_STATUS_PATH = "fleet-status.json";
 
 /**
  * Read booked-dates.json from GitHub and block the given date range.
@@ -87,6 +87,66 @@ async function blockBookedDates(vehicleId, from, to) {
 }
 
 /**
+ * Mark a vehicle as unavailable in fleet-status.json on GitHub.
+ * Mirrors the same logic used by send-reservation-email.js.
+ */
+async function markVehicleUnavailable(vehicleId) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn("stripe-webhook: GITHUB_TOKEN not set — skipping fleet-status update");
+    return;
+  }
+  if (!vehicleId) return;
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  const getResp = await fetch(apiUrl, { headers });
+  let current = {};
+  let sha = null;
+  if (getResp.ok) {
+    const fileData = await getResp.json();
+    sha = fileData.sha;
+    try {
+      current = JSON.parse(
+        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
+      );
+    } catch (parseErr) {
+      console.error("stripe-webhook: malformed JSON in fleet-status.json, resetting:", parseErr);
+      current = {};
+    }
+  }
+
+  if (!current[vehicleId]) current[vehicleId] = {};
+  if (current[vehicleId].available === false) return; // Already marked — idempotent
+  current[vehicleId].available = false;
+
+  const updatedContent = Buffer.from(
+    JSON.stringify(current, null, 2) + "\n"
+  ).toString("base64");
+
+  const putBody = {
+    message: `Mark ${vehicleId} unavailable after confirmed booking (webhook)`,
+    content: updatedContent,
+  };
+  if (sha) putBody.sha = sha;
+
+  const putResp = await fetch(apiUrl, {
+    method: "PUT",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify(putBody),
+  });
+
+  if (!putResp.ok) {
+    console.error(`stripe-webhook: GitHub PUT (fleet-status) failed: ${putResp.status} ${await putResp.text()}`);
+  }
+}
+
+/**
  * Read the raw request body from a Node.js IncomingMessage stream.
  */
 function getRawBody(req) {
@@ -122,34 +182,35 @@ export default async function handler(req, res) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
+  if (event.type === "payment_intent.succeeded") {
+    const paymentIntent = event.data.object;
 
-    // Only treat the booking as confirmed when payment is actually paid.
-    // Redirect-based methods (Cash App Pay, etc.) may fire this event before
-    // payment settles — payment_status will be "unpaid" in that case.
-    if (session.payment_status !== "paid") {
+    // Skip balance payments — dates were already blocked when the deposit was paid.
+    if ((paymentIntent.metadata || {}).payment_type === "balance_payment") {
       console.log(
-        `stripe-webhook: checkout.session.completed for session ${session.id} ` +
-        `but payment_status=${session.payment_status} — skipping confirmation`
+        `stripe-webhook: balance_payment for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );
       return res.status(200).json({ received: true });
     }
 
-    const { vehicle_id, pickup_date, return_date } = session.metadata || {};
+    const { vehicle_id, pickup_date, return_date } = paymentIntent.metadata || {};
 
     console.log(
-      `stripe-webhook: confirmed paid booking — vehicle=${vehicle_id} ` +
-      `pickup=${pickup_date} return=${return_date} session=${session.id}`
+      `stripe-webhook: payment_intent.succeeded — vehicle=${vehicle_id} ` +
+      `pickup=${pickup_date} return=${return_date} pi=${paymentIntent.id}`
     );
 
-    // Block the booked dates so the vehicle shows as unavailable.
+    // Block the booked dates and mark the vehicle unavailable.
     if (vehicle_id && pickup_date && return_date) {
       try {
         await blockBookedDates(vehicle_id, pickup_date, return_date);
       } catch (err) {
-        // Log but don't fail — date-blocking failure should not prevent a 200 ack
         console.error("stripe-webhook: blockBookedDates error:", err);
+      }
+      try {
+        await markVehicleUnavailable(vehicle_id);
+      } catch (err) {
+        console.error("stripe-webhook: markVehicleUnavailable error:", err);
       }
     }
   }
