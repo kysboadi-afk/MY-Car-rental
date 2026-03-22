@@ -147,24 +147,3 @@ async function loadFleetStatus() {
 
 loadFleetStatus();
 
-// ─── Mini card sliders (Slingshot fleet cards) ────────────────────────────────
-document.querySelectorAll('.card-slider').forEach(function(slider) {
-  const slides = slider.querySelectorAll('.card-slide');
-  if (slides.length < 2) return;
-  let current = 0;
-
-  function showSlide(n) {
-    slides[current].classList.remove('active');
-    current = (n + slides.length) % slides.length;
-    slides[current].classList.add('active');
-  }
-
-  slider.querySelector('.card-slide-prev').addEventListener('click', function(e) {
-    e.preventDefault();
-    showSlide(current - 1);
-  });
-  slider.querySelector('.card-slide-next').addEventListener('click', function(e) {
-    e.preventDefault();
-    showSlide(current + 1);
-  });
-});
