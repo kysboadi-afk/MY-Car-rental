@@ -14,6 +14,7 @@
 
 import crypto from "crypto";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
+import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES   = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -79,6 +80,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, expense });
   } catch (err) {
     console.error("add-expense error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

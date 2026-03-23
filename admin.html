@@ -306,6 +306,7 @@
         <option value="camry">Camry 2012</option>
         <option value="camry2013">Camry 2013 SE</option>
         <option value="slingshot">Slingshot R</option>
+        <option value="slingshot2">Slingshot R (2)</option>
       </select>
     </div>
 
@@ -711,6 +712,8 @@
 
       // Date picker for expense date
       flatpickr("#expDate", { dateFormat: "Y-m-d" });
+      // Date picker for vehicle purchase date (allowInput so admin can also type)
+      flatpickr("#editPurchaseDate", { dateFormat: "Y-m-d", allowInput: true });
 
       var currentVehicleId = null;
       var statsCache       = null;
