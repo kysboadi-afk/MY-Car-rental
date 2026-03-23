@@ -20,6 +20,7 @@
 // existing range) it returns 200 without adding a duplicate entry.
 
 import { hasOverlap } from "./_availability.js";
+import { adminErrorMessage } from "./_error-helpers.js";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -122,6 +123,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, added: 1 });
   } catch (err) {
     console.error("block-dates endpoint error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

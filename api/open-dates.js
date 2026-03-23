@@ -17,6 +17,8 @@
 // The endpoint removes every stored range whose [from, to] exactly matches the
 // requested range.  It does NOT perform partial overlap removal.
 
+import { adminErrorMessage } from "./_error-helpers.js";
+
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -116,6 +118,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, removed });
   } catch (err) {
     console.error("open-dates endpoint error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

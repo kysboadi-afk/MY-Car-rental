@@ -26,6 +26,7 @@ import { loadVehicles }  from "./_vehicles.js";
 import { loadExpenses }  from "./_expenses.js";
 import { loadBookings }  from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
+import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -140,6 +141,6 @@ export default async function handler(req, res) {
     return res.status(200).json(stats);
   } catch (err) {
     console.error("get-vehicle-stats error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
