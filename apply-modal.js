@@ -20,6 +20,7 @@
   const licenseInfo  = document.getElementById("applyLicenseInfo");
 
   let licenseFile = null;
+  let applyInsuranceFile = null;
 
   // i18n helper
   function mt(key, fallback) {
@@ -100,6 +101,72 @@
     licenseInfo.textContent = "\u2713 " + file.name;
     licenseInfo.style.color = "#4caf50";
   });
+
+  // ─── Insurance & Protection Plan wiring ──────────────────────────────────────
+
+  var insYesRadio     = document.getElementById("applyHasInsuranceYes");
+  var insNoRadio      = document.getElementById("applyHasInsuranceNo");
+  var insProofField   = document.getElementById("applyInsuranceProofField");
+  var insUploadInput  = document.getElementById("applyInsuranceUpload");
+  var insFileInfo     = document.getElementById("applyInsuranceFileInfo");
+  var insNoneOption   = document.getElementById("applyProtectionNoneOption");
+  var insNoneRadio    = document.getElementById("applyProtectionNone");
+  var insStdRadio     = document.getElementById("applyProtectionStandard");
+
+  function onInsuranceChange() {
+    var hasIns = insYesRadio && insYesRadio.checked;
+    // Show/hide proof of insurance upload
+    if (insProofField) insProofField.style.display = hasIns ? "" : "none";
+    if (!hasIns) {
+      // When "No insurance" is selected, disable Decline option and reset to Standard if needed
+      if (insNoneOption) insNoneOption.style.opacity = "0.4";
+      if (insNoneOption) insNoneOption.title = "A protection plan is required when you have no insurance.";
+      if (insNoneRadio && insNoneRadio.checked && insStdRadio) {
+        insStdRadio.checked = true;
+      }
+    } else {
+      if (insNoneOption) insNoneOption.style.opacity = "";
+      if (insNoneOption) insNoneOption.title = "";
+    }
+  }
+
+  if (insYesRadio) insYesRadio.addEventListener("change", onInsuranceChange);
+  if (insNoRadio)  insNoRadio.addEventListener("change", onInsuranceChange);
+
+  // Prevent selecting Decline when No insurance is chosen
+  if (insNoneRadio) {
+    insNoneRadio.addEventListener("change", function() {
+      if (insNoRadio && insNoRadio.checked) {
+        if (insStdRadio) insStdRadio.checked = true;
+        statusEl.textContent = mt("applyModal.declineNotAllowed", "A protection plan is required when you have no personal auto insurance.");
+        statusEl.className = "apply-status error";
+      }
+    });
+  }
+
+  // Insurance proof file validation
+  if (insUploadInput) {
+    insUploadInput.addEventListener("change", function() {
+      const file = this.files[0];
+      applyInsuranceFile = null;
+      if (insFileInfo) { insFileInfo.textContent = ""; insFileInfo.style.color = ""; }
+
+      if (!file) return;
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      if (!allowed.includes(file.type)) {
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceTypeError", "Only JPG, PNG, or PDF files are accepted."); insFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        if (insFileInfo) { insFileInfo.textContent = mt("applyModal.insuranceSizeError", "File must be under 5\u00a0MB."); insFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        return;
+      }
+      applyInsuranceFile = file;
+      if (insFileInfo) { insFileInfo.textContent = "\u2713 " + file.name; insFileInfo.style.color = "#4caf50"; }
+    });
+  }
 
   // ─── Phone OTP wiring ────────────────────────────────────────────────────────
 
@@ -224,6 +291,12 @@
     const agreeTerms      = document.getElementById("applyTerms").checked;
     const agreeSmsConsent = document.getElementById("applySmsConsent").checked;
 
+    // Insurance & protection plan
+    const insChecked  = form.querySelector('input[name="applyInsuranceCoverage"]:checked');
+    const hasInsurance = insChecked ? insChecked.value : null;
+    const planChecked  = form.querySelector('input[name="applyProtectionPlan"]:checked');
+    const protectionPlanPref = planChecked ? planChecked.value : "standard";
+
     if (isNaN(age) || age < 18 || age > 100) {
       statusEl.textContent = mt("applyModal.invalidAge", "Please enter a valid age.");
       statusEl.className = "apply-status error";
@@ -232,6 +305,24 @@
 
     if (apps.length === 0) {
       statusEl.textContent = mt("applyModal.selectApp", "Please select at least one delivery app.");
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (!hasInsurance) {
+      statusEl.textContent = mt("applyModal.insuranceRequired", "Please answer the insurance question.");
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (hasInsurance === "yes" && !applyInsuranceFile) {
+      statusEl.textContent = mt("applyModal.uploadInsuranceReq", "Please upload your proof of insurance.");
+      statusEl.className = "apply-status error";
+      return;
+    }
+
+    if (hasInsurance === "no" && protectionPlanPref === "none") {
+      statusEl.textContent = mt("applyModal.declineNotAllowed", "A protection plan is required when you have no personal auto insurance.");
       statusEl.className = "apply-status error";
       return;
     }
@@ -277,6 +368,17 @@
         reader.readAsDataURL(licenseFile);
       });
 
+      // Encode insurance proof if provided
+      let insuranceBase64 = null;
+      if (applyInsuranceFile) {
+        insuranceBase64 = await new Promise(function (resolve, reject) {
+          const reader = new FileReader();
+          reader.onload = function () { resolve(reader.result.split(",")[1]); };
+          reader.onerror = reject;
+          reader.readAsDataURL(applyInsuranceFile);
+        });
+      }
+
       const resp = await fetch(API_BASE + "/api/send-application-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -294,6 +396,11 @@
           licenseFileName: licenseFile.name,
           licenseMimeType: licenseFile.type,
           licenseBase64,
+          hasInsurance,
+          insuranceBase64,
+          insuranceFileName: applyInsuranceFile ? applyInsuranceFile.name : null,
+          insuranceMimeType: applyInsuranceFile ? applyInsuranceFile.type : null,
+          protectionPlanPref,
         }),
       });
 
@@ -305,11 +412,11 @@
       // Read the pre-approval decision returned by the API.
       const decision = result.decision || "review";
 
-      // Persist name, phone & approval decision so that subsequent pages
-      // (cars.html, booking flow) can gate access until the applicant is approved.
+      // Persist name, phone, approval decision, and protection preferences so
+      // subsequent pages (cars.html, booking flow) can pre-populate the selections.
       // localStorage survives browser close/reopen.
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, phone, decision }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, phone, decision, hasInsurance, protectionPlanPref }));
       } catch (_) { /* storage may be blocked in private mode */ }
 
       // Redirect to the thank-you page

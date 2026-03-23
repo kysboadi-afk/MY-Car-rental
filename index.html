@@ -220,6 +220,31 @@
         <span id="applyLicenseInfo" class="apply-file-info"></span>
       </div>
 
+      <!-- Insurance Question -->
+      <div class="apply-field">
+        <label><span>Do you have personal auto insurance that covers rental vehicles?</span> <span class="apply-required">*</span></label>
+        <div class="insurance-options">
+          <label class="insurance-option">
+            <input type="radio" name="applyInsuranceCoverage" id="applyHasInsuranceYes" value="yes">
+            <span>Yes, I have personal auto insurance</span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="applyInsuranceCoverage" id="applyHasInsuranceNo" value="no">
+            <span>No, I do not have personal auto insurance</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Insurance Proof Upload (shown when Yes is selected) -->
+      <div class="apply-field" id="applyInsuranceProofField" style="display:none">
+        <label for="applyInsuranceUpload"><span>Upload Proof of Insurance</span> <span class="apply-required">*</span></label>
+        <label class="apply-file-label" for="applyInsuranceUpload">
+          📎 Upload Insurance Document (JPG, PNG, or PDF &middot; max 5&nbsp;MB)
+        </label>
+        <input type="file" id="applyInsuranceUpload" name="insuranceUpload" accept=".jpg,.jpeg,.png,.pdf">
+        <span id="applyInsuranceFileInfo" class="apply-file-info"></span>
+      </div>
+
       <div class="apply-field">
         <label for="applyAge"><span data-i18n="applyModal.labelAge">Age</span> <span class="apply-required">*</span></label>
         <input type="number" id="applyAge" name="age" placeholder="Your age" data-i18n-placeholder="applyModal.placeholderAge" min="18" max="100" required autocomplete="bday-year">
@@ -247,6 +272,31 @@
           <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Amazon Flex"> Amazon Flex</label>
           <label class="apply-checkbox-label"><input type="checkbox" name="apps" value="Other"> Other</label>
         </div>
+      </div>
+
+      <!-- Protection Plan Pre-Selection -->
+      <div class="apply-field">
+        <label>Protection Plan <span style="font-size:12px;font-weight:400;color:#aaa">(Select Now, Pay at Booking)</span></label>
+        <p style="font-size:12px;color:#aaa;margin:2px 0 10px;line-height:1.5">Choose a protection plan now to speed up your booking process. Final pricing will be applied at checkout.</p>
+        <div class="insurance-options" id="applyProtectionOptions">
+          <label class="insurance-option">
+            <input type="radio" name="applyProtectionPlan" id="applyProtectionBasic" value="basic">
+            <span>Basic Protection<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="applyProtectionPlan" id="applyProtectionStandard" value="standard" checked>
+            <span>Standard Protection <span class="apply-plan-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="applyProtectionPlan" id="applyProtectionPremium" value="premium">
+            <span>Premium Protection <span class="apply-plan-tag apply-plan-tag--value">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
+          </label>
+          <label class="insurance-option" id="applyProtectionNoneOption">
+            <input type="radio" name="applyProtectionPlan" id="applyProtectionNone" value="none">
+            <span>Decline Protection<br><small style="font-weight:400;color:#aaa">You are fully responsible for all damage or loss</small></span>
+          </label>
+        </div>
+        <p class="apply-plan-disclaimer">⚠️ Protection plans are optional and not insurance. Final pricing and terms are applied during booking.</p>
       </div>
 
       <div class="apply-field">

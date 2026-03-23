@@ -375,6 +375,52 @@
         <input type="file" id="waitlistLicense" accept="image/*,application/pdf" style="margin-bottom:4px">
         <p class="pay-hint" id="waitlistLicenseHint" style="margin-top:0;margin-bottom:12px" data-i18n="fleet.waitlistIdHint">Upload a clear photo or scan of your driver's license or state ID (required).</p>
 
+        <!-- Insurance Question -->
+        <p style="font-weight:600;color:#ddd;margin-bottom:8px">🛡️ Do you have personal auto insurance that covers rental vehicles? <span style="color:#dc3545">*</span></p>
+        <div class="insurance-options" style="margin-bottom:12px">
+          <label class="insurance-option">
+            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceYes" value="yes">
+            <span>Yes, I have personal auto insurance</span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceNo" value="no">
+            <span>No, I do not have personal auto insurance</span>
+          </label>
+        </div>
+
+        <!-- Insurance Proof Upload (shown when Yes is selected) -->
+        <div id="waitlistInsuranceUploadSection" style="display:none;margin-bottom:12px">
+          <label for="waitlistInsuranceUpload">📎 Upload Proof of Insurance <span style="color:#dc3545">*</span></label>
+          <input type="file" id="waitlistInsuranceUpload" accept="image/*,application/pdf" style="margin-bottom:4px">
+          <p class="pay-hint" style="margin-top:0;margin-bottom:4px">Accepted: JPG, PNG, PDF &middot; max 5&nbsp;MB</p>
+          <div id="waitlistInsuranceFileInfo" style="font-size:12px;margin-bottom:8px"></div>
+        </div>
+
+        <!-- Protection Plan Pre-Selection -->
+        <div id="waitlistProtectionSection" style="margin-bottom:12px">
+          <p style="font-weight:600;color:#ddd;margin-bottom:4px">Protection Plan <span style="font-size:12px;font-weight:400;color:#aaa">(Select Now, Pay at Booking)</span></p>
+          <p class="pay-hint" style="margin-top:0;margin-bottom:8px">Choose a protection plan now to speed up your booking. Final pricing will be applied at checkout.</p>
+          <div class="insurance-options">
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionBasic" value="basic">
+              <span>Basic Protection<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
+            </label>
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionStandard" value="standard" checked>
+              <span>Standard Protection <span class="popular-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
+            </label>
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionPremium" value="premium">
+              <span>Premium Protection <span class="best-value-tag">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
+            </label>
+            <label class="insurance-option" id="waitlistProtectionNoneOption">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionNone" value="none">
+              <span>Decline Protection<br><small style="font-weight:400;color:#aaa">You are fully responsible for all damage or loss</small></span>
+            </label>
+          </div>
+          <p style="font-size:12px;color:#888;margin-top:8px;line-height:1.5">⚠️ Protection plans are optional and not insurance. Final pricing and terms are applied during booking.</p>
+        </div>
+
         <p class="waitlist-deposit-note">💰 <strong>$50 non-refundable deposit</strong> is charged now to secure your priority. It is applied toward your total rental price at pickup.</p>
 
         <button id="waitlistJoinBtn" class="waitlist-join-btn" disabled data-i18n="fleet.waitlistJoinBtn">🔔 Join Waitlist — Pay $50 Deposit</button>

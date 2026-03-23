@@ -159,23 +159,44 @@
             var db = e.target.result;
             try {
               var tx = db.transaction("files", "readonly");
-              var getReq = tx.objectStore("files").get("waitlistLicense");
-              getReq.onsuccess = function(ev) {
+              var licReq = tx.objectStore("files").get("waitlistLicense");
+              licReq.onsuccess = function(ev) {
                 var fileData = ev.target.result;
                 if (fileData && fileData.licenseBase64) {
                   payload.idBase64    = fileData.licenseBase64;
                   payload.idMimeType  = fileData.licenseMimeType || "application/octet-stream";
                   payload.idFileName  = fileData.licenseFileName || "drivers-license";
                 }
-                // Clean up the stored license
-                try {
-                  var cleanTx = db.transaction("files", "readwrite");
-                  cleanTx.objectStore("files").delete("waitlistLicense");
-                  cleanTx.oncomplete = function() { db.close(); dispatchSave(payload); };
-                  cleanTx.onerror   = function() { db.close(); dispatchSave(payload); };
-                } catch (cleanErr) { db.close(); dispatchSave(payload); }
+                // Also read insurance proof
+                var insReq = tx.objectStore("files").get("waitlistInsurance");
+                insReq.onsuccess = function(ev2) {
+                  var insData = ev2.target.result;
+                  if (insData && insData.base64) {
+                    payload.insuranceBase64    = insData.base64;
+                    payload.insuranceMimeType  = insData.mimeType || "application/octet-stream";
+                    payload.insuranceFileName  = insData.fileName || "insurance-proof";
+                  }
+                  // Clean up both stored files
+                  try {
+                    var cleanTx = db.transaction("files", "readwrite");
+                    cleanTx.objectStore("files").delete("waitlistLicense");
+                    cleanTx.objectStore("files").delete("waitlistInsurance");
+                    cleanTx.oncomplete = function() { db.close(); dispatchSave(payload); };
+                    cleanTx.onerror   = function() { db.close(); dispatchSave(payload); };
+                  } catch (cleanErr) { db.close(); dispatchSave(payload); }
+                };
+                insReq.onerror = function() {
+                  // If insurance read fails, still proceed — clean up both keys
+                  try {
+                    var cleanTx2 = db.transaction("files", "readwrite");
+                    cleanTx2.objectStore("files").delete("waitlistLicense");
+                    cleanTx2.objectStore("files").delete("waitlistInsurance");
+                    cleanTx2.oncomplete = function() { db.close(); dispatchSave(payload); };
+                    cleanTx2.onerror   = function() { db.close(); dispatchSave(payload); };
+                  } catch (cleanErr2) { db.close(); dispatchSave(payload); }
+                };
               };
-              getReq.onerror = function() { db.close(); dispatchSave(payload); };
+              licReq.onerror = function() { db.close(); dispatchSave(payload); };
             } catch (txErr) { db.close(); dispatchSave(payload); }
           };
           idbReq.onerror = function() { dispatchSave(payload); };
