@@ -1045,6 +1045,16 @@ function initWaitlistForm() {
   const wlJoinBtn = document.getElementById("waitlistJoinBtn");
   const wlHint    = document.getElementById("waitlistPayHint");
 
+  // Insurance & protection plan elements
+  const wlInsYes       = document.getElementById("waitlistHasInsuranceYes");
+  const wlInsNo        = document.getElementById("waitlistHasInsuranceNo");
+  const wlInsUploadSec = document.getElementById("waitlistInsuranceUploadSection");
+  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
+  const wlInsFileInfo  = document.getElementById("waitlistInsuranceFileInfo");
+  const wlInsNoneOpt   = document.getElementById("waitlistProtectionNoneOption");
+  const wlInsNoneRad   = document.getElementById("waitlistProtectionNone");
+  const wlInsStdRad    = document.getElementById("waitlistProtectionStandard");
+
   // Set minimum dates
   const todayISO = new Date().toISOString().slice(0, 10);
   if (wlPickup && !wlPickup.value) wlPickup.setAttribute("min", todayISO);
@@ -1054,9 +1064,61 @@ function initWaitlistForm() {
     const nameOk    = wlName    && isValidName(wlName.value.trim());
     const emailOk   = wlEmail   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
     const licenseOk = wlLicense && wlLicense.files && wlLicense.files.length > 0;
-    const ready     = nameOk && emailOk && licenseOk;
+    const insAnswered = (wlInsYes && wlInsYes.checked) || (wlInsNo && wlInsNo.checked);
+    const insProofOk  = !wlInsYes || !wlInsYes.checked || (wlInsUpload && wlInsUpload.files && wlInsUpload.files.length > 0);
+    const ready     = nameOk && emailOk && licenseOk && insAnswered && insProofOk;
     if (wlJoinBtn) wlJoinBtn.disabled = !ready;
     if (wlHint)    wlHint.style.display = ready ? "none" : "";
+  }
+
+  // Insurance radio change handler
+  function onWlInsuranceChange() {
+    const hasIns = wlInsYes && wlInsYes.checked;
+    if (wlInsUploadSec) wlInsUploadSec.style.display = hasIns ? "" : "none";
+    if (!hasIns) {
+      // Disable Decline when no insurance
+      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = "0.4"; wlInsNoneOpt.title = "A protection plan is required when you have no insurance."; }
+      if (wlInsNoneRad && wlInsNoneRad.checked && wlInsStdRad) wlInsStdRad.checked = true;
+    } else {
+      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = ""; wlInsNoneOpt.title = ""; }
+    }
+    updateWaitlistBtn();
+  }
+
+  if (wlInsYes) wlInsYes.addEventListener("change", onWlInsuranceChange);
+  if (wlInsNo)  wlInsNo.addEventListener("change", onWlInsuranceChange);
+
+  // Prevent selecting Decline when No insurance is chosen
+  if (wlInsNoneRad) {
+    wlInsNoneRad.addEventListener("change", function() {
+      if (wlInsNo && wlInsNo.checked && wlInsStdRad) {
+        wlInsStdRad.checked = true;
+      }
+    });
+  }
+
+  // Insurance proof file validation
+  if (wlInsUpload) {
+    wlInsUpload.addEventListener("change", function() {
+      const file = this.files[0];
+      if (wlInsFileInfo) { wlInsFileInfo.textContent = ""; wlInsFileInfo.style.color = ""; }
+      if (!file) { updateWaitlistBtn(); return; }
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      if (!allowed.includes(file.type)) {
+        if (wlInsFileInfo) { wlInsFileInfo.textContent = "Only JPG, PNG, or PDF files are accepted."; wlInsFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        updateWaitlistBtn();
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        if (wlInsFileInfo) { wlInsFileInfo.textContent = "File must be under 5 MB."; wlInsFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        updateWaitlistBtn();
+        return;
+      }
+      if (wlInsFileInfo) { wlInsFileInfo.textContent = "\u2713 " + file.name; wlInsFileInfo.style.color = "#4caf50"; }
+      updateWaitlistBtn();
+    });
   }
 
   [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
@@ -1087,6 +1149,23 @@ async function launchWaitlistPayment() {
   const wlPickup  = (document.getElementById("waitlistPickup") || {}).value || "";
   const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
   const wlLicense = document.getElementById("waitlistLicense");
+
+  // Insurance & protection plan values
+  const wlInsChecked   = document.querySelector('input[name="waitlistInsuranceCoverage"]:checked');
+  const wlHasInsurance = wlInsChecked ? wlInsChecked.value : null;
+  const wlPlanChecked  = document.querySelector('input[name="waitlistProtectionPlan"]:checked');
+  const wlProtectionPlanPref = wlPlanChecked ? wlPlanChecked.value : "standard";
+  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
+
+  // Validate insurance question (should be already enforced by button state)
+  if (!wlHasInsurance) {
+    alert(_t("booking.insuranceRequired", "Please answer the insurance question."));
+    return;
+  }
+  if (wlHasInsurance === "no" && wlProtectionPlanPref === "none") {
+    alert(_t("booking.planRequiredNoInsurance", "A protection plan is required when you have no personal auto insurance."));
+    return;
+  }
 
   // Defensive guard — the button should already be disabled when no file is
   // selected (enforced by updateWaitlistBtn), but guard here in case this
@@ -1120,6 +1199,30 @@ async function launchWaitlistPayment() {
     return;
   }
 
+  // Read insurance proof file if provided
+  let wlInsBase64 = null;
+  let wlInsMimeType = null;
+  let wlInsFileName = null;
+  if (wlHasInsurance === "yes" && wlInsUpload && wlInsUpload.files && wlInsUpload.files[0]) {
+    const insFile = wlInsUpload.files[0];
+    try {
+      wlInsBase64 = await new Promise(function(resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const result = e.target.result;
+          const commaIdx = result.indexOf(",");
+          resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(insFile);
+      });
+      wlInsMimeType = insFile.type || "application/octet-stream";
+      wlInsFileName = insFile.name || "insurance-proof";
+    } catch (insErr) {
+      console.warn("Could not read insurance file:", insErr);
+    }
+  }
+
   // Store license in IndexedDB so it survives the Stripe redirect
   try {
     await new Promise(function(resolve) {
@@ -1133,6 +1236,13 @@ async function launchWaitlistPayment() {
             { licenseBase64, licenseMimeType, licenseFileName },
             "waitlistLicense"
           );
+          // Also store insurance proof if available
+          if (wlInsBase64) {
+            tx.objectStore("files").put(
+              { base64: wlInsBase64, mimeType: wlInsMimeType, fileName: wlInsFileName },
+              "waitlistInsurance"
+            );
+          }
           tx.oncomplete = function() { db.close(); resolve(); };
           tx.onerror    = function() { db.close(); resolve(); };
         } catch (err) { db.close(); resolve(); }
@@ -1166,14 +1276,16 @@ async function launchWaitlistPayment() {
     sessionStorage.setItem("slyStripePublishable", publishableKey);
     sessionStorage.setItem("slyPiSecret", clientSecret);
     sessionStorage.setItem("slyWaitlistEntry", JSON.stringify({
-      isWaitlist:      true,
+      isWaitlist:          true,
       vehicleId,
-      car:             carData.name,
-      name:            wlName,
-      email:           wlEmail,
-      phone:           wlPhone.trim(),
-      preferredPickup: wlPickup,
-      preferredReturn: wlReturn,
+      car:                 carData.name,
+      name:                wlName,
+      email:               wlEmail,
+      phone:               wlPhone.trim(),
+      preferredPickup:     wlPickup,
+      preferredReturn:     wlReturn,
+      hasInsurance:        wlHasInsurance,
+      protectionPlanPref:  wlProtectionPlanPref,
     }));
 
     const stripe   = Stripe(publishableKey);
@@ -1242,7 +1354,7 @@ async function launchWaitlistPayment() {
         joinBtnReset.disabled = false;
         joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
       }
-      // Clean up the stored license from IndexedDB on cancel
+      // Clean up the stored license and insurance proof from IndexedDB on cancel
       try {
         const idbReq = indexedDB.open("slyRidesDB", 1);
         idbReq.onsuccess = function(e) {
@@ -1250,6 +1362,7 @@ async function launchWaitlistPayment() {
           try {
             const tx = db.transaction("files", "readwrite");
             tx.objectStore("files").delete("waitlistLicense");
+            tx.objectStore("files").delete("waitlistInsurance");
             tx.oncomplete = function() { db.close(); };
             tx.onerror    = function() { db.close(); };
           } catch (err) { db.close(); }

@@ -192,6 +192,8 @@ export default async function handler(req, res) {
     name, phone, email, age, experience, apps, agreeTerms,
     phoneOtpToken, phoneOtpCode,
     licenseFileName, licenseMimeType, licenseBase64,
+    hasInsurance, insuranceBase64, insuranceFileName, insuranceMimeType,
+    protectionPlanPref,
   } = req.body || {};
 
   if (!name || !phone || !experience) {
@@ -227,6 +229,18 @@ export default async function handler(req, res) {
     });
   }
 
+  // Attach insurance proof if provided
+  if (insuranceBase64 && insuranceFileName && insuranceMimeType) {
+    if (insuranceBase64.length > MAX_LICENSE_B64_LEN) {
+      return res.status(400).json({ error: "Insurance file is too large." });
+    }
+    attachments.push({
+      filename: insuranceFileName,
+      content: Buffer.from(insuranceBase64, "base64"),
+      contentType: insuranceMimeType,
+    });
+  }
+
   const hasLicense = attachments.length > 0;
 
   // ─── Pre-approval decision ──────────────────────────────────────────────────
@@ -236,6 +250,11 @@ export default async function handler(req, res) {
 
   const firstName = (name || "").split(" ")[0] || "there";
   const appsLabel = Array.isArray(apps) && apps.length ? apps.join(", ") : "Not specified";
+
+  const PLAN_LABELS = { basic: "Basic Protection", standard: "Standard Protection", premium: "Premium Protection", none: "Declined" };
+  const planLabel = PLAN_LABELS[protectionPlanPref] || (protectionPlanPref ? esc(String(protectionPlanPref)) : "Not specified");
+  const insuranceLabel = hasInsurance === "yes" ? "Yes" : hasInsurance === "no" ? "No" : "Not specified";
+  const hasInsuranceProof = !!(insuranceBase64 && insuranceFileName && insuranceMimeType);
 
   try {
     // ─── Owner notification email ─────────────────────────────────────────────
@@ -252,6 +271,9 @@ export default async function handler(req, res) {
         `Age               : ${age ?? "Not provided"}`,
         `Driving Experience: ${experience}`,
         `Delivery Apps     : ${appsLabel}`,
+        `Has Insurance     : ${insuranceLabel}`,
+        `Insurance Proof   : ${hasInsuranceProof ? insuranceFileName : "Not uploaded"}`,
+        `Protection Plan   : ${planLabel}`,
         `Terms Agreed      : ${agreeTerms ? "Yes" : "No"}`,
         `License Attached  : ${hasLicense ? licenseFileName : "No"}`,
         `Decision          : ${DECISION_LABELS[decision]}`,
@@ -265,11 +287,15 @@ export default async function handler(req, res) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Age</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(String(age ?? "Not provided"))}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driving Experience</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(experience)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Delivery Apps</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(appsLabel)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Has Insurance</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(insuranceLabel)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Proof</strong></td><td style="padding:8px;border:1px solid #ddd">${hasInsuranceProof ? `<em>See attached: ${esc(insuranceFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(planLabel)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Terms Agreed</strong></td><td style="padding:8px;border:1px solid #ddd">${agreeTerms ? "Yes" : "No"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver's License</strong></td><td style="padding:8px;border:1px solid #ddd">${hasLicense ? `<em>See attached: ${esc(licenseFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Decision</strong></td><td style="padding:8px;border:1px solid #ddd;font-weight:bold">${esc(DECISION_LABELS[decision])}</td></tr>
         </table>
         ${hasLicense ? "<p style=\"margin-top:12px\">The applicant&#39;s driver&#39;s license is attached to this email.</p>" : ""}
+        ${hasInsuranceProof ? "<p style=\"margin-top:4px\">The applicant&#39;s proof of insurance is attached to this email.</p>" : ""}
       `,
       attachments,
     });

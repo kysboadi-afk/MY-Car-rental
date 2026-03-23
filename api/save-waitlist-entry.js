@@ -114,6 +114,8 @@ export default async function handler(req, res) {
       preferredPickup, preferredReturn,
       paymentIntentId,
       idBase64, idFileName, idMimeType,
+      hasInsurance, insuranceBase64, insuranceFileName, insuranceMimeType,
+      protectionPlanPref,
     } = req.body;
 
     if (!vehicleId || !CARS[vehicleId]) {
@@ -137,15 +139,17 @@ export default async function handler(req, res) {
 
     const entry = {
       entryId,
-      name:            trimmedName,
+      name:                trimmedName,
       email,
-      phone:           phone || "",
-      preferredPickup: preferredPickup || "",
-      preferredReturn: preferredReturn || "",
-      depositPaid:     WAITLIST_DEPOSIT,
-      paymentIntentId: paymentIntentId || "",
-      vehicleName:     carData.name,
-      status:          "pending",
+      phone:               phone || "",
+      preferredPickup:     preferredPickup || "",
+      preferredReturn:     preferredReturn || "",
+      depositPaid:         WAITLIST_DEPOSIT,
+      paymentIntentId:     paymentIntentId || "",
+      vehicleName:         carData.name,
+      status:              "pending",
+      hasInsurance:        hasInsurance || "",
+      protectionPlanPref:  protectionPlanPref || "standard",
     };
 
     const position = await appendWaitlistEntry(vehicleId, entry);
@@ -157,6 +161,11 @@ export default async function handler(req, res) {
     const decisionToken = createDecisionToken(vehicleId, entryId);
     const approveUrl = `${API_BASE}/api/waitlist-decision?action=approve&token=${encodeURIComponent(decisionToken)}`;
     const declineUrl = `${API_BASE}/api/waitlist-decision?action=decline&token=${encodeURIComponent(decisionToken)}`;
+
+    const PLAN_LABELS = { basic: "Basic Protection", standard: "Standard Protection", premium: "Premium Protection", none: "Declined" };
+    const planLabel = PLAN_LABELS[protectionPlanPref] || (protectionPlanPref ? esc(String(protectionPlanPref)) : "Not specified");
+    const insuranceLabel = hasInsurance === "yes" ? "Yes" : hasInsurance === "no" ? "No" : "Not specified";
+    const hasInsuranceProof = !!(insuranceBase64 && insuranceFileName && insuranceMimeType);
 
     // ── Email notifications ───────────────────────────────────────────────────
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -182,6 +191,9 @@ export default async function handler(req, res) {
             `Phone          : ${phone || "Not provided"}`,
             `Preferred Pickup: ${preferredPickup || "Not specified"}`,
             `Preferred Return: ${preferredReturn || "Not specified"}`,
+            `Has Insurance  : ${insuranceLabel}`,
+            `Insurance Proof: ${hasInsuranceProof ? insuranceFileName : "Not uploaded"}`,
+            `Protection Plan: ${planLabel}`,
             `Deposit Paid   : $${WAITLIST_DEPOSIT} (non-refundable)`,
             `Payment Intent : ${paymentIntentId || "N/A"}`,
             `Entry ID       : ${entryId}`,
@@ -204,6 +216,9 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone || "Not provided")}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredPickup || "Not specified")}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredReturn || "Not specified")}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Has Insurance</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(insuranceLabel)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Proof</strong></td><td style="padding:8px;border:1px solid #ddd">${hasInsuranceProof ? `<em>See attached: ${esc(insuranceFileName)}</em>` : "<em>Not uploaded</em>"}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(planLabel)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${WAITLIST_DEPOSIT} (non-refundable)</strong></td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Intent</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntentId || "N/A")}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Driver's License</strong></td><td style="padding:8px;border:1px solid #ddd">📎 See attachment</td></tr>
@@ -231,6 +246,17 @@ export default async function handler(req, res) {
             content:     Buffer.from(idBase64, "base64"),
             contentType: idMimeType || "application/octet-stream",
           }];
+        }
+
+        // Also attach insurance proof if provided
+        if (hasInsuranceProof) {
+          const safeInsName = (insuranceFileName || "insurance-proof.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
+          if (!adminMailOpts.attachments) adminMailOpts.attachments = [];
+          adminMailOpts.attachments.push({
+            filename:    safeInsName,
+            content:     Buffer.from(insuranceBase64, "base64"),
+            contentType: insuranceMimeType || "application/octet-stream",
+          });
         }
 
         await transporter.sendMail(adminMailOpts);
