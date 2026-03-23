@@ -584,15 +584,14 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Update the Security Deposit section to reflect actual vehicle pricing.
-  // All vehicles offer DPP. Slingshot charges a $150 refundable security deposit as part of
-  // the full payment online. Camry vehicles have no security deposit.
+  // Slingshot charges a $150 refundable security deposit as part of the full payment online.
+  // Camry vehicles have no security deposit — the entire section is hidden for economy cars.
   const depositHeadingEl = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
   const speedSection      = document.getElementById("slingshotSpeedSection");
-  const depositLang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
   if (carData.hourlyTiers) {
     // Slingshot: full payment (including security deposit) charged at booking
     if (depositHeadingEl) {
@@ -620,23 +619,11 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     // Show Slingshot speed & strike policy
     if (speedSection) speedSection.style.display = "";
   } else {
-    // For Camry: show the deposit/DPP section with a heading that accurately reflects no deposit.
-    // Removing data-i18n prevents applyTranslations() from overriding the heading text below.
-    if (depositHeadingEl) {
-      depositHeadingEl.removeAttribute("data-i18n");
-      depositHeadingEl.textContent = depositLang === "es"
-        ? "DEP\u00D3SITO DE SEGURIDAD Y PLAN DE PROTECCI\u00D3N DE DA\u00D1OS"
-        : "SECURITY DEPOSIT & DAMAGE PROTECTION PLAN";
-      depositHeadingEl.style.display = "";
-    }
-    if (depositLang === "es") {
-      if (depositIntroEl) depositIntroEl.textContent = "No se requiere dep\u00F3sito de seguridad para este veh\u00EDculo.";
-      if (depositDppEl) { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Plan de Protecci\u00F3n de Da\u00F1os ($13/d\u00EDa &bull; $85/semana &bull; $150/2 sem &bull; $295/mes):</strong> complemento opcional &mdash; reduce tu responsabilidad por da\u00F1os a $1,000"; }
-    } else {
-      if (depositIntroEl) depositIntroEl.textContent = "No security deposit is required for this vehicle.";
-      if (depositDppEl)     { depositDppEl.style.display = ""; depositDppEl.innerHTML = "<strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> optional add-on &mdash; reduces your damage liability to $1,000"; }
-    }
-    if (depositInsEl)     depositInsEl.style.display = "none";
+    // For Camry (economy): no security deposit — hide the entire deposit section.
+    if (depositHeadingEl) depositHeadingEl.style.display = "none";
+    if (depositIntroEl)   depositIntroEl.style.display   = "none";
+    if (depositInsEl)     depositInsEl.style.display     = "none";
+    if (depositDppEl)     depositDppEl.style.display     = "none";
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
     // Hide Slingshot speed & strike policy for non-Slingshot vehicles
     if (speedSection) speedSection.style.display = "none";
