@@ -992,3 +992,136 @@ test("non-deposit full-payment email does NOT include 'Pay Balance Online' link"
     "Full-payment email should NOT include a 'Pay Balance Online' link"
   );
 });
+
+// ─── Slingshot-specific email content tests ────────────────────────────────
+
+const SLINGSHOT_BODY = {
+  vehicleId:             "slingshot",
+  car:                   "Slingshot R",
+  vehicleMake:           "Polaris",
+  vehicleModel:          "Slingshot XR",
+  vehicleYear:           2023,
+  vehicleVin:            "57XAARHB8P8156561",
+  name:                  "John Smith",
+  pickup:                "2026-04-10",
+  pickupTime:            "10:00 AM",
+  returnDate:            "2026-04-10",
+  returnTime:            "4:00 PM",
+  email:                 "john@example.com",
+  phone:                 "555-9876",
+  total:                 "275.50",
+  deposit:               150,
+  days:                  1,
+  slingshotDuration:     6,
+  insuranceCoverageChoice: "yes",
+  protectionPlan:        false,
+  signature:             "John Smith",
+};
+
+test("Slingshot owner email includes insurance option for Option A (own insurance)", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", SLINGSHOT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should be sent");
+  assert.ok(
+    ownerMail.html.includes("Option A"),
+    "Owner email should include Option A for own insurance choice"
+  );
+  assert.ok(
+    ownerMail.html.includes("Insurance Option"),
+    "Owner email should include an Insurance Option row"
+  );
+});
+
+test("Slingshot owner email includes insurance option for Option B (DPP)", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", {
+    ...SLINGSHOT_BODY,
+    insuranceCoverageChoice: "no",
+    protectionPlan:          true,
+  });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ownerMail = sentMails[0];
+  assert.ok(ownerMail, "Owner email should be sent");
+  assert.ok(
+    ownerMail.html.includes("Option B"),
+    "Owner email should include Option B for DPP choice"
+  );
+  assert.ok(
+    ownerMail.html.includes("Protection Plan") || ownerMail.html.includes("DPP"),
+    "Owner email should mention the Damage Protection Plan"
+  );
+});
+
+test("Slingshot customer email is sent on confirmed payment", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", SLINGSHOT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(mockSendMail.mock.callCount(), 2, "Both owner and customer emails should be sent for Slingshot");
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.equal(customerMail.to, SLINGSHOT_BODY.email);
+  assert.ok(
+    customerMail.html.includes("Slingshot") || customerMail.html.includes("Slingshot R"),
+    "Customer email should reference the Slingshot vehicle"
+  );
+});
+
+test("Slingshot email does NOT include 'Pay Balance Online' link (full payment upfront)", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", SLINGSHOT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const customerMail = sentMails[1];
+  assert.ok(customerMail, "Customer email should be sent");
+  assert.ok(
+    !customerMail.html.includes("Pay Balance Online"),
+    "Slingshot full-payment email should NOT include a 'Pay Balance Online' link"
+  );
+});
+
+test("Slingshot blockBookedDates and markVehicleUnavailable are called on confirmed booking", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
+  process.env.GITHUB_TOKEN = "test-token";
+
+  const req = makeReq("POST", SLINGSHOT_BODY);
+  const res = makeRes();
+  await handler(req, res);
+
+  delete process.env.GITHUB_TOKEN;
+  globalThis.fetch = originalFetch;
+
+  assert.equal(res._status, 200);
+  const bookedDatesPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("booked-dates.json"));
+  assert.ok(bookedDatesPut, "booked-dates.json should be updated after Slingshot booking");
+  const fleetPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("fleet-status.json"));
+  assert.ok(fleetPut, "fleet-status.json should be updated after Slingshot booking");
+  const putBody = JSON.parse(bookedDatesPut.body);
+  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
+  assert.equal(updated.slingshot.length, 1, "slingshot dates should be blocked");
+});
