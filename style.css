@@ -1773,6 +1773,50 @@ body {
   transform: translateY(-2px);
 }
 
+/* Slingshot-only bottom sections */
+.slingshot-explore-section {
+  background: #000;
+}
+
+.slingshot-why-section {
+  background: #0a0a0a;
+}
+
+.slingshot-explore-body {
+  text-align: center;
+  color: #aaa;
+  font-size: 16px;
+  max-width: 600px;
+  margin: 0 auto 28px;
+  line-height: 1.7;
+}
+
+.slingshot-explore-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.slingshot-explore-list li {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid #ffb400;
+  border-radius: 8px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.slingshot-cta-wrap {
+  text-align: center;
+  margin-top: 32px;
+}
+
 /* CARS PAGE LAYOUT (sidebar + grid) */
 .cars-page-layout {
   display: flex;
