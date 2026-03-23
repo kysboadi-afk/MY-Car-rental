@@ -310,7 +310,7 @@ function generateRentalAgreementHtml(body) {
     <li>Diminished value</li>
     <li>Administrative, towing, and storage fees</li>
   </ul>
-  <p><strong>With Protection Plan:</strong> Renter's responsibility is limited to the stated deductible, provided all terms of this agreement are followed.</p>
+  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
   <p><strong>Exclusions (Protection Plan Void If):</strong></p>
   <ul>
     <li>Driver is under the influence of drugs or alcohol</li>
@@ -563,7 +563,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("Without Protection Plan: Renter is fully responsible for all damages and associated costs, including:");
     bulletList(["Full cost of vehicle repair or replacement", "Loss of use (rental downtime)", "Diminished value", "Administrative, towing, and storage fees"]);
     doc.moveDown(0.2);
-    bodyText("With Protection Plan: Renter's responsibility is limited to the stated deductible, provided all terms of this agreement are followed.");
+    bodyText("With Protection Plan: Renter's maximum liability for covered vehicle damage is limited to $1,000 per incident. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.");
     doc.moveDown(0.2);
     bodyText("Exclusions (Protection Plan Void If):");
     bulletList([
