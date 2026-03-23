@@ -3,21 +3,20 @@
 // containing the applicant's name, phone, age, driving experience, delivery
 // apps, and a copy of their driver's license as an email attachment.
 // Evaluates the application against pre-approval rules and sends the
-// applicant both an email and an SMS (via Twilio) with the appropriate outcome.
+// applicant both an email and an SMS (via TextMagic) with the appropriate outcome.
 //
 // Required environment variables (set in Vercel dashboard):
-//   SMTP_HOST    — SMTP server hostname  (e.g. smtp.gmail.com)
-//   SMTP_PORT    — SMTP port             (587 for TLS, 465 for SSL)
-//   SMTP_USER    — sending email address
-//   SMTP_PASS    — email password or app password
-//   OWNER_EMAIL  — business email that receives all applications
-//                  (defaults to slyservices@supports-info.com)
-//   OTP_SECRET   — shared secret used to sign/verify phone OTP tokens
-//   TWILIO_ACCOUNT_SID  — Twilio Account SID (optional; SMS skipped if absent)
-//   TWILIO_AUTH_TOKEN   — Twilio Auth Token
-//   TWILIO_PHONE_NUMBER — Twilio sending phone number (E.164, e.g. +18773155034)
+//   SMTP_HOST          — SMTP server hostname  (e.g. smtp.gmail.com)
+//   SMTP_PORT          — SMTP port             (587 for TLS, 465 for SSL)
+//   SMTP_USER          — sending email address
+//   SMTP_PASS          — email password or app password
+//   OWNER_EMAIL        — business email that receives all applications
+//                        (defaults to slyservices@supports-info.com)
+//   OTP_SECRET         — shared secret used to sign/verify phone OTP tokens
+//   TEXTMAGIC_USERNAME — TextMagic account username (optional; SMS skipped if absent)
+//   TEXTMAGIC_API_KEY  — TextMagic API key
 import nodemailer from "nodemailer";
-import twilio from "twilio";
+import { sendSms } from "./_textmagic.js";
 import { verifyPhoneOtpToken } from "./_otp.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -212,20 +211,19 @@ export default async function handler(req, res) {
       .json({ error: "Missing required fields: name, phone, experience." });
   }
 
-  // NOTE: Phone OTP verification temporarily disabled — Twilio setup pending.
-  // Once Twilio is configured, restore this block:
-  // if (!phoneOtpToken || !phoneOtpCode) {
-  //   return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
-  // }
-  // const phoneDigits = String(phone).replace(/\D/g, "");
-  // const phoneE164 = phoneDigits.length === 10
-  //   ? "+1" + phoneDigits
-  //   : phoneDigits.length === 11 && phoneDigits.startsWith("1")
-  //     ? "+" + phoneDigits
-  //     : phone.startsWith("+") ? phone : null;
-  // if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
-  //   return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
-  // }
+  if (!phoneOtpToken || !phoneOtpCode) {
+    return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
+  }
+  const phoneDigits = String(phone).replace(/\D/g, "");
+  const phoneStr    = String(phone);
+  const phoneE164 = phoneDigits.length === 10
+    ? "+1" + phoneDigits
+    : phoneDigits.length === 11 && phoneDigits.startsWith("1")
+      ? "+" + phoneDigits
+      : phoneStr.startsWith("+") ? phoneStr : null;
+  if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
+    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
+  }
 
   // Build attachment if a license image/PDF was provided
   const attachments = [];
@@ -305,20 +303,11 @@ export default async function handler(req, res) {
 
     // ─── Applicant SMS ────────────────────────────────────────────────────────
     if (
-      process.env.TWILIO_ACCOUNT_SID &&
-      process.env.TWILIO_AUTH_TOKEN &&
-      process.env.TWILIO_PHONE_NUMBER
+      process.env.TEXTMAGIC_USERNAME &&
+      process.env.TEXTMAGIC_API_KEY
     ) {
       try {
-        const client = twilio(
-          process.env.TWILIO_ACCOUNT_SID,
-          process.env.TWILIO_AUTH_TOKEN
-        );
-        await client.messages.create({
-          body: SMS_MESSAGES[decision](firstName),
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: phone,
-        });
+        await sendSms(phone, SMS_MESSAGES[decision](firstName));
       } catch (smsErr) {
         // SMS failure is non-fatal — log it but don't fail the whole request
         console.error("Application SMS send failed:", smsErr);

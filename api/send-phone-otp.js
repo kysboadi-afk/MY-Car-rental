@@ -1,24 +1,23 @@
 // api/send-phone-otp.js
 // Vercel serverless function — sends a 6-digit OTP to the supplied phone number
-// via Twilio SMS so the booking form can verify the renter controls that number
+// via TextMagic SMS so the booking form can verify the renter controls that number
 // before the payment flow begins.
 //
 // Required environment variables (set in Vercel dashboard):
-//   TWILIO_ACCOUNT_SID   — Twilio Account SID
-//   TWILIO_AUTH_TOKEN    — Twilio Auth Token
-//   TWILIO_PHONE_NUMBER  — Twilio sending phone number (E.164, e.g. +18773155034)
-//   OTP_SECRET           — long random string used to sign OTP tokens
+//   TEXTMAGIC_USERNAME — TextMagic account username
+//   TEXTMAGIC_API_KEY  — TextMagic API key
+//   OTP_SECRET         — long random string used to sign OTP tokens
 //
 // POST /api/send-phone-otp
 //   Body:    { phone }   ← E.164 or US 10-digit format
 //   Returns: { token }   ← opaque signed token; client passes it back on submit
-import twilio from "twilio";
+import { sendSms } from "./_textmagic.js";
 import { generateOtp, createPhoneOtpToken } from "./_otp.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Accept E.164 (+1XXXXXXXXXX) or a 10–11 digit US number (digits only).
-// Normalises to E.164 before sending so Twilio is happy.
+// Normalises to E.164 before sending so TextMagic is happy.
 function normalizePhoneNumber(raw) {
   if (typeof raw !== "string") return null;
   const digits = raw.replace(/\D/g, "");
@@ -39,16 +38,15 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   if (
-    !process.env.TWILIO_ACCOUNT_SID ||
-    !process.env.TWILIO_AUTH_TOKEN ||
-    !process.env.TWILIO_PHONE_NUMBER
+    !process.env.TEXTMAGIC_USERNAME ||
+    !process.env.TEXTMAGIC_API_KEY
   ) {
     console.error(
-      "Missing Twilio environment variables (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)."
+      "Missing TextMagic environment variables (TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY)."
     );
     return res
       .status(500)
-      .json({ error: "Server configuration error: Twilio credentials are not set." });
+      .json({ error: "Server configuration error: TextMagic credentials are not set." });
   }
 
   const { phone } = req.body || {};
@@ -62,16 +60,7 @@ export default async function handler(req, res) {
   const token = createPhoneOtpToken(e164, otp);
 
   try {
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-
-    await client.messages.create({
-      body: `Your Sly Transportation verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: e164,
-    });
+    await sendSms(e164, `Your Sly Transportation verification code is: ${otp}. Valid for 10 minutes. Do not share this code.`);
 
     return res.status(200).json({ token });
   } catch (err) {

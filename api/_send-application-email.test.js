@@ -17,10 +17,9 @@ process.env.OWNER_EMAIL = "owner@test.invalid";
 // ─── OTP secret (must be set before importing handler or _otp.js) ─────────────
 process.env.OTP_SECRET = "test-otp-secret-for-application-email-tests";
 
-// ─── Twilio env vars ──────────────────────────────────────────────────────────
-process.env.TWILIO_ACCOUNT_SID  = "ACtest00000000000000000000000000000";
-process.env.TWILIO_AUTH_TOKEN   = "test_auth_token_00000000000000000000";
-process.env.TWILIO_PHONE_NUMBER = "+18773155034";
+// ─── TextMagic env vars ───────────────────────────────────────────────────────
+process.env.TEXTMAGIC_USERNAME = "testuser";
+process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
 
 // ─── Nodemailer mock ──────────────────────────────────────────────────────────
 const sentMails = [];
@@ -32,14 +31,12 @@ mock.module("nodemailer", {
   },
 });
 
-// ─── Twilio mock ──────────────────────────────────────────────────────────────
+// ─── TextMagic mock ───────────────────────────────────────────────────────────
 const sentMessages = [];
-const mockCreate = mock.fn(async (opts) => { sentMessages.push(opts); return {}; });
+const mockSendSms = mock.fn(async (to, text) => { sentMessages.push({ to, text }); return {}; });
 
-mock.module("twilio", {
-  defaultExport: () => ({
-    messages: { create: mockCreate },
-  }),
+mock.module("./_textmagic.js", {
+  namedExports: { sendSms: mockSendSms },
 });
 
 const { default: handler } = await import("./send-application-email.js");
@@ -267,10 +264,10 @@ test("sends approved SMS for qualified applicant", async () => {
   await handler(makeReq("POST", VALID_BODY), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].body.includes("approved"),
-    `Expected approved SMS body, got: ${sentMessages[0].body}`
+    sentMessages[0].text.includes("approved"),
+    `Expected approved SMS body, got: ${sentMessages[0].text}`
   );
-  assert.ok(sentMessages[0].body.includes("www.slytrans.com/cars"));
+  assert.ok(sentMessages[0].text.includes("www.slytrans.com/cars"));
 });
 
 test("sends declined SMS when age is under 21", async () => {
@@ -279,8 +276,8 @@ test("sends declined SMS when age is under 21", async () => {
   await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].body.includes("does not meet our current rental requirements"),
-    `Expected declined SMS body, got: ${sentMessages[0].body}`
+    sentMessages[0].text.includes("does not meet our current rental requirements"),
+    `Expected declined SMS body, got: ${sentMessages[0].text}`
   );
 });
 
@@ -291,8 +288,8 @@ test("sends review SMS when license is missing", async () => {
   await handler(makeReq("POST", body), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(
-    sentMessages[0].body.includes("under review"),
-    `Expected review SMS body, got: ${sentMessages[0].body}`
+    sentMessages[0].text.includes("under review"),
+    `Expected review SMS body, got: ${sentMessages[0].text}`
   );
 });
 
@@ -308,8 +305,8 @@ test("SMS contains first name in review/declined messages", async () => {
   const res = makeRes();
   await handler(makeReq("POST", { ...VALID_BODY, age: 18 }), res);
   assert.ok(
-    sentMessages[0].body.includes("Jane"),
-    `Expected first name in SMS, got: ${sentMessages[0].body}`
+    sentMessages[0].text.includes("Jane"),
+    `Expected first name in SMS, got: ${sentMessages[0].text}`
   );
 });
 

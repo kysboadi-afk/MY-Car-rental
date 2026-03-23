@@ -38,11 +38,8 @@
   }
 
   // ─── Phone OTP state ─────────────────────────────────────────────────────────
-  // NOTE: Phone OTP verification is temporarily disabled while Twilio is being
-  // set up. phoneVerified is pre-set to true and a placeholder token is used
-  // so that form submissions proceed without SMS. Re-enable once Twilio is ready.
-  let phoneOtpToken  = "bypassed"; // temporary placeholder — OTP disabled
-  let phoneVerified  = true;       // pre-approved while OTP is disabled
+  let phoneOtpToken  = null;
+  let phoneVerified  = false;
   let resendTimer    = null;
 
   // ─── Open / close ────────────────────────────────────────────────────────────
@@ -112,11 +109,6 @@
   var phoneOtpInput       = document.getElementById("applyPhoneOtpInput");
   var resendPhoneOtpBtn   = document.getElementById("applyResendPhoneOtpBtn");
   var phoneVerifiedBadge  = document.getElementById("applyPhoneVerifiedBadge");
-
-  // Hide OTP UI while Twilio is temporarily disabled
-  if (sendPhoneOtpBtn)    sendPhoneOtpBtn.style.display    = "none";
-  if (phoneOtpGroup)      phoneOtpGroup.style.display      = "none";
-  if (phoneVerifiedBadge) phoneVerifiedBadge.style.display = "none";
 
   function startResendCooldown() {
     resendPhoneOtpBtn.disabled = true;
@@ -262,13 +254,12 @@
       return;
     }
 
-    // Phone OTP check temporarily disabled — Twilio setup pending.
-    // if (!phoneVerified || !phoneOtpToken) {
-    //   statusEl.textContent = "Please verify your phone number before submitting.";
-    //   statusEl.className = "apply-status error";
-    //   phoneInput.focus();
-    //   return;
-    // }
+    if (!phoneVerified || !phoneOtpToken) {
+      statusEl.textContent = mt("applyModal.verifyPhoneFirst", "Please verify your phone number before submitting.");
+      statusEl.className = "apply-status error";
+      phoneInput.focus();
+      return;
+    }
 
     submitBtn.disabled = true;
     statusEl.textContent = mt("applyModal.submitting", "Submitting your application\u2026");

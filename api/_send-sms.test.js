@@ -1,23 +1,20 @@
 // Tests for api/send-sms.js
-// Validates that an SMS is sent via Twilio when a visitor submits the lead form.
+// Validates that an SMS is sent via TextMagic when a visitor submits the lead form.
 //
 // Run with: npm test
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-// ─── Twilio env vars ──────────────────────────────────────────────────────────
-process.env.TWILIO_ACCOUNT_SID   = "ACtest00000000000000000000000000000";
-process.env.TWILIO_AUTH_TOKEN    = "test_auth_token_00000000000000000000";
-process.env.TWILIO_PHONE_NUMBER  = "+18773155034";
+// ─── TextMagic env vars ───────────────────────────────────────────────────────
+process.env.TEXTMAGIC_USERNAME = "testuser";
+process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
 
-// ─── Twilio mock ──────────────────────────────────────────────────────────────
+// ─── TextMagic mock ───────────────────────────────────────────────────────────
 const sentMessages = [];
-const mockCreate = mock.fn(async (opts) => { sentMessages.push(opts); return {}; });
+const mockSendSms = mock.fn(async (to, text) => { sentMessages.push({ to, text }); return {}; });
 
-mock.module("twilio", {
-  defaultExport: () => ({
-    messages: { create: mockCreate },
-  }),
+mock.module("./_textmagic.js", {
+  namedExports: { sendSms: mockSendSms },
 });
 
 const { default: handler } = await import("./send-sms.js");
@@ -92,37 +89,27 @@ test("SMS is sent to the visitor phone number", async () => {
   assert.equal(sentMessages[0].to, "3105550123");
 });
 
-test("SMS is sent from the configured Twilio phone number", async () => {
-  sentMessages.length = 0;
-  const res = makeRes();
-  await handler(makeReq("POST", VALID_BODY), res);
-  assert.equal(sentMessages[0].from, "+18773155034");
-});
-
 test("SMS body contains the expected message", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
-  const body = sentMessages[0].body;
+  const body = sentMessages[0].text;
   assert.ok(body.includes("SLY Services"), `Expected body to mention SLY Services, got: ${body}`);
   assert.ok(body.includes("for vehicle rentals"), `Expected body to mention vehicle rentals, got: ${body}`);
   assert.ok(body.includes("Reply STOP"), `Expected body to include opt-out instruction, got: ${body}`);
 });
 
-test("returns 500 when Twilio credentials are missing", async () => {
-  const savedSid   = process.env.TWILIO_ACCOUNT_SID;
-  const savedToken = process.env.TWILIO_AUTH_TOKEN;
-  const savedPhone = process.env.TWILIO_PHONE_NUMBER;
-  delete process.env.TWILIO_ACCOUNT_SID;
-  delete process.env.TWILIO_AUTH_TOKEN;
-  delete process.env.TWILIO_PHONE_NUMBER;
+test("returns 500 when TextMagic credentials are missing", async () => {
+  const savedUser = process.env.TEXTMAGIC_USERNAME;
+  const savedKey  = process.env.TEXTMAGIC_API_KEY;
+  delete process.env.TEXTMAGIC_USERNAME;
+  delete process.env.TEXTMAGIC_API_KEY;
 
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
   assert.equal(res._status, 500);
   assert.ok(res._body.error);
 
-  process.env.TWILIO_ACCOUNT_SID  = savedSid;
-  process.env.TWILIO_AUTH_TOKEN   = savedToken;
-  process.env.TWILIO_PHONE_NUMBER = savedPhone;
+  process.env.TEXTMAGIC_USERNAME = savedUser;
+  process.env.TEXTMAGIC_API_KEY  = savedKey;
 });
