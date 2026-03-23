@@ -21,7 +21,8 @@ export async function sendSms(to, text) {
     throw new Error("Missing TextMagic environment variables (TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY).");
   }
 
-  // TextMagic REST API v2: `phones` is a comma-separated string of recipients.
+  // TextMagic REST API v2: `phones` accepts a single E.164 number or a
+  // comma-separated string of multiple numbers.
   const response = await fetch(TEXTMAGIC_API_URL, {
     method: "POST",
     headers: {

@@ -211,20 +211,19 @@ export default async function handler(req, res) {
       .json({ error: "Missing required fields: name, phone, experience." });
   }
 
-  // NOTE: Phone OTP verification temporarily disabled — TextMagic setup pending.
-  // Once TextMagic is configured, restore this block:
-  // if (!phoneOtpToken || !phoneOtpCode) {
-  //   return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
-  // }
-  // const phoneDigits = String(phone).replace(/\D/g, "");
-  // const phoneE164 = phoneDigits.length === 10
-  //   ? "+1" + phoneDigits
-  //   : phoneDigits.length === 11 && phoneDigits.startsWith("1")
-  //     ? "+" + phoneDigits
-  //     : phone.startsWith("+") ? phone : null;
-  // if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
-  //   return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
-  // }
+  if (!phoneOtpToken || !phoneOtpCode) {
+    return res.status(400).json({ error: "Phone number verification is required. Please verify your phone before submitting." });
+  }
+  const phoneDigits = String(phone).replace(/\D/g, "");
+  const phoneStr    = String(phone);
+  const phoneE164 = phoneDigits.length === 10
+    ? "+1" + phoneDigits
+    : phoneDigits.length === 11 && phoneDigits.startsWith("1")
+      ? "+" + phoneDigits
+      : phoneStr.startsWith("+") ? phoneStr : null;
+  if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
+    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
+  }
 
   // Build attachment if a license image/PDF was provided
   const attachments = [];

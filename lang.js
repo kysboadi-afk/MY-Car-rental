@@ -99,6 +99,7 @@
         codeSentPhone:      "A 6-digit code was sent to your phone.",
         networkError:       "Network error. Please check your connection and try again.",
         otpSentError:       "Failed to send verification code. Please try again.",
+        verifyPhoneFirst:   "Please verify your phone number before submitting.",
         generalError:       "Something went wrong. Please try again."
       },
       // cars.html
@@ -524,6 +525,7 @@
         codeSentPhone:      "Se envi\u00F3 un c\u00F3digo de 6 d\u00EDgitos a tu tel\u00E9fono.",
         networkError:       "Error de red. Por favor verifica tu conexi\u00F3n e int\u00E9ntalo de nuevo.",
         otpSentError:       "No se pudo enviar el c\u00F3digo de verificaci\u00F3n. Por favor int\u00E9ntalo de nuevo.",
+        verifyPhoneFirst:   "Por favor verifica tu n\u00FAmero de tel\u00E9fono antes de enviar.",
         generalError:       "Algo sali\u00F3 mal. Por favor int\u00E9ntalo de nuevo."
       },
       fleet: {
