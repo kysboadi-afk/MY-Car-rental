@@ -26,6 +26,9 @@
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
 import { verifyDecisionToken } from "./_waitlist-token.js";
+import { sendSms } from "./_textmagic.js";
+import { render, WAITLIST_APPROVED, WAITLIST_DECLINED } from "./_sms-templates.js";
+import { normalizePhone } from "./_bookings.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const GITHUB_REPO   = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -332,6 +335,30 @@ export default async function handler(req, res) {
     );
     if (nextPending) {
       nextNote = `<p>ℹ️ The next pending entry in the queue is <strong>${esc(nextPending.name)}</strong> (${esc(nextPending.email)}) at position #${nextPending.position}.</p>`;
+    }
+  }
+
+  // ── Decision SMS ──────────────────────────────────────────────────────────
+  if (entry.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    const normalizedPhone = normalizePhone(entry.phone);
+    try {
+      if (action === "approve") {
+        await sendSms(
+          normalizedPhone,
+          render(WAITLIST_APPROVED, {
+            customer_name: entry.name,
+            vehicle:       entry.vehicleName || vehicleId,
+            booking_link:  "https://www.slytrans.com/cars",
+          })
+        );
+      } else {
+        await sendSms(
+          normalizedPhone,
+          render(WAITLIST_DECLINED, { customer_name: entry.name })
+        );
+      }
+    } catch (smsErr) {
+      console.error("waitlist-decision: decision SMS failed:", smsErr);
     }
   }
 
