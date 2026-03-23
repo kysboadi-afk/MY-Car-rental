@@ -48,8 +48,8 @@
     <aside class="cars-sidebar">
       <h3 class="sidebar-title" data-i18n="fleet.sidebarTitle">Browse by Type</h3>
       <nav class="sidebar-nav">
-        <button class="sidebar-btn active" data-filter="all" data-i18n="fleet.filterAll">All Cars</button>
-        <button class="sidebar-btn" data-filter="economy" data-i18n="fleet.filterEconomy">Economy / Ridesharing</button>
+        <button class="sidebar-btn" data-filter="all" data-i18n="fleet.filterAll">All Cars</button>
+        <button class="sidebar-btn active" data-filter="economy" data-i18n="fleet.filterEconomy">Economy / Ridesharing</button>
         <button class="sidebar-btn" data-filter="slingshot" data-i18n="fleet.filterSlingshot">Slingshots</button>
       </nav>
     </aside>
@@ -58,7 +58,7 @@
     <section class="cars" id="car-grid">
 
       <!-- Slingshot -->
-      <div class="car-card" data-category="slingshot" data-vehicle="slingshot">
+      <div class="car-card" data-category="slingshot" data-vehicle="slingshot" style="display:none">
         <img src="images/car2.jpg" alt="Slingshot R" class="img-slingshot">
         <div class="car-info">
           <span class="status-badge" id="status-badge-slingshot" data-i18n="fleet.available">● Available</span>
@@ -82,7 +82,7 @@
       </div>
 
       <!-- Slingshot #2 — TODO: update the VIN in car.js once it is available. -->
-      <div class="car-card" data-category="slingshot" data-vehicle="slingshot2">
+      <div class="car-card" data-category="slingshot" data-vehicle="slingshot2" style="display:none">
         <img src="images/IMG_1749.jpeg" alt="Slingshot R" class="img-slingshot2">
         <div class="car-info">
           <span class="status-badge" id="status-badge-slingshot2" data-i18n="fleet.available">● Available</span>
