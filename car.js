@@ -1587,10 +1587,11 @@ function updateTotal() {
 
     // DPP scales with the number of rental days when Option B is selected
     if (insuranceCoverageChoice === "no") {
+      const dppFmtKey = slingshotDays === 1 ? "booking.dppSlingshotFmt1" : "booking.dppSlingshotFmtN";
       const dppLabel = slingshotDays === 1
         ? `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`
         : `Damage Protection Plan (${slingshotDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day)`;
-      lines.push({ label: _fmt("booking.dppSlingshotFmt", { days: slingshotDays, price: PROTECTION_PLAN_DAILY }, dppLabel), amount: dppCost });
+      lines.push({ label: _fmt(dppFmtKey, { days: slingshotDays, price: PROTECTION_PLAN_DAILY }, dppLabel), amount: dppCost });
     }
 
     // Compute LA sales tax (10.25%) on the full rental base.

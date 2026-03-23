@@ -18,6 +18,9 @@
 import nodemailer from "nodemailer";
 import { sendSms } from "./_textmagic.js";
 import { verifyPhoneOtpToken } from "./_otp.js";
+import { render, APPLICATION_RECEIVED, APPLICATION_APPROVED, APPLICATION_DENIED } from "./_sms-templates.js";
+import { normalizePhone } from "./_bookings.js";
+import { upsertContact } from "./_contacts.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -58,24 +61,10 @@ function evaluateApplication({ age, experience, licenseAttached, agreeTerms }) {
   return "approved";
 }
 
-const SMS_MESSAGES = {
-  approved: (firstName) =>
-    `\uD83C\uDF89 Congratulations! You\u2019re approved to rent with SLY Transportation.\n\n` +
-    `Choose your car and complete your booking here:\n` +
-    `\uD83D\uDC49 www.slytrans.com/cars\n\n` +
-    `$350/week \u2022 Unlimited miles \uD83D\uDE97\uD83D\uDCA8\n\n` +
-    `Start driving today! Reply STOP to opt out.`,
-
-  review: (firstName) =>
-    `Hi ${firstName}, thanks for applying with SLY Transportation.\n\n` +
-    `Your application is currently under review. Our team will get back to you within 24 hours.\n\n` +
-    `Please keep an eye on your messages. Reply STOP to opt out.`,
-
-  declined: (firstName) =>
-    `Hi ${firstName}, thank you for your interest in SLY Transportation.\n\n` +
-    `Unfortunately, your application does not meet our current rental requirements.\n\n` +
-    `If you have any questions, feel free to reply to this message.`,
-};
+// SMS templates are defined in _sms-templates.js.
+// approved  → APPLICATION_APPROVED  (with waitlist_link)
+// review    → APPLICATION_RECEIVED already sent; no second SMS at this stage
+// declined  → APPLICATION_DENIED
 
 const EMAIL_SUBJECTS = {
   approved: `\u2705 You\u2019re Approved! \u2014 SLY Transportation Services`,
@@ -306,11 +295,36 @@ export default async function handler(req, res) {
       process.env.TEXTMAGIC_USERNAME &&
       process.env.TEXTMAGIC_API_KEY
     ) {
+      const normalizedPhone = normalizePhone(phone);
       try {
-        await sendSms(phone, SMS_MESSAGES[decision](firstName));
+        // Send a single decision SMS: approved, declined, or review (received).
+        if (decision === "approved") {
+          await sendSms(normalizedPhone, render(APPLICATION_APPROVED, {
+            customer_name: firstName,
+            vehicle:       "",
+            waitlist_link: "https://www.slytrans.com/cars",
+          }));
+        } else if (decision === "declined") {
+          await sendSms(normalizedPhone, render(APPLICATION_DENIED, { customer_name: firstName }));
+        } else {
+          // "review" → application received / under review acknowledgment
+          await sendSms(normalizedPhone, render(APPLICATION_RECEIVED, { customer_name: firstName }));
+        }
       } catch (smsErr) {
         // SMS failure is non-fatal — log it but don't fail the whole request
-        console.error("Application SMS send failed:", smsErr);
+        console.error(`Application SMS send failed for ${normalizedPhone}:`, smsErr);
+      }
+    }
+
+    // ─── TextMagic contact upsert ─────────────────────────────────────────────
+    if (phone) {
+      try {
+        const addTags = decision === "approved"
+          ? ["application", "approved"]
+          : ["application"];
+        await upsertContact(normalizePhone(phone), name || "", { addTags });
+      } catch (contactErr) {
+        console.error("TextMagic contact upsert failed:", contactErr);
       }
     }
 

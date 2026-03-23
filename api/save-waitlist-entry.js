@@ -13,6 +13,10 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { CARS } from "./_pricing.js";
 import { createDecisionToken } from "./_waitlist-token.js";
+import { sendSms } from "./_textmagic.js";
+import { render, WAITLIST_JOINED } from "./_sms-templates.js";
+import { normalizePhone } from "./_bookings.js";
+import { upsertContact, vehicleTag } from "./_contacts.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -298,6 +302,33 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error("Customer waitlist email failed:", err);
         }
+      }
+    }
+
+    // ─── Waitlist join SMS ────────────────────────────────────────────────────
+    if (phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+      try {
+        await sendSms(
+          normalizePhone(phone),
+          render(WAITLIST_JOINED, {
+            customer_name: trimmedName,
+            vehicle:       carData.name,
+          })
+        );
+      } catch (smsErr) {
+        console.error("Waitlist join SMS failed:", smsErr);
+      }
+    }
+
+    // ─── TextMagic contact upsert ─────────────────────────────────────────────
+    if (phone) {
+      try {
+        const addTags = ["waitlist"];
+        const vTag = vehicleTag(vehicleId);
+        if (vTag) addTags.push(vTag);
+        await upsertContact(normalizePhone(phone), trimmedName, { addTags });
+      } catch (contactErr) {
+        console.error("TextMagic contact upsert (waitlist) failed:", contactErr);
       }
     }
 
