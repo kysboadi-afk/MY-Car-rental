@@ -20,6 +20,7 @@ import { sendSms } from "./_textmagic.js";
 import { verifyPhoneOtpToken } from "./_otp.js";
 import { render, APPLICATION_RECEIVED, APPLICATION_APPROVED, APPLICATION_DENIED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
+import { upsertContact } from "./_contacts.js";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -312,6 +313,18 @@ export default async function handler(req, res) {
       } catch (smsErr) {
         // SMS failure is non-fatal — log it but don't fail the whole request
         console.error(`Application SMS send failed for ${normalizedPhone}:`, smsErr);
+      }
+    }
+
+    // ─── TextMagic contact upsert ─────────────────────────────────────────────
+    if (phone) {
+      try {
+        const addTags = decision === "approved"
+          ? ["application", "approved"]
+          : ["application"];
+        await upsertContact(normalizePhone(phone), name || "", { addTags });
+      } catch (contactErr) {
+        console.error("TextMagic contact upsert failed:", contactErr);
       }
     }
 

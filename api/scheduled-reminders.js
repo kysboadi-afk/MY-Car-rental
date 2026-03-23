@@ -49,6 +49,7 @@ import {
   RETENTION_DAY_30,
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { upsertContact } from "./_contacts.js";
 import { CARS } from "./_pricing.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
@@ -382,7 +383,20 @@ async function processCompleted(allBookings, now, sentMarks) {
       // Thank-you immediately on completion (within 1 hour)
       if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you")) {
         const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "post_thank_you" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "post_thank_you" });
+          // Promote to past_customer in TextMagic contact database
+          if (booking.phone) {
+            try {
+              await upsertContact(normalizePhone(booking.phone), booking.name || "", {
+                addTags:    ["past_customer"],
+                removeTags: ["booked"],
+              });
+            } catch (contactErr) {
+              console.error("scheduled-reminders: TextMagic contact update failed:", contactErr);
+            }
+          }
+        }
       }
 
       // Retention sequence

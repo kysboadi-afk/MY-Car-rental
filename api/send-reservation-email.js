@@ -17,6 +17,7 @@ import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BI
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { appendBooking, normalizePhone } from "./_bookings.js";
+import { upsertContact, vehicleTag } from "./_contacts.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1118,6 +1119,18 @@ export default async function handler(req, res) {
         );
       } catch (smsErr) {
         console.error("Booking confirmation SMS failed:", smsErr);
+      }
+    }
+
+    // ── TextMagic contact upsert ──────────────────────────────────────────────
+    if (isConfirmed && !isBalancePayment && phone && vehicleId) {
+      try {
+        const addTags = ["booked"];
+        const vTag = vehicleTag(vehicleId);
+        if (vTag) addTags.push(vTag);
+        await upsertContact(normalizePhone(phone), name || "", { addTags });
+      } catch (contactErr) {
+        console.error("TextMagic contact upsert (booking) failed:", contactErr);
       }
     }
 

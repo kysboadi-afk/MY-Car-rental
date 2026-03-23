@@ -4,7 +4,7 @@
   "type": "module",
   "description": "SLY Rides Vercel serverless backend",
   "scripts": {
-    "test": "node --experimental-test-module-mocks --test api/_pricing.test.js api/_send-reservation-email.test.js api/_send-signnow-invite.test.js api/_check-signnow.test.js api/_open-dates.test.js api/_block-dates.test.js api/_send-lead-email.test.js api/_send-sms.test.js api/_otp.test.js api/_send-otp.test.js api/_send-contact-email.test.js api/_send-application-email.test.js api/_send-phone-otp.test.js api/_waitlist-token.test.js api/_sms-templates.test.js"
+    "test": "node --experimental-test-module-mocks --test api/_pricing.test.js api/_send-reservation-email.test.js api/_send-signnow-invite.test.js api/_check-signnow.test.js api/_open-dates.test.js api/_block-dates.test.js api/_send-lead-email.test.js api/_send-sms.test.js api/_otp.test.js api/_send-otp.test.js api/_send-contact-email.test.js api/_send-application-email.test.js api/_send-phone-otp.test.js api/_waitlist-token.test.js api/_sms-templates.test.js api/_contacts.test.js"
   },
   "dependencies": {
     "nodemailer": "^8.0.1",

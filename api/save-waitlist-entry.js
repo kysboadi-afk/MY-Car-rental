@@ -16,6 +16,7 @@ import { createDecisionToken } from "./_waitlist-token.js";
 import { sendSms } from "./_textmagic.js";
 import { render, WAITLIST_JOINED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
+import { upsertContact, vehicleTag } from "./_contacts.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -316,6 +317,18 @@ export default async function handler(req, res) {
         );
       } catch (smsErr) {
         console.error("Waitlist join SMS failed:", smsErr);
+      }
+    }
+
+    // ─── TextMagic contact upsert ─────────────────────────────────────────────
+    if (phone) {
+      try {
+        const addTags = ["waitlist"];
+        const vTag = vehicleTag(vehicleId);
+        if (vTag) addTags.push(vTag);
+        await upsertContact(normalizePhone(phone), trimmedName, { addTags });
+      } catch (contactErr) {
+        console.error("TextMagic contact upsert (waitlist) failed:", contactErr);
       }
     }
 

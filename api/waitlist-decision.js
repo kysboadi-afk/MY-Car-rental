@@ -29,6 +29,7 @@ import { verifyDecisionToken } from "./_waitlist-token.js";
 import { sendSms } from "./_textmagic.js";
 import { render, WAITLIST_APPROVED, WAITLIST_DECLINED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
+import { upsertContact } from "./_contacts.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const GITHUB_REPO   = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -359,6 +360,15 @@ export default async function handler(req, res) {
       }
     } catch (smsErr) {
       console.error("waitlist-decision: decision SMS failed:", smsErr);
+    }
+  }
+
+  // ── TextMagic contact: add 'approved' tag on approval ────────────────────
+  if (action === "approve" && entry.phone) {
+    try {
+      await upsertContact(normalizePhone(entry.phone), entry.name, { addTags: ["approved"] });
+    } catch (contactErr) {
+      console.error("waitlist-decision: TextMagic contact upsert failed:", contactErr);
     }
   }
 
