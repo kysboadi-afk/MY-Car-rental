@@ -289,8 +289,8 @@ function generateRentalAgreementHtml(body) {
   </table>
   <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
 
-  <h4>MILEAGE &amp; FUEL</h4>
-  <p><strong>Mileage Limit:</strong> Unlimited miles are included; however, all driving must remain within the state of California. Driving the vehicle out of state is strictly prohibited and will result in a <strong>$250 penalty charge</strong>.</p>
+  <h4>MILEAGE, GEOGRAPHIC USE &amp; FUEL</h4>
+  <p><strong>Mileage &amp; Geographic Limit:</strong> Unlimited miles are included within a designated local area only. All vehicle use must remain within <strong>Los Angeles County</strong> or within a <strong>50-mile radius of Los Angeles</strong>, unless otherwise approved in writing by the host. Travel outside this area — including trips to San Diego, San Francisco, Las Vegas, or any out-of-state destination — is not allowed without prior written authorization. Unauthorized use outside the approved area will result in a <strong>$500 penalty fee</strong> and may lead to early termination of the rental without refund. The vehicle is equipped with a GPS tracking system for security and compliance; by renting, you consent to location monitoring during the rental period.</p>
   <p><strong>Fuel Policy:</strong> Return the vehicle with the same fuel level as at pickup, or pay a $5/gallon replacement fee.</p>
 
   ${depositSection}
@@ -310,7 +310,7 @@ function generateRentalAgreementHtml(body) {
     <li>Diminished value</li>
     <li>Administrative, towing, and storage fees</li>
   </ul>
-  <p><strong>With Protection Plan:</strong> Renter's responsibility is limited to the stated deductible, provided all terms of this agreement are followed.</p>
+  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
   <p><strong>Exclusions (Protection Plan Void If):</strong></p>
   <ul>
     <li>Driver is under the influence of drugs or alcohol</li>
@@ -364,7 +364,7 @@ function generateRentalAgreementHtml(body) {
 
   <div class="sig-block">
     <p><strong>ELECTRONIC SIGNATURE</strong></p>
-    <p>By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding.</p>
+    <p>By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding. By signing, the renter confirms they are <strong>21 years of age or older</strong> and have full legal capacity to enter into this agreement.</p>
     <p class="sig-name">${esc(signature || "")}</p>
     <p class="watermark">&#10003; Digitally Signed</p>
     <p style="font-size:13px;color:#555">Signed: ${esc(signedAt)} (Pacific Time)</p>
@@ -522,8 +522,8 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("Late Fee: $50/day after a 2-hour grace period.");
 
     // ── Mileage & Fuel ─────────────────────────────────────────────────────────
-    sectionHeader("Mileage & Fuel");
-    bodyText("Mileage Limit: Unlimited miles are included; however, all driving must remain within the state of California. Driving out of state is strictly prohibited and will result in a $250 penalty charge.");
+    sectionHeader("Mileage, Geographic Use & Fuel");
+    bodyText("Mileage & Geographic Limit: Unlimited miles are included within a designated local area only. All vehicle use must remain within Los Angeles County or within a 50-mile radius of Los Angeles, unless otherwise approved in writing by the host. Travel outside this area — including trips to San Diego, San Francisco, Las Vegas, or any out-of-state destination — is not allowed without prior written authorization. Unauthorized use outside the approved area will result in a $500 penalty fee and may lead to early termination of the rental without refund. The vehicle is equipped with a GPS tracking system for security and compliance; by renting, you consent to location monitoring during the rental period.");
     doc.moveDown(0.2);
     bodyText("Fuel Policy: Return the vehicle with the same fuel level as at pickup, or pay a $5/gallon replacement fee.");
 
@@ -563,7 +563,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("Without Protection Plan: Renter is fully responsible for all damages and associated costs, including:");
     bulletList(["Full cost of vehicle repair or replacement", "Loss of use (rental downtime)", "Diminished value", "Administrative, towing, and storage fees"]);
     doc.moveDown(0.2);
-    bodyText("With Protection Plan: Renter's responsibility is limited to the stated deductible, provided all terms of this agreement are followed.");
+    bodyText("With Protection Plan: Renter's maximum liability for covered vehicle damage is limited to $1,000 per incident. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.");
     doc.moveDown(0.2);
     bodyText("Exclusions (Protection Plan Void If):");
     bulletList([
@@ -644,7 +644,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       .text("ELECTRONIC SIGNATURE", 60, doc.y);
     doc.moveDown(0.3);
     doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
-      .text("By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding.", 60, doc.y, { width: PAGE_WIDTH - 20 });
+      .text("By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding. By signing, the renter confirms they are 21 years of age or older and have full legal capacity to enter into this agreement.", 60, doc.y, { width: PAGE_WIDTH - 20 });
     doc.moveDown(0.5);
 
     // Signature in cursive-style font (using Helvetica-BoldOblique as fallback)

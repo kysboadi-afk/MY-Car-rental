@@ -3,6 +3,21 @@
 const filterBtns = document.querySelectorAll('.sidebar-btn');
 const carCards = document.querySelectorAll('#car-grid .car-card');
 
+const rideshareOnlySections = [
+  document.querySelector('.why-drivers-section'),
+  document.querySelector('.fleet-cta-section'),
+];
+const slingshotOnlySections = [
+  document.getElementById('slingshot-explore-section'),
+  document.getElementById('slingshot-why-section'),
+];
+
+function applyBottomSections(filter) {
+  const isSlingshotOnly = filter === 'slingshot';
+  rideshareOnlySections.forEach(el => { if (el) el.style.display = isSlingshotOnly ? 'none' : ''; });
+  slingshotOnlySections.forEach(el => { if (el) el.style.display = isSlingshotOnly ? '' : 'none'; });
+}
+
 filterBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     filterBtns.forEach(b => b.classList.remove('active'));
@@ -16,6 +31,8 @@ filterBtns.forEach(btn => {
         card.style.display = 'none';
       }
     });
+
+    applyBottomSections(filter);
   });
 });
 
