@@ -140,15 +140,15 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(data),
           }).then(function(res) {
-            if (!res.ok) { showEmailError(); }
             enableHomeBtn();
+            if (!res.ok) { showEmailError(); }
             // After waitlist confirmation, home button should go to cars page
             var btn = document.getElementById("homeBtn");
             if (btn) btn.href = "cars.html";
           }).catch(function(err) {
             console.error("save-waitlist-entry error:", err);
-            showEmailError();
             enableHomeBtn();
+            showEmailError();
           });
         }
 
@@ -308,12 +308,12 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
         }).then(function (res) {
-          if (!res.ok) { showEmailError(); }
           enableHomeBtn();
+          if (!res.ok) { showEmailError(); }
         }).catch(function (err) {
           console.error("Reservation email error:", err);
-          showEmailError();
           enableHomeBtn();
+          showEmailError();
         });
       }
 
