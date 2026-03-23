@@ -87,7 +87,7 @@ test("APPLICATION_APPROVED contains approval phrasing and variables", () => {
 
 test("APPLICATION_DENIED contains denial phrasing", () => {
   assert.ok(APPLICATION_DENIED.includes("{customer_name}"));
-  assert.ok(APPLICATION_DENIED.includes("unable to approve"));
+  assert.ok(APPLICATION_DENIED.includes("does not meet our current rental requirements"));
 });
 
 test("render APPLICATION_RECEIVED replaces customer_name", () => {

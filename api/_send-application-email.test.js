@@ -297,7 +297,7 @@ test("SMS is sent to applicant phone number", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
-  assert.equal(sentMessages[0].to, "3105550199");
+  assert.equal(sentMessages[0].to, "+13105550199");
 });
 
 test("SMS contains first name in review/declined messages", async () => {

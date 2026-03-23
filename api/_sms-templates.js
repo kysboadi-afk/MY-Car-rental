@@ -44,7 +44,7 @@ export function render(template, vars = {}) {
 export const APPLICATION_RECEIVED =
   "Hi {customer_name},\n\n" +
   "We\u2019ve received your application.\n\n" +
-  "We are currently reviewing your information.\n" +
+  "Your application is currently under review.\n" +
   "We\u2019ll notify you shortly.\n\n" +
   "Reply STOP to opt out.";
 
@@ -59,7 +59,7 @@ export const APPLICATION_APPROVED =
 /** Sent when the application is auto-denied. */
 export const APPLICATION_DENIED =
   "Hi {customer_name},\n\n" +
-  "We\u2019re unable to approve your application at this time.\n\n" +
+  "Your application does not meet our current rental requirements.\n\n" +
   "If you have any questions, feel free to contact us.\n\n" +
   "Reply STOP to opt out.";
 

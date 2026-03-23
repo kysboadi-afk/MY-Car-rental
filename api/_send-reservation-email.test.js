@@ -300,13 +300,18 @@ test("blockBookedDates: GitHub API is called with correct params when vehicleId 
   // 2. PUT booked-dates.json  (blockBookedDates)
   // 3. GET fleet-status.json  (markVehicleUnavailable)
   // 4. PUT fleet-status.json  (markVehicleUnavailable)
-  assert.equal(fetchCalls.length, 4, "Should make 4 GitHub API calls (2 per file)");
+  // 5. GET bookings.json      (appendBooking)
+  // 6. PUT bookings.json      (appendBooking)
+  assert.equal(fetchCalls.length, 6, "Should make 6 GitHub API calls (2 each for booked-dates, fleet-status, bookings)");
   assert.ok(fetchCalls[0].url.includes("booked-dates.json"), "First call should GET booked-dates.json");
   assert.equal(fetchCalls[1].method, "PUT", "Second call should PUT booked-dates.json");
   assert.ok(fetchCalls[1].url.includes("booked-dates.json"), "Second call should target booked-dates.json");
   assert.ok(fetchCalls[2].url.includes("fleet-status.json"), "Third call should GET fleet-status.json");
   assert.equal(fetchCalls[3].method, "PUT", "Fourth call should PUT fleet-status.json");
   assert.ok(fetchCalls[3].url.includes("fleet-status.json"), "Fourth call should target fleet-status.json");
+  assert.ok(fetchCalls[4].url.includes("bookings.json"), "Fifth call should GET bookings.json");
+  assert.equal(fetchCalls[5].method, "PUT", "Sixth call should PUT bookings.json");
+  assert.ok(fetchCalls[5].url.includes("bookings.json"), "Sixth call should target bookings.json");
 });
 
 test("blockBookedDates: PUT body includes the new date range for the correct vehicle", async () => {

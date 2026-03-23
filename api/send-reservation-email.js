@@ -1075,7 +1075,8 @@ export default async function handler(req, res) {
     }
 
     // ── Save booking record for scheduled reminders ───────────────────────────
-    if (isConfirmed && vehicleId && phone) {
+    // Only save on initial booking — balance payments update the existing record.
+    if (isConfirmed && !isBalancePayment && vehicleId && phone) {
       try {
         const bookingRecord = {
           bookingId:       crypto.randomBytes(16).toString("hex"),
@@ -1089,7 +1090,7 @@ export default async function handler(req, res) {
           returnDate:      returnDate || "",
           returnTime:      returnTime || "",
           location:        DEFAULT_LOCATION,
-          status:          isBalancePayment ? "booked_paid" : (fullRentalCost ? "reserved_unpaid" : "booked_paid"),
+          status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
           paymentIntentId: paymentIntentId || "",
           paymentLink:     balancePayUrl || "",
           smsSentAt:       {},

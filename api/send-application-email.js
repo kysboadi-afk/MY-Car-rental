@@ -296,13 +296,7 @@ export default async function handler(req, res) {
     ) {
       const normalizedPhone = normalizePhone(phone);
       try {
-        // Step 1: Always send "application received" acknowledgment immediately.
-        await sendSms(normalizedPhone, render(APPLICATION_RECEIVED, { customer_name: firstName }));
-      } catch (smsErr) {
-        console.error(`Application received SMS send failed for ${normalizedPhone}:`, smsErr);
-      }
-      try {
-        // Step 2: Send decision SMS (approved or denied only; "review" is pending).
+        // Send a single decision SMS: approved, declined, or review (received).
         if (decision === "approved") {
           await sendSms(normalizedPhone, render(APPLICATION_APPROVED, {
             customer_name: firstName,
@@ -311,11 +305,13 @@ export default async function handler(req, res) {
           }));
         } else if (decision === "declined") {
           await sendSms(normalizedPhone, render(APPLICATION_DENIED, { customer_name: firstName }));
+        } else {
+          // "review" → application received / under review acknowledgment
+          await sendSms(normalizedPhone, render(APPLICATION_RECEIVED, { customer_name: firstName }));
         }
-        // "review" → no decision SMS; owner will manually follow up
       } catch (smsErr) {
         // SMS failure is non-fatal — log it but don't fail the whole request
-        console.error(`Application decision SMS send failed for ${normalizedPhone}:`, smsErr);
+        console.error(`Application SMS send failed for ${normalizedPhone}:`, smsErr);
       }
     }
 
