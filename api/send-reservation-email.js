@@ -1092,6 +1092,7 @@ export default async function handler(req, res) {
           returnTime:      returnTime || "",
           location:        DEFAULT_LOCATION,
           status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
+          amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
           paymentIntentId: paymentIntentId || "",
           paymentLink:     balancePayUrl || "",
           smsSentAt:       {},

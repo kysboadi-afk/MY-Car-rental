@@ -154,6 +154,135 @@
     #fleetStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
     #fleetStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #fleetStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* ── Vehicle Tracking & Profit ───────────────────────────────────── */
+    .profit-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .profit-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
+    .profit-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+    /* Vehicle cards grid */
+    .vehicle-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 560px) { .vehicle-cards { grid-template-columns: 1fr; } }
+
+    .vehicle-card {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .vehicle-card:hover { border-color: #ffb400; }
+    .vehicle-card.active { border-color: #ffb400; background: #1a1500; }
+
+    .vc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .vc-name { font-size: 14px; font-weight: 700; color: #fff; }
+    .vc-status-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .vc-status-badge.active      { background: #1b3a1b; color: #4caf50; }
+    .vc-status-badge.maintenance { background: #3a2e0a; color: #ffb400; }
+    .vc-status-badge.inactive    { background: #2a1b1b; color: #ef4444; }
+
+    .vc-stat { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .vc-stat .lbl { color: #888; }
+    .vc-stat .val { color: #fff; font-weight: 600; }
+    .vc-stat .val.green { color: #4caf50; }
+    .vc-stat .val.red   { color: #ef4444; }
+
+    /* Progress bar */
+    .break-even-bar { margin-top: 10px; }
+    .break-even-label { font-size: 11px; color: #888; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .bar-bg { background: #222; border-radius: 4px; height: 6px; overflow: hidden; }
+    .bar-fill { height: 6px; background: #ffb400; border-radius: 4px; transition: width 0.5s; }
+    .bar-fill.full { background: #4caf50; }
+
+    /* Detail panel */
+    .vehicle-detail {
+      background: #0d0d0d;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .vehicle-detail.open { display: block; }
+    .detail-title { font-size: 16px; color: #ffb400; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .detail-close { cursor: pointer; font-size: 20px; color: #666; line-height: 1; }
+    .detail-close:hover { color: #fff; }
+
+    /* Metric grid */
+    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    @media (max-width: 480px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+    .metric-box { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 12px 10px; text-align: center; }
+    .metric-box .m-val { font-size: 18px; font-weight: 700; color: #ffb400; }
+    .metric-box .m-val.green { color: #4caf50; }
+    .metric-box .m-val.red   { color: #ef4444; }
+    .metric-box .m-lbl { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* Sub-section heading */
+    .detail-sub { font-size: 13px; color: #aaa; font-weight: 700; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; margin: 18px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Monthly table */
+    .monthly-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+    .monthly-table th { text-align: left; color: #888; padding: 4px 8px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+    .monthly-table td { padding: 5px 8px; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+    .monthly-table tr:last-child td { border-bottom: none; }
+    .monthly-table td.green { color: #4caf50; }
+    .monthly-table td.red   { color: #ef4444; }
+
+    /* Edit vehicle info */
+    .edit-vehicle-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 480px) { .edit-vehicle-form { grid-template-columns: 1fr; } }
+    .edit-vehicle-form .form-group { margin-bottom: 0; }
+    .edit-vehicle-form .form-group label { font-size: 12px; }
+
+    /* Expense list */
+    .expense-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #111; border: 1px solid #222; border-radius: 8px;
+      padding: 8px 12px; margin-bottom: 6px; font-size: 13px; gap: 10px;
+    }
+    .expense-item .exp-info { flex: 1; min-width: 0; }
+    .expense-item .exp-cat  { font-size: 11px; color: #888; text-transform: capitalize; }
+    .expense-item .exp-amt  { color: #ef4444; font-weight: 700; white-space: nowrap; }
+    .expense-item .exp-del  { background: none; border: none; color: #555; cursor: pointer; font-size: 16px; padding: 0 4px; }
+    .expense-item .exp-del:hover { color: #ef4444; }
+    .no-expenses { color: #555; font-size: 13px; font-style: italic; }
+
+    /* Add expense form */
+    .add-expense-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: end; margin-top: 10px; }
+    @media (max-width: 500px) { .add-expense-form { grid-template-columns: 1fr 1fr; } }
+    .add-expense-form .form-group { margin-bottom: 0; }
+    .add-expense-form .form-group label { font-size: 11px; }
+    .add-expense-form .form-group input,
+    .add-expense-form .form-group select { font-size: 13px; padding: 8px 10px; }
+    .btn-add-exp {
+      padding: 9px 14px; background: #ffb400; color: #000; border: none;
+      border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+      white-space: nowrap; transition: 0.2s;
+    }
+    .btn-add-exp:hover { background: #e0a000; }
+    .btn-save-vehicle {
+      padding: 9px 16px; background: #1a3a5c; color: #64b5f6; border: 1px solid #2a5a8a;
+      border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.2s;
+      margin-top: 12px;
+    }
+    .btn-save-vehicle:hover { background: #224a72; }
+
+    #profitMsg {
+      margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;
+    }
+    #profitMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #profitMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #profitMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* Recent bookings */
+    .booking-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+    .booking-row:last-child { border-bottom: none; }
+    .booking-row .bk-dates { color: #888; font-size: 11px; }
+    .booking-row .bk-amt   { color: #4caf50; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -247,6 +376,106 @@
 
       <div id="fleetStatusMsg"></div>
     </div>
+
+    <!-- ── Vehicle Tracking & Profit Dashboard ──────────────────────── -->
+    <div class="profit-section">
+      <h2>📊 Vehicle Tracking &amp; Profit</h2>
+      <p class="subtitle">Track revenue, expenses, and profitability for each vehicle. Enter admin password above, then click Load Stats.</p>
+
+      <button class="btn-block" id="loadStatsBtn" style="max-width:180px;margin-bottom:16px">📈 Load Stats</button>
+
+      <!-- Vehicle cards -->
+      <div class="vehicle-cards" id="vehicleCards">
+        <div style="color:#555;font-size:13px;font-style:italic;grid-column:1/-1">Click "Load Stats" to view vehicle performance data.</div>
+      </div>
+
+      <!-- Detail panel (shown when a vehicle card is clicked) -->
+      <div class="vehicle-detail" id="vehicleDetail">
+        <div class="detail-title">
+          <span id="detailTitle">Vehicle Name</span>
+          <span class="detail-close" id="detailClose" title="Close">✕</span>
+        </div>
+
+        <!-- Key metrics -->
+        <div class="metric-grid" id="detailMetrics"></div>
+
+        <!-- Break-even progress -->
+        <div class="break-even-bar" id="detailBreakEvenWrap">
+          <div class="break-even-label">
+            <span>Break-even Progress</span>
+            <span id="detailBreakEvenPct">–</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" id="detailBreakEvenBar" style="width:0%"></div></div>
+        </div>
+
+        <!-- Monthly breakdown table -->
+        <div class="detail-sub">Monthly Breakdown</div>
+        <div id="detailMonthly"></div>
+
+        <!-- Recent bookings -->
+        <div class="detail-sub">Recent Bookings</div>
+        <div id="detailBookings"></div>
+
+        <!-- Edit vehicle info -->
+        <div class="detail-sub">Vehicle Info</div>
+        <div class="edit-vehicle-form" id="editVehicleForm">
+          <div class="form-group">
+            <label>Purchase Date</label>
+            <input type="text" id="editPurchaseDate" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label>Purchase Price ($)</label>
+            <input type="number" id="editPurchasePrice" placeholder="0" min="0" step="1">
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="editVehicleStatus">
+              <option value="active">Active</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-save-vehicle" id="saveVehicleBtn">💾 Save Vehicle Info</button>
+
+        <!-- Expense list -->
+        <div class="detail-sub">Expenses</div>
+        <div id="detailExpenses"></div>
+
+        <!-- Add expense form -->
+        <div class="detail-sub" style="margin-top:14px">Add Expense</div>
+        <div class="add-expense-form">
+          <div class="form-group">
+            <label>Date</label>
+            <input type="text" id="expDate" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="expCategory">
+              <option value="maintenance">Maintenance</option>
+              <option value="insurance">Insurance</option>
+              <option value="repair">Repair</option>
+              <option value="fuel">Fuel</option>
+              <option value="registration">Registration</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Amount ($)</label>
+            <input type="number" id="expAmount" placeholder="0.00" min="0.01" step="0.01">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Notes (optional)</label>
+            <input type="text" id="expNotes" placeholder="e.g. Oil change at Jiffy Lube" maxlength="500">
+          </div>
+          <div style="grid-column:1/-1">
+            <button class="btn-add-exp" id="addExpenseBtn">➕ Add Expense</button>
+          </div>
+        </div>
+      </div><!-- /vehicleDetail -->
+
+      <div id="profitMsg"></div>
+    </div><!-- /profit-section -->
   </div>
 
   <footer>
@@ -473,6 +702,322 @@
       });
 
       loadFleetStatus();
+    })();
+  </script>
+  <!-- Vehicle Tracking & Profit Dashboard Script -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Date picker for expense date
+      flatpickr("#expDate", { dateFormat: "Y-m-d" });
+
+      var currentVehicleId = null;
+      var statsCache       = null;
+
+      // ── Helpers ────────────────────────────────────────────────────────────
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showProfitMsg(msg, type) {
+        var el = document.getElementById("profitMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        setTimeout(function () { el.style.display = "none"; }, 5000);
+      }
+
+      function fmt(num) {
+        if (num == null) return "–";
+        return "$" + Number(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function fmtPct(n) {
+        if (n == null) return "–";
+        return n.toFixed(1) + "%";
+      }
+
+      function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // ── Render vehicle cards ───────────────────────────────────────────────
+      function renderCards(stats) {
+        var container = document.getElementById("vehicleCards");
+        var VEHICLE_ORDER = ["slingshot", "slingshot2", "camry", "camry2013"];
+        var html = "";
+        VEHICLE_ORDER.forEach(function (vid) {
+          var s = stats[vid];
+          if (!s) return;
+          var v = s.vehicle;
+          var profitClass = s.netProfit >= 0 ? "green" : "red";
+          var breakEvenPct = s.breakEvenPct != null ? Math.min(100, s.breakEvenPct) : 0;
+          var statusClass  = v.status || "active";
+          html += '<div class="vehicle-card" id="vcard-' + vid + '" onclick="window._profitSelectVehicle(\'' + vid + '\')">'
+            + '<div class="vc-header">'
+            + '<div class="vc-name">' + esc(v.vehicle_name) + '</div>'
+            + '<span class="vc-status-badge ' + statusClass + '">' + esc(v.status || "active") + '</span>'
+            + '</div>'
+            + '<div class="vc-stat"><span class="lbl">Bookings</span><span class="val">' + s.totalBookings + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Revenue</span><span class="val">' + fmt(s.totalRevenue) + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Expenses</span><span class="val">' + fmt(s.totalExpenses) + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Net Profit</span><span class="val ' + profitClass + '">' + fmt(s.netProfit) + '</span></div>'
+            + (v.purchase_price > 0
+              ? '<div class="break-even-bar"><div class="break-even-label"><span>Break-even</span><span>' + fmtPct(s.breakEvenPct) + '</span></div>'
+                + '<div class="bar-bg"><div class="bar-fill' + (breakEvenPct >= 100 ? " full" : "") + '" style="width:' + Math.min(100, breakEvenPct) + '%"></div></div></div>'
+              : '')
+            + '</div>';
+        });
+        if (!html) html = '<div style="color:#555;font-size:13px;font-style:italic">No vehicle data available.</div>';
+        container.innerHTML = html;
+      }
+
+      // ── Select vehicle → show detail panel ────────────────────────────────
+      window._profitSelectVehicle = function (vehicleId) {
+        if (!statsCache) return;
+        var s = statsCache[vehicleId];
+        if (!s) return;
+
+        currentVehicleId = vehicleId;
+
+        // Highlight selected card
+        document.querySelectorAll(".vehicle-card").forEach(function (c) { c.classList.remove("active"); });
+        var card = document.getElementById("vcard-" + vehicleId);
+        if (card) card.classList.add("active");
+
+        var v = s.vehicle;
+
+        // Title
+        document.getElementById("detailTitle").textContent = "📊 " + (v.vehicle_name || vehicleId);
+
+        // Metric boxes
+        var roiHtml = s.roi != null
+          ? '<div class="metric-box"><div class="m-val ' + (s.roi >= 0 ? "green" : "red") + '">' + fmtPct(s.roi) + '</div><div class="m-lbl">ROI</div></div>'
+          : '<div class="metric-box"><div class="m-val" style="color:#666">–</div><div class="m-lbl">ROI (set price)</div></div>';
+        document.getElementById("detailMetrics").innerHTML =
+          '<div class="metric-box"><div class="m-val">' + s.totalBookings + '</div><div class="m-lbl">Total Bookings</div></div>'
+          + '<div class="metric-box"><div class="m-val green">' + fmt(s.totalRevenue) + '</div><div class="m-lbl">Lifetime Revenue</div></div>'
+          + '<div class="metric-box"><div class="m-val red">' + fmt(s.totalExpenses) + '</div><div class="m-lbl">Total Expenses</div></div>'
+          + '<div class="metric-box"><div class="m-val ' + (s.netProfit >= 0 ? "green" : "red") + '">' + fmt(s.netProfit) + '</div><div class="m-lbl">Net Profit</div></div>'
+          + roiHtml
+          + '<div class="metric-box"><div class="m-val" style="color:#888">' + fmt(v.purchase_price || 0) + '</div><div class="m-lbl">Purchase Price</div></div>';
+
+        // Break-even bar
+        if (v.purchase_price > 0 && s.breakEvenPct != null) {
+          var pct = Math.min(100, s.breakEvenPct);
+          document.getElementById("detailBreakEvenWrap").style.display = "block";
+          document.getElementById("detailBreakEvenPct").textContent = fmtPct(s.breakEvenPct);
+          var bar = document.getElementById("detailBreakEvenBar");
+          bar.style.width = pct + "%";
+          bar.className = "bar-fill" + (pct >= 100 ? " full" : "");
+        } else {
+          document.getElementById("detailBreakEvenWrap").style.display = "none";
+        }
+
+        // Monthly breakdown
+        var months = Object.keys(s.monthlyRevenue).concat(Object.keys(s.monthlyExpenses));
+        months = months.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort().reverse();
+        var mHtml = "";
+        if (months.length) {
+          mHtml = '<table class="monthly-table"><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Profit</th></tr></thead><tbody>';
+          months.slice(0, 12).forEach(function (m) {
+            var rev  = s.monthlyRevenue[m]  || 0;
+            var exp  = s.monthlyExpenses[m] || 0;
+            var prof = rev - exp;
+            mHtml += '<tr>'
+              + '<td>' + esc(m) + '</td>'
+              + '<td class="green">' + fmt(rev) + '</td>'
+              + '<td class="red">'   + fmt(exp) + '</td>'
+              + '<td class="' + (prof >= 0 ? "green" : "red") + '">' + fmt(prof) + '</td>'
+              + '</tr>';
+          });
+          mHtml += '</tbody></table>';
+        } else {
+          mHtml = '<div class="no-expenses">No monthly data yet.</div>';
+        }
+        document.getElementById("detailMonthly").innerHTML = mHtml;
+
+        // Recent bookings
+        var bkHtml = "";
+        if (s.recentBookings && s.recentBookings.length) {
+          s.recentBookings.forEach(function (b) {
+            bkHtml += '<div class="booking-row">'
+              + '<div><div>' + esc(b.name || "Guest") + '</div><div class="bk-dates">' + esc(b.pickupDate || "") + ' → ' + esc(b.returnDate || "") + '</div></div>'
+              + '<span class="bk-amt">' + (b.amountPaid ? fmt(b.amountPaid) : "–") + '</span>'
+              + '</div>';
+          });
+        } else {
+          bkHtml = '<div class="no-expenses">No paid bookings yet.</div>';
+        }
+        document.getElementById("detailBookings").innerHTML = bkHtml;
+
+        // Edit vehicle info
+        document.getElementById("editPurchaseDate").value  = v.purchase_date  || "";
+        document.getElementById("editPurchasePrice").value = v.purchase_price || 0;
+        document.getElementById("editVehicleStatus").value = v.status         || "active";
+
+        // Render expenses
+        renderExpenses(vehicleId, s);
+
+        document.getElementById("vehicleDetail").classList.add("open");
+        document.getElementById("vehicleDetail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+
+      // ── Render expense list ────────────────────────────────────────────────
+      function renderExpenses(vehicleId, s) {
+        var vehicleExpenses = (statsCache._expenses || []).filter(function (e) { return e.vehicle_id === vehicleId; });
+        vehicleExpenses.sort(function (a, b) { return b.date > a.date ? -1 : 1; });
+        var html = "";
+        if (vehicleExpenses.length) {
+          vehicleExpenses.forEach(function (e) {
+            html += '<div class="expense-item">'
+              + '<div class="exp-info"><div>' + esc(e.notes || capitalize(e.category)) + '</div>'
+              + '<div class="exp-cat">' + esc(capitalize(e.category)) + ' · ' + esc(e.date) + '</div></div>'
+              + '<span class="exp-amt">-' + fmt(e.amount) + '</span>'
+              + '<button class="exp-del" data-expense-id="' + esc(e.expense_id) + '" title="Delete">🗑</button>'
+              + '</div>';
+          });
+        } else {
+          html = '<div class="no-expenses">No expenses recorded yet.</div>';
+        }
+        document.getElementById("detailExpenses").innerHTML = html;
+      }
+
+      // ── Load stats ─────────────────────────────────────────────────────────
+      function loadStats(silent) {
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+        if (!silent) showProfitMsg("Loading stats…", "info");
+
+        Promise.all([
+          fetch(API_BASE + "/api/get-vehicle-stats", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret: secret }),
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }),
+          fetch(API_BASE + "/api/get-expenses", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret: secret }),
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }),
+        ]).then(function (results) {
+          if (!results[0].ok) {
+            showProfitMsg("Error: " + (results[0].data.error || "Could not load stats"), "error");
+            return;
+          }
+          statsCache = results[0].data;
+          if (results[1].ok) {
+            statsCache._expenses = results[1].data.expenses || [];
+          } else {
+            statsCache._expenses = [];
+          }
+          renderCards(statsCache);
+          if (!silent) showProfitMsg("✅ Stats loaded.", "success");
+          // Re-render open detail if one was selected
+          if (currentVehicleId && document.getElementById("vehicleDetail").classList.contains("open")) {
+            window._profitSelectVehicle(currentVehicleId);
+          }
+        }).catch(function (err) {
+          showProfitMsg("Network error: " + err.message, "error");
+        });
+      }
+
+      document.getElementById("loadStatsBtn").addEventListener("click", function () { loadStats(false); });
+
+      // ── Save vehicle info ──────────────────────────────────────────────────
+      document.getElementById("saveVehicleBtn").addEventListener("click", function () {
+        if (!currentVehicleId) return;
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        var purchaseDate  = document.getElementById("editPurchaseDate").value.trim();
+        var purchasePrice = parseFloat(document.getElementById("editPurchasePrice").value) || 0;
+        var status        = document.getElementById("editVehicleStatus").value;
+
+        showProfitMsg("Saving…", "info");
+        fetch(API_BASE + "/api/update-vehicle", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, purchase_date: purchaseDate, purchase_price: purchasePrice, status: status }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showProfitMsg("✅ Vehicle info saved.", "success");
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+      });
+
+      // ── Add expense ────────────────────────────────────────────────────────
+      document.getElementById("addExpenseBtn").addEventListener("click", function () {
+        if (!currentVehicleId) { showProfitMsg("Select a vehicle first.", "error"); return; }
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        var date     = document.getElementById("expDate").value;
+        var category = document.getElementById("expCategory").value;
+        var amount   = parseFloat(document.getElementById("expAmount").value);
+        var notes    = document.getElementById("expNotes").value.trim();
+
+        if (!date)            { showProfitMsg("Select an expense date.", "error"); return; }
+        if (!amount || isNaN(amount) || amount <= 0) { showProfitMsg("Enter a valid expense amount.", "error"); return; }
+
+        showProfitMsg("Adding expense…", "info");
+        fetch(API_BASE + "/api/add-expense", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category: category, amount: amount, notes: notes }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showProfitMsg("✅ Expense added.", "success");
+              document.getElementById("expAmount").value = "";
+              document.getElementById("expNotes").value  = "";
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+      });
+
+      // ── Delete expense (event delegation) ─────────────────────────────────
+      document.getElementById("detailExpenses").addEventListener("click", function (evt) {
+        var btn = evt.target.closest(".exp-del");
+        if (!btn) return;
+        var expenseId = btn.getAttribute("data-expense-id");
+        if (!expenseId) return;
+
+        if (!confirm("Delete this expense?")) return;
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        fetch(API_BASE + "/api/delete-expense", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, expense_id: expenseId }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showProfitMsg("✅ Expense deleted.", "success");
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+      });
+
+      // ── Close detail panel ─────────────────────────────────────────────────
+      document.getElementById("detailClose").addEventListener("click", function () {
+        document.getElementById("vehicleDetail").classList.remove("open");
+        document.querySelectorAll(".vehicle-card").forEach(function (c) { c.classList.remove("active"); });
+        currentVehicleId = null;
+      });
     })();
   </script>
 </body>
