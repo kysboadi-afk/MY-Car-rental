@@ -57,26 +57,40 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "status must be active, maintenance, or inactive" });
   }
 
-  try {
-    const { data, sha } = await loadVehicles();
+  const MAX_RETRIES = 3;
+  let lastError = new Error("Unexpected error saving vehicle data");
 
-    if (!data[vehicle_id]) {
-      return res.status(404).json({ error: "Vehicle not found" });
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const { data, sha } = await loadVehicles();
+
+      if (!data[vehicle_id]) {
+        return res.status(404).json({ error: "Vehicle not found" });
+      }
+
+      // Apply only the fields provided in the request
+      if (purchase_date  !== undefined) data[vehicle_id].purchase_date  = purchase_date;
+      if (purchase_price !== undefined) data[vehicle_id].purchase_price = purchase_price;
+      if (status         !== undefined) data[vehicle_id].status         = status;
+      if (vehicle_name   !== undefined && typeof vehicle_name === "string" && vehicle_name.trim()) {
+        data[vehicle_id].vehicle_name = vehicle_name.trim();
+      }
+
+      await saveVehicles(data, sha, `Update vehicle info for ${vehicle_id}`);
+
+      return res.status(200).json({ success: true, vehicle: data[vehicle_id] });
+    } catch (err) {
+      lastError = err;
+      console.error(`update-vehicle error (attempt ${attempt + 1}):`, err);
+
+      // Only retry on a 409 SHA conflict — any other error is terminal
+      const is409 = /\b409\b/.test(err.message);
+      if (!is409 || attempt === MAX_RETRIES - 1) break;
+
+      // Brief back-off before retrying with a fresh SHA
+      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
     }
-
-    // Apply only the fields provided in the request
-    if (purchase_date  !== undefined) data[vehicle_id].purchase_date  = purchase_date;
-    if (purchase_price !== undefined) data[vehicle_id].purchase_price = purchase_price;
-    if (status         !== undefined) data[vehicle_id].status         = status;
-    if (vehicle_name   !== undefined && typeof vehicle_name === "string" && vehicle_name.trim()) {
-      data[vehicle_id].vehicle_name = vehicle_name.trim();
-    }
-
-    await saveVehicles(data, sha, `Update vehicle info for ${vehicle_id}`);
-
-    return res.status(200).json({ success: true, vehicle: data[vehicle_id] });
-  } catch (err) {
-    console.error("update-vehicle error:", err);
-    return res.status(500).json({ error: adminErrorMessage(err) });
   }
+
+  return res.status(500).json({ error: adminErrorMessage(lastError) });
 }
