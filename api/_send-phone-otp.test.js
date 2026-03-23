@@ -5,20 +5,17 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-// ─── Twilio + OTP env vars ────────────────────────────────────────────────────
-process.env.TWILIO_ACCOUNT_SID   = "ACtest00000000000000000000000000000";
-process.env.TWILIO_AUTH_TOKEN    = "test-auth-token";
-process.env.TWILIO_PHONE_NUMBER  = "+18773155034";
-process.env.OTP_SECRET           = "test-otp-secret-for-send-phone-otp-tests";
+// ─── TextMagic + OTP env vars ─────────────────────────────────────────────────
+process.env.TEXTMAGIC_USERNAME = "testuser";
+process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
+process.env.OTP_SECRET         = "test-otp-secret-for-send-phone-otp-tests";
 
-// ─── Twilio mock ──────────────────────────────────────────────────────────────
+// ─── TextMagic mock ───────────────────────────────────────────────────────────
 const sentMessages = [];
-const mockCreate = mock.fn(async (opts) => { sentMessages.push(opts); return {}; });
+const mockSendSms = mock.fn(async (to, text) => { sentMessages.push({ to, text }); return {}; });
 
-mock.module("twilio", {
-  defaultExport: () => ({
-    messages: { create: mockCreate },
-  }),
+mock.module("./_textmagic.js", {
+  namedExports: { sendSms: mockSendSms },
 });
 
 const { default: handler } = await import("./send-phone-otp.js");
@@ -114,7 +111,7 @@ test("SMS body contains a 6-digit code", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { phone: "2135550100" }), res);
-  assert.match(sentMessages[0].body, /\b[0-9]{6}\b/);
+  assert.match(sentMessages[0].text, /\b[0-9]{6}\b/);
 });
 
 test("returned token verifies the sent OTP", async () => {
@@ -123,7 +120,7 @@ test("returned token verifies the sent OTP", async () => {
   await handler(makeReq("POST", { phone: "2135550100" }), res);
 
   // Extract the 6-digit code from the SMS body
-  const match = sentMessages[0].body.match(/\b([0-9]{6})\b/);
+  const match = sentMessages[0].text.match(/\b([0-9]{6})\b/);
   assert.ok(match, "No 6-digit OTP found in SMS body");
   const otp = match[1];
 
@@ -144,7 +141,7 @@ test("token does not verify against a different phone number", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", { phone: "2135550100" }), res);
-  const match = sentMessages[0].body.match(/\b([0-9]{6})\b/);
+  const match = sentMessages[0].text.match(/\b([0-9]{6})\b/);
   const otp = match[1];
   const { verifyPhoneOtpToken } = await import("./_otp.js");
   assert.equal(verifyPhoneOtpToken(res._body.token, "+12135550199", otp), false);

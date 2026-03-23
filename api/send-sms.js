@@ -1,12 +1,11 @@
 // api/send-sms.js
 // Vercel serverless function — sends an SMS confirmation to a new lead
-// via the Twilio SMS API immediately after the renter info form is submitted.
+// via the TextMagic SMS API immediately after the renter info form is submitted.
 //
 // Required environment variables (set in Vercel dashboard):
-//   TWILIO_ACCOUNT_SID   — Twilio Account SID
-//   TWILIO_AUTH_TOKEN    — Twilio Auth Token
-//   TWILIO_PHONE_NUMBER  — Twilio sending phone number (E.164, e.g. +18773155034)
-import twilio from "twilio";
+//   TEXTMAGIC_USERNAME — TextMagic account username
+//   TEXTMAGIC_API_KEY  — TextMagic API key
+import { sendSms } from "./_textmagic.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -25,16 +24,15 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   if (
-    !process.env.TWILIO_ACCOUNT_SID ||
-    !process.env.TWILIO_AUTH_TOKEN ||
-    !process.env.TWILIO_PHONE_NUMBER
+    !process.env.TEXTMAGIC_USERNAME ||
+    !process.env.TEXTMAGIC_API_KEY
   ) {
     console.error(
-      "Missing Twilio environment variables (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)."
+      "Missing TextMagic environment variables (TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY)."
     );
     return res
       .status(500)
-      .json({ error: "Server configuration error: Twilio credentials are not set." });
+      .json({ error: "Server configuration error: TextMagic credentials are not set." });
   }
 
   const { name, phone } = req.body || {};
@@ -44,16 +42,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const client = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
-
-    await client.messages.create({
-      body: SMS_BODY,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phone,
-    });
+    await sendSms(phone, SMS_BODY);
 
     return res.status(200).json({ success: true });
   } catch (err) {
