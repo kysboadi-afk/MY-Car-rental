@@ -14,6 +14,10 @@ import PDFDocument from "pdfkit";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
 import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { sendSms } from "./_textmagic.js";
+import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { appendBooking, normalizePhone } from "./_bookings.js";
+import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
 export const config = {
@@ -1068,6 +1072,52 @@ export default async function handler(req, res) {
     // owner received the booking alert so the booking is not lost.
     if (ownerEmailErr) {
       return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
+    }
+
+    // ── Save booking record for scheduled reminders ───────────────────────────
+    if (isConfirmed && vehicleId && phone) {
+      try {
+        const bookingRecord = {
+          bookingId:       crypto.randomBytes(16).toString("hex"),
+          name:            name || "",
+          phone,
+          email:           email || "",
+          vehicleId,
+          vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+          pickupDate:      pickup || "",
+          pickupTime:      pickupTime || "",
+          returnDate:      returnDate || "",
+          returnTime:      returnTime || "",
+          location:        DEFAULT_LOCATION,
+          status:          isBalancePayment ? "booked_paid" : (fullRentalCost ? "reserved_unpaid" : "booked_paid"),
+          paymentIntentId: paymentIntentId || "",
+          paymentLink:     balancePayUrl || "",
+          smsSentAt:       {},
+          createdAt:       new Date().toISOString(),
+        };
+        await appendBooking(bookingRecord);
+      } catch (bookingErr) {
+        console.error("Failed to save booking record:", bookingErr);
+      }
+    }
+
+    // ── Booking confirmation SMS ──────────────────────────────────────────────
+    if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+      // Send confirmation only for fully-paid bookings (not deposit-only reservations)
+      try {
+        await sendSms(
+          normalizePhone(phone),
+          render(BOOKING_CONFIRMED, {
+            vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
+            customer_name: (name || "").split(" ")[0] || name || "Customer",
+            pickup_date:   pickup || "",
+            pickup_time:   pickupTime || "",
+            location:      DEFAULT_LOCATION,
+          })
+        );
+      } catch (smsErr) {
+        console.error("Booking confirmation SMS failed:", smsErr);
+      }
     }
 
     res.status(200).json({ success: true });

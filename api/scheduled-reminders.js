@@ -1,0 +1,479 @@
+// api/scheduled-reminders.js
+// Vercel cron serverless function — scans bookings.json and sends automated
+// SMS reminders based on booking status and timing.
+//
+// This endpoint is called by Vercel Cron on a frequent schedule (every 15 min).
+// It is also callable manually from an admin panel via POST with an
+// Authorization: Bearer <CRON_SECRET> header.
+//
+// Reminder types fired per booking status:
+//
+//  reserved_unpaid  → UNPAID_REMINDER_24H, UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
+//  booked_paid      → PICKUP_REMINDER_24H, PICKUP_REMINDER_2H, PICKUP_REMINDER_30MIN
+//  active_rental    → ACTIVE_RENTAL_MID, ACTIVE_RENTAL_1H_BEFORE_END,
+//                     ACTIVE_RENTAL_15MIN_BEFORE_END, LATE_WARNING_30MIN,
+//                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
+//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_1/3/7/14/30
+//
+// Required environment variables:
+//   TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY
+//   GITHUB_TOKEN, GITHUB_REPO
+//   CRON_SECRET  — shared secret to authenticate manual trigger calls
+//   STRIPE_SECRET_KEY  — for auto-charging late fees
+//
+// Vercel cron configuration is in vercel.json.
+
+import Stripe from "stripe";
+import { sendSms } from "./_textmagic.js";
+import {
+  render,
+  DEFAULT_LOCATION,
+  UNPAID_REMINDER_24H,
+  UNPAID_REMINDER_2H,
+  UNPAID_REMINDER_FINAL,
+  PICKUP_REMINDER_24H,
+  PICKUP_REMINDER_2H,
+  PICKUP_REMINDER_30MIN,
+  ACTIVE_RENTAL_MID,
+  ACTIVE_RENTAL_1H_BEFORE_END,
+  ACTIVE_RENTAL_15MIN_BEFORE_END,
+  LATE_WARNING_30MIN,
+  LATE_AT_RETURN_TIME,
+  LATE_GRACE_EXPIRED,
+  LATE_FEE_APPLIED,
+  POST_RENTAL_THANK_YOU,
+  RETENTION_DAY_1,
+  RETENTION_DAY_3,
+  RETENTION_DAY_7,
+  RETENTION_DAY_14,
+  RETENTION_DAY_30,
+} from "./_sms-templates.js";
+import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { CARS } from "./_pricing.js";
+
+// ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
+const GRACE_PERIODS = {
+  slingshot:  15,
+  slingshot2: 15,
+  camry:      60,
+  camry2013:  60,
+};
+
+// ─── Late fee amounts ($) per vehicle type ────────────────────────────────────
+const LATE_FEE_AMOUNTS = {
+  slingshot:  50,   // $50 per hour after grace
+  slingshot2: 50,
+  camry:      50,   // $50 flat after 2h; full day after 4–6h (simplified to $50 here)
+  camry2013:  50,
+};
+
+/**
+ * Parse a booking's pickup/return into a JS Date.
+ * Date: YYYY-MM-DD  |  Time: "3:00 PM" or "15:00"
+ * @param {string} date  - YYYY-MM-DD
+ * @param {string} [time] - optional time string
+ * @returns {Date}
+ */
+function parseBookingDateTime(date, time) {
+  if (!date) return new Date(NaN);
+  const base = new Date(date + "T00:00:00"); // midnight local
+  if (time) {
+    const t = time.trim();
+    // "3:00 PM" or "3:00PM" format
+    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      let hours = parseInt(ampmMatch[1], 10);
+      const mins = parseInt(ampmMatch[2], 10);
+      const period = ampmMatch[3].toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+      base.setHours(hours, mins, 0, 0);
+      return base;
+    }
+    // "15:00" format
+    const h24Match = t.match(/^(\d{1,2}):(\d{2})$/);
+    if (h24Match) {
+      base.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
+      return base;
+    }
+  }
+  return base; // fall back to midnight if time can't be parsed
+}
+
+/**
+ * Format a date object into a human-readable date string ("March 28").
+ */
+function formatDate(d) {
+  if (!d || isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+}
+
+/**
+ * Format a date object into a human-readable time string ("3:00 PM").
+ */
+function formatTime(d) {
+  if (!d || isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/**
+ * Safely send an SMS, catching errors so one failure doesn't abort the whole job.
+ * @param {string} phone
+ * @param {string} body
+ * @returns {Promise<boolean>} true on success
+ */
+async function safeSend(phone, body) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) {
+    console.warn("scheduled-reminders: no phone number — skipping");
+    return false;
+  }
+  try {
+    await sendSms(normalized, body);
+    return true;
+  } catch (err) {
+    console.error(`scheduled-reminders: SMS send failed to ${normalized}:`, err.message);
+    return false;
+  }
+}
+
+/**
+ * Check if a reminder has already been sent for this booking.
+ */
+function alreadySent(booking, key) {
+  return !!(booking.smsSentAt && booking.smsSentAt[key]);
+}
+
+/**
+ * Build template variables for a booking.
+ */
+function vars(booking) {
+  const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+  const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+  return {
+    customer_name: booking.name || "Customer",
+    vehicle:       booking.vehicleName || booking.vehicleId,
+    pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
+    pickup_time:   booking.pickupTime || "",
+    return_time:   booking.returnTime || "",
+    return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
+    location:      booking.location || DEFAULT_LOCATION,
+    payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",
+  };
+}
+
+/**
+ * Auto-charge a late fee via Stripe.
+ * @param {object} booking
+ * @param {number} feeAmount - in dollars
+ * @returns {Promise<boolean>} true if charge succeeded
+ */
+async function chargeLateFee(booking, feeAmount) {
+  if (!process.env.STRIPE_SECRET_KEY || !booking.paymentIntentId) return false;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    // Retrieve the original PaymentIntent to get the customer / payment method
+    const pi = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
+    const paymentMethod = pi.payment_method;
+    const customer = pi.customer;
+    if (!paymentMethod) {
+      console.warn(`scheduled-reminders: no payment method for PI ${booking.paymentIntentId}`);
+      return false;
+    }
+    await stripe.paymentIntents.create({
+      amount:         Math.round(feeAmount * 100),
+      currency:       "usd",
+      customer:       customer || undefined,
+      payment_method: paymentMethod,
+      confirm:        true,
+      off_session:    true,
+      description:    `Late fee — ${booking.vehicleName || booking.vehicleId} — ${booking.name}`,
+      metadata: {
+        payment_type:       "late_fee",
+        original_booking_id: booking.bookingId || booking.paymentIntentId,
+        vehicle_id:          booking.vehicleId,
+        renter_name:         booking.name || "",
+      },
+    });
+    return true;
+  } catch (err) {
+    console.error(`scheduled-reminders: late fee charge failed for ${booking.bookingId}:`, err.message);
+    return false;
+  }
+}
+
+/**
+ * Process all reserved_unpaid bookings — send payment reminders.
+ */
+async function processUnpaid(allBookings, now, sentMarks) {
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "reserved_unpaid") continue;
+      if (!booking.phone) continue;
+
+      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      if (isNaN(pickupDt.getTime())) continue;
+
+      const minutesUntilPickup = (pickupDt - now) / 60000;
+      const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
+
+      // 24-hour reminder (window: 24h–23h)
+      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "unpaid_24h")) {
+        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_24H, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_24h" });
+      }
+
+      // 2-hour reminder (window: 2h–90min)
+      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h")) {
+        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_2H, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_2h" });
+      }
+
+      // Final reminder (window: 30–15 min)
+      if (minutesUntilPickup <= 30 && minutesUntilPickup > 15 && !alreadySent(booking, "unpaid_final")) {
+        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_FINAL, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_final" });
+      }
+    }
+  }
+}
+
+/**
+ * Process all booked_paid bookings — send pre-pickup reminders.
+ */
+async function processPaidBookings(allBookings, now, sentMarks) {
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "booked_paid") continue;
+      if (!booking.phone) continue;
+
+      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      if (isNaN(pickupDt.getTime())) continue;
+
+      const minutesUntilPickup = (pickupDt - now) / 60000;
+      const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
+
+      // 24-hour reminder (window: 24h–23h)
+      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
+        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
+      }
+
+      // 2-hour reminder (window: 2h–90min)
+      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "pickup_2h")) {
+        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_2H, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_2h" });
+      }
+
+      // 30-minute reminder (window: 35–20 min)
+      if (minutesUntilPickup <= 35 && minutesUntilPickup > 20 && !alreadySent(booking, "pickup_30min")) {
+        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_30MIN, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_30min" });
+      }
+    }
+  }
+}
+
+/**
+ * Process all active_rental bookings — mid-rental, end reminders, late fees.
+ */
+async function processActiveRentals(allBookings, now, sentMarks) {
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "active_rental") continue;
+      if (!booking.phone) continue;
+
+      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+      if (isNaN(pickupDt.getTime()) || isNaN(returnDt.getTime())) continue;
+
+      const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
+      const totalMinutes  = (returnDt - pickupDt) / 60000;
+      const elapsedMinutes = (now - pickupDt) / 60000;
+      const minutesUntilReturn = (returnDt - now) / 60000;
+      const grace = GRACE_PERIODS[vehicleId] || 60;
+
+      // Mid-rental: at the halfway point (±15 min window)
+      const halfwayMinutes = totalMinutes / 2;
+      if (
+        elapsedMinutes >= halfwayMinutes - 15 &&
+        elapsedMinutes < halfwayMinutes + 15 &&
+        !alreadySent(booking, "active_mid")
+      ) {
+        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "active_mid" });
+      }
+
+      // 1 hour before end
+      if (minutesUntilReturn <= 60 && minutesUntilReturn > 45 && !alreadySent(booking, "active_1h")) {
+        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "active_1h" });
+      }
+
+      // 15 min before end
+      if (minutesUntilReturn <= 15 && minutesUntilReturn > 0 && !alreadySent(booking, "active_15min")) {
+        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_15MIN_BEFORE_END, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "active_15min" });
+      }
+
+      // 30-min late warning (sent before return time)
+      if (minutesUntilReturn <= 30 && minutesUntilReturn > 15 && !alreadySent(booking, "late_warning_30min")) {
+        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
+      }
+
+      // At return time (window: 0–5 min past)
+      const minsOverdue = -minutesUntilReturn; // positive = overdue
+      if (minsOverdue >= 0 && minsOverdue < 5 && !alreadySent(booking, "late_at_return")) {
+        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "late_at_return" });
+      }
+
+      // After grace period expired (window: grace–grace+15 min overdue)
+      if (minsOverdue >= grace && minsOverdue < grace + 15 && !alreadySent(booking, "late_grace_expired")) {
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
+      }
+
+      // Late fee — after grace, only if not already charged, and no active extension
+      if (
+        minsOverdue >= grace &&
+        !alreadySent(booking, "late_fee_applied") &&
+        !booking.lateFeeApplied
+      ) {
+        const feeAmount = LATE_FEE_AMOUNTS[vehicleId] || 50;
+        const charged = await chargeLateFee(booking, feeAmount);
+        const feeVars = { ...v, late_fee: String(feeAmount) };
+        const sent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+        if (sent || charged) {
+          sentMarks.push({ vehicleId, id, key: "late_fee_applied" });
+          sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Process completed_rental bookings — post-rental and retention SMS.
+ */
+async function processCompleted(allBookings, now, sentMarks) {
+  const retentionSchedule = [
+    { days: 1,  key: "retention_1d",  template: RETENTION_DAY_1 },
+    { days: 3,  key: "retention_3d",  template: RETENTION_DAY_3 },
+    { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
+    { days: 14, key: "retention_14d", template: RETENTION_DAY_14 },
+    { days: 30, key: "retention_30d", template: RETENTION_DAY_30 },
+  ];
+
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "completed_rental") continue;
+      if (!booking.phone || !booking.completedAt) continue;
+
+      const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
+      const completedAt = new Date(booking.completedAt);
+      const hoursSinceComplete = (now - completedAt) / 3600000;
+
+      // Thank-you immediately on completion (within 1 hour)
+      if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you")) {
+        const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "post_thank_you" });
+      }
+
+      // Retention sequence
+      for (const item of retentionSchedule) {
+        const targetHours = item.days * 24;
+        if (
+          hoursSinceComplete >= targetHours &&
+          hoursSinceComplete < targetHours + 24 &&
+          !alreadySent(booking, item.key)
+        ) {
+          const sent = await safeSend(booking.phone, render(item.template, v));
+          if (sent) sentMarks.push({ vehicleId, id, key: item.key });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Persist all reminder sent-marks back to bookings.json.
+ * Groups marks by vehicleId/id to minimize GitHub API calls.
+ */
+async function persistSentMarks(sentMarks) {
+  if (sentMarks.length === 0) return;
+  if (!process.env.GITHUB_TOKEN) return;
+
+  try {
+    const { data, sha } = await loadBookings();
+
+    for (const mark of sentMarks) {
+      const { vehicleId, id, key, value } = mark;
+      if (!Array.isArray(data[vehicleId])) continue;
+      const idx = data[vehicleId].findIndex(
+        (b) => b.bookingId === id || b.paymentIntentId === id
+      );
+      if (idx === -1) continue;
+
+      if (key === "_late_fee_amount") {
+        data[vehicleId][idx].lateFeeApplied = value;
+      } else {
+        if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
+        data[vehicleId][idx].smsSentAt[key] = new Date().toISOString();
+      }
+    }
+
+    await saveBookings(data, sha, `scheduled-reminders: record ${sentMarks.length} sent marks`);
+  } catch (err) {
+    console.error("scheduled-reminders: failed to persist sent marks:", err);
+  }
+}
+
+export default async function handler(req, res) {
+  // Accept GET (Vercel cron) or POST (manual admin trigger)
+  if (req.method !== "GET" && req.method !== "POST") {
+    return res.status(405).send("Method Not Allowed");
+  }
+
+  // Authenticate manual POST requests
+  if (req.method === "POST") {
+    const authHeader = req.headers.authorization || "";
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  }
+
+  if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
+    console.warn("scheduled-reminders: TextMagic credentials not set — SMS will not be sent");
+    return res.status(200).json({ skipped: true, reason: "TextMagic not configured" });
+  }
+
+  let allBookings;
+  try {
+    const loaded = await loadBookings();
+    allBookings = loaded.data;
+  } catch (err) {
+    console.error("scheduled-reminders: failed to load bookings:", err);
+    return res.status(500).json({ error: "Failed to load bookings" });
+  }
+
+  const now = new Date();
+  const sentMarks = [];
+
+  await Promise.allSettled([
+    processUnpaid(allBookings, now, sentMarks),
+    processPaidBookings(allBookings, now, sentMarks),
+    processActiveRentals(allBookings, now, sentMarks),
+    processCompleted(allBookings, now, sentMarks),
+  ]);
+
+  await persistSentMarks(sentMarks);
+
+  return res.status(200).json({ ok: true, remindersSent: sentMarks.filter(m => !m.key.startsWith("_")).length });
+}

@@ -17,6 +17,9 @@
 //   Events: payment_intent.succeeded
 
 import Stripe from "stripe";
+import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { sendSms } from "./_textmagic.js";
+import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -185,11 +188,66 @@ export default async function handler(req, res) {
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
 
+    // Handle rental extension payment confirmations.
+    if ((paymentIntent.metadata || {}).payment_type === "rental_extension") {
+      const { vehicle_id, original_booking_id } = paymentIntent.metadata || {};
+      if (vehicle_id && original_booking_id) {
+        try {
+          const { data, sha } = await loadBookings();
+          if (Array.isArray(data[vehicle_id])) {
+            const idx = data[vehicle_id].findIndex(
+              (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+            );
+            if (idx !== -1) {
+              const booking = data[vehicle_id][idx];
+              const ext = booking.extensionPendingPayment;
+              if (ext) {
+                data[vehicle_id][idx].returnDate = ext.newReturnDate || booking.returnDate;
+                data[vehicle_id][idx].returnTime = ext.newReturnTime || booking.returnTime;
+                data[vehicle_id][idx].extensionPendingPayment = null;
+                data[vehicle_id][idx].extensionCount = (booking.extensionCount || 0) + 1;
+                await saveBookings(data, sha, `Confirm extension for booking ${original_booking_id}`);
+
+                // Send extension confirmed SMS
+                if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+                  const isSlingshot = vehicle_id === "slingshot" || vehicle_id === "slingshot2";
+                  const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
+                  const vars = {
+                    return_time: ext.newReturnTime || "",
+                    return_date: ext.newReturnDate || "",
+                  };
+                  try {
+                    await sendSms(normalizePhone(booking.phone), render(template, vars));
+                  } catch (smsErr) {
+                    console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("stripe-webhook: extension confirmation error:", err);
+        }
+      }
+      return res.status(200).json({ received: true });
+    }
+
     // Skip balance payments — dates were already blocked when the deposit was paid.
     if ((paymentIntent.metadata || {}).payment_type === "balance_payment") {
       console.log(
         `stripe-webhook: balance_payment for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );
+      // Update booking status to booked_paid when full balance is paid
+      const { vehicle_id } = paymentIntent.metadata || {};
+      const originalPiId = (paymentIntent.metadata || {}).original_payment_intent_id ||
+        (paymentIntent.metadata || {}).deposit_payment_intent_id;
+      if (vehicle_id && originalPiId) {
+        try {
+          await updateBooking(vehicle_id, originalPiId, { status: "booked_paid" });
+        } catch (err) {
+          console.error("stripe-webhook: updateBooking (balance) error:", err);
+        }
+      }
       return res.status(200).json({ received: true });
     }
 

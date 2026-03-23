@@ -65,7 +65,19 @@
     },
     "api/waitlist-decision.js": {
       "maxDuration": 30
+    },
+    "api/scheduled-reminders.js": {
+      "maxDuration": 60
+    },
+    "api/receive-textmagic-sms.js": {
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/scheduled-reminders",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }
 
