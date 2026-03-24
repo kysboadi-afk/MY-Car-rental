@@ -105,11 +105,12 @@ const cars = {
 };
 
 // ----- Insurance / Protection Plan -----
-const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
-const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
-const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
-// Daily rate auto-derived from weekly so it stays proportional
-const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
+// Slingshot Option B: DPP rate — kept for backward compat with Slingshot Option B info display.
+const PROTECTION_PLAN_DAILY    = 13;   // $13/day (Slingshot Option B only)
+// Economy car protection plan tiers (flat daily rates — must mirror api/_pricing.js).
+const PROTECTION_PLAN_BASIC    = 15;   // Basic: $15/day
+const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
+const PROTECTION_PLAN_PREMIUM  = 50;   // Premium: $50/day
 
 // ----- Helpers -----
 function getVehicleFromURL() {
@@ -237,6 +238,9 @@ let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Slingshot always uses 'deposit' (driven by carData.bookingDeposit).
 // Camry renters choose via the two-button UI.
 let _pendingPaymentMode = null;
+// Economy car protection plan tier selected on the booking page: basic | standard | premium
+// Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
+let selectedProtectionTier = "standard";
 
 // ----- Slingshot: set up the insurance/protection UI -----
 // For Slingshot, replace the generic insurance question/options with the two-choice
@@ -329,33 +333,67 @@ function isValidName(val) {
   });
 }());
 
-// ----- Pre-fill from Apply Now application (localStorage) -----
-// When an approved applicant submits the "Apply Now" form on index.html their
-// name, phone, and email are stored in localStorage under "slyApplicant".
-// If that data exists we pre-fill the corresponding booking-form fields so
-// they don't have to re-type the same information after they are approved.
+// ----- Pre-fill from Apply Now application (localStorage) or Waitlist (sessionStorage) -----
+// When an applicant submits the "Apply Now" form their name, phone, email, insurance choice,
+// and protection plan preference are stored in localStorage under "slyApplicant".
+// Waitlist entries store the same fields in sessionStorage under "slyWaitlistEntry".
+// If that data exists we pre-fill the booking-form fields so the renter doesn't have to
+// re-enter information they already provided. Waitlist data takes precedence over Apply data.
 (function prefillFromApplication() {
   try {
-    const stored = localStorage.getItem("slyApplicant");
-    if (!stored) return;
-    const data = JSON.parse(stored);
+    // Prefer the more-recent waitlist entry (sessionStorage) over the apply entry (localStorage).
+    let data = null;
+    const wlRaw = sessionStorage.getItem("slyWaitlistEntry");
+    if (wlRaw) {
+      const wl = JSON.parse(wlRaw);
+      // Only use waitlist data if it matches the vehicle being booked
+      if (!wl.vehicleId || wl.vehicleId === vehicleId) {
+        data = wl;
+      }
+    }
+    if (!data) {
+      const applyRaw = localStorage.getItem("slyApplicant");
+      if (applyRaw) data = JSON.parse(applyRaw);
+    }
+    if (!data) return;
+
     const nameField  = document.getElementById("name");
     const emailField = document.getElementById("email");
     const phoneField = document.getElementById("phone");
-    if (data.name && nameField && !nameField.value) {
-      nameField.value = data.name;
-      // updatePayBtn is hoisted (function declaration) so it is safe to call here
+    if (data.name  && nameField  && !nameField.value)  { nameField.value  = data.name;  updatePayBtn(); }
+    if (data.email && emailField && !emailField.value) { emailField.value = data.email; updatePayBtn(); }
+    if (data.phone && phoneField && !phoneField.value) { phoneField.value = data.phone; updatePayBtn(); }
+
+    // For Economy cars only: pre-select insurance choice and protection plan tier.
+    // Slingshot uses its own Option A / Option B UI (set up separately).
+    if (!carData.hourlyTiers) {
+      // Pre-select protection plan tier (default to standard if not stored)
+      const pref = data.protectionPlanPref || data.protectionPlan;
+      if (pref === "basic" || pref === "standard" || pref === "premium") {
+        selectedProtectionTier = pref;
+      }
+      // Pre-select insurance radio and show/hide appropriate sections
+      const hasInsurance = data.hasInsurance;
+      if (hasInsurance === "yes") {
+        insuranceCoverageChoice = "yes";
+        const hasInsRadio = document.getElementById("hasInsurance");
+        const insSection  = document.getElementById("insuranceUploadSection");
+        if (hasInsRadio) hasInsRadio.checked = true;
+        if (insSection)  insSection.style.display = "";
+        document.getElementById("protectionPlanSection").style.display = "none";
+      } else if (hasInsurance === "no") {
+        insuranceCoverageChoice = "no";
+        const noInsRadio     = document.getElementById("noInsurance");
+        const protSection    = document.getElementById("protectionPlanSection");
+        const insSection     = document.getElementById("insuranceUploadSection");
+        if (noInsRadio)   noInsRadio.checked = true;
+        if (insSection)   insSection.style.display = "none";
+        if (protSection)  protSection.style.display = "";
+        _syncProtectionTierRadio(selectedProtectionTier);
+      }
       updatePayBtn();
     }
-    if (data.email && emailField && !emailField.value) {
-      emailField.value = data.email;
-      updatePayBtn();
-    }
-    if (data.phone && phoneField && !phoneField.value) {
-      phoneField.value = data.phone;
-      updatePayBtn();
-    }
-  } catch (_) { /* localStorage may be blocked in private mode */ }
+  } catch (_) { /* storage may be blocked in private mode */ }
 }());
 
 // Also sanitize the signature input so it only accepts valid name characters
@@ -410,12 +448,14 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-  // For Slingshot: show auth-hold info box; for Camry: show generic DPP notice
+  // For Slingshot: show auth-hold info box; for Camry: show tier-selection DPP notice
   if (carData.hourlyTiers) {
     document.getElementById("protectionPlanSection").style.display = "none";
     _updateSlingshotInsuranceInfo("no");
   } else {
     document.getElementById("protectionPlanSection").style.display = "";
+    // Ensure the pre-selected tier radio is checked in the UI
+    _syncProtectionTierRadio(selectedProtectionTier);
   }
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
@@ -455,6 +495,26 @@ function _updateSlingshotInsuranceInfo(choice) {
     infoEl.style.display = "none";
   }
 }
+
+// ----- Economy Car: Protection Plan Tier Selection -----
+// Syncs the tier radio buttons in #protectionPlanSection to the given tier value.
+function _syncProtectionTierRadio(tier) {
+  const radio = document.querySelector('input[name="bookingProtectionPlan"][value="' + tier + '"]');
+  if (radio) radio.checked = true;
+}
+
+// Attach change handlers to the tier radios (Economy cars only).
+// Slingshot vehicles never show #protectionPlanSection, so this is safe for all vehicles.
+(function setupProtectionTierListeners() {
+  document.querySelectorAll('input[name="bookingProtectionPlan"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      if (!this.checked) return;
+      selectedProtectionTier = this.value;
+      updateTotal();
+      updatePayBtn();
+    });
+  });
+}());
 
 idUpload.addEventListener("change", function(e) {
   const file = e.target.files[0];
@@ -652,7 +712,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
       paymentTermsBodyEl.textContent = `Full payment (including a $150 refundable security deposit) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
     } else {
       // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
-      paymentTermsBodyEl.textContent = depositLang === "es"
+      paymentTermsBodyEl.textContent = lang === "es"
         ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
         : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
     }
@@ -1478,7 +1538,12 @@ function restoreFailedBooking() {
           if (protectionSection) protectionSection.style.display = "none";
           _updateSlingshotInsuranceInfo("no");
         } else {
+          // Restore the protection plan tier for economy cars
+          if (data.protectionPlanTier) {
+            selectedProtectionTier = data.protectionPlanTier;
+          }
           if (protectionSection) protectionSection.style.display = "";
+          _syncProtectionTierRadio(selectedProtectionTier);
         }
       }
     }
@@ -1644,10 +1709,14 @@ window.addEventListener("pageshow", function(e) {
 function updatePayBtn() {
   const nameVal = document.getElementById("name").value.trim();
   const emailVal = document.getElementById("email").value.trim();
-  // Insurance readiness: "yes" requires an uploaded file; "no" uses the protection plan (no upload).
-  // Also accept pre-filled variables restored from a previous failed-payment attempt.
+  // Insurance readiness:
+  //   "yes"  → requires an uploaded file (own insurance)
+  //   "no"   → for Slingshot: DPP auto-included (always ready)
+  //           → for Economy: requires a valid tier selection (basic/standard/premium)
+  const isEconomy = !carData.hourlyTiers;
+  const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
-                          insuranceCoverageChoice === "no";
+                          (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
   // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
   const datesReady = carData.hourlyTiers
@@ -1777,35 +1846,21 @@ function updateTotal() {
   if (carData.deposit) {
     lines.push({ label: _t("booking.securityDeposit", "Security deposit"), amount: carData.deposit });
   }
-  // Add Damage Protection Plan if the renter has no rental coverage (tiered rates).
+  // Add Damage Protection Plan if the renter has no rental coverage.
+  // Economy cars use flat tier rates (basic $15/day · standard $30/day · premium $50/day).
   if (insuranceCoverageChoice === "no") {
-    let protectionCost = 0;
-    let protDays = currentDayCount;
-    const protLines = [];
-    if (protDays >= 30) {
-      const months = Math.floor(protDays / 30);
-      protectionCost += months * PROTECTION_PLAN_MONTHLY;
-      protLines.push(months === 1 ? _fmt("booking.fmtMonth1", { price: PROTECTION_PLAN_MONTHLY }, `1 month \u00D7 $${PROTECTION_PLAN_MONTHLY}/mo`) : _fmt("booking.fmtMonthN", { n: months, price: PROTECTION_PLAN_MONTHLY }, `${months} months \u00D7 $${PROTECTION_PLAN_MONTHLY}/mo`));
-      protDays = protDays % 30;
-    }
-    if (protDays >= 14) {
-      const twoWeeks = Math.floor(protDays / 14);
-      protectionCost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
-      protLines.push(twoWeeks === 1 ? _fmt("booking.fmtTwoWeeks1", { price: PROTECTION_PLAN_BIWEEKLY }, `1 2-week period \u00D7 $${PROTECTION_PLAN_BIWEEKLY}`) : _fmt("booking.fmtTwoWeeksN", { n: twoWeeks, price: PROTECTION_PLAN_BIWEEKLY }, `${twoWeeks} 2-week periods \u00D7 $${PROTECTION_PLAN_BIWEEKLY}`));
-      protDays = protDays % 14;
-    }
-    if (protDays >= 7) {
-      const weeks = Math.floor(protDays / 7);
-      protectionCost += weeks * PROTECTION_PLAN_WEEKLY;
-      protLines.push(weeks === 1 ? _fmt("booking.fmtWeek1", { price: PROTECTION_PLAN_WEEKLY }, `1 week \u00D7 $${PROTECTION_PLAN_WEEKLY}/wk`) : _fmt("booking.fmtWeekN", { n: weeks, price: PROTECTION_PLAN_WEEKLY }, `${weeks} weeks \u00D7 $${PROTECTION_PLAN_WEEKLY}/wk`));
-      protDays = protDays % 7;
-    }
-    if (protDays > 0) {
-      protectionCost += protDays * PROTECTION_PLAN_DAILY;
-      protLines.push(protDays === 1 ? _fmt("booking.fmtDay1", { price: PROTECTION_PLAN_DAILY }, `1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day`) : _fmt("booking.fmtDayN", { n: protDays, price: PROTECTION_PLAN_DAILY }, `${protDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day`));
-    }
+    const tierRate = selectedProtectionTier === "basic" ? PROTECTION_PLAN_BASIC
+      : selectedProtectionTier === "premium" ? PROTECTION_PLAN_PREMIUM
+      : PROTECTION_PLAN_STANDARD;
+    const tierName = selectedProtectionTier === "basic" ? "Basic"
+      : selectedProtectionTier === "premium" ? "Premium"
+      : "Standard";
+    const protectionCost = tierRate * currentDayCount;
+    const dppLabel = currentDayCount === 1
+      ? `${tierName} Protection (1 day \u00D7 $${tierRate}/day)`
+      : `${tierName} Protection (${currentDayCount} days \u00D7 $${tierRate}/day)`;
     cost += protectionCost;
-    lines.push({ label: _fmt("booking.dppFmt", { detail: protLines.join(" + ") }, `Damage Protection Plan (${protLines.join(" + ")})`), amount: protectionCost });
+    lines.push({ label: dppLabel, amount: protectionCost });
   }
 
   const rentalSubtotal = cost + (carData.deposit || 0);
@@ -1933,6 +1988,8 @@ stripeBtn.addEventListener("click", async () => {
         pickup: pickup.value,
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",
+        // For Economy cars: pass the selected tier so the server uses the correct flat rate.
+        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
         // Pass insurance choice for Slingshot auth-hold selection
         ...(carData.hourlyTiers ? { insuranceCoverageChoice } : {}),
@@ -2045,6 +2102,7 @@ stripeBtn.addEventListener("click", async () => {
           insuranceMimeType,
           insuranceCoverageChoice,
           protectionPlan: insuranceCoverageChoice === "no",
+          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
           signature: agreementSignature || null,
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
@@ -2176,6 +2234,7 @@ stripeBtn.addEventListener("click", async () => {
         insuranceMimeType,
         insuranceCoverageChoice,
         protectionPlan: insuranceCoverageChoice === "no",
+        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
@@ -2233,6 +2292,7 @@ stripeBtn.addEventListener("click", async () => {
           ...bookingPayload,
           paymentFailed: true,
           insuranceCoverageChoice,
+          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         }));
         msgEl.textContent = error.message;
         submitBtn.disabled = false;

@@ -56,11 +56,17 @@ export const CARS = {
 };
 
 // Damage Protection Plan rates — must stay in sync with car.js client-side constants.
+// Legacy tiered rates (used for Slingshot Option B and backward-compatibility).
 export const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
 export const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
 export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
-// Daily rate is auto-derived from the weekly rate so it stays proportional.
+// Legacy daily rate (Slingshot Option B, and default when no tier is specified).
 export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
+
+// Economy car protection plan tiers (flat daily rates — no weekly/monthly discount).
+export const PROTECTION_PLAN_BASIC    = 15;  // $15/day — limits liability to $2,500
+export const PROTECTION_PLAN_STANDARD = 30;  // $30/day — limits liability to $1,000
+export const PROTECTION_PLAN_PREMIUM  = 50;  // $50/day — limits liability to $500
 
 /**
  * Compute the total charge for an hourly/daily-tier rental (Slingshot vehicles).
@@ -92,12 +98,25 @@ export function computeRentalDays(pickup, returnDate) {
 
 /**
  * Compute the Damage Protection Plan cost for a given number of rental days.
- * Uses the same greedy tier logic: monthly → weekly → daily.
- * @param {number} days - number of rental days (min 1)
+ *
+ * When `tier` is "basic", "standard", or "premium" (Economy car tiers), a flat
+ * daily rate is applied for all days — no weekly/monthly discount buckets.
+ *
+ * When `tier` is null/undefined (Slingshot Option B and legacy callers), the
+ * original greedy monthly → biweekly → weekly → daily logic is used so that
+ * existing tests and Slingshot pricing remain unchanged.
+ *
+ * @param {number} days  - number of rental days (min 1)
+ * @param {string|null} [tier=null] - "basic" | "standard" | "premium" | null
  * @returns {number} protection plan cost in dollars
  */
-export function computeProtectionPlanCost(days) {
-  let remaining = Math.max(1, days);
+export function computeProtectionPlanCost(days, tier = null) {
+  const d = Math.max(1, days);
+  if (tier === "basic")    return d * PROTECTION_PLAN_BASIC;
+  if (tier === "standard") return d * PROTECTION_PLAN_STANDARD;
+  if (tier === "premium")  return d * PROTECTION_PLAN_PREMIUM;
+  // Legacy / Slingshot Option B: greedy monthly → biweekly → weekly → daily
+  let remaining = d;
   let cost = 0;
   if (remaining >= 30) {
     const months = Math.floor(remaining / 30);
@@ -158,13 +177,14 @@ export function computeAmount(vehicleId, pickup, returnDate) {
  * @param {string} pickup      - ISO date string
  * @param {string} returnDate  - ISO date string
  * @param {boolean} [protectionPlan=false] - whether the renter opted in to DPP
+ * @param {string|null} [protectionPlanTier=null] - "basic"|"standard"|"premium"|null
  * @returns {string[]|null} array of plain-text line items, or null if vehicleId unknown
  *
  * Example output for a 10-day camry rental with DPP:
  *   ["1 × Weekly ($350/week): $350", "3 × Daily ($55/day): $165",
  *    "Damage Protection Plan: $98", "Total: $613"]
  */
-export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionPlan = false) {
+export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionPlan = false, protectionPlanTier = null) {
   const car = CARS[vehicleId];
   if (!car) return null;
   // Hourly-tier vehicles (Slingshot) do not use daily/weekly pricing
@@ -202,13 +222,14 @@ export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionP
 
   if (protectionPlan) {
     const days = computeRentalDays(pickup, returnDate);
-    const dppCost = computeProtectionPlanCost(days);
-    lines.push(`Damage Protection Plan: $${dppCost}`);
+    const dppCost = computeProtectionPlanCost(days, protectionPlanTier);
+    const tierLabel = protectionPlanTier ? ` (${protectionPlanTier.charAt(0).toUpperCase() + protectionPlanTier.slice(1)})` : "";
+    lines.push(`Damage Protection Plan${tierLabel}: $${dppCost}`);
   }
 
   const totalDays = computeRentalDays(pickup, returnDate);
   const rentalCost = computeAmount(vehicleId, pickup, returnDate);
-  const dppCost = protectionPlan ? computeProtectionPlanCost(totalDays) : 0;
+  const dppCost = protectionPlan ? computeProtectionPlanCost(totalDays, protectionPlanTier) : 0;
   const preTax = rentalCost + dppCost;
   const taxAmount = Math.round(preTax * LA_TAX_RATE * 100) / 100;
   const total = Math.round((preTax + taxAmount) * 100) / 100;

@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
+    const { vehicleId, name, email, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -93,8 +93,11 @@ export default async function handler(req, res) {
     // Add Damage Protection Plan cost when the renter opted in.
     // For Slingshot multi-day tiers (48 hr = 2 days, 72 hr = 3 days), DPP scales with days.
     // Sub-day tiers (3 hr, 6 hr) are billed as 1 day for DPP purposes.
+    // For Economy cars, protectionPlanTier ("basic"|"standard"|"premium") selects the flat daily rate.
+    // For Slingshot Option B and legacy callers, tier is null and the greedy logic is used.
     const days = isSlingshotVehicle ? Math.max(1, Math.ceil(Number(slingshotDuration) / 24)) : computeRentalDays(pickup, returnDate);
-    const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
+    const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
+    const protectionCost = protectionPlan ? computeProtectionPlanCost(days, tier) : 0;
 
     // For Slingshot: charge the full rental amount (rental + $150 security deposit + DPP + tax)
     // upfront as a single automatic payment. No split payment or auth hold — everything is

@@ -152,12 +152,25 @@
       </div>
 
       <div id="protectionPlanSection" class="protection-plan-notice" style="display:none">
-        <p data-i18n="booking.dppWarning">⚠️ Your Personal Auto Insurance may not cover rental Vehicles</p>
-        <p class="protection-plan-price" data-i18n-html="booking.dppPrice">Protect yourself with our <strong>Damage Protection Plan: $13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month</strong></p>
-        <p class="protection-plan-whats-included" data-i18n="booking.dppWhatsIncluded">What's included:</p>
-        <ul class="protection-plan-includes">
+        <p data-i18n="booking.dppWarning">⚠️ Your Personal Auto Insurance may not cover rental vehicles</p>
+        <p style="font-weight:600;color:#ddd;margin-bottom:6px">Select a Damage Protection Plan:</p>
+        <div class="insurance-options" id="bookingProtectionOptions">
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionBasic" value="basic">
+            <span>Basic — $15/day<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionStandard" value="standard" checked>
+            <span>Standard — $30/day <span class="popular-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionPremium" value="premium">
+            <span>Premium — $50/day <span class="best-value-tag">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
+          </label>
+        </div>
+        <ul class="protection-plan-includes" style="margin-top:8px">
           <li data-i18n="booking.dppItem1">✅ Covers accidental vehicle damage</li>
-          <li data-i18n="booking.dppItem2">✅ Reduces your liability to $1,000</li>
+          <li>✅ Reduces your liability (varies by plan)</li>
         </ul>
       </div>
     </div>
@@ -205,7 +218,7 @@
           <h4 id="agreementDepositHeading" data-i18n="agreement.depositHeading">SECURITY DEPOSIT (Refundable)</h4>
           <p id="agreementDepositIntro">A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return (typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
           <p id="agreementDepositInsurance"><strong>Verified Rental Car Insurance:</strong> $200</p>
-          <p id="agreementDepositDpp"><strong>Damage Protection Plan ($13/day &bull; $85/week &bull; $150/2 wks &bull; $295/month):</strong> $200 deposit</p>
+          <p id="agreementDepositDpp"><strong>Damage Protection Plan — Basic $15/day &bull; Standard $30/day &bull; Premium $50/day</strong></p>
           <p id="agreementDepositNeither"><strong>Neither Option:</strong> $500</p>
 
           <h4 data-i18n-html="agreement.insuranceHeading">INSURANCE &amp; LIABILITY</h4>
@@ -214,7 +227,7 @@
             <li data-i18n-html="agreement.insuranceLi1">Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
             <li data-i18n="agreement.insuranceLi2">Purchase of SLY Transportation Services Damage Protection Plan</li>
           </ul>
-          <p data-i18n-html="agreement.dppOptionalBody"><strong>Damage Protection Plan (Optional):</strong> $13/day &bull; $85/week &bull; $150/2 weeks &bull; $295/month</p>
+          <p data-i18n-html="agreement.dppOptionalBody"><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $15/day &bull; Standard &mdash; $30/day &bull; Premium &mdash; $50/day</p>
           <p data-i18n-html="agreement.dppReduces">This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
           <p data-i18n-html="agreement.withoutPlanBody"><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
           <ul>
