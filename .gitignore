@@ -24,6 +24,7 @@ deployment-config.json
 
 # Database
 *.sql
+!supabase/migrations/*.sql
 *.sqlite
 *.db
 
