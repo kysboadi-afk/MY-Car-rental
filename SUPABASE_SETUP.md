@@ -46,7 +46,34 @@ In Vercel → Your Project → **Settings → Environment Variables**, add:
 
 In your Supabase project, go to **SQL Editor → New Query**, paste each block below and click **Run**.
 
-### 3a — `site_settings` table
+### 3a — `vehicles` table (required for `/api/v2-vehicles`)
+
+Stores one row per vehicle. The `data` column holds all vehicle metadata as JSONB.
+This replaces the previous `vehicles.json` GitHub file as the source of truth, eliminating
+the SHA-conflict errors that caused admin vehicle saves to fail.
+
+You can also run the canonical migration file directly:
+`supabase/migrations/0001_create_vehicles.sql`
+
+```sql
+create table if not exists vehicles (
+  vehicle_id text        primary key,
+  data       jsonb       not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists vehicles_updated_at_idx on vehicles (updated_at);
+
+-- Seed the four known fleet vehicles (safe to re-run; ignores conflicts)
+insert into vehicles (vehicle_id, data) values
+  ('slingshot',  '{"vehicle_id":"slingshot",  "vehicle_name":"Slingshot R",     "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active"}'::jsonb),
+  ('slingshot2', '{"vehicle_id":"slingshot2", "vehicle_name":"Slingshot R (2)", "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active"}'::jsonb),
+  ('camry',      '{"vehicle_id":"camry",      "vehicle_name":"Camry 2012",      "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active"}'::jsonb),
+  ('camry2013',  '{"vehicle_id":"camry2013",  "vehicle_name":"Camry 2013 SE",   "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active"}'::jsonb)
+on conflict (vehicle_id) do nothing;
+```
+
+### 3b — `site_settings` table
 
 Stores flat key/value pairs for site-wide settings (business name, contact info, promo banners, etc.).
 
@@ -63,7 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_site_settings_key ON public.site_settings (key);
 COMMENT ON TABLE public.site_settings IS 'Site-wide settings editable via the Admin CMS.';
 ```
 
-### 3b — `content_blocks` table
+### 3c — `content_blocks` table
 
 Stores structured content blocks: FAQs, announcements, and testimonials.
 
@@ -89,7 +116,7 @@ CREATE INDEX IF NOT EXISTS idx_content_blocks_sort   ON public.content_blocks (s
 COMMENT ON TABLE public.content_blocks IS 'Structured content blocks (FAQs, announcements, testimonials) editable via the Admin CMS.';
 ```
 
-### 3c — `content_revisions` table
+### 3d — `content_revisions` table
 
 Tracks every change made via the Admin CMS so you can roll back.
 

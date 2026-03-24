@@ -1,15 +1,13 @@
 // api/v2-vehicles.js
 // SLYTRANS FLEET CONTROL v2 — Vehicles CRUD endpoint.
-// Supports listing and updating vehicle data.
+// Supports listing and updating vehicle data stored in Supabase.
 //
 // POST /api/v2-vehicles
 // Actions:
 //   list   — { secret, action:"list" }
 //   update — { secret, action:"update", vehicleId, updates:{...} }
 
-import { loadVehicles, saveVehicles } from "./_vehicles.js";
-import { adminErrorMessage } from "./_error-helpers.js";
-import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -36,11 +34,25 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return res.status(500).json({ error: "Server configuration error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set." });
+  }
+
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      const { data } = await loadVehicles();
-      return res.status(200).json({ vehicles: data });
+      const { data: rows, error } = await supabase
+        .from("vehicles")
+        .select("vehicle_id, data");
+
+      if (error) throw new Error(`Supabase select failed: ${error.message}`);
+
+      const vehicles = {};
+      for (const row of rows || []) {
+        vehicles[row.vehicle_id] = row.data;
+      }
+      return res.status(200).json({ vehicles });
     }
 
     // ── UPDATE ──────────────────────────────────────────────────────────────
@@ -53,11 +65,8 @@ export default async function handler(req, res) {
       if (!updates || typeof updates !== "object") {
         return res.status(400).json({ error: "updates object is required" });
       }
-      if (!process.env.GITHUB_TOKEN) {
-        return res.status(500).json({ error: "GITHUB_TOKEN not configured" });
-      }
 
-      // Validate and build safe updates before the retry loop
+      // Validate and build safe updates
       const safeUpdates = {};
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
@@ -81,30 +90,37 @@ export default async function handler(req, res) {
         }
       }
 
-      // Quick existence check before the retry loop
-      const { data: checkData } = await loadVehicles();
-      if (!checkData[vehicleId]) {
+      // Fetch existing row
+      const { data: existing, error: fetchErr } = await supabase
+        .from("vehicles")
+        .select("data")
+        .eq("vehicle_id", vehicleId)
+        .maybeSingle();
+
+      if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+      if (!existing) {
         return res.status(404).json({ error: "Vehicle not found" });
       }
 
-      let updatedVehicle;
-      await updateJsonFileWithRetry({
-        load:    loadVehicles,
-        apply:   (data) => {
-          if (!data[vehicleId]) return; // vehicle was deleted between the check and the retry
-          data[vehicleId] = { ...data[vehicleId], ...safeUpdates };
-          updatedVehicle  = data[vehicleId];
-        },
-        save:    saveVehicles,
-        message: `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
-      });
+      // Merge safe updates into existing data and upsert atomically
+      const updatedData = { ...existing.data, ...safeUpdates };
+      const { data: upserted, error: upsertErr } = await supabase
+        .from("vehicles")
+        .upsert(
+          { vehicle_id: vehicleId, data: updatedData, updated_at: new Date().toISOString() },
+          { onConflict: "vehicle_id" }
+        )
+        .select("data")
+        .single();
 
-      return res.status(200).json({ success: true, vehicle: updatedVehicle });
+      if (upsertErr) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
+
+      return res.status(200).json({ success: true, vehicle: upserted.data });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error("v2-vehicles error:", err);
-    return res.status(500).json({ error: adminErrorMessage(err) });
+    return res.status(500).json({ error: err.message || "An unexpected error occurred." });
   }
 }
