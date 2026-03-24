@@ -120,6 +120,13 @@ Edit `index.html` stats section:
 # SLY-RIDES
 Simple car rental website — live at **[https://www.slytrans.com](https://www.slytrans.com)** 🚗
 
+## 🔐 Admin Dashboard
+
+**Fleet Control (new):** [https://www.slytrans.com/admin-v2/](https://www.slytrans.com/admin-v2/)
+**Legacy Admin:** [https://www.slytrans.com/admin.html](https://www.slytrans.com/admin.html)
+
+You can also reach the admin from any page on the site — click the small **Admin** link in the footer.
+
 ## 📧 Need to update the Vercel backend (reservation emails)?
 
 See the step-by-step guide: **[VERCEL_SETUP.md](VERCEL_SETUP.md)**
