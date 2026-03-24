@@ -15,6 +15,7 @@
 import crypto from "crypto";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES   = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -62,8 +63,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data, sha } = await loadExpenses();
-
     const expense = {
       expense_id: crypto.randomBytes(8).toString("hex"),
       vehicle_id,
@@ -74,8 +73,17 @@ export default async function handler(req, res) {
       created_at: new Date().toISOString(),
     };
 
-    data.push(expense);
-    await saveExpenses(data, sha, `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`);
+    // apply is idempotent: skips push if expense_id already present (safe on retry)
+    await updateJsonFileWithRetry({
+      load:    loadExpenses,
+      apply:   (data) => {
+        if (!data.some((e) => e.expense_id === expense.expense_id)) {
+          data.push(expense);
+        }
+      },
+      save:    saveExpenses,
+      message: `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`,
+    });
 
     return res.status(200).json({ success: true, expense });
   } catch (err) {

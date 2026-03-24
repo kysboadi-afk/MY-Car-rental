@@ -11,6 +11,7 @@
 
 import { TEMPLATES } from "./_sms-templates.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -90,10 +91,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data: overrides, sha } = await loadOverrides();
-
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
+      const { data: overrides } = await loadOverrides();
       const result = Object.entries(TEMPLATES).map(([key, defaultMessage]) => {
         const override = overrides[key] || {};
         return {
@@ -122,24 +122,31 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "updates object is required" });
       }
 
-      if (!overrides[templateKey]) overrides[templateKey] = {};
+      // Capture the update values before the retry loop
+      const newMessage  = typeof updates.message === "string" ? updates.message.slice(0, 1000) : undefined;
+      const newEnabled  = typeof updates.enabled === "boolean" ? updates.enabled : undefined;
+      const updatedAt   = new Date().toISOString();
 
-      if (typeof updates.message === "string") {
-        overrides[templateKey].message = updates.message.slice(0, 1000);
-      }
-      if (typeof updates.enabled === "boolean") {
-        overrides[templateKey].enabled = updates.enabled;
-      }
-      overrides[templateKey].updatedAt = new Date().toISOString();
-
-      await saveOverrides(overrides, sha, `v2: Update SMS template ${templateKey}`);
+      let resultOverride;
+      await updateJsonFileWithRetry({
+        load:    loadOverrides,
+        apply:   (data) => {
+          if (!data[templateKey]) data[templateKey] = {};
+          if (newMessage  !== undefined) data[templateKey].message  = newMessage;
+          if (newEnabled  !== undefined) data[templateKey].enabled  = newEnabled;
+          data[templateKey].updatedAt = updatedAt;
+          resultOverride = data[templateKey];
+        },
+        save:    saveOverrides,
+        message: `v2: Update SMS template ${templateKey}`,
+      });
 
       return res.status(200).json({
         success: true,
         template: {
           key:          templateKey,
-          message:      overrides[templateKey].message ?? TEMPLATES[templateKey],
-          enabled:      overrides[templateKey].enabled ?? true,
+          message:      resultOverride.message ?? TEMPLATES[templateKey],
+          enabled:      resultOverride.enabled ?? true,
           isCustomized: true,
         },
       });
@@ -153,8 +160,12 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Invalid templateKey" });
       }
 
-      delete overrides[templateKey];
-      await saveOverrides(overrides, sha, `v2: Reset SMS template ${templateKey} to default`);
+      await updateJsonFileWithRetry({
+        load:    loadOverrides,
+        apply:   (data) => { delete data[templateKey]; },
+        save:    saveOverrides,
+        message: `v2: Reset SMS template ${templateKey} to default`,
+      });
 
       return res.status(200).json({
         success: true,

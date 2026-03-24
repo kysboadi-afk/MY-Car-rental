@@ -18,6 +18,7 @@
 // requested range.  It does NOT perform partial overlap removal.
 
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -68,52 +69,58 @@ export default async function handler(req, res) {
   }
 
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const headers = {
+  const ghHeaders = {
     Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  try {
-    // Fetch current file
-    const getResp = await fetch(apiUrl, { headers });
-    if (!getResp.ok) {
-      const errText = await getResp.text();
-      console.error(`GitHub GET failed: ${getResp.status} ${errText}`);
-      return res.status(502).json({ error: "Failed to read booked-dates.json from GitHub" });
+  async function loadBookedDates() {
+    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
     }
-    const fileData = await getResp.json();
-    const current = JSON.parse(
-      Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-    );
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+      if (typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
 
-    // Remove the exact matching range(s) for the given vehicle
-    const before = (current[vehicleId] || []).length;
-    current[vehicleId] = (current[vehicleId] || []).filter(
-      (r) => !(r.from === from && r.to === to)
-    );
-    const removed = before - current[vehicleId].length;
-
-    // Write back even if nothing was removed, to stay idempotent
-    const updatedContent = Buffer.from(
-      JSON.stringify(current, null, 2) + "\n"
-    ).toString("base64");
-
-    const putResp = await fetch(apiUrl, {
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
       method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: `Open dates for ${vehicleId}: ${from} to ${to}`,
-        content: updatedContent,
-        sha: fileData.sha,
-      }),
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
-
-    if (!putResp.ok) {
-      const errText = await putResp.text();
-      console.error(`GitHub PUT failed: ${putResp.status} ${errText}`);
-      return res.status(502).json({ error: "Failed to update booked-dates.json on GitHub" });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
     }
+  }
+
+  try {
+    let removed = 0;
+    await updateJsonFileWithRetry({
+      load:    loadBookedDates,
+      // apply is idempotent: filter removes exact matches; if already gone, it's a no-op
+      apply:   (data) => {
+        const before = (data[vehicleId] || []).length;
+        data[vehicleId] = (data[vehicleId] || []).filter(
+          (r) => !(r.from === from && r.to === to)
+        );
+        removed = before - data[vehicleId].length;
+      },
+      save:    saveBookedDates,
+      message: `Open dates for ${vehicleId}: ${from} to ${to}`,
+    });
 
     return res.status(200).json({ success: true, removed });
   } catch (err) {

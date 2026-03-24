@@ -632,6 +632,8 @@
       document.getElementById("blockBtn").addEventListener("click", function () {
         var vals = getFormValues();
         if (!validate(vals)) return;
+        var btn = this;
+        btn.disabled = true;
         showStatus("Blocking dates…", "info");
         fetch(API_BASE + "/api/block-dates", {
           method: "POST",
@@ -649,13 +651,16 @@
               loadBookings();
             }
           })
-          .catch(function (err) { showStatus("Network error: " + err.message, "error"); });
+          .catch(function (err) { showStatus("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
       });
 
       document.getElementById("unblockBtn").addEventListener("click", function () {
         var vals = getFormValues();
         if (!validate(vals)) return;
         if (!confirm("Are you sure you want to unblock " + vals.from + " to " + vals.to + " for the " + vals.vehicleId + "? This will make those dates available for new bookings.")) return;
+        var btn = this;
+        btn.disabled = true;
         showStatus("Unblocking dates…", "info");
         fetch(API_BASE + "/api/open-dates", {
           method: "POST",
@@ -673,7 +678,8 @@
               loadBookings();
             }
           })
-          .catch(function (err) { showStatus("Network error: " + err.message, "error"); });
+          .catch(function (err) { showStatus("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
       });
 
       function loadBookings() {
@@ -1048,6 +1054,8 @@
         var purchasePrice = parseFloat(document.getElementById("editPurchasePrice").value) || 0;
         var status        = document.getElementById("editVehicleStatus").value;
 
+        var btn = this;
+        btn.disabled = true;
         showProfitMsg("Saving…", "info");
         fetch(API_BASE + "/api/update-vehicle", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1073,7 +1081,8 @@
               loadStats(true);
             }
           })
-          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
       });
 
       // ── Add expense ────────────────────────────────────────────────────────
@@ -1090,6 +1099,8 @@
         if (!date)            { showProfitMsg("Select an expense date.", "error"); return; }
         if (!amount || isNaN(amount) || amount <= 0) { showProfitMsg("Enter a valid expense amount.", "error"); return; }
 
+        var btn = this;
+        btn.disabled = true;
         showProfitMsg("Adding expense…", "info");
         fetch(API_BASE + "/api/add-expense", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1106,7 +1117,8 @@
               loadStats(true);
             }
           })
-          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
       });
 
       // ── Delete expense (event delegation) ─────────────────────────────────
@@ -1190,6 +1202,8 @@
           return;
         }
 
+        var btn = this;
+        btn.disabled = true;
         showMbMsg("Saving booking…", "info");
         fetch(API_BASE + "/api/add-manual-booking", {
           method:  "POST",
@@ -1215,7 +1229,8 @@
               document.getElementById("mbAmount").value = "";
             }
           })
-          .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); });
+          .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
       });
     })();
   </script>
