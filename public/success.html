@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Your payment was successful. Sly Transportation Services LLC has confirmed your car rental booking.">
+  <title>Payment Successful | Sly Transportation Services LLC</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    .message-box {
+      max-width: 600px;
+      margin: 100px auto;
+      background: #1a1a1a;
+      padding: 40px;
+      border-radius: 16px;
+      text-align: center;
+      border: 1px solid #2a2a2a;
+      box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    }
+    .message-box h1 { color: #4caf50; font-size: 36px; margin-bottom: 20px; }
+    .message-box p { font-size: 18px; margin-bottom: 30px; color: #ccc; }
+    .message-box a {
+      display: inline-block;
+      padding: 12px 24px;
+      background: #ffb400;
+      color: #000;
+      border-radius: 12px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: bold;
+      transition: 0.3s;
+    }
+    .message-box a:hover { transform: scale(1.05); background: #e0a000; }
+  </style>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+  <header class="site-header">
+    <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav.homeLink">Home</a>
+      <a href="cars.html" data-i18n="nav.browseCars">Browse Cars</a>
+      <a href="index.html#how-it-works" data-i18n="nav.howItWorks">How It Works</a>
+      <a href="index.html#video-testimonial" data-i18n="nav.videoTestimonial">Video Testimonial</a>
+      <a href="index.html#about" data-i18n="nav.about">About</a>
+    </nav>
+    <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
+  </header>
+  <div class="message-box" id="messageBox">
+    <h1 id="messageTitle" data-i18n="success.title">✅ Payment Successful!</h1>
+    <p id="messageBody" data-i18n="success.body">Thank you for booking with Sly Transportation Services LLC! Your car is reserved. We will be in touch shortly to confirm your rental details.</p>
+    <p id="emailStatus" style="font-size:15px;color:#aaa;margin-bottom:16px" data-i18n="success.sending">Sending confirmation…</p>
+    <a id="homeBtn" href="cars.html" style="pointer-events:none;opacity:0.5" data-i18n="success.homeBtn">Return to Checkout</a>
+    <br><br>
+    <a id="homeLinkSecondary" href="index.html" style="display:none;background:#333;color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="nav.home">Back to Homepage</a>
+  </div>
+  <footer>
+    <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+  </footer>
+  <script src="lang.js"></script>
+  <script src="chatbot.js"></script>
+  <script>
+    // Send the reservation notification email now that payment is confirmed.
+    // Booking metadata was saved to sessionStorage by car.js before the Stripe
+    // redirect; the large ID binary was saved separately in IndexedDB to avoid
+    // sessionStorage's ~5 MB size cap.
+    //
+    // Payment verification strategy (in order):
+    //
+    //  1. Checkout Session flow (session_id in URL):
+    //       Call /api/verify-session?session_id=cs_... server-side to retrieve
+    //       the actual payment_status from Stripe.  Only proceed on "paid".
+    //
+    //  2. Payment Elements flow (payment_intent_client_secret in URL):
+    //       Use stripe.retrievePaymentIntent(clientSecret) via Stripe.js to
+    //       get the authoritative paymentIntent.status from Stripe.
+    //         succeeded                → proceed
+    //         processing               → payment pending; do NOT send confirmation
+    //         requires_payment_method  → payment failed
+    //         any other                → treat as failed
+    //       Falls back to redirect_status URL param if the publishable key is
+    //       not available in sessionStorage.
+    //
+    //  3. Direct redirect for all payment methods (slyPiSecret in sessionStorage):
+    //       car.js saves the PaymentIntent client secret for ALL payment methods
+    //       (Apple Pay, Google Pay, card, Cash App, etc.) that redirect to this
+    //       page without Stripe appending URL params.  The same
+    //       stripe.retrievePaymentIntent() check is performed using the stored secret.
+    //
+    //  4. redirect_status fallback:
+    //       Checked last; used when the publishable key was not cached and no
+    //       Stripe.js verification could be performed.
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Build a "Return to Checkout" / "Try Again" href using the vehicle query
+      // param so we can send the user straight back to their booking.
+      var urlParams = new URLSearchParams(window.location.search);
+      var vehicleId = urlParams.get("vehicle");
+      var tryAgainHref = vehicleId
+        ? "car.html?vehicle=" + encodeURIComponent(vehicleId)
+        : "cars.html";
+
+      // Read and immediately clear the stored PaymentIntent client secret so it
+      // cannot be replayed.  Used by Path 3 when Stripe did not append URL params.
+      var storedPiSecret = sessionStorage.getItem("slyPiSecret");
+      sessionStorage.removeItem("slyPiSecret");
+
+      // PaymentIntent ID used to look up card last4 for the PDF rental agreement.
+      // Stripe appends payment_intent=pi_xxx to the redirect URL (Path 2); for
+      // Path 3 it is captured from the retrievePaymentIntent result below.
+      var confirmedPaymentIntentId = urlParams.get("payment_intent") || null;
+
+      // ── Waitlist flow ──────────────────────────────────────────────────────
+      // When ?waitlist=1 is present the customer paid a $50 waitlist deposit —
+      // call save-waitlist-entry instead of send-reservation-email and show a
+      // tailored confirmation message.
+      var isWaitlist = urlParams.get("waitlist") === "1";
+
+      function saveWaitlistEntry(waitlistData, piId) {
+        var t = getT();
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title) { title.textContent = t("fleet.waitlistSuccess") || "⏳ Application Received!"; title.style.color = "#f0a500"; }
+        if (body) {
+          var tpl = t("fleet.waitlistSuccessBody") || "Your waitlist application for the {car} is under review. We'll email you within 24–48 hours.";
+          body.textContent = tpl.replace("{car}", waitlistData.car || "vehicle");
+        }
+        if (status) { status.textContent = t("success.sending") || "Sending confirmation…"; status.style.display = ""; }
+
+        var payload = Object.assign({}, waitlistData);
+        if (piId) payload.paymentIntentId = piId;
+
+        // Read the driver's license from IndexedDB, then send to API
+        function dispatchSave(data) {
+          fetch(API_BASE + "/api/save-waitlist-entry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }).then(function(res) {
+            enableHomeBtn();
+            if (!res.ok) { showEmailError(); }
+            // After waitlist confirmation, home button should go to cars page
+            var btn = document.getElementById("homeBtn");
+            if (btn) btn.href = "cars.html";
+          }).catch(function(err) {
+            console.error("save-waitlist-entry error:", err);
+            enableHomeBtn();
+            showEmailError();
+          });
+        }
+
+        try {
+          var idbReq = indexedDB.open("slyRidesDB", 1);
+          idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+          idbReq.onsuccess = function(e) {
+            var db = e.target.result;
+            try {
+              var tx = db.transaction("files", "readonly");
+              var licReq = tx.objectStore("files").get("waitlistLicense");
+              licReq.onsuccess = function(ev) {
+                var fileData = ev.target.result;
+                if (fileData && fileData.licenseBase64) {
+                  payload.idBase64    = fileData.licenseBase64;
+                  payload.idMimeType  = fileData.licenseMimeType || "application/octet-stream";
+                  payload.idFileName  = fileData.licenseFileName || "drivers-license";
+                }
+                // Also read insurance proof
+                var insReq = tx.objectStore("files").get("waitlistInsurance");
+                insReq.onsuccess = function(ev2) {
+                  var insData = ev2.target.result;
+                  if (insData && insData.base64) {
+                    payload.insuranceBase64    = insData.base64;
+                    payload.insuranceMimeType  = insData.mimeType || "application/octet-stream";
+                    payload.insuranceFileName  = insData.fileName || "insurance-proof";
+                  }
+                  // Clean up both stored files
+                  try {
+                    var cleanTx = db.transaction("files", "readwrite");
+                    cleanTx.objectStore("files").delete("waitlistLicense");
+                    cleanTx.objectStore("files").delete("waitlistInsurance");
+                    cleanTx.oncomplete = function() { db.close(); dispatchSave(payload); };
+                    cleanTx.onerror   = function() { db.close(); dispatchSave(payload); };
+                  } catch (cleanErr) { db.close(); dispatchSave(payload); }
+                };
+                insReq.onerror = function() {
+                  // If insurance read fails, still proceed — clean up both keys
+                  try {
+                    var cleanTx2 = db.transaction("files", "readwrite");
+                    cleanTx2.objectStore("files").delete("waitlistLicense");
+                    cleanTx2.objectStore("files").delete("waitlistInsurance");
+                    cleanTx2.oncomplete = function() { db.close(); dispatchSave(payload); };
+                    cleanTx2.onerror   = function() { db.close(); dispatchSave(payload); };
+                  } catch (cleanErr2) { db.close(); dispatchSave(payload); }
+                };
+              };
+              licReq.onerror = function() { db.close(); dispatchSave(payload); };
+            } catch (txErr) { db.close(); dispatchSave(payload); }
+          };
+          idbReq.onerror = function() { dispatchSave(payload); };
+        } catch (idbErr) { dispatchSave(payload); }
+      }
+
+      function proceedWithWaitlistConfirmation(piId) {
+        var raw = sessionStorage.getItem("slyWaitlistEntry");
+        sessionStorage.removeItem("slyWaitlistEntry");
+        var waitlistData;
+        try { waitlistData = raw ? JSON.parse(raw) : {}; } catch(e) { waitlistData = {}; }
+        saveWaitlistEntry(waitlistData, piId || confirmedPaymentIntentId);
+      }
+
+      if (isWaitlist) {
+        // Reuse the same Stripe verification logic but call the waitlist endpoint on success.
+        var wlPiClientSecret = urlParams.get("payment_intent_client_secret");
+        var wlPiId = urlParams.get("payment_intent") || null;
+        var wlPubKey = sessionStorage.getItem("slyStripePublishable");
+        var wlSecret = storedPiSecret;
+
+        function handleWaitlistRedirectStatus() {
+          var redirectStatus = urlParams.get("redirect_status");
+          if (redirectStatus === "succeeded") {
+            proceedWithWaitlistConfirmation(wlPiId);
+          } else if (redirectStatus === "processing") {
+            sessionStorage.removeItem("slyWaitlistEntry");
+            showPaymentProcessing();
+            enableHomeBtn(true);
+          } else {
+            sessionStorage.removeItem("slyWaitlistEntry");
+            showPaymentFailed();
+            enableHomeBtn(true);
+          }
+        }
+
+        if (wlPiClientSecret && wlPubKey && typeof Stripe !== "undefined") {
+          var wlStripe = Stripe(wlPubKey);
+          wlStripe.retrievePaymentIntent(wlPiClientSecret).then(function(result) {
+            if (result.error) { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); return; }
+            var piStatus = result.paymentIntent.status;
+            if (piStatus === "succeeded") {
+              proceedWithWaitlistConfirmation(result.paymentIntent.id);
+            } else if (piStatus === "processing") {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentProcessing(); enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true);
+            }
+          }).catch(function() { handleWaitlistRedirectStatus(); });
+          return;
+        }
+        if (wlSecret && wlPubKey && typeof Stripe !== "undefined") {
+          var wlStripe2 = Stripe(wlPubKey);
+          wlStripe2.retrievePaymentIntent(wlSecret).then(function(result) {
+            if (result.error) { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); return; }
+            var piStatus2 = result.paymentIntent.status;
+            if (piStatus2 === "succeeded") {
+              proceedWithWaitlistConfirmation(result.paymentIntent.id);
+            } else if (piStatus2 === "processing") {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentProcessing(); enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true);
+            }
+          }).catch(function() { sessionStorage.removeItem("slyWaitlistEntry"); showPaymentFailed(); enableHomeBtn(true); });
+          return;
+        }
+        handleWaitlistRedirectStatus();
+        return;
+      }
+
+      function getT() {
+        return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t : function(k) { return k; };
+      }
+
+      function enableHomeBtn(isRetry) {
+        var btn = document.getElementById("homeBtn");
+        var status = document.getElementById("emailStatus");
+        var secondary = document.getElementById("homeLinkSecondary");
+        if (btn) {
+          btn.style.pointerEvents = "";
+          btn.style.opacity = "";
+          // Always link back to the checkout/booking page (success or retry).
+          btn.href = tryAgainHref;
+          var t = getT();
+          if (isRetry) {
+            btn.textContent = t("success.tryAgain");
+            // Show secondary "Back to Homepage" link for both options.
+            if (secondary) { secondary.style.display = ""; }
+          } else {
+            btn.textContent = t("success.homeBtn"); // "Return to Checkout"
+          }
+        }
+        if (status) { status.style.display = "none"; }
+      }
+
+      function showPaymentFailed() {
+        var t      = getT();
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title)  { title.textContent  = t("success.failTitle"); title.style.color = "#f44336"; }
+        if (body)   body.textContent  = t("success.failBody");
+        if (status) status.style.display = "none";
+      }
+
+      function showPaymentProcessing() {
+        var t      = getT();
+        var title  = document.getElementById("messageTitle");
+        var body   = document.getElementById("messageBody");
+        var status = document.getElementById("emailStatus");
+        if (title)  { title.textContent  = t("success.pendingTitle"); title.style.color = "#ffb400"; }
+        if (body)   body.textContent  = t("success.pendingBody");
+        if (status) status.style.display = "none";
+      }
+
+      function showEmailError() {
+        var t      = getT();
+        var status = document.getElementById("emailStatus");
+        if (status) {
+          status.textContent = t("success.emailError");
+          status.style.color = "#ff9800";
+          status.style.display = "";
+        }
+      }
+
+      function sendEmail(data) {
+        if (!data || typeof data !== "object" || Array.isArray(data)) { enableHomeBtn(); return; }
+        fetch(API_BASE + "/api/send-reservation-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        }).then(function (res) {
+          enableHomeBtn();
+          if (!res.ok) { showEmailError(); }
+        }).catch(function (err) {
+          console.error("Reservation email error:", err);
+          enableHomeBtn();
+          showEmailError();
+        });
+      }
+
+      // Retrieve the ID and insurance attachments from IndexedDB, merge into the
+      // payload, then call sendEmail() exactly once.
+      function loadFilesAndSendEmail(data) {
+        try {
+          var openReq = indexedDB.open("slyRidesDB", 1);
+          openReq.onupgradeneeded = function (e) {
+            e.target.result.createObjectStore("files");
+          };
+          openReq.onsuccess = function (e) {
+            var db = e.target.result;
+            try {
+              var tx = db.transaction("files", "readonly");
+              var getReq = tx.objectStore("files").get("pendingId");
+              getReq.onsuccess = function (ev) {
+                var fileData = ev.target.result;
+                if (fileData) {
+                  Object.assign(data, {
+                    idBase64:          fileData.idBase64,
+                    idFileName:        fileData.idFileName,
+                    idMimeType:        fileData.idMimeType,
+                    insuranceBase64:   fileData.insuranceBase64,
+                    insuranceFileName: fileData.insuranceFileName,
+                    insuranceMimeType: fileData.insuranceMimeType,
+                  });
+                }
+                // Clean up both keys, then send exactly one email.
+                try {
+                  var cleanTx = db.transaction("files", "readwrite");
+                  var store = cleanTx.objectStore("files");
+                  store.delete("pendingId");
+                  store.delete("pendingInsurance");
+                  cleanTx.oncomplete = function () { db.close(); sendEmail(data); };
+                  cleanTx.onerror   = function () { db.close(); sendEmail(data); };
+                } catch (err) { db.close(); sendEmail(data); }
+              };
+              getReq.onerror = function () { db.close(); sendEmail(data); };
+            } catch (err) { db.close(); sendEmail(data); }
+          };
+          openReq.onerror = function () { sendEmail(data); };
+        } catch (err) { sendEmail(data); }
+      }
+
+      // Proceed with sending the confirmation email after payment is verified.
+      function proceedWithConfirmation() {
+        var raw = sessionStorage.getItem("slyRidesBooking");
+        if (!raw) { enableHomeBtn(); return; }
+        sessionStorage.removeItem("slyRidesBooking");
+        var data;
+        try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
+        if (confirmedPaymentIntentId) { data.paymentIntentId = confirmedPaymentIntentId; }
+        // Meta Pixel — track successful purchase
+        if (typeof fbq === "function" && data.total != null) {
+          var purchaseValue = parseFloat(String(data.total).replace(/[^0-9.]/g, ""));
+          if (isFinite(purchaseValue) && purchaseValue > 0) {
+            fbq("track", "Purchase", { value: purchaseValue, currency: "USD" });
+          }
+        }
+        loadFilesAndSendEmail(data);
+      }
+
+      // Shared handler for redirect_status URL parameter (fallback path).
+      function handleRedirectStatus() {
+        var redirectStatus = urlParams.get("redirect_status");
+        if (redirectStatus === "succeeded") {
+          proceedWithConfirmation();
+        } else if (redirectStatus === "processing") {
+          sessionStorage.removeItem("slyRidesBooking");
+          showPaymentProcessing();
+          enableHomeBtn(true);
+        } else {
+          // failed, requires_payment_method, absent, or unknown → treat as failure.
+          sessionStorage.removeItem("slyRidesBooking");
+          showPaymentFailed();
+          enableHomeBtn(true);
+        }
+      }
+
+      // ── Path 1: Checkout Session flow ─────────────────────────────────────
+      // When session_id is present, verify payment status server-side via
+      // /api/verify-session.  This is the authoritative check and cannot be
+      // forged by manipulating URL parameters.
+      var sessionId = urlParams.get("session_id");
+      if (sessionId) {
+        var statusEl = document.getElementById("emailStatus");
+        if (statusEl) { statusEl.textContent = getT()("success.verifying"); }
+
+        fetch(API_BASE + "/api/verify-session?session_id=" + encodeURIComponent(sessionId))
+          .then(function (res) { return res.json(); })
+          .then(function (body) {
+            if (body.payment_status === "paid") {
+              proceedWithConfirmation();
+            } else if (body.payment_status === "unpaid" || body.payment_status === "no_payment_required") {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            }
+          })
+          .catch(function (err) {
+            console.error("verify-session error:", err);
+            sessionStorage.removeItem("slyRidesBooking");
+            showPaymentProcessing();
+            enableHomeBtn(true);
+          });
+        return;
+      }
+
+      // ── Path 2: Payment Elements flow (payment_intent_client_secret) ──────
+      // Use stripe.retrievePaymentIntent() for the authoritative status instead
+      // of trusting the redirect_status URL param alone, which could be
+      // manipulated.  Falls back to redirect_status if the publishable key is
+      // unavailable (e.g. user opened the link in a new tab).
+      var piClientSecret = urlParams.get("payment_intent_client_secret");
+      if (piClientSecret) {
+        var statusEl2 = document.getElementById("emailStatus");
+        if (statusEl2) { statusEl2.textContent = getT()("success.verifying"); }
+
+        var pubKey = sessionStorage.getItem("slyStripePublishable");
+        // storedPiSecret was already cleared at the top of this IIFE;
+        // Path 3 only runs when payment_intent_client_secret is absent from the
+        // URL, so there is no double-use concern.
+        if (pubKey && typeof Stripe !== "undefined") {
+          var stripe = Stripe(pubKey);
+          stripe.retrievePaymentIntent(piClientSecret).then(function (result) {
+            if (result.error) {
+              console.error("retrievePaymentIntent error:", result.error);
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+              return;
+            }
+            var piStatus = result.paymentIntent.status;
+            if (piStatus === "succeeded") {
+              confirmedPaymentIntentId = confirmedPaymentIntentId || result.paymentIntent.id;
+              proceedWithConfirmation();
+            } else if (piStatus === "processing") {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            } else {
+              // requires_payment_method, requires_action, canceled, etc.
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            }
+          }).catch(function (err) {
+            console.error("retrievePaymentIntent network error:", err);
+            // Network failure — fall back to the redirect_status param.
+            handleRedirectStatus();
+          });
+          return;
+        }
+        // Publishable key not cached (e.g. direct link); fall back to
+        // redirect_status which Stripe also includes in the URL.
+        handleRedirectStatus();
+        return;
+      }
+
+      // ── Path 3: Direct success redirect (all payment methods) ─────────────
+      // car.js saves the PaymentIntent client secret to sessionStorage as
+      // "slyPiSecret" for ALL payment methods (Apple Pay, Google Pay, card,
+      // Cash App, etc.) that redirect to this page without Stripe appending
+      // URL params.  The secret was read and cleared at the top of this IIFE.
+      if (storedPiSecret) {
+        var statusEl3 = document.getElementById("emailStatus");
+        if (statusEl3) { statusEl3.textContent = getT()("success.verifying"); }
+
+        var pubKey3 = sessionStorage.getItem("slyStripePublishable");
+        if (pubKey3 && typeof Stripe !== "undefined") {
+          var stripe3 = Stripe(pubKey3);
+          stripe3.retrievePaymentIntent(storedPiSecret).then(function (result) {
+            if (result.error) {
+              console.error("retrievePaymentIntent (stored) error:", result.error);
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+              return;
+            }
+            var piStatus3 = result.paymentIntent.status;
+            if (piStatus3 === "succeeded") {
+              confirmedPaymentIntentId = confirmedPaymentIntentId || result.paymentIntent.id;
+              proceedWithConfirmation();
+            } else if (piStatus3 === "processing") {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentProcessing();
+              enableHomeBtn(true);
+            } else {
+              sessionStorage.removeItem("slyRidesBooking");
+              showPaymentFailed();
+              enableHomeBtn(true);
+            }
+          }).catch(function (err) {
+            console.error("retrievePaymentIntent (stored) network error:", err);
+            sessionStorage.removeItem("slyRidesBooking");
+            showPaymentFailed();
+            enableHomeBtn(true);
+          });
+          return;
+        }
+        // Publishable key unavailable — treat as failure (cannot verify).
+        sessionStorage.removeItem("slyRidesBooking");
+        showPaymentFailed();
+        enableHomeBtn(true);
+        return;
+      }
+
+      // ── Path 4: redirect_status fallback ──────────────────────────────────
+      // Used when none of the above paths matched (e.g. user navigated directly
+      // to this page).  Treat absent redirect_status as a failed payment.
+      handleRedirectStatus();
+    })();
+  </script>
+</body>
+</html>

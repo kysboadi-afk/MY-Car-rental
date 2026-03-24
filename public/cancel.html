@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Your payment was canceled. No charge was made. Return to Sly Transportation Services LLC to try again.">
+  <title>Payment Canceled | Sly Transportation Services LLC</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .message-box {
+      max-width: 600px;
+      margin: 100px auto;
+      background: #1a1a1a;
+      padding: 40px;
+      border-radius: 16px;
+      text-align: center;
+      border: 1px solid #2a2a2a;
+      box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    }
+    .message-box h1 { color: #f44336; font-size: 36px; margin-bottom: 20px; }
+    .message-box p { font-size: 18px; margin-bottom: 30px; color: #ccc; }
+    .message-box a {
+      display: inline-block;
+      padding: 12px 24px;
+      background: #ffb400;
+      color: #000;
+      border-radius: 12px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: bold;
+      transition: 0.3s;
+    }
+    .message-box a:hover { transform: scale(1.05); background: #e0a000; }
+  </style>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+  <header class="site-header">
+    <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav.homeLink">Home</a>
+      <a href="cars.html" data-i18n="nav.browseCars">Browse Cars</a>
+      <a href="index.html#how-it-works" data-i18n="nav.howItWorks">How It Works</a>
+      <a href="index.html#video-testimonial" data-i18n="nav.videoTestimonial">Video Testimonial</a>
+      <a href="index.html#about" data-i18n="nav.about">About</a>
+    </nav>
+    <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
+  </header>
+  <div class="message-box">
+    <h1 data-i18n="cancel.title">❌ Payment Canceled</h1>
+    <p data-i18n="cancel.body">Your payment was not completed. No charge was made. You can try again anytime!</p>
+    <a id="cancelActionBtn" href="cars.html" data-i18n="cancel.tryAgain">Try Booking Again</a>
+    <br><br>
+    <a href="index.html" style="background:#333;color:#fff;display:inline-block;padding:10px 20px;border-radius:10px;text-decoration:none;font-size:14px" data-i18n="cancel.homeBtn">Back to Homepage</a>
+  </div>
+  <footer>
+    <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+  </footer>
+  <script src="lang.js"></script>
+  <script src="chatbot.js"></script>
+  <script>
+    // If car.js embedded the vehicle ID in the cancel_url query param, send the
+    // user back to that specific car's booking page rather than the generic list.
+    (function () {
+      var vehicleId = new URLSearchParams(window.location.search).get("vehicle");
+      var btn = document.getElementById("cancelActionBtn");
+      if (btn && vehicleId) {
+        btn.href = "car.html?vehicle=" + encodeURIComponent(vehicleId);
+      }
+    })();
+  </script>
+</body>
+</html>

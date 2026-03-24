@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Book your rental vehicle with Sly Transportation Services LLC. Select dates, upload ID, sign the agreement and pay securely online.">
+  <title>Sly Transportation Services LLC | Book a Vehicle</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+  <script src="https://js.stripe.com/v3/"></script>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+<header class="site-header">
+  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+  <nav class="site-nav">
+    <a href="index.html" data-i18n="nav.homeLink">Home</a>
+    <a href="cars.html" data-i18n="nav.browseCars">Browse Cars</a>
+    <a href="index.html#how-it-works" data-i18n="nav.howItWorks">How It Works</a>
+    <a href="index.html#video-testimonial" data-i18n="nav.videoTestimonial">Video Testimonial</a>
+    <a href="index.html#about" data-i18n="nav.about">About</a>
+  </nav>
+  <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
+</header>
+
+<div class="container">
+
+  <button id="backBtn" class="back-btn" data-i18n="booking.backToCars">⬅ Back to Cars</button>
+
+  <div class="car-slider" id="carSlider">
+    <div class="slider" id="sliderContainer">
+    </div>
+    <div class="slider-controls">
+      <button id="prevSlide">&#10094;</button>
+      <button id="nextSlide">&#10095;</button>
+    </div>
+    <div class="slider-dots" id="sliderDots"></div>
+
+    <div class="car-info">
+      <h3 id="carName"></h3>
+      <div class="earnings-block" id="earningsBlock">
+        <p class="earnings-tagline" data-i18n="booking.earningsTagline">Uber &amp; Lyft Ready &bull; Unlimited Miles</p>
+        <p class="earnings-title" data-i18n="booking.earningsTitle">Driver Earnings Example (Los Angeles)</p>
+        <p class="earnings-row" data-i18n="booking.earningsRow1">Average weekly earnings: $1,200 – $1,600</p>
+        <p class="earnings-row" data-i18n-html="booking.earningsRow2Html">Weekly rental: <span class="earnings-yellow">$350</span></p>
+        <p class="earnings-row" data-i18n-html="booking.earningsRow3Html"><span class="earnings-green">Estimated take-home:</span> $850 – $1,250</p>
+        <p class="earnings-cta" data-i18n-html="booking.earningsCtaHtml"><span class="earnings-yellow">Limited vehicles available</span> — reserve today</p>
+      </div>
+      <div class="earnings-block" id="slingshotDesc" style="display:none">
+        <p class="earnings-tagline" data-i18n="booking.slingshotTagline">🏎️ Built for Thrills &bull; Pure Fun</p>
+        <p class="earnings-title" data-i18n="fleet.slingshotSub">Experience the Ultimate City Ride</p>
+        <p class="earnings-row" data-i18n="fleet.slingshotLi1">🌴 Cruise the streets of Los Angeles in style</p>
+        <p class="earnings-row" data-i18n="fleet.slingshotLi2">⚡ Feel the open-air rush of a 3-wheeled sports car</p>
+        <p class="earnings-row" data-i18n="fleet.slingshotLi3">🎯 Perfect for exploring LA, photo shoots &amp; special occasions</p>
+        <p class="earnings-cta" data-i18n="fleet.slingshotCta"><span class="earnings-yellow">Limited availability</span> — reserve yours today</p>
+      </div>
+      <p class="car-subtitle" id="carSubtitle"></p>
+      <p class="price" id="carPrice"></p>
+    </div>
+  </div>
+
+  <section class="booking">
+    <h2 data-i18n="booking.completeReservation">Complete Your Reservation</h2>
+
+    <!-- Shown when the user returns after a failed payment so they know their info is pre-filled -->
+    <div id="paymentRetryBanner" class="payment-retry-banner" style="display:none" role="alert">
+      <strong>⚠️ Payment not completed.</strong> Your booking details have been pre-filled below. Please review and try again with a different payment method.
+    </div>
+
+    <label for="pickup" data-i18n="booking.pickupDate">Pickup Date</label>
+    <input type="date" id="pickup">
+
+    <label for="pickupTime" data-i18n="booking.pickupTime">Pickup Time</label>
+    <input type="time" id="pickupTime">
+
+    <!-- Slingshot hourly duration selector (shown for Slingshot only, populated by car.js) -->
+    <div id="slingshotDurationSection" style="display:none">
+      <label data-i18n="booking.rentalDuration">Rental Duration</label>
+      <div class="duration-options" id="durationOptions"></div>
+    </div>
+
+    <!-- Return date/time: user-selected for daily vehicles; auto-computed for Slingshot -->
+    <div id="returnDateSection">
+      <label for="return" data-i18n="booking.returnDate">Return Date</label>
+      <input type="date" id="return">
+
+      <label for="returnTime" data-i18n="booking.returnTime">Return Time <span class="field-note" id="returnTimeNote" data-i18n="booking.returnTimeSame">(same as pickup time)</span></label>
+      <input type="time" id="returnTime" readonly>
+    </div>
+
+    <label for="name" data-i18n="booking.fullName">Full Name</label>
+    <input type="text" id="name" placeholder="Enter your full name" data-i18n-placeholder="booking.namePh" autocomplete="off" required>
+    <span class="field-error" id="nameError" style="display:none"></span>
+
+    <label for="email" data-i18n="booking.email">Email Address</label>
+    <input type="email" id="email" placeholder="Enter your email" data-i18n-placeholder="booking.emailPh" autocomplete="email">
+
+    <label for="phone" data-i18n="booking.phone">Phone Number</label>
+    <input type="tel" id="phone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel">
+
+    <p class="sms-consent" data-i18n="booking.smsConsent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
+
+    <div class="id-upload-section">
+      <label for="idUpload"><span data-i18n="booking.uploadId">📎 Upload Driver's License / ID</span> <span class="required">*</span></label>
+      <p class="id-note" data-i18n="booking.idNote">A valid government-issued ID is required to confirm your rental.</p>
+      <input type="file" id="idUpload" accept=".jpg,.jpeg,.png,.pdf">
+      <div id="fileInfo">
+        <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
+        <span class="file-size"></span>
+      </div>
+      <p class="id-accepted" data-i18n="booking.accepted">Accepted: JPG, PNG, PDF</p>
+    </div>
+
+    <div class="id-upload-section insurance-coverage-section">
+      <p class="insurance-question" id="insuranceQuestionText" data-i18n="booking.insuranceQuestion">🛡️ Do you have auto insurance that covers rental vehicles?</p>
+      <div class="insurance-options">
+        <label class="insurance-option" id="hasInsuranceLabel">
+          <input type="radio" name="insuranceCoverage" id="hasInsurance" value="yes">
+          <span id="hasInsuranceText" data-i18n="booking.hasInsurance">Yes, I have rental car coverage</span>
+        </label>
+        <label class="insurance-option" id="noInsuranceLabel">
+          <input type="radio" name="insuranceCoverage" id="noInsurance" value="no">
+          <span id="noInsuranceText" data-i18n="booking.noInsurance">Add Damage Protection</span>
+        </label>
+      </div>
+
+      <!-- Slingshot-only: deposit info box, updated dynamically based on the chosen option -->
+      <div id="slingshotInsuranceInfo" style="display:none"></div>
+
+      <div id="insuranceUploadSection" style="display:none">
+        <label for="insuranceUpload"><span data-i18n="booking.uploadInsuranceLabel">📎 Upload Proof of Insurance</span> <span class="required">*</span></label>
+        <p class="id-note" data-i18n="booking.insuranceNote">Valid auto insurance documentation is required for all rentals.</p>
+        <input type="file" id="insuranceUpload" accept=".jpg,.jpeg,.png,.pdf">
+        <div id="insuranceFileInfo">
+          <span class="file-name" data-i18n="booking.fileNotSelected">No file selected</span>
+          <span class="file-size"></span>
+        </div>
+        <p class="id-accepted" data-i18n="booking.accepted">Accepted: JPG, PNG, PDF</p>
+      </div>
+
+      <div id="protectionPlanSection" class="protection-plan-notice" style="display:none">
+        <p data-i18n="booking.dppWarning">⚠️ Your Personal Auto Insurance may not cover rental vehicles</p>
+        <p style="font-weight:600;color:#ddd;margin-bottom:6px">Select a Damage Protection Plan:</p>
+        <div class="insurance-options" id="bookingProtectionOptions">
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionBasic" value="basic">
+            <span>Basic — $15/day<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionStandard" value="standard" checked>
+            <span>Standard — $30/day <span class="popular-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="bookingProtectionPlan" id="bookingProtectionPremium" value="premium">
+            <span>Premium — $50/day <span class="best-value-tag">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
+          </label>
+        </div>
+        <ul class="protection-plan-includes" style="margin-top:8px">
+          <li data-i18n="booking.dppItem1">✅ Covers accidental vehicle damage</li>
+          <li>✅ Reduces your liability (varies by plan)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="sign-agreement">
+      <p class="sign-agreement-label" data-i18n="booking.step1SignLabel">📄 Step 1: Read &amp; Sign your Rental Agreement</p>
+      <p id="signAgreementStatus" aria-live="polite" style="display:none"></p>
+      <button type="button" id="signAgreementBtn" class="sign-agreement-btn" data-i18n="booking.signAgreementBtn">
+        ✍ Review &amp; Sign Rental Agreement
+      </button>
+
+      <!-- Inline rental agreement — hidden until the button above is clicked -->
+      <div id="rentalAgreementBox" class="rental-agreement-box" style="display:none">
+        <div class="rental-agreement-scroll" id="agreementText">
+          <h3 data-i18n="agreement.title">SLY TRANSPORTATION SERVICES — CAR RENTAL AGREEMENT</h3>
+          <p id="agreementIntro"></p>
+
+          <h4 data-i18n="agreement.partiesHeading">PARTIES</h4>
+          <p data-i18n-html="agreement.partiesOwner"><strong>Owner:</strong> SLY Transportation Services &mdash; (213) 916-6606 &mdash; info@slytrans.com</p>
+          <p data-i18n-html="agreement.partiesRenter"><strong>Renter:</strong> Name, address, phone, email, driver's license number, and date of birth as provided at time of booking.</p>
+
+          <h4 data-i18n="agreement.vehicleHeading">VEHICLE INFORMATION</h4>
+          <table id="vehicleDetailsTable" style="border-collapse:collapse;width:100%;margin-bottom:12px">
+            <tr><td style="padding:6px 10px;border:1px solid #555"><strong data-i18n="agreement.vehicleMake">Make</strong></td><td id="agreementVehicleMake" style="padding:6px 10px;border:1px solid #555"></td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #555"><strong data-i18n="agreement.vehicleModel">Model</strong></td><td id="agreementVehicleModel" style="padding:6px 10px;border:1px solid #555"></td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #555"><strong data-i18n="agreement.vehicleYear">Year</strong></td><td id="agreementVehicleYear" style="padding:6px 10px;border:1px solid #555"></td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #555"><strong data-i18n="agreement.vehicleVin">VIN / Plate</strong></td><td id="agreementVehicleVin" style="padding:6px 10px;border:1px solid #555"></td></tr>
+            <tr id="agreementColorRow"><td style="padding:6px 10px;border:1px solid #555"><strong data-i18n="agreement.vehicleColor">Color</strong></td><td id="agreementVehicleColor" style="padding:6px 10px;border:1px solid #555"></td></tr>
+          </table>
+          <p data-i18n-html="agreement.fuelInspection">Fuel Level at Pickup: Full &nbsp; Half &nbsp; Quarter &nbsp;&nbsp;&nbsp; Condition Photos Attached: Yes</p>
+
+          <h4 data-i18n="agreement.rentalPeriodHeading">RENTAL PERIOD</h4>
+          <p data-i18n="agreement.rentalPeriodBody">Rental start and end dates/times are as specified at the time of booking. The vehicle must be returned to the same location at the agreed return date and time.</p>
+          <p data-i18n-html="agreement.lateFeeBody"><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
+
+          <h4 data-i18n-html="agreement.mileageFuelHeading">MILEAGE, GEOGRAPHIC USE &amp; VEHICLE TRACKING POLICY</h4>
+          <p data-i18n-html="agreement.mileageLimitBody">Mileage is unlimited within a designated local area only. All vehicle use must remain within <strong>Los Angeles County</strong> or within a <strong>50-mile radius of Los Angeles</strong>, unless otherwise approved in writing by the host.</p>
+          <p data-i18n-html="agreement.geoAuthBody">Travel outside the permitted area is not allowed without prior written authorization. This includes, but is not limited to, trips to San Diego, San Francisco, Las Vegas, or any out-of-state destinations. Requests for extended travel must be submitted in advance and are subject to approval at the host's sole discretion.</p>
+          <p data-i18n-html="agreement.geoPenaltyBody">Any unauthorized use of the vehicle outside the approved geographic area will result in a <strong>$500 penalty fee</strong> and may lead to early termination of the rental without refund, in accordance with platform policies.</p>
+          <p data-i18n-html="agreement.gpsTrackingBody">The vehicle is equipped with a <strong>GPS tracking system</strong> for security, safety, and compliance purposes. By renting this vehicle, you acknowledge and consent to location monitoring during the rental period.</p>
+
+          <h4 data-i18n-html="agreement.fuelHeading">FUEL POLICY</h4>
+          <p data-i18n-html="agreement.fuelPolicyBody">The vehicle must be returned with the same fuel level as at the start of the trip. Any deficiency will be charged at a rate of <strong>$5 per gallon</strong>.</p>
+
+          <h4 id="agreementDepositHeading" data-i18n="agreement.depositHeading">SECURITY DEPOSIT (Refundable)</h4>
+          <p id="agreementDepositIntro">A refundable security deposit is required at time of booking and returned after the vehicle is inspected upon return (typically within 5–7 business days). Deposit covers damages, loss of use, cleaning, tolls, and fuel.</p>
+          <p id="agreementDepositInsurance"><strong>Verified Rental Car Insurance:</strong> $200</p>
+          <p id="agreementDepositDpp"><strong>Damage Protection Plan — Basic $15/day &bull; Standard $30/day &bull; Premium $50/day</strong></p>
+          <p id="agreementDepositNeither"><strong>Neither Option:</strong> $500</p>
+
+          <h4 data-i18n-html="agreement.insuranceHeading">INSURANCE &amp; LIABILITY</h4>
+          <p data-i18n-html="agreement.insuranceMustProvide">Renter must provide <strong>one of the following</strong> prior to vehicle release:</p>
+          <ul>
+            <li data-i18n-html="agreement.insuranceLi1">Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
+            <li data-i18n="agreement.insuranceLi2">Purchase of SLY Transportation Services Damage Protection Plan</li>
+          </ul>
+          <!-- Economy-car protection choice summary — populated dynamically by car.js when agreement opens -->
+          <p id="agreementProtectionChoice" style="display:none"></p>
+          <p data-i18n-html="agreement.dppOptionalBody"><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $15/day &bull; Standard &mdash; $30/day &bull; Premium &mdash; $50/day</p>
+          <p id="agreementDppReduces" data-i18n-html="agreement.dppReduces">This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
+          <p data-i18n-html="agreement.withoutPlanBody"><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
+          <ul>
+            <li data-i18n="agreement.withoutLi1">Full cost of vehicle repair or replacement</li>
+            <li data-i18n="agreement.withoutLi2">Loss of use (rental downtime)</li>
+            <li data-i18n="agreement.withoutLi3">Diminished value</li>
+            <li data-i18n="agreement.withoutLi4">Administrative, towing, and storage fees</li>
+          </ul>
+          <p id="agreementWithPlanBody" data-i18n-html="agreement.withPlanBody"><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
+          <p data-i18n-html="agreement.exclusionsBody"><strong>Exclusions (Protection Plan Void If):</strong></p>
+          <ul>
+            <li data-i18n="agreement.exclusionLi1">Driver is under the influence of drugs or alcohol</li>
+            <li data-i18n="agreement.exclusionLi2">Unauthorized driver operates the vehicle</li>
+            <li data-i18n="agreement.exclusionLi3">Reckless, illegal, or negligent use</li>
+            <li data-i18n="agreement.exclusionLi4">Off-road or prohibited use</li>
+            <li data-i18n="agreement.exclusionLi5">Failure to report damage within 24 hours</li>
+            <li data-i18n="agreement.exclusionLi6">Violation of rental agreement terms</li>
+          </ul>
+          <p data-i18n-html="agreement.thirdPartyBody"><strong>Third-Party Liability:</strong> Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.</p>
+
+          <h4 data-i18n="agreement.useRestrictionsHeading">USE RESTRICTIONS</h4>
+          <p data-i18n="agreement.useRestrictionsIntro">Renter agrees to all of the following restrictions:</p>
+          <p data-i18n-html="agreement.useRestrictionsRow1">No smoking &nbsp; No pets &nbsp; No off-road use &nbsp; No subleasing</p>
+          <p data-i18n-html="agreement.useRestrictionsRow2">Approved drivers only &nbsp; No racing or towing &nbsp; No commercial hauling</p>
+
+          <!-- Slingshot Speed &amp; Strike Policy (shown for Slingshot only) -->
+          <div id="slingshotSpeedSection" style="display:none">
+            <h4 data-i18n="agreement.slingshotSpeedHeading">SLINGSHOT SPEED POLICY</h4>
+            <p data-i18n-html="agreement.slingshotSpeedBody"><strong>Speed Limit:</strong> The posted speed limit is 65 mph. Renters may not exceed <strong>75 mph</strong> under any circumstances. Exceeding 75 mph at any time constitutes a violation of this agreement.</p>
+            <p data-i18n-html="agreement.slingshotStrikePolicy"><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
+          </div>
+
+          <!-- Slingshot Security Deposit Policy (shown for Slingshot only) -->
+          <div id="slingshotBookingDepositSection" style="display:none">
+            <h4 id="slingshotDepositAgreementHeading">SECURITY DEPOSIT (Refundable)</h4>
+            <p id="slingshotDepositAgreementBody">A $150 refundable security deposit is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5–7 business days).</p>
+            <ul id="slingshotDepositAgreementList">
+              <li id="slingshotDepositAgreementOptionA" style="display:none">You selected <strong>Option A (own insurance)</strong>: proof of insurance must be provided at pickup.</li>
+              <li id="slingshotDepositAgreementOptionB" style="display:none">You selected <strong>Option B (no insurance)</strong>: the Damage Protection Plan is automatically included in your rental.</li>
+              <li>The security deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel if applicable.</li>
+            </ul>
+          </div>
+
+          <h4 data-i18n="agreement.conditionHeading">CONDITION INSPECTION</h4>
+          <p data-i18n="agreement.conditionBody">Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
+
+          <h4 data-i18n="agreement.terminationHeading">TERMINATION</h4>
+          <p data-i18n="agreement.terminationBody">SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
+
+          <h4 data-i18n="agreement.paymentTermsHeading">PAYMENT TERMS</h4>
+          <p id="agreementPaymentTermsBody" data-i18n="agreement.paymentTermsBody">All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+          <p data-i18n-html="agreement.noRefundBody">&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
+
+          <h4 data-i18n-html="agreement.chargebackHeading">PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
+          <p data-i18n="agreement.chargebackIntro">By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed under this agreement, including but not limited to:</p>
+          <ul>
+            <li data-i18n="agreement.chargebackLi1">Rental charges and extensions</li>
+            <li data-i18n="agreement.chargebackLi2">Security deposit and any applicable deductions</li>
+            <li data-i18n="agreement.chargebackLi3">Vehicle damage, repair, or replacement costs</li>
+            <li data-i18n="agreement.chargebackLi4">Loss of use and diminished value</li>
+            <li data-i18n="agreement.chargebackLi5">Fuel, cleaning, smoking, or excess wear fees</li>
+            <li data-i18n="agreement.chargebackLi6">Towing, storage, tickets, tolls, and administrative fees</li>
+          </ul>
+          <p data-i18n="agreement.chargebackAfter">Renter agrees that these charges may be processed after the rental period if additional costs are identified upon inspection or later discovery.</p>
+          <p data-i18n="agreement.chargebackAcknowledge">Renter acknowledges that all charges are valid, agreed upon, and authorized under this contract. Renter agrees not to dispute, reverse, or initiate a chargeback for any legitimate charge incurred in accordance with this agreement.</p>
+          <p data-i18n-html="agreement.chargebackDisputeBody"><strong>In the event of a payment dispute or chargeback, renter agrees that:</strong></p>
+          <ul>
+            <li data-i18n="agreement.chargebackDisputeLi1">This signed agreement serves as binding proof of authorization</li>
+            <li data-i18n="agreement.chargebackDisputeLi2">SLY Transportation Services may submit this agreement, along with rental records, photos, inspection reports, and communication logs, as evidence to the payment processor</li>
+            <li data-i18n="agreement.chargebackDisputeLi3">Renter remains financially responsible for all charges, including any fees resulting from the dispute</li>
+          </ul>
+          <p data-i18n="agreement.chargebackChargeback">If a chargeback is initiated without valid cause, SLY Transportation Services reserves the right to pursue collection, legal action, and recovery of all associated costs, including reasonable attorney's fees where permitted by law.</p>
+
+          <h4 data-i18n="agreement.governingLawHeading">GOVERNING LAW</h4>
+          <p data-i18n="agreement.governingLawBody">This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County. By signing, the renter acknowledges they have read, understood, and agreed to all terms above.</p>
+        </div>
+
+        <div class="signature-area">
+          <label for="signatureInput" data-i18n="booking.signatureLabel">Type your full legal name to sign:</label>
+          <input type="text" id="signatureInput" class="signature-input" placeholder="Your full name" data-i18n-placeholder="booking.namePh" autocomplete="off">
+          <p id="signatureError" class="signature-error" style="display:none"></p>
+          <p class="signature-note" data-i18n="booking.signatureNote">Typing your name above constitutes your legal electronic signature.</p>
+          <p class="signature-note" style="margin-top:6px" data-i18n-html="booking.signatureCapacity">By signing, you confirm that you are <strong>21 years of age or older</strong> and have full legal capacity to enter into this binding rental agreement.</p>
+          <div class="agreement-btn-row">
+            <button type="button" id="confirmSignBtn" class="confirm-sign-btn" disabled data-i18n="booking.confirmSign">✅ I Agree &amp; Sign</button>
+            <button type="button" id="cancelSignBtn" class="cancel-sign-btn" data-i18n="booking.cancelSign">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <label class="agree">
+        <input type="checkbox" id="agree" disabled>
+        <span data-i18n="booking.agreeLabel">I have read and signed the Rental Agreement &amp; Terms</span>
+      </label>
+    </div>
+
+    <p class="refund-notice" data-i18n-html="booking.refundNotice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
+
+    <!-- Slingshot non-refundable deposit notice — shown by car.js for slingshot/slingshot2 only -->
+    <div id="slingshotDepositNotice" class="deposit-notice" style="display:none">
+      <strong>🔒 <span data-deposit-booking>$50</span> Non-Refundable Reservation Deposit</strong>
+      <ul>
+        <li>A <strong><span data-deposit-booking>$50</span> deposit</strong> is charged now to secure your Slingshot reservation.</li>
+        <li>The deposit is applied toward your total rental balance at pickup.</li>
+        <li>The deposit is <strong>NON-REFUNDABLE</strong> — it is forfeited if you cancel or no-show.</li>
+        <li>Remaining balance (rental fee + <span data-deposit-security>$150</span> security deposit) is due at pickup.</li>
+      </ul>
+    </div>
+
+    <!-- Camry non-refundable deposit notice — shown by car.js for camry/camry2013 only -->
+    <div id="camryDepositNotice" class="deposit-notice" style="display:none">
+      <strong>🔒 $50 Non-Refundable Reservation Deposit</strong>
+      <ul>
+        <li>A <strong>$50 deposit</strong> is charged now to hold your vehicle.</li>
+        <li>The deposit is applied toward your total rental balance at pickup.</li>
+        <li>The deposit is <strong>NON-REFUNDABLE</strong> — forfeited if you cancel or no-show.</li>
+        <li>Remaining rental balance is due at pickup.</li>
+      </ul>
+    </div>
+
+    <div id="priceBreakdown" class="price-breakdown" style="display:none">
+      <div id="breakdownRows"></div>
+    </div>
+    <p class="total"><span data-i18n="booking.subtotalLabel">Subtotal:</span> $<span id="subtotal">0</span></p>
+    <p class="total tax-line" id="taxLine" style="display:none"><span data-i18n="booking.salesTaxLabel">Sales Tax:</span> $<span id="tax">0.00</span></p>
+    <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote" data-i18n="booking.taxNote">(+ applicable sales tax)</span></p>
+    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <!-- Reserve-deposit button — shown by car.js for all vehicles; allows renter to pay only a
+         $50 non-refundable deposit now and the remaining balance at pickup instead of paying in full -->
+    <button id="reserveBtn" class="reserve-btn" style="display:none" disabled aria-describedby="payHint">🔒 Reserve with $50 Deposit</button>
+    <button id="stripePay" class="pay-button" disabled aria-describedby="payHint" data-i18n="booking.payNow">💳 Pay Now</button>
+
+    <div id="payment-request-button" style="display:none"></div>
+
+    <div id="payment-form" style="display:none">
+      <div id="payment-element"></div>
+      <div id="payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+      <button id="submit-payment" type="button">Pay $<span id="payAmount">0</span></button>
+      <button id="cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change booking details</button>
+    </div>
+
+    <!-- ── Waitlist section ──────────────────────────────────────────────────
+         Shown by car.js INSTEAD of the regular form when the vehicle is
+         currently booked (fleet-status available=false).
+         The existing #reserveBtn / #stripePay buttons are hidden in that state
+         so there is no duplication of "reserve" CTAs.
+    ─────────────────────────────────────────────────────────────────────── -->
+    <div id="waitlistSection" class="waitlist-section" style="display:none">
+      <h3 class="waitlist-heading" data-i18n="fleet.waitlistHeading">🔔 Join the Waitlist</h3>
+      <p class="waitlist-subtitle" data-i18n="fleet.waitlistSubtitle">This vehicle is currently booked. Pay a $50 non-refundable deposit to lock your place in line — it goes toward your rental when the car becomes available.</p>
+      <p class="waitlist-next-line" id="waitlistNextAvailLine" style="display:none"></p>
+      <p class="waitlist-queue-note" data-i18n="fleet.waitlistQueueNote">First come, first served. You'll receive a payment link when the car is ready for your dates.</p>
+
+      <div class="waitlist-form">
+        <label for="waitlistName" data-i18n="booking.fullName">Full Name</label>
+        <input type="text" id="waitlistName" placeholder="Enter your full name" data-i18n-placeholder="booking.namePh" autocomplete="off">
+
+        <label for="waitlistEmail" data-i18n="booking.email">Email Address</label>
+        <input type="email" id="waitlistEmail" placeholder="Enter your email" data-i18n-placeholder="booking.emailPh" autocomplete="email">
+
+        <label for="waitlistPhone" data-i18n="booking.phone">Phone Number</label>
+        <input type="tel" id="waitlistPhone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel">
+
+        <label for="waitlistPickup" data-i18n="fleet.waitlistPrefPickup">Preferred Pickup Date</label>
+        <input type="date" id="waitlistPickup">
+
+        <label for="waitlistReturn" data-i18n="fleet.waitlistPrefReturn">Preferred Return Date</label>
+        <input type="date" id="waitlistReturn">
+
+        <label for="waitlistLicense" data-i18n="fleet.waitlistIdUpload">Driver's License / State ID <span style="color:#dc3545">*</span></label>
+        <input type="file" id="waitlistLicense" accept="image/*,application/pdf" style="margin-bottom:4px">
+        <p class="pay-hint" id="waitlistLicenseHint" style="margin-top:0;margin-bottom:12px" data-i18n="fleet.waitlistIdHint">Upload a clear photo or scan of your driver's license or state ID (required).</p>
+
+        <!-- Insurance Question -->
+        <p style="font-weight:600;color:#ddd;margin-bottom:8px">🛡️ Do you have personal auto insurance that covers rental vehicles? <span style="color:#dc3545">*</span></p>
+        <div class="insurance-options" style="margin-bottom:12px">
+          <label class="insurance-option">
+            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceYes" value="yes">
+            <span>Yes, I have personal auto insurance</span>
+          </label>
+          <label class="insurance-option">
+            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceNo" value="no">
+            <span>No, I do not have personal auto insurance</span>
+          </label>
+        </div>
+
+        <!-- Insurance Proof Upload (shown when Yes is selected) -->
+        <div id="waitlistInsuranceUploadSection" style="display:none;margin-bottom:12px">
+          <label for="waitlistInsuranceUpload">📎 Upload Proof of Insurance <span style="color:#dc3545">*</span></label>
+          <input type="file" id="waitlistInsuranceUpload" accept="image/*,application/pdf" style="margin-bottom:4px">
+          <p class="pay-hint" style="margin-top:0;margin-bottom:4px">Accepted: JPG, PNG, PDF &middot; max 5&nbsp;MB</p>
+          <div id="waitlistInsuranceFileInfo" style="font-size:12px;margin-bottom:8px"></div>
+        </div>
+
+        <!-- Protection Plan Pre-Selection -->
+        <div id="waitlistProtectionSection" style="margin-bottom:12px">
+          <p style="font-weight:600;color:#ddd;margin-bottom:4px">Protection Plan <span style="font-size:12px;font-weight:400;color:#aaa">(Select Now, Pay at Booking)</span></p>
+          <p class="pay-hint" style="margin-top:0;margin-bottom:8px">Choose a protection plan now to speed up your booking. Final pricing will be applied at checkout.</p>
+          <div class="insurance-options">
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionBasic" value="basic">
+              <span>Basic Protection<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
+            </label>
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionStandard" value="standard" checked>
+              <span>Standard Protection <span class="popular-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
+            </label>
+            <label class="insurance-option">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionPremium" value="premium">
+              <span>Premium Protection <span class="best-value-tag">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
+            </label>
+            <label class="insurance-option" id="waitlistProtectionNoneOption">
+              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionNone" value="none">
+              <span>Decline Protection<br><small style="font-weight:400;color:#aaa">You are fully responsible for all damage or loss</small></span>
+            </label>
+          </div>
+          <p style="font-size:12px;color:#888;margin-top:8px;line-height:1.5">⚠️ Protection plans are optional and not insurance. Final pricing and terms are applied during booking.</p>
+        </div>
+
+        <p class="waitlist-deposit-note">💰 <strong>$50 non-refundable deposit</strong> is charged now to secure your priority. It is applied toward your total rental price at pickup.</p>
+
+        <button id="waitlistJoinBtn" class="waitlist-join-btn" disabled data-i18n="fleet.waitlistJoinBtn">🔔 Join Waitlist — Pay $50 Deposit</button>
+        <p class="pay-hint" id="waitlistPayHint" data-i18n="fleet.waitlistPayHint">Enter your name, email, preferred dates, and upload your driver's license to reserve your spot.</p>
+      </div>
+
+      <!-- Stripe payment form for the $50 waitlist deposit -->
+      <div id="waitlistPaymentForm" style="display:none">
+        <div id="waitlist-payment-element"></div>
+        <div id="waitlist-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+        <button id="waitlist-submit-payment" type="button">Pay $50 Deposit</button>
+        <button id="waitlist-cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change details</button>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<footer>
+  <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="lang.js"></script>
+<script src="car.js"></script>
+<script src="chatbot.js"></script>
+</body>
+</html>
