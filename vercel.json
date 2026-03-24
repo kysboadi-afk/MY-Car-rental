@@ -1,5 +1,20 @@
 {
   "functions": {
+    "api/admin-site-settings.js": {
+      "maxDuration": 15
+    },
+    "api/admin-content-blocks.js": {
+      "maxDuration": 15
+    },
+    "api/admin-revisions.js": {
+      "maxDuration": 15
+    },
+    "api/admin-ai-assist.js": {
+      "maxDuration": 30
+    },
+    "api/site-content.js": {
+      "maxDuration": 15
+    },
     "api/v2-dashboard.js": {
       "maxDuration": 15
     },
