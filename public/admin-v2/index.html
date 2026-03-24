@@ -277,6 +277,17 @@
     /* ── Form ───────────────────────────────────────────────────── */
     .form-section { background: var(--surface); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 16px; }
     .form-section-title { font-size: 14px; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    /* ── Action Required Tiles ────────────────────────────── */
+    .action-req-tile {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; text-align: center; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
+    }
+    .action-req-tile:hover { box-shadow: var(--shadow-md); border-color: var(--primary); }
+    .action-req-tile.has-items { border-color: var(--warning); background: #fffbeb; }
+    .action-req-tile.has-urgent { border-color: var(--danger); background: #fef2f2; }
+    .ar-icon { font-size: 24px; margin-bottom: 6px; }
+    .ar-count { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1; }
+    .ar-label { font-size: 12px; color: var(--text-sub); margin-top: 4px; font-weight: 500; }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
     .form-grid.one { grid-template-columns: 1fr; }
@@ -520,6 +531,30 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
         Expenses
       </a>
+      <a class="nav-item" data-page="revenue" href="#" onclick="navigate('revenue');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Revenue
+      </a>
+      <a class="nav-item" data-page="analytics" href="#" onclick="navigate('analytics');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Fleet Analytics
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Management</div>
+      <a class="nav-item" data-page="customers" href="#" onclick="navigate('customers');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Customers
+      </a>
+      <a class="nav-item" data-page="protection-plans" href="#" onclick="navigate('protection-plans');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Protection Plans
+      </a>
+      <a class="nav-item" data-page="system-settings" href="#" onclick="navigate('system-settings');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        System Settings
+      </a>
     </nav>
 
     <nav class="nav-section">
@@ -607,6 +642,41 @@
               <div class="chart-wrap"><canvas id="bookings-chart"></canvas></div>
             </div>
           </div>
+          <!-- Action Required section -->
+          <div class="card" id="action-required-card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">⚡ Action Required</div>
+                <div class="card-sub">Items needing immediate attention</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">Refresh</button>
+            </div>
+            <div id="action-required-content">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:4px 0;">
+                <div class="action-req-tile" id="ar-pending" onclick="navigate('bookings');document.getElementById('booking-filter-status').value='reserved_unpaid';applyBookingFilters()">
+                  <div class="ar-icon">📋</div>
+                  <div class="ar-count" id="ar-pending-count">–</div>
+                  <div class="ar-label">Pending Approvals</div>
+                </div>
+                <div class="action-req-tile" id="ar-pickups" onclick="navigate('bookings')">
+                  <div class="ar-icon">🔑</div>
+                  <div class="ar-count" id="ar-pickups-count">–</div>
+                  <div class="ar-label">Pickups Today</div>
+                </div>
+                <div class="action-req-tile" id="ar-returns" onclick="navigate('bookings')">
+                  <div class="ar-icon">🏁</div>
+                  <div class="ar-count" id="ar-returns-count">–</div>
+                  <div class="ar-label">Returns Today</div>
+                </div>
+                <div class="action-req-tile" id="ar-overdue">
+                  <div class="ar-icon">⚠️</div>
+                  <div class="ar-count" id="ar-overdue-count">–</div>
+                  <div class="ar-label">Overdue</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="alerts-grid">
             <div class="card">
               <div class="card-header"><div class="card-title">Alerts &amp; Actions</div></div>
@@ -881,6 +951,149 @@
         </div>
       </div>
 
+      <!-- REVENUE PAGE -->
+      <div class="page" id="page-revenue">
+        <div class="filters-row">
+          <select class="filter-select" id="rev-filter-vehicle" onchange="applyRevenueFilters()">
+            <option value="">All Vehicles</option>
+            <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (2)</option>
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+          </select>
+          <select class="filter-select" id="rev-filter-status" onchange="applyRevenueFilters()">
+            <option value="">All Statuses</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="partial">Partial</option>
+            <option value="refunded">Refunded</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
+        </div>
+        <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
+        <div class="card">
+          <div id="revenue-loading" class="loading"><div class="loading-spinner"></div><div>Loading revenue…</div></div>
+          <div id="revenue-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Vehicle</th>
+                  <th>Dates</th>
+                  <th>Gross</th>
+                  <th>Refund</th>
+                  <th>Net</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="revenue-tbody"></tbody>
+            </table>
+          </div>
+          <div id="revenue-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            <p>No revenue records found.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ANALYTICS PAGE -->
+      <div class="page" id="page-analytics">
+        <div id="analytics-loading" class="loading"><div class="loading-spinner"></div><div>Loading analytics…</div></div>
+        <div id="analytics-content" style="display:none">
+          <div class="kpi-grid" id="analytics-kpi-grid"></div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Revenue Trend</div>
+                  <div class="card-sub">Monthly revenue (last 12 months)</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="analytics-revenue-chart"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Fleet Utilization</div>
+                  <div class="card-sub">% of available days rented per vehicle</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="analytics-util-chart"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Vehicle Performance</div></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Vehicle</th><th>Bookings</th><th>Revenue</th><th>Expenses</th><th>Net Profit</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
+                </thead>
+                <tbody id="analytics-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CUSTOMERS PAGE -->
+      <div class="page" id="page-customers">
+        <div class="filters-row">
+          <input type="text" class="filter-input" id="cust-search" placeholder="Search name, phone, email…" oninput="applyCustomerFilters()">
+          <select class="filter-select" id="cust-filter-flag" onchange="applyCustomerFilters()">
+            <option value="">All Customers</option>
+            <option value="flagged">Flagged</option>
+            <option value="banned">Banned</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
+        </div>
+        <div class="card">
+          <div id="customers-loading" class="loading"><div class="loading-spinner"></div><div>Loading customers…</div></div>
+          <div id="customers-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Bookings</th>
+                  <th>Total Spent</th>
+                  <th>Last Booking</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="customers-tbody"></tbody>
+            </table>
+          </div>
+          <div id="customers-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            <p>No customers found. Click "Sync from Bookings" to import.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROTECTION PLANS PAGE -->
+      <div class="page" id="page-protection-plans">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openAddPlanModal()">+ Add Plan</button>
+        </div>
+        <div class="card">
+          <div id="plans-loading" class="loading"><div class="loading-spinner"></div><div>Loading plans…</div></div>
+          <div id="plans-content" style="display:none;padding:8px 0;"></div>
+          <div id="plans-empty" class="empty-state" style="display:none">
+            <p>No protection plans configured.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- SYSTEM SETTINGS PAGE -->
+      <div class="page" id="page-system-settings">
+        <div id="sys-settings-loading" class="loading"><div class="loading-spinner"></div><div>Loading settings…</div></div>
+        <div id="sys-settings-content" style="display:none"></div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1141,14 +1354,19 @@ function navigate(page) {
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
 
   const titles = {
-    dashboard:       'Dashboard',
-    vehicles:        'Vehicles',
-    'vehicle-profile': 'Vehicle Profile',
-    bookings:        'Bookings',
-    'manual-booking': 'Manual Booking',
-    expenses:        'Expenses',
-    sms:             'SMS Automation',
-    settings:        'Settings',
+    dashboard:          'Dashboard',
+    vehicles:           'Vehicles',
+    'vehicle-profile':  'Vehicle Profile',
+    bookings:           'Bookings',
+    'manual-booking':   'Manual Booking',
+    expenses:           'Expenses',
+    sms:                'SMS Automation',
+    settings:           'Settings',
+    revenue:            'Revenue Tracker',
+    analytics:          'Fleet Analytics',
+    customers:          'Customer Management',
+    'protection-plans': 'Protection Plans',
+    'system-settings':  'System Settings',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -1164,6 +1382,11 @@ function navigate(page) {
   else if (page === 'expenses') loadExpenses();
   else if (page === 'sms') loadSmsTemplates();
   else if (page === 'dashboard' && !dashboardData) refreshDashboard();
+  else if (page === 'revenue') loadRevenue();
+  else if (page === 'analytics') loadAnalytics();
+  else if (page === 'customers') loadCustomers();
+  else if (page === 'protection-plans') loadProtectionPlans();
+  else if (page === 'system-settings') loadSystemSettings();
 }
 
 function refreshCurrentPage() {
@@ -1177,6 +1400,11 @@ function refreshCurrentPage() {
   else if (currentPage === 'vehicles') { allVehicles = {}; loadVehicles(); }
   else if (currentPage === 'expenses') { allExpenses = []; loadExpenses(); }
   else if (currentPage === 'sms') { smsTemplates = []; loadSmsTemplates(); }
+  else if (currentPage === 'revenue') loadRevenue();
+  else if (currentPage === 'analytics') loadAnalytics();
+  else if (currentPage === 'customers') loadCustomers();
+  else if (currentPage === 'protection-plans') loadProtectionPlans();
+  else if (currentPage === 'system-settings') loadSystemSettings();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -2051,8 +2279,780 @@ document.addEventListener('keydown', (e) => {
   });
 })();
 
+// ══════════════════════════════════════════════════════════════════════════
+// NEW MODULES — Admin Control & Automation System
+// All functions below are additive. No existing functions are modified.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Action Required helpers (called from renderDashboard) ─────────────────
+function renderActionRequired(data) {
+  const bookings = data.recentBookings || [];
+  const allB     = (typeof allBookings !== 'undefined' && allBookings.length > 0)
+                   ? allBookings : bookings;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const pending  = allB.filter((b) => b.status === 'reserved_unpaid').length;
+  const pickups  = allB.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
+  const returns  = allB.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const overdue  = allB.filter((b) => {
+    if (b.status !== 'active_rental' || !b.returnDate) return false;
+    return b.returnDate < today;
+  }).length;
+
+  const setTile = (id, count, urgency) => {
+    const el = document.getElementById(id + '-count');
+    if (el) el.textContent = count;
+    const tile = el ? el.closest('.action-req-tile') : null;
+    if (tile) {
+      tile.classList.toggle('has-urgent', urgency && count > 0);
+      tile.classList.toggle('has-items',  !urgency && count > 0);
+    }
+  };
+
+  setTile('ar-pending',  pending,  false);
+  setTile('ar-pickups',  pickups,  false);
+  setTile('ar-returns',  returns,  false);
+  setTile('ar-overdue',  overdue,  true);
+}
+
+// Patch renderDashboard to also call renderActionRequired
+const _origRenderDashboard = typeof renderDashboard === 'function' ? renderDashboard : null;
+if (_origRenderDashboard) {
+  window.renderDashboard = function(data) {
+    _origRenderDashboard(data);
+    renderActionRequired(data);
+  };
+}
+
+// ── Revenue ───────────────────────────────────────────────────────────────
+let allRevenueRecords = [];
+
+function loadRevenue() {
+  document.getElementById('revenue-loading').style.display = '';
+  document.getElementById('revenue-table-wrap').style.display = 'none';
+  document.getElementById('revenue-empty').style.display = 'none';
+
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allRevenueRecords = data.records || [];
+      renderRevenueSummary();
+      applyRevenueFilters();
+      document.getElementById('revenue-loading').style.display = 'none';
+    })
+    .catch((err) => {
+      showToast('Revenue load error: ' + err.message, 'error');
+      document.getElementById('revenue-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderRevenueSummary() {
+  const active  = allRevenueRecords.filter((r) => !r.is_cancelled && !r.is_no_show);
+  const gross   = active.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
+  const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
+  const net     = gross - refunds;
+  const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
+
+  const grid = document.getElementById('rev-kpi-grid');
+  if (grid) {
+    grid.innerHTML = [
+      { label: 'Gross Revenue',   value: '$' + formatMoney(gross),   icon: '💵' },
+      { label: 'Total Refunds',   value: '$' + formatMoney(refunds), icon: '↩️' },
+      { label: 'Net Revenue',     value: '$' + formatMoney(net),     icon: '✅' },
+      { label: 'Total Deposits',  value: '$' + formatMoney(deposits),icon: '🔒' },
+    ].map((k) => `
+      <div class="kpi-card">
+        <div class="kpi-icon">${k.icon}</div>
+        <div class="kpi-body"><div class="kpi-value">${esc(k.value)}</div><div class="kpi-label">${esc(k.label)}</div></div>
+      </div>
+    `).join('');
+  }
+}
+
+function applyRevenueFilters() {
+  const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
+  const status  = document.getElementById('rev-filter-status')?.value  || '';
+
+  let filtered = allRevenueRecords;
+  if (vehicle) filtered = filtered.filter((r) => r.vehicle_id === vehicle);
+  if (status)  filtered = filtered.filter((r) => r.payment_status === status);
+
+  const tbody = document.getElementById('revenue-tbody');
+  const wrap  = document.getElementById('revenue-table-wrap');
+  const empty = document.getElementById('revenue-empty');
+
+  if (!filtered.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map((r) => {
+    const payBadge = {
+      paid:     '<span class="badge badge-success">Paid</span>',
+      pending:  '<span class="badge badge-warning">Pending</span>',
+      partial:  '<span class="badge" style="background:#ede9fe;color:#7c3aed;">Partial</span>',
+      refunded: '<span class="badge badge-danger">Refunded</span>',
+    }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
+
+    const net = (Number(r.gross_amount || 0) - Number(r.refund_amount || 0)).toFixed(2);
+    return `<tr>
+      <td>${esc(r.customer_name || '–')}</td>
+      <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
+      <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
+      <td>$${formatMoney(r.gross_amount  || 0)}</td>
+      <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
+      <td style="font-weight:700;">$${formatMoney(net)}</td>
+      <td style="font-size:12px;">${esc(r.payment_method || '–')}</td>
+      <td>${payBadge}</td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(r.id)}')">Edit</button>
+        <button class="btn btn-danger btn-sm"    onclick="deleteRevenueRecord('${esc(r.id)}')">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openAddRevenueModal() {
+  document.getElementById('rev-modal-title').textContent = 'Add Revenue Record';
+  document.getElementById('rev-id').value        = '';
+  document.getElementById('rev-booking-id').value = '';
+  document.getElementById('rev-vehicle').value    = '';
+  document.getElementById('rev-customer').value   = '';
+  document.getElementById('rev-phone').value      = '';
+  document.getElementById('rev-email').value      = '';
+  document.getElementById('rev-pickup').value     = '';
+  document.getElementById('rev-return').value     = '';
+  document.getElementById('rev-gross').value      = '';
+  document.getElementById('rev-deposit').value    = '';
+  document.getElementById('rev-refund').value     = '0';
+  document.getElementById('rev-method').value     = 'stripe';
+  document.getElementById('rev-status').value     = 'paid';
+  document.getElementById('rev-notes').value      = '';
+  document.getElementById('rev-no-show').checked  = false;
+  document.getElementById('rev-cancelled').checked = false;
+  openModal('revenue-modal');
+}
+
+async function openEditRevenueModal(id) {
+  const rec = allRevenueRecords.find((r) => r.id === id);
+  if (!rec) return;
+  document.getElementById('rev-modal-title').textContent = 'Edit Revenue Record';
+  document.getElementById('rev-id').value         = rec.id;
+  document.getElementById('rev-booking-id').value = rec.booking_id  || '';
+  document.getElementById('rev-vehicle').value    = rec.vehicle_id  || '';
+  document.getElementById('rev-customer').value   = rec.customer_name  || '';
+  document.getElementById('rev-phone').value      = rec.customer_phone || '';
+  document.getElementById('rev-email').value      = rec.customer_email || '';
+  document.getElementById('rev-pickup').value     = rec.pickup_date    || '';
+  document.getElementById('rev-return').value     = rec.return_date    || '';
+  document.getElementById('rev-gross').value      = rec.gross_amount   || '';
+  document.getElementById('rev-deposit').value    = rec.deposit_amount || '';
+  document.getElementById('rev-refund').value     = rec.refund_amount  || '0';
+  document.getElementById('rev-method').value     = rec.payment_method || 'stripe';
+  document.getElementById('rev-status').value     = rec.payment_status || 'paid';
+  document.getElementById('rev-notes').value      = rec.notes          || '';
+  document.getElementById('rev-no-show').checked  = Boolean(rec.is_no_show);
+  document.getElementById('rev-cancelled').checked = Boolean(rec.is_cancelled);
+  openModal('revenue-modal');
+}
+
+async function saveRevenueRecord() {
+  const id = document.getElementById('rev-id').value;
+  const payload = {
+    booking_id:     document.getElementById('rev-booking-id').value,
+    vehicle_id:     document.getElementById('rev-vehicle').value,
+    customer_name:  document.getElementById('rev-customer').value,
+    customer_phone: document.getElementById('rev-phone').value,
+    customer_email: document.getElementById('rev-email').value,
+    pickup_date:    document.getElementById('rev-pickup').value  || null,
+    return_date:    document.getElementById('rev-return').value  || null,
+    gross_amount:   parseFloat(document.getElementById('rev-gross').value)   || 0,
+    deposit_amount: parseFloat(document.getElementById('rev-deposit').value) || 0,
+    refund_amount:  parseFloat(document.getElementById('rev-refund').value)  || 0,
+    payment_method: document.getElementById('rev-method').value,
+    payment_status: document.getElementById('rev-status').value,
+    notes:          document.getElementById('rev-notes').value   || null,
+    is_no_show:     document.getElementById('rev-no-show').checked,
+    is_cancelled:   document.getElementById('rev-cancelled').checked,
+    override_by_admin: true,
+  };
+
+  if (!payload.booking_id || !payload.vehicle_id) {
+    showToast('Booking ID and Vehicle are required.', 'error'); return;
+  }
+
+  try {
+    if (id) {
+      await apiPost('/api/v2-revenue', { secret: adminSecret, action: 'update', id, updates: payload });
+      showToast('Revenue record updated.', 'success');
+    } else {
+      await apiPost('/api/v2-revenue', { secret: adminSecret, action: 'create', ...payload });
+      showToast('Revenue record created.', 'success');
+    }
+    closeModal('revenue-modal');
+    loadRevenue();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function deleteRevenueRecord(id) {
+  if (!confirm('Delete this revenue record? This cannot be undone.')) return;
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id })
+    .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Analytics ─────────────────────────────────────────────────────────────
+let analyticsChart1 = null, analyticsChart2 = null;
+
+function loadAnalytics() {
+  document.getElementById('analytics-loading').style.display = '';
+  document.getElementById('analytics-content').style.display = 'none';
+
+  Promise.all([
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+  ]).then(([fleetData, trendData]) => {
+    renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
+    document.getElementById('analytics-loading').style.display = 'none';
+    document.getElementById('analytics-content').style.display = '';
+  }).catch((err) => {
+    showToast('Analytics error: ' + err.message, 'error');
+    document.getElementById('analytics-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+  });
+}
+
+function renderAnalytics(fleet, trend) {
+  // KPI grid
+  const vehicles = Object.values(fleet);
+  const totalRev  = vehicles.reduce((s, v) => s + v.revenue, 0);
+  const totalBookings = vehicles.reduce((s, v) => s + v.totalBookings, 0);
+  const avgUtil   = vehicles.length
+    ? Math.round(vehicles.reduce((s, v) => s + v.utilizationRate, 0) / vehicles.length * 10) / 10
+    : 0;
+  const activeNow = vehicles.filter((v) => v.activeNow).length;
+
+  const kpiGrid = document.getElementById('analytics-kpi-grid');
+  if (kpiGrid) {
+    kpiGrid.innerHTML = [
+      { label: 'Total Fleet Revenue', value: '$' + formatMoney(totalRev),      icon: '💰' },
+      { label: 'Total Bookings',      value: totalBookings,                     icon: '📋' },
+      { label: 'Avg Utilization',     value: avgUtil + '%',                     icon: '📊' },
+      { label: 'Vehicles Active Now', value: activeNow + ' / ' + vehicles.length, icon: '🚗' },
+    ].map((k) => `
+      <div class="kpi-card">
+        <div class="kpi-icon">${k.icon}</div>
+        <div class="kpi-body"><div class="kpi-value">${esc(String(k.value))}</div><div class="kpi-label">${esc(k.label)}</div></div>
+      </div>
+    `).join('');
+  }
+
+  // Revenue trend chart
+  const ctx1 = document.getElementById('analytics-revenue-chart')?.getContext('2d');
+  if (ctx1) {
+    if (analyticsChart1) analyticsChart1.destroy();
+    analyticsChart1 = new Chart(ctx1, {
+      type: 'line',
+      data: {
+        labels: trend.map((t) => t.month),
+        datasets: [{ label: 'Revenue', data: trend.map((t) => t.revenue),
+          borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)',
+          tension: 0.3, fill: true }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+    });
+  }
+
+  // Utilization chart
+  const ctx2 = document.getElementById('analytics-util-chart')?.getContext('2d');
+  if (ctx2) {
+    if (analyticsChart2) analyticsChart2.destroy();
+    analyticsChart2 = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: vehicles.map((v) => v.name),
+        datasets: [{ label: 'Utilization %', data: vehicles.map((v) => v.utilizationRate),
+          backgroundColor: vehicles.map((v) => v.utilizationRate >= 70 ? '#16a34a' : v.utilizationRate >= 40 ? '#d97706' : '#dc2626') }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { max: 100, ticks: { callback: (v) => v + '%' } } } },
+    });
+  }
+
+  // Vehicle table
+  const tbody = document.getElementById('analytics-tbody');
+  if (tbody) {
+    tbody.innerHTML = vehicles.map((v) => {
+      const utilColor = v.utilizationRate >= 70 ? 'var(--success)' : v.utilizationRate >= 40 ? 'var(--warning)' : 'var(--danger)';
+      return `<tr>
+        <td style="font-weight:600;">${esc(v.name)}</td>
+        <td>${v.totalBookings}</td>
+        <td>$${formatMoney(v.revenue)}</td>
+        <td style="color:var(--danger);">$${formatMoney(v.expenses)}</td>
+        <td style="font-weight:700;${v.netProfit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(v.netProfit)}</td>
+        <td><span style="color:${utilColor};font-weight:700;">${v.utilizationRate}%</span></td>
+        <td>$${formatMoney(v.avgRevenuePerBooking)}</td>
+        <td>${v.status === 'active'
+          ? (v.activeNow ? '<span class="badge badge-success">On Rental</span>' : '<span class="badge badge-success">Available</span>')
+          : '<span class="badge badge-danger">Inactive</span>'
+        }</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── Customers ─────────────────────────────────────────────────────────────
+let allCustomers = [];
+
+function loadCustomers() {
+  document.getElementById('customers-loading').style.display = '';
+  document.getElementById('customers-table-wrap').style.display = 'none';
+  document.getElementById('customers-empty').style.display = 'none';
+
+  apiPost('/api/v2-customers', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allCustomers = data.customers || [];
+      applyCustomerFilters();
+      document.getElementById('customers-loading').style.display = 'none';
+    })
+    .catch((err) => {
+      showToast('Customers error: ' + err.message, 'error');
+      document.getElementById('customers-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function applyCustomerFilters() {
+  const search = (document.getElementById('cust-search')?.value || '').toLowerCase();
+  const flag   = document.getElementById('cust-filter-flag')?.value || '';
+
+  let filtered = allCustomers;
+  if (search) filtered = filtered.filter((c) =>
+    (c.name  || '').toLowerCase().includes(search) ||
+    (c.phone || '').toLowerCase().includes(search) ||
+    (c.email || '').toLowerCase().includes(search)
+  );
+  if (flag === 'flagged') filtered = filtered.filter((c) => c.flagged);
+  if (flag === 'banned')  filtered = filtered.filter((c) => c.banned);
+
+  const tbody = document.getElementById('customers-tbody');
+  const wrap  = document.getElementById('customers-table-wrap');
+  const empty = document.getElementById('customers-empty');
+
+  if (!filtered.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map((c) => {
+    const statusBadges = [
+      c.banned  ? '<span class="badge badge-danger">Banned</span>'  : '',
+      c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '',
+      (!c.banned && !c.flagged) ? '<span class="badge badge-success">Active</span>' : '',
+    ].filter(Boolean).join(' ');
+    return `<tr>
+      <td style="font-weight:600;">${esc(c.name || '–')}</td>
+      <td>${esc(c.phone || '–')}</td>
+      <td style="font-size:12px;">${esc(c.email || '–')}</td>
+      <td>${c.total_bookings || 0}</td>
+      <td>$${formatMoney(c.total_spent || 0)}</td>
+      <td style="font-size:12px;">${esc(c.last_booking_date || '–')}</td>
+      <td>${statusBadges}</td>
+      <td class="td-actions">
+        <button class="btn btn-secondary btn-sm" onclick="viewCustomer('${esc(c.id)}')">View</button>
+        ${!c.flagged ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(c.id)}', true)">Flag</button>` : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(c.id)}', false)">Unflag</button>`}
+        ${!c.banned  ? `<button class="btn btn-danger btn-sm"  onclick="banCustomer('${esc(c.id)}', true)">Ban</button>`  : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(c.id)}', false)">Unban</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function viewCustomer(id) {
+  const c = allCustomers.find((x) => x.id === id);
+  if (!c) return;
+  document.getElementById('cust-detail-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Name</div><div style="font-weight:600;">${esc(c.name || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(c.phone || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
+      ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
+      ${c.ban_reason  ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Ban Reason</div><div>${esc(c.ban_reason)}</div></div>`  : ''}
+      ${c.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(c.notes)}</div></div>` : ''}
+    </div>
+  `;
+  document.getElementById('cust-detail-id').value = id;
+  openModal('customer-detail-modal');
+}
+
+function flagCustomer(id, flagged) {
+  const reason = flagged ? (prompt('Reason for flagging (optional):') || '') : '';
+  apiPost('/api/v2-customers', {
+    secret: adminSecret, action: 'update', id,
+    updates: { flagged, flag_reason: reason || null }
+  }).then(() => {
+    showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
+    loadCustomers();
+  }).catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function banCustomer(id, banned) {
+  if (banned && !confirm('Are you sure you want to ban this customer?')) return;
+  const reason = banned ? (prompt('Reason for ban (optional):') || '') : '';
+  apiPost('/api/v2-customers', {
+    secret: adminSecret, action: 'update', id,
+    updates: { banned, ban_reason: reason || null }
+  }).then(() => {
+    showToast(banned ? 'Customer banned.' : 'Customer unbanned.', 'success');
+    closeModal('customer-detail-modal');
+    loadCustomers();
+  }).catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function syncCustomers() {
+  showToast('Syncing customers from bookings…', 'info');
+  apiPost('/api/v2-customers', { secret: adminSecret, action: 'sync' })
+    .then((data) => {
+      showToast(data.message || 'Sync complete.', 'success');
+      allCustomers = [];
+      loadCustomers();
+    })
+    .catch((err) => showToast('Sync error: ' + err.message, 'error'));
+}
+
+// ── Protection Plans ──────────────────────────────────────────────────────
+let allProtectionPlans = [];
+
+function loadProtectionPlans() {
+  document.getElementById('plans-loading').style.display = '';
+  document.getElementById('plans-content').style.display = 'none';
+  document.getElementById('plans-empty').style.display   = 'none';
+
+  apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allProtectionPlans = data.plans || [];
+      renderProtectionPlans();
+      document.getElementById('plans-loading').style.display = 'none';
+    })
+    .catch((err) => {
+      showToast('Plans error: ' + err.message, 'error');
+      document.getElementById('plans-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderProtectionPlans() {
+  const container = document.getElementById('plans-content');
+  const empty     = document.getElementById('plans-empty');
+  if (!allProtectionPlans.length) {
+    container.style.display = 'none';
+    empty.style.display     = '';
+    return;
+  }
+  container.style.display = '';
+  empty.style.display     = 'none';
+
+  container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:8px;">` +
+    allProtectionPlans.map((p) => `
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--bg);${!p.is_active ? 'opacity:0.6;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:15px;">${esc(p.name)}</div>
+          ${p.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge">Inactive</span>'}
+        </div>
+        <div style="color:var(--text-sub);font-size:13px;margin-bottom:8px;">${esc(p.description || '')}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--primary);margin-bottom:4px;">$${formatMoney(p.daily_rate)}<span style="font-size:13px;font-weight:400;color:var(--text-sub);">/day</span></div>
+        <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;">Liability cap: ${p.liability_cap > 0 ? '$' + formatMoney(p.liability_cap) : 'None'}</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="openEditPlanModal('${esc(p.id)}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}')">Del</button>
+        </div>
+      </div>
+    `).join('') + '</div>';
+}
+
+function openAddPlanModal() {
+  document.getElementById('plan-modal-title').textContent = 'Add Protection Plan';
+  document.getElementById('plan-id').value          = '';
+  document.getElementById('plan-name').value        = '';
+  document.getElementById('plan-desc').value        = '';
+  document.getElementById('plan-rate').value        = '';
+  document.getElementById('plan-cap').value         = '1000';
+  document.getElementById('plan-active').checked    = true;
+  openModal('plan-modal');
+}
+
+function openEditPlanModal(id) {
+  const p = allProtectionPlans.find((x) => x.id === id);
+  if (!p) return;
+  document.getElementById('plan-modal-title').textContent = 'Edit Protection Plan';
+  document.getElementById('plan-id').value          = p.id;
+  document.getElementById('plan-name').value        = p.name        || '';
+  document.getElementById('plan-desc').value        = p.description || '';
+  document.getElementById('plan-rate').value        = p.daily_rate  || '';
+  document.getElementById('plan-cap').value         = p.liability_cap != null ? p.liability_cap : '1000';
+  document.getElementById('plan-active').checked    = Boolean(p.is_active);
+  openModal('plan-modal');
+}
+
+async function savePlan() {
+  const id = document.getElementById('plan-id').value;
+  const payload = {
+    name:          document.getElementById('plan-name').value.trim(),
+    description:   document.getElementById('plan-desc').value.trim() || null,
+    daily_rate:    parseFloat(document.getElementById('plan-rate').value) || 0,
+    liability_cap: parseFloat(document.getElementById('plan-cap').value)  || 0,
+    is_active:     document.getElementById('plan-active').checked,
+  };
+  if (!payload.name) { showToast('Plan name is required.', 'error'); return; }
+
+  try {
+    if (id) {
+      await apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'update', id, updates: payload });
+      showToast('Plan updated.', 'success');
+    } else {
+      await apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'create', ...payload });
+      showToast('Plan created.', 'success');
+    }
+    closeModal('plan-modal');
+    loadProtectionPlans();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
+function deletePlan(id) {
+  if (!confirm('Delete this protection plan?')) return;
+  apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'delete', id })
+    .then(() => { showToast('Deleted.', 'success'); loadProtectionPlans(); })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── System Settings ───────────────────────────────────────────────────────
+let allSystemSettings = [];
+
+function loadSystemSettings() {
+  document.getElementById('sys-settings-loading').style.display = '';
+  document.getElementById('sys-settings-content').style.display = 'none';
+
+  apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allSystemSettings = data.settings || [];
+      renderSystemSettings();
+      document.getElementById('sys-settings-loading').style.display = 'none';
+      document.getElementById('sys-settings-content').style.display = '';
+    })
+    .catch((err) => {
+      showToast('Settings error: ' + err.message, 'error');
+      document.getElementById('sys-settings-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderSystemSettings() {
+  const container = document.getElementById('sys-settings-content');
+  if (!allSystemSettings.length) {
+    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No settings found. Run the migration to populate defaults.</p>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  for (const s of allSystemSettings) {
+    const cat = s.category || 'general';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(s);
+  }
+
+  const catLabels = { pricing: 'Pricing', tax: 'Tax', automation: 'Automation', notification: 'Notifications', general: 'General' };
+  const catOrder  = ['pricing', 'tax', 'automation', 'notification', 'general'];
+
+  container.innerHTML = catOrder.filter((c) => groups[c]).map((cat) => `
+    <div class="form-section" style="max-width:680px;">
+      <div class="form-section-title">${esc(catLabels[cat] || cat)}</div>
+      <div class="form-grid">
+        ${groups[cat].map((s) => `
+          <div class="form-group" style="grid-column:1/-1;">
+            <label class="form-label">${esc(s.key)} ${s.description ? `<span style="font-weight:400;color:var(--text-sub);">— ${esc(s.description)}</span>` : ''}</label>
+            <div style="display:flex;gap:8px;">
+              <input type="text" class="form-input" id="setting-${esc(s.key)}" value="${esc(String(s.value ?? ''))}" style="flex:1;">
+              <button class="btn btn-primary btn-sm" onclick="saveSetting('${esc(s.key)}')">Save</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function saveSetting(key) {
+  const el = document.getElementById('setting-' + key);
+  if (!el) return;
+  let value = el.value.trim();
+  // Try to parse as number or boolean for JSONB
+  if (value === 'true') value = true;
+  else if (value === 'false') value = false;
+  else if (!isNaN(value) && value !== '') value = Number(value);
+
+  apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'set', key, value })
+    .then(() => showToast(`Setting "${key}" saved.`, 'success'))
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
 </script>
+
+<!-- Revenue Record Modal -->
+<div class="modal-overlay" id="revenue-modal">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <div class="modal-title" id="rev-modal-title">Revenue Record</div>
+      <button class="modal-close" onclick="closeModal('revenue-modal')">✕</button>
+    </div>
+    <input type="hidden" id="rev-id">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Booking ID *</label>
+        <input type="text" class="form-input" id="rev-booking-id" placeholder="e.g. abc123">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle *</label>
+        <select class="form-select" id="rev-vehicle">
+          <option value="">Select vehicle…</option>
+          <option value="slingshot">Slingshot R</option>
+          <option value="slingshot2">Slingshot R (2)</option>
+          <option value="camry">Camry 2012</option>
+          <option value="camry2013">Camry 2013 SE</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Customer Name</label>
+        <input type="text" class="form-input" id="rev-customer" placeholder="John Doe">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="tel" class="form-input" id="rev-phone" placeholder="(213) 555-1234">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="rev-email" placeholder="customer@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Method</label>
+        <select class="form-select" id="rev-method">
+          <option value="stripe">Stripe</option>
+          <option value="zelle">Zelle</option>
+          <option value="cash">Cash</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pickup Date</label>
+        <input type="date" class="form-input" id="rev-pickup">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Return Date</label>
+        <input type="date" class="form-input" id="rev-return">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gross Amount ($)</label>
+        <input type="number" class="form-input" id="rev-gross" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Deposit Collected ($)</label>
+        <input type="number" class="form-input" id="rev-deposit" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Refund Amount ($)</label>
+        <input type="number" class="form-input" id="rev-refund" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Status</label>
+        <select class="form-select" id="rev-status">
+          <option value="paid">Paid</option>
+          <option value="pending">Pending</option>
+          <option value="partial">Partial</option>
+          <option value="refunded">Refunded</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="rev-notes" rows="2" placeholder="Cash receipt #, Zelle confirmation, etc."></textarea>
+      </div>
+      <div class="form-group" style="display:flex;gap:20px;align-items:center;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="rev-no-show"> No-show
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="rev-cancelled"> Cancelled
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal('revenue-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRevenueRecord()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div class="modal-overlay" id="customer-detail-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Customer Details</div>
+      <button class="modal-close" onclick="closeModal('customer-detail-modal')">✕</button>
+    </div>
+    <input type="hidden" id="cust-detail-id">
+    <div id="cust-detail-content"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal('customer-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Protection Plan Modal -->
+<div class="modal-overlay" id="plan-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title" id="plan-modal-title">Protection Plan</div>
+      <button class="modal-close" onclick="closeModal('plan-modal')">✕</button>
+    </div>
+    <input type="hidden" id="plan-id">
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="form-label">Plan Name *</label>
+        <input type="text" class="form-input" id="plan-name" placeholder="e.g. Standard Coverage">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="plan-desc" placeholder="Brief description of coverage">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Daily Rate ($)</label>
+        <input type="number" class="form-input" id="plan-rate" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Liability Cap ($)</label>
+        <input type="number" class="form-input" id="plan-cap" min="0" step="1" placeholder="1000">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="plan-active"> Active (visible to booking flow)
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal('plan-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePlan()">Save Plan</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
