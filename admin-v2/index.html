@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="description" content="SLYTRANS Fleet Control — Admin Dashboard">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SLYTRANS Fleet Control</title>
+  <link rel="icon" href="../images/logo.jpg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Reset & Base ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:          #f5f6fa;
+      --surface:     #ffffff;
+      --sidebar-bg:  #0f1117;
+      --sidebar-w:   240px;
+      --topbar-h:    64px;
+      --primary:     #2563eb;
+      --primary-dim: #1d4ed8;
+      --success:     #16a34a;
+      --warning:     #d97706;
+      --danger:      #dc2626;
+      --info:        #0891b2;
+      --text:        #111827;
+      --text-sub:    #6b7280;
+      --border:      #e5e7eb;
+      --radius:      10px;
+      --shadow:      0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+      --shadow-md:   0 4px 20px rgba(0,0,0,0.1);
+      --font:        'Inter', system-ui, sans-serif;
+    }
+    html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+    /* ── Auth Screen ────────────────────────────────────────────── */
+    #auth-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--sidebar-bg);
+    }
+    .auth-card {
+      background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 16px;
+      padding: 40px 36px; width: 100%; max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .auth-logo img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; }
+    .auth-logo span { color: #fff; font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .auth-logo small { display: block; color: #6b7280; font-size: 11px; font-weight: 400; }
+    .auth-card h2 { color: #fff; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .auth-card p { color: #6b7280; font-size: 13px; margin-bottom: 28px; }
+    .auth-field { margin-bottom: 16px; }
+    .auth-field label { display: block; color: #9ca3af; font-size: 12px; font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .auth-field input {
+      width: 100%; padding: 11px 14px; background: #111318;
+      border: 1px solid #2d3141; border-radius: 8px; color: #fff;
+      font-size: 14px; font-family: var(--font); transition: border-color 0.2s;
+    }
+    .auth-field input:focus { outline: none; border-color: var(--primary); }
+    .auth-btn {
+      width: 100%; padding: 12px; background: var(--primary); color: #fff;
+      border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s; margin-top: 8px; font-family: var(--font);
+    }
+    .auth-btn:hover { background: var(--primary-dim); }
+    .auth-error { color: #f87171; font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; }
+
+    /* ── App Layout ─────────────────────────────────────────────── */
+    #app { display: none; }
+    #app.ready { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ────────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w); background: var(--sidebar-bg);
+      position: fixed; top: 0; left: 0; bottom: 0;
+      display: flex; flex-direction: column; z-index: 100;
+      overflow-y: auto; transition: transform 0.3s;
+    }
+    .sidebar-logo {
+      padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #1e2130;
+    }
+    .sidebar-logo img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+    .sidebar-logo .brand { color: #fff; }
+    .sidebar-logo .brand-name { font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .sidebar-logo .brand-sub { font-size: 10px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.8px; }
+
+    .nav-section { padding: 16px 12px 8px; }
+    .nav-section-label { color: #374151; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; padding: 0 8px; margin-bottom: 6px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+      border-radius: 8px; cursor: pointer; color: #6b7280; font-size: 13px;
+      font-weight: 500; transition: all 0.15s; text-decoration: none; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #1e2130; color: #d1d5db; }
+    .nav-item.active { background: #1e40af22; color: #60a5fa; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .nav-badge {
+      margin-left: auto; background: var(--danger); color: #fff;
+      font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
+    }
+
+    .sidebar-footer {
+      margin-top: auto; padding: 16px 12px;
+      border-top: 1px solid #1e2130;
+    }
+    .sidebar-user { display: flex; align-items: center; gap: 10px; }
+    .user-avatar {
+      width: 32px; height: 32px; background: var(--primary); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .user-name { color: #9ca3af; font-size: 12px; font-weight: 500; }
+    .user-role { color: #374151; font-size: 11px; }
+    .logout-btn {
+      margin-left: auto; background: none; border: none; color: #4b5563;
+      cursor: pointer; padding: 4px; border-radius: 4px; transition: color 0.15s;
+    }
+    .logout-btn:hover { color: #f87171; }
+
+    /* ── Main Area ──────────────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1; display: flex; flex-direction: column; min-width: 0;
+    }
+
+    /* ── Topbar ─────────────────────────────────────────────────── */
+    .topbar {
+      height: var(--topbar-h); background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 24px; gap: 16px;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar-page-title { font-size: 18px; font-weight: 700; flex: 1; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; border: none; font-family: var(--font);
+      text-decoration: none; white-space: nowrap;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dim); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #eee; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn svg { width: 14px; height: 14px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Content Area ───────────────────────────────────────────── */
+    .content { padding: 24px; flex: 1; overflow-y: auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── KPI Cards ──────────────────────────────────────────────── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .kpi-card {
+      background: var(--surface); border-radius: var(--radius); padding: 20px;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+    }
+    .kpi-label { font-size: 12px; font-weight: 500; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .kpi-value { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1; margin-bottom: 4px; }
+    .kpi-change { font-size: 12px; color: var(--text-sub); }
+    .kpi-icon {
+      float: right; width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: -4px;
+    }
+    .kpi-icon svg { width: 20px; height: 20px; }
+    .kpi-icon.blue   { background: #eff6ff; color: var(--primary); }
+    .kpi-icon.green  { background: #f0fdf4; color: var(--success); }
+    .kpi-icon.orange { background: #fffbeb; color: var(--warning); }
+    .kpi-icon.red    { background: #fef2f2; color: var(--danger); }
+
+    /* ── Charts ─────────────────────────────────────────────────── */
+    .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .card {
+      background: var(--surface); border-radius: var(--radius); padding: 20px;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+    }
+    .card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .card-title { font-size: 15px; font-weight: 700; }
+    .card-sub { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ── Alerts ─────────────────────────────────────────────────── */
+    .alerts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .alert-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 12px 14px; border-radius: 8px; font-size: 13px;
+    }
+    .alert-item.action { background: #eff6ff; border-left: 3px solid var(--primary); }
+    .alert-item.warning { background: #fffbeb; border-left: 3px solid var(--warning); }
+    .alert-item.info    { background: #f0f9ff; border-left: 3px solid var(--info); }
+    .alert-item.error   { background: #fef2f2; border-left: 3px solid var(--danger); }
+    .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .alert-item.action .alert-dot { background: var(--primary); }
+    .alert-item.warning .alert-dot { background: var(--warning); }
+    .alert-item.info    .alert-dot { background: var(--info); }
+    .alert-item.error   .alert-dot { background: var(--danger); }
+
+    /* ── Table ──────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left; font-size: 11px; font-weight: 600; color: var(--text-sub);
+      text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    td { padding: 12px; font-size: 13px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f9fafb; }
+    .td-actions { display: flex; gap: 6px; align-items: center; }
+
+    /* ── Status Badges ──────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      text-transform: capitalize; white-space: nowrap;
+    }
+    .badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .badge-green  { background: #f0fdf4; color: #15803d; }
+    .badge-orange { background: #fffbeb; color: #b45309; }
+    .badge-red    { background: #fef2f2; color: #b91c1c; }
+    .badge-blue   { background: #eff6ff; color: #1d4ed8; }
+    .badge-gray   { background: #f9fafb; color: #4b5563; }
+    .badge-purple { background: #faf5ff; color: #6d28d9; }
+
+    /* ── Vehicles Grid ──────────────────────────────────────────── */
+    .vehicles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .vehicle-card {
+      background: var(--surface); border-radius: var(--radius);
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+      overflow: hidden; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s;
+    }
+    .vehicle-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .vehicle-img { width: 100%; height: 180px; object-fit: cover; background: #f3f4f6; }
+    .vehicle-img-placeholder { width: 100%; height: 180px; background: linear-gradient(135deg, #1e2130 0%, #2d3350 100%); display: flex; align-items: center; justify-content: center; }
+    .vehicle-img-placeholder svg { width: 48px; height: 48px; color: #374151; }
+    .vehicle-card-body { padding: 16px; }
+    .vehicle-card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .vehicle-card-type { font-size: 12px; color: var(--text-sub); text-transform: capitalize; margin-bottom: 12px; }
+    .vehicle-stats-row { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .vehicle-stat { text-align: center; flex: 1; }
+    .vehicle-stat-val { font-size: 14px; font-weight: 700; }
+    .vehicle-stat-lbl { font-size: 10px; color: var(--text-sub); }
+
+    /* ── Vehicle Profile ────────────────────────────────────────── */
+    .profile-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .back-btn {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+      font-weight: 500; display: flex; align-items: center; gap: 6px; transition: 0.15s;
+    }
+    .back-btn:hover { background: #e5e7eb; }
+    .fin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .fin-card {
+      background: var(--surface); border-radius: var(--radius); padding: 16px;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+      text-align: center;
+    }
+    .fin-label { font-size: 11px; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .fin-value { font-size: 22px; font-weight: 800; }
+    .fin-value.positive { color: var(--success); }
+    .fin-value.negative { color: var(--danger); }
+
+    /* ── Form ───────────────────────────────────────────────────── */
+    .form-section { background: var(--surface); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 16px; }
+    .form-section-title { font-size: 14px; font-weight: 700; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+    .form-grid.one { grid-template-columns: 1fr; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1 / -1; }
+    .form-label { font-size: 12px; font-weight: 600; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.4px; }
+    .form-input, .form-select, .form-textarea {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 13px; color: var(--text); background: var(--surface);
+      font-family: var(--font); transition: border-color 0.15s;
+      width: 100%;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none; border-color: var(--primary);
+    }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .form-hint { font-size: 11px; color: var(--text-sub); margin-top: 2px; }
+    .price-display {
+      background: var(--bg); border-radius: 8px; padding: 12px 16px;
+      font-size: 20px; font-weight: 800; color: var(--primary); text-align: center;
+    }
+
+    /* ── SMS Templates ──────────────────────────────────────────── */
+    .sms-item {
+      display: flex; align-items: center; gap: 12px; padding: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sms-item:last-child { border-bottom: none; }
+    .sms-item-info { flex: 1; min-width: 0; }
+    .sms-item-key { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 3px; font-family: monospace; }
+    .sms-item-preview { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+    .toggle {
+      position: relative; width: 36px; height: 20px;
+      display: inline-flex; align-items: center;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; background: #d1d5db;
+      border-radius: 20px; cursor: pointer; transition: 0.2s;
+    }
+    .toggle-slider::after {
+      content: ''; position: absolute; width: 16px; height: 16px;
+      background: white; border-radius: 50%; top: 2px; left: 2px; transition: 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--success); }
+    .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
+
+    /* ── Modal ──────────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      z-index: 200; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 12px; padding: 24px;
+      width: 100%; max-width: 520px; box-shadow: var(--shadow-md);
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .modal-title { font-size: 17px; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; cursor: pointer; color: var(--text-sub);
+      padding: 4px; border-radius: 4px; transition: color 0.15s; font-size: 18px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+    /* ── Filters ────────────────────────────────────────────────── */
+    .filters-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+    .filter-select, .filter-input {
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 13px; color: var(--text); background: var(--surface);
+      font-family: var(--font); min-width: 140px;
+    }
+    .filter-select:focus, .filter-input:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Loading & Empty states ─────────────────────────────────── */
+    .loading { text-align: center; padding: 60px 20px; color: var(--text-sub); }
+    .loading-spinner {
+      width: 32px; height: 32px; border: 3px solid var(--border);
+      border-top-color: var(--primary); border-radius: 50%;
+      animation: spin 0.7s linear infinite; margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-sub); }
+    .empty-state svg { width: 48px; height: 48px; margin: 0 auto 12px; display: block; opacity: 0.3; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--text); color: #fff; padding: 12px 18px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; box-shadow: var(--shadow-md);
+      animation: slideIn 0.25s ease; max-width: 320px;
+    }
+    .toast.success { background: var(--success); }
+    .toast.error   { background: var(--danger); }
+    .toast.warning { background: var(--warning); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ── Mobile ─────────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      :root { --sidebar-w: 0px; }
+      .sidebar { transform: translateX(-240px); }
+      .sidebar.open { transform: translateX(0); width: 240px; }
+      .main { margin-left: 0; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-grid { grid-template-columns: 1fr; }
+      .alerts-grid { grid-template-columns: 1fr; }
+      .fin-grid { grid-template-columns: repeat(2, 1fr); }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid.three { grid-template-columns: 1fr; }
+      .mobile-menu-btn { display: flex; }
+    }
+    @media (max-width: 600px) {
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .vehicles-grid { grid-template-columns: 1fr; }
+      .content { padding: 16px; }
+    }
+    .mobile-menu-btn {
+      display: none; background: none; border: none; cursor: pointer;
+      color: var(--text); padding: 6px; border-radius: 6px;
+    }
+    .mobile-menu-btn svg { width: 20px; height: 20px; }
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 99;
+    }
+    .sidebar-overlay.open { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+      <div>
+        <span>SLYTRANS</span>
+        <small>Fleet Control v2</small>
+      </div>
+    </div>
+    <h2>Admin Sign In</h2>
+    <p>Enter your admin password to access Fleet Control.</p>
+    <div class="auth-field">
+      <label>Admin Password</label>
+      <input type="password" id="auth-password" placeholder="Enter admin password" autocomplete="current-password">
+    </div>
+    <button class="auth-btn" id="auth-btn">Sign In</button>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <!-- Sidebar overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+      <div class="brand">
+        <div class="brand-name">SLYTRANS</div>
+        <div class="brand-sub">Fleet Control</div>
+      </div>
+    </div>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Overview</div>
+      <a class="nav-item active" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-item" data-page="vehicles" href="#" onclick="navigate('vehicles');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg>
+        Vehicles
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Reservations</div>
+      <a class="nav-item" data-page="bookings" href="#" onclick="navigate('bookings');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        Bookings
+        <span class="nav-badge" id="pending-badge" style="display:none">0</span>
+      </a>
+      <a class="nav-item" data-page="manual-booking" href="#" onclick="navigate('manual-booking');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Manual Booking
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Finance</div>
+      <a class="nav-item" data-page="expenses" href="#" onclick="navigate('expenses');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+        Expenses
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Communication</div>
+      <a class="nav-item" data-page="sms" href="#" onclick="navigate('sms');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        SMS Automation
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Admin</div>
+      <a class="nav-item" data-page="settings" href="#" onclick="navigate('settings');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="user-avatar">A</div>
+        <div>
+          <div class="user-name">Admin</div>
+          <div class="user-role">Fleet Control v2</div>
+        </div>
+        <button class="logout-btn" onclick="logout()" title="Sign Out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="mobile-menu-btn" onclick="openSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="topbar-page-title" id="page-title">Dashboard</div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="refreshCurrentPage()" title="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('manual-booking')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Booking
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- DASHBOARD PAGE -->
+      <div class="page active" id="page-dashboard">
+        <div id="dashboard-loading" class="loading">
+          <div class="loading-spinner"></div>
+          <div>Loading dashboard…</div>
+        </div>
+        <div id="dashboard-content" style="display:none">
+          <div class="kpi-grid" id="kpi-grid"></div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Revenue Over Time</div>
+                  <div class="card-sub">Monthly revenue trend</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Bookings by Vehicle</div>
+                  <div class="card-sub">Paid bookings breakdown</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="bookings-chart"></canvas></div>
+            </div>
+          </div>
+          <div class="alerts-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Alerts &amp; Actions</div></div>
+              <div id="alerts-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Recent Bookings</div></div>
+              <div id="recent-bookings-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VEHICLES PAGE -->
+      <div class="page" id="page-vehicles">
+        <div id="vehicles-loading" class="loading"><div class="loading-spinner"></div><div>Loading vehicles…</div></div>
+        <div id="vehicles-content" style="display:none"></div>
+      </div>
+
+      <!-- VEHICLE PROFILE PAGE -->
+      <div class="page" id="page-vehicle-profile">
+        <div id="vehicle-profile-content"></div>
+      </div>
+
+      <!-- BOOKINGS PAGE -->
+      <div class="page" id="page-bookings">
+        <div class="filters-row">
+          <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
+            <option value="">All Vehicles</option>
+            <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (2)</option>
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+          </select>
+          <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
+            <option value="">All Statuses</option>
+            <option value="reserved_unpaid">Pending / Unpaid</option>
+            <option value="booked_paid">Booked &amp; Paid</option>
+            <option value="active_rental">Active Rental</option>
+            <option value="completed_rental">Completed</option>
+          </select>
+          <input type="text" class="filter-input" id="booking-search" placeholder="Search name or ID…" oninput="applyBookingFilters()">
+        </div>
+        <div class="card">
+          <div id="bookings-loading" class="loading"><div class="loading-spinner"></div><div>Loading bookings…</div></div>
+          <div id="bookings-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Vehicle</th>
+                  <th>Dates</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bookings-tbody"></tbody>
+            </table>
+          </div>
+          <div id="bookings-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            <p>No bookings found.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- MANUAL BOOKING PAGE -->
+      <div class="page" id="page-manual-booking">
+        <form id="manual-booking-form" onsubmit="submitManualBooking(event)">
+          <div class="form-section">
+            <div class="form-section-title">Customer Information</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Full Name *</label>
+                <input type="text" class="form-input" id="mb-name" required placeholder="John Doe">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" class="form-input" id="mb-phone" placeholder="(213) 555-1234">
+              </div>
+              <div class="form-group full">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="mb-email" placeholder="customer@email.com">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Rental Details</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Vehicle *</label>
+                <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
+                  <option value="">Select vehicle…</option>
+                  <option value="slingshot">Slingshot R ($350/day)</option>
+                  <option value="slingshot2">Slingshot R (2) ($350/day)</option>
+                  <option value="camry">Camry 2012 ($55/day)</option>
+                  <option value="camry2013">Camry 2013 SE ($55/day)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Payment Method</label>
+                <select class="form-select" id="mb-payment-method">
+                  <option value="cash">Cash</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="stripe">Stripe / Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pickup Date *</label>
+                <input type="date" class="form-input" id="mb-pickup-date" required onchange="updateManualPrice()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pickup Time</label>
+                <input type="time" class="form-input" id="mb-pickup-time">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Return Date *</label>
+                <input type="date" class="form-input" id="mb-return-date" required onchange="updateManualPrice()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Return Time</label>
+                <input type="time" class="form-input" id="mb-return-time">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Pricing</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Auto-Calculated Price</label>
+                <div class="price-display" id="mb-auto-price">–</div>
+                <div class="form-hint">Based on vehicle &amp; dates</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Amount Paid (Override)</label>
+                <input type="number" class="form-input" id="mb-amount-paid" min="0" step="0.01" placeholder="Leave blank to use auto-price">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Notes</div>
+            <div class="form-grid one">
+              <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-textarea" id="mb-notes" placeholder="Cash payment, VIN, agreement number, etc."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-secondary" onclick="clearManualBookingForm()">Clear Form</button>
+            <button type="submit" class="btn btn-primary" id="mb-submit-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg>
+              Save Booking
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- EXPENSES PAGE -->
+      <div class="page" id="page-expenses">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+          <button class="btn btn-primary" onclick="openAddExpenseModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Expense
+          </button>
+        </div>
+        <div class="filters-row">
+          <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
+            <option value="">All Vehicles</option>
+            <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (2)</option>
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+          </select>
+          <select class="filter-select" id="expense-filter-category" onchange="applyExpenseFilters()">
+            <option value="">All Categories</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="insurance">Insurance</option>
+            <option value="repair">Repair</option>
+            <option value="fuel">Fuel</option>
+            <option value="registration">Registration</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="card">
+          <div id="expenses-loading" class="loading"><div class="loading-spinner"></div><div>Loading expenses…</div></div>
+          <div id="expenses-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Vehicle</th>
+                  <th>Category</th>
+                  <th>Amount</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="expenses-tbody"></tbody>
+            </table>
+          </div>
+          <div id="expenses-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p>No expenses found.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- SMS PAGE -->
+      <div class="page" id="page-sms">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">SMS Templates</div>
+              <div class="card-sub">Customize automated messages sent to customers</div>
+            </div>
+          </div>
+          <div id="sms-loading" class="loading"><div class="loading-spinner"></div><div>Loading templates…</div></div>
+          <div id="sms-list" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- SETTINGS PAGE -->
+      <div class="page" id="page-settings">
+        <div class="form-section" style="max-width:480px;">
+          <div class="form-section-title">Admin Access</div>
+          <div class="form-grid one">
+            <div class="form-group">
+              <label class="form-label">Current Admin Password</label>
+              <input type="password" class="form-input" id="settings-current-pass" placeholder="Current password">
+            </div>
+            <div class="form-group">
+              <label class="form-label">New Password (leave blank to keep)</label>
+              <input type="password" class="form-input" id="settings-new-pass" placeholder="New password">
+            </div>
+            <div>
+              <div class="form-hint" style="margin-bottom:12px;">Password changes require updating the ADMIN_SECRET environment variable in your Vercel dashboard. This form is for reference only.</div>
+              <p style="font-size:13px;color:var(--text-sub);">To change the admin password, update the <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">ADMIN_SECRET</code> environment variable in your <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel dashboard</a>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section" style="max-width:480px;">
+          <div class="form-section-title">Business Information</div>
+          <div class="form-grid one">
+            <div class="form-group">
+              <label class="form-label">Business Name</label>
+              <input type="text" class="form-input" value="SLY Transportation Services LLC" readonly>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Location</label>
+              <input type="text" class="form-input" value="Los Angeles, CA" readonly>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Website</label>
+              <input type="text" class="form-input" value="https://www.slytrans.com" readonly>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Legacy Admin</label>
+              <a href="../admin.html" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Open Legacy Admin
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Add Expense Modal -->
+<div class="modal-overlay" id="add-expense-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Expense</div>
+      <button class="modal-close" onclick="closeModal('add-expense-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Vehicle *</label>
+        <select class="form-select" id="exp-vehicle">
+          <option value="">Select vehicle…</option>
+          <option value="slingshot">Slingshot R</option>
+          <option value="slingshot2">Slingshot R (2)</option>
+          <option value="camry">Camry 2012</option>
+          <option value="camry2013">Camry 2013 SE</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date *</label>
+        <input type="date" class="form-input" id="exp-date">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-select" id="exp-category">
+          <option value="">Select category…</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="insurance">Insurance</option>
+          <option value="repair">Repair</option>
+          <option value="fuel">Fuel</option>
+          <option value="registration">Registration</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Amount ($) *</label>
+        <input type="number" class="form-input" id="exp-amount" min="0.01" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="exp-notes" placeholder="Optional notes…" style="min-height:60px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-expense-modal')">Cancel</button>
+      <button class="btn btn-primary" id="exp-submit-btn" onclick="submitExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- SMS Edit Modal -->
+<div class="modal-overlay" id="sms-edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit SMS Template</div>
+      <button class="modal-close" onclick="closeModal('sms-edit-modal')">✕</button>
+    </div>
+    <div class="form-grid one">
+      <div class="form-group">
+        <label class="form-label">Template Key</label>
+        <input type="text" class="form-input" id="sms-edit-key" readonly style="background:var(--bg);font-family:monospace;">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Message</label>
+        <textarea class="form-textarea" id="sms-edit-message" style="min-height:160px;font-family:monospace;font-size:12px;"></textarea>
+        <div class="form-hint">Variables: {customer_name}, {vehicle}, {pickup_date}, {pickup_time}, {return_date}, {location}, {payment_link}, {booking_link}</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="resetSmsTemplate()" id="sms-reset-btn">Reset to Default</button>
+      <button class="btn btn-secondary" onclick="closeModal('sms-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSmsTemplate()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Vehicle Modal -->
+<div class="modal-overlay" id="edit-vehicle-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit Vehicle</div>
+      <button class="modal-close" onclick="closeModal('edit-vehicle-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Vehicle Name</label>
+        <input type="text" class="form-input" id="ev-name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-select" id="ev-status">
+          <option value="active">Active</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle Year</label>
+        <input type="number" class="form-input" id="ev-year" min="1990" max="2030">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Purchase Price ($)</label>
+        <input type="number" class="form-input" id="ev-purchase-price" min="0" step="100">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Purchase Date</label>
+        <input type="date" class="form-input" id="ev-purchase-date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('edit-vehicle-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVehicle()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Booking Detail Modal -->
+<div class="modal-overlay" id="booking-detail-modal">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <div class="modal-title">Booking Details</div>
+      <button class="modal-close" onclick="closeModal('booking-detail-modal')">✕</button>
+    </div>
+    <div id="booking-detail-content"></div>
+    <div class="modal-footer" id="booking-detail-actions"></div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script>
+// ── Configuration ──────────────────────────────────────────────────────────
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? ''
+  : 'https://sly-rides.vercel.app'; // Adjust if deployed to different Vercel URL
+
+const VEHICLE_NAMES = {
+  slingshot:  'Slingshot R',
+  slingshot2: 'Slingshot R (2)',
+  camry:      'Camry 2012',
+  camry2013:  'Camry 2013 SE',
+};
+
+const VEHICLE_RATES = {
+  slingshot:  { perDay: 350, perWeek: null },
+  slingshot2: { perDay: 350, perWeek: null },
+  camry:      { perDay: 55,  perWeek: 350  },
+  camry2013:  { perDay: 55,  perWeek: 350  },
+};
+
+// ── State ──────────────────────────────────────────────────────────────────
+let adminSecret   = '';
+let dashboardData = null;
+let allBookings   = [];
+let allExpenses   = [];
+let allVehicles   = {};
+let smsTemplates  = [];
+let editingVehicleId   = null;
+let editingSmsKey      = null;
+let currentPage   = 'dashboard';
+let revenueChart  = null;
+let bookingsChart = null;
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+document.getElementById('auth-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') signIn();
+});
+document.getElementById('auth-btn').addEventListener('click', signIn);
+
+function signIn() {
+  const pw = document.getElementById('auth-password').value.trim();
+  if (!pw) { showAuthError('Please enter a password.'); return; }
+  adminSecret = pw;
+  document.getElementById('auth-btn').textContent = 'Signing in…';
+  document.getElementById('auth-btn').disabled = true;
+
+  apiPost('/api/v2-dashboard', { secret: adminSecret })
+    .then((data) => {
+      dashboardData = data;
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app').classList.add('ready');
+      renderDashboard(data);
+    })
+    .catch((err) => {
+      adminSecret = '';
+      document.getElementById('auth-btn').textContent = 'Sign In';
+      document.getElementById('auth-btn').disabled = false;
+      showAuthError(err.message === 'Unauthorized' ? 'Incorrect password.' : `Error: ${err.message}`);
+    });
+}
+
+function showAuthError(msg) {
+  document.getElementById('auth-error').textContent = msg;
+}
+
+function logout() {
+  adminSecret = '';
+  dashboardData = null;
+  allBookings = [];
+  document.getElementById('app').classList.remove('ready');
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('auth-password').value = '';
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('auth-btn').textContent = 'Sign In';
+  document.getElementById('auth-btn').disabled = false;
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function apiPost(path, body) {
+  const url = API_BASE + path;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function navigate(page) {
+  // Hide all pages
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+
+  const titles = {
+    dashboard:       'Dashboard',
+    vehicles:        'Vehicles',
+    'vehicle-profile': 'Vehicle Profile',
+    bookings:        'Bookings',
+    'manual-booking': 'Manual Booking',
+    expenses:        'Expenses',
+    sms:             'SMS Automation',
+    settings:        'Settings',
+  };
+
+  document.getElementById(`page-${page}`).classList.add('active');
+  const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (navItem) navItem.classList.add('active');
+  document.getElementById('page-title').textContent = titles[page] || page;
+  currentPage = page;
+  closeSidebar();
+
+  // Load data if needed
+  if (page === 'bookings') loadBookings();
+  else if (page === 'vehicles') loadVehicles();
+  else if (page === 'expenses') loadExpenses();
+  else if (page === 'sms') loadSmsTemplates();
+  else if (page === 'dashboard' && !dashboardData) refreshDashboard();
+}
+
+function refreshCurrentPage() {
+  dashboardData = null;
+  allBookings = [];
+  allExpenses = [];
+  smsTemplates = [];
+
+  if (currentPage === 'dashboard') refreshDashboard();
+  else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
+  else if (currentPage === 'vehicles') { allVehicles = {}; loadVehicles(); }
+  else if (currentPage === 'expenses') { allExpenses = []; loadExpenses(); }
+  else if (currentPage === 'sms') { smsTemplates = []; loadSmsTemplates(); }
+}
+
+// ── Sidebar Mobile ─────────────────────────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function refreshDashboard() {
+  document.getElementById('dashboard-loading').style.display = '';
+  document.getElementById('dashboard-content').style.display = 'none';
+  apiPost('/api/v2-dashboard', { secret: adminSecret })
+    .then((data) => { dashboardData = data; renderDashboard(data); })
+    .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
+}
+
+function renderDashboard(data) {
+  document.getElementById('dashboard-loading').style.display = 'none';
+  document.getElementById('dashboard-content').style.display = '';
+
+  // KPIs
+  const kpi = data.kpis;
+  const pendingCount = kpi.pendingApprovals;
+  const badge = document.getElementById('pending-badge');
+  if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; } else { badge.style.display = 'none'; }
+
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-value">$${formatMoney(kpi.totalRevenue)}</div>
+      <div class="kpi-change">Lifetime paid bookings</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>
+      <div class="kpi-label">Active Bookings</div>
+      <div class="kpi-value">${kpi.activeBookings}</div>
+      <div class="kpi-change">Paid + active rentals</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+      <div class="kpi-label">Vehicles Available</div>
+      <div class="kpi-value">${kpi.availableVehicles}</div>
+      <div class="kpi-change">Active in fleet</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+      <div class="kpi-label">Pending Approvals</div>
+      <div class="kpi-value">${kpi.pendingApprovals}</div>
+      <div class="kpi-change" style="${pendingCount > 0 ? 'color:var(--danger)' : ''}">Awaiting action</div>
+    </div>
+  `;
+
+  // Revenue Chart
+  const rcData = data.revenueChart || [];
+  const rcLabels = rcData.map((d) => d.month);
+  const rcValues = rcData.map((d) => d.amount);
+
+  if (revenueChart) revenueChart.destroy();
+  const rcCtx = document.getElementById('revenue-chart').getContext('2d');
+  revenueChart = new Chart(rcCtx, {
+    type: 'line',
+    data: {
+      labels: rcLabels,
+      datasets: [{
+        label: 'Revenue ($)',
+        data: rcValues,
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37,99,235,0.08)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#2563eb',
+        pointRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 11 }, callback: (v) => '$' + formatMoney(v) } },
+      },
+    },
+  });
+
+  // Bookings per vehicle chart
+  const bpv = data.bookingsPerVehicle || {};
+  const bpvLabels = Object.keys(bpv).map((k) => VEHICLE_NAMES[k] || k);
+  const bpvValues = Object.values(bpv);
+  const chartColors = ['#2563eb', '#16a34a', '#d97706', '#dc2626'];
+
+  if (bookingsChart) bookingsChart.destroy();
+  const bcCtx = document.getElementById('bookings-chart').getContext('2d');
+  bookingsChart = new Chart(bcCtx, {
+    type: 'doughnut',
+    data: {
+      labels: bpvLabels,
+      datasets: [{ data: bpvValues, backgroundColor: chartColors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } } },
+      cutout: '65%',
+    },
+  });
+
+  // Alerts
+  const alerts = data.alerts || [];
+  document.getElementById('alerts-list').innerHTML = alerts.length === 0
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No alerts.</div>'
+    : alerts.slice(0, 6).map((a) => `
+      <div class="alert-item ${a.type}">
+        <div class="alert-dot"></div>
+        <div>${esc(a.message)}</div>
+      </div>`).join('');
+
+  // Recent bookings
+  const recent = data.recentBookings || [];
+  document.getElementById('recent-bookings-list').innerHTML = recent.length === 0
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent bookings.</div>'
+    : recent.map((b) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
+          <div style="font-size:11px;color:var(--text-sub);">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId)} · ${esc(b.pickupDate || '')}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:13px;font-weight:700;">$${formatMoney(b.amountPaid)}</div>
+          <div>${statusBadge(b.status)}</div>
+        </div>
+      </div>`).join('');
+}
+
+// ── Vehicles ───────────────────────────────────────────────────────────────
+function loadVehicles() {
+  document.getElementById('vehicles-loading').style.display = '';
+  document.getElementById('vehicles-content').style.display = 'none';
+
+  Promise.all([
+    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' }),
+    apiPost('/api/v2-dashboard', { secret: adminSecret }),
+  ]).then(([vData, dash]) => {
+    allVehicles = vData.vehicles;
+    renderVehicles(vData.vehicles, dash.vehicleStats || {});
+  }).catch((err) => {
+    document.getElementById('vehicles-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+  });
+}
+
+function renderVehicles(vehicles, stats) {
+  document.getElementById('vehicles-loading').style.display = 'none';
+  document.getElementById('vehicles-content').style.display = '';
+  const vehicleImages = {
+    slingshot:  '../images/car2.jpg',
+    slingshot2: '../images/car3.jpg',
+    camry:      '../images/car1.jpg',
+    camry2013:  '../images/camry-beach-hero.png',
+  };
+
+  document.getElementById('vehicles-content').innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+      <button class="btn btn-secondary btn-sm" onclick="loadVehicles()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+        Refresh
+      </button>
+    </div>
+    <div class="vehicles-grid">
+      ${Object.entries(vehicles).map(([id, v]) => {
+        const s = stats[id] || {};
+        const isActive = v.status === 'active';
+        const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
+        const imgSrc = vehicleImages[id] || '';
+        return `
+          <div class="vehicle-card" onclick="showVehicleProfile('${id}')">
+            ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}" alt="${esc(v.vehicle_name)}" onerror="this.outerHTML='<div class=vehicle-img-placeholder><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'3\\'\\'/><circle cx=\\'7\\' cy=\\'17\\' r=\\'3\\'\\'/></svg></div>'">` : `<div class="vehicle-img-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>`}
+            <div class="vehicle-card-body">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+                <div>
+                  <div class="vehicle-card-name">${esc(v.vehicle_name)}</div>
+                  <div class="vehicle-card-type">${esc(v.type)}</div>
+                </div>
+                <span class="badge ${isActive ? 'badge-green' : 'badge-orange'}">${esc(v.status)}</span>
+              </div>
+              <div class="vehicle-stats-row">
+                <div class="vehicle-stat">
+                  <div class="vehicle-stat-val">$${formatMoney(s.revenue || 0)}</div>
+                  <div class="vehicle-stat-lbl">Revenue</div>
+                </div>
+                <div class="vehicle-stat">
+                  <div class="vehicle-stat-val ${profitClass}" style="color:${s.netProfit < 0 ? 'var(--danger)' : (s.netProfit > 0 ? 'var(--success)' : 'inherit')}">$${formatMoney(s.netProfit || 0)}</div>
+                  <div class="vehicle-stat-lbl">Net Profit</div>
+                </div>
+                <div class="vehicle-stat">
+                  <div class="vehicle-stat-val">${s.roi != null ? s.roi.toFixed(1) + '%' : '–'}</div>
+                  <div class="vehicle-stat-lbl">ROI</div>
+                </div>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px;">
+                <button class="btn btn-secondary btn-sm" style="flex:1" onclick="event.stopPropagation();openEditVehicle('${id}')">Edit</button>
+                <button class="btn btn-primary btn-sm" style="flex:1" onclick="event.stopPropagation();showVehicleProfile('${id}')">View Profile</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function showVehicleProfile(vehicleId) {
+  navigate('vehicle-profile');
+  const v = allVehicles[vehicleId] || {};
+  document.getElementById('page-title').textContent = v.vehicle_name || vehicleId;
+
+  // Load fresh stats
+  apiPost('/api/v2-dashboard', { secret: adminSecret })
+    .then((dash) => {
+      const s = (dash.vehicleStats || {})[vehicleId] || {};
+      renderVehicleProfile(vehicleId, v, s);
+    })
+    .catch((err) => {
+      document.getElementById('vehicle-profile-content').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+
+  document.getElementById('vehicle-profile-content').innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Loading profile…</div></div>';
+}
+
+function renderVehicleProfile(id, v, s) {
+  const roi      = s.roi != null ? s.roi.toFixed(2) + '%' : '–';
+  const profit   = s.netProfit || 0;
+  const profitCls = profit < 0 ? 'negative' : (profit > 0 ? 'positive' : '');
+
+  document.getElementById('vehicle-profile-content').innerHTML = `
+    <div class="profile-header">
+      <button class="back-btn" onclick="navigate('vehicles')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Vehicles
+      </button>
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary btn-sm" onclick="openEditVehicle('${id}')">Edit Vehicle</button>
+    </div>
+
+    <div class="fin-grid">
+      <div class="fin-card">
+        <div class="fin-label">Purchase Price</div>
+        <div class="fin-value">$${formatMoney(v.purchase_price || 0)}</div>
+      </div>
+      <div class="fin-card">
+        <div class="fin-label">Total Bookings</div>
+        <div class="fin-value">${s.bookingCount || 0}</div>
+      </div>
+      <div class="fin-card">
+        <div class="fin-label">Lifetime Revenue</div>
+        <div class="fin-value">$${formatMoney(s.revenue || 0)}</div>
+      </div>
+      <div class="fin-card">
+        <div class="fin-label">Total Expenses</div>
+        <div class="fin-value">$${formatMoney(s.expenses || 0)}</div>
+      </div>
+      <div class="fin-card">
+        <div class="fin-label">Net Profit</div>
+        <div class="fin-value ${profitCls}">$${formatMoney(profit)}</div>
+      </div>
+      <div class="fin-card">
+        <div class="fin-label">ROI</div>
+        <div class="fin-value ${profit < 0 ? 'negative' : 'positive'}">${roi}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div class="card-title">Vehicle Details</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Name</label><input class="form-input" value="${esc(v.vehicle_name || '')}" readonly></div>
+        <div class="form-group"><label class="form-label">Type</label><input class="form-input" value="${esc(v.type || '')}" readonly></div>
+        <div class="form-group"><label class="form-label">Status</label><input class="form-input" value="${esc(v.status || '')}" readonly></div>
+        <div class="form-group"><label class="form-label">Year</label><input class="form-input" value="${esc(String(v.vehicle_year || '–'))}" readonly></div>
+        <div class="form-group"><label class="form-label">Purchase Date</label><input class="form-input" value="${esc(v.purchase_date || '–')}" readonly></div>
+      </div>
+    </div>
+  `;
+}
+
+function openEditVehicle(vehicleId) {
+  const v = allVehicles[vehicleId] || {};
+  editingVehicleId = vehicleId;
+  document.getElementById('ev-name').value = v.vehicle_name || '';
+  document.getElementById('ev-status').value = v.status || 'active';
+  document.getElementById('ev-year').value = v.vehicle_year || '';
+  document.getElementById('ev-purchase-price').value = v.purchase_price || '';
+  document.getElementById('ev-purchase-date').value = v.purchase_date || '';
+  openModal('edit-vehicle-modal');
+}
+
+function saveVehicle() {
+  if (!editingVehicleId) return;
+  const updates = {
+    vehicle_name:   document.getElementById('ev-name').value.trim(),
+    status:         document.getElementById('ev-status').value,
+    vehicle_year:   Number(document.getElementById('ev-year').value) || null,
+    purchase_price: parseFloat(document.getElementById('ev-purchase-price').value) || 0,
+    purchase_date:  document.getElementById('ev-purchase-date').value,
+  };
+
+  apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'update', vehicleId: editingVehicleId, updates })
+    .then(() => {
+      closeModal('edit-vehicle-modal');
+      showToast('Vehicle updated.', 'success');
+      allVehicles[editingVehicleId] = { ...allVehicles[editingVehicleId], ...updates };
+      if (currentPage === 'vehicles') loadVehicles();
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Bookings ───────────────────────────────────────────────────────────────
+function loadBookings() {
+  document.getElementById('bookings-loading').style.display = '';
+  document.getElementById('bookings-table-wrap').style.display = 'none';
+  document.getElementById('bookings-empty').style.display = 'none';
+
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      allBookings = data.bookings || [];
+      renderBookings();
+    })
+    .catch((err) => {
+      document.getElementById('bookings-loading').innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderBookings() {
+  document.getElementById('bookings-loading').style.display = 'none';
+  applyBookingFilters();
+}
+
+function applyBookingFilters() {
+  const vFilter = document.getElementById('booking-filter-vehicle').value;
+  const sFilter = document.getElementById('booking-filter-status').value;
+  const search  = (document.getElementById('booking-search').value || '').toLowerCase();
+
+  let filtered = allBookings.filter((b) => {
+    if (vFilter && b.vehicleId !== vFilter) return false;
+    if (sFilter && b.status !== sFilter) return false;
+    if (search && !(b.name || '').toLowerCase().includes(search) && !(b.bookingId || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    document.getElementById('bookings-table-wrap').style.display = 'none';
+    document.getElementById('bookings-empty').style.display = '';
+    return;
+  }
+
+  document.getElementById('bookings-table-wrap').style.display = '';
+  document.getElementById('bookings-empty').style.display = 'none';
+
+  document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => `
+    <tr>
+      <td>
+        <div style="font-weight:600;">${esc(b.name || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
+      </td>
+      <td>${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+      <td>
+        <div>${esc(b.pickupDate || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}</div>
+      </td>
+      <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
+      <td>${statusBadge(b.status)}</td>
+      <td>
+        <div class="td-actions">
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
+          ${b.status === 'reserved_unpaid' ? `
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid')">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental')">Decline</button>
+          ` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function viewBooking(bookingId, vehicleId) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) return;
+  document.getElementById('booking-detail-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(b.returnTime || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Amount Paid</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountPaid || 0)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${statusBadge(b.status)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div>${esc(b.paymentMethod || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
+      ${b.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
+    </div>
+  `;
+  document.getElementById('booking-detail-actions').innerHTML = `
+    ${b.status === 'reserved_unpaid' ? `
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid');closeModal('booking-detail-modal')">✓ Mark as Paid</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental');closeModal('booking-detail-modal')">✗ Decline</button>
+    ` : ''}
+    ${b.status === 'booked_paid' ? `<button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental');closeModal('booking-detail-modal')">Mark Active</button>` : ''}
+    ${b.status === 'active_rental' ? `<button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental');closeModal('booking-detail-modal')">Mark Completed</button>` : ''}
+    <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
+  `;
+  openModal('booking-detail-modal');
+}
+
+function updateBookingStatus(vehicleId, bookingId, status) {
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    updates: { status },
+  }).then(() => {
+    showToast('Booking updated.', 'success');
+    const idx = allBookings.findIndex((b) => b.bookingId === bookingId);
+    if (idx >= 0) allBookings[idx].status = status;
+    renderBookings();
+  }).catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Manual Booking ─────────────────────────────────────────────────────────
+function updateManualPrice() {
+  const vehicleId  = document.getElementById('mb-vehicle').value;
+  const pickupDate = document.getElementById('mb-pickup-date').value;
+  const returnDate = document.getElementById('mb-return-date').value;
+  const el = document.getElementById('mb-auto-price');
+
+  if (!vehicleId || !pickupDate || !returnDate || returnDate < pickupDate) {
+    el.textContent = '–';
+    return;
+  }
+
+  const rate  = VEHICLE_RATES[vehicleId];
+  const days  = Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000));
+  let price   = 0;
+
+  if (rate.perWeek && days >= 7) {
+    const weeks    = Math.floor(days / 7);
+    const remDays  = days % 7;
+    price = weeks * rate.perWeek + remDays * rate.perDay;
+  } else {
+    price = days * rate.perDay;
+  }
+
+  el.textContent = '$' + formatMoney(price);
+}
+
+async function submitManualBooking(e) {
+  e.preventDefault();
+  const btn = document.getElementById('mb-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const vehicleId  = document.getElementById('mb-vehicle').value;
+  const pickupDate = document.getElementById('mb-pickup-date').value;
+  const returnDate = document.getElementById('mb-return-date').value;
+  const autoText   = document.getElementById('mb-auto-price').textContent;
+  const overrideAmount = parseFloat(document.getElementById('mb-amount-paid').value);
+  const autoAmount = autoText !== '–' ? parseFloat(autoText.replace('$', '').replace(/,/g, '')) : 0;
+  const amountPaid = !isNaN(overrideAmount) && overrideAmount >= 0 ? overrideAmount : autoAmount;
+
+  const formatTime = (val) => {
+    if (!val) return '';
+    const [h, m] = val.split(':');
+    const hr = parseInt(h), mn = m;
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    return `${hr % 12 || 12}:${mn} ${ampm}`;
+  };
+
+  try {
+    await apiPost('/api/v2-bookings', {
+      secret:         adminSecret,
+      action:         'create',
+      vehicleId,
+      name:           document.getElementById('mb-name').value.trim(),
+      phone:          document.getElementById('mb-phone').value.trim(),
+      email:          document.getElementById('mb-email').value.trim(),
+      pickupDate,
+      pickupTime:     formatTime(document.getElementById('mb-pickup-time').value),
+      returnDate,
+      returnTime:     formatTime(document.getElementById('mb-return-time').value),
+      amountPaid,
+      paymentMethod:  document.getElementById('mb-payment-method').value,
+      notes:          document.getElementById('mb-notes').value.trim(),
+    });
+
+    showToast('Booking saved successfully.', 'success');
+    clearManualBookingForm();
+    allBookings = []; // Force refresh on next visit
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg> Save Booking';
+  }
+}
+
+function clearManualBookingForm() {
+  document.getElementById('manual-booking-form').reset();
+  document.getElementById('mb-auto-price').textContent = '–';
+}
+
+// ── Expenses ───────────────────────────────────────────────────────────────
+function loadExpenses() {
+  document.getElementById('expenses-loading').style.display = '';
+  document.getElementById('expenses-table-wrap').style.display = 'none';
+  document.getElementById('expenses-empty').style.display = 'none';
+
+  apiPost('/api/get-expenses', { secret: adminSecret })
+    .then((data) => {
+      allExpenses = data.expenses || [];
+      renderExpenses();
+    })
+    .catch((err) => {
+      document.getElementById('expenses-loading').innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderExpenses() {
+  document.getElementById('expenses-loading').style.display = 'none';
+  applyExpenseFilters();
+}
+
+function applyExpenseFilters() {
+  const vFilter = document.getElementById('expense-filter-vehicle').value;
+  const cFilter = document.getElementById('expense-filter-category').value;
+
+  const filtered = allExpenses.filter((e) => {
+    if (vFilter && e.vehicle_id !== vFilter) return false;
+    if (cFilter && e.category !== cFilter) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    document.getElementById('expenses-table-wrap').style.display = 'none';
+    document.getElementById('expenses-empty').style.display = '';
+    return;
+  }
+
+  document.getElementById('expenses-table-wrap').style.display = '';
+  document.getElementById('expenses-empty').style.display = 'none';
+
+  document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => `
+    <tr>
+      <td>${esc(e.date || '–')}</td>
+      <td>${esc(VEHICLE_NAMES[e.vehicle_id] || e.vehicle_id || '–')}</td>
+      <td><span class="badge badge-gray">${esc(e.category || '–')}</span></td>
+      <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
+      <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
+      <td>
+        <button class="btn btn-danger btn-sm" onclick="deleteExpense('${esc(e.expense_id || '')}')">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddExpenseModal() {
+  // Reset form
+  document.getElementById('exp-vehicle').value = '';
+  document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('exp-category').value = '';
+  document.getElementById('exp-amount').value = '';
+  document.getElementById('exp-notes').value = '';
+  openModal('add-expense-modal');
+}
+
+function submitExpense() {
+  const vehicle_id = document.getElementById('exp-vehicle').value;
+  const date       = document.getElementById('exp-date').value;
+  const category   = document.getElementById('exp-category').value;
+  const amount     = parseFloat(document.getElementById('exp-amount').value);
+  const notes      = document.getElementById('exp-notes').value.trim();
+
+  if (!vehicle_id) { showToast('Please select a vehicle.', 'error'); return; }
+  if (!date)       { showToast('Please enter a date.', 'error'); return; }
+  if (!category)   { showToast('Please select a category.', 'error'); return; }
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
+
+  const btn = document.getElementById('exp-submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  apiPost('/api/add-expense', { secret: adminSecret, vehicle_id, date, category, amount, notes })
+    .then(() => {
+      closeModal('add-expense-modal');
+      showToast('Expense added.', 'success');
+      allExpenses = []; // Force refresh
+      loadExpenses();
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'))
+    .finally(() => { btn.disabled = false; btn.textContent = 'Save Expense'; });
+}
+
+function deleteExpense(expenseId) {
+  if (!confirm('Delete this expense? This cannot be undone.')) return;
+  apiPost('/api/delete-expense', { secret: adminSecret, expense_id: expenseId })
+    .then(() => {
+      showToast('Expense deleted.', 'success');
+      allExpenses = allExpenses.filter((e) => e.expense_id !== expenseId);
+      renderExpenses();
+    })
+    .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── SMS Templates ──────────────────────────────────────────────────────────
+function loadSmsTemplates() {
+  document.getElementById('sms-loading').style.display = '';
+  document.getElementById('sms-list').style.display = 'none';
+
+  apiPost('/api/v2-sms-templates', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      smsTemplates = data.templates || [];
+      renderSmsTemplates();
+    })
+    .catch((err) => {
+      document.getElementById('sms-loading').innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderSmsTemplates() {
+  document.getElementById('sms-loading').style.display = 'none';
+  document.getElementById('sms-list').style.display = '';
+
+  document.getElementById('sms-list').innerHTML = smsTemplates.map((t) => `
+    <div class="sms-item">
+      <label class="toggle" title="${t.enabled ? 'Enabled' : 'Disabled'}">
+        <input type="checkbox" ${t.enabled ? 'checked' : ''} onchange="toggleSmsTemplate('${esc(t.key)}', this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+      <div class="sms-item-info">
+        <div class="sms-item-key">${esc(t.key)}</div>
+        <div class="sms-item-preview">${esc((t.message || '').slice(0, 80))}…</div>
+      </div>
+      ${t.isCustomized ? '<span class="badge badge-blue" style="font-size:10px;">Customized</span>' : ''}
+      <button class="btn btn-secondary btn-sm" onclick="openSmsEditModal('${esc(t.key)}')">Edit</button>
+    </div>
+  `).join('');
+}
+
+function toggleSmsTemplate(key, enabled) {
+  apiPost('/api/v2-sms-templates', {
+    secret: adminSecret, action: 'update',
+    templateKey: key, updates: { enabled },
+  }).then(() => {
+    const t = smsTemplates.find((x) => x.key === key);
+    if (t) t.enabled = enabled;
+    showToast(enabled ? 'Template enabled.' : 'Template disabled.', 'success');
+  }).catch((err) => { showToast('Error: ' + err.message, 'error'); loadSmsTemplates(); });
+}
+
+function openSmsEditModal(key) {
+  const t = smsTemplates.find((x) => x.key === key);
+  if (!t) return;
+  editingSmsKey = key;
+  document.getElementById('sms-edit-key').value = key;
+  document.getElementById('sms-edit-message').value = t.message || '';
+  openModal('sms-edit-modal');
+}
+
+function saveSmsTemplate() {
+  if (!editingSmsKey) return;
+  const message = document.getElementById('sms-edit-message').value;
+  apiPost('/api/v2-sms-templates', {
+    secret: adminSecret, action: 'update',
+    templateKey: editingSmsKey, updates: { message },
+  }).then(() => {
+    closeModal('sms-edit-modal');
+    showToast('Template saved.', 'success');
+    const t = smsTemplates.find((x) => x.key === editingSmsKey);
+    if (t) { t.message = message; t.isCustomized = true; }
+    renderSmsTemplates();
+  }).catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function resetSmsTemplate() {
+  if (!editingSmsKey) return;
+  if (!confirm('Reset this template to its default message?')) return;
+  apiPost('/api/v2-sms-templates', {
+    secret: adminSecret, action: 'reset', templateKey: editingSmsKey,
+  }).then((data) => {
+    closeModal('sms-edit-modal');
+    showToast('Template reset to default.', 'success');
+    const t = smsTemplates.find((x) => x.key === editingSmsKey);
+    if (t) { t.message = data.template.message; t.isCustomized = false; }
+    renderSmsTemplates();
+  }).catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach((overlay) => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+// ── Utility ────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatMoney(n) {
+  const num = Number(n) || 0;
+  return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function statusBadge(status) {
+  const map = {
+    reserved_unpaid:   'badge-orange',
+    booked_paid:       'badge-green',
+    active_rental:     'badge-blue',
+    completed_rental:  'badge-gray',
+  };
+  const labels = {
+    reserved_unpaid:  'Pending',
+    booked_paid:      'Confirmed',
+    active_rental:    'Active',
+    completed_rental: 'Completed',
+  };
+  const cls   = map[status] || 'badge-gray';
+  const label = labels[status] || status;
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
+</script>
+</body>
+</html>
