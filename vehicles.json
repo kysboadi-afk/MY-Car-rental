@@ -6,7 +6,8 @@
     "vehicle_year": null,
     "purchase_date": "",
     "purchase_price": 0,
-    "status": "active"
+    "status": "active",
+    "cover_image": "images/car2.jpg"
   },
   "slingshot2": {
     "vehicle_id": "slingshot2",
@@ -15,7 +16,8 @@
     "vehicle_year": null,
     "purchase_date": "",
     "purchase_price": 0,
-    "status": "active"
+    "status": "active",
+    "cover_image": "images/IMG_1749.jpeg"
   },
   "camry": {
     "vehicle_id": "camry",
@@ -24,7 +26,8 @@
     "vehicle_year": null,
     "purchase_date": "",
     "purchase_price": 0,
-    "status": "active"
+    "status": "active",
+    "cover_image": "images/IMG_0046.png"
   },
   "camry2013": {
     "vehicle_id": "camry2013",
@@ -33,6 +36,7 @@
     "vehicle_year": null,
     "purchase_date": "",
     "purchase_price": 0,
-    "status": "active"
+    "status": "active",
+    "cover_image": "images/IMG_5144.png"
   }
 }
