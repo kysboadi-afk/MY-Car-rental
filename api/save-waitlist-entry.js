@@ -17,6 +17,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, WAITLIST_JOINED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -46,54 +47,61 @@ async function appendWaitlistEntry(vehicleId, entry) {
 
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${WAITLIST_PATH}`;
   const headers = {
-    Authorization:        `Bearer ${token}`,
-    Accept:               "application/vnd.github+json",
+    Authorization:          `Bearer ${token}`,
+    Accept:                 "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  let current = { slingshot: [], slingshot2: [], camry: [], camry2013: [] };
-  let sha = null;
+  const EMPTY_WAITLIST = { slingshot: [], slingshot2: [], camry: [], camry2013: [] };
 
-  const getResp = await fetch(apiUrl, { headers });
-  if (getResp.ok) {
-    const fileData = await getResp.json();
-    sha = fileData.sha;
+  async function loadWaitlist() {
+    const resp = await fetch(apiUrl, { headers });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: { ...EMPTY_WAITLIST }, sha: null };
+      return { data: { ...EMPTY_WAITLIST }, sha: null }; // non-fatal
+    }
+    const file = await resp.json();
+    let data = { ...EMPTY_WAITLIST };
     try {
-      current = JSON.parse(
-        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-      );
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
     } catch (parseErr) {
       console.error("waitlist: malformed JSON:", parseErr);
     }
+    return { data, sha: file.sha };
   }
 
-  if (!current[vehicleId]) current[vehicleId] = [];
-  const position = current[vehicleId].length + 1;
-  current[vehicleId].push({
-    ...entry,
-    position,
-    joinedAt: new Date().toISOString(),
-  });
-
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putBody = {
-    message: `Add waitlist entry for ${vehicleId}: ${entry.name} (#${position})`,
-    content: updatedContent,
-  };
-  if (sha) putBody.sha = sha;
-
-  const putResp = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify(putBody),
-  });
-  if (!putResp.ok) {
-    const errText = await putResp.text();
-    console.error(`GitHub PUT failed: ${putResp.status} ${errText}`);
+  async function saveWaitlist(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method:  "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT waitlist.json failed: ${resp.status} ${text}`);
+    }
   }
+
+  let position = 1;
+  await updateJsonFileWithRetry({
+    load:  loadWaitlist,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      // Idempotent: if entry already present (retry), find its position
+      const existing = data[vehicleId].find((e) => e.entryId === entry.entryId);
+      if (existing) {
+        position = existing.position;
+        return;
+      }
+      position = data[vehicleId].length + 1;
+      data[vehicleId].push({ ...entry, position, joinedAt: new Date().toISOString() });
+    },
+    save:    saveWaitlist,
+    message: `Add waitlist entry for ${vehicleId}: ${entry.name}`,
+  });
 
   return position;
 }

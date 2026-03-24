@@ -30,6 +30,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, WAITLIST_APPROVED, WAITLIST_DECLINED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const GITHUB_REPO   = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -140,12 +141,12 @@ export default async function handler(req, res) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  let wlData, sha;
+  // Initial load used only for entry validation (not-found / already-decided checks)
+  let wlData;
   try {
     const loaded = await loadWaitlist(ghHeaders, apiUrl);
     if (!loaded) throw new Error("Could not load waitlist.json");
     wlData = loaded.data;
-    sha    = loaded.sha;
   } catch (err) {
     console.error("waitlist-decision: load error:", err);
     return res
@@ -185,18 +186,35 @@ export default async function handler(req, res) {
       );
   }
 
-  // ── Apply decision ────────────────────────────────────────────────────────
+  // ── Apply decision with retry-on-409 ─────────────────────────────────────
   const newStatus = action === "approve" ? "approved" : "declined";
-  wlData[vehicleId][idx] = { ...entry, status: newStatus, decidedAt: new Date().toISOString() };
+  const decidedAt = new Date().toISOString();
+
+  // Closure-based load/save so updateJsonFileWithRetry always re-fetches the
+  // latest SHA before each write attempt.
+  const loadFn = async () => {
+    const result = await loadWaitlist(ghHeaders, apiUrl);
+    if (!result) throw new Error("Could not load waitlist.json");
+    return result;
+  };
+  const saveFn = (data, fileSha, message) => saveWaitlist(ghHeaders, apiUrl, data, fileSha, message);
 
   try {
-    await saveWaitlist(
-      ghHeaders,
-      apiUrl,
-      wlData,
-      sha,
-      `Waitlist ${newStatus}: ${vehicleId} — ${entry.name} (#${entry.position})`
-    );
+    await updateJsonFileWithRetry({
+      load:  loadFn,
+      apply: (data) => {
+        const vList = data[vehicleId];
+        if (!Array.isArray(vList)) return;
+        const i = vList.findIndex((e) => e.entryId === entryId);
+        if (i === -1) return;
+        // Idempotent: only update if not already decided
+        if (vList[i].status !== "approved" && vList[i].status !== "declined") {
+          vList[i] = { ...vList[i], status: newStatus, decidedAt };
+        }
+      },
+      save:    saveFn,
+      message: `Waitlist ${newStatus}: ${vehicleId} — ${entry.name} (#${entry.position})`,
+    });
   } catch (err) {
     console.error("waitlist-decision: save error:", err);
     return res
