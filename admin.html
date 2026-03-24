@@ -155,6 +155,27 @@
     #fleetStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #fleetStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
 
+    /* ── Manual Booking Entry ────────────────────────────────────────── */
+    .manual-booking-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .manual-booking-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .manual-booking-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .manual-booking-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+    @media (max-width: 480px) { .manual-booking-grid { grid-template-columns: 1fr; } }
+    #mbStatusMsg {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #mbStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #mbStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #mbStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
     /* ── Vehicle Tracking & Profit ───────────────────────────────────── */
     .profit-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
     .profit-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
@@ -376,6 +397,72 @@
       </div>
 
       <div id="fleetStatusMsg"></div>
+    </div>
+
+    <!-- ── Manual Booking Entry ──────────────────────────────────────── -->
+    <div class="manual-booking-section">
+      <h2>✍️ Manual Booking Entry</h2>
+      <p class="subtitle">Record a booking paid in cash or arranged offline. Saves the customer record and blocks the calendar dates automatically.</p>
+
+      <div class="manual-booking-grid">
+        <div class="form-group">
+          <label for="mbVehicle">Vehicle</label>
+          <select id="mbVehicle">
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+            <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (2)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="mbName">Customer Name <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbName" placeholder="Full name" maxlength="100" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPhone">Phone</label>
+          <input type="tel" id="mbPhone" placeholder="(213) 555-1234" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbEmail">Email</label>
+          <input type="email" id="mbEmail" placeholder="customer@email.com" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPickupDate">Pickup Date <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbPickupDate" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPickupTime">Pickup Time</label>
+          <input type="text" id="mbPickupTime" placeholder="e.g. 10:00 AM" maxlength="20">
+        </div>
+
+        <div class="form-group">
+          <label for="mbReturnDate">Return Date <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbReturnDate" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="form-group">
+          <label for="mbReturnTime">Return Time</label>
+          <input type="text" id="mbReturnTime" placeholder="e.g. 5:00 PM" maxlength="20">
+        </div>
+
+        <div class="form-group">
+          <label for="mbAmount">Amount Paid ($)</label>
+          <input type="number" id="mbAmount" placeholder="0.00" min="0" step="0.01">
+        </div>
+
+        <div class="form-group">
+          <label for="mbNotes">Notes (optional)</label>
+          <input type="text" id="mbNotes" placeholder="e.g. Cash payment" maxlength="500" autocomplete="off">
+        </div>
+      </div>
+
+      <button class="btn-block" id="mbSubmitBtn" style="margin-top:16px">💾 Save Manual Booking</button>
+      <div id="mbStatusMsg"></div>
     </div>
 
     <!-- ── Vehicle Tracking & Profit Dashboard ──────────────────────── -->
@@ -1020,6 +1107,83 @@
         document.getElementById("vehicleDetail").classList.remove("open");
         document.querySelectorAll(".vehicle-card").forEach(function (c) { c.classList.remove("active"); });
         currentVehicleId = null;
+      });
+    })();
+  </script>
+
+  <!-- ── Manual Booking Entry Script ───────────────────────────────────────── -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Date pickers with allowInput so the admin can also type dates manually
+      flatpickr("#mbPickupDate", { dateFormat: "Y-m-d", allowInput: true });
+      flatpickr("#mbReturnDate",  { dateFormat: "Y-m-d", allowInput: true });
+
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showMbMsg(msg, type) {
+        var el = document.getElementById("mbStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        if (type !== "info") {
+          setTimeout(function () { el.style.display = "none"; }, 7000);
+        }
+      }
+
+      document.getElementById("mbSubmitBtn").addEventListener("click", function () {
+        var secret = getSecret();
+        if (!secret) { showMbMsg("Please enter the admin password first.", "error"); return; }
+
+        var vehicleId  = document.getElementById("mbVehicle").value;
+        var name       = document.getElementById("mbName").value.trim();
+        var phone      = document.getElementById("mbPhone").value.trim();
+        var email      = document.getElementById("mbEmail").value.trim();
+        var pickupDate = document.getElementById("mbPickupDate").value.trim();
+        var pickupTime = document.getElementById("mbPickupTime").value.trim();
+        var returnDate = document.getElementById("mbReturnDate").value.trim();
+        var returnTime = document.getElementById("mbReturnTime").value.trim();
+        var amountPaid = parseFloat(document.getElementById("mbAmount").value) || 0;
+        var notes      = document.getElementById("mbNotes").value.trim();
+
+        // Client-side validation
+        if (!name)       { showMbMsg("Customer name is required.", "error"); return; }
+        if (!pickupDate) { showMbMsg("Pickup date is required.", "error"); return; }
+        if (!returnDate) { showMbMsg("Return date is required.", "error"); return; }
+        if (pickupDate > returnDate) {
+          showMbMsg("Pickup date must be on or before the return date.", "error");
+          return;
+        }
+
+        showMbMsg("Saving booking…", "info");
+        fetch(API_BASE + "/api/add-manual-booking", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            secret: secret, vehicleId: vehicleId, name: name, phone: phone,
+            email: email, pickupDate: pickupDate, pickupTime: pickupTime,
+            returnDate: returnDate, returnTime: returnTime,
+            amountPaid: amountPaid, notes: notes,
+          }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showMbMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showMbMsg("✅ Booking saved. Calendar dates are now blocked.", "success");
+              // Reset form fields
+              ["mbName", "mbPhone", "mbEmail", "mbPickupDate", "mbReturnDate",
+               "mbPickupTime", "mbReturnTime", "mbNotes"].forEach(function (id) {
+                document.getElementById(id).value = "";
+              });
+              document.getElementById("mbAmount").value = "";
+              // Refresh the blocked dates list
+              if (typeof loadBookings === "function") loadBookings();
+            }
+          })
+          .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); });
       });
     })();
   </script>

@@ -13,6 +13,8 @@
 //     "available": true | false
 //   }
 
+import { adminErrorMessage } from "./_error-helpers.js";
+
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -110,6 +112,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, vehicleId, available });
   } catch (err) {
     console.error("update-fleet-status error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

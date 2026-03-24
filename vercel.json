@@ -57,6 +57,9 @@
     "api/update-fleet-status.js": {
       "maxDuration": 15
     },
+    "api/add-manual-booking.js": {
+      "maxDuration": 15
+    },
     "api/join-waitlist.js": {
       "maxDuration": 15
     },
