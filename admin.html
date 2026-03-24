@@ -1179,8 +1179,6 @@
                 document.getElementById(id).value = "";
               });
               document.getElementById("mbAmount").value = "";
-              // Refresh the blocked dates list
-              if (typeof loadBookings === "function") loadBookings();
             }
           })
           .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); });

@@ -62,7 +62,9 @@ async function blockBookedDates(vehicleId, from, to) {
   );
 
   if (!current[vehicleId]) current[vehicleId] = [];
-  if (hasOverlap(current[vehicleId], from, to)) return; // already blocked — skip
+  // If dates are already blocked (overlap), skip the write — the calendar is
+  // already correct and we will still proceed to save the booking record.
+  if (hasOverlap(current[vehicleId], from, to)) return;
 
   current[vehicleId].push({ from, to });
 
@@ -154,11 +156,13 @@ export default async function handler(req, res) {
   };
 
   try {
-    // 1. Save the booking record to bookings.json
-    await appendBooking(booking);
-
-    // 2. Block the dates in booked-dates.json so the calendar reflects the reservation
+    // 1. Block the dates in booked-dates.json first so the calendar reflects the
+    //    reservation before the booking record is persisted. If this step fails
+    //    (e.g. GitHub write error) we abort early before creating the booking record.
     await blockBookedDates(vehicleId, pickupDate, returnDate);
+
+    // 2. Save the booking record to bookings.json.
+    await appendBooking(booking);
 
     return res.status(200).json({ success: true, booking });
   } catch (err) {
