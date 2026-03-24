@@ -807,13 +807,21 @@ body {
 
 .waitlist-form input:not([type="radio"]):not([type="checkbox"]) {
   width: 100%;
+  max-width: 100%;
   padding: 10px 14px;
   background: #0f1e2e;
   border: 1px solid #2d6da8;
   border-radius: 8px;
   color: #fff;
-  font-size: 15px;
+  font-size: 16px;
   box-sizing: border-box;
+}
+
+.waitlist-form input[type="file"] {
+  font-size: 14px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .waitlist-form input:not([type="radio"]):not([type="checkbox"]):focus {
@@ -1437,7 +1445,7 @@ body {
 
 .insurance-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   cursor: pointer;
   padding: 10px 14px;
@@ -1458,8 +1466,17 @@ body {
   accent-color: #ffb400;
   width: 16px;
   height: 16px;
+  min-width: 16px;
   cursor: pointer;
   flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.insurance-option > span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .insurance-option input[type="radio"]:checked + span {
@@ -2126,6 +2143,14 @@ footer {
 
   .fleet-cta-heading {
     font-size: 24px;
+  }
+
+  .booking {
+    padding: 20px 16px;
+  }
+
+  .waitlist-section {
+    padding: 20px 14px;
   }
 }
 
