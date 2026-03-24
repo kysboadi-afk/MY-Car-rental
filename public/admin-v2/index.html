@@ -2409,7 +2409,7 @@ function applyRevenueFilters() {
       <td>${payBadge}</td>
       <td class="td-actions">
         <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(r.id)}')">Edit</button>
-        <button class="btn btn-danger btn-sm"    onclick="deleteRevenueRecord('${esc(r.id)}')">Del</button>
+        <button class="btn btn-danger btn-sm"    onclick="deleteRevenueRecord('${esc(r.id)}')">Delete</button>
       </td>
     </tr>`;
   }).join('');
@@ -2771,7 +2771,7 @@ function renderProtectionPlans() {
         <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;">Liability cap: ${p.liability_cap > 0 ? '$' + formatMoney(p.liability_cap) : 'None'}</div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" style="flex:1" onclick="openEditPlanModal('${esc(p.id)}')">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}')">Del</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}')">Delete</button>
         </div>
       </div>
     `).join('') + '</div>';
@@ -2893,11 +2893,18 @@ function renderSystemSettings() {
 function saveSetting(key) {
   const el = document.getElementById('setting-' + key);
   if (!el) return;
-  let value = el.value.trim();
-  // Try to parse as number or boolean for JSONB
-  if (value === 'true') value = true;
-  else if (value === 'false') value = false;
-  else if (!isNaN(value) && value !== '') value = Number(value);
+  const raw = el.value.trim();
+  let value;
+  if (raw === '') {
+    value = null;
+  } else if (raw === 'true') {
+    value = true;
+  } else if (raw === 'false') {
+    value = false;
+  } else {
+    const num = Number(raw);
+    value = (!isNaN(num) && raw !== '') ? num : raw;
+  }
 
   apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'set', key, value })
     .then(() => showToast(`Setting "${key}" saved.`, 'success'))
