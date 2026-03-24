@@ -52,8 +52,9 @@ Stores one row per vehicle. The `data` column holds all vehicle metadata as JSON
 This replaces the previous `vehicles.json` GitHub file as the source of truth, eliminating
 the SHA-conflict errors that caused admin vehicle saves to fail.
 
-You can also run the canonical migration file directly:
-`supabase/migrations/0001_create_vehicles.sql`
+You can also run the canonical migration files directly:
+- `supabase/migrations/0001_create_vehicles.sql` — creates the table
+- `supabase/migrations/0002_seed_fleet_vehicles.sql` — removes placeholder rows and upserts correct fleet data (run this if `GET /api/v2-vehicles` returns only `vehicle_id` with no other fields)
 
 ```sql
 create table if not exists vehicles (
@@ -209,6 +210,7 @@ Once your Vercel environment variables are set and redeployed:
 | Problem | Fix |
 |---------|-----|
 | "Supabase is not configured" error | Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel env vars, then Redeploy |
+| `GET /api/v2-vehicles` returns only `vehicle_id` | The `data` column is empty in Supabase. Run migration `0002_seed_fleet_vehicles.sql` in the Supabase SQL Editor to upsert the correct vehicle data |
 | CMS loads but shows no data | Run the SQL migrations in Step 3, then reload the CMS |
 | AI assistant shows "not available" | Add `OPENAI_API_KEY` in Vercel env vars, then Redeploy |
 | Public site still shows old content | Content is cached for 60s. Wait a minute and hard-refresh, or clear CDN cache |
