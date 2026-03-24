@@ -1869,6 +1869,15 @@ stripeBtn.addEventListener("click", async () => {
   // For Slingshot: show full rental total; For Camry reserve: show deposit; For Camry full: full amount.
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
 
+  // Meta Pixel — track checkout initiation with the amount being charged
+  if (typeof fbq === "function") {
+    var _pixelCheckoutValue = parseFloat(String(displayPayNow).replace(/[^0-9.]/g, ""));
+    fbq("track", "InitiateCheckout", {
+      value: isFinite(_pixelCheckoutValue) ? _pixelCheckoutValue : 0,
+      currency: "USD",
+    });
+  }
+
   stripeBtn.disabled = true;
   stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
   const _reserveBtnLoading = document.getElementById("reserveBtn");
