@@ -1469,9 +1469,22 @@ function renderVehicleProfile(id, v, s) {
   `;
 }
 
-function openEditVehicle(vehicleId) {
-  const v = allVehicles[vehicleId] || {};
+async function openEditVehicle(vehicleId) {
   editingVehicleId = vehicleId;
+  // Fetch the freshest vehicle record from the DB before opening the form so
+  // the admin always edits the current state and not a potentially stale cache.
+  // We use the list action (rather than a per-vehicle GET) because no
+  // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
+  try {
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    if (latest.vehicles && latest.vehicles[vehicleId]) {
+      allVehicles[vehicleId] = latest.vehicles[vehicleId];
+    }
+  } catch (_err) {
+    // Fall back to the in-memory cache if the pre-fetch fails; the save step
+    // will attempt its own refresh before submitting.
+  }
+  const v = allVehicles[vehicleId] || {};
   document.getElementById('ev-name').value = v.vehicle_name || '';
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
@@ -1480,7 +1493,7 @@ function openEditVehicle(vehicleId) {
   openModal('edit-vehicle-modal');
 }
 
-function saveVehicle() {
+async function saveVehicle() {
   if (!editingVehicleId) return;
   const updates = {
     vehicle_name:   document.getElementById('ev-name').value.trim(),
@@ -1494,15 +1507,38 @@ function saveVehicle() {
   const origText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
-  apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'update', vehicleId: editingVehicleId, updates })
-    .then(() => {
-      closeModal('edit-vehicle-modal');
-      showToast('Vehicle updated.', 'success');
-      allVehicles[editingVehicleId] = { ...allVehicles[editingVehicleId], ...updates };
-      if (currentPage === 'vehicles') loadVehicles();
-    })
-    .catch((err) => showToast('Error: ' + err.message, 'error'))
-    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = origText; } });
+  try {
+    // Re-fetch the latest vehicle record immediately before saving so the API
+    // always merges the admin's edits onto the freshest DB state — this prevents
+    // the Supabase "concurrent update conflict" that occurs when a stale local
+    // copy is used as the base for the merge inside the update handler.
+    // We use the list action (rather than a per-vehicle GET) because no
+    // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    if (latest.vehicles && latest.vehicles[editingVehicleId]) {
+      allVehicles[editingVehicleId] = latest.vehicles[editingVehicleId];
+    }
+
+    // Submit the admin's edits; the API merges them onto the latest DB row.
+    const result = await apiPost('/api/v2-vehicles', {
+      secret: adminSecret, action: 'update', vehicleId: editingVehicleId, updates,
+    });
+
+    closeModal('edit-vehicle-modal');
+    showToast('Vehicle updated.', 'success');
+
+    // Sync the local cache from the data the API confirms was written so the
+    // UI always reflects the backend's actual current state after a save.
+    allVehicles[editingVehicleId] = {
+      ...allVehicles[editingVehicleId],
+      ...(result.vehicle || updates),
+    };
+    if (currentPage === 'vehicles') loadVehicles();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 // ── Bookings ───────────────────────────────────────────────────────────────
