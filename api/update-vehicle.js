@@ -6,6 +6,7 @@
 // Body: {
 //   "secret":         "<ADMIN_SECRET>",
 //   "vehicle_id":     "slingshot" | "slingshot2" | "camry" | "camry2013",
+//   "vehicle_year":   number | null  (optional, model year e.g. 2021),
 //   "purchase_date":  "YYYY-MM-DD"  (optional),
 //   "purchase_price": number        (optional),
 //   "status":         "active" | "maintenance" | "inactive"  (optional),
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: GITHUB_TOKEN is not set." });
   }
 
-  const { secret, vehicle_id, purchase_date, purchase_price, status, vehicle_name } = req.body || {};
+  const { secret, vehicle_id, vehicle_year, purchase_date, purchase_price, status, vehicle_name } = req.body || {};
 
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -47,6 +48,12 @@ export default async function handler(req, res) {
   }
 
   const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if (vehicle_year !== undefined && vehicle_year !== null) {
+    const yr = Number(vehicle_year);
+    if (!Number.isInteger(yr) || yr < 1900 || yr > 2099) {
+      return res.status(400).json({ error: "vehicle_year must be an integer between 1900 and 2099, or null" });
+    }
+  }
   if (purchase_date !== undefined && purchase_date !== "" && !ISO_DATE.test(purchase_date)) {
     return res.status(400).json({ error: "purchase_date must be YYYY-MM-DD or empty string" });
   }
@@ -69,6 +76,7 @@ export default async function handler(req, res) {
       }
 
       // Apply only the fields provided in the request
+      if (vehicle_year  !== undefined) data[vehicle_id].vehicle_year  = vehicle_year === null ? null : Number(vehicle_year);
       if (purchase_date  !== undefined) data[vehicle_id].purchase_date  = purchase_date;
       if (purchase_price !== undefined) data[vehicle_id].purchase_price = purchase_price;
       if (status         !== undefined) data[vehicle_id].status         = status;

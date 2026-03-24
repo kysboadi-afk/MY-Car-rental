@@ -10,6 +10,7 @@
 //     vehicle_id:     string,
 //     vehicle_name:   string,
 //     type:           "slingshot" | "economy",
+//     vehicle_year:   number | null  (model year, e.g. 2021),
 //     purchase_date:  string  (YYYY-MM-DD or ""),
 //     purchase_price: number  (dollars),
 //     status:         "active" | "maintenance" | "inactive",
@@ -20,10 +21,10 @@ const GITHUB_REPO    = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const VEHICLES_PATH  = "vehicles.json";
 
 const EMPTY_VEHICLES = {
-  slingshot:  { vehicle_id: "slingshot",  vehicle_name: "Slingshot R",      type: "slingshot", purchase_date: "", purchase_price: 0, status: "active" },
-  slingshot2: { vehicle_id: "slingshot2", vehicle_name: "Slingshot R (2)",  type: "slingshot", purchase_date: "", purchase_price: 0, status: "active" },
-  camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",       type: "economy",   purchase_date: "", purchase_price: 0, status: "active" },
-  camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE",    type: "economy",   purchase_date: "", purchase_price: 0, status: "active" },
+  slingshot:  { vehicle_id: "slingshot",  vehicle_name: "Slingshot R",      type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
+  slingshot2: { vehicle_id: "slingshot2", vehicle_name: "Slingshot R (2)",  type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
+  camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",       type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
+  camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE",    type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
 };
 
 function ghHeaders() {
