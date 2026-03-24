@@ -167,6 +167,18 @@ function esc(str) {
 }
 
 /**
+ * Return the liability cap dollar amount for a given economy DPP tier.
+ * Basic → $2,500  |  Standard → $1,000  |  Premium → $500
+ * @param {string|undefined} tier - "basic" | "standard" | "premium"
+ * @returns {string}  e.g. "$1,000"
+ */
+function dppTierLiabilityCap(tier) {
+  if (tier === "basic")   return "$2,500";
+  if (tier === "premium") return "$500";
+  return "$1,000";
+}
+
+/**
  * Build a self-contained HTML document representing the signed rental agreement.
  * This is generated server-side from the verified booking data so it can be
  * attached to the owner confirmation email as a permanent record.
@@ -189,11 +201,12 @@ function generateRentalAgreementHtml(body) {
 
   // Build the DPP rates label from server-side constants to avoid hardcoding
   const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 wks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
-  const dppRatesTextLong = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 weeks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
   // Economy car tier label
   const tierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
     : protectionPlanTier === "premium" ? "Premium ($50/day)"
     : "Standard ($30/day)";
+  // Economy car tier liability cap (Basic: $2,500 / Standard: $1,000 / Premium: $500)
+  const tierLiabilityCap = dppTierLiabilityCap(protectionPlanTier);
 
   // Deposit / pricing section — matches the logic in car.js openAgreement()
   const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
@@ -313,8 +326,12 @@ function generateRentalAgreementHtml(body) {
     <li>Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
     <li>Purchase of SLY Transportation Services Damage Protection Plan</li>
   </ul>
-  <p><strong>Damage Protection Plan (Optional):</strong> ${dppRatesTextLong}</p>
-  <p>This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
+  ${isHourly
+    ? `<p><strong>Damage Protection Plan (Slingshot):</strong> ${dppRatesText}</p>
+  <p>This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>`
+    : `<p><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $${PROTECTION_PLAN_BASIC}/day &bull; Standard &mdash; $${PROTECTION_PLAN_STANDARD}/day &bull; Premium &mdash; $${PROTECTION_PLAN_PREMIUM}/day</p>
+  <p>Liability cap depends on plan selected: Basic &mdash; $2,500 &bull; Standard &mdash; $1,000 &bull; Premium &mdash; $500 per incident.</p>`
+  }
   <p><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
   <ul>
     <li>Full cost of vehicle repair or replacement</li>
@@ -322,7 +339,7 @@ function generateRentalAgreementHtml(body) {
     <li>Diminished value</li>
     <li>Administrative, towing, and storage fees</li>
   </ul>
-  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
+  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>${isHourly ? "$1,000" : tierLiabilityCap} per incident</strong>. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.</p>
   <p><strong>Exclusions (Protection Plan Void If):</strong></p>
   <ul>
     <li>Driver is under the influence of drugs or alcohol</li>
@@ -419,6 +436,8 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     const pdfTierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
       : protectionPlanTier === "premium" ? "Premium ($50/day)"
       : "Standard ($30/day)";
+    // Economy car tier liability cap (Basic: $2,500 / Standard: $1,000 / Premium: $500)
+    const pdfTierLiabilityCap = dppTierLiabilityCap(protectionPlanTier);
     // Slingshot: insurance choice is explicit; Camry: derive from protectionPlan flag
     const insuranceSummary = isHourly
       ? (insuranceCoverageChoice === "no"
@@ -579,7 +598,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     bodyText("Without Protection Plan: Renter is fully responsible for all damages and associated costs, including:");
     bulletList(["Full cost of vehicle repair or replacement", "Loss of use (rental downtime)", "Diminished value", "Administrative, towing, and storage fees"]);
     doc.moveDown(0.2);
-    bodyText("With Protection Plan: Renter's maximum liability for covered vehicle damage is limited to $1,000 per incident. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.");
+    bodyText("With Protection Plan: Renter's maximum liability for covered vehicle damage is limited to " + (isHourly ? "$1,000" : pdfTierLiabilityCap) + " per incident. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.");
     doc.moveDown(0.2);
     bodyText("Exclusions (Protection Plan Void If):");
     bulletList([

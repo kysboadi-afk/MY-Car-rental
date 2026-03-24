@@ -227,8 +227,10 @@
             <li data-i18n-html="agreement.insuranceLi1">Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
             <li data-i18n="agreement.insuranceLi2">Purchase of SLY Transportation Services Damage Protection Plan</li>
           </ul>
+          <!-- Economy-car protection choice summary — populated dynamically by car.js when agreement opens -->
+          <p id="agreementProtectionChoice" style="display:none"></p>
           <p data-i18n-html="agreement.dppOptionalBody"><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $15/day &bull; Standard &mdash; $30/day &bull; Premium &mdash; $50/day</p>
-          <p data-i18n-html="agreement.dppReduces">This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
+          <p id="agreementDppReduces" data-i18n-html="agreement.dppReduces">This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>
           <p data-i18n-html="agreement.withoutPlanBody"><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
           <ul>
             <li data-i18n="agreement.withoutLi1">Full cost of vehicle repair or replacement</li>
@@ -236,7 +238,7 @@
             <li data-i18n="agreement.withoutLi3">Diminished value</li>
             <li data-i18n="agreement.withoutLi4">Administrative, towing, and storage fees</li>
           </ul>
-          <p data-i18n-html="agreement.withPlanBody"><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
+          <p id="agreementWithPlanBody" data-i18n-html="agreement.withPlanBody"><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>$1,000 per incident</strong>. Any damage costs exceeding $1,000 are covered by the plan, provided all terms of this agreement are followed.</p>
           <p data-i18n-html="agreement.exclusionsBody"><strong>Exclusions (Protection Plan Void If):</strong></p>
           <ul>
             <li data-i18n="agreement.exclusionLi1">Driver is under the influence of drugs or alcohol</li>
