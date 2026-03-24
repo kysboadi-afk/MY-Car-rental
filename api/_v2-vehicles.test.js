@@ -384,14 +384,110 @@ test("OPTIONS returns 200", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("non-POST returns 405", async () => {
+test("non-POST/GET returns 405", async () => {
   setSecret("testSecret");
   supabaseMockState.client = makeSupabase();
+
+  const req = makeReq({ method: "DELETE" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 405);
+  assert.equal(res._headers["Allow"], "GET, POST, OPTIONS");
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+// ─── GET ──────────────────────────────────────────────────────────────────────
+
+test("GET: returns empty array when table is empty", async () => {
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+    }),
+  };
 
   const req = makeReq({ method: "GET" });
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(res._status, 405);
-  setSecret(REAL_ADMIN_SECRET);
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, []);
+});
+
+test("GET: returns array of flattened vehicle objects", async () => {
+  const rows = [
+    { vehicle_id: "slingshot",  data: { vehicle_id: "slingshot",  vehicle_name: "Slingshot R", cover_image: "../images/car2.jpg", status: "active" } },
+    { vehicle_id: "camry",      data: { vehicle_id: "camry",      vehicle_name: "Camry 2012",  cover_image: "images/car1.jpg",   status: "active" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body));
+  assert.equal(res._body.length, 2);
+  assert.equal(res._body[0].vehicle_id, "slingshot");
+  assert.equal(res._body[0].vehicle_name, "Slingshot R");
+  // "../images/car2.jpg" normalizes to "/images/car2.jpg"
+  assert.equal(res._body[0].cover_image, "/images/car2.jpg");
+  // "images/car1.jpg" normalizes to "/images/car1.jpg"
+  assert.equal(res._body[1].cover_image, "/images/car1.jpg");
+});
+
+test("GET: normalizes various cover_image path formats", async () => {
+  const rows = [
+    { vehicle_id: "v1", data: { cover_image: "../images/a.jpg" } },
+    { vehicle_id: "v2", data: { cover_image: "images/b.jpg" } },
+    { vehicle_id: "v3", data: { cover_image: "/images/c.jpg" } },
+    { vehicle_id: "v4", data: { cover_image: "https://cdn.example.com/d.jpg" } },
+    { vehicle_id: "v5", data: {} },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body[0].cover_image, "/images/a.jpg");
+  assert.equal(res._body[1].cover_image, "/images/b.jpg");
+  assert.equal(res._body[2].cover_image, "/images/c.jpg");
+  assert.equal(res._body[3].cover_image, "https://cdn.example.com/d.jpg");
+  assert.equal(res._body[4].cover_image, undefined);
+});
+
+test("GET: 500 when Supabase select returns an error", async () => {
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: null, error: { message: "db timeout" } }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 500);
+  assert.ok(res._body.error.includes("db timeout"));
+});
+
+test("GET: 500 when Supabase is not configured", async () => {
+  supabaseMockState.client = null;
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 500);
+  assert.ok(res._body.error.includes("SUPABASE_URL"));
 });
