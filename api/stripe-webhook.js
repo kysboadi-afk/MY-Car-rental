@@ -20,6 +20,8 @@ import Stripe from "stripe";
 import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { hasOverlap } from "./_availability.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -50,43 +52,49 @@ async function blockBookedDates(vehicleId, from, to) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  const getResp = await fetch(apiUrl, { headers });
-  if (!getResp.ok) {
-    console.error(`stripe-webhook: GitHub GET failed: ${getResp.status} ${await getResp.text()}`);
-    return;
+  async function loadBookedDates() {
+    const resp = await fetch(apiUrl, { headers });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      return { data: {}, sha: null }; // non-fatal: don't throw, keep existing dates
+    }
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    } catch {
+      data = {};
+    }
+    return { data, sha: file.sha };
   }
-  const fileData = await getResp.json();
-  const current = JSON.parse(
-    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-  );
 
-  if (!current[vehicleId]) current[vehicleId] = [];
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+    }
+  }
 
-  // Skip if this exact range is already recorded (idempotency guard)
-  const alreadyBlocked = current[vehicleId].some(
-    (r) => r.from === from && r.to === to
-  );
-  if (alreadyBlocked) return;
-
-  current[vehicleId].push({ from, to });
-
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putResp = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: `Block dates for ${vehicleId}: ${from} to ${to} (webhook)`,
-      content: updatedContent,
-      sha: fileData.sha,
-    }),
+  await updateJsonFileWithRetry({
+    load:  loadBookedDates,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      // Skip if this exact range is already recorded (idempotency guard)
+      if (!hasOverlap(data[vehicleId], from, to)) {
+        data[vehicleId].push({ from, to });
+      }
+    },
+    save:    saveBookedDates,
+    message: `Block dates for ${vehicleId}: ${from} to ${to} (webhook)`,
   });
-
-  if (!putResp.ok) {
-    console.error(`stripe-webhook: GitHub PUT failed: ${putResp.status} ${await putResp.text()}`);
-  }
 }
 
 /**
@@ -108,45 +116,47 @@ async function markVehicleUnavailable(vehicleId) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  const getResp = await fetch(apiUrl, { headers });
-  let current = {};
-  let sha = null;
-  if (getResp.ok) {
-    const fileData = await getResp.json();
-    sha = fileData.sha;
+  async function loadFleetStatus() {
+    const resp = await fetch(apiUrl, { headers });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      return { data: {}, sha: null }; // non-fatal
+    }
+    const file = await resp.json();
+    let data = {};
     try {
-      current = JSON.parse(
-        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-      );
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
     } catch (parseErr) {
       console.error("stripe-webhook: malformed JSON in fleet-status.json, resetting:", parseErr);
-      current = {};
+      data = {};
+    }
+    return { data, sha: file.sha };
+  }
+
+  async function saveFleetStatus(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT fleet-status.json failed: ${resp.status} ${text}`);
     }
   }
 
-  if (!current[vehicleId]) current[vehicleId] = {};
-  if (current[vehicleId].available === false) return; // Already marked — idempotent
-  current[vehicleId].available = false;
-
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putBody = {
+  await updateJsonFileWithRetry({
+    load:  loadFleetStatus,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = {};
+      data[vehicleId].available = false;
+    },
+    save:    saveFleetStatus,
     message: `Mark ${vehicleId} unavailable after confirmed booking (webhook)`,
-    content: updatedContent,
-  };
-  if (sha) putBody.sha = sha;
-
-  const putResp = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify(putBody),
   });
-
-  if (!putResp.ok) {
-    console.error(`stripe-webhook: GitHub PUT (fleet-status) failed: ${putResp.status} ${await putResp.text()}`);
-  }
 }
 
 /**

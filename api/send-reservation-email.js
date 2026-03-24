@@ -18,6 +18,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { appendBooking, normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -55,37 +56,49 @@ async function blockBookedDates(vehicleId, from, to) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  const getResp = await fetch(apiUrl, { headers });
-  if (!getResp.ok) {
-    const errText = await getResp.text();
-    throw new Error(`GitHub GET failed: ${getResp.status} ${errText}`);
+  async function loadBookedDates() {
+    const resp = await fetch(apiUrl, { headers });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET failed: ${resp.status} ${errText}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    } catch {
+      data = {};
+    }
+    return { data, sha: file.sha };
   }
-  const fileData = await getResp.json();
 
-  const current = JSON.parse(
-    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-  );
-  if (!current[vehicleId]) current[vehicleId] = [];
-  if (hasOverlap(current[vehicleId], from, to)) return;
-  current[vehicleId].push({ from, to });
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT failed: ${resp.status} ${errText}`);
+    }
+  }
 
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putResp = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: `Block dates for ${vehicleId}: ${from} to ${to}`,
-      content: updatedContent,
-      sha: fileData.sha,
-    }),
+  await updateJsonFileWithRetry({
+    load:  loadBookedDates,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      if (!hasOverlap(data[vehicleId], from, to)) {
+        data[vehicleId].push({ from, to });
+      }
+    },
+    save:    saveBookedDates,
+    message: `Block dates for ${vehicleId}: ${from} to ${to}`,
   });
-  if (!putResp.ok) {
-    const errText = await putResp.text();
-    throw new Error(`GitHub PUT failed: ${putResp.status} ${errText}`);
-  }
 }
 
 /**
@@ -110,49 +123,48 @@ async function markVehicleUnavailable(vehicleId) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  const getResp = await fetch(apiUrl, { headers });
-  let current = {};
-  let sha = null;
-  if (getResp.ok) {
-    const fileData = await getResp.json();
-    sha = fileData.sha;
+  async function loadFleetStatus() {
+    const resp = await fetch(apiUrl, { headers });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET failed: ${resp.status} ${errText}`);
+    }
+    const file = await resp.json();
+    let data = {};
     try {
-      current = JSON.parse(
-        Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-      );
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
     } catch (parseErr) {
       console.error("markVehicleUnavailable: malformed JSON in fleet-status.json, resetting:", parseErr);
-      current = {};
+      data = {};
+    }
+    return { data, sha: file.sha };
+  }
+
+  async function saveFleetStatus(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT (fleet-status): ${resp.status} ${errText}`);
     }
   }
 
-  if (!current[vehicleId]) current[vehicleId] = {};
-  // Nothing to do if already marked unavailable
-  if (current[vehicleId].available === false) {
-    console.log(`markVehicleUnavailable: ${vehicleId} is already unavailable — skipping write`);
-    return;
-  }
-  current[vehicleId].available = false;
-
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putBody = {
+  await updateJsonFileWithRetry({
+    load:  loadFleetStatus,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = {};
+      data[vehicleId].available = false;
+    },
+    save:    saveFleetStatus,
     message: `Mark ${vehicleId} unavailable after confirmed booking`,
-    content: updatedContent,
-  };
-  if (sha) putBody.sha = sha;
-
-  const putResp = await fetch(apiUrl, {
-    method: "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify(putBody),
   });
-  if (!putResp.ok) {
-    const errText = await putResp.text();
-    throw new Error(`GitHub PUT failed (fleet-status): ${putResp.status} ${errText}`);
-  }
 }
 
 // Escape special HTML characters to prevent XSS in email templates

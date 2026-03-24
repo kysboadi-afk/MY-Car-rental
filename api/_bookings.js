@@ -35,6 +35,8 @@ const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKINGS_PATH   = "bookings.json";
 const EMPTY_BOOKINGS  = { slingshot: [], slingshot2: [], camry: [], camry2013: [] };
 
+import { updateJsonFileWithRetry } from "./_github-retry.js";
+
 /**
  * Build standard GitHub API headers.
  * @returns {Record<string,string>}
@@ -122,21 +124,24 @@ export async function appendBooking(booking) {
     console.warn("_bookings: GITHUB_TOKEN not set — booking will not be persisted");
     return;
   }
-  const { data, sha } = await loadBookings();
   const vehicleId = booking.vehicleId;
-  if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
-
-  // Guard: don't duplicate by paymentIntentId
-  if (
-    booking.paymentIntentId &&
-    data[vehicleId].some((b) => b.paymentIntentId === booking.paymentIntentId)
-  ) {
-    console.log(`_bookings: booking ${booking.paymentIntentId} already exists — skipping`);
-    return;
-  }
-
-  data[vehicleId].push(booking);
-  await saveBookings(data, sha, `Add booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`);
+  await updateJsonFileWithRetry({
+    load:  loadBookings,
+    apply: (data) => {
+      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+      // Guard: don't duplicate by paymentIntentId
+      if (
+        booking.paymentIntentId &&
+        data[vehicleId].some((b) => b.paymentIntentId === booking.paymentIntentId)
+      ) {
+        console.log(`_bookings: booking ${booking.paymentIntentId} already exists — skipping`);
+        return;
+      }
+      data[vehicleId].push(booking);
+    },
+    save:    saveBookings,
+    message: `Add booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`,
+  });
 }
 
 /**
@@ -151,20 +156,27 @@ export async function updateBooking(vehicleId, id, updates) {
     console.warn("_bookings: GITHUB_TOKEN not set — booking update skipped");
     return false;
   }
-  const { data, sha } = await loadBookings();
-  if (!Array.isArray(data[vehicleId])) return false;
-
-  const idx = data[vehicleId].findIndex(
-    (b) => b.bookingId === id || b.paymentIntentId === id
-  );
-  if (idx === -1) return false;
-
-  data[vehicleId][idx] = { ...data[vehicleId][idx], ...updates };
-  await saveBookings(
-    data, sha,
-    `Update booking ${id} for ${vehicleId}: ${JSON.stringify(Object.keys(updates))}`
-  );
-  return true;
+  let found = false;
+  try {
+    await updateJsonFileWithRetry({
+      load:  loadBookings,
+      apply: (data) => {
+        if (!Array.isArray(data[vehicleId])) return;
+        const idx = data[vehicleId].findIndex(
+          (b) => b.bookingId === id || b.paymentIntentId === id
+        );
+        if (idx === -1) return;
+        data[vehicleId][idx] = { ...data[vehicleId][idx], ...updates };
+        found = true;
+      },
+      save:    saveBookings,
+      message: `Update booking ${id} for ${vehicleId}: ${JSON.stringify(Object.keys(updates))}`,
+    });
+  } catch (err) {
+    console.error(`_bookings: updateBooking failed for ${id}:`, err);
+    return false;
+  }
+  return found;
 }
 
 /**
@@ -177,15 +189,20 @@ export async function updateBooking(vehicleId, id, updates) {
 export async function markReminderSent(vehicleId, id, reminderKey) {
   if (!process.env.GITHUB_TOKEN) return;
   try {
-    const { data, sha } = await loadBookings();
-    if (!Array.isArray(data[vehicleId])) return;
-    const idx = data[vehicleId].findIndex(
-      (b) => b.bookingId === id || b.paymentIntentId === id
-    );
-    if (idx === -1) return;
-    if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
-    data[vehicleId][idx].smsSentAt[reminderKey] = new Date().toISOString();
-    await saveBookings(data, sha, `Mark reminder ${reminderKey} sent for booking ${id}`);
+    await updateJsonFileWithRetry({
+      load:  loadBookings,
+      apply: (data) => {
+        if (!Array.isArray(data[vehicleId])) return;
+        const idx = data[vehicleId].findIndex(
+          (b) => b.bookingId === id || b.paymentIntentId === id
+        );
+        if (idx === -1) return;
+        if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
+        data[vehicleId][idx].smsSentAt[reminderKey] = new Date().toISOString();
+      },
+      save:    saveBookings,
+      message: `Mark reminder ${reminderKey} sent for booking ${id}`,
+    });
   } catch (err) {
     console.error(`_bookings: markReminderSent failed for ${id}/${reminderKey}:`, err);
   }
