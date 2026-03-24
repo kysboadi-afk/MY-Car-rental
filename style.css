@@ -797,7 +797,7 @@ body {
   padding-left: 10px;
 }
 
-.waitlist-form label {
+.waitlist-form label:not(.insurance-option) {
   display: block;
   color: #ccc;
   font-size: 14px;
@@ -805,7 +805,7 @@ body {
   margin-top: 14px;
 }
 
-.waitlist-form input {
+.waitlist-form input:not([type="radio"]):not([type="checkbox"]) {
   width: 100%;
   padding: 10px 14px;
   background: #0f1e2e;
@@ -816,7 +816,7 @@ body {
   box-sizing: border-box;
 }
 
-.waitlist-form input:focus {
+.waitlist-form input:not([type="radio"]):not([type="checkbox"]):focus {
   outline: none;
   border-color: #7ec8f8;
 }
