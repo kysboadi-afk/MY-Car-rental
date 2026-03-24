@@ -1,5 +1,17 @@
 {
   "functions": {
+    "api/v2-dashboard.js": {
+      "maxDuration": 15
+    },
+    "api/v2-bookings.js": {
+      "maxDuration": 15
+    },
+    "api/v2-vehicles.js": {
+      "maxDuration": 15
+    },
+    "api/v2-sms-templates.js": {
+      "maxDuration": 15
+    },
     "api/send-lead-email.js": {
       "maxDuration": 15
     },
