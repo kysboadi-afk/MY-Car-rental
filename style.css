@@ -2764,7 +2764,7 @@ button.hero-btn {
   inset: 0;
   background: rgba(0, 0, 0, 0.78);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 1000;
   padding: 16px;
@@ -2778,8 +2778,11 @@ button.hero-btn {
   padding: 40px 36px;
   width: 100%;
   max-width: 500px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   position: relative;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  margin: auto;
 }
 
 .apply-modal-close {
@@ -3031,7 +3034,11 @@ button.hero-btn {
 }
 
 @media (max-width: 540px) {
-  .apply-modal-box { padding: 30px 20px; }
+  .apply-modal-box {
+    padding: 24px 16px;
+    max-height: calc(100vh - 16px);
+    border-radius: 10px;
+  }
 }
 
 /* ── Approval gate overlay (cars.html) ─────────────────────────────────────── */
