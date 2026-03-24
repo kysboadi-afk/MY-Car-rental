@@ -687,7 +687,54 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
     // Hide Slingshot speed & strike policy for non-Slingshot vehicles
     if (speedSection) speedSection.style.display = "none";
-  }
+
+    // For economy cars: populate the protection choice summary and update the
+    // tier-specific liability cap text in the Insurance & Liability section.
+    const protChoiceEl = document.getElementById("agreementProtectionChoice");
+    const dppReducesEl = document.getElementById("agreementDppReduces");
+    const withPlanEl   = document.getElementById("agreementWithPlanBody");
+    // Compute tier info once so it can be reused in both the choice summary
+    // and the liability-cap paragraphs below.
+    const _tierName = selectedProtectionTier === "basic" ? "Basic"
+      : selectedProtectionTier === "premium" ? "Premium"
+      : "Standard";
+    const _tierRate = selectedProtectionTier === "basic" ? PROTECTION_PLAN_BASIC
+      : selectedProtectionTier === "premium" ? PROTECTION_PLAN_PREMIUM
+      : PROTECTION_PLAN_STANDARD;
+    const _tierCap = selectedProtectionTier === "basic" ? "$2,500"
+      : selectedProtectionTier === "premium" ? "$500"
+      : "$1,000";
+    if (protChoiceEl) {
+      if (insuranceCoverageChoice === "yes") {
+        protChoiceEl.innerHTML = "<strong>Your protection choice:</strong> You have provided your own personal auto insurance. Proof of insurance is required at pickup.";
+        protChoiceEl.style.display = "";
+      } else if (insuranceCoverageChoice === "no") {
+        protChoiceEl.innerHTML = `<strong>Your protection choice:</strong> <strong>${_tierName} Damage Protection Plan</strong> ($${_tierRate}/day) — limits your damage liability to <strong>${_tierCap} per incident</strong>.`;
+        protChoiceEl.style.display = "";
+      } else {
+        protChoiceEl.style.display = "none";
+      }
+    }
+    // Update the "reduces" and "with plan" paragraphs to show the correct
+    // tier-specific liability cap (Basic: $2,500 / Standard: $1,000 / Premium: $500).
+    if (insuranceCoverageChoice === "no") {
+      if (dppReducesEl) {
+        dppReducesEl.removeAttribute("data-i18n-html");
+        dppReducesEl.innerHTML = `This plan reduces the renter\u2019s financial responsibility for covered vehicle damage. Liability cap depends on plan selected (Basic: $2,500 / Standard: $1,000 / Premium: $500). Your selected plan (<strong>${_tierName}</strong>) limits your liability to <strong>${_tierCap} per incident</strong>.`;
+      }
+      if (withPlanEl) {
+        withPlanEl.removeAttribute("data-i18n-html");
+        withPlanEl.innerHTML = `<strong>With Protection Plan:</strong> Renter\u2019s maximum liability for covered vehicle damage is limited to <strong>${_tierCap} per incident</strong> under the selected plan. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.`;
+      }
+    } else {
+      // Restore generic tier-info text (in case the user switched from "no" to "yes" insurance).
+      if (dppReducesEl && !dppReducesEl.hasAttribute("data-i18n-html")) {
+        dppReducesEl.setAttribute("data-i18n-html", "agreement.dppReduces");
+      }
+      if (withPlanEl && !withPlanEl.hasAttribute("data-i18n-html")) {
+        withPlanEl.setAttribute("data-i18n-html", "agreement.withPlanBody");
+      }
+    }
 
   // Show/hide the booking deposit policy section (Slingshot only)
   const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
