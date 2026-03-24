@@ -18,6 +18,7 @@ Follow these steps **in order**. Each links to the full instructions below.
 | [Step 4](#step-4--add-your-signnow-variables-for-e-signature) | Add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD`, `SIGNNOW_TEMPLATE_ID` in Vercel, then Redeploy | ✅ Yes — rental agreement e-signature won't work without these |
 | [Step 5](#step-5--verify-your-signnow-setup-diagnostic-endpoint) | Visit `https://sly-rides.vercel.app/api/check-signnow` to verify SignNow is working | ✅ Yes — run this after Step 4 to confirm everything is connected |
 | [Step 6](#step-6--test-the-payment-form) | Do a test booking using Stripe test card `4242 4242 4242 4242` | ✅ Yes — confirms the full flow works end-to-end |
+| [Step 7](#step-7--set-up-the-admin-cms-supabase) | Add Supabase env vars and run SQL migrations for the Admin CMS | ⚠️ Required for admin content editing — see [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) |
 
 > 💡 After adding **any** new environment variable in Vercel, you must **Redeploy** for it to take effect: go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
 
@@ -290,4 +291,26 @@ The response will tell you:
 | `SIGNNOW_ROLE_NAME` | Optional — set only if your template's role is not `"Signer 1"` |
 | `GITHUB_TOKEN` | Must be set to auto-block calendar dates after each booking |
 | Redeploy after adding keys | Required — without redeploy, new env vars are not active |
+
+---
+
+## Step 7 — Set Up the Admin CMS (Supabase)
+
+For full Admin CMS functionality (site settings editor, content blocks editor, AI assistant, revision history), see **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** for the complete guide.
+
+### Quick Summary
+
+Add these to Vercel → Settings → Environment Variables:
+
+| Variable Name | Value | Notes |
+|--------------|-------|-------|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` | Your Supabase project URL |
+| `SUPABASE_ANON_KEY` | `eyJhbGciOi…` | Supabase public anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi…` | 🔒 Supabase service role key (server-only, never expose in frontend) |
+| `ADMIN_SECRET` | A strong password | Used to log into the Admin CMS at `/admin-cms.html` |
+| `OPENAI_API_KEY` | `sk-…` | Optional — enables the AI assistant in the Admin CMS |
+
+Then run the SQL migrations in `SUPABASE_SETUP.md` → Step 3.
+
+After that, visit `https://your-vercel-url.vercel.app/admin-cms.html` to access the Admin CMS.
 

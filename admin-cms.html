@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="description" content="SLYTRANS Admin CMS — Site Settings & Content Editor">
+  <meta name="robots" content="noindex, nofollow">
+  <title>SLYTRANS CMS</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:          #f5f6fa;
+      --surface:     #ffffff;
+      --sidebar-bg:  #0f1117;
+      --sidebar-w:   240px;
+      --topbar-h:    64px;
+      --primary:     #2563eb;
+      --primary-dim: #1d4ed8;
+      --success:     #16a34a;
+      --warning:     #d97706;
+      --danger:      #dc2626;
+      --info:        #0891b2;
+      --purple:      #7c3aed;
+      --text:        #111827;
+      --text-sub:    #6b7280;
+      --border:      #e5e7eb;
+      --radius:      10px;
+      --shadow:      0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+      --font:        'Inter', system-ui, sans-serif;
+    }
+    html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+    /* ── Auth ──── */
+    #auth-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--sidebar-bg); }
+    .auth-card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 16px; padding: 40px 36px; width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    .auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .auth-logo img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; }
+    .auth-logo span { color: #fff; font-size: 17px; font-weight: 700; }
+    .auth-logo small { display: block; color: #6b7280; font-size: 11px; }
+    .auth-card h2 { color: #fff; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .auth-card p  { color: #6b7280; font-size: 13px; margin-bottom: 28px; }
+    .auth-field { margin-bottom: 16px; }
+    .auth-field label { display: block; color: #9ca3af; font-size: 12px; font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .auth-field input { width: 100%; padding: 11px 14px; background: #111318; border: 1px solid #2d3141; border-radius: 8px; color: #fff; font-size: 14px; font-family: var(--font); transition: border-color 0.2s; }
+    .auth-field input:focus { outline: none; border-color: var(--primary); }
+    .auth-btn { width: 100%; padding: 12px; background: var(--primary); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 8px; font-family: var(--font); }
+    .auth-btn:hover { background: var(--primary-dim); }
+    .auth-error { color: #f87171; font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; }
+
+    /* ── App Layout ── */
+    #app { display: none; }
+    #app.ready { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar { width: var(--sidebar-w); background: var(--sidebar-bg); position: fixed; top: 0; left: 0; bottom: 0; display: flex; flex-direction: column; z-index: 100; overflow-y: auto; }
+    .sidebar-logo { padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1e2130; }
+    .sidebar-logo img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+    .sidebar-logo .brand-name { color: #fff; font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .sidebar-logo .brand-sub  { color: #4b5563; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; }
+    .nav-section { padding: 16px 12px 8px; }
+    .nav-section-label { color: #374151; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; padding: 0 8px; margin-bottom: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; cursor: pointer; color: #6b7280; font-size: 13px; font-weight: 500; transition: all 0.15s; text-decoration: none; margin-bottom: 2px; }
+    .nav-item:hover { background: #1e2130; color: #d1d5db; }
+    .nav-item.active { background: #1e40af22; color: #60a5fa; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .sidebar-footer { margin-top: auto; padding: 16px 12px; border-top: 1px solid #1e2130; }
+    .sidebar-user { display: flex; align-items: center; gap: 10px; }
+    .user-avatar { width: 32px; height: 32px; background: var(--primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+    .user-name { color: #9ca3af; font-size: 12px; font-weight: 500; }
+    .logout-btn { margin-left: auto; background: none; border: none; color: #4b5563; cursor: pointer; padding: 4px; border-radius: 4px; transition: color 0.15s; }
+    .logout-btn:hover { color: #f87171; }
+    .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar { height: var(--topbar-h); background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; gap: 16px; position: sticky; top: 0; z-index: 50; }
+    .topbar-page-title { font-size: 18px; font-weight: 700; flex: 1; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Buttons ── */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; font-family: var(--font); text-decoration: none; white-space: nowrap; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dim); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #eee; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-purple { background: var(--purple); color: #fff; }
+    .btn-purple:hover { background: #6d28d9; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn svg { width: 14px; height: 14px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Content Area ── */
+    .content { padding: 24px; flex: 1; overflow-y: auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Card ── */
+    .card { background: var(--surface); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 20px; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 700; }
+    .card-sub   { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+
+    /* ── Form ── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-grid.full { grid-template-columns: 1fr; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 12px; font-weight: 600; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.4px; }
+    .field input, .field textarea, .field select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: var(--font); background: var(--surface); color: var(--text); transition: border-color 0.15s; width: 100%; }
+    .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--primary); }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field-hint { font-size: 11px; color: var(--text-sub); }
+    .toggle-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+    .toggle-row label { font-size: 13px; font-weight: 500; cursor: pointer; flex: 1; }
+    .toggle { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #d1d5db; border-radius: 22px; transition: 0.2s; }
+    .toggle-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+    .toggle input:checked + .toggle-slider { background: var(--success); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .form-actions { display: flex; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+    /* ── Content Blocks ── */
+    .blocks-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .block-type-tabs { display: flex; gap: 6px; }
+    .type-tab { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-sub); transition: all 0.15s; }
+    .type-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .block-list { display: grid; gap: 12px; }
+    .block-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: flex; gap: 12px; align-items: flex-start; }
+    .block-item-body { flex: 1; min-width: 0; }
+    .block-item-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .block-item-preview { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .block-item-meta { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-blue   { background: #eff6ff; color: var(--primary); }
+    .badge-green  { background: #f0fdf4; color: var(--success); }
+    .badge-orange { background: #fffbeb; color: var(--warning); }
+    .badge-gray   { background: #f3f4f6; color: var(--text-sub); }
+    .badge-purple { background: #f5f3ff; color: var(--purple); }
+    .block-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .empty-state { text-align: center; padding: 48px 24px; color: var(--text-sub); }
+    .empty-state svg { width: 40px; height: 40px; margin-bottom: 12px; opacity: 0.4; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Revisions ── */
+    .rev-list { display: grid; gap: 8px; }
+    .rev-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+    .rev-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+    .rev-body { flex: 1; min-width: 0; }
+    .rev-type { font-size: 12px; font-weight: 600; color: var(--text-sub); text-transform: uppercase; }
+    .rev-keys { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rev-time { font-size: 11px; color: var(--text-sub); white-space: nowrap; }
+
+    /* ── AI Assistant ── */
+    .ai-panel { display: flex; flex-direction: column; gap: 16px; }
+    .ai-chat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; height: 420px; }
+    .ai-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .ai-msg { max-width: 85%; }
+    .ai-msg.user { align-self: flex-end; }
+    .ai-msg.assistant { align-self: flex-start; }
+    .ai-bubble { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.5; }
+    .ai-msg.user      .ai-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+    .ai-msg.assistant .ai-bubble { background: #f3f4f6; color: var(--text); border-bottom-left-radius: 4px; }
+    .ai-msg.assistant.proposal .ai-bubble { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .ai-msg.assistant.error    .ai-bubble { background: #fef2f2; border: 1px solid #fecaca; color: var(--danger); }
+    .ai-input-row { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
+    .ai-input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: var(--font); resize: none; height: 38px; overflow: hidden; }
+    .ai-input:focus { outline: none; border-color: var(--primary); }
+    .ai-send { flex-shrink: 0; }
+    .proposal-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .proposal-diff { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 12px; font-family: monospace; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+    .diff-added   { color: var(--success); }
+    .diff-removed { color: var(--danger); }
+    .ai-disabled-notice { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #92400e; }
+
+    /* ── Modal ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+    .modal-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+    .modal-title { font-size: 17px; font-weight: 700; }
+    .modal-close { background: none; border: none; color: var(--text-sub); font-size: 20px; cursor: pointer; line-height: 1; padding: 4px; }
+    .modal-body  { padding: 20px 24px; }
+    .modal-footer { padding: 0 24px 20px; display: flex; justify-content: flex-end; gap: 10px; }
+
+    /* ── Toast ── */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow); animation: slideIn 0.25s ease; max-width: 320px; }
+    .toast.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+    .toast.error   { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .toast.info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    @keyframes slideIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+    /* ── Loader ── */
+    .loader { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-area { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 12px; color: var(--text-sub); font-size: 13px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ AUTH SCREEN ══════════════════════════════════════════════════════ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="images/logo.jpg" alt="Logo">
+      <span>SLYTRANS<small>Admin CMS</small></span>
+    </div>
+    <h2>Sign in</h2>
+    <p>Enter your admin password to access the CMS.</p>
+    <div class="auth-field">
+      <label>Admin Password</label>
+      <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="auth-btn" id="auth-btn" onclick="doLogin()">Sign in</button>
+    <div class="auth-error" id="auth-error"></div>
+  </div>
+</div>
+
+<!-- ═══ APP ══════════════════════════════════════════════════════════════ -->
+<div id="app">
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <img src="images/logo.jpg" alt="Logo">
+      <div>
+        <div class="brand-name">SLYTRANS</div>
+        <div class="brand-sub">Admin CMS</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Content</div>
+      <a class="nav-item active" data-page="settings" href="#" onclick="navigate('settings');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+        Site Settings
+      </a>
+      <a class="nav-item" data-page="blocks" href="#" onclick="navigate('blocks');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Content Blocks
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">AI & History</div>
+      <a class="nav-item" data-page="ai" href="#" onclick="navigate('ai');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 1 0 20A10 10 0 0 1 12 2z"/><path d="M12 8v4l3 3"/></svg>
+        AI Assistant
+      </a>
+      <a class="nav-item" data-page="revisions" href="#" onclick="navigate('revisions');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+        Revision History
+      </a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Links</div>
+      <a class="nav-item" href="/admin-v2/" target="_blank">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>
+        Fleet Dashboard ↗
+      </a>
+      <a class="nav-item" href="/" target="_blank">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Public Site ↗
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="user-avatar">A</div>
+        <div class="user-name">Admin</div>
+        <button class="logout-btn" onclick="doLogout()" title="Sign out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-page-title" id="page-title">Site Settings</div>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </header>
+
+    <div class="content">
+
+      <!-- ── Site Settings ─────────────────────────────────── -->
+      <div class="page active" id="page-settings">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Business Info</div>
+              <div class="card-sub">Core contact details shown on the public site</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Business Name</label><input type="text" id="s-business_name" placeholder="SLY Transportation Services"></div>
+            <div class="field"><label>Email Address</label><input type="email" id="s-email" placeholder="contact@example.com"></div>
+            <div class="field"><label>Phone</label><input type="tel" id="s-phone" placeholder="+1 (213) 555-0000"></div>
+            <div class="field"><label>WhatsApp</label><input type="tel" id="s-whatsapp" placeholder="+1 (213) 555-0000"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Social Links</div>
+              <div class="card-sub">Paste full URLs (leave blank to hide)</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Instagram</label><input type="url" id="s-instagram_url" placeholder="https://instagram.com/…"></div>
+            <div class="field"><label>Facebook</label><input type="url" id="s-facebook_url" placeholder="https://facebook.com/…"></div>
+            <div class="field"><label>TikTok</label><input type="url" id="s-tiktok_url" placeholder="https://tiktok.com/@…"></div>
+            <div class="field"><label>Twitter / X</label><input type="url" id="s-twitter_url" placeholder="https://twitter.com/…"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Homepage Hero</div>
+              <div class="card-sub">Main heading and subtitle shown on the homepage</div>
+            </div>
+          </div>
+          <div class="form-grid full">
+            <div class="field"><label>Hero Title</label><input type="text" id="s-hero_title" placeholder="Explore LA in Style"></div>
+            <div class="field"><label>Hero Subtitle</label><input type="text" id="s-hero_subtitle" placeholder="Affordable car rentals in Los Angeles"></div>
+            <div class="field"><label>About Text</label><textarea id="s-about_text" placeholder="A short paragraph about your business…"></textarea></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Promo Banner</div>
+              <div class="card-sub">Optional announcement bar shown at the top of the site</div>
+            </div>
+          </div>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="s-promo_banner_enabled">
+              <span class="toggle-slider"></span>
+            </label>
+            <label for="s-promo_banner_enabled" style="cursor:pointer;">Show promo banner</label>
+          </div>
+          <div class="form-grid full" style="margin-top:12px;">
+            <div class="field"><label>Banner Text</label><input type="text" id="s-promo_banner_text" placeholder="🎉 Summer special — book now and save!"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Policies & Operations</div>
+              <div class="card-sub">Policy text blocks shown in the booking page and rental agreement</div>
+            </div>
+          </div>
+          <div class="form-grid full">
+            <div class="field"><label>Cancellation Policy</label><textarea id="s-policies_cancellation" placeholder="Describe your cancellation policy…"></textarea></div>
+            <div class="field"><label>Damage Policy</label><textarea id="s-policies_damage" placeholder="Describe your damage policy…"></textarea></div>
+            <div class="field"><label>Fuel Policy</label><textarea id="s-policies_fuel" placeholder="e.g., Return with same fuel level"></textarea></div>
+            <div class="field"><label>Age Requirement</label><textarea id="s-policies_age" placeholder="e.g., Minimum age 21, valid driver's license required"></textarea></div>
+            <div class="field"><label>Service Area Notes</label><textarea id="s-service_area_notes" placeholder="e.g., 50-mile radius of Los Angeles"></textarea></div>
+            <div class="field"><label>Pickup Instructions</label><textarea id="s-pickup_instructions" placeholder="Where and how to pick up the vehicle…"></textarea></div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" id="settings-save-btn" onclick="saveSettings()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Settings
+          </button>
+          <button class="btn btn-secondary" onclick="loadSettings()">Discard Changes</button>
+        </div>
+      </div>
+
+      <!-- ── Content Blocks ─────────────────────────────────── -->
+      <div class="page" id="page-blocks">
+        <div class="blocks-toolbar">
+          <div class="block-type-tabs">
+            <div class="type-tab active" data-type="all" onclick="setBlockType('all')">All</div>
+            <div class="type-tab" data-type="faq" onclick="setBlockType('faq')">FAQs</div>
+            <div class="type-tab" data-type="announcement" onclick="setBlockType('announcement')">Announcements</div>
+            <div class="type-tab" data-type="testimonial" onclick="setBlockType('testimonial')">Testimonials</div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="openBlockModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Block
+          </button>
+        </div>
+        <div id="blocks-loading" class="loading-area"><div class="loader"></div> Loading…</div>
+        <div id="blocks-list" class="block-list" style="display:none;"></div>
+        <div id="blocks-empty" class="empty-state" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <p>No content blocks yet. Click <strong>Add Block</strong> to create one.</p>
+        </div>
+      </div>
+
+      <!-- ── AI Assistant ───────────────────────────────────── -->
+      <div class="page" id="page-ai">
+        <div id="ai-disabled-notice" class="ai-disabled-notice" style="display:none;">
+          ⚠️ The AI assistant is not available because <code>OPENAI_API_KEY</code> is not configured. Add it to your Vercel environment variables and redeploy.
+        </div>
+        <div class="card ai-panel" id="ai-panel">
+          <div class="card-header">
+            <div>
+              <div class="card-title">AI Content Assistant</div>
+              <div class="card-sub">Ask the assistant to propose changes to settings or content blocks. You review and approve before anything is published.</div>
+            </div>
+          </div>
+          <div class="ai-chat" id="ai-chat">
+            <div class="ai-messages" id="ai-messages">
+              <div class="ai-msg assistant">
+                <div class="ai-bubble">👋 Hi! I can help you update site settings, FAQs, announcements, or testimonials. Just tell me what you'd like to change and I'll show you a preview before publishing anything.</div>
+              </div>
+            </div>
+            <div class="ai-input-row">
+              <textarea class="ai-input" id="ai-input" placeholder="e.g. Update the promo banner to say 'Book now for 10% off!'" onkeydown="aiInputKey(event)"></textarea>
+              <button class="btn btn-purple ai-send" id="ai-send-btn" onclick="sendAiMessage()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Revision History ───────────────────────────────── -->
+      <div class="page" id="page-revisions">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Revision History</div>
+              <div class="card-sub">All changes made via the Admin CMS. Click Rollback to restore a previous state.</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadRevisions()">Refresh</button>
+          </div>
+          <div id="revisions-loading" class="loading-area"><div class="loader"></div> Loading…</div>
+          <div id="revisions-list" class="rev-list" style="display:none;"></div>
+          <div id="revisions-empty" class="empty-state" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <p>No revisions yet. Changes you make will appear here.</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .content -->
+  </div><!-- .main -->
+</div><!-- #app -->
+
+<!-- ═══ MODALS ════════════════════════════════════════════════════════════ -->
+
+<!-- Block Editor Modal -->
+<div class="modal-overlay" id="block-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="block-modal-title">Add Block</div>
+      <button class="modal-close" onclick="closeModal('block-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid full" style="gap:14px;">
+        <div class="field">
+          <label>Type</label>
+          <select id="bm-type" onchange="updateBlockModalFields()">
+            <option value="faq">FAQ</option>
+            <option value="announcement">Announcement</option>
+            <option value="testimonial">Testimonial</option>
+          </select>
+        </div>
+        <div class="field"><label>Title / Question</label><input type="text" id="bm-title" placeholder="e.g. What is your cancellation policy?"></div>
+        <div class="field"><label>Body / Answer</label><textarea id="bm-body" style="min-height:100px;" placeholder="Full text…"></textarea></div>
+        <div class="field" id="bm-author-row" style="display:none;"><label>Author Name</label><input type="text" id="bm-author_name" placeholder="e.g. John D."></div>
+        <div class="field" id="bm-location-row" style="display:none;"><label>Author Location</label><input type="text" id="bm-author_location" placeholder="e.g. Los Angeles, CA"></div>
+        <div class="field" id="bm-expires-row" style="display:none;"><label>Expires At (optional)</label><input type="datetime-local" id="bm-expires_at"><div class="field-hint">Leave blank for a permanent announcement.</div></div>
+        <div class="field">
+          <label>Sort Order</label>
+          <input type="number" id="bm-sort_order" placeholder="0" value="0" min="0">
+        </div>
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="bm-active" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <label for="bm-active" style="cursor:pointer;">Active (visible on public site)</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('block-modal')">Cancel</button>
+      <button class="btn btn-primary" id="block-modal-save-btn" onclick="saveBlock()">Save Block</button>
+    </div>
+  </div>
+</div>
+
+<!-- Revision Detail Modal -->
+<div class="modal-overlay" id="rev-modal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <div class="modal-title">Revision Detail</div>
+      <button class="modal-close" onclick="closeModal('rev-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="rev-modal-body"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('rev-modal')">Close</button>
+      <button class="btn btn-danger" id="rev-rollback-btn" onclick="doRollback()">↩ Rollback to This Version</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let adminSecret   = '';
+let allBlocks     = [];
+let blockFilter   = 'all';
+let editingBlockId = null;
+let pendingRevisionId = null;
+let aiContext     = {};
+let lastProposal  = null;
+
+const PAGE_TITLES = {
+  settings:  'Site Settings',
+  blocks:    'Content Blocks',
+  ai:        'AI Assistant',
+  revisions: 'Revision History',
+};
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+document.getElementById('auth-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogin() {
+  const password = document.getElementById('auth-password').value;
+  const btn      = document.getElementById('auth-btn');
+  const errEl    = document.getElementById('auth-error');
+  errEl.textContent = '';
+  btn.disabled = true; btn.textContent = 'Signing in…';
+
+  try {
+    const data = await apiPost('/api/admin-site-settings', { secret: password, action: 'get' });
+    adminSecret = password;
+    sessionStorage.setItem('cms_secret', password);
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app').classList.add('ready');
+    loadSettings(data.settings);
+    loadAiContext();
+  } catch (err) {
+    errEl.textContent = err.status === 401 ? 'Incorrect password.' : 'Error: ' + err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+function doLogout() {
+  adminSecret = '';
+  sessionStorage.removeItem('cms_secret');
+  document.getElementById('app').classList.remove('ready');
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('auth-password').value = '';
+}
+
+// Auto-login if session persists
+(function tryAutoLogin() {
+  const saved = sessionStorage.getItem('cms_secret');
+  if (saved) {
+    document.getElementById('auth-password').value = saved;
+    doLogin();
+  }
+})();
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+
+  const pageEl = document.getElementById('page-' + page);
+  if (pageEl) pageEl.classList.add('active');
+
+  const navEl = document.querySelector('.nav-item[data-page="' + page + '"]');
+  if (navEl) navEl.classList.add('active');
+
+  document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+
+  if (page === 'blocks'    && allBlocks.length === 0) loadBlocks();
+  if (page === 'revisions') loadRevisions();
+  if (page === 'ai')        loadAiContext();
+}
+
+// ── API helper ─────────────────────────────────────────────────────────────
+async function apiPost(url, body) {
+  const resp = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const e    = new Error(data.error || ('HTTP ' + resp.status));
+    e.status   = resp.status;
+    e.disabled = data.disabled;
+    throw e;
+  }
+  return data;
+}
+
+// ── Site Settings ──────────────────────────────────────────────────────────
+let currentSettings = {};
+
+async function loadSettings(initialData) {
+  if (initialData) {
+    currentSettings = initialData;
+    renderSettings(initialData);
+    return;
+  }
+  try {
+    const data = await apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'get' });
+    currentSettings = data.settings || {};
+    renderSettings(currentSettings);
+  } catch (err) {
+    showToast('Failed to load settings: ' + err.message, 'error');
+  }
+}
+
+function renderSettings(s) {
+  const fields = [
+    'business_name','email','phone','whatsapp',
+    'instagram_url','facebook_url','tiktok_url','twitter_url',
+    'hero_title','hero_subtitle','about_text',
+    'promo_banner_text',
+    'policies_cancellation','policies_damage','policies_fuel','policies_age',
+    'service_area_notes','pickup_instructions',
+  ];
+  fields.forEach((k) => {
+    const el = document.getElementById('s-' + k);
+    if (el) el.value = s[k] || '';
+  });
+  const promoEl = document.getElementById('s-promo_banner_enabled');
+  if (promoEl) promoEl.checked = s.promo_banner_enabled === true || s.promo_banner_enabled === 'true';
+}
+
+async function saveSettings() {
+  const btn = document.getElementById('settings-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const fields = [
+    'business_name','email','phone','whatsapp',
+    'instagram_url','facebook_url','tiktok_url','twitter_url',
+    'hero_title','hero_subtitle','about_text',
+    'promo_banner_text',
+    'policies_cancellation','policies_damage','policies_fuel','policies_age',
+    'service_area_notes','pickup_instructions',
+  ];
+  const settings = {};
+  fields.forEach((k) => {
+    const el = document.getElementById('s-' + k);
+    if (el) settings[k] = el.value;
+  });
+  const promoEl = document.getElementById('s-promo_banner_enabled');
+  if (promoEl) settings.promo_banner_enabled = String(promoEl.checked);
+
+  try {
+    await apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'update', settings });
+    currentSettings = { ...currentSettings, ...settings };
+    aiContext.settings = currentSettings;
+    showToast('Settings saved! Changes will appear on the public site within 1 minute.', 'success');
+  } catch (err) {
+    showToast('Failed to save settings: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Settings';
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Settings';
+  }
+}
+
+// ── Content Blocks ─────────────────────────────────────────────────────────
+async function loadBlocks() {
+  document.getElementById('blocks-loading').style.display = 'flex';
+  document.getElementById('blocks-list').style.display = 'none';
+  document.getElementById('blocks-empty').style.display = 'none';
+
+  try {
+    const data = await apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'list' });
+    allBlocks = data.blocks || [];
+    aiContext.blocks = allBlocks;
+    renderBlocks();
+  } catch (err) {
+    document.getElementById('blocks-loading').innerHTML = '<p style="color:var(--danger);padding:16px;">Failed to load: ' + esc(err.message) + '</p>';
+  }
+}
+
+function setBlockType(type) {
+  blockFilter = type;
+  document.querySelectorAll('.type-tab').forEach((t) => t.classList.toggle('active', t.dataset.type === type));
+  renderBlocks();
+}
+
+function renderBlocks() {
+  document.getElementById('blocks-loading').style.display = 'none';
+
+  const filtered = blockFilter === 'all' ? allBlocks : allBlocks.filter((b) => b.type === blockFilter);
+
+  if (filtered.length === 0) {
+    document.getElementById('blocks-list').style.display = 'none';
+    document.getElementById('blocks-empty').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('blocks-empty').style.display = 'none';
+  document.getElementById('blocks-list').style.display = 'grid';
+
+  const typeColors = { faq: 'badge-blue', announcement: 'badge-orange', testimonial: 'badge-purple' };
+
+  document.getElementById('blocks-list').innerHTML = filtered.map((b) => `
+    <div class="block-item">
+      <div class="block-item-body">
+        <div class="block-item-title">${esc(b.title || '(no title)')}</div>
+        <div class="block-item-preview">${esc((b.body || '').slice(0, 100))}${(b.body || '').length > 100 ? '…' : ''}</div>
+        <div class="block-item-meta">
+          <span class="badge ${typeColors[b.type] || 'badge-gray'}">${esc(b.type)}</span>
+          ${b.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}
+          ${b.author_name ? '<span class="badge badge-gray">— ' + esc(b.author_name) + '</span>' : ''}
+        </div>
+      </div>
+      <div class="block-item-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openBlockModal('${esc(b.block_id)}')">Edit</button>
+        <button class="btn btn-danger btn-sm"    onclick="deleteBlock('${esc(b.block_id)}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openBlockModal(blockId) {
+  editingBlockId = blockId || null;
+  document.getElementById('block-modal-title').textContent = blockId ? 'Edit Block' : 'Add Block';
+  document.getElementById('block-modal-save-btn').textContent = blockId ? 'Save Changes' : 'Save Block';
+
+  if (blockId) {
+    const b = allBlocks.find((x) => x.block_id === blockId);
+    if (!b) return;
+    document.getElementById('bm-type').value       = b.type || 'faq';
+    document.getElementById('bm-title').value      = b.title || '';
+    document.getElementById('bm-body').value       = b.body || '';
+    document.getElementById('bm-author_name').value   = b.author_name || '';
+    document.getElementById('bm-author_location').value = b.author_location || '';
+    document.getElementById('bm-expires_at').value = b.expires_at ? b.expires_at.slice(0,16) : '';
+    document.getElementById('bm-sort_order').value = b.sort_order ?? 0;
+    document.getElementById('bm-active').checked   = b.active !== false;
+  } else {
+    document.getElementById('bm-type').value       = 'faq';
+    document.getElementById('bm-title').value      = '';
+    document.getElementById('bm-body').value       = '';
+    document.getElementById('bm-author_name').value   = '';
+    document.getElementById('bm-author_location').value = '';
+    document.getElementById('bm-expires_at').value = '';
+    document.getElementById('bm-sort_order').value = '0';
+    document.getElementById('bm-active').checked   = true;
+  }
+
+  updateBlockModalFields();
+  openModal('block-modal');
+}
+
+function updateBlockModalFields() {
+  const type = document.getElementById('bm-type').value;
+  document.getElementById('bm-author-row').style.display   = type === 'testimonial' ? '' : 'none';
+  document.getElementById('bm-location-row').style.display = type === 'testimonial' ? '' : 'none';
+  document.getElementById('bm-expires-row').style.display  = type === 'announcement' ? '' : 'none';
+}
+
+async function saveBlock() {
+  const btn  = document.getElementById('block-modal-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  const type  = document.getElementById('bm-type').value;
+  const block = {
+    type,
+    title:      document.getElementById('bm-title').value.trim(),
+    body:       document.getElementById('bm-body').value.trim(),
+    sort_order: parseInt(document.getElementById('bm-sort_order').value, 10) || 0,
+    active:     document.getElementById('bm-active').checked,
+  };
+  if (type === 'testimonial') {
+    block.author_name     = document.getElementById('bm-author_name').value.trim();
+    block.author_location = document.getElementById('bm-author_location').value.trim();
+  }
+  if (type === 'announcement') {
+    const exp = document.getElementById('bm-expires_at').value;
+    block.expires_at = exp ? new Date(exp).toISOString() : null;
+  }
+
+  try {
+    if (editingBlockId) {
+      const data = await apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'update', block_id: editingBlockId, updates: block });
+      const idx  = allBlocks.findIndex((x) => x.block_id === editingBlockId);
+      if (idx !== -1) allBlocks[idx] = data.block;
+    } else {
+      const data = await apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'create', block });
+      allBlocks.push(data.block);
+    }
+    aiContext.blocks = allBlocks;
+    renderBlocks();
+    closeModal('block-modal');
+    showToast(editingBlockId ? 'Block updated.' : 'Block created.', 'success');
+  } catch (err) {
+    showToast('Failed to save block: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingBlockId ? 'Save Changes' : 'Save Block';
+  }
+}
+
+async function deleteBlock(blockId) {
+  if (!confirm('Delete this block? This action can be undone via Revision History.')) return;
+  try {
+    await apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'delete', block_id: blockId });
+    allBlocks = allBlocks.filter((b) => b.block_id !== blockId);
+    aiContext.blocks = allBlocks;
+    renderBlocks();
+    showToast('Block deleted.', 'success');
+  } catch (err) {
+    showToast('Failed to delete: ' + err.message, 'error');
+  }
+}
+
+// ── AI Assistant ───────────────────────────────────────────────────────────
+async function loadAiContext() {
+  try {
+    if (!currentSettings || Object.keys(currentSettings).length === 0) {
+      const data = await apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'get' });
+      currentSettings = data.settings || {};
+    }
+    if (allBlocks.length === 0) {
+      const data = await apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'list' });
+      allBlocks = data.blocks || [];
+    }
+    aiContext = { settings: currentSettings, blocks: allBlocks };
+  } catch (_) { /* non-fatal — AI still works with partial context */ }
+}
+
+function aiInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAiMessage();
+  }
+}
+
+async function sendAiMessage() {
+  const input = document.getElementById('ai-input');
+  const msg   = input.value.trim();
+  if (!msg) return;
+
+  input.value = '';
+  appendAiMessage('user', msg);
+
+  const sendBtn = document.getElementById('ai-send-btn');
+  sendBtn.disabled = true;
+  appendAiMessage('assistant', '<div class="loader"></div>', 'thinking');
+
+  try {
+    const data = await apiPost('/api/admin-ai-assist', {
+      secret:  adminSecret,
+      action:  'propose',
+      message: msg,
+      context: aiContext,
+    });
+
+    removeLastThinkingMessage();
+
+    const proposal = data.proposal;
+    lastProposal   = proposal;
+
+    if (!proposal || proposal.type === 'none') {
+      appendAiMessage('assistant', esc(proposal?.explanation || 'I couldn\'t generate a proposal for that request. Please try rephrasing.'));
+    } else {
+      renderProposal(proposal);
+    }
+  } catch (err) {
+    removeLastThinkingMessage();
+    if (err.disabled) {
+      document.getElementById('ai-disabled-notice').style.display = '';
+      appendAiMessage('assistant', 'The AI assistant is not available: OPENAI_API_KEY is not configured.', 'error');
+    } else {
+      appendAiMessage('assistant', 'Error: ' + esc(err.message), 'error');
+    }
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+function renderProposal(proposal) {
+  const diff = buildDiff(proposal);
+  const html = `
+    <strong>Proposed change:</strong><br>${esc(proposal.explanation)}
+    <div class="proposal-diff">${diff}</div>
+    <div class="proposal-actions">
+      <button class="btn btn-success btn-sm" onclick="applyProposal()">✅ Approve &amp; Publish</button>
+      <button class="btn btn-secondary btn-sm" onclick="discardProposal()">Discard</button>
+    </div>`;
+  appendAiMessage('assistant', html, 'proposal');
+}
+
+function buildDiff(proposal) {
+  if (proposal.type === 'settings_update') {
+    const changes = proposal.changes?.settings || {};
+    return Object.entries(changes).map(([k, v]) => {
+      const old = currentSettings[k] || '';
+      return `<span class="diff-removed">- ${esc(k)}: ${esc(String(old))}</span>\n<span class="diff-added">+ ${esc(k)}: ${esc(String(v))}</span>`;
+    }).join('\n');
+  }
+  if (proposal.type === 'block_create') {
+    const b = proposal.changes?.block || {};
+    return `<span class="diff-added">+ New ${esc(b.type || 'block')}: "${esc(b.title || '')}"\n  ${esc((b.body || '').slice(0, 120))}</span>`;
+  }
+  if (proposal.type === 'block_update') {
+    const updates  = proposal.changes?.updates || {};
+    const existing = allBlocks.find((b) => b.block_id === proposal.changes?.block_id);
+    return Object.entries(updates).map(([k, v]) => {
+      const old = existing?.[k] || '';
+      return `<span class="diff-removed">- ${esc(k)}: ${esc(String(old))}</span>\n<span class="diff-added">+ ${esc(k)}: ${esc(String(v))}</span>`;
+    }).join('\n');
+  }
+  if (proposal.type === 'block_delete') {
+    const existing = allBlocks.find((b) => b.block_id === proposal.changes?.block_id);
+    return `<span class="diff-removed">- Delete: "${esc(existing?.title || proposal.changes?.block_id)}"</span>`;
+  }
+  return '';
+}
+
+async function applyProposal() {
+  if (!lastProposal) return;
+  const proposal = lastProposal;
+  lastProposal   = null;
+
+  try {
+    await apiPost('/api/admin-ai-assist', { secret: adminSecret, action: 'apply', proposal });
+    appendAiMessage('assistant', '✅ Change published! The public site will reflect this within 1 minute.');
+    showToast('AI change published!', 'success');
+
+    // Refresh local state
+    const [settingsData, blocksData] = await Promise.all([
+      apiPost('/api/admin-site-settings',  { secret: adminSecret, action: 'get' }),
+      apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'list' }),
+    ]);
+    currentSettings = settingsData.settings || {};
+    allBlocks       = blocksData.blocks || [];
+    aiContext       = { settings: currentSettings, blocks: allBlocks };
+    renderSettings(currentSettings);
+    renderBlocks();
+  } catch (err) {
+    appendAiMessage('assistant', 'Failed to apply change: ' + esc(err.message), 'error');
+    showToast('Failed to apply AI change.', 'error');
+  }
+}
+
+function discardProposal() {
+  lastProposal = null;
+  appendAiMessage('assistant', 'Got it — change discarded. Let me know if you\'d like to try something else.');
+}
+
+function appendAiMessage(role, html, extraClass) {
+  const container = document.getElementById('ai-messages');
+  const div       = document.createElement('div');
+  div.className   = 'ai-msg ' + role + (extraClass ? ' ' + extraClass : '');
+  div.dataset.id  = extraClass === 'thinking' ? 'thinking' : '';
+  div.innerHTML   = '<div class="ai-bubble">' + html + '</div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeLastThinkingMessage() {
+  const el = document.querySelector('[data-id="thinking"]');
+  if (el) el.remove();
+}
+
+// ── Revision History ───────────────────────────────────────────────────────
+let allRevisions = [];
+
+async function loadRevisions() {
+  document.getElementById('revisions-loading').style.display = 'flex';
+  document.getElementById('revisions-list').style.display = 'none';
+  document.getElementById('revisions-empty').style.display = 'none';
+
+  try {
+    const data = await apiPost('/api/admin-revisions', { secret: adminSecret, action: 'list', limit: 50 });
+    allRevisions = data.revisions || [];
+    renderRevisions();
+  } catch (err) {
+    document.getElementById('revisions-loading').innerHTML = '<p style="color:var(--danger);padding:16px;">Failed to load: ' + esc(err.message) + '</p>';
+  }
+}
+
+function renderRevisions() {
+  document.getElementById('revisions-loading').style.display = 'none';
+
+  if (allRevisions.length === 0) {
+    document.getElementById('revisions-empty').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('revisions-list').style.display = 'grid';
+  document.getElementById('revisions-list').innerHTML = allRevisions.map((r) => `
+    <div class="rev-item">
+      <div class="rev-dot"></div>
+      <div class="rev-body">
+        <div class="rev-type">${esc(r.resource_type)} · ${esc(r.resource_id)}</div>
+        <div class="rev-keys">${esc((r.changed_keys || []).join(', '))}</div>
+      </div>
+      <div class="rev-time">${formatTime(r.created_at)}</div>
+      <button class="btn btn-secondary btn-sm" onclick="openRevisionModal(${r.id})">View &amp; Rollback</button>
+    </div>
+  `).join('');
+}
+
+async function openRevisionModal(id) {
+  pendingRevisionId = id;
+  document.getElementById('rev-modal-body').innerHTML = '<div class="loading-area"><div class="loader"></div></div>';
+  openModal('rev-modal');
+
+  try {
+    // Fetch full revision
+    const data = await apiPost('/api/admin-revisions', { secret: adminSecret, action: 'list', limit: 200 });
+    const rev  = (data.revisions || []).find((r) => r.id === id);
+
+    if (!rev) {
+      document.getElementById('rev-modal-body').innerHTML = '<p>Revision not found.</p>';
+      return;
+    }
+
+    // Fetch full detail (we need before/after — re-fetch with id filter)
+    const full = await apiPost('/api/admin-revisions', { secret: adminSecret, action: 'list', limit: 1 }).catch(() => null);
+
+    // Show what we have
+    document.getElementById('rev-modal-body').innerHTML = `
+      <p style="margin-bottom:12px;font-size:13px;color:var(--text-sub);">${formatTime(rev.created_at)} — <strong>${esc(rev.resource_type)}</strong> / ${esc(rev.resource_id)}</p>
+      <p style="margin-bottom:8px;font-size:13px;"><strong>Changed keys:</strong> ${esc((rev.changed_keys || []).join(', '))}</p>
+      <p style="font-size:12px;color:var(--text-sub);">Click <strong>Rollback</strong> to restore the state that existed immediately before this change.</p>
+    `;
+  } catch (_) {
+    document.getElementById('rev-modal-body').innerHTML = '<p>Could not load revision details.</p>';
+  }
+}
+
+async function doRollback() {
+  if (!pendingRevisionId) return;
+  if (!confirm('Roll back to the state before this change? This will overwrite the current state but will itself be recorded as a new revision you can undo.')) return;
+
+  const btn = document.getElementById('rev-rollback-btn');
+  btn.disabled = true; btn.textContent = 'Rolling back…';
+
+  try {
+    await apiPost('/api/admin-revisions', { secret: adminSecret, action: 'rollback', revision_id: pendingRevisionId });
+    closeModal('rev-modal');
+    showToast('Rollback successful!', 'success');
+    // Refresh data
+    const [settingsData, blocksData] = await Promise.all([
+      apiPost('/api/admin-site-settings',  { secret: adminSecret, action: 'get' }),
+      apiPost('/api/admin-content-blocks', { secret: adminSecret, action: 'list' }),
+    ]);
+    currentSettings = settingsData.settings || {};
+    allBlocks       = blocksData.blocks || [];
+    aiContext       = { settings: currentSettings, blocks: allBlocks };
+    renderSettings(currentSettings);
+    renderBlocks();
+    loadRevisions();
+  } catch (err) {
+    showToast('Rollback failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '↩ Rollback to This Version';
+  }
+}
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach((overlay) => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast     = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function formatTime(iso) {
+  if (!iso) return '–';
+  return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+}
+</script>
+</body>
+</html>
