@@ -132,11 +132,17 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "Block not found." });
       }
 
-      const safe = sanitizeBlock(body.updates || {}, existing.type);
-      safe.updated_at = new Date().toISOString();
+      const updates = sanitizeBlock(body, existing.type);
 
       const { data, error } = await sb
-        .from("content_blocks").update(safe).eq("block_id", block_id).select().single();
+        .from("content_blocks")
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("block_id", block_id)
+        .select()
+        .single();
       if (error) throw new Error(error.message);
 
       await sb.from("content_revisions").insert({
@@ -144,7 +150,7 @@ export default async function handler(req, res) {
         resource_id:   block_id,
         before:        existing,
         after:         data,
-        changed_keys:  Object.keys(safe).filter((k) => k !== "updated_at"),
+        changed_keys:  Object.keys(updates).filter((k) => k !== "updated_at"),
         created_at:    new Date().toISOString(),
       });
 
