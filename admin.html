@@ -521,6 +521,10 @@
         <div class="detail-sub">Vehicle Info</div>
         <div class="edit-vehicle-form" id="editVehicleForm">
           <div class="form-group">
+            <label>Model Year</label>
+            <input type="number" id="editVehicleYear" placeholder="e.g. 2021" min="1900" max="2099" step="1">
+          </div>
+          <div class="form-group">
             <label>Purchase Date</label>
             <input type="text" id="editPurchaseDate" placeholder="YYYY-MM-DD">
           </div>
@@ -812,8 +816,8 @@
 
       // Date picker for expense date
       flatpickr("#expDate", { dateFormat: "Y-m-d" });
-      // Date picker for vehicle purchase date (allowInput so admin can also type)
-      flatpickr("#editPurchaseDate", { dateFormat: "Y-m-d", allowInput: true });
+      // Date picker for vehicle purchase date (allowInput so admin can also type manually)
+      var purchaseDatePicker = flatpickr("#editPurchaseDate", { dateFormat: "Y-m-d", allowInput: true });
 
       var currentVehicleId = null;
       var statsCache       = null;
@@ -958,7 +962,12 @@
         document.getElementById("detailBookings").innerHTML = bkHtml;
 
         // Edit vehicle info
-        document.getElementById("editPurchaseDate").value  = v.purchase_date  || "";
+        document.getElementById("editVehicleYear").value   = v.vehicle_year  !== null && v.vehicle_year !== undefined ? v.vehicle_year : "";
+        if (v.purchase_date) {
+          purchaseDatePicker.setDate(v.purchase_date, false);
+        } else {
+          purchaseDatePicker.clear();
+        }
         document.getElementById("editPurchasePrice").value = v.purchase_price || 0;
         document.getElementById("editVehicleStatus").value = v.status         || "active";
 
@@ -1034,6 +1043,7 @@
         var secret = getSecret();
         if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
 
+        var vehicleYear   = document.getElementById("editVehicleYear").value.trim();
         var purchaseDate  = document.getElementById("editPurchaseDate").value.trim();
         var purchasePrice = parseFloat(document.getElementById("editPurchasePrice").value) || 0;
         var status        = document.getElementById("editVehicleStatus").value;
@@ -1041,13 +1051,24 @@
         showProfitMsg("Saving…", "info");
         fetch(API_BASE + "/api/update-vehicle", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, purchase_date: purchaseDate, purchase_price: purchasePrice, status: status }),
+          body: JSON.stringify({
+            secret: secret,
+            vehicle_id: currentVehicleId,
+            vehicle_year: vehicleYear !== "" ? parseInt(vehicleYear, 10) : null,
+            purchase_date: purchaseDate,
+            purchase_price: purchasePrice,
+            status: status,
+          }),
         })
           .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
           .then(function (result) {
             if (!result.ok) {
               showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
             } else {
+              // Update local cache immediately so the re-render shows the saved values
+              if (result.data.vehicle && statsCache && statsCache[currentVehicleId]) {
+                statsCache[currentVehicleId].vehicle = result.data.vehicle;
+              }
               showProfitMsg("✅ Vehicle info saved.", "success");
               loadStats(true);
             }
