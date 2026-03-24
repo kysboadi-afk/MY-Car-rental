@@ -2903,7 +2903,7 @@ function saveSetting(key) {
     value = false;
   } else {
     const num = Number(raw);
-    value = (!isNaN(num) && raw !== '') ? num : raw;
+    value = !isNaN(num) ? num : raw;
   }
 
   apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'set', key, value })

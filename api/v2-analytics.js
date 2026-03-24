@@ -13,6 +13,10 @@
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
+
+// Minimum analysis window in days — ensures utilization % is meaningful for
+// newly-added vehicles that have very few bookings.
+const MIN_UTILIZATION_WINDOW_DAYS = 90;
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { createClient } from "@supabase/supabase-js";
@@ -82,10 +86,10 @@ export default async function handler(req, res) {
         // Total rented days
         const rentedDays = paidBookings.reduce((s, b) => s + rentalDays(b), 0);
 
-        // Calendar days since first booking (or 90 days minimum for meaningful %)
+        // Calendar days since first booking (or MIN_UTILIZATION_WINDOW_DAYS minimum for meaningful %)
         const allDates = vBookings.map((b) => b.pickupDate).filter(Boolean).sort();
-        const firstDate = allDates[0] ? new Date(allDates[0]) : new Date(now - 90 * 86400000);
-        const totalDays = Math.max(90, Math.round((now - firstDate) / 86400000));
+        const firstDate = allDates[0] ? new Date(allDates[0]) : new Date(now - MIN_UTILIZATION_WINDOW_DAYS * 86400000);
+        const totalDays = Math.max(MIN_UTILIZATION_WINDOW_DAYS, Math.round((now - firstDate) / 86400000));
         const utilizationRate = Math.min(100, Math.round((rentedDays / totalDays) * 100 * 10) / 10);
 
         // Active booking right now
