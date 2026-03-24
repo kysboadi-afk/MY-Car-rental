@@ -13,7 +13,7 @@ import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
-import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { appendBooking, normalizePhone } from "./_bookings.js";
@@ -179,7 +179,7 @@ function generateRentalAgreementHtml(body) {
     vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor,
     name, email, phone,
     pickup, pickupTime, returnDate, returnTime,
-    total, deposit, days, protectionPlan, signature,
+    total, deposit, days, protectionPlan, protectionPlanTier, signature,
     slingshotDuration,
     fullRentalCost, balanceAtPickup,
     insuranceCoverageChoice, slingshotDepositAmount,
@@ -190,6 +190,10 @@ function generateRentalAgreementHtml(body) {
   // Build the DPP rates label from server-side constants to avoid hardcoding
   const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 wks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
   const dppRatesTextLong = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 weeks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
+  // Economy car tier label
+  const tierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
+    : protectionPlanTier === "premium" ? "Premium ($50/day)"
+    : "Standard ($30/day)";
 
   // Deposit / pricing section — matches the logic in car.js openAgreement()
   const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
@@ -207,9 +211,12 @@ function generateRentalAgreementHtml(body) {
       ${dppLine}
     `;
   } else {
+    const dppDetail = protectionPlan
+      ? `<strong>Damage Protection Plan &mdash; ${tierLabel}:</strong> selected &mdash; reduces your damage liability based on chosen plan`
+      : `<strong>Damage Protection Plan:</strong> not selected (renter provided personal rental car insurance)`;
     depositSection = `
       <p>No security deposit is required for this vehicle.</p>
-      <p><strong>Damage Protection Plan (${dppRatesText}):</strong> optional add-on &mdash; reduces your damage liability to $1,000</p>
+      <p>${dppDetail}</p>
     `;
   }
 
@@ -219,7 +226,7 @@ function generateRentalAgreementHtml(body) {
         ? "Option B: No personal insurance — Damage Protection Plan included"
         : "Option A: Renter has own insurance (proof required at pickup)")
     : (protectionPlan
-        ? "Damage Protection Plan selected"
+        ? `Damage Protection Plan selected — ${tierLabel}`
         : "Renter provided personal rental car insurance");
 
   // Slingshot speed policy section
@@ -394,7 +401,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor,
       name, email, phone,
       pickup, pickupTime, returnDate, returnTime,
-      total, deposit, days, protectionPlan, signature,
+      total, deposit, days, protectionPlan, protectionPlanTier, signature,
       slingshotDuration,
       fullRentalCost, balanceAtPickup,
       insuranceCoverageChoice, slingshotDepositAmount,
@@ -409,13 +416,16 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
     const isHourly = !!(carInfo && carInfo.hourlyTiers);
     const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day  •  $${PROTECTION_PLAN_WEEKLY}/week  •  $${PROTECTION_PLAN_BIWEEKLY}/2 wks  •  $${PROTECTION_PLAN_MONTHLY}/month`;
+    const pdfTierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
+      : protectionPlanTier === "premium" ? "Premium ($50/day)"
+      : "Standard ($30/day)";
     // Slingshot: insurance choice is explicit; Camry: derive from protectionPlan flag
     const insuranceSummary = isHourly
       ? (insuranceCoverageChoice === "no"
           ? "Option B: No personal insurance — Damage Protection Plan included"
           : "Option A: Renter has own insurance (proof required at pickup)")
       : (protectionPlan
-          ? "Damage Protection Plan selected"
+          ? `Damage Protection Plan selected — ${pdfTierLabel}`
           : "Renter provided personal rental car insurance");
     const durationLine = isHourly && slingshotDuration
       ? (Number(slingshotDuration) >= 48
@@ -550,7 +560,8 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     }
     if (!isHourly) {
       doc.moveDown(0.2);
-      bodyText(`Damage Protection Plan (${dppRatesText}): optional add-on — reduces your damage liability to $1,000.`);
+      const tierRatesText = `Basic — $${PROTECTION_PLAN_BASIC}/day  •  Standard — $${PROTECTION_PLAN_STANDARD}/day  •  Premium — $${PROTECTION_PLAN_PREMIUM}/day`;
+      bodyText(`Damage Protection Plan (${tierRatesText}): optional add-on — reduces your damage liability.`);
     }
 
     // ── Insurance & Liability ──────────────────────────────────────────────────
@@ -561,9 +572,9 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       "Purchase of SLY Transportation Services Damage Protection Plan",
     ]);
     doc.moveDown(0.2);
-    bodyText(`Damage Protection Plan (Optional): ${dppRatesText}`);
+    bodyText(`Damage Protection Plan (Optional): Basic — $${PROTECTION_PLAN_BASIC}/day  •  Standard — $${PROTECTION_PLAN_STANDARD}/day  •  Premium — $${PROTECTION_PLAN_PREMIUM}/day`);
     doc.moveDown(0.1);
-    bodyText("This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of $1,000 per incident.");
+    bodyText("This plan reduces the renter's financial responsibility for covered vehicle damage per incident. Liability cap depends on plan selected (Basic: $2,500 / Standard: $1,000 / Premium: $500).");
     doc.moveDown(0.2);
     bodyText("Without Protection Plan: Renter is fully responsible for all damages and associated costs, including:");
     bulletList(["Full cost of vehicle repair or replacement", "Loss of use (rental downtime)", "Diminished value", "Administrative, towing, and storage fees"]);
@@ -732,7 +743,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
 
   // Extract the customer's IP address from reverse-proxy headers (Vercel sets x-forwarded-for).
   const customerIp = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || null;
@@ -740,7 +751,7 @@ export default async function handler(req, res) {
   // Compute server-side pricing breakdown lines for daily/weekly rentals.
   // Slingshot (hourly tier) or missing dates fall back gracefully to null.
   const breakdownLines = (vehicleId && pickup && returnDate && !slingshotDuration)
-    ? computeBreakdownLines(vehicleId, pickup, returnDate, !!protectionPlan)
+    ? computeBreakdownLines(vehicleId, pickup, returnDate, !!protectionPlan, protectionPlanTier || null)
     : null;
   const breakdownText = breakdownLines ? breakdownLines.join("\n") : null;
   const breakdownHtml = breakdownLines
