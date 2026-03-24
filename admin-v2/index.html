@@ -1029,30 +1029,33 @@ const VEHICLE_NAMES = {
   camry2013:  'Camry 2013 SE',
 };
 
-// Dynamic maps populated from vehicles.json (override hard-coded fallbacks above)
+// Dynamic maps populated from /api/v2-vehicles (override hard-coded fallbacks above)
 let VEHICLE_NAMES_DYNAMIC  = {};
 let VEHICLE_IMAGES_DYNAMIC = {};
 
-// Load vehicles.json and build dynamic name/image maps; fails silently so admin keeps working.
-// Expected format: { [vehicleId]: { vehicle_id, vehicle_name, cover_image, ... }, ... }
-async function loadVehiclesJson() {
+// Load vehicles from the Supabase-backed API and build dynamic name/image maps.
+// Fails silently so the admin remains usable with hard-coded fallbacks.
+// Expected response: array of { vehicle_id, vehicle_name, cover_image, ... }
+// cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
+async function loadVehiclesFromApi() {
   try {
-    const res  = await fetch('../vehicles.json');
+    const res  = await fetch('/api/v2-vehicles');
     if (!res.ok) return;
-    const data = await res.json();
-    Object.values(data).forEach((v) => {
+    const vehicles = await res.json();
+    if (!Array.isArray(vehicles)) return;
+    vehicles.forEach((v) => {
       if (v.vehicle_id) {
         if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
-        if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = '../' + v.cover_image;
+        if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
       }
     });
   } catch (err) {
     // Network/parse error — continue with hard-coded fallbacks
-    console.error('admin-v2: failed to load vehicles.json, using fallback values', err);
+    console.error('admin-v2: failed to load vehicles from API, using fallback values', err);
   }
 }
 // Kick off the fetch immediately; UI functions consume the maps whenever they run
-loadVehiclesJson();
+loadVehiclesFromApi();
 
 const VEHICLE_RATES = {
   slingshot:  { perDay: 350, perWeek: null },
@@ -1352,7 +1355,7 @@ function renderVehicles(vehicles, stats) {
         const s = stats[id] || {};
         const isActive = v.status === 'active';
         const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
-        // Prefer cover image from vehicles.json; fall back to hard-coded map
+        // Prefer cover image from API; fall back to hard-coded map
         const imgSrc = (VEHICLE_IMAGES_DYNAMIC[id] || vehicleImages[id] || '');
         return `
           <div class="vehicle-card" onclick="showVehicleProfile('${id}')">

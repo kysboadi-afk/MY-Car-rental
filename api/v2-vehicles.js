@@ -2,6 +2,10 @@
 // SLYTRANS FLEET CONTROL v2 — Vehicles CRUD endpoint.
 // Supports listing and updating vehicle data stored in Supabase.
 //
+// GET  /api/v2-vehicles
+//   Returns an array of vehicle objects: [{ vehicle_id, ...data }, ...]
+//   cover_image paths are normalized to root-relative form (/images/...)
+//
 // POST /api/v2-vehicles
 // Actions:
 //   list   — { secret, action:"list" }
@@ -13,15 +17,56 @@ const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
 const ALLOWED_STATUSES = ["active", "maintenance", "inactive"];
 
+// Normalize cover_image paths to root-relative form so browsers can resolve
+// them correctly regardless of the page's location in the site hierarchy.
+// e.g. "../images/car2.jpg" → "/images/car2.jpg"
+//      "images/car2.jpg"    → "/images/car2.jpg"
+//      "/images/car2.jpg"   → "/images/car2.jpg"  (unchanged)
+//      "https://..."        → "https://..."        (unchanged)
+function normalizeCoverImage(val) {
+  if (!val || typeof val !== "string") return val;
+  if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("/")) return val;
+  // Strip any leading "../" segments then prepend "/"
+  return "/" + val.replace(/^(\.\.\/)+/, "");
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  // ── GET — public listing (no secret required) ──────────────────────────────
+  if (req.method === "GET") {
+    const supabase = getSupabaseAdmin();
+    if (!supabase) {
+      return res.status(500).json({ error: "Server configuration error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set." });
+    }
+    try {
+      const { data: rows, error } = await supabase
+        .from("vehicles")
+        .select("vehicle_id, data");
+      if (error) throw new Error(`Supabase select failed: ${error.message}`);
+
+      const vehicles = (rows || []).map((row) => {
+        const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
+        if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
+        return obj;
+      });
+      return res.status(200).json(vehicles);
+    } catch (err) {
+      console.error("v2-vehicles GET error:", err);
+      return res.status(500).json({ error: err.message || "An unexpected error occurred." });
+    }
+  }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST, OPTIONS");
+    return res.status(405).send("Method Not Allowed");
+  }
 
   if (!process.env.ADMIN_SECRET) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
