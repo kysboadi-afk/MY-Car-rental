@@ -982,6 +982,31 @@ const VEHICLE_NAMES = {
   camry2013:  'Camry 2013 SE',
 };
 
+// Dynamic maps populated from vehicles.json (override hard-coded fallbacks above)
+let VEHICLE_NAMES_DYNAMIC  = {};
+let VEHICLE_IMAGES_DYNAMIC = {};
+
+// Load vehicles.json and build dynamic name/image maps; fails silently so admin keeps working.
+// Expected format: { [vehicleId]: { vehicle_id, vehicle_name, cover_image, ... }, ... }
+async function loadVehiclesJson() {
+  try {
+    const res  = await fetch('../vehicles.json');
+    if (!res.ok) return;
+    const data = await res.json();
+    Object.values(data).forEach((v) => {
+      if (v.vehicle_id) {
+        if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
+        if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = '../' + v.cover_image;
+      }
+    });
+  } catch (err) {
+    // Network/parse error — continue with hard-coded fallbacks
+    console.error('admin-v2: failed to load vehicles.json, using fallback values', err);
+  }
+}
+// Kick off the fetch immediately; UI functions consume the maps whenever they run
+loadVehiclesJson();
+
 const VEHICLE_RATES = {
   slingshot:  { perDay: 350, perWeek: null },
   slingshot2: { perDay: 350, perWeek: null },
@@ -1195,7 +1220,7 @@ function renderDashboard(data) {
 
   // Bookings per vehicle chart
   const bpv = data.bookingsPerVehicle || {};
-  const bpvLabels = Object.keys(bpv).map((k) => VEHICLE_NAMES[k] || k);
+  const bpvLabels = Object.keys(bpv).map((k) => VEHICLE_NAMES_DYNAMIC[k] || VEHICLE_NAMES[k] || k);
   const bpvValues = Object.values(bpv);
   const chartColors = ['#2563eb', '#16a34a', '#d97706', '#dc2626'];
 
@@ -1232,7 +1257,7 @@ function renderDashboard(data) {
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
-          <div style="font-size:11px;color:var(--text-sub);">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId)} · ${esc(b.pickupDate || '')}</div>
+          <div style="font-size:11px;color:var(--text-sub);">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId)} · ${esc(b.pickupDate || '')}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:13px;font-weight:700;">$${formatMoney(b.amountPaid)}</div>
@@ -1260,6 +1285,7 @@ function loadVehicles() {
 function renderVehicles(vehicles, stats) {
   document.getElementById('vehicles-loading').style.display = 'none';
   document.getElementById('vehicles-content').style.display = '';
+  // Hard-coded fallback images (used when vehicles.json hasn't loaded or doesn't provide a cover)
   const vehicleImages = {
     slingshot:  '../images/car2.jpg',
     slingshot2: '../images/car3.jpg',
@@ -1279,7 +1305,8 @@ function renderVehicles(vehicles, stats) {
         const s = stats[id] || {};
         const isActive = v.status === 'active';
         const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
-        const imgSrc = vehicleImages[id] || '';
+        // Prefer cover image from vehicles.json; fall back to hard-coded map
+        const imgSrc = (VEHICLE_IMAGES_DYNAMIC[id] || vehicleImages[id] || '');
         return `
           <div class="vehicle-card" onclick="showVehicleProfile('${id}')">
             ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}" alt="${esc(v.vehicle_name)}" onerror="this.outerHTML='<div class=vehicle-img-placeholder><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'3\\'\\'/><circle cx=\\'7\\' cy=\\'17\\' r=\\'3\\'\\'/></svg></div>'">` : `<div class="vehicle-img-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>`}
@@ -1471,7 +1498,7 @@ function applyBookingFilters() {
         <div style="font-weight:600;">${esc(b.name || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
       </td>
-      <td>${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+      <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
       <td>
         <div>${esc(b.pickupDate || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}</div>
@@ -1497,7 +1524,7 @@ function viewBooking(bookingId, vehicleId) {
   document.getElementById('booking-detail-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
@@ -1658,7 +1685,7 @@ function applyExpenseFilters() {
   document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => `
     <tr>
       <td>${esc(e.date || '–')}</td>
-      <td>${esc(VEHICLE_NAMES[e.vehicle_id] || e.vehicle_id || '–')}</td>
+      <td>${esc(VEHICLE_NAMES_DYNAMIC[e.vehicle_id] || VEHICLE_NAMES[e.vehicle_id] || e.vehicle_id || '–')}</td>
       <td><span class="badge badge-gray">${esc(e.category || '–')}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
