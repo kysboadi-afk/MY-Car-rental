@@ -1571,7 +1571,7 @@ async function submitManualBooking(e) {
   const returnDate = document.getElementById('mb-return-date').value;
   const autoText   = document.getElementById('mb-auto-price').textContent;
   const overrideAmount = parseFloat(document.getElementById('mb-amount-paid').value);
-  const autoAmount = autoText !== '–' ? parseFloat(autoText.replace('$', '').replace(/,/g, '')) : 0;
+  const autoAmount = autoText !== '–' ? parseFloat(autoText.replace(/\$/g, '').replace(/,/g, '')) : 0;
   const amountPaid = !isNaN(overrideAmount) && overrideAmount >= 0 ? overrideAmount : autoAmount;
 
   const formatTime = (val) => {
