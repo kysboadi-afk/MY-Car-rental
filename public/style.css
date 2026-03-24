@@ -1,0 +1,3189 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  background: #000;
+  color: #fff;
+}
+
+/* HEADER */
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 40px;
+  background: #000;
+  border-bottom: 2px solid #ffb400;
+}
+
+/* Company info banner (fleet page) */
+.company-banner {
+  background: #111;
+  border-bottom: 1px solid #ffb400;
+  padding: 10px 40px;
+}
+
+.company-banner-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.company-banner-name {
+  color: #ffb400;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-size: 14px;
+}
+
+.company-banner-divider {
+  color: #555;
+}
+
+.company-banner-item {
+  color: #ccc;
+}
+
+.company-banner-item a {
+  color: #ffb400;
+  text-decoration: none;
+}
+
+.company-banner-item a:hover {
+  text-decoration: underline;
+}
+
+.site-logo {
+  height: 80px;
+}
+
+.site-header a.logo-link {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-header a.logo-link:focus {
+  outline: 2px solid #ffb400;
+  border-radius: 4px;
+}
+
+.site-nav {
+  display: flex;
+  gap: 30px;
+}
+
+.site-nav a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: color 0.2s;
+}
+
+.site-nav a:hover {
+  color: #ffb400;
+}
+
+.header-phone {
+  color: #ffb400;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: color 0.2s;
+  text-align: right;
+  line-height: 1.3;
+}
+
+.phone-urgency {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 2px;
+}
+
+.header-phone:hover {
+  color: #fff;
+}
+
+/* LANGUAGE SWITCHER */
+.lang-switcher {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #aaa;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+
+.lang-btn:hover {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #ffb400;
+}
+
+.lang-btn.active {
+  background: #ffb400;
+  color: #000;
+  border-color: #ffb400;
+}
+
+.lang-flag {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.lang-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 480px) {
+  .lang-label { display: none; }
+  .lang-btn { padding: 5px 7px; }
+}
+
+/* HERO */
+.hero {
+  overflow: hidden;
+  color: #fff;
+}
+
+/* Full-width portrait image, no cropping */
+.hero-image {
+  position: relative;
+  width: 100%;
+}
+
+.hero-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Button overlaid right after where image text ends (~79% down) */
+.hero-image .hero-btn {
+  position: absolute;
+  top: 80%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  font-weight: 900;
+  padding: 14px 48px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hero-btn {
+  background: #ffb400;
+  color: #000;
+  padding: 12px 30px;
+  text-decoration: none;
+  font-weight: bold;
+  border-radius: 5px;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.hero-btn:hover {
+  background: #e0a000;
+  transform: scale(1.04);
+}
+
+/* STATS SECTION */
+.stats {
+  background: #0d0d0d;
+  padding: 60px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.stats-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 30px;
+}
+
+.stat-card {
+  background: #1a1a1a;
+  padding: 40px 20px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
+  border-color: #ffb400;
+}
+
+.stat-number {
+  font-size: 48px;
+  font-weight: bold;
+  color: #ffb400;
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 16px;
+  color: #aaa;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* HOW IT WORKS */
+.how-it-works {
+  background: #0d0d0d;
+  padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.hiw-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.how-it-works h2 {
+  text-align: center;
+  font-size: 36px;
+  margin-bottom: 50px;
+  color: #ffb400;
+  font-weight: bold;
+}
+
+.hiw-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.hiw-step--highlight {
+  border-color: #ffb400;
+  background: #1e1a0e;
+}
+
+.hiw-step--highlight .hiw-icon {
+  color: #ffb400;
+}
+
+.hiw-step {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 36px 24px;
+  text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hiw-step:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
+  border-color: #ffb400;
+}
+
+.hiw-icon {
+  font-size: 42px;
+  margin-bottom: 16px;
+}
+
+.hiw-step h3 {
+  font-size: 18px;
+  color: #fff;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.hiw-step p {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1.7;
+}
+
+/* ABOUT SECTION */
+.about {
+  background: #000;
+  padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.about-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.about h2 {
+  text-align: center;
+  font-size: 36px;
+  margin-bottom: 40px;
+  color: #ffb400;
+  font-weight: bold;
+}
+
+.about-content {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.about-text,
+.about-values {
+  background: #1a1a1a;
+  padding: 30px;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.about-text p,
+.about-values p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: #ccc;
+  margin: 0;
+}
+
+.about-values h3 {
+  font-size: 24px;
+  color: #ffb400;
+  margin-bottom: 15px;
+  font-weight: 600;
+}
+
+.about-values {
+  background: #1a1a1a;
+  border-left: 4px solid #ffb400;
+}
+
+.about-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.about-gallery img {
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.about-gallery img:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(255,180,0,0.25);
+}
+
+/* CONTAINER */
+.container {
+  padding: 40px;
+}
+
+/* CARS */
+.cars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 25px;
+  flex: 1;
+  min-width: 0;
+}
+
+.car-card {
+  background: #1a1a1a;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.car-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.6);
+  border-color: #ffb400;
+}
+
+.car-card img {
+  display: block;
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+}
+
+/* Slingshot needs to show the vehicle from the bottom of its portrait image */
+.car-card img.img-slingshot {
+  object-position: center bottom;
+}
+
+/* Slingshot 2 photos have the car centered in the portrait — show the middle */
+.car-card img.img-slingshot2 {
+  object-position: center center;
+}
+
+
+.car-info {
+  padding: 20px;
+  background: #1a1a1a;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* STATUS BADGE */
+.status-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+}
+.status-badge.available {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+.status-badge.unavailable {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+/* AVAILABLE TODAY BADGE */
+.available-today-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+  margin-left: 6px;
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.car-subtitle {
+  color: #aaa;
+  font-size: 14px;
+}
+
+/* SLINGSHOT MARKETING DESCRIPTION */
+.slingshot-desc {
+  margin: 10px 0;
+  font-size: 13px;
+}
+.slingshot-desc-tagline {
+  font-weight: bold;
+  color: #fff;
+  margin: 0 0 2px;
+}
+.slingshot-desc-sub {
+  color: #ccc;
+  margin: 0 0 8px;
+}
+.slingshot-desc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  color: #ddd;
+}
+.slingshot-desc-list li {
+  margin-bottom: 3px;
+}
+.slingshot-desc-cta {
+  color: #ff7a00;
+  font-weight: bold;
+  margin: 0;
+}
+
+/* EARNINGS BLOCK — car booking page */
+.earnings-block {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: #111;
+  border-left: 3px solid #ffb400;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.earnings-tagline {
+  color: #ccc;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.earnings-title {
+  color: #aaa;
+  margin-bottom: 4px;
+}
+
+.earnings-row {
+  color: #ccc;
+  margin: 2px 0;
+}
+
+.earnings-cta {
+  color: #ccc;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.earnings-green {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.earnings-yellow {
+  color: #ffb400;
+  font-weight: 600;
+}
+
+/* RIDESHARE FEATURE BADGES */
+.rideshare-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.rideshare-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: rgba(255, 180, 0, 0.12);
+  color: #ffb400;
+  border: 1px solid rgba(255, 180, 0, 0.3);
+  white-space: nowrap;
+}
+
+/* PRICE LIST (multi-line with Most Popular highlight) */
+.price-list {
+  margin: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.price-item {
+  font-size: 13px;
+  color: #ccc;
+}
+
+.price-item--popular {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffb400;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.popular-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: #ffb400;
+  color: #000;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* SCARCITY / URGENCY NOTICE */
+.scarcity-notice {
+  font-size: 12px;
+  color: #f97316;
+  font-weight: 600;
+  margin: 4px 0 0;
+}
+
+/* WEEKLY EARNINGS EXAMPLE — italic hint shown on rideshare car cards to help drivers estimate net profit */
+.earnings-example {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  margin: 6px 0 2px;
+  line-height: 1.5;
+}
+
+.price {
+  font-weight: bold;
+  margin: 10px 0;
+  color: #ffb400;
+}
+
+.car-info .select-link {
+  margin-top: auto;
+  padding-top: 16px;
+  display: block;
+}
+
+.car-info button {
+  width: 100%;
+  padding: 10px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  cursor: pointer;
+  border-radius: 5px;
+  font-weight: bold;
+  transition: background 0.2s;
+}
+
+.car-info button:hover {
+  background: #e0a000;
+}
+
+/* BOOKED / DISABLED BUTTON STATE */
+.car-info button.btn-booked,
+.car-info button:disabled {
+  background: #555 !important;
+  color: #999 !important;
+  cursor: not-allowed !important;
+  opacity: 0.65;
+}
+.car-info button.btn-booked:hover,
+.car-info button:disabled:hover {
+  background: #555 !important;
+  color: #999 !important;
+}
+
+/* WAITLIST button — overrides the disabled/booked grey style so it looks clickable */
+.car-info button.btn-waitlist {
+  background: linear-gradient(135deg, #1a3a5c, #0f2540) !important;
+  color: #7ec8f8 !important;
+  border: 1px solid #2d6da8 !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+}
+.car-info button.btn-waitlist:hover {
+  background: linear-gradient(135deg, #1e4575, #163060) !important;
+  color: #aadcff !important;
+}
+
+/* NEXT AVAILABLE badge — shown below the "Currently Booked" status badge */
+.next-available-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  margin-bottom: 8px;
+  margin-left: 6px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* Payment retry banner — shown when a renter returns after a failed payment */
+.payment-retry-banner {
+  background: #2a1f00;
+  border: 2px solid #ffb400;
+  border-radius: 12px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  color: #ffe08a;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.payment-retry-banner strong {
+  color: #ffb400;
+}
+
+/* Vehicle Unavailable notice on the booking page (car.html) */
+.vehicle-unavailable-notice {
+  background: #3a0000;
+  border: 2px solid #f44336;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+.vehicle-unavailable-notice p:first-child {
+  color: #f44336;
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 0 8px;
+}
+.vehicle-unavailable-notice p {
+  color: #ccc;
+  font-size: 15px;
+  margin: 4px 0;
+}
+.vehicle-unavailable-notice a {
+  color: #ffb400;
+  text-decoration: underline;
+}
+
+/* ── Waitlist section (car.html) ─────────────────────────────────────────── */
+.waitlist-section {
+  background: #0d1f35;
+  border: 2px solid #2d6da8;
+  border-radius: 16px;
+  padding: 28px 24px;
+  margin-top: 8px;
+}
+
+.waitlist-heading {
+  color: #7ec8f8;
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+
+.waitlist-subtitle {
+  color: #ccc;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+
+.waitlist-next-line {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.waitlist-queue-note {
+  color: #aaa;
+  font-size: 13px;
+  font-style: italic;
+  margin: 0 0 20px;
+  border-left: 3px solid #2d6da8;
+  padding-left: 10px;
+}
+
+.waitlist-form label:not(.insurance-option) {
+  display: block;
+  color: #ccc;
+  font-size: 14px;
+  margin-bottom: 4px;
+  margin-top: 14px;
+}
+
+.waitlist-form input:not([type="radio"]):not([type="checkbox"]) {
+  width: 100%;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: #0f1e2e;
+  border: 1px solid #2d6da8;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.waitlist-form input[type="file"] {
+  font-size: 14px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.waitlist-form input:not([type="radio"]):not([type="checkbox"]):focus {
+  outline: none;
+  border-color: #7ec8f8;
+}
+
+.waitlist-deposit-note {
+  color: #ffe08a;
+  font-size: 13px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 18px 0 14px;
+}
+
+.waitlist-join-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #1a3a5c, #0f2540);
+  color: #7ec8f8;
+  border: 1px solid #2d6da8;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  margin-bottom: 8px;
+}
+
+.waitlist-join-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e4575, #163060);
+  color: #aadcff;
+  transform: translateY(-1px);
+}
+
+.waitlist-join-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#waitlistPaymentForm #waitlist-submit-payment {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #1a3a5c, #0f2540);
+  color: #7ec8f8;
+  border: 1px solid #2d6da8;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 14px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+
+#waitlistPaymentForm #waitlist-submit-payment:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1e4575, #163060);
+  color: #aadcff;
+}
+
+#waitlistPaymentForm #waitlist-cancel-payment {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+}
+
+#waitlistPaymentForm #waitlist-cancel-payment:hover {
+  color: #fff;
+}
+
+/* CHECK NOW WIDGET */
+.check-availability {
+  margin: 12px 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 12px;
+  background: #111;
+}
+
+.check-dates {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.check-dates input[type="date"] {
+  flex: 1;
+  padding: 7px 8px;
+  background: #1e1e1e;
+  color: #fff;
+  border: 1px solid #3a3a3a;
+  border-radius: 5px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.check-dates input[type="date"]:focus {
+  outline: none;
+  border-color: #ffb400;
+}
+
+.check-now-btn {
+  width: 100%;
+  padding: 8px;
+  background: #1e1e1e !important;
+  color: #ffb400 !important;
+  border: 1px solid #ffb400 !important;
+  border-radius: 5px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s, color 0.2s !important;
+}
+
+.check-now-btn:hover {
+  background: #ffb400 !important;
+  color: #000 !important;
+}
+
+.select-btn {
+  margin-top: 8px;
+}
+
+/* BOOKING PAGE */
+.back-btn {
+  background: #000;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 24px;
+  display: inline-block;
+  transition: background 0.2s, color 0.2s;
+}
+.back-btn:hover { background: #ffb400; color: #000; }
+
+.car-slider {
+  background: #1a1a1a;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  margin-bottom: 30px;
+}
+
+.slider {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  max-height: 550px;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #000;
+}
+
+.slider img.slide {
+  width: 100%;
+  height: 550px;
+  object-fit: contain;
+  display: none;
+}
+.slider img.slide.active { display: block; }
+
+.slider-controls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0;
+  background: transparent;
+}
+.slider-controls button {
+  background: #1a1a1a;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: bold;
+  pointer-events: all;
+  transition: background 0.2s, color 0.2s;
+  width: 50px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.slider-controls button:hover { background: #ffb400; color: #000; }
+
+.slider-dots {
+  text-align: center;
+  padding: 8px 0;
+  margin-top: 10px;
+}
+.dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: #ccc;
+  border-radius: 50%;
+  margin: 0 5px;
+  cursor: pointer;
+}
+.dot.active { background: #ffb400; }
+
+/* VEHICLE PROMO BANNER */
+.vehicle-promo-banner {
+  background: linear-gradient(135deg, #1a1a1a 0%, #222 60%, #1c1c1c 100%);
+  border: 1px solid #ffb400;
+  border-radius: 12px;
+  padding: 28px 28px 22px;
+  margin-bottom: 28px;
+  box-shadow: 0 4px 20px rgba(255, 180, 0, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+.vehicle-promo-banner::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px;
+  height: 100%;
+  background: #ffb400;
+  border-radius: 12px 0 0 12px;
+}
+.promo-badge {
+  display: inline-block;
+  background: #ffb400;
+  color: #000;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+}
+.promo-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 8px;
+  line-height: 1.3;
+}
+.promo-tagline {
+  font-size: 0.95rem;
+  color: #cccccc;
+  margin: 0 0 18px;
+  line-height: 1.55;
+}
+.promo-highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.promo-highlight-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 0.85rem;
+  color: #e0e0e0;
+  font-weight: 500;
+}
+.promo-highlight-item .hi-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.promo-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #2a2a2a;
+  padding-top: 16px;
+}
+.platforms-label {
+  font-size: 0.8rem;
+  color: #aaa;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+.platform-tag {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  color: #fff;
+}
+.platform-tag.uber    { background: #000; border: 1px solid #555; }
+.platform-tag.lyft    { background: #e8197c; }
+.platform-tag.doordash { background: #e03c31; }
+.platform-tag.instacart { background: #3ab749; }
+.platform-tag.amazon  { background: #ff9900; color: #000; }
+
+/* BOOKING FORM */
+.booking {
+  background: #1a1a1a;
+  border-radius: 12px;
+  padding: 32px;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  max-width: 560px;
+}
+
+.booking h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #ffb400;
+}
+
+.booking label {
+  display: block;
+  font-weight: bold;
+  font-size: 13px;
+  margin-top: 16px;
+  margin-bottom: 6px;
+  color: #ddd;
+}
+
+.booking input[type="date"],
+.booking input[type="time"],
+.booking input[type="email"],
+.booking input[type="tel"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: #111;
+  color: #fff;
+}
+.booking input:focus { border-color: #ffb400; }
+
+.booking label.agree {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+  margin-top: 20px;
+  font-size: 14px;
+}
+.booking label.agree a { color: #ffb400; }
+
+/* Sign Agreement block */
+.sign-agreement {
+  margin: 16px 0;
+}
+.sign-agreement-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #aaa;
+  margin: 0 0 8px;
+}
+.sign-agreement-btn {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  background: #145a1e;
+  color: #fff;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: bold;
+  text-decoration: none;
+  margin-bottom: 12px;
+  transition: background 0.2s;
+  box-sizing: border-box;
+}
+.sign-agreement-btn:hover { background: #1e7a2c; }
+.sign-agreement-btn.signed { background: #0e3d16; color: #7dff9b; }
+
+.booking .total {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 20px 0 8px;
+  color: #ffb400;
+}
+
+.tax-note {
+  font-size: 13px;
+  font-weight: normal;
+  color: #bbb;
+}
+
+.price-breakdown {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 20px 0 0;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 14px;
+  color: #bbb;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.breakdown-row:last-child {
+  border-bottom: none;
+}
+
+.breakdown-label {
+  flex: 1;
+}
+
+.breakdown-value {
+  font-weight: bold;
+  color: #fff;
+  margin-left: 12px;
+}
+
+.pay-hint {
+  font-size: 12px;
+  color: #e53935;
+  margin-bottom: 10px;
+}
+
+.booking #stripePay {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+.booking #stripePay:hover:not(:disabled) { background: #e0a000; }
+.booking #stripePay:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+/* Reserve-deposit button (all vehicles) — appears above the Book Now button */
+.reserve-btn {
+  display: block;
+  width: 100%;
+  padding: 14px;
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+.reserve-btn:hover:not(:disabled) { background: #1976d2; }
+.reserve-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+
+/* STRIPE PAYMENT ELEMENT */
+#payment-form {
+  margin-top: 16px;
+  padding: 20px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 10px;
+}
+#payment-element {
+  margin-bottom: 16px;
+}
+#submit-payment {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-bottom: 10px;
+}
+#submit-payment:hover:not(:disabled) { background: #e0a000; }
+#submit-payment:disabled { background: #333; color: #666; cursor: not-allowed; }
+#cancel-payment {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #444;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  margin-top: 4px;
+}
+#cancel-payment:hover { color: #fff; border-color: #aaa; }
+#payment-message {
+  color: #e53935;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+/* ID UPLOAD */
+.id-upload-section {
+  margin-top: 20px;
+  background: #111;
+  border: 1px solid #ffb400;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.id-upload-section label {
+  margin-top: 0;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.id-upload-section .required {
+  color: #e53935;
+}
+
+.id-note {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 10px;
+}
+
+.sms-consent {
+  font-size: 12px;
+  color: #aaa;
+  margin-top: 6px;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.id-accepted {
+  font-size: 11px;
+  color: #888;
+  margin-top: 6px;
+}
+
+#fileInfo,
+#insuranceFileInfo {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #aaa;
+  padding: 6px 8px;
+  background: #222;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#fileInfo.has-file,
+#insuranceFileInfo.has-file {
+  background: #1a2e1a;
+  color: #66bb6a;
+}
+
+#fileInfo .file-size,
+#insuranceFileInfo .file-size {
+  color: #888;
+  font-size: 11px;
+}
+
+#fileInfo.has-file .file-size,
+#insuranceFileInfo.has-file .file-size {
+  color: #66bb6a;
+}
+
+.optional-label {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
+.id-upload-section input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed #444;
+  border-radius: 8px;
+  font-size: 13px;
+  background: #1a1a1a;
+  color: #ccc;
+  cursor: pointer;
+}
+
+/* INSURANCE COVERAGE QUESTION */
+.insurance-coverage-section .insurance-question {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.insurance-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.insurance-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 10px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  transition: border-color 0.2s, background 0.2s;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.insurance-option:hover {
+  border-color: #ffb400;
+  background: #222;
+}
+
+.insurance-option input[type="radio"] {
+  accent-color: #ffb400;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.insurance-option > span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.insurance-option input[type="radio"]:checked + span {
+  color: #ffb400;
+  font-weight: 600;
+}
+
+.insurance-option:has(input:checked) {
+  border-color: #ffb400;
+  background: #1f1a00;
+}
+
+/* SLINGSHOT DURATION SELECTOR */
+#slingshotDurationSection {
+  margin-bottom: 16px;
+}
+
+#slingshotDurationSection > label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.duration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duration-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px 16px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1a1a1a;
+  transition: border-color 0.2s, background 0.2s;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.duration-option:hover {
+  border-color: #ffb400;
+  background: #222;
+}
+
+.duration-option input[type="radio"] {
+  accent-color: #ffb400;
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.duration-option input[type="radio"]:checked + span {
+  color: #ffb400;
+}
+
+.duration-option:has(input:checked) {
+  border-color: #ffb400;
+  background: #1f1a00;
+}
+
+#insuranceUploadSection {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a2a;
+}
+
+/* PROTECTION PLAN NOTICE */
+.protection-plan-notice {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid #e67e22;
+  border-radius: 8px;
+  background: #1f1000;
+}
+
+.protection-plan-notice p {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #f0a040;
+  line-height: 1.5;
+}
+
+.protection-plan-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.protection-plan-price {
+  font-size: 14px !important;
+  color: #ffb400 !important;
+}
+
+.protection-plan-whats-included {
+  font-size: 13px !important;
+  font-weight: bold;
+  color: #f0a040 !important;
+  margin-top: 8px !important;
+  margin-bottom: 4px !important;
+}
+
+.protection-plan-includes {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0 4px;
+}
+
+.protection-plan-includes li {
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.protection-plan-detail {
+  color: #ccc !important;
+}
+
+/* FLEET PAGE HEADING */
+.fleet-heading {
+  text-align: center;
+  color: #ffb400;
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.fleet-subheading {
+  text-align: center;
+  color: #aaa;
+  font-size: 16px;
+  margin: 0 auto 30px;
+  max-width: 680px;
+  line-height: 1.6;
+}
+
+/* PRICE LIST SECTION LABEL */
+.price-list-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+  margin: 10px 0 4px;
+}
+
+/* BEST VALUE TAG — complements popular-tag */
+.best-value-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: #22c55e;
+  color: #000;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  margin-left: 6px;
+}
+
+/* EARNINGS BREAKDOWN — driver profit estimate shown on Camry cards */
+.earnings-breakdown {
+  background: rgba(255, 180, 0, 0.06);
+  border: 1px solid rgba(255, 180, 0, 0.18);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0 6px;
+}
+
+.earnings-breakdown-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffb400;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.earnings-breakdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.earnings-breakdown-list li {
+  font-size: 12px;
+  color: #bbb;
+  line-height: 1.4;
+}
+
+.earnings-breakdown-list li strong {
+  color: #fff;
+}
+
+/* FLEET INFO SECTIONS (Driver Requirements, Why Choose SLY, CTA) */
+.fleet-info-section {
+  padding: 60px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.driver-req-section {
+  background: #0d0d0d;
+}
+
+.why-drivers-section {
+  background: #000;
+}
+
+.fleet-info-container {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.fleet-info-heading {
+  text-align: center;
+  font-size: 28px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 32px;
+}
+
+/* Driver requirements list */
+.fleet-req-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fleet-req-list li {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid #ffb400;
+  border-radius: 8px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+/* Why drivers choose SLY grid */
+.why-drivers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.why-drivers-item {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+  transition: border-color 0.2s;
+}
+
+.why-drivers-item:hover {
+  border-color: #ffb400;
+}
+
+/* CTA section */
+.fleet-cta-section {
+  background: #0a0a0a;
+  border-top: 1px solid #2a2a2a;
+  padding: 70px 20px;
+  text-align: center;
+}
+
+.fleet-cta-heading {
+  font-size: 32px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 14px;
+}
+
+.fleet-cta-sub {
+  font-size: 16px;
+  color: #aaa;
+  max-width: 560px;
+  margin: 0 auto 28px;
+  line-height: 1.6;
+}
+
+.fleet-cta-btn {
+  display: inline-block;
+  background: #ffb400;
+  color: #000;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 14px 32px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.fleet-cta-btn:hover {
+  background: #ffc933;
+  transform: translateY(-2px);
+}
+
+/* Slingshot-only bottom sections */
+.slingshot-explore-section {
+  background: #000;
+}
+
+.slingshot-why-section {
+  background: #0a0a0a;
+}
+
+.slingshot-explore-body {
+  text-align: center;
+  color: #aaa;
+  font-size: 16px;
+  max-width: 600px;
+  margin: 0 auto 28px;
+  line-height: 1.7;
+}
+
+.slingshot-explore-list {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.slingshot-explore-list li {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-left: 4px solid #ffb400;
+  border-radius: 8px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: #ccc;
+  line-height: 1.5;
+}
+
+.slingshot-cta-wrap {
+  text-align: center;
+  margin-top: 32px;
+}
+
+/* CARS PAGE LAYOUT (sidebar + grid) */
+.cars-page-layout {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+/* SIDEBAR */
+.cars-sidebar {
+  flex: 0 0 200px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 24px 16px;
+  position: sticky;
+  top: 80px;
+}
+
+.sidebar-title {
+  color: #ffb400;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 16px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-btn {
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  color: #ccc;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.sidebar-btn:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.sidebar-btn.active {
+  background: #ffb400;
+  color: #000;
+  border-color: #ffb400;
+  font-weight: bold;
+}
+
+/* REFUND POLICY NOTICE (How It Works section) */
+.refund-policy-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: #1e0e0e;
+  border: 1px solid #c0392b;
+  border-left: 4px solid #c0392b;
+  border-radius: 10px;
+  padding: 18px 24px;
+  margin-top: 36px;
+  color: #f5a3a0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.refund-policy-notice .refund-policy-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.refund-policy-notice strong {
+  color: #e57373;
+}
+
+/* REFUND NOTICE (Booking form) */
+.refund-notice {
+  background: #1e0e0e;
+  border: 1px solid #c0392b;
+  border-left: 4px solid #c0392b;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 20px 0 8px;
+  font-size: 13px;
+  color: #f5a3a0;
+  line-height: 1.6;
+}
+
+.refund-notice strong {
+  color: #e57373;
+}
+
+.deposit-notice {
+  background: #0e1a1e;
+  border: 1px solid #1565c0;
+  border-left: 4px solid #1e88e5;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0 8px;
+  font-size: 13px;
+  color: #90caf9;
+  line-height: 1.6;
+}
+
+.deposit-notice strong {
+  color: #42a5f5;
+  font-size: 14px;
+}
+
+.deposit-notice ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+
+.deposit-notice li {
+  margin: 4px 0;
+}
+
+.breakdown-deposit {
+  border-left: 3px solid #ffb400;
+  padding-left: 10px !important;
+}
+
+.breakdown-deposit .breakdown-label,
+.breakdown-deposit .breakdown-value {
+  color: #ffb400;
+}
+
+/* FOOTER */
+footer {
+  text-align: center;
+  padding: 20px;
+  background: #000;
+  color: #aaa;
+  border-top: 2px solid #ffb400;
+  margin-top: 40px;
+}
+
+.footer-phone {
+  color: #ffb400;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.footer-phone:hover {
+  text-decoration: underline;
+}
+
+
+/* MOBILE */
+@media (max-width: 600px) {
+  .site-header {
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 20px;
+  }
+
+  .company-banner {
+    padding: 10px 20px;
+  }
+
+  .company-banner-inner {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  .company-banner-divider {
+    display: none;
+  }
+
+  .site-nav {
+    gap: 20px;
+  }
+
+  .site-nav a {
+    font-size: 14px;
+  }
+
+  .hero-image .hero-btn {
+    font-size: 15px;
+    padding: 11px 32px;
+  }
+
+  .hiw-steps {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .how-it-works h2 {
+    font-size: 28px;
+    margin-bottom: 30px;
+  }
+
+  .stats-container {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  
+  .stat-card {
+    padding: 30px 15px;
+  }
+  
+  .stat-number {
+    font-size: 36px;
+  }
+  
+  .stat-label {
+    font-size: 13px;
+  }
+  
+  .about {
+    padding: 60px 20px;
+  }
+  
+  .about h2 {
+    font-size: 28px;
+    margin-bottom: 30px;
+  }
+  
+  .about-text,
+  .about-values {
+    padding: 20px;
+  }
+  
+  .about-values h3 {
+    font-size: 20px;
+  }
+  
+  .about-text p,
+  .about-values p {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .about-gallery {
+    grid-template-columns: 1fr;
+  }
+  
+  .about-gallery img {
+    height: 200px;
+  }
+  
+  .slider img.slide {
+    height: 350px;
+  }
+  
+  .slider-controls button {
+    width: 40px;
+    height: 40px;
+    padding: 10px;
+    font-size: 20px;
+  }
+  
+  .container {
+    padding: 20px;
+  }
+
+  /* Sidebar becomes horizontal tab strip on mobile */
+  .cars-page-layout {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .cars-sidebar {
+    flex: none;
+    width: 100%;
+    position: static;
+    padding: 16px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sidebar-btn {
+    width: auto;
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .fleet-heading {
+    font-size: 26px;
+  }
+
+  .fleet-subheading {
+    font-size: 14px;
+  }
+
+  .why-drivers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-info-heading {
+    font-size: 22px;
+  }
+
+  .fleet-cta-heading {
+    font-size: 24px;
+  }
+
+  .booking {
+    padding: 20px 16px;
+  }
+
+  .waitlist-section {
+    padding: 20px 14px;
+  }
+}
+
+/* ===== FLATPICKR THEME OVERRIDES ===== */
+.flatpickr-calendar {
+  background: #1a1a1a !important;
+  border: 1px solid #2a2a2a !important;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6) !important;
+}
+.flatpickr-months .flatpickr-month,
+.flatpickr-weekdays,
+span.flatpickr-weekday {
+  background: #111 !important;
+  color: #ffb400 !important;
+}
+.flatpickr-day {
+  color: #ddd !important;
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: #333 !important;
+  border-color: #ffb400 !important;
+}
+.flatpickr-day.selected,
+.flatpickr-day.selected:hover {
+  background: #ffb400 !important;
+  border-color: #ffb400 !important;
+  color: #000 !important;
+}
+.flatpickr-day.today {
+  border-color: #ffb400 !important;
+}
+.flatpickr-day.disabled,
+.flatpickr-day.disabled:hover {
+  color: #444 !important;
+  background: transparent !important;
+  text-decoration: line-through;
+}
+.flatpickr-prev-month,
+.flatpickr-next-month {
+  color: #ffb400 !important;
+  fill: #ffb400 !important;
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year {
+  color: #ffb400 !important;
+}
+.flatpickr-time input,
+.flatpickr-time .flatpickr-am-pm {
+  color: #fff !important;
+  background: #111 !important;
+}
+.flatpickr-time input:hover,
+.flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus,
+.flatpickr-time .flatpickr-am-pm:focus {
+  background: #222 !important;
+}
+.numInput.cur-year { color: #ffb400 !important; }
+
+/* ===== CHATBOT WIDGET ===== */
+#chat-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  font-family: Arial, sans-serif;
+}
+
+#chat-toggle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ffb400;
+  border: none;
+  font-size: 26px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+  position: relative;
+}
+
+#chat-toggle:hover { transform: scale(1.1); }
+
+/* Red notification dot on the chat toggle */
+#chat-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  background: #e53935;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  animation: chat-badge-pulse 1.5s infinite;
+}
+
+@keyframes chat-badge-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.3); opacity: 0.8; }
+}
+
+/* Pulsing ring animation on the toggle button when badge is shown */
+.chat-toggle-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 3px solid #ffb400;
+  animation: chat-toggle-ring 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes chat-toggle-ring {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Reminder popup card */
+#chat-reminder {
+  position: fixed;
+  bottom: 96px;
+  right: 24px;
+  width: 270px;
+  background: #1a1a1a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px 16px 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  z-index: 9998;
+  animation: chat-slide-in 0.4s ease;
+}
+
+@keyframes chat-slide-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+#chat-reminder p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#chat-reminder-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+#chat-reminder-close:hover { color: #fff; }
+
+#chat-reminder-cta {
+  display: block;
+  width: 100%;
+  padding: 9px 0;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 4px;
+  transition: background 0.2s;
+}
+
+#chat-reminder-cta:hover { background: #e0a000; }
+
+/* Chat chips (quick-reply buttons below messages) */
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px 10px;
+}
+
+.chat-chip {
+  background: #2a2a2a;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.chat-chip:hover {
+  background: #ffb400;
+  color: #000;
+}
+
+#chat-box {
+  width: 320px;
+  height: 480px;
+  background: #1a1a1a;
+  border-radius: 14px;
+  border: 1px solid #333;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: absolute;
+  bottom: 70px;
+  right: 0;
+}
+
+#chat-box[hidden] { display: none; }
+
+#chat-header {
+  background: #111;
+  color: #fff;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+#chat-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #111;
+}
+
+.chat-msg {
+  max-width: 85%;
+  padding: 10px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-msg.bot {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #ddd;
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.chat-msg.user {
+  background: #ffb400;
+  color: #000;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+#chat-input-row {
+  display: flex;
+  border-top: 1px solid #333;
+  background: #111;
+}
+
+#chat-input {
+  flex: 1;
+  border: none;
+  padding: 12px 14px;
+  font-size: 13px;
+  outline: none;
+  background: #111;
+  color: #fff;
+}
+
+#chat-send {
+  background: #ffb400;
+  border: none;
+  padding: 12px 16px;
+  font-weight: bold;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#chat-send:hover { background: #e0a000; }
+
+@media (max-width: 600px) {
+  .vehicle-promo-banner {
+    padding: 20px 16px 16px;
+  }
+  .promo-title {
+    font-size: 1.1rem;
+  }
+  .promo-highlights {
+    gap: 8px;
+  }
+  .promo-highlight-item {
+    font-size: 0.8rem;
+    padding: 6px 10px;
+  }
+  .platform-tag {
+    font-size: 0.78rem;
+    padding: 3px 10px;
+  }
+}
+@media (max-width: 400px) {
+  #chat-box { width: 290px; }
+}
+
+
+/* ----- Inline Rental Agreement Panel ----- */
+.rental-agreement-box {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 12px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+
+.rental-agreement-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 18px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #ccc;
+  border-bottom: 1px solid #333;
+}
+
+.rental-agreement-scroll h3 {
+  color: #ffb400;
+  font-size: 14px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.rental-agreement-scroll h4 {
+  color: #fff;
+  font-size: 13px;
+  margin: 12px 0 4px;
+}
+
+.rental-agreement-scroll p {
+  margin: 0 0 8px;
+}
+
+.signature-area {
+  padding: 16px 20px;
+}
+
+.signature-area label {
+  display: block;
+  font-size: 13px;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.signature-input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 16px;
+  font-style: italic;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  color: #fff;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+
+.signature-input:focus {
+  outline: none;
+  border-color: #ffb400;
+}
+
+.signature-note {
+  font-size: 11px;
+  color: #777;
+  margin: 0 0 12px;
+}
+
+.signature-error {
+  font-size: 12px;
+  color: #ff4444;
+  margin: 4px 0 8px;
+}
+
+.field-error {
+  font-size: 12px;
+  color: #ff4444;
+  margin: 2px 0 8px;
+  display: block;
+}
+
+.field-note {
+  font-size: 11px;
+  color: #888;
+  font-weight: normal;
+}
+
+.agreement-btn-row {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-sign-btn {
+  flex: 1;
+  padding: 10px;
+  background: #4caf50;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.confirm-sign-btn:hover:not(:disabled) {
+  background: #388e3c;
+}
+
+.confirm-sign-btn:disabled {
+  background: #2a2a2a;
+  color: #555;
+  cursor: not-allowed;
+}
+
+.cancel-sign-btn {
+  padding: 10px 16px;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid #444;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.cancel-sign-btn:hover {
+  border-color: #ff4444;
+  color: #ff4444;
+}
+
+/* VIDEO TESTIMONIAL SECTION */
+.video-testimonial {
+  background: #000;
+  padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.video-testimonial-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.video-testimonial-container h2 {
+  font-size: 36px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.video-testimonial-subheading {
+  font-size: 16px;
+  color: #aaa;
+  margin-bottom: 40px;
+}
+
+/* Two-column grid for portrait videos */
+.video-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+/* Responsive wrapper — works for both <video> and <iframe> */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(255, 180, 0, 0.15);
+  border: 1px solid #2a2a2a;
+}
+
+/* Portrait (9:16) modifier for vertical videos */
+.video-wrapper--portrait {
+  padding-top: 182.76%; /* 848/464 */
+}
+
+.video-wrapper video,
+.video-wrapper iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #000;
+}
+
+@media (max-width: 900px) {
+  .video-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 540px) {
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 580px) {
+  .video-testimonial-container h2 {
+    font-size: 26px;
+  }
+}
+
+/* REVIEWS SECTION */
+.reviews {
+  background: #111;
+  padding: 80px 20px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.reviews-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.reviews h2 {
+  text-align: center;
+  font-size: 36px;
+  color: #ffb400;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.reviews-subheading {
+  text-align: center;
+  font-size: 16px;
+  color: #aaa;
+  margin-bottom: 50px;
+}
+
+.reviews-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.review-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.review-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(255, 180, 0, 0.2);
+  border-color: #ffb400;
+}
+
+.review-stars {
+  font-size: 22px;
+  color: #ffb400;
+  letter-spacing: 3px;
+}
+
+.review-text {
+  font-size: 15px;
+  color: #ddd;
+  line-height: 1.7;
+  flex: 1;
+}
+
+.review-author {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffb400;
+  letter-spacing: 0.5px;
+}
+
+@media (max-width: 900px) {
+  .reviews-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 580px) {
+  .reviews-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviews h2 {
+    font-size: 28px;
+  }
+}
+
+/* ─── APPLY NOW MODAL ─────────────────────────────────────────────────────── */
+
+/* Allow the hero "Apply Now" to work as a <button> element */
+button.hero-btn {
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.apply-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.apply-modal-box {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 500px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  margin: auto;
+}
+
+.apply-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 26px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.apply-modal-close:hover { color: #fff; }
+
+.apply-modal-box h2 {
+  font-size: 26px;
+  color: #ffb400;
+  margin-bottom: 8px;
+}
+
+.apply-modal-sub {
+  font-size: 14px;
+  color: #aaa;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.apply-field {
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.apply-field label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.apply-required { color: #f44336; }
+
+.apply-field input[type="text"],
+.apply-field input[type="tel"],
+.apply-field input[type="number"],
+.apply-field select {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px 12px;
+  font-size: 15px;
+  width: 100%;
+  transition: border-color 0.2s;
+}
+
+.apply-field input[type="text"]:focus,
+.apply-field input[type="tel"]:focus,
+.apply-field input[type="number"]:focus,
+.apply-field select:focus {
+  border-color: #ffb400;
+  outline: none;
+}
+
+.apply-field select option { background: #1a1a1a; }
+
+.apply-file-label {
+  display: inline-block;
+  background: #222;
+  border: 1px dashed #555;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #ccc;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.apply-file-label:hover {
+  border-color: #ffb400;
+  color: #ffb400;
+}
+
+/* Hide the native file picker — the styled label above triggers it */
+.apply-field input[type="file"] { display: none; }
+
+.apply-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 2px;
+}
+
+.apply-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 400;
+  color: #ddd;
+  cursor: pointer;
+  user-select: none;
+}
+
+.apply-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #ffb400;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.apply-terms-label {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.5;
+}
+
+.apply-terms-link {
+  color: #ffb400;
+  text-decoration: underline;
+}
+
+.apply-terms-link:hover { color: #fff; }
+
+.apply-file-info {
+  font-size: 13px;
+  min-height: 18px;
+  display: block;
+}
+
+/* Protection plan option badges */
+.apply-plan-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: #ffb400;
+  color: #111;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+  line-height: 1.6;
+}
+
+.apply-plan-tag--value {
+  background: #4caf50;
+  color: #fff;
+}
+
+/* Protection plan disclaimer note */
+.apply-plan-disclaimer {
+  font-size: 12px;
+  color: #888;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.apply-status {
+  font-size: 14px;
+  min-height: 20px;
+  text-align: center;
+  margin: 0 0 12px;
+}
+
+.apply-status.error   { color: #f44336; }
+.apply-status.sending { color: #aaa; }
+
+.apply-submit-btn {
+  width: 100%;
+  padding: 14px;
+  background: #ffb400;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.apply-submit-btn:hover:not(:disabled) {
+  background: #e0a000;
+  transform: scale(1.02);
+}
+
+.apply-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.apply-back-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: transparent;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.apply-back-btn:hover {
+  background: #ffb400;
+  color: #000;
+}
+
+.apply-phone-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.apply-phone-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.apply-send-code-btn {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  background: #1a1a1a;
+  color: #ffb400;
+  border: 1px solid #ffb400;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+
+.apply-send-code-btn:hover:not(:disabled) {
+  background: #ffb400;
+  color: #000;
+}
+
+.apply-send-code-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 540px) {
+  .apply-modal-box {
+    padding: 24px 16px;
+    max-height: calc(100vh - 16px);
+    border-radius: 10px;
+  }
+}
+
+/* ── Approval gate overlay (cars.html) ─────────────────────────────────────── */
+.approval-gate-overlay {
+  position: fixed;
+  inset: 0;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px 16px;
+}
+
+.approval-gate-box {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 48px 40px;
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+}
+
+.approval-gate-box .gate-icon {
+  font-size: 52px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.approval-gate-box h2 {
+  color: #ffb400;
+  font-size: 26px;
+  margin-bottom: 12px;
+}
+
+.approval-gate-box p {
+  color: #ccc;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.approval-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.approval-gate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 28px;
+  background: #ffb400;
+  color: #000;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 15px;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.approval-gate-btn:hover {
+  background: #e0a000;
+  transform: scale(1.04);
+}
+
+.approval-gate-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 13px 28px;
+  background: transparent;
+  color: #ffb400;
+  border: 2px solid #ffb400;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 15px;
+  transition: background 0.2s, color 0.2s, transform 0.2s;
+}
+
+.approval-gate-btn-secondary:hover {
+  background: #ffb400;
+  color: #000;
+  transform: scale(1.04);
+}
+
+@media (max-width: 520px) {
+  .approval-gate-box { padding: 36px 22px; }
+  .approval-gate-box h2 { font-size: 22px; }
+  .approval-gate-btn,
+  .approval-gate-btn-secondary { width: 100%; justify-content: center; }
+}
+
+/* ── Browse-gate toast (index.html / thank-you.html) ───────────────────────── */
+.browse-gate-toast {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid #ffb400;
+  border-radius: 10px;
+  padding: 14px 22px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  max-width: 400px;
+  width: calc(100% - 40px);
+  z-index: 9000;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  animation: browseGateToastIn 0.3s ease;
+}
+
+@keyframes browseGateToastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

@@ -1,0 +1,2417 @@
+// ----- API Base URL -----
+// The frontend is served by GitHub Pages (www.slytrans.com).
+// The API functions are deployed on Vercel (sly-rides.vercel.app).
+// Because they are on different domains, the full Vercel URL must be used here.
+const API_BASE = "https://sly-rides.vercel.app";
+
+// Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
+// Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
+const SLINGSHOT_BOOKING_DEPOSIT = 50;
+// Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
+const CAMRY_BOOKING_DEPOSIT = 50;
+// Slingshot authorization hold amounts — kept for reference but no longer used for payment.
+// Slingshot now charges the full rental amount online; these constants are retained for
+// any legacy references.
+const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
+const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
+// Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
+const LA_TAX_RATE = 0.1025;
+
+// ----- Car Data -----
+const cars = {
+  slingshot: {
+    name: "Slingshot R",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
+    // Sub-day tiers (3 hr, 6 hr) and daily tiers (1–3 days at $350/day, max 3 days).
+    // Multi-day durations are stored as hours (days × 24) to stay consistent with
+    // the existing applySlingshotDuration() auto-return-date logic.
+    hourlyTiers: [
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
+    ],
+    deposit: 150,
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
+    // TO ADD PHOTOS FOR SLINGSHOT 1:
+    // 1. Upload your image file to the /images folder in the repository.
+    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
+    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg","images/photo_2026-03-22_11-38-56.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: "57XAARHB8P8156561",
+    color: null
+  },
+  // Second Slingshot unit — same pricing, different photos.
+  // TODO: update vin once available.
+  slingshot2: {
+    name: "Slingshot R",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
+    hourlyTiers: [
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
+    ],
+    deposit: 150,
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
+    // TO ADD PHOTOS FOR SLINGSHOT 2:
+    // 1. Upload your image file to the /images folder in the repository.
+    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
+    images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg", "images/photo_2026-03-22_11-38-56.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: "TBD",
+    color: null
+  },
+  camry: {
+    name: "Camry 2012",
+    subtitle: "",
+    subtitleKey: "fleet.sedan5seater",
+    pricePerDay: 55,
+    minRentalDays: 1,
+    weekly: 350,
+    biweekly: 650,
+    monthly: 1300,
+    images: ["images/IMG_0046.png","images/IMG_4486.jpeg"],
+    make: "Toyota",
+    model: "Camry",
+    year: 2012,
+    vin: "4T1BF1FK5CU063142",
+    color: "Grey"
+  },
+  camry2013: {
+    name: "Camry 2013 SE",
+    subtitle: "",
+    subtitleKey: "fleet.sedan5seater",
+    pricePerDay: 55,
+    minRentalDays: 1,
+    weekly: 350,
+    biweekly: 650,
+    monthly: 1300,
+    images: ["images/IMG_5144.png", "images/IMG_5139.jpeg", "images/IMG_5140.jpeg", "images/IMG_5145.png"],
+    make: "Toyota",
+    model: "Camry SE",
+    year: 2013,
+    vin: "4T1BF1FK9DU678911",
+    color: "Charcoal Grey"
+  }
+};
+
+// ----- Insurance / Protection Plan -----
+// Slingshot Option B: DPP rate — kept for backward compat with Slingshot Option B info display.
+const PROTECTION_PLAN_DAILY    = 13;   // $13/day (Slingshot Option B only)
+// Economy car protection plan tiers (flat daily rates — must mirror api/_pricing.js).
+const PROTECTION_PLAN_BASIC    = 15;   // Basic: $15/day
+const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
+const PROTECTION_PLAN_PREMIUM  = 50;   // Premium: $50/day
+
+// ----- Helpers -----
+function getVehicleFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("vehicle");
+}
+
+// i18n helper — translates a key using lang.js if available, else returns fallback.
+function _t(key, fallback) {
+  return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : (fallback || key);
+}
+
+// Format helper — replaces {placeholder} tokens in a translated string.
+function _fmt(key, vars, fallback) {
+  let s = _t(key, fallback || key);
+  if (vars) {
+    Object.keys(vars).forEach(function(k) {
+      s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), vars[k]);
+    });
+  }
+  return s;
+}
+
+// ----- Load Car Data -----
+const vehicleId = getVehicleFromURL();
+if (!vehicleId || !cars[vehicleId]) {
+  alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
+  window.location.href = "index.html";
+}
+
+const carData = cars[vehicleId];
+document.getElementById("carName").textContent = carData.name;
+document.getElementById("carSubtitle").textContent =
+  (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
+document.getElementById("carPrice").textContent = (carData.hourlyTiers)
+  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.label}`).join(" \u2022 ")
+  : (carData.weekly)
+    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
+    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+// Show the Slingshot fun description instead of the Uber/Lyft earnings block
+if (carData.hourlyTiers) {
+  document.getElementById("earningsBlock").style.display = "none";
+  document.getElementById("slingshotDesc").style.display = "block";
+  // Populate duration options dynamically from hourlyTiers (single source of truth)
+  const optionsContainer = document.getElementById("durationOptions");
+  if (optionsContainer && carData.hourlyTiers) {
+    carData.hourlyTiers.forEach(function(tier) {
+      const lbl = document.createElement("label");
+      lbl.className = "duration-option";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "slingshotDuration";
+      radio.value = String(tier.hours);
+      const span = document.createElement("span");
+      span.textContent = `${tier.label} \u2014 $${tier.price}`;
+      lbl.appendChild(radio);
+      lbl.appendChild(span);
+      optionsContainer.appendChild(lbl);
+      radio.addEventListener("change", applySlingshotDuration);
+    });
+  }
+  // Show the hourly duration selector and hide the manual return-date picker
+  document.getElementById("slingshotDurationSection").style.display = "";
+  document.getElementById("returnDateSection").style.display = "none";
+  // Return date/time will be auto-computed once pickup date/time + duration are set
+}
+
+const sliderContainer = document.getElementById("sliderContainer");
+const sliderDots = document.getElementById("sliderDots");
+let currentSlide = 0;
+
+// Load images
+carData.images.forEach((imgSrc, idx) => {
+  const img = document.createElement("img");
+  img.src = imgSrc;
+  img.classList.add("slide");
+  if (idx === 0) img.classList.add("active");
+  sliderContainer.appendChild(img);
+
+  const dot = document.createElement("span");
+  dot.classList.add("dot");
+  if (idx === 0) dot.classList.add("active");
+  dot.addEventListener("click", () => goToSlide(idx));
+  sliderDots.appendChild(dot);
+});
+
+function showSlide(index) {
+  const slides = sliderContainer.querySelectorAll(".slide");
+  const dots = sliderDots.querySelectorAll(".dot");
+  slides.forEach((s,i)=>s.classList.toggle("active", i===index));
+  dots.forEach((d,i)=>d.classList.toggle("active", i===index));
+  currentSlide = index;
+}
+
+function nextSlide() { showSlide((currentSlide+1)%carData.images.length); }
+function prevSlide() { showSlide((currentSlide-1+carData.images.length)%carData.images.length); }
+document.getElementById("nextSlide").addEventListener("click", nextSlide);
+document.getElementById("prevSlide").addEventListener("click", prevSlide);
+function goToSlide(idx){ showSlide(idx); }
+
+// ----- Back Button -----
+document.getElementById("backBtn").addEventListener("click", ()=>window.location.href="cars.html");
+
+// ----- Booking Form Automation -----
+const pickup = document.getElementById("pickup");
+const pickupTime = document.getElementById("pickupTime");
+const returnDate = document.getElementById("return");
+const returnTime = document.getElementById("returnTime");
+const agreeCheckbox = document.getElementById("agree");
+const idUpload = document.getElementById("idUpload");
+const insuranceUpload = document.getElementById("insuranceUpload");
+const totalEl = document.getElementById("total");
+const stripeBtn = document.getElementById("stripePay");
+
+let uploadedFile = null;
+let uploadedInsurance = null;
+let currentDayCount = 1;
+let currentSlingshotDuration = null; // selected hourly tier in hours (3 | 6 | 24) for Slingshot
+let currentSubtotal = 0;
+let agreementSignature = ""; // typed signature from the inline agreement panel
+let insuranceCoverageChoice = null; // 'yes' | 'no' | null
+// Payment mode for the current payment attempt: 'deposit' | 'full'.
+// Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
+// Slingshot always uses 'deposit' (driven by carData.bookingDeposit).
+// Camry renters choose via the two-button UI.
+let _pendingPaymentMode = null;
+// Economy car protection plan tier selected on the booking page: basic | standard | premium
+// Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
+let selectedProtectionTier = "standard";
+
+// ----- Slingshot: set up the insurance/protection UI -----
+// For Slingshot, replace the generic insurance question/options with the two-choice
+// system: Option A (own insurance) or Option B (no insurance, DPP included).
+// The old $50 non-refundable reserveBtn is removed.
+if (carData.hourlyTiers) {
+  // Update the question heading
+  const qEl = document.getElementById("insuranceQuestionText");
+  if (qEl) {
+    qEl.removeAttribute("data-i18n");
+    qEl.textContent = "\uD83D\uDEE1\uFE0F Insurance & Damage Protection — Choose One";
+  }
+  // Update Option A label
+  const hasInsTextEl = document.getElementById("hasInsuranceText");
+  if (hasInsTextEl) {
+    hasInsTextEl.removeAttribute("data-i18n");
+    hasInsTextEl.innerHTML = `<strong>Option A:</strong> I have valid personal auto insurance<br><small style='color:#ffb400'>Upload required &rarr; no Damage Protection Plan included</small>`;
+  }
+  // Update Option B label
+  const noInsTextEl = document.getElementById("noInsuranceText");
+  if (noInsTextEl) {
+    noInsTextEl.removeAttribute("data-i18n");
+    noInsTextEl.innerHTML = `<strong>Option B:</strong> I do not have insurance &mdash; add Damage Protection Plan<br><small style='color:#ffb400'>No upload required &rarr; Damage Protection Plan ($${PROTECTION_PLAN_DAILY}/day) included</small>`;
+  }
+  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot any more
+  const oldDepositNotice = document.getElementById("slingshotDepositNotice");
+  if (oldDepositNotice) oldDepositNotice.style.display = "none";
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (reserveBtnEl) reserveBtnEl.style.display = "none";
+}
+
+// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
+// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
+if (!carData.hourlyTiers) {
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (reserveBtnEl) {
+    reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
+    reserveBtnEl.style.display = "";
+  }
+  const camryDepNotice = document.getElementById("camryDepositNotice");
+  if (camryDepNotice) camryDepNotice.style.display = "";
+}
+
+// ----- Name Field Validation & Auto-correction -----
+
+// Capitalize the first letter after each word boundary (spaces, hyphens, apostrophes)
+function toTitleCase(str) {
+  return str.replace(/(?:^|[\s'\-])([a-zA-ZÀ-ÖØ-öø-ÿ])/g, function (m) {
+    return m.toUpperCase();
+  });
+}
+
+// Remove any character that is not a letter, space, hyphen, apostrophe, or period.
+function sanitizeNameInput(val) {
+  return val.replace(/[^a-zA-ZÀ-ÖØ-öø-ÿ\s'\-.]/g, '');
+}
+
+// Name must contain at least a first and last name (two words)
+function isValidName(val) {
+  return val.trim().split(/\s+/).filter(Boolean).length >= 2;
+}
+
+(function setupNameField() {
+  const nameField = document.getElementById('name');
+  const nameError = document.getElementById('nameError');
+
+  nameField.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+    // Hide the error while the user is still typing
+    if (nameError) { nameError.style.display = 'none'; }
+    updatePayBtn();
+  });
+
+  nameField.addEventListener('blur', function () {
+    if (this.value.trim()) {
+      this.value = toTitleCase(this.value.trim().replace(/\s+/g, ' '));
+    }
+    // Show validation error if the name is present but incomplete
+    if (nameError) {
+      const val = this.value.trim();
+      if (val && !isValidName(val)) {
+        nameError.textContent = window.slyI18n ? window.slyI18n.t("booking.nameError") : 'Please enter at least a first and last name.';
+        nameError.style.display = '';
+      } else {
+        nameError.style.display = 'none';
+      }
+    }
+    updatePayBtn();
+  });
+}());
+
+// ----- Pre-fill from Apply Now application (localStorage) or Waitlist (sessionStorage) -----
+// When an applicant submits the "Apply Now" form their name, phone, email, insurance choice,
+// and protection plan preference are stored in localStorage under "slyApplicant".
+// Waitlist entries store the same fields in sessionStorage under "slyWaitlistEntry".
+// If that data exists we pre-fill the booking-form fields so the renter doesn't have to
+// re-enter information they already provided. Waitlist data takes precedence over Apply data.
+(function prefillFromApplication() {
+  try {
+    // Prefer the more-recent waitlist entry (sessionStorage) over the apply entry (localStorage).
+    let data = null;
+    const wlRaw = sessionStorage.getItem("slyWaitlistEntry");
+    if (wlRaw) {
+      const wl = JSON.parse(wlRaw);
+      // Only use waitlist data if it matches the vehicle being booked
+      if (!wl.vehicleId || wl.vehicleId === vehicleId) {
+        data = wl;
+      }
+    }
+    if (!data) {
+      const applyRaw = localStorage.getItem("slyApplicant");
+      if (applyRaw) data = JSON.parse(applyRaw);
+    }
+    if (!data) return;
+
+    const nameField  = document.getElementById("name");
+    const emailField = document.getElementById("email");
+    const phoneField = document.getElementById("phone");
+    if (data.name  && nameField  && !nameField.value)  { nameField.value  = data.name;  updatePayBtn(); }
+    if (data.email && emailField && !emailField.value) { emailField.value = data.email; updatePayBtn(); }
+    if (data.phone && phoneField && !phoneField.value) { phoneField.value = data.phone; updatePayBtn(); }
+
+    // For Economy cars only: pre-select insurance choice and protection plan tier.
+    // Slingshot uses its own Option A / Option B UI (set up separately).
+    if (!carData.hourlyTiers) {
+      // Pre-select protection plan tier (default to standard if not stored)
+      const pref = data.protectionPlanPref || data.protectionPlan;
+      if (pref === "basic" || pref === "standard" || pref === "premium") {
+        selectedProtectionTier = pref;
+      }
+      // Pre-select insurance radio and show/hide appropriate sections
+      const hasInsurance = data.hasInsurance;
+      if (hasInsurance === "yes") {
+        insuranceCoverageChoice = "yes";
+        const hasInsRadio = document.getElementById("hasInsurance");
+        const insSection  = document.getElementById("insuranceUploadSection");
+        if (hasInsRadio) hasInsRadio.checked = true;
+        if (insSection)  insSection.style.display = "";
+        document.getElementById("protectionPlanSection").style.display = "none";
+      } else if (hasInsurance === "no") {
+        insuranceCoverageChoice = "no";
+        const noInsRadio     = document.getElementById("noInsurance");
+        const protSection    = document.getElementById("protectionPlanSection");
+        const insSection     = document.getElementById("insuranceUploadSection");
+        if (noInsRadio)   noInsRadio.checked = true;
+        if (insSection)   insSection.style.display = "none";
+        if (protSection)  protSection.style.display = "";
+        _syncProtectionTierRadio(selectedProtectionTier);
+      }
+      updatePayBtn();
+    }
+  } catch (_) { /* storage may be blocked in private mode */ }
+}());
+
+// Also sanitize the signature input so it only accepts valid name characters
+(function setupSignatureField() {
+  const sigInput = document.getElementById('signatureInput');
+  if (!sigInput) return;
+  sigInput.addEventListener('input', function () {
+    const cleaned = sanitizeNameInput(this.value);
+    if (cleaned !== this.value) { this.value = cleaned; }
+  });
+}());
+
+// ----- File Upload Handling -----
+function resetFileInfo() {
+  const fileInfoEl = document.getElementById("fileInfo");
+  fileInfoEl.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
+  fileInfoEl.querySelector(".file-size").textContent = "";
+  fileInfoEl.classList.remove("has-file");
+}
+
+function resetInsuranceFileInfo() {
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = window.slyI18n ? window.slyI18n.t("booking.fileNotSelected") : "No file selected";
+  el.querySelector(".file-size").textContent = "";
+  el.classList.remove("has-file");
+}
+
+function clearInsuranceFile() {
+  insuranceUpload.value = "";
+  uploadedInsurance = null;
+  resetInsuranceFileInfo();
+}
+
+// ----- Insurance Coverage Radio Buttons -----
+document.getElementById("hasInsurance").addEventListener("change", function() {
+  if (!this.checked) return;
+  insuranceCoverageChoice = "yes";
+  document.getElementById("insuranceUploadSection").style.display = "";
+  // For Slingshot: hide generic DPP notice, show auth-hold info box instead
+  if (carData.hourlyTiers) {
+    document.getElementById("protectionPlanSection").style.display = "none";
+    _updateSlingshotInsuranceInfo("yes");
+  } else {
+    document.getElementById("protectionPlanSection").style.display = "none";
+  }
+  // Clear any protection-plan file state if previously "no"
+  updateTotal();
+  updatePayBtn();
+});
+
+document.getElementById("noInsurance").addEventListener("change", function() {
+  if (!this.checked) return;
+  insuranceCoverageChoice = "no";
+  document.getElementById("insuranceUploadSection").style.display = "none";
+  // For Slingshot: show auth-hold info box; for Camry: show tier-selection DPP notice
+  if (carData.hourlyTiers) {
+    document.getElementById("protectionPlanSection").style.display = "none";
+    _updateSlingshotInsuranceInfo("no");
+  } else {
+    document.getElementById("protectionPlanSection").style.display = "";
+    // Ensure the pre-selected tier radio is checked in the UI
+    _syncProtectionTierRadio(selectedProtectionTier);
+  }
+  // Clear the uploaded insurance file since it's no longer needed
+  clearInsuranceFile();
+  updateTotal();
+  updatePayBtn();
+});
+
+// Update the Slingshot insurance info box (shown below the radio buttons)
+// to reflect the selected option and its associated deposit amount.
+function _updateSlingshotInsuranceInfo(choice) {
+  const infoEl = document.getElementById("slingshotInsuranceInfo");
+  if (!infoEl) return;
+  if (choice === "yes") {
+    infoEl.innerHTML = `
+      <div class="deposit-notice" style="margin-top:10px">
+        <strong>✅ Option A selected: Own Insurance</strong>
+        <ul>
+          <li>Upload your proof of insurance below (required before checkout).</li>
+          <li>Damage Protection Plan is <strong>not</strong> included.</li>
+          <li>A <strong>$150 refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
+        </ul>
+      </div>`;
+    infoEl.style.display = "";
+  } else if (choice === "no") {
+    infoEl.innerHTML = `
+      <div class="deposit-notice" style="margin-top:10px">
+        <strong>✅ Option B selected: Damage Protection Plan Included</strong>
+        <ul>
+          <li>The <strong>Damage Protection Plan ($${PROTECTION_PLAN_DAILY}/day)</strong> is automatically included in your rental.</li>
+          <li>No insurance upload required.</li>
+          <li>A <strong>$150 refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
+        </ul>
+      </div>`;
+    infoEl.style.display = "";
+  } else {
+    infoEl.innerHTML = "";
+    infoEl.style.display = "none";
+  }
+}
+
+// ----- Economy Car: Protection Plan Tier Selection -----
+// Syncs the tier radio buttons in #protectionPlanSection to the given tier value.
+function _syncProtectionTierRadio(tier) {
+  const radio = document.querySelector('input[name="bookingProtectionPlan"][value="' + tier + '"]');
+  if (radio) radio.checked = true;
+}
+
+// Attach change handlers to the tier radios (Economy cars only).
+// Slingshot vehicles never show #protectionPlanSection, so this is safe for all vehicles.
+(function setupProtectionTierListeners() {
+  document.querySelectorAll('input[name="bookingProtectionPlan"]').forEach(function(radio) {
+    radio.addEventListener("change", function() {
+      if (!this.checked) return;
+      selectedProtectionTier = this.value;
+      updateTotal();
+      updatePayBtn();
+    });
+  });
+}());
+
+idUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+
+  if (!file) {
+    uploadedFile = null;
+    resetFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  // Validate file type
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert(window.slyI18n.t("booking.alertIdType"));
+    e.target.value = '';
+    uploadedFile = null;
+    resetFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  // Validate file size (5MB max)
+  const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+  if (file.size > maxSize) {
+    alert(window.slyI18n.t("booking.alertFileSize"));
+    e.target.value = '';
+    uploadedFile = null;
+    resetFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  uploadedFile = file;
+  const fileInfoEl = document.getElementById("fileInfo");
+  fileInfoEl.querySelector(".file-name").textContent = file.name;
+  fileInfoEl.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  fileInfoEl.classList.add("has-file");
+  updatePayBtn();
+});
+
+insuranceUpload.addEventListener("change", function(e) {
+  const file = e.target.files[0];
+
+  if (!file) {
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (!allowedTypes.includes(file.type)) {
+    alert(window.slyI18n.t("booking.alertInsuranceType"));
+    e.target.value = '';
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert(window.slyI18n.t("booking.alertFileSize"));
+    e.target.value = '';
+    uploadedInsurance = null;
+    resetInsuranceFileInfo();
+    updatePayBtn();
+    return;
+  }
+
+  uploadedInsurance = file;
+  const el = document.getElementById("insuranceFileInfo");
+  el.querySelector(".file-name").textContent = file.name;
+  el.querySelector(".file-size").textContent = `(${(file.size / 1024).toFixed(1)} KB)`;
+  el.classList.add("has-file");
+  updatePayBtn();
+});
+
+
+// Block past dates — only allow today or future dates
+const todayStr = new Date().toISOString().split("T")[0];
+pickup.setAttribute("min", todayStr);
+returnDate.setAttribute("min", todayStr);
+
+agreeCheckbox.addEventListener("change", updatePayBtn);
+document.getElementById("name").addEventListener("input", updatePayBtn);
+document.getElementById("email").addEventListener("input", updatePayBtn);
+
+// ----- Inline Rental Agreement / Signing -----
+// Opens the inline agreement panel pre-filled with the current booking details.
+// No external service is used — the customer reads the terms and types their
+// full name as an electronic signature.  The typed name is stored in
+// agreementSignature and included in the owner confirmation email.
+document.getElementById("signAgreementBtn").addEventListener("click", function () {
+  const renterName = document.getElementById("name").value.trim();
+  const pickupVal  = document.getElementById("pickup").value;
+  const returnVal  = document.getElementById("return").value;
+  // Hoist lang to function scope so it is available throughout the handler
+  // (e.g. for the payment terms section below) regardless of element presence.
+  const lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
+
+  // Populate the agreement intro paragraph with live booking details
+  const intro = document.getElementById("agreementIntro");
+  if (intro) {
+    const namePart   = renterName  ? `<strong>${renterName}</strong>` : "<strong>[Renter]</strong>";
+    const carPart    = `<strong>${carData.name}</strong>`;
+    const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
+    const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
+    if (lang === "es") {
+      intro.innerHTML = `Este Contrato de Alquiler es celebrado entre SLY Transportation Services ("Empresa") y ${namePart} ("Arrendatario") para el alquiler de ${carPart} desde ${pickPart} hasta ${retPart}.`;
+    } else {
+      intro.innerHTML = `This Rental Agreement is entered into between SLY Transportation Services ("Company") and ${namePart} ("Renter") for the rental of a ${carPart} from ${pickPart} to ${retPart}.`;
+    }
+  }
+
+  // Populate vehicle details section
+  const elMake  = document.getElementById("agreementVehicleMake");
+  const elModel = document.getElementById("agreementVehicleModel");
+  const elYear  = document.getElementById("agreementVehicleYear");
+  const elVin   = document.getElementById("agreementVehicleVin");
+  const elColor = document.getElementById("agreementVehicleColor");
+  const colorRow = document.getElementById("agreementColorRow");
+  if (elMake)  elMake.textContent  = carData.make  || "";
+  if (elModel) elModel.textContent = carData.model || "";
+  if (elYear)  elYear.textContent  = carData.year  || "";
+  if (elVin)   elVin.textContent   = carData.vin   || "";
+  if (elColor) elColor.textContent = carData.color || "";
+  if (colorRow) colorRow.style.display = carData.color ? "" : "none";
+
+  // Update the Security Deposit section to reflect actual vehicle pricing.
+  // Slingshot charges a $150 refundable security deposit as part of the full payment online.
+  // Camry vehicles have no security deposit — the entire section is hidden for economy cars.
+  const depositHeadingEl = document.getElementById("agreementDepositHeading");
+  const depositIntroEl    = document.getElementById("agreementDepositIntro");
+  const depositInsEl      = document.getElementById("agreementDepositInsurance");
+  const depositDppEl      = document.getElementById("agreementDepositDpp");
+  const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  const speedSection      = document.getElementById("slingshotSpeedSection");
+  if (carData.hourlyTiers) {
+    // Slingshot: full payment (including security deposit) charged at booking
+    if (depositHeadingEl) {
+      depositHeadingEl.removeAttribute("data-i18n");
+      depositHeadingEl.textContent = "SECURITY DEPOSIT (Refundable)";
+      depositHeadingEl.style.display = "";
+    }
+    if (depositIntroEl) {
+      depositIntroEl.innerHTML =
+        `A <strong>$150 refundable security deposit</strong> is included in your total payment. ` +
+        `It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). ` +
+        `The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.`;
+    }
+    if (depositDppEl) {
+      if (insuranceCoverageChoice === "no") {
+        depositDppEl.style.display = "";
+        depositDppEl.innerHTML = "<strong>Damage Protection Plan ($" + PROTECTION_PLAN_DAILY + "/day):</strong> automatically included &mdash; reduces your damage liability to $1,000";
+      } else {
+        depositDppEl.style.display = "none";
+      }
+    }
+    if (depositInsEl) depositInsEl.style.display = "none";
+    if (depositNeitherEl) depositNeitherEl.style.display = "none";
+
+    // Show Slingshot speed & strike policy
+    if (speedSection) speedSection.style.display = "";
+  } else {
+    // For Camry (economy): no security deposit — hide the entire deposit section.
+    if (depositHeadingEl) depositHeadingEl.style.display = "none";
+    if (depositIntroEl)   depositIntroEl.style.display   = "none";
+    if (depositInsEl)     depositInsEl.style.display     = "none";
+    if (depositDppEl)     depositDppEl.style.display     = "none";
+    if (depositNeitherEl) depositNeitherEl.style.display = "none";
+    // Hide Slingshot speed & strike policy for non-Slingshot vehicles
+    if (speedSection) speedSection.style.display = "none";
+
+    // For economy cars: populate the protection choice summary and update the
+    // tier-specific liability cap text in the Insurance & Liability section.
+    const protChoiceEl = document.getElementById("agreementProtectionChoice");
+    const dppReducesEl = document.getElementById("agreementDppReduces");
+    const withPlanEl   = document.getElementById("agreementWithPlanBody");
+    // Compute tier info once so it can be reused in both the choice summary
+    // and the liability-cap paragraphs below.
+    const tierName = selectedProtectionTier === "basic" ? "Basic"
+      : selectedProtectionTier === "premium" ? "Premium"
+      : "Standard";
+    const tierRate = selectedProtectionTier === "basic" ? PROTECTION_PLAN_BASIC
+      : selectedProtectionTier === "premium" ? PROTECTION_PLAN_PREMIUM
+      : PROTECTION_PLAN_STANDARD;
+    const tierCap = selectedProtectionTier === "basic" ? "$2,500"
+      : selectedProtectionTier === "premium" ? "$500"
+      : "$1,000";
+    // Build the all-tiers summary from the same source as the per-tier selection,
+    // so the values stay in sync if tier rates/caps are ever updated.
+    const allTiersCapsText = `Basic: $2,500 \u2022 Standard: $1,000 \u2022 Premium: $500`;
+    if (protChoiceEl) {
+      if (insuranceCoverageChoice === "yes") {
+        protChoiceEl.innerHTML = "<strong>Your protection choice:</strong> You have provided your own personal auto insurance. Proof of insurance is required at pickup.";
+        protChoiceEl.style.display = "";
+      } else if (insuranceCoverageChoice === "no") {
+        protChoiceEl.innerHTML = `<strong>Your protection choice:</strong> <strong>${tierName} Damage Protection Plan</strong> ($${tierRate}/day) — limits your damage liability to <strong>${tierCap} per incident</strong>.`;
+        protChoiceEl.style.display = "";
+      } else {
+        protChoiceEl.style.display = "none";
+      }
+    }
+    // Update the "reduces" and "with plan" paragraphs to show the correct
+    // tier-specific liability cap.
+    if (insuranceCoverageChoice === "no") {
+      if (dppReducesEl) {
+        dppReducesEl.removeAttribute("data-i18n-html");
+        dppReducesEl.innerHTML = `This plan reduces the renter\u2019s financial responsibility for covered vehicle damage. Liability cap depends on plan selected (${allTiersCapsText} per incident). Your selected plan (<strong>${tierName}</strong>) limits your liability to <strong>${tierCap} per incident</strong>.`;
+      }
+      if (withPlanEl) {
+        withPlanEl.removeAttribute("data-i18n-html");
+        withPlanEl.innerHTML = `<strong>With Protection Plan:</strong> Renter\u2019s maximum liability for covered vehicle damage is limited to <strong>${tierCap} per incident</strong> under the selected plan. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.`;
+      }
+    } else {
+      // Restore generic tier-info text (in case the user switched from "no" to "yes" insurance).
+      if (dppReducesEl && !dppReducesEl.hasAttribute("data-i18n-html")) {
+        dppReducesEl.setAttribute("data-i18n-html", "agreement.dppReduces");
+      }
+      if (withPlanEl && !withPlanEl.hasAttribute("data-i18n-html")) {
+        withPlanEl.setAttribute("data-i18n-html", "agreement.withPlanBody");
+      }
+    }
+  } // end economy (non-hourly) branch
+
+  // Show/hide the booking deposit policy section (Slingshot only)
+  const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
+  if (bookingDepositSection) {
+    bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
+    if (carData.hourlyTiers) {
+      // Update option A / option B bullet visibility in the agreement section
+      const optAEl = document.getElementById("slingshotDepositAgreementOptionA");
+      const optBEl = document.getElementById("slingshotDepositAgreementOptionB");
+      if (optAEl) optAEl.style.display = insuranceCoverageChoice === "yes" ? "" : "none";
+      if (optBEl) optBEl.style.display = insuranceCoverageChoice === "no"  ? "" : "none";
+    }
+  }
+
+  // Update Payment Terms body to accurately describe when/how payment is collected.
+  // Removing data-i18n prevents applyTranslations() from overwriting the corrected text.
+  const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
+  if (paymentTermsBodyEl) {
+    paymentTermsBodyEl.removeAttribute("data-i18n");
+    if (carData.hourlyTiers) {
+      // Slingshot: full payment (including $150 refundable security deposit) charged online at booking
+      paymentTermsBodyEl.textContent = `Full payment (including a $150 refundable security deposit) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
+    } else {
+      // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
+      paymentTermsBodyEl.textContent = lang === "es"
+        ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+        : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+    }
+  }
+
+  // Pre-fill the signature field with the renter's name if already typed
+  const sigInput = document.getElementById("signatureInput");
+  if (sigInput && renterName && !sigInput.value) {
+    sigInput.value = renterName;
+    // Programmatic value assignment doesn't fire the 'input' event, so
+    // manually sync the confirm button's disabled state to avoid the renter
+    // having to delete and retype their name just to enable the button.
+    document.getElementById("confirmSignBtn").disabled = false;
+  }
+
+  document.getElementById("rentalAgreementBox").style.display = "";
+  if (window.slyI18n && typeof window.slyI18n.applyTranslations === "function") {
+    window.slyI18n.applyTranslations();
+  }
+  this.style.display = "none";
+  document.getElementById("signAgreementStatus").style.display = "none";
+});
+
+// Enable the confirm button only when the signature field has text
+document.getElementById("signatureInput").addEventListener("input", function () {
+  document.getElementById("confirmSignBtn").disabled = this.value.trim() === "";
+  const sigError = document.getElementById("signatureError");
+  if (sigError) { sigError.style.display = "none"; sigError.textContent = ""; }
+});
+
+// Confirm & Sign
+document.getElementById("confirmSignBtn").addEventListener("click", function () {
+  const sig = document.getElementById("signatureInput").value.trim();
+  if (!sig) return;
+
+  // Ensure the typed signature matches the Full Name entered in the booking form
+  const renterName = document.getElementById("name").value.trim();
+  const sigError = document.getElementById("signatureError");
+  if (renterName && sig.toLowerCase() !== renterName.toLowerCase()) {
+    if (sigError) {
+      sigError.textContent = window.slyI18n ? window.slyI18n.t("booking.sigError") : "Signature must match the full name entered in the booking form.";
+      sigError.style.display = "";
+    }
+    return;
+  }
+
+  agreementSignature = sig;
+
+  document.getElementById("rentalAgreementBox").style.display = "none";
+  document.getElementById("signAgreementBtn").style.display  = "";
+
+  const btn    = document.getElementById("signAgreementBtn");
+  const status = document.getElementById("signAgreementStatus");
+  btn.classList.add("signed");
+  btn.textContent = window.slyI18n ? window.slyI18n.t("booking.signedBtn") : "✅ Rental Agreement Signed";
+
+  status.style.display = "";
+  status.style.color   = "#4caf50";
+  const signedByTpl = window.slyI18n ? window.slyI18n.t("booking.signedByNote") : "Signed by {name}. Check the box below to confirm.";
+  status.textContent   = signedByTpl.replace("{name}", sig);
+
+  const checkbox = document.getElementById("agree");
+  checkbox.disabled = false;
+  updatePayBtn();
+});
+
+// Cancel — close the panel and restore the button
+document.getElementById("cancelSignBtn").addEventListener("click", function () {
+  document.getElementById("rentalAgreementBox").style.display = "none";
+  document.getElementById("signAgreementBtn").style.display  = "";
+});
+
+// Promote return pickers to module scope so applySlingshotDuration() can update them
+let returnPicker = null;
+let returnTimePicker = null;
+
+// ----- Slingshot: auto-compute return date/time from pickup + duration -----
+function applySlingshotDuration() {
+  if (!carData.hourlyTiers) return;
+  const selectedDuration = document.querySelector('input[name="slingshotDuration"]:checked');
+  if (!selectedDuration) return;
+
+  const hours = parseInt(selectedDuration.value, 10);
+  currentSlingshotDuration = hours;
+
+  const dateStr = pickup.value; // "YYYY-MM-DD"
+  if (!dateStr) { updatePayBtn(); return; }
+
+  // Normalize pickupTime.value to "HH:MM" regardless of Flatpickr's "h:i K" format
+  let timeStr = "12:00"; // default noon if no time selected
+  const rawTime = pickupTime.value;
+  if (rawTime) {
+    const nativeTest = new Date("1970-01-01T" + rawTime);
+    if (!isNaN(nativeTest)) {
+      // Already HH:MM (native input or Flatpickr with 24-hr format)
+      timeStr = rawTime.slice(0, 5);
+    } else {
+      // Flatpickr "h:i K" — e.g. "2:30 PM"
+      const m = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (m) {
+        let h = parseInt(m[1], 10);
+        const mins = m[2];
+        const period = m[3].toUpperCase();
+        if (period === "PM" && h !== 12) h += 12;
+        if (period === "AM" && h === 12) h = 0;
+        timeStr = String(h).padStart(2, "0") + ":" + mins;
+      }
+    }
+  }
+
+  // Build pickup moment and add duration
+  const pickupMoment = new Date(dateStr + "T" + timeStr);
+  if (isNaN(pickupMoment.getTime())) { updatePayBtn(); return; }
+  const returnMoment = new Date(pickupMoment.getTime() + hours * 60 * 60 * 1000);
+
+  // Format return date as "YYYY-MM-DD"
+  const y  = returnMoment.getFullYear();
+  const mo = String(returnMoment.getMonth() + 1).padStart(2, "0");
+  const dd = String(returnMoment.getDate()).padStart(2, "0");
+  const retDateStr = `${y}-${mo}-${dd}`;
+
+  // Format return time as "HH:MM"
+  const retH = String(returnMoment.getHours()).padStart(2, "0");
+  const retM = String(returnMoment.getMinutes()).padStart(2, "0");
+  const retTimeStr = `${retH}:${retM}`;
+
+  // Update return date (via Flatpickr API if available, otherwise direct)
+  if (returnPicker) {
+    returnPicker.setDate(retDateStr, true);
+  } else {
+    returnDate.value = retDateStr;
+  }
+
+  // Update return time (via Flatpickr API if available, otherwise direct)
+  if (returnTimePicker) {
+    returnTimePicker.setDate(returnMoment, true);
+  } else {
+    returnTime.value = retTimeStr;
+  }
+
+  // Show the return section so the renter can see their auto-computed return time
+  const retSection = document.getElementById("returnDateSection");
+  if (retSection) retSection.style.display = "";
+
+  updateTotal();
+  updatePayBtn();
+}
+
+// Flag set to true inside initDatePickers() once Flatpickr takes over.
+// Flatpickr already fires native change events after its own onChange, so
+// the native listeners below must skip when Flatpickr is active to avoid
+// calling updateTotal() / applySlingshotDuration() twice on every selection.
+let flatpickrActive = false;
+[pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
+  inp.addEventListener("change", function() {
+    if (flatpickrActive) return; // Flatpickr's own onChange handles this
+    if (carData.hourlyTiers) {
+      applySlingshotDuration();
+    } else {
+      updateTotal();
+    }
+  });
+});
+
+// ----- Date Pickers (Flatpickr) -----
+async function initDatePickers() {
+  if (typeof flatpickr === "undefined") return; // fallback to native inputs
+  let bookedRanges = [];
+  try {
+    // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
+    // GitHub Pages CDN caches files for several minutes after a commit, so the
+    // static file often shows stale (empty) data even after a booking is saved.
+    // The /api/booked-dates endpoint reads directly from the GitHub Contents API
+    // with Cache-Control: no-store, so new bookings appear immediately.
+    const resp = await fetch(`${API_BASE}/api/booked-dates`);
+    if (resp.ok) {
+      const data = await resp.json();
+      bookedRanges = data[vehicleId] || [];
+    }
+  } catch (e) { console.error("Failed to load booked dates:", e); }
+
+  // Pre-compile range boundaries to millisecond timestamps once so the
+  // disable callback never allocates new Date objects per calendar cell.
+  const compiledRanges = bookedRanges.map(function(r) {
+    return {
+      from: new Date(r.from + "T00:00:00").getTime(),
+      to: new Date(r.to + "T23:59:59").getTime()
+    };
+  });
+
+  function isBooked(date) {
+    const t = date.getTime();
+    return compiledRanges.some(function(r) { return t >= r.from && t <= r.to; });
+  }
+
+  const pickupPicker = flatpickr(pickup, {
+    minDate: "today",
+    disable: [isBooked],
+    onChange: function(selectedDates) {
+      if (selectedDates[0]) {
+        if (carData.minRentalDays > 1) {
+          const minReturn = new Date(selectedDates[0]);
+          minReturn.setDate(minReturn.getDate() + carData.minRentalDays);
+          if (returnPicker) returnPicker.set("minDate", minReturn);
+        } else {
+          if (returnPicker) returnPicker.set("minDate", selectedDates[0]);
+        }
+      }
+      if (carData.hourlyTiers) {
+        applySlingshotDuration();
+      } else {
+        updateTotal();
+      }
+    }
+  });
+
+  returnPicker = flatpickr(returnDate, {
+    minDate: "today",
+    disable: [isBooked],
+    onChange: function() {
+      if (!carData.hourlyTiers) updateTotal();
+    }
+  });
+
+  flatpickr(pickupTime, {
+    enableTime: true,
+    noCalendar: true,
+    dateFormat: "h:i K",
+    onChange: function(selectedDates, timeStr) {
+      if (carData.hourlyTiers) {
+        applySlingshotDuration();
+      } else {
+        if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
+      }
+    }
+  });
+
+  returnTimePicker = flatpickr(returnTime, {
+    enableTime: true,
+    noCalendar: true,
+    dateFormat: "h:i K",
+    clickOpens: false
+  });
+
+  // Flatpickr is now fully active; native change listeners will defer to it.
+  flatpickrActive = true;
+}
+
+initDatePickers();
+
+// ----- Fleet Status Check -----
+// Fetch the vehicle's availability from fleet-status.json. If the vehicle is
+// globally marked unavailable (e.g. already booked or taken offline), show a
+// clear "Currently Booked" notice and replace the booking form with the
+// waitlist sign-up section.  Fails open on any API error so transient outages
+// do not lock out the form.
+(async function checkFleetStatus() {
+  try {
+    const [fleetResp, datesResp] = await Promise.all([
+      fetch(`${API_BASE}/api/fleet-status`),
+      fetch(`${API_BASE}/api/booked-dates`),
+    ]);
+    if (!fleetResp.ok) return;
+    const status      = await fleetResp.json();
+    const bookedDates = datesResp.ok ? await datesResp.json() : {};
+    const entry = status[vehicleId];
+    if (entry && entry.available === false) {
+      // Compute next available date from booked-dates
+      const today  = new Date().toISOString().slice(0, 10);
+      const ranges = ((bookedDates[vehicleId] || []).slice().sort((a, b) =>
+        a.from < b.from ? -1 : 1
+      ));
+      let nextAvail = null;
+      for (const r of ranges) {
+        if (r.from <= today && today <= r.to) {
+          // Add one day after the booking ends
+          const d = new Date(r.to + "T00:00:00");
+          d.setDate(d.getDate() + 1);
+          nextAvail = d.toISOString().slice(0, 10);
+          break;
+        }
+      }
+      showVehicleUnavailable(nextAvail);
+    }
+  } catch (err) {
+    console.warn("Could not check fleet status:", err);
+  }
+})();
+
+function showVehicleUnavailable(nextAvailableISO) {
+  const bookingSection = document.querySelector(".booking");
+  if (!bookingSection) return;
+
+  // ── 1. Insert / update the "Currently Booked" notice at the top ──────────
+  let notice = document.getElementById("vehicleUnavailableNotice");
+  if (!notice) {
+    notice = document.createElement("div");
+    notice.id = "vehicleUnavailableNotice";
+    notice.className = "vehicle-unavailable-notice";
+    bookingSection.insertBefore(notice, bookingSection.firstChild);
+  }
+
+  let nextLine = "";
+  if (nextAvailableISO) {
+    const d = new Date(nextAvailableISO + "T00:00:00");
+    const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+
+    // Pre-fill the preferred pickup date in the waitlist form
+    const wlPickup = document.getElementById("waitlistPickup");
+    if (wlPickup) {
+      wlPickup.value = nextAvailableISO;
+      wlPickup.setAttribute("min", nextAvailableISO);
+    }
+    const wlReturn = document.getElementById("waitlistReturn");
+    if (wlReturn) wlReturn.setAttribute("min", nextAvailableISO);
+
+    // Also update the inline "next available" line inside the waitlist section
+    const nextLine2 = document.getElementById("waitlistNextAvailLine");
+    if (nextLine2) {
+      nextLine2.textContent = _fmt("fleet.waitlistNextLine", { date: formatted }, `Next available: ${formatted}`);
+      nextLine2.style.display = "";
+    }
+  }
+
+  notice.innerHTML = `
+    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Booked")}</strong></p>
+    ${nextLine}
+    <p><a href="cars.html">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
+
+  // ── 2. Hide the regular booking form elements ────────────────────────────
+  // Hide the heading and all regular form inputs/sections.  The waitlist
+  // section is shown below instead so there are no duplicate "reserve" CTAs.
+  const bookingHeading = bookingSection.querySelector("h2");
+  if (bookingHeading) bookingHeading.style.display = "none";
+
+  const regularIds = [
+    "paymentRetryBanner",
+    "pickup", "pickupTime", "slingshotDurationSection", "returnDateSection",
+    "name", "email", "phone",
+    "nameError",
+    "idSection", "idUpload", "fileInfo",
+    "insuranceSection",
+    "hasInsurance", "noInsurance",
+    "insuranceUploadSection", "protectionPlanSection",
+    "signAgreementBtn", "signAgreementStatus", "rentalAgreementBox",
+    "slingshotDepositNotice", "camryDepositNotice",
+    "priceBreakdown", "subtotal", "taxLine", "taxNote",
+    "payHint", "reserveBtn", "stripePay",
+    "payment-request-button", "payment-form",
+    "smsConsent",
+  ];
+  regularIds.forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+  // Also hide labels and blocks that only have for= attributes, using a broader selector
+  bookingSection.querySelectorAll(
+    'label[for="pickup"], label[for="pickupTime"], label[for="return"], label[for="returnTime"], ' +
+    'label[for="name"], label[for="email"], label[for="phone"], label[for="idUpload"], ' +
+    'label[for="insuranceUpload"], ' +
+    '.sms-consent, .total, .pay-hint, .insurance-question, .insurance-options, ' +
+    '.id-section, .insurance-upload-section, .protection-plan-section, ' +
+    '#insuranceCoverage, .insurance-label'
+  ).forEach(function(el) { el.style.display = "none"; });
+
+  // Disable all remaining interactive elements so they cannot be submitted
+  bookingSection.querySelectorAll("input, button, select, textarea").forEach(function(el) {
+    if (!el.closest("#waitlistSection")) el.disabled = true;
+  });
+
+  // ── 3. Show the waitlist sign-up section ─────────────────────────────────
+  const waitlistSection = document.getElementById("waitlistSection");
+  if (waitlistSection) {
+    waitlistSection.style.display = "";
+    // Initialize the waitlist form interactions
+    initWaitlistForm();
+  }
+}
+
+// ----- Waitlist Form -----
+// Manages the waitlist sign-up form that is shown when the vehicle is booked.
+// Validates inputs and launches the Stripe $50 deposit payment flow.
+function initWaitlistForm() {
+  const wlName    = document.getElementById("waitlistName");
+  const wlEmail   = document.getElementById("waitlistEmail");
+  const wlPickup  = document.getElementById("waitlistPickup");
+  const wlReturn  = document.getElementById("waitlistReturn");
+  const wlLicense = document.getElementById("waitlistLicense");
+  const wlJoinBtn = document.getElementById("waitlistJoinBtn");
+  const wlHint    = document.getElementById("waitlistPayHint");
+
+  // Insurance & protection plan elements
+  const wlInsYes       = document.getElementById("waitlistHasInsuranceYes");
+  const wlInsNo        = document.getElementById("waitlistHasInsuranceNo");
+  const wlInsUploadSec = document.getElementById("waitlistInsuranceUploadSection");
+  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
+  const wlInsFileInfo  = document.getElementById("waitlistInsuranceFileInfo");
+  const wlInsNoneOpt   = document.getElementById("waitlistProtectionNoneOption");
+  const wlInsNoneRad   = document.getElementById("waitlistProtectionNone");
+  const wlInsStdRad    = document.getElementById("waitlistProtectionStandard");
+
+  // Set minimum dates
+  const todayISO = new Date().toISOString().slice(0, 10);
+  if (wlPickup && !wlPickup.value) wlPickup.setAttribute("min", todayISO);
+  if (wlReturn) wlReturn.setAttribute("min", todayISO);
+
+  function updateWaitlistBtn() {
+    const nameOk    = wlName    && isValidName(wlName.value.trim());
+    const emailOk   = wlEmail   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
+    const licenseOk = wlLicense && wlLicense.files && wlLicense.files.length > 0;
+    const insAnswered = (wlInsYes && wlInsYes.checked) || (wlInsNo && wlInsNo.checked);
+    const insProofOk  = !wlInsYes || !wlInsYes.checked || (wlInsUpload && wlInsUpload.files && wlInsUpload.files.length > 0);
+    const ready     = nameOk && emailOk && licenseOk && insAnswered && insProofOk;
+    if (wlJoinBtn) wlJoinBtn.disabled = !ready;
+    if (wlHint)    wlHint.style.display = ready ? "none" : "";
+  }
+
+  // Insurance radio change handler
+  function onWlInsuranceChange() {
+    const hasIns = wlInsYes && wlInsYes.checked;
+    if (wlInsUploadSec) wlInsUploadSec.style.display = hasIns ? "" : "none";
+    if (!hasIns) {
+      // Disable Decline when no insurance
+      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = "0.4"; wlInsNoneOpt.title = "A protection plan is required when you have no insurance."; }
+      if (wlInsNoneRad && wlInsNoneRad.checked && wlInsStdRad) wlInsStdRad.checked = true;
+    } else {
+      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = ""; wlInsNoneOpt.title = ""; }
+    }
+    updateWaitlistBtn();
+  }
+
+  if (wlInsYes) wlInsYes.addEventListener("change", onWlInsuranceChange);
+  if (wlInsNo)  wlInsNo.addEventListener("change", onWlInsuranceChange);
+
+  // Prevent selecting Decline when No insurance is chosen
+  if (wlInsNoneRad) {
+    wlInsNoneRad.addEventListener("change", function() {
+      if (wlInsNo && wlInsNo.checked && wlInsStdRad) {
+        wlInsStdRad.checked = true;
+      }
+    });
+  }
+
+  // Insurance proof file validation
+  if (wlInsUpload) {
+    wlInsUpload.addEventListener("change", function() {
+      const file = this.files[0];
+      if (wlInsFileInfo) { wlInsFileInfo.textContent = ""; wlInsFileInfo.style.color = ""; }
+      if (!file) { updateWaitlistBtn(); return; }
+      const allowed = ["image/jpeg", "image/png", "application/pdf"];
+      if (!allowed.includes(file.type)) {
+        if (wlInsFileInfo) { wlInsFileInfo.textContent = "Only JPG, PNG, or PDF files are accepted."; wlInsFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        updateWaitlistBtn();
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        if (wlInsFileInfo) { wlInsFileInfo.textContent = "File must be under 5 MB."; wlInsFileInfo.style.color = "#f44336"; }
+        this.value = "";
+        updateWaitlistBtn();
+        return;
+      }
+      if (wlInsFileInfo) { wlInsFileInfo.textContent = "\u2713 " + file.name; wlInsFileInfo.style.color = "#4caf50"; }
+      updateWaitlistBtn();
+    });
+  }
+
+  [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
+    if (el) el.addEventListener("input", updateWaitlistBtn);
+  });
+  if (wlLicense) wlLicense.addEventListener("change", updateWaitlistBtn);
+  updateWaitlistBtn();
+
+  // When pickup changes, keep return ≥ pickup
+  if (wlPickup) {
+    wlPickup.addEventListener("change", function() {
+      if (wlReturn) wlReturn.setAttribute("min", wlPickup.value || todayISO);
+      if (wlReturn && wlReturn.value && wlReturn.value < wlPickup.value) {
+        wlReturn.value = wlPickup.value;
+      }
+    });
+  }
+
+  if (wlJoinBtn) {
+    wlJoinBtn.addEventListener("click", launchWaitlistPayment);
+  }
+}
+
+async function launchWaitlistPayment() {
+  const wlName    = document.getElementById("waitlistName").value.trim();
+  const wlEmail   = document.getElementById("waitlistEmail").value.trim();
+  const wlPhone   = (document.getElementById("waitlistPhone") || {}).value || "";
+  const wlPickup  = (document.getElementById("waitlistPickup") || {}).value || "";
+  const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
+  const wlLicense = document.getElementById("waitlistLicense");
+
+  // Insurance & protection plan values
+  const wlInsChecked   = document.querySelector('input[name="waitlistInsuranceCoverage"]:checked');
+  const wlHasInsurance = wlInsChecked ? wlInsChecked.value : null;
+  const wlPlanChecked  = document.querySelector('input[name="waitlistProtectionPlan"]:checked');
+  const wlProtectionPlanPref = wlPlanChecked ? wlPlanChecked.value : "standard";
+  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
+
+  // Validate insurance question (should be already enforced by button state)
+  if (!wlHasInsurance) {
+    alert(_t("booking.insuranceRequired", "Please answer the insurance question."));
+    return;
+  }
+  if (wlHasInsurance === "no" && wlProtectionPlanPref === "none") {
+    alert(_t("booking.planRequiredNoInsurance", "A protection plan is required when you have no personal auto insurance."));
+    return;
+  }
+
+  // Defensive guard — the button should already be disabled when no file is
+  // selected (enforced by updateWaitlistBtn), but guard here in case this
+  // function is called programmatically.
+  if (!wlLicense || !wlLicense.files || !wlLicense.files[0]) return;
+  const licenseFile = wlLicense.files[0];
+
+  const joinBtn = document.getElementById("waitlistJoinBtn");
+  if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
+
+  // Read license file as base64 before launching payment (must happen before redirect)
+  let licenseBase64 = null;
+  let licenseMimeType = licenseFile.type || "application/octet-stream";
+  let licenseFileName = licenseFile.name || "drivers-license";
+  try {
+    licenseBase64 = await new Promise(function(resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        // result is "data:<mime>;base64,<data>" — strip the prefix
+        const result = e.target.result;
+        const commaIdx = result.indexOf(",");
+        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(licenseFile);
+    });
+  } catch (fileErr) {
+    console.error("Failed to read license file:", fileErr);
+    if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit"); }
+    alert(_t("booking.loadError", "Could not read your ID file. Please try again."));
+    return;
+  }
+
+  // Read insurance proof file if provided
+  let wlInsBase64 = null;
+  let wlInsMimeType = null;
+  let wlInsFileName = null;
+  if (wlHasInsurance === "yes" && wlInsUpload && wlInsUpload.files && wlInsUpload.files[0]) {
+    const insFile = wlInsUpload.files[0];
+    try {
+      wlInsBase64 = await new Promise(function(resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const result = e.target.result;
+          const commaIdx = result.indexOf(",");
+          resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(insFile);
+      });
+      wlInsMimeType = insFile.type || "application/octet-stream";
+      wlInsFileName = insFile.name || "insurance-proof";
+    } catch (insErr) {
+      console.warn("Could not read insurance file:", insErr);
+    }
+  }
+
+  // Store license in IndexedDB so it survives the Stripe redirect
+  try {
+    await new Promise(function(resolve) {
+      const idbReq = indexedDB.open("slyRidesDB", 1);
+      idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+      idbReq.onsuccess = function(e) {
+        const db = e.target.result;
+        try {
+          const tx = db.transaction("files", "readwrite");
+          tx.objectStore("files").put(
+            { licenseBase64, licenseMimeType, licenseFileName },
+            "waitlistLicense"
+          );
+          // Also store insurance proof if available
+          if (wlInsBase64) {
+            tx.objectStore("files").put(
+              { base64: wlInsBase64, mimeType: wlInsMimeType, fileName: wlInsFileName },
+              "waitlistInsurance"
+            );
+          }
+          tx.oncomplete = function() { db.close(); resolve(); };
+          tx.onerror    = function() { db.close(); resolve(); };
+        } catch (err) { db.close(); resolve(); }
+      };
+      idbReq.onerror = function() { resolve(); };
+    });
+  } catch (idbErr) {
+    console.warn("Could not save license to IndexedDB:", idbErr);
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/join-waitlist`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vehicleId,
+        name:            wlName,
+        email:           wlEmail,
+        phone:           wlPhone.trim(),
+        preferredPickup: wlPickup,
+        preferredReturn: wlReturn,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Server error");
+
+    const { clientSecret, publishableKey } = data;
+    if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
+
+    // Save waitlist data to sessionStorage so success.html can call save-waitlist-entry
+    sessionStorage.setItem("slyStripePublishable", publishableKey);
+    sessionStorage.setItem("slyPiSecret", clientSecret);
+    sessionStorage.setItem("slyWaitlistEntry", JSON.stringify({
+      isWaitlist:          true,
+      vehicleId,
+      car:                 carData.name,
+      name:                wlName,
+      email:               wlEmail,
+      phone:               wlPhone.trim(),
+      preferredPickup:     wlPickup,
+      preferredReturn:     wlReturn,
+      hasInsurance:        wlHasInsurance,
+      protectionPlanPref:  wlProtectionPlanPref,
+    }));
+
+    const stripe   = Stripe(publishableKey);
+    const elements = stripe.elements({
+      clientSecret,
+      locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
+      defaultValues: { billingDetails: { name: wlName, email: wlEmail } },
+    });
+
+    const paymentElement = elements.create("payment", {
+      fields: { billingDetails: { name: "never" } },
+    });
+
+    // Show the Stripe payment form; hide the sign-up form
+    document.getElementById("waitlistSection").querySelector(".waitlist-form").style.display = "none";
+    const wlPayForm = document.getElementById("waitlistPaymentForm");
+    wlPayForm.style.display = "";
+    paymentElement.mount("#waitlist-payment-element");
+
+    // Submit + cancel handlers for this payment attempt.
+    // { once: true } on submit prevents double-fire if the user clicks rapidly.
+    let submitting = false;
+    const submitBtn = document.getElementById("waitlist-submit-payment");
+    const cancelBtn = document.getElementById("waitlist-cancel-payment");
+    const msgEl     = document.getElementById("waitlist-payment-message");
+
+    const handleWaitlistSubmit = async function() {
+      if (submitting) return;
+      submitting = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = _t("booking.processingPayment", "Processing…");
+      msgEl.textContent = "";
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html?waitlist=1&vehicle=" + encodeURIComponent(vehicleId),
+          receipt_email: wlEmail,
+          payment_method_data: {
+            billing_details: { name: wlName, email: wlEmail },
+          },
+        },
+      });
+
+      if (error) {
+        msgEl.textContent = error.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Pay $50 Deposit";
+        submitting = false;
+      }
+      // On success Stripe redirects — no cleanup needed here
+    };
+    submitBtn.addEventListener("click", handleWaitlistSubmit);
+
+    const handleWaitlistCancel = function() {
+      submitting = false;
+      submitBtn.removeEventListener("click", handleWaitlistSubmit);
+      cancelBtn.removeEventListener("click", handleWaitlistCancel);
+      paymentElement.unmount();
+      msgEl.textContent = "";
+      wlPayForm.style.display = "none";
+      const wlForm = document.getElementById("waitlistSection").querySelector(".waitlist-form");
+      if (wlForm) wlForm.style.display = "";
+      const joinBtnReset = document.getElementById("waitlistJoinBtn");
+      if (joinBtnReset) {
+        joinBtnReset.disabled = false;
+        joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+      }
+      // Clean up the stored license and insurance proof from IndexedDB on cancel
+      try {
+        const idbReq = indexedDB.open("slyRidesDB", 1);
+        idbReq.onsuccess = function(e) {
+          const db = e.target.result;
+          try {
+            const tx = db.transaction("files", "readwrite");
+            tx.objectStore("files").delete("waitlistLicense");
+            tx.objectStore("files").delete("waitlistInsurance");
+            tx.oncomplete = function() { db.close(); };
+            tx.onerror    = function() { db.close(); };
+          } catch (err) { db.close(); }
+        };
+      } catch (idbErr) { /* ignore */ }
+    };
+    cancelBtn.addEventListener("click", handleWaitlistCancel);
+
+  } catch (err) {
+    console.error("Waitlist payment error:", err);
+    const joinBtn2 = document.getElementById("waitlistJoinBtn");
+    if (joinBtn2) {
+      joinBtn2.disabled = false;
+      joinBtn2.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+    }
+    alert(err.message || _t("booking.loadError", "Could not launch payment. Please try again."));
+  }
+}
+
+
+// ----- Payment Retry Pre-fill -----
+// Converts a Base64 string (stored in IndexedDB) back into a Blob.
+function base64ToBlob(base64, mimeType) {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    bytes[i] = byteChars.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+// Restores all form fields, insurance choice, signature, and uploaded files
+// from a previous payment attempt that ended in failure.  Called on every
+// pageshow so it works for both fresh page loads and bfcache restores.
+function restoreFailedBooking() {
+  try {
+    const stored = sessionStorage.getItem("slyRidesBooking");
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    if (!data.paymentFailed) return;
+
+    // Helper: set a date/time input respecting Flatpickr when active.
+    // For native <input type="time"> fallback, converts "h:i K" (e.g. "2:30 PM")
+    // to "HH:MM" which is the format the native input requires.
+    function fpSet(input, value) {
+      if (!value || !input) return;
+      if (flatpickrActive && input._flatpickr) {
+        input._flatpickr.setDate(value, true);
+      } else {
+        // Normalize Flatpickr "h:i K" time format → "HH:MM" for native time inputs
+        const ampm = value.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (ampm) {
+          let h = parseInt(ampm[1], 10);
+          const mins = ampm[2];
+          const period = ampm[3].toUpperCase();
+          if (period === "PM" && h !== 12) h += 12;
+          if (period === "AM" && h === 12) h = 0;
+          input.value = String(h).padStart(2, "0") + ":" + mins;
+        } else {
+          input.value = value;
+        }
+      }
+    }
+
+    // Restore personal details
+    const nameField  = document.getElementById("name");
+    const emailField = document.getElementById("email");
+    const phoneField = document.getElementById("phone");
+    if (data.name  && nameField)  nameField.value  = data.name;
+    if (data.email && emailField) emailField.value = data.email;
+    if (data.phone && phoneField) phoneField.value = data.phone;
+
+    // Restore dates / times
+    fpSet(pickup, data.pickup);
+    fpSet(pickupTime, data.pickupTime);
+    if (!carData.hourlyTiers) {
+      fpSet(returnDate, data.returnDate);
+    }
+
+    // Restore Slingshot hourly-duration selection
+    if (data.slingshotDuration && carData.hourlyTiers) {
+      currentSlingshotDuration = data.slingshotDuration;
+      const radio = document.querySelector(`input[name="slingshotDuration"][value="${data.slingshotDuration}"]`);
+      if (radio) radio.checked = true;
+      applySlingshotDuration();
+    }
+
+    // Restore insurance / protection-plan choice.
+    // insuranceCoverageChoice is saved explicitly in the failed-payment entry
+    // since v2 of this feature.  The legacy fallback (from protectionPlan /
+    // insuranceFileName) handles entries persisted by an earlier release.
+    const choice = data.insuranceCoverageChoice ||
+      (data.protectionPlan === true ? "no" : (data.insuranceFileName ? "yes" : null));
+    if (choice) {
+      insuranceCoverageChoice = choice;
+      const hasInsuranceRadio   = document.getElementById("hasInsurance");
+      const noInsuranceRadio    = document.getElementById("noInsurance");
+      const insuranceSection    = document.getElementById("insuranceUploadSection");
+      const protectionSection   = document.getElementById("protectionPlanSection");
+      if (choice === "yes") {
+        if (hasInsuranceRadio) hasInsuranceRadio.checked = true;
+        if (insuranceSection)  insuranceSection.style.display  = "";
+        if (protectionSection) protectionSection.style.display = "none";
+        // For Slingshot: restore info box instead of generic DPP section
+        if (carData.hourlyTiers) {
+          if (protectionSection) protectionSection.style.display = "none";
+          _updateSlingshotInsuranceInfo("yes");
+        }
+      } else {
+        if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
+        if (insuranceSection)  insuranceSection.style.display  = "none";
+        if (carData.hourlyTiers) {
+          if (protectionSection) protectionSection.style.display = "none";
+          _updateSlingshotInsuranceInfo("no");
+        } else {
+          // Restore the protection plan tier for economy cars
+          if (data.protectionPlanTier) {
+            selectedProtectionTier = data.protectionPlanTier;
+          }
+          if (protectionSection) protectionSection.style.display = "";
+          _syncProtectionTierRadio(selectedProtectionTier);
+        }
+      }
+    }
+
+    // Restore signed-agreement state
+    if (data.signature) {
+      agreementSignature = data.signature;
+      const signBtn    = document.getElementById("signAgreementBtn");
+      const signStatus = document.getElementById("signAgreementStatus");
+      if (signBtn) {
+        signBtn.classList.add("signed");
+        signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signedBtn") : "✅ Rental Agreement Signed";
+        signBtn.style.display = "";
+      }
+      if (signStatus) {
+        signStatus.style.display = "";
+        signStatus.style.color   = "#4caf50";
+        const tpl = window.slyI18n ? window.slyI18n.t("booking.signedByNote") : "Signed by {name}. Check the box below to confirm.";
+        signStatus.textContent   = tpl.replace("{name}", data.signature);
+      }
+      agreeCheckbox.disabled = false;
+      agreeCheckbox.checked  = true;
+    }
+
+    // Show the retry banner so the renter knows the form was pre-filled
+    const retryBanner = document.getElementById("paymentRetryBanner");
+    if (retryBanner) retryBanner.style.display = "";
+
+    updateTotal();
+    // Defer updatePayBtn until after the async IndexedDB file restoration
+    // finishes so it only runs once with a complete picture of the form state.
+
+    // Restore uploaded files from IndexedDB (async, finishes with updatePayBtn)
+    try {
+      const idbReq = indexedDB.open("slyRidesDB", 1);
+      idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
+      idbReq.onsuccess = function(e) {
+        const db = e.target.result;
+        try {
+          const tx  = db.transaction("files", "readonly");
+          const req = tx.objectStore("files").get("pendingId");
+          req.onsuccess = function(ev) {
+            const fileData = ev.target.result;
+            db.close();
+            if (!fileData) { updatePayBtn(); return; }
+
+            if (fileData.idBase64 && fileData.idFileName && fileData.idMimeType) {
+              const blob = base64ToBlob(fileData.idBase64, fileData.idMimeType);
+              uploadedFile = new File([blob], fileData.idFileName, { type: fileData.idMimeType });
+              const fileInfoEl = document.getElementById("fileInfo");
+              if (fileInfoEl) {
+                fileInfoEl.querySelector(".file-name").textContent = fileData.idFileName;
+                fileInfoEl.querySelector(".file-size").textContent = `(${(blob.size / 1024).toFixed(1)} KB)`;
+                fileInfoEl.classList.add("has-file");
+              }
+            }
+
+            if (choice === "yes" && fileData.insuranceBase64 && fileData.insuranceFileName && fileData.insuranceMimeType) {
+              const blob = base64ToBlob(fileData.insuranceBase64, fileData.insuranceMimeType);
+              uploadedInsurance = new File([blob], fileData.insuranceFileName, { type: fileData.insuranceMimeType });
+              const insEl = document.getElementById("insuranceFileInfo");
+              if (insEl) {
+                insEl.querySelector(".file-name").textContent = fileData.insuranceFileName;
+                insEl.querySelector(".file-size").textContent = `(${(blob.size / 1024).toFixed(1)} KB)`;
+                insEl.classList.add("has-file");
+              }
+            }
+
+            updatePayBtn();
+          };
+          req.onerror = function() { db.close(); updatePayBtn(); };
+        } catch (idbErr) { console.warn("restoreFailedBooking: IDB transaction error:", idbErr); db.close(); updatePayBtn(); }
+      };
+      idbReq.onerror = function() { console.warn("restoreFailedBooking: IDB open error"); updatePayBtn(); };
+    } catch (idbErr) { console.warn("restoreFailedBooking: IDB unavailable:", idbErr); updatePayBtn(); }
+  } catch (err) { console.warn("restoreFailedBooking: could not restore booking data:", err); }
+}
+
+// When the browser restores this page from bfcache (e.g. user hits "back"
+// after the Stripe redirect), all field values and UI state from the previous
+// renter's session would still be visible.  Resetting here ensures each new
+// visitor starts with a completely blank form.
+window.addEventListener("pageshow", function(e) {
+  if (e.persisted) {
+  document.getElementById("name").value = "";
+  document.getElementById("email").value = "";
+  document.getElementById("phone").value = "";
+  pickup.value = "";
+  returnDate.value = "";
+  pickupTime.value = "";
+  returnTime.value = "";
+  idUpload.value = "";
+  uploadedFile = null;
+  resetFileInfo();
+  clearInsuranceFile();
+  // Reset insurance coverage radio buttons
+  const hasInsuranceRadio = document.getElementById("hasInsurance");
+  const noInsuranceRadio = document.getElementById("noInsurance");
+  if (hasInsuranceRadio) hasInsuranceRadio.checked = false;
+  if (noInsuranceRadio) noInsuranceRadio.checked = false;
+  insuranceCoverageChoice = null;
+  // Reset hourly-tier duration selection (Slingshot vehicles)
+  if (carData.hourlyTiers) {
+    currentSlingshotDuration = null;
+    document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
+    const retSection = document.getElementById("returnDateSection");
+    if (retSection) retSection.style.display = "none";
+  }
+  const insuranceUploadSection = document.getElementById("insuranceUploadSection");
+  const protectionPlanSection = document.getElementById("protectionPlanSection");
+  if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
+  if (protectionPlanSection) protectionPlanSection.style.display = "none";
+  // Reset Slingshot insurance info box
+  if (carData.hourlyTiers) { _updateSlingshotInsuranceInfo(null); }
+  const signBtn = document.getElementById("signAgreementBtn");
+  signBtn.classList.remove("signed");
+  signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signAgreementBtn") : "✍ Review & Sign Rental Agreement";
+  signBtn.style.display = "";
+  const agreementBox = document.getElementById("rentalAgreementBox");
+  if (agreementBox) agreementBox.style.display = "none";
+  const sigInput = document.getElementById("signatureInput");
+  if (sigInput) sigInput.value = "";
+  const confirmBtn = document.getElementById("confirmSignBtn");
+  if (confirmBtn) confirmBtn.disabled = true;
+  agreementSignature = "";
+  const status = document.getElementById("signAgreementStatus");
+  status.style.display = "none";
+  status.textContent = "";
+  agreeCheckbox.disabled = true;
+  agreeCheckbox.checked = false;
+  const paymentForm = document.getElementById("payment-form");
+  paymentForm.style.display = "none";
+  const prBtnContainer = document.getElementById("payment-request-button");
+  if (prBtnContainer) prBtnContainer.style.display = "none";
+  document.getElementById("payment-message").textContent = "";
+  stripeBtn.style.display = "";
+  stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+  const _reserveBtnReset = document.getElementById("reserveBtn");
+  if (_reserveBtnReset) {
+    // reserveBtn is only shown for Camry (not Slingshot — Slingshot uses auth-hold system)
+    _reserveBtnReset.style.display = carData.hourlyTiers ? "none" : "";
+    _reserveBtnReset.disabled = true;
+  }
+  _pendingPaymentMode = null;
+  totalEl.textContent = "0";
+  document.getElementById("subtotal").textContent = "0";
+  document.getElementById("taxLine").style.display = "none";
+  const taxNoteReset = document.getElementById("taxNote");
+  if (taxNoteReset) taxNoteReset.style.display = "";
+  currentSubtotal = 0;
+  document.getElementById("priceBreakdown").style.display = "none";
+  updatePayBtn();
+  // Re-initialize Flatpickr so the calendar shows fresh state (no lingering
+  // selected dates from the previous session) and fetches the latest booked
+  // ranges from the API.
+  initDatePickers();
+  }
+  // After any page restoration (bfcache or fresh load), check whether a
+  // previous payment attempt failed and pre-fill the form if so.
+  restoreFailedBooking();
+});
+
+function updatePayBtn() {
+  const nameVal = document.getElementById("name").value.trim();
+  const emailVal = document.getElementById("email").value.trim();
+  // Insurance readiness:
+  //   "yes"  → requires an uploaded file (own insurance)
+  //   "no"   → for Slingshot: DPP auto-included (always ready)
+  //           → for Economy: requires a valid tier selection (basic/standard/premium)
+  const isEconomy = !carData.hourlyTiers;
+  const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
+  const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
+                          (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
+  const nameValid = isValidName(nameVal);
+  // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
+  const datesReady = carData.hourlyTiers
+    ? pickup.value && currentSlingshotDuration
+    : pickup.value && returnDate.value;
+  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
+  stripeBtn.disabled = !ready;
+  const _reserveBtnPayBtn = document.getElementById("reserveBtn");
+  if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
+  const hint = document.getElementById("payHint");
+  if (hint) hint.style.display = ready ? "none" : "block";
+}
+
+function updateTotal() {
+  // ----- Hourly-tier vehicles (Slingshot) -----
+  if (carData.hourlyTiers) {
+    if (!pickup.value || !currentSlingshotDuration) return;
+    const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
+    if (!tier) return;
+    // For DPP and day-count purposes: 3hr/6hr = 1 day; 24hr = 1 day; 48hr = 2 days; 72hr = 3 days.
+    const slingshotDays = Math.max(1, Math.ceil(currentSlingshotDuration / 24));
+    currentDayCount = slingshotDays;
+
+    // Compute the full rental cost: tier price + $150 security deposit + DPP (if Option B).
+    // Everything is charged online at booking — no split payment.
+    const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY * slingshotDays : 0;
+    const rentalBase = tier.price + carData.deposit + dppCost;
+    // Store full rental total on carData for the booking payload.
+    carData._fullRentalCost = rentalBase.toFixed(2);
+
+    // Show the rental breakdown so renters know exactly what they're paying.
+    const lines = [];
+    lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
+
+    // Security deposit — refundable after return with no damage
+    lines.push({ label: "\uD83D\uDCB0 Security Deposit (refundable)", amount: carData.deposit });
+
+    // DPP scales with the number of rental days when Option B is selected
+    if (insuranceCoverageChoice === "no") {
+      const dppFmtKey = slingshotDays === 1 ? "booking.dppSlingshotFmt1" : "booking.dppSlingshotFmtN";
+      const dppLabel = slingshotDays === 1
+        ? `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`
+        : `Damage Protection Plan (${slingshotDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day)`;
+      lines.push({ label: _fmt(dppFmtKey, { days: slingshotDays, price: PROTECTION_PLAN_DAILY }, dppLabel), amount: dppCost });
+    }
+
+    // Compute LA sales tax (10.25%) on the full rental base.
+    const taxAmount = Math.round(rentalBase * LA_TAX_RATE * 100) / 100;
+    const afterTaxRental = Math.round((rentalBase + taxAmount) * 100) / 100;
+    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
+
+    currentSubtotal = rentalBase;
+    carData._fullRentalCost = afterTaxRental.toFixed(2);
+
+    const rowsEl = document.getElementById("breakdownRows");
+    const frag = document.createDocumentFragment();
+    lines.forEach(function(l) {
+      const row = document.createElement("div");
+      row.className = "breakdown-row";
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "breakdown-label";
+      labelSpan.textContent = l.label;
+      const valueSpan = document.createElement("span");
+      valueSpan.className = "breakdown-value";
+      valueSpan.textContent = "$" + l.amount;
+      row.appendChild(labelSpan);
+      row.appendChild(valueSpan);
+      frag.appendChild(row);
+    });
+    rowsEl.innerHTML = "";
+    rowsEl.appendChild(frag);
+    document.getElementById("priceBreakdown").style.display = "";
+
+    document.getElementById("subtotal").textContent = rentalBase;
+    const taxLineEl = document.getElementById("taxLine");
+    const taxNoteEl = document.getElementById("taxNote");
+    document.getElementById("tax").textContent = taxAmount.toFixed(2);
+    taxLineEl.style.display = "";
+    if (taxNoteEl) taxNoteEl.style.display = "none";
+    // Total shows the full amount charged online (rental + deposit + DPP + tax)
+    totalEl.textContent = afterTaxRental.toFixed(2);
+    // Standard pay button — full amount charged online
+    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    updatePayBtn();
+    return;
+  }
+
+  // ----- Daily/weekly vehicles -----
+  if(!pickup.value || !returnDate.value) return;
+  const minDays = carData.minRentalDays || 1;
+  currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+
+  // Calculate cost using the best applicable discount tier (greedy: largest period first).
+  // "Monthly" is defined as every 30-day block; this is intentional for a rental business
+  // where rates are fixed regardless of calendar month lengths.
+  let cost = 0;
+  let remaining = currentDayCount;
+  const lines = [];
+
+  if (carData.monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    const subtotal = months * carData.monthly;
+    cost += subtotal;
+    remaining = remaining % 30;
+    lines.push({ label: months === 1 ? _fmt("booking.fmtMonth1", { price: carData.monthly }, `1 month \u00D7 $${carData.monthly}/mo`) : _fmt("booking.fmtMonthN", { n: months, price: carData.monthly }, `${months} months \u00D7 $${carData.monthly}/mo`), amount: subtotal });
+  }
+  if (carData.biweekly && remaining >= 14) {
+    const twoWeekPeriods = Math.floor(remaining / 14);
+    const subtotal = twoWeekPeriods * carData.biweekly;
+    cost += subtotal;
+    remaining = remaining % 14;
+    lines.push({ label: twoWeekPeriods === 1 ? _fmt("booking.fmtTwoWeeks1", { price: carData.biweekly }, `1 2-week period \u00D7 $${carData.biweekly}`) : _fmt("booking.fmtTwoWeeksN", { n: twoWeekPeriods, price: carData.biweekly }, `${twoWeekPeriods} 2-week periods \u00D7 $${carData.biweekly}`), amount: subtotal });
+  }
+  if (carData.weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    const subtotal = weeks * carData.weekly;
+    cost += subtotal;
+    remaining = remaining % 7;
+    lines.push({ label: weeks === 1 ? _fmt("booking.fmtWeek1", { price: carData.weekly }, `1 week \u00D7 $${carData.weekly}/wk`) : _fmt("booking.fmtWeekN", { n: weeks, price: carData.weekly }, `${weeks} weeks \u00D7 $${carData.weekly}/wk`), amount: subtotal });
+  }
+  if (remaining > 0) {
+    const subtotal = remaining * carData.pricePerDay;
+    cost += subtotal;
+    lines.push({ label: remaining === 1 ? _fmt("booking.fmtDay1", { price: carData.pricePerDay }, `1 day \u00D7 $${carData.pricePerDay}/day`) : _fmt("booking.fmtDayN", { n: remaining, price: carData.pricePerDay }, `${remaining} days \u00D7 $${carData.pricePerDay}/day`), amount: subtotal });
+  }
+  // Security deposit is always charged (never waived)
+  if (carData.deposit) {
+    lines.push({ label: _t("booking.securityDeposit", "Security deposit"), amount: carData.deposit });
+  }
+  // Add Damage Protection Plan if the renter has no rental coverage.
+  // Economy cars use flat tier rates (basic $15/day · standard $30/day · premium $50/day).
+  if (insuranceCoverageChoice === "no") {
+    const tierRate = selectedProtectionTier === "basic" ? PROTECTION_PLAN_BASIC
+      : selectedProtectionTier === "premium" ? PROTECTION_PLAN_PREMIUM
+      : PROTECTION_PLAN_STANDARD;
+    const tierName = selectedProtectionTier === "basic" ? "Basic"
+      : selectedProtectionTier === "premium" ? "Premium"
+      : "Standard";
+    const protectionCost = tierRate * currentDayCount;
+    const dppLabel = currentDayCount === 1
+      ? `${tierName} Protection (1 day \u00D7 $${tierRate}/day)`
+      : `${tierName} Protection (${currentDayCount} days \u00D7 $${tierRate}/day)`;
+    cost += protectionCost;
+    lines.push({ label: dppLabel, amount: protectionCost });
+  }
+
+  const rentalSubtotal = cost + (carData.deposit || 0);
+  currentSubtotal = rentalSubtotal;
+
+  // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
+  const taxAmount = Math.round(rentalSubtotal * LA_TAX_RATE * 100) / 100;
+  const afterTaxTotal = Math.round((rentalSubtotal + taxAmount) * 100) / 100;
+  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
+
+  const rowsEl = document.getElementById("breakdownRows");
+  const frag = document.createDocumentFragment();
+  lines.forEach(function(l) {
+    const row = document.createElement("div");
+    row.className = "breakdown-row";
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "breakdown-label";
+    labelSpan.textContent = l.label;
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "breakdown-value";
+    valueSpan.textContent = "$" + l.amount;
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    frag.appendChild(row);
+  });
+  rowsEl.innerHTML = "";
+  rowsEl.appendChild(frag);
+  document.getElementById("priceBreakdown").style.display = "";
+
+  // Update the subtotal / tax / total display rows
+  document.getElementById("subtotal").textContent = rentalSubtotal;
+  const taxLineEl = document.getElementById("taxLine");
+  const taxNoteEl = document.getElementById("taxNote");
+  document.getElementById("tax").textContent = taxAmount.toFixed(2);
+  taxLineEl.style.display = "";
+  if (taxNoteEl) taxNoteEl.style.display = "none";
+  totalEl.textContent = afterTaxTotal.toFixed(2);
+  stripeBtn.textContent = window.slyI18n.t("booking.payPrefix") + afterTaxTotal.toFixed(2);
+  updatePayBtn();
+}
+
+// ----- Pay Now -----
+stripeBtn.addEventListener("click", async () => {
+  // Resolve payment mode: deposit when reserveBtn was clicked, full when stripeBtn clicked directly.
+  // _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
+  if (_pendingPaymentMode === null) {
+    _pendingPaymentMode = 'full'; // stripeBtn is always "Book Now" for all vehicles
+  }
+  const paymentMode = _pendingPaymentMode;
+  _pendingPaymentMode = null; // consume and reset
+
+  const email = document.getElementById("email").value;
+  const nameVal = document.getElementById("name").value.trim();
+  const phone = document.getElementById("phone").value.trim();
+  if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
+  if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
+
+  // Determine the amount charged now: full payment for Slingshot, deposit or full for Camry.
+  const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
+  const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
+  // For Slingshot: show full rental total; For Camry reserve: show deposit; For Camry full: full amount.
+  const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
+
+  // Meta Pixel — track checkout initiation with the amount being charged
+  if (typeof fbq === "function") {
+    var _pixelCheckoutValue = parseFloat(String(displayPayNow).replace(/[^0-9.]/g, ""));
+    fbq("track", "InitiateCheckout", {
+      value: isFinite(_pixelCheckoutValue) ? _pixelCheckoutValue : 0,
+      currency: "USD",
+    });
+  }
+
+  stripeBtn.disabled = true;
+  stripeBtn.textContent = window.slyI18n.t("booking.loadingPayment");
+  const _reserveBtnLoading = document.getElementById("reserveBtn");
+  if (_reserveBtnLoading) _reserveBtnLoading.disabled = true;
+
+  // Pre-encode the ID file so it's ready when the user submits payment
+  let idBase64 = null;
+  let idFileName = null;
+  let idMimeType = null;
+  if (uploadedFile) {
+    try {
+      idBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedFile);
+      });
+      idFileName = uploadedFile.name;
+      idMimeType = uploadedFile.type;
+    } catch (err) {
+      console.error("ID encoding error:", err);
+    }
+  }
+
+  // Pre-encode the insurance file
+  let insuranceBase64 = null;
+  let insuranceFileName = null;
+  let insuranceMimeType = null;
+  if (uploadedInsurance) {
+    try {
+      insuranceBase64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedInsurance);
+      });
+      insuranceFileName = uploadedInsurance.name;
+      insuranceMimeType = uploadedInsurance.type;
+    } catch (err) {
+      console.error("Insurance encoding error:", err);
+    }
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/create-payment-intent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vehicleId: vehicleId,
+        name: nameVal,
+        car: carData.name,
+        email: email,
+        pickup: pickup.value,
+        returnDate: returnDate.value,
+        protectionPlan: insuranceCoverageChoice === "no",
+        // For Economy cars: pass the selected tier so the server uses the correct flat rate.
+        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+        // Pass insurance choice for Slingshot auth-hold selection
+        ...(carData.hourlyTiers ? { insuranceCoverageChoice } : {}),
+        paymentMode,
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      // Surface the server's error message so setup issues are visible
+      const isDatesError = res.status === 409;
+      throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
+    }
+
+    const { clientSecret, publishableKey } = data;
+    if (!clientSecret) {
+      throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
+    }
+    if (!publishableKey) {
+      throw new Error("No publishableKey returned from server. Check that STRIPE_PUBLISHABLE_KEY is set in your Vercel environment variables.");
+    }
+
+    // Persist the publishable key and client secret so success.html can
+    // initialize Stripe.js and call stripe.retrievePaymentIntent() to verify
+    // the actual payment status for ALL payment methods — including Apple Pay,
+    // Google Pay, card, and Cash App — regardless of whether the redirect URL
+    // contains payment_intent_client_secret.
+    sessionStorage.setItem("slyStripePublishable", publishableKey);
+    sessionStorage.setItem("slyPiSecret", clientSecret);
+
+    // Initialize Stripe and mount the Payment Element
+    const stripe = Stripe(publishableKey);
+    const elements = stripe.elements({
+      clientSecret,
+      // Pass the user's selected language so the Payment Element (including
+      // the Apple Pay sheet and Google Pay button) renders in the right locale.
+      locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
+      defaultValues: {
+        billingDetails: {
+          name: nameVal,
+          email: email,
+        },
+      },
+    });
+
+    // ----- Payment Request Button (Apple Pay / Google Pay) -----
+    // Build a paymentRequest with a valid country ('US'), currency ('usd'), and
+    // the confirmed total in whole cents.  canMakePayment() returns null when
+    // the browser / device does not support any express wallet, so we guard
+    // before mounting the button — this is what prevents the "Unable to show
+    // Apple Pay" error that occurs when Apple Pay is displayed on unsupported
+    // browsers or when the domain association file has not yet been verified.
+    const totalCents = isCamryDepositMode
+        ? Math.round(camryDepositAmount * 100)
+        : Math.round(parseFloat(totalEl.textContent) * 100);
+    const paymentReq = stripe.paymentRequest({
+      country: "US",
+      currency: "usd",
+      total: {
+        label: isCamryDepositMode ? carData.name + " Reservation Deposit" : carData.name + " Rental",
+        amount: totalCents,
+      },
+      requestPayerName: true,
+      requestPayerEmail: true,
+    });
+
+    const prContainer = document.getElementById("payment-request-button");
+    let prButton = null;
+
+    const canPay = await paymentReq.canMakePayment();
+    if (canPay && prContainer) {
+      prButton = elements.create("paymentRequestButton", { paymentRequest: paymentReq });
+      prButton.mount("#payment-request-button");
+      prContainer.style.display = "block";
+
+      // Handle the payment authorization from Apple Pay / Google Pay.
+      // We use handleActions:false so that Stripe does not attempt to render
+      // its own confirmation UI inside the native wallet sheet.
+      paymentReq.on("paymentmethod", async (ev) => {
+        const prBookingPayload = {
+          vehicleId,
+          car: carData.name,
+          vehicleMake: carData.make || null,
+          vehicleModel: carData.model || null,
+          vehicleYear: carData.year || null,
+          vehicleVin: carData.vin || null,
+          vehicleColor: carData.color || null,
+          name: nameVal,
+          pickup: pickup.value,
+          pickupTime: pickupTime.value,
+          returnDate: returnDate.value,
+          returnTime: returnTime.value,
+          email,
+          phone,
+          total: displayPayNow,
+          // For Slingshot, fullRentalCost and balanceAtPickup are not applicable (full payment online).
+          fullRentalCost: carData.hourlyTiers ? null : (carData._fullRentalCost || totalEl.textContent),
+          balanceAtPickup: carData.hourlyTiers ? null : (carData._balanceAtPickup || null),
+          pricePerDay: carData.pricePerDay || null,
+          pricePerWeek: carData.weekly || null,
+          pricePerBiWeekly: carData.biweekly || null,
+          pricePerMonthly: carData.monthly || null,
+          deposit: carData.deposit || 0,
+          days: currentDayCount,
+          ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+          idFileName,
+          idMimeType,
+          insuranceFileName,
+          insuranceMimeType,
+          insuranceCoverageChoice,
+          protectionPlan: insuranceCoverageChoice === "no",
+          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+          signature: agreementSignature || null,
+        };
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
+
+        if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
+          try {
+            await new Promise((resolve) => {
+              const idbReq = indexedDB.open("slyRidesDB", 1);
+              idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+              idbReq.onsuccess = e => {
+                const db = e.target.result;
+                try {
+                  const tx = db.transaction("files", "readwrite");
+                  tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+                  tx.oncomplete = () => { db.close(); resolve(); };
+                  tx.onerror = () => { db.close(); resolve(); };
+                } catch (idbErr) { db.close(); resolve(); }
+              };
+              idbReq.onerror = () => resolve();
+            });
+          } catch (idbErr) {
+            console.warn("Could not save ID to IndexedDB:", idbErr);
+          }
+        }
+
+        const { paymentIntent, error: confirmError } = await stripe.confirmCardPayment(
+          clientSecret,
+          { payment_method: ev.paymentMethod.id },
+          { handleActions: false }
+        );
+
+        if (confirmError) {
+          ev.complete("fail");
+          sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+            ...prBookingPayload,
+            paymentFailed: true,
+            insuranceCoverageChoice,
+          }));
+          document.getElementById("payment-message").textContent = confirmError.message;
+        } else {
+          ev.complete("success");
+          if (paymentIntent.status === "requires_action") {
+            // The payment requires additional action (e.g. 3D Secure).
+            const { error: actionError } = await stripe.confirmCardPayment(clientSecret, {
+              payment_method: ev.paymentMethod.id,
+            });
+            if (actionError) {
+              sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+                ...prBookingPayload,
+                paymentFailed: true,
+                insuranceCoverageChoice,
+              }));
+              document.getElementById("payment-message").textContent = actionError.message;
+            } else {
+              window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+            }
+          } else {
+            window.location.href = "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId);
+          }
+        }
+      });
+    }
+
+    // Collect the cardholder name from our booking form (already validated).
+    // Hide the duplicate name field inside the Stripe Payment Element so the
+    // customer cannot accidentally clear or override it.
+    const paymentElement = elements.create("payment", {
+      fields: {
+        billingDetails: { name: "never" },
+      },
+    });
+
+    const paymentForm = document.getElementById("payment-form");
+    document.getElementById("payAmount").textContent = displayPayNow;
+    document.getElementById("submit-payment").textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+    paymentForm.style.display = "block";
+    stripeBtn.style.display = "none";
+    const payHint = document.getElementById("payHint");
+    if (payHint) payHint.style.display = "none";
+
+    paymentElement.mount("#payment-element");
+
+    // Handle cancel — go back to booking form.
+    // { once: true } is intentional: each "Pay Now" click registers a fresh cancel
+    // listener inside its own closure, so once-per-showing is exactly what we want.
+    let paymentSubmitting = false;
+
+    const submitHandler = async () => {
+      if (paymentSubmitting) return;
+      paymentSubmitting = true;
+      const submitBtn = document.getElementById("submit-payment");
+      const msgEl = document.getElementById("payment-message");
+      submitBtn.disabled = true;
+      submitBtn.textContent = window.slyI18n.t("booking.processingPayment");
+      msgEl.textContent = "";
+
+      // Store booking data in sessionStorage so success.html can send the
+      // confirmation email AFTER the payment redirect completes.
+      // (A fire-and-forget fetch here is cancelled by the browser redirect.)
+      const bookingPayload = {
+        vehicleId,
+        car: carData.name,
+        vehicleMake: carData.make || null,
+        vehicleModel: carData.model || null,
+        vehicleYear: carData.year || null,
+        vehicleVin: carData.vin || null,
+        vehicleColor: carData.color || null,
+        name: nameVal,
+        pickup: pickup.value,
+        pickupTime: pickupTime.value,
+        returnDate: returnDate.value,
+        returnTime: returnTime.value,
+        email,
+        phone,
+        total: displayPayNow,
+        // For Slingshot, fullRentalCost and balanceAtPickup are not applicable (full payment online).
+        fullRentalCost: carData.hourlyTiers ? null : (carData._fullRentalCost || totalEl.textContent),
+        balanceAtPickup: carData.hourlyTiers ? null : (carData._balanceAtPickup || null),
+        pricePerDay: carData.pricePerDay || null,
+        pricePerWeek: carData.weekly || null,
+        pricePerBiWeekly: carData.biweekly || null,
+        pricePerMonthly: carData.monthly || null,
+        deposit: carData.deposit || 0,
+        days: currentDayCount,
+        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+        idFileName,
+        idMimeType,
+        insuranceFileName,
+        insuranceMimeType,
+        insuranceCoverageChoice,
+        protectionPlan: insuranceCoverageChoice === "no",
+        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+        signature: agreementSignature || null,
+      };
+      // Store booking metadata in sessionStorage and the large ID binary in
+      // IndexedDB (no size cap) so both survive the Stripe redirect reliably.
+      sessionStorage.setItem("slyRidesBooking", JSON.stringify(bookingPayload));
+
+      if ((idBase64 && idFileName) || (insuranceBase64 && insuranceFileName)) {
+        const idbReq = indexedDB.open("slyRidesDB", 1);
+        idbReq.onupgradeneeded = e => e.target.result.createObjectStore("files");
+        idbReq.onsuccess = e => {
+          const db = e.target.result;
+          try {
+            const tx = db.transaction("files", "readwrite");
+            tx.objectStore("files").put({ idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType }, "pendingId");
+            tx.oncomplete = () => db.close();
+            tx.onerror = () => db.close();
+          } catch (idbErr) { db.close(); }
+        };
+        idbReq.onerror = () => {};
+      }
+
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html?vehicle=" + encodeURIComponent(vehicleId),
+          receipt_email: email,
+          payment_method_data: {
+            billing_details: {
+              name: nameVal,
+              email: email,
+            },
+          },
+        },
+      });
+
+      if (error) {
+        // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
+        // Keep booking data in sessionStorage with paymentFailed:true so the form
+        // can be pre-filled automatically when the renter returns to try again.
+        fetch(API_BASE + "/api/send-reservation-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...bookingPayload,
+            paymentStatus: "failed",
+            idBase64,
+            idFileName,
+            idMimeType,
+            insuranceBase64,
+            insuranceFileName,
+            insuranceMimeType,
+          }),
+        }).catch(function (err) { console.error("Failed to notify owner of payment failure:", err); });
+        sessionStorage.setItem("slyRidesBooking", JSON.stringify({
+          ...bookingPayload,
+          paymentFailed: true,
+          insuranceCoverageChoice,
+          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+        }));
+        msgEl.textContent = error.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = window.slyI18n.t("booking.payPrefix") + displayPayNow;
+        paymentSubmitting = false;
+      }
+    };
+
+    document.getElementById("submit-payment").addEventListener("click", submitHandler);
+
+    document.getElementById("cancel-payment").addEventListener("click", () => {
+      paymentSubmitting = false; // reset in case cancelled mid-processing
+      document.getElementById("submit-payment").removeEventListener("click", submitHandler);
+      paymentElement.unmount();
+      if (prButton) {
+        prButton.unmount();
+        prButton = null;
+      }
+      if (prContainer) prContainer.style.display = "none";
+      document.getElementById("payment-form").style.display = "none";
+      document.getElementById("payment-message").textContent = "";
+      stripeBtn.style.display = "";
+      // Restore the correct button text for Slingshot vs Camry
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+      const _reserveBtnCancel = document.getElementById("reserveBtn");
+      if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
+      _pendingPaymentMode = null;
+      updatePayBtn();
+    }, { once: true });
+
+  } catch (err) {
+    console.error("Stripe error:", err);
+    stripeBtn.disabled = false;
+    // Restore the correct button text
+    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    const _reserveBtnErr = document.getElementById("reserveBtn");
+    if (_reserveBtnErr) _reserveBtnErr.disabled = false;
+    _pendingPaymentMode = null;
+    if (err.isDatesError) {
+      // Dates were booked by someone else — refresh the calendar and tell the user
+      alert(err.message);
+      initDatePickers(); // reload availability so the calendar reflects the new booking
+      return;
+    }
+    // Show detailed message only for known setup/config errors; generic message otherwise
+    const isSetupError = err.message && (
+      err.message.includes("STRIPE_SECRET_KEY") ||
+      err.message.includes("STRIPE_PUBLISHABLE_KEY") ||
+      err.message.includes("clientSecret") ||
+      err.message.includes("publishableKey")
+    );
+    const userMessage = isSetupError
+      ? "Payment setup error:\n\n" + err.message
+      : window.slyI18n.t("booking.loadError");
+    alert(userMessage);
+  }
+});
+
+// ----- Camry "Reserve with Deposit" button -----
+// Sets deposit payment mode then delegates to the main stripeBtn handler.
+(function setupReserveBtn() {
+  const reserveBtnEl = document.getElementById("reserveBtn");
+  if (!reserveBtnEl) return;
+  reserveBtnEl.addEventListener("click", function () {
+    _pendingPaymentMode = 'deposit';
+    stripeBtn.click();
+  });
+}());
+
