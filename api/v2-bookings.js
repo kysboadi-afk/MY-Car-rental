@@ -13,6 +13,7 @@ import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -36,29 +37,51 @@ function ghHeaders() {
   return headers;
 }
 
-async function blockBookedDates(vehicleId, from, to) {
+async function loadBookedDates() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
   const getResp = await fetch(apiUrl, { headers: ghHeaders() });
-  if (!getResp.ok) return; // non-fatal — calendar may be stale but booking is saved
-
+  if (!getResp.ok) {
+    if (getResp.status === 404) return { data: {}, sha: null };
+    return { data: {}, sha: null }; // non-fatal
+  }
   const fileData = await getResp.json();
-  const current  = JSON.parse(
-    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-  );
-  if (!current[vehicleId]) current[vehicleId] = [];
-  if (hasOverlap(current[vehicleId], from, to)) return;
+  let data = {};
+  try {
+    data = JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    if (typeof data !== "object" || Array.isArray(data)) data = {};
+  } catch {
+    data = {};
+  }
+  return { data, sha: fileData.sha };
+}
 
-  current[vehicleId].push({ from, to });
-  const updatedContent = Buffer.from(JSON.stringify(current, null, 2) + "\n").toString("base64");
-
-  await fetch(apiUrl, {
+async function saveBookedDates(data, sha, message) {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+  const body = { message, content };
+  if (sha) body.sha = sha;
+  const resp = await fetch(apiUrl, {
     method:  "PUT",
     headers: { ...ghHeaders(), "Content-Type": "application/json" },
-    body:    JSON.stringify({
-      message: `Block dates for ${vehicleId}: ${from} to ${to} (v2 manual booking)`,
-      content: updatedContent,
-      sha:     fileData.sha,
-    }),
+    body:    JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+  }
+}
+
+async function blockBookedDates(vehicleId, from, to) {
+  await updateJsonFileWithRetry({
+    load:    loadBookedDates,
+    apply:   (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      if (!hasOverlap(data[vehicleId], from, to)) {
+        data[vehicleId].push({ from, to });
+      }
+    },
+    save:    saveBookedDates,
+    message: `Block dates for ${vehicleId}: ${from} to ${to} (v2 manual booking)`,
   });
 }
 
@@ -120,19 +143,16 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: "GITHUB_TOKEN not configured" });
       }
 
-      const { data, sha } = await loadBookings();
-      if (!Array.isArray(data[vehicleId])) {
+      // Validate booking exists before the retry loop
+      const { data: checkData } = await loadBookings();
+      if (!Array.isArray(checkData[vehicleId])) {
         return res.status(404).json({ error: "Vehicle not found" });
       }
-
-      const idx = data[vehicleId].findIndex(
-        (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
-      );
-      if (idx === -1) {
+      if (!checkData[vehicleId].some((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)) {
         return res.status(404).json({ error: "Booking not found" });
       }
 
-      // Only allow safe fields to be updated
+      // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
       const allowedUpdateFields = ["status", "notes", "amountPaid", "paymentMethod"];
       for (const f of allowedUpdateFields) {
@@ -142,13 +162,23 @@ export default async function handler(req, res) {
       }
       safeUpdates.updatedAt = new Date().toISOString();
 
-      data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
-      await saveBookings(
-        data, sha,
-        `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`
-      );
+      let updatedBooking;
+      await updateJsonFileWithRetry({
+        load:    loadBookings,
+        apply:   (data) => {
+          if (!Array.isArray(data[vehicleId])) return;
+          const idx = data[vehicleId].findIndex(
+            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+          );
+          if (idx === -1) return;
+          data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
+          updatedBooking = data[vehicleId][idx];
+        },
+        save:    saveBookings,
+        message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+      });
 
-      return res.status(200).json({ success: true, booking: data[vehicleId][idx] });
+      return res.status(200).json({ success: true, booking: updatedBooking });
     }
 
     // ── CREATE (manual booking) ─────────────────────────────────────────────
@@ -198,6 +228,7 @@ export default async function handler(req, res) {
 
       const parsedAmount = typeof amountPaid === "number" ? amountPaid : parseFloat(amountPaid) || 0;
 
+      // Build the booking record once; bookingId is stable across retries for idempotency
       const booking = {
         bookingId:      crypto.randomBytes(8).toString("hex"),
         name:           name.trim().slice(0, 100),
@@ -218,7 +249,19 @@ export default async function handler(req, res) {
         source:         "admin_v2",
       };
 
-      await appendBooking(booking);
+      // Save with retry; apply is idempotent — skips if bookingId already present
+      await updateJsonFileWithRetry({
+        load:    loadBookings,
+        apply:   (data) => {
+          if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+          if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+            data[vehicleId].push(booking);
+          }
+        },
+        save:    saveBookings,
+        message: `v2: Manual booking ${booking.bookingId} for ${vehicleId} (${name.trim()})`,
+      });
+
       await blockBookedDates(vehicleId, pickupDate, returnDate).catch((err) => {
         console.warn("v2-bookings: blockBookedDates failed (non-fatal):", err.message);
       });

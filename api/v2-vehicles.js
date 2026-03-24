@@ -9,6 +9,7 @@
 
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -56,12 +57,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: "GITHUB_TOKEN not configured" });
       }
 
-      const { data, sha } = await loadVehicles();
-      if (!data[vehicleId]) {
-        return res.status(404).json({ error: "Vehicle not found" });
-      }
-
-      // Only allow safe fields to be updated
+      // Validate and build safe updates before the retry loop
       const safeUpdates = {};
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
@@ -85,10 +81,25 @@ export default async function handler(req, res) {
         }
       }
 
-      data[vehicleId] = { ...data[vehicleId], ...safeUpdates };
-      await saveVehicles(data, sha, `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`);
+      // Quick existence check before the retry loop
+      const { data: checkData } = await loadVehicles();
+      if (!checkData[vehicleId]) {
+        return res.status(404).json({ error: "Vehicle not found" });
+      }
 
-      return res.status(200).json({ success: true, vehicle: data[vehicleId] });
+      let updatedVehicle;
+      await updateJsonFileWithRetry({
+        load:    loadVehicles,
+        apply:   (data) => {
+          if (!data[vehicleId]) return; // vehicle was deleted between the check and the retry
+          data[vehicleId] = { ...data[vehicleId], ...safeUpdates };
+          updatedVehicle  = data[vehicleId];
+        },
+        save:    saveVehicles,
+        message: `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+      });
+
+      return res.status(200).json({ success: true, vehicle: updatedVehicle });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

@@ -14,6 +14,7 @@
 //   }
 
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const FLEET_STATUS_PATH = "fleet-status.json";
@@ -60,54 +61,54 @@ export default async function handler(req, res) {
   }
 
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const headers = {
+  const ghHeaders = {
     Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  try {
-    const getResp = await fetch(apiUrl, { headers });
-    let current = { ...DEFAULT_STATUS };
-    let sha = null;
-
-    if (getResp.ok) {
-      const fileData = await getResp.json();
-      sha = fileData.sha;
-      try {
-        current = JSON.parse(
-          Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-        );
-      } catch (parseErr) {
-        console.error("update-fleet-status: malformed JSON in file, resetting to defaults:", parseErr);
-        current = { ...DEFAULT_STATUS };
-      }
+  async function loadFleetStatus() {
+    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: { ...DEFAULT_STATUS }, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET fleet-status.json failed: ${resp.status} ${text}`);
     }
+    const file = await resp.json();
+    let data;
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    } catch {
+      data = { ...DEFAULT_STATUS };
+    }
+    return { data, sha: file.sha };
+  }
 
-    if (!current[vehicleId]) current[vehicleId] = {};
-    current[vehicleId].available = available;
-
-    const updatedContent = Buffer.from(
-      JSON.stringify(current, null, 2) + "\n"
-    ).toString("base64");
-
-    const putBody = {
-      message: `Update ${vehicleId} availability to ${available ? "available" : "unavailable"}`,
-      content: updatedContent,
-    };
-    if (sha) putBody.sha = sha;
-
-    const putResp = await fetch(apiUrl, {
+  async function saveFleetStatus(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
       method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(putBody),
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
-
-    if (!putResp.ok) {
-      const errText = await putResp.text();
-      console.error(`GitHub PUT failed: ${putResp.status} ${errText}`);
-      return res.status(502).json({ error: "Failed to update fleet-status.json on GitHub" });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT fleet-status.json failed: ${resp.status} ${text}`);
     }
+  }
+
+  try {
+    await updateJsonFileWithRetry({
+      load:    loadFleetStatus,
+      apply:   (data) => {
+        if (!data[vehicleId]) data[vehicleId] = {};
+        data[vehicleId].available = available;
+      },
+      save:    saveFleetStatus,
+      message: `Update ${vehicleId} availability to ${available ? "available" : "unavailable"}`,
+    });
 
     return res.status(200).json({ success: true, vehicleId, available });
   } catch (err) {

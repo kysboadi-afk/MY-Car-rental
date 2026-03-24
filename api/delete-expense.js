@@ -10,6 +10,7 @@
 
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -41,16 +42,27 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data, sha } = await loadExpenses();
-    const before = data.length;
-    const updated = data.filter((e) => e.expense_id !== expense_id);
-
-    if (updated.length === before) {
+    // Confirm existence before the retry loop to give a clear 404
+    const { data: checkData } = await loadExpenses();
+    if (!checkData.some((e) => e.expense_id === expense_id)) {
       return res.status(404).json({ error: "Expense not found" });
     }
 
-    await saveExpenses(updated, sha, `Delete expense ${expense_id}`);
-    return res.status(200).json({ success: true, deleted: before - updated.length });
+    let deletedCount = 0;
+    await updateJsonFileWithRetry({
+      load:    loadExpenses,
+      // apply is idempotent: filter is a pure transform — safe to replay
+      apply:   (data) => {
+        const before = data.length;
+        const after  = data.filter((e) => e.expense_id !== expense_id);
+        deletedCount = before - after.length;
+        data.splice(0, data.length, ...after);
+      },
+      save:    saveExpenses,
+      message: `Delete expense ${expense_id}`,
+    });
+
+    return res.status(200).json({ success: true, deleted: deletedCount });
   } catch (err) {
     console.error("delete-expense error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

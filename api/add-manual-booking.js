@@ -23,9 +23,10 @@
 // }
 
 import crypto from "crypto";
-import { appendBooking } from "./_bookings.js";
+import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -40,52 +41,59 @@ const VEHICLE_NAMES     = {
 
 /**
  * Block the date range in booked-dates.json so the calendar shows the
- * vehicle as unavailable for those dates.
+ * vehicle as unavailable for those dates.  Retries on 409 conflict.
  */
 async function blockBookedDates(vehicleId, from, to) {
   const token   = process.env.GITHUB_TOKEN;
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const headers = {
+  const ghHeaders = {
     Authorization:           `Bearer ${token}`,
     Accept:                  "application/vnd.github+json",
     "X-GitHub-Api-Version":  "2022-11-28",
   };
 
-  const getResp = await fetch(apiUrl, { headers });
-  if (!getResp.ok) {
-    const errText = await getResp.text();
-    throw new Error(`GitHub GET booked-dates.json failed: ${getResp.status} ${errText}`);
+  async function loadBookedDates() {
+    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+      if (typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch { data = {}; }
+    return { data, sha: file.sha };
   }
-  const fileData = await getResp.json();
-  const current  = JSON.parse(
-    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-  );
 
-  if (!current[vehicleId]) current[vehicleId] = [];
-  // If dates are already blocked (overlap), skip the write — the calendar is
-  // already correct and we will still proceed to save the booking record.
-  if (hasOverlap(current[vehicleId], from, to)) return;
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method:  "PUT",
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+    }
+  }
 
-  current[vehicleId].push({ from, to });
-
-  const updatedContent = Buffer.from(
-    JSON.stringify(current, null, 2) + "\n"
-  ).toString("base64");
-
-  const putResp = await fetch(apiUrl, {
-    method:  "PUT",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body:    JSON.stringify({
-      message: `Block dates for ${vehicleId}: ${from} to ${to} (manual booking)`,
-      content: updatedContent,
-      sha:     fileData.sha,
-    }),
+  await updateJsonFileWithRetry({
+    load:    loadBookedDates,
+    apply:   (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      if (!hasOverlap(data[vehicleId], from, to)) {
+        data[vehicleId].push({ from, to });
+      }
+    },
+    save:    saveBookedDates,
+    message: `Block dates for ${vehicleId}: ${from} to ${to} (manual booking)`,
   });
-
-  if (!putResp.ok) {
-    const errText = await putResp.text();
-    throw new Error(`GitHub PUT booked-dates.json failed: ${putResp.status} ${errText}`);
-  }
 }
 
 export default async function handler(req, res) {
@@ -157,12 +165,22 @@ export default async function handler(req, res) {
 
   try {
     // 1. Block the dates in booked-dates.json first so the calendar reflects the
-    //    reservation before the booking record is persisted. If this step fails
-    //    (e.g. GitHub write error) we abort early before creating the booking record.
+    //    reservation before the booking record is persisted.
     await blockBookedDates(vehicleId, pickupDate, returnDate);
 
-    // 2. Save the booking record to bookings.json.
-    await appendBooking(booking);
+    // 2. Save the booking record to bookings.json with retry + idempotency guard.
+    await updateJsonFileWithRetry({
+      load:    loadBookings,
+      apply:   (data) => {
+        if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+        // Idempotent: don't add if bookingId already present (safe on retry)
+        if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+          data[vehicleId].push(booking);
+        }
+      },
+      save:    saveBookings,
+      message: `Add manual booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`,
+    });
 
     return res.status(200).json({ success: true, booking });
   } catch (err) {

@@ -282,7 +282,7 @@ test("makes a GET then a PUT to GitHub API", async () => {
   assert.equal(fetchFn.calls[1].method, "PUT");
 });
 
-test("returns 502 when GitHub GET fails", async () => {
+test("returns 500 when GitHub GET fails", async () => {
   const origFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => "error" });
 
@@ -296,10 +296,10 @@ test("returns 502 when GitHub GET fails", async () => {
   await handler(req, res);
   globalThis.fetch = origFetch;
 
-  assert.equal(res._status, 502);
+  assert.equal(res._status, 500);
 });
 
-test("returns 502 when GitHub PUT fails", async () => {
+test("returns 500 when GitHub PUT fails", async () => {
   const origFetch = globalThis.fetch;
   let callCount = 0;
   globalThis.fetch = async (url, opts) => {
@@ -323,5 +323,5 @@ test("returns 502 when GitHub PUT fails", async () => {
   await handler(req, res);
   globalThis.fetch = origFetch;
 
-  assert.equal(res._status, 502);
+  assert.equal(res._status, 500);
 });

@@ -21,6 +21,7 @@
 
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -71,56 +72,61 @@ export default async function handler(req, res) {
   }
 
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const headers = {
+  const ghHeaders = {
     Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  try {
-    // Fetch current file
-    const getResp = await fetch(apiUrl, { headers });
-    if (!getResp.ok) {
-      const errText = await getResp.text();
-      console.error(`GitHub GET failed: ${getResp.status} ${errText}`);
-      return res.status(502).json({ error: "Failed to read booked-dates.json from GitHub" });
+  async function loadBookedDates() {
+    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
     }
-    const fileData = await getResp.json();
-    const current = JSON.parse(
-      Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-    );
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+      if (typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
 
-    // Ensure the vehicle key exists
-    if (!current[vehicleId]) current[vehicleId] = [];
-
-    // Skip if this range (or an overlapping one) is already recorded
-    if (hasOverlap(current[vehicleId], from, to)) {
-      return res.status(200).json({ success: true, added: 0, message: "Date range already blocked (overlap detected)" });
-    }
-
-    current[vehicleId].push({ from, to });
-
-    const updatedContent = Buffer.from(
-      JSON.stringify(current, null, 2) + "\n"
-    ).toString("base64");
-
-    const putResp = await fetch(apiUrl, {
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
       method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: `Block dates for ${vehicleId}: ${from} to ${to}`,
-        content: updatedContent,
-        sha: fileData.sha,
-      }),
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+    }
+  }
+
+  try {
+    let added = 0;
+    await updateJsonFileWithRetry({
+      load:    loadBookedDates,
+      apply:   (data) => {
+        if (!data[vehicleId]) data[vehicleId] = [];
+        if (!hasOverlap(data[vehicleId], from, to)) {
+          data[vehicleId].push({ from, to });
+          added = 1;
+        } else {
+          added = 0;
+        }
+      },
+      save:    saveBookedDates,
+      message: `Block dates for ${vehicleId}: ${from} to ${to}`,
     });
 
-    if (!putResp.ok) {
-      const errText = await putResp.text();
-      console.error(`GitHub PUT failed: ${putResp.status} ${errText}`);
-      return res.status(502).json({ error: "Failed to update booked-dates.json on GitHub" });
-    }
-
-    return res.status(200).json({ success: true, added: 1 });
+    return res.status(200).json({ success: true, added });
   } catch (err) {
     console.error("block-dates endpoint error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
