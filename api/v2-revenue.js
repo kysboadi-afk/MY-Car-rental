@@ -10,14 +10,16 @@
 //   update      — { secret, action:"update", id, updates:{...} }
 //   delete      — { secret, action:"delete", id }
 //   summary     — { secret, action:"summary" } — per-vehicle aggregated stats
+//   sync        — { secret, action:"sync" } — populate records from bookings.json
 //
 // Error contract:
 //   • READ actions (list, get, summary) return empty state when Supabase is not
 //     configured or the table does not yet exist, so the admin panel never crashes.
-//   • WRITE actions (create, update, delete) return a clear 503 when Supabase is
+//   • WRITE actions (create, update, delete, sync) return a clear 503 when Supabase is
 //     unavailable so callers know the operation did not persist.
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -191,6 +193,73 @@ export default async function handler(req, res) {
         console.error("v2-revenue summary error:", sumErr);
         return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
       }
+    }
+
+    // ── SYNC — build/refresh revenue_records from bookings.json ─────────────
+    // Finds all paid bookings in bookings.json that don't yet have a revenue
+    // record in Supabase and creates them. Existing records (matched by
+    // booking_id) are skipped to avoid duplicates.
+    if (action === "sync") {
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot sync revenue records" });
+
+      const { data: bookingsData } = await loadBookings();
+      const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      const paidBookings = Object.values(bookingsData).flat()
+        .filter((b) => paidStatuses.has(b.status) && b.bookingId && Number(b.amountPaid || 0) > 0);
+
+      if (paidBookings.length === 0) {
+        return res.status(200).json({ synced: 0, skipped: 0, message: "No paid bookings found to sync." });
+      }
+
+      // Fetch existing booking_ids to avoid duplicates
+      const { data: existing, error: existErr } = await sb
+        .from("revenue_records")
+        .select("booking_id");
+      if (existErr) throw existErr;
+      const existingIds = new Set((existing || []).map((r) => r.booking_id));
+
+      const toInsert = paidBookings
+        .filter((b) => !existingIds.has(b.bookingId))
+        .map((b) => ({
+          booking_id:        b.bookingId,
+          vehicle_id:        b.vehicleId,
+          customer_name:     b.name        || null,
+          customer_phone:    b.phone       || null,
+          customer_email:    b.email       || null,
+          pickup_date:       b.pickupDate  || null,
+          return_date:       b.returnDate  || null,
+          gross_amount:      Number(b.amountPaid || 0),
+          deposit_amount:    0,
+          refund_amount:     0,
+          payment_method:    b.paymentMethod || "cash",
+          payment_status:    "paid",
+          notes:             b.notes || null,
+          is_no_show:        false,
+          is_cancelled:      b.status === "cancelled_rental",
+          override_by_admin: true,
+        }));
+
+      const skipped = paidBookings.length - toInsert.length;
+
+      if (toInsert.length === 0) {
+        return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} bookings already have revenue records.` });
+      }
+
+      // Insert in batches of 100 to avoid Supabase payload limits
+      let synced = 0;
+      const BATCH = 100;
+      for (let i = 0; i < toInsert.length; i += BATCH) {
+        const batch = toInsert.slice(i, i + BATCH);
+        const { error: insertErr } = await sb.from("revenue_records").insert(batch);
+        if (insertErr) throw insertErr;
+        synced += batch.length;
+      }
+
+      return res.status(200).json({
+        synced,
+        skipped,
+        message: `Synced ${synced} revenue record${synced !== 1 ? "s" : ""} from bookings.${skipped > 0 ? ` ${skipped} already existed and were skipped.` : ""}`,
+      });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

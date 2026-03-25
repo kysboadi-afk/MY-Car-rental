@@ -150,6 +150,8 @@
     .btn-danger:hover { background: #b91c1c; }
     .btn-success { background: var(--success); color: #fff; }
     .btn-success:hover { background: #15803d; }
+    .btn-warning { background: var(--warning); color: #fff; }
+    .btn-warning:hover { background: #b45309; }
     .btn-sm { padding: 5px 10px; font-size: 12px; }
     .btn svg { width: 14px; height: 14px; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -235,6 +237,10 @@
     .badge-blue   { background: #eff6ff; color: #1d4ed8; }
     .badge-gray   { background: #f9fafb; color: #4b5563; }
     .badge-purple { background: #faf5ff; color: #6d28d9; }
+    /* Semantic aliases */
+    .badge-success { background: #f0fdf4; color: #15803d; }
+    .badge-warning { background: #fffbeb; color: #b45309; }
+    .badge-danger  { background: #fef2f2; color: #b91c1c; }
 
     /* ── Vehicles Grid ──────────────────────────────────────────── */
     .vehicles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
@@ -969,6 +975,7 @@
             <option value="refunded">Refunded</option>
           </select>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
+          <button class="btn btn-secondary btn-sm" onclick="syncRevenueFromBookings()" title="Create revenue records for any paid bookings that are missing from the Revenue Tracker">↺ Sync from Bookings</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
         <div class="card">
@@ -994,6 +1001,7 @@
           <div id="revenue-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
             <p>No revenue records found.</p>
+            <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">If you have existing bookings, click <strong>↺ Sync from Bookings</strong> above to populate revenue records automatically.</p>
           </div>
         </div>
       </div>
@@ -1394,6 +1402,10 @@ function refreshCurrentPage() {
   allBookings = [];
   allExpenses = [];
   smsTemplates = [];
+  allRevenueRecords = [];
+  allCustomers = [];
+  allProtectionPlans = [];
+  allSystemSettings = [];
 
   if (currentPage === 'dashboard') refreshDashboard();
   else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
@@ -1829,7 +1841,7 @@ function applyBookingFilters() {
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
-            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this)">Decline</button>
+            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
           ` : ''}
         </div>
       </td>
@@ -1858,10 +1870,16 @@ function viewBooking(bookingId, vehicleId) {
   document.getElementById('booking-detail-actions').innerHTML = `
     ${b.status === 'reserved_unpaid' ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
-      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
     ` : ''}
-    ${b.status === 'booked_paid' ? `<button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>` : ''}
-    ${b.status === 'active_rental' ? `<button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">Mark Completed</button>` : ''}
+    ${b.status === 'booked_paid' ? `
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+    ` : ''}
+    ${b.status === 'active_rental' ? `
+      <button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">Mark Completed</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+    ` : ''}
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');
@@ -2199,12 +2217,14 @@ function statusBadge(status) {
     booked_paid:       'badge-green',
     active_rental:     'badge-blue',
     completed_rental:  'badge-gray',
+    cancelled_rental:  'badge-red',
   };
   const labels = {
     reserved_unpaid:  'Pending',
     booked_paid:      'Confirmed',
     active_rental:    'Active',
     completed_rental: 'Completed',
+    cancelled_rental: 'Cancelled',
   };
   const cls   = map[status] || 'badge-gray';
   const label = labels[status] || status;
@@ -2286,16 +2306,18 @@ document.addEventListener('keydown', (e) => {
 
 // ── Action Required helpers (called from renderDashboard) ─────────────────
 function renderActionRequired(data) {
+  // Use dashboard KPIs for accurate pending count; recentBookings for day-of context
+  const kpis     = data.kpis || {};
   const bookings = data.recentBookings || [];
-  const allB     = (typeof allBookings !== 'undefined' && allBookings.length > 0)
-                   ? allBookings : bookings;
 
   const today = new Date().toISOString().split('T')[0];
 
-  const pending  = allB.filter((b) => b.status === 'reserved_unpaid').length;
-  const pickups  = allB.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
-  const returns  = allB.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
-  const overdue  = allB.filter((b) => {
+  // pendingApprovals from server-side KPI is accurate (covers all bookings)
+  const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
+  // For day-of counts, use recentBookings as a best-effort approximation
+  const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
+  const returns  = bookings.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const overdue  = bookings.filter((b) => {
     if (b.status !== 'active_rental' || !b.returnDate) return false;
     return b.returnDate < today;
   }).length;
@@ -2332,6 +2354,9 @@ function loadRevenue() {
   document.getElementById('revenue-loading').style.display = '';
   document.getElementById('revenue-table-wrap').style.display = 'none';
   document.getElementById('revenue-empty').style.display = 'none';
+  // Clear stale KPI values while loading
+  const kpiGrid = document.getElementById('rev-kpi-grid');
+  if (kpiGrid) kpiGrid.innerHTML = '';
 
   apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
     .then((data) => {
@@ -2504,6 +2529,18 @@ function deleteRevenueRecord(id) {
   apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id })
     .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function syncRevenueFromBookings() {
+  if (!confirm('Sync revenue records from bookings? This will create revenue records for any paid bookings that are missing from the Revenue Tracker. Existing records will not be modified.')) return;
+  showToast('Syncing revenue from bookings…', 'info');
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'sync' })
+    .then((data) => {
+      showToast(data.message || 'Sync complete.', 'success');
+      allRevenueRecords = [];
+      loadRevenue();
+    })
+    .catch((err) => showToast('Sync error: ' + err.message, 'error'));
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────
