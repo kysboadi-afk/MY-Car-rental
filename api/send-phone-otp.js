@@ -42,7 +42,9 @@ export default async function handler(req, res) {
     !process.env.TEXTMAGIC_API_KEY
   ) {
     console.error(
-      "Missing TextMagic environment variables (TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY)."
+      "send-phone-otp: Missing TextMagic credentials.",
+      "TEXTMAGIC_USERNAME set:", !!process.env.TEXTMAGIC_USERNAME,
+      "TEXTMAGIC_API_KEY set:",  !!process.env.TEXTMAGIC_API_KEY
     );
     return res
       .status(500)
@@ -64,7 +66,10 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ token });
   } catch (err) {
-    console.error("Phone OTP SMS failed:", err);
+    console.error(
+      "send-phone-otp: TextMagic SMS failed for phone", e164,
+      "| error:", err.message
+    );
     return res.status(500).json({ error: "Unable to send verification code at this time. Please call us at (213) 916-6606 to complete your application." });
   }
 }

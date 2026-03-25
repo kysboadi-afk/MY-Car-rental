@@ -61,13 +61,14 @@ test("sendSms sets the message text in the `text` field", async () => {
   assert.equal(sentRequests[0].body.text, "Your code is: 123456");
 });
 
-test("sendSms uses +18332521093 as default `from` sender", async () => {
+test("sendSms omits `from` field when TEXTMAGIC_FROM is not set", async () => {
   sentRequests.length = 0;
+  delete process.env.TEXTMAGIC_FROM;
   await sendSms("+12135550100", "OTP code");
   assert.equal(
     sentRequests[0].body.from,
-    "+18332521093",
-    "from must be the registered TextMagic sender so US carriers deliver the message"
+    undefined,
+    "from must be omitted when TEXTMAGIC_FROM is not set so TextMagic uses the account default sender"
   );
 });
 

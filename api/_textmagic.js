@@ -6,16 +6,13 @@
 //   TEXTMAGIC_API_KEY  — TextMagic API key
 //
 // Optional environment variables:
-//   TEXTMAGIC_FROM     — Registered sender number in E.164 format (e.g. +18332521093).
-//                        US carriers require a consistent, registered 10DLC sender so
-//                        that messages are delivered rather than filtered.
-//                        Defaults to the SLY Transportation Services sender number.
+//   TEXTMAGIC_FROM     — Registered sender number or alphanumeric sender ID.
+//                        When set, it is forwarded to TextMagic as the `from` field
+//                        so US carriers deliver the message from a consistent sender.
+//                        When omitted, TextMagic uses the account's default sender,
+//                        which is the safest option if no dedicated number is configured.
 
 const TEXTMAGIC_API_URL = "https://rest.textmagic.com/api/v2/messages";
-
-// Registered TextMagic sender number for SLY Transportation Services.
-// Override with the TEXTMAGIC_FROM environment variable if the number changes.
-const DEFAULT_FROM = "+18332521093";
 
 /**
  * Send an SMS via the TextMagic REST API.
@@ -33,8 +30,12 @@ export async function sendSms(to, text) {
 
   // TextMagic REST API v2: `phones` accepts a single E.164 number or a
   // comma-separated string of multiple numbers.
-  // `from` pins the registered sender number so US carriers deliver the message.
-  const from = process.env.TEXTMAGIC_FROM || DEFAULT_FROM;
+  // Only include `from` when explicitly configured; sending an unregistered
+  // sender ID causes TextMagic to reject the request with a 4xx error.
+  const from = process.env.TEXTMAGIC_FROM;
+  const payload = { text, phones: to };
+  if (from) payload.from = from;
+
   const response = await fetch(TEXTMAGIC_API_URL, {
     method: "POST",
     headers: {
@@ -42,7 +43,7 @@ export async function sendSms(to, text) {
       "X-TM-Key":      apiKey,
       "Content-Type":  "application/json",
     },
-    body: JSON.stringify({ text, phones: to, from }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
