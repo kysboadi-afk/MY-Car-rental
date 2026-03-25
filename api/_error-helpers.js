@@ -4,6 +4,18 @@
 // a sanitised, category-level description is returned to the client so
 // that no internal implementation details (file paths, service names,
 // raw API responses) are ever exposed.
+//
+// Error categories (in match priority order):
+//   1. GitHub auth failure (401/403)
+//   2. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
+//   3. GitHub rate-limit (429)
+//   4. Network / DNS errors
+//   5. Supabase: missing table / column (migration not applied — PostgreSQL 42P01/42703)
+//   6. Supabase: unique-constraint violation (PostgreSQL 23505)
+//   7. Supabase/PostgREST: single() returned 0 or >1 rows (PGRST116)
+//   8. Generic Supabase/PostgREST error (PGRST error code prefix)
+//   9. GitHub generic failure
+//  10. Fallback
 
 /**
  * Given a caught error, return a human-readable string suitable for
@@ -14,33 +26,69 @@
  * @returns {string}
  */
 export function adminErrorMessage(err) {
-  const raw = (err && err.message) ? String(err.message) : "";
+  const raw  = (err && err.message) ? String(err.message) : "";
+  // Supabase JS client exposes the PostgreSQL / PostgREST error code on err.code
+  const code = (err && err.code)    ? String(err.code)    : "";
 
-  // GitHub authentication / authorisation failure
+  // ── GitHub authentication / authorisation failure ──────────────────────────
   if (/\b(401|403)\b/.test(raw) || /bad credentials|authentication|forbidden/i.test(raw)) {
     return "Authentication failed — please verify that GITHUB_TOKEN is configured correctly and has write access to the repository.";
   }
 
-  // Stale SHA / write conflict (two concurrent saves)
-  if (/\b409\b/.test(raw) || /sha|conflict/i.test(raw)) {
+  // ── Stale SHA / write conflict (GitHub-specific 409 on file PUT) ───────────
+  // Use a narrow pattern to avoid matching PostgreSQL "conflict" messages.
+  if (/\b409\b/.test(raw) || /sha.*conflict|conflict.*sha/i.test(raw)) {
     return "A concurrent update conflict occurred — please try again.";
   }
 
-  // GitHub API rate-limit
+  // ── GitHub / API rate-limit ────────────────────────────────────────────────
   if (/\b429\b/.test(raw) || /rate.?limit/i.test(raw)) {
     return "API rate limit exceeded — please wait a moment and try again.";
   }
 
-  // Network / DNS / connection errors
+  // ── Network / DNS / connection errors ──────────────────────────────────────
   if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(raw)) {
     return "Could not reach the data store API — please check network connectivity and try again.";
   }
 
-  // Any other identifiable data-store failure
+  // ── Supabase: table or column missing (migration not applied) ─────────────
+  // PostgreSQL 42P01 = undefined_table, 42703 = undefined_column
+  if (
+    code === "42P01" || code === "42703" ||
+    /relation .* does not exist|table .* (was )?not found|column .* does not exist/i.test(raw) ||
+    /42P01|42703/.test(raw)
+  ) {
+    return "Database schema error — a required table or column was not found. Please ensure all Supabase migrations have been applied (see DEPLOYMENT.md for setup instructions).";
+  }
+
+  // ── Supabase: unique-constraint violation ──────────────────────────────────
+  // PostgreSQL 23505 = unique_violation
+  if (
+    code === "23505" ||
+    /duplicate key value violates unique constraint|23505/i.test(raw)
+  ) {
+    return "A record with this key already exists — please refresh and try again, or check for duplicate entries.";
+  }
+
+  // ── Supabase/PostgREST: .single() returned 0 or multiple rows ─────────────
+  // PGRST116 = "JSON object requested, multiple (or no) rows returned"
+  if (
+    code === "PGRST116" ||
+    /PGRST116|JSON object requested, multiple|no rows returned/i.test(raw)
+  ) {
+    return "The record was not found after saving — please refresh and try again.";
+  }
+
+  // ── Generic Supabase / PostgREST error ─────────────────────────────────────
+  if (/^PGRST/i.test(code) || /PGRST[0-9]+/i.test(raw)) {
+    return "Database operation failed — please try again. If the problem persists, check the server logs for details.";
+  }
+
+  // ── Any other identifiable GitHub data-store failure ──────────────────────
   if (/GitHub/i.test(raw)) {
     return "Data store request failed — please try again. If the problem persists, check the server logs for details.";
   }
 
-  // Fallback
+  // ── Fallback ────────────────────────────────────────────────────────────────
   return "An unexpected error occurred — please try again. If the problem persists, check the server logs for details.";
 }
