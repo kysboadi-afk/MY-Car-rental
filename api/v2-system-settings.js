@@ -132,18 +132,31 @@ export default async function handler(req, res) {
       if (body.description) record.description = body.description;
       if (body.category)    record.category    = body.category;
 
-      // Step 1: upsert without RETURNING — avoids PGRST116 and other
-      // PostgREST RETURNING-related errors that vary across versions.
-      const { error: upsertErr } = await sb.from("system_settings")
-        .upsert(record, { onConflict: "key" });
-      if (upsertErr) throw upsertErr;
+      // Try UPDATE first (for existing rows); if no rows updated, INSERT the new row.
+      // This avoids PostgREST upsert compatibility issues with keyword column names.
+      const { data: updatedData, error: updateErr, count: updateCount } = await sb
+        .from("system_settings")
+        .update(record)
+        .eq("key", record.key)
+        .select();
 
-      // Step 2: fetch the current row via a plain SELECT (always reliable).
-      const { data, error: fetchErr } = await sb.from("system_settings")
-        .select("*").eq("key", record.key).single();
-      if (fetchErr) throw fetchErr;
+      if (updateErr) throw updateErr;
 
-      return res.status(200).json({ setting: data });
+      let finalData;
+      if (updatedData && updatedData.length > 0) {
+        finalData = updatedData[0];
+      } else {
+        // Row didn't exist — INSERT it
+        const { data: insertedData, error: insertErr } = await sb
+          .from("system_settings")
+          .insert(record)
+          .select()
+          .single();
+        if (insertErr) throw insertErr;
+        finalData = insertedData;
+      }
+
+      return res.status(200).json({ setting: finalData });
     }
 
     if (action === "delete") {

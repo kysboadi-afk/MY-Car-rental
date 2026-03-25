@@ -53,12 +53,16 @@ export function adminErrorMessage(err) {
 
   // ── Supabase: table or column missing (migration not applied) ─────────────
   // PostgreSQL 42P01 = undefined_table, 42703 = undefined_column
+  // PostgREST PGRST204 = "Could not find the relation X in the schema cache"
+  // PostgREST PGRST200 = "Embedded resource not found in the schema cache"
   if (
     code === "42P01" || code === "42703" ||
+    code === "PGRST204" || code === "PGRST200" ||
     /relation .* does not exist|table .* (was )?not found|column .* does not exist/i.test(raw) ||
+    /Could not find the .* in the schema cache/i.test(raw) ||
     /42P01|42703/.test(raw)
   ) {
-    return "Database schema error — a required table or column was not found. Please ensure all Supabase migrations have been applied (see DEPLOYMENT.md for setup instructions).";
+    return "Database schema error — a required table or column was not found. Please ensure all Supabase migrations have been applied (see SUPABASE_SETUP.md for setup instructions).";
   }
 
   // ── Supabase: NOT NULL constraint violation ────────────────────────────────

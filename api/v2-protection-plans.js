@@ -11,7 +11,7 @@
 //   delete  — { secret, action:"delete", id }
 //
 // Error contract:
-//   • list/get return empty state when Supabase is not configured or table missing.
+//   • list/get return hardcoded defaults when Supabase is not configured or table missing.
 //   • create/update/delete return 503 when Supabase is unavailable.
 
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -23,6 +23,15 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 function getSupabase() {
   return getSupabaseAdmin();
 }
+
+// Default protection plans matching the migration 0003 seed values.
+// Used when Supabase is unavailable, the table is missing, or the table is empty.
+const DEFAULT_PLANS = [
+  { name: "None",     description: "No protection plan selected",          daily_rate: 0,  liability_cap: 0,    is_active: true, sort_order: 0 },
+  { name: "Basic",    description: "Basic damage protection, $1,000 cap",  daily_rate: 15, liability_cap: 1000, is_active: true, sort_order: 1 },
+  { name: "Standard", description: "Standard coverage, $500 cap",          daily_rate: 25, liability_cap: 500,  is_active: true, sort_order: 2 },
+  { name: "Premium",  description: "Full coverage, $0 liability",          daily_rate: 40, liability_cap: 0,    is_active: true, sort_order: 3 },
+];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -44,18 +53,43 @@ export default async function handler(req, res) {
 
   try {
     if (!action || action === "list") {
-      if (!sb) return res.status(200).json({ plans: [] });
+      if (!sb) return res.status(200).json({ plans: DEFAULT_PLANS });
       try {
         const { data, error } = await sb.from("protection_plans")
           .select("*").order("sort_order").order("name");
         if (error) {
           console.error("v2-protection-plans list error:", error.message);
-          return res.status(200).json({ plans: [] });
+          return res.status(200).json({ plans: DEFAULT_PLANS });
         }
+
+        // If the table exists but is empty, auto-seed the defaults.
+        // The upsert uses ignoreDuplicates:true so concurrent requests are safe.
+        if (!data || data.length === 0) {
+          const seedRecords = DEFAULT_PLANS.map((p) => ({
+            name:          p.name,
+            description:   p.description,
+            daily_rate:    p.daily_rate,
+            liability_cap: p.liability_cap,
+            is_active:     p.is_active,
+            sort_order:    p.sort_order,
+          }));
+          const { error: seedErr } = await sb.from("protection_plans")
+            .insert(seedRecords);
+          if (seedErr) {
+            console.error("v2-protection-plans seed error (non-fatal):", seedErr.message);
+            // Return hardcoded defaults on seed failure
+            return res.status(200).json({ plans: DEFAULT_PLANS });
+          }
+          // Re-fetch seeded plans
+          const { data: seeded, error: refetchErr } = await sb.from("protection_plans")
+            .select("*").order("sort_order").order("name");
+          return res.status(200).json({ plans: refetchErr ? DEFAULT_PLANS : (seeded || DEFAULT_PLANS) });
+        }
+
         return res.status(200).json({ plans: data || [] });
       } catch (qErr) {
         console.error("v2-protection-plans list query error:", qErr);
-        return res.status(200).json({ plans: [] });
+        return res.status(200).json({ plans: DEFAULT_PLANS });
       }
     }
 

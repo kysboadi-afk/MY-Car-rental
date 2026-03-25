@@ -211,18 +211,26 @@ export default async function handler(req, res) {
         return res.status(200).json({ synced: 0, skipped: 0, message: "No paid bookings found to sync." });
       }
 
-      // Fetch existing booking_ids to avoid duplicates
-      const { data: existing, error: existErr } = await sb
-        .from("revenue_records")
-        .select("booking_id");
-      if (existErr) throw existErr;
-      const existingIds = new Set((existing || []).map((r) => r.booking_id));
+      // Pre-check existing booking_ids to compute accurate counts and skip
+      // records that are already present. Errors here are non-fatal: if the
+      // query fails (e.g., table not yet migrated), we try to insert anyway.
+      let existingIds = new Set();
+      try {
+        const { data: existing, error: existErr } = await sb
+          .from("revenue_records")
+          .select("booking_id");
+        if (!existErr) {
+          existingIds = new Set((existing || []).map((r) => r.booking_id));
+        }
+      } catch (_) {
+        // Non-fatal: proceed with empty set; upsert will handle conflicts
+      }
 
       const toInsert = paidBookings
         .filter((b) => !existingIds.has(b.bookingId))
         .map((b) => ({
           booking_id:        b.bookingId,
-          vehicle_id:        b.vehicleId,
+          vehicle_id:        b.vehicleId || "unknown",
           customer_name:     b.name        || null,
           customer_phone:    b.phone       || null,
           customer_email:    b.email       || null,
@@ -242,16 +250,22 @@ export default async function handler(req, res) {
       const skipped = paidBookings.length - toInsert.length;
 
       if (toInsert.length === 0) {
-        return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} bookings already have revenue records.` });
+        return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} booking${skipped !== 1 ? "s" : ""} already have revenue records.` });
       }
 
-      // Insert in batches of 100 to avoid Supabase payload limits
+      // Insert in batches of 100, using upsert with ignoreDuplicates as a
+      // safety net against race conditions when the UNIQUE constraint exists.
       let synced = 0;
       const BATCH = 100;
       for (let i = 0; i < toInsert.length; i += BATCH) {
         const batch = toInsert.slice(i, i + BATCH);
-        const { error: insertErr } = await sb.from("revenue_records").insert(batch);
-        if (insertErr) throw insertErr;
+        const { error: upsertErr } = await sb.from("revenue_records")
+          .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
+        if (upsertErr) {
+          // onConflict upsert failed (UNIQUE constraint may not exist) — fall back to plain INSERT
+          const { error: insertErr } = await sb.from("revenue_records").insert(batch);
+          if (insertErr) throw insertErr;
+        }
         synced += batch.length;
       }
 
