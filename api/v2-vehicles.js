@@ -122,7 +122,7 @@ export default async function handler(req, res) {
       const safeUpdates = {};
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
-        "vehicle_name", "vehicle_year", "type",
+        "vehicle_name", "vehicle_year", "type", "cover_image",
       ];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
@@ -130,12 +130,18 @@ export default async function handler(req, res) {
           if (f === "status" && !ALLOWED_STATUSES.includes(val)) {
             return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(", ")}` });
           }
+          if (f === "type" && val && !ALLOWED_TYPES.includes(val)) {
+            return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(", ")}` });
+          }
           if (f === "purchase_price" || f === "vehicle_year") {
             const n = Number(val);
             if (isNaN(n) || n < 0) {
               return res.status(400).json({ error: `${f} must be a non-negative number` });
             }
             safeUpdates[f] = Math.round(n * 100) / 100;
+          } else if (f === "cover_image") {
+            // Allow URLs, root-relative paths, or empty string
+            safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : "";
           } else {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 200) : val;
           }
@@ -172,7 +178,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -228,7 +234,7 @@ export default async function handler(req, res) {
         purchase_price: purchasePrice ? Math.round(parseFloat(purchasePrice) * 100) / 100 : 0,
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
-        cover_image:    "",
+        cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
       };
 
       const { data: inserted, error: insertErr } = await supabase

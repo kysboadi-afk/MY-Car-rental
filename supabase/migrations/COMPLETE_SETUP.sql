@@ -454,3 +454,39 @@ END $$;
 -- All 12 tables, 1 view, and all triggers are now in place.
 -- You can run this script again at any time — it is fully idempotent.
 -- =============================================================================
+
+
+-- =============================================================================
+-- 15. VEHICLE IMAGE STORAGE BUCKET
+-- =============================================================================
+-- Creates a public Supabase Storage bucket called "vehicle-images" so the admin
+-- panel can upload vehicle photos directly from the Edit/Add Vehicle modal.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'vehicle-images',
+  'vehicle-images',
+  true,
+  5242880,
+  ARRAY['image/jpeg','image/png','image/webp','image/gif']
+)
+ON CONFLICT (id) DO UPDATE
+  SET public             = true,
+      file_size_limit    = 5242880,
+      allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','image/gif'];
+
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "vehicle-images: public read"   ON storage.objects;
+DROP POLICY IF EXISTS "vehicle-images: service write" ON storage.objects;
+
+CREATE POLICY "vehicle-images: public read"
+  ON storage.objects
+  FOR SELECT
+  USING (bucket_id = 'vehicle-images');
+
+CREATE POLICY "vehicle-images: service write"
+  ON storage.objects
+  FOR ALL
+  USING     (bucket_id = 'vehicle-images' AND auth.role() = 'service_role')
+  WITH CHECK (bucket_id = 'vehicle-images' AND auth.role() = 'service_role');

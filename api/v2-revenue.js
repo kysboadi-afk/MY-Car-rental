@@ -21,6 +21,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -85,9 +86,11 @@ export default async function handler(req, res) {
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
       if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot create revenue record" });
-      const { booking_id, vehicle_id, gross_amount } = body;
-      if (!booking_id || !vehicle_id || gross_amount == null)
-        return res.status(400).json({ error: "booking_id, vehicle_id, gross_amount are required" });
+      const { vehicle_id, gross_amount } = body;
+      // booking_id is optional for manual entries; auto-generate a unique id if not supplied
+      const booking_id = body.booking_id || ("manual-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex"));
+      if (!vehicle_id || gross_amount == null)
+        return res.status(400).json({ error: "vehicle_id and gross_amount are required" });
 
       const record = {
         booking_id,

@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/upload-vehicle-image.js": {
+      "maxDuration": 30
+    },
     "api/admin-site-settings.js": {
       "maxDuration": 15
     },
