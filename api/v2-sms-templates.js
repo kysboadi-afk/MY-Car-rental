@@ -1,7 +1,10 @@
 // api/v2-sms-templates.js
 // SLYTRANS FLEET CONTROL v2 — SMS templates CRUD endpoint.
-// Returns all SMS templates (from hardcoded defaults + any DB overrides stored
-// in sms-templates.json) and allows admins to edit/enable/disable templates.
+// Returns all SMS templates (from hardcoded defaults + any DB overrides) and
+// allows admins to edit/enable/disable templates.
+//
+// Storage: Supabase `sms_template_overrides` table (primary).
+//          Falls back to GitHub `sms-templates.json` when Supabase is not configured.
 //
 // POST /api/v2-sms-templates
 // Actions:
@@ -13,10 +16,74 @@ import { TEMPLATES } from "./_sms-templates.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const TEMPLATES_DB_PATH = "sms-templates.json";
+
+// ── Supabase helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Load all SMS template overrides from Supabase.
+ * Returns a map of { templateKey: { message, enabled } }.
+ * Returns null if Supabase is not configured or the table doesn't exist.
+ */
+async function loadOverridesFromSupabase() {
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb.from("sms_template_overrides").select("*");
+    if (error) {
+      console.error("v2-sms-templates: Supabase load error:", error.message);
+      return null; // fall back to GitHub
+    }
+    const map = {};
+    for (const row of (data || [])) {
+      map[row.template_key] = { message: row.message, enabled: row.enabled };
+    }
+    return map;
+  } catch (e) {
+    console.error("v2-sms-templates: Supabase load exception:", e.message);
+    return null; // fall back to GitHub
+  }
+}
+
+/**
+ * Upsert a single template override into Supabase.
+ * Returns the resulting record { message, enabled } on success, null on failure.
+ */
+async function upsertOverrideInSupabase(templateKey, message, enabled) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  const record = {
+    template_key: templateKey,
+    updated_at:   new Date().toISOString(),
+  };
+  if (message  !== undefined) record.message  = message;
+  if (enabled  !== undefined) record.enabled  = enabled;
+  const { data, error } = await sb.from("sms_template_overrides")
+    .upsert(record, { onConflict: "template_key" })
+    .select("message, enabled")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Delete a single template override from Supabase (reset to default).
+ * Returns true on success, false on failure.
+ */
+async function deleteOverrideFromSupabase(templateKey) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return false;
+  const { error } = await sb.from("sms_template_overrides")
+    .delete().eq("template_key", templateKey);
+  if (error) throw error;
+  return true;
+}
+
+// ── GitHub fallback helpers ───────────────────────────────────────────────────
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -29,7 +96,7 @@ function ghHeaders() {
 }
 
 /** Load overrides from sms-templates.json (returns empty object if missing). */
-async function loadOverrides() {
+async function loadOverridesFromGitHub() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${TEMPLATES_DB_PATH}`;
   const resp    = await fetch(apiUrl, { headers: ghHeaders() });
   if (!resp.ok) {
@@ -48,7 +115,7 @@ async function loadOverrides() {
 }
 
 /** Save overrides to sms-templates.json. */
-async function saveOverrides(data, sha, message) {
+async function saveOverridesToGitHub(data, sha, message) {
   if (!process.env.GITHUB_TOKEN) {
     console.warn("v2-sms-templates: GITHUB_TOKEN not set — overrides will not be saved");
     return;
@@ -94,7 +161,13 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      const { data: overrides } = await loadOverrides();
+      // Try Supabase first; fall back to GitHub if unavailable
+      let overrides = await loadOverridesFromSupabase();
+      if (overrides === null) {
+        const { data } = await loadOverridesFromGitHub();
+        overrides = data;
+      }
+
       const result = Object.entries(TEMPLATES).map(([key, defaultMessage]) => {
         const override = overrides[key] || {};
         return {
@@ -123,28 +196,35 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "updates object is required" });
       }
 
-      // Capture the update values before the retry loop — only accept known fields
-      const newMessage  = typeof updates.message === "string" ? updates.message.slice(0, 1000) : undefined;
-      const newEnabled  = typeof updates.enabled === "boolean" ? updates.enabled : undefined;
+      // Only accept known fields
+      const newMessage = typeof updates.message === "string" ? updates.message.slice(0, 1000) : undefined;
+      const newEnabled = typeof updates.enabled === "boolean" ? updates.enabled : undefined;
 
       if (newMessage === undefined && newEnabled === undefined) {
         return res.status(400).json({ error: "updates must include at least one of: message (string), enabled (boolean)" });
       }
-      const updatedAt   = new Date().toISOString();
 
+      // Try Supabase first; fall back to GitHub if unavailable
+      const sb = getSupabaseAdmin();
       let resultOverride;
-      await updateJsonFileWithRetry({
-        load:    loadOverrides,
-        apply:   (data) => {
-          if (!data[templateKey]) data[templateKey] = {};
-          if (newMessage  !== undefined) data[templateKey].message  = newMessage;
-          if (newEnabled  !== undefined) data[templateKey].enabled  = newEnabled;
-          data[templateKey].updatedAt = updatedAt;
-          resultOverride = data[templateKey];
-        },
-        save:    saveOverrides,
-        message: `v2: Update SMS template ${templateKey}`,
-      });
+      if (sb) {
+        resultOverride = await upsertOverrideInSupabase(templateKey, newMessage, newEnabled);
+      } else {
+        // GitHub fallback
+        const updatedAt = new Date().toISOString();
+        await updateJsonFileWithRetry({
+          load:    loadOverridesFromGitHub,
+          apply:   (data) => {
+            if (!data[templateKey]) data[templateKey] = {};
+            if (newMessage !== undefined) data[templateKey].message = newMessage;
+            if (newEnabled !== undefined) data[templateKey].enabled = newEnabled;
+            data[templateKey].updatedAt = updatedAt;
+            resultOverride = data[templateKey];
+          },
+          save:    saveOverridesToGitHub,
+          message: `v2: Update SMS template ${templateKey}`,
+        });
+      }
 
       return res.status(200).json({
         success: true,
@@ -165,12 +245,19 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Invalid templateKey" });
       }
 
-      await updateJsonFileWithRetry({
-        load:    loadOverrides,
-        apply:   (data) => { delete data[templateKey]; },
-        save:    saveOverrides,
-        message: `v2: Reset SMS template ${templateKey} to default`,
-      });
+      // Try Supabase first; fall back to GitHub if unavailable
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        await deleteOverrideFromSupabase(templateKey);
+      } else {
+        // GitHub fallback
+        await updateJsonFileWithRetry({
+          load:    loadOverridesFromGitHub,
+          apply:   (data) => { delete data[templateKey]; },
+          save:    saveOverridesToGitHub,
+          message: `v2: Reset SMS template ${templateKey} to default`,
+        });
+      }
 
       return res.status(200).json({
         success: true,
@@ -189,3 +276,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
+
