@@ -14,6 +14,9 @@
 //   2. The customer is upserted in Supabase (customers table) if phone is present.
 //   When a booking status transitions to "completed_rental":
 //   2. The customer stats (total_bookings, total_spent, last_booking_date) are updated.
+//   When a booking status transitions to "cancelled_rental":
+//   1. No revenue record is created.
+//   2. No customer stats are updated.
 
 import crypto from "crypto";
 import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
@@ -271,7 +274,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "paymentMethod"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "paymentMethod", "cancelReason"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -307,6 +310,7 @@ export default async function handler(req, res) {
       } else if (updatedBooking && newStatus === "completed_rental") {
         await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
       }
+      // "cancelled_rental" intentionally skips revenue creation and stat updates
 
       return res.status(200).json({ success: true, booking: updatedBooking });
     }
