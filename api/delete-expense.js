@@ -11,7 +11,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -42,17 +42,32 @@ export default async function handler(req, res) {
 
   try {
     const sb = getSupabaseAdmin();
+    let useGitHub = !sb;
 
     if (sb) {
       // ── Supabase path (preferred) ──────────────────────────────────────
       const { data: existing, error: fetchErr } = await sb
         .from("expenses").select("expense_id").eq("expense_id", expense_id).maybeSingle();
-      if (fetchErr) throw new Error(fetchErr.message);
-      if (!existing) return res.status(404).json({ error: "Expense not found" });
 
-      const { error: delErr } = await sb.from("expenses").delete().eq("expense_id", expense_id);
-      if (delErr) throw new Error(delErr.message);
-    } else {
+      if (fetchErr && isSchemaError(fetchErr)) {
+        console.warn("delete-expense: expenses table missing in Supabase, falling back to GitHub");
+        useGitHub = true;
+      } else if (fetchErr) {
+        throw new Error(fetchErr.message);
+      } else if (!existing) {
+        return res.status(404).json({ error: "Expense not found" });
+      } else {
+        const { error: delErr } = await sb.from("expenses").delete().eq("expense_id", expense_id);
+        if (delErr && isSchemaError(delErr)) {
+          console.warn("delete-expense: expenses table missing in Supabase, falling back to GitHub");
+          useGitHub = true;
+        } else if (delErr) {
+          throw new Error(delErr.message);
+        }
+      }
+    }
+
+    if (useGitHub) {
       // ── GitHub fallback ────────────────────────────────────────────────
       if (!process.env.GITHUB_TOKEN) {
         return res.status(503).json({ error: "Neither Supabase nor GITHUB_TOKEN is configured." });

@@ -17,7 +17,7 @@
 import crypto from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -74,11 +74,20 @@ export default async function handler(req, res) {
 
   try {
     const sb = getSupabaseAdmin();
+    let useGitHub = !sb;
     if (sb) {
       // ── Supabase path (preferred) ──────────────────────────────────────
       const { error: sbErr } = await sb.from("expenses").insert(expense);
-      if (sbErr) throw new Error(sbErr.message);
-    } else {
+      if (sbErr) {
+        if (isSchemaError(sbErr)) {
+          console.warn("add-expense: expenses table missing in Supabase, falling back to GitHub");
+          useGitHub = true;
+        } else {
+          throw new Error(sbErr.message);
+        }
+      }
+    }
+    if (useGitHub) {
       // ── GitHub fallback ────────────────────────────────────────────────
       if (!process.env.GITHUB_TOKEN) {
         return res.status(503).json({ error: "Neither Supabase nor GITHUB_TOKEN is configured." });

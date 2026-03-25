@@ -18,6 +18,30 @@
 //  10. Fallback
 
 /**
+ * Returns true when the error is a Supabase/PostgreSQL "table or column not
+ * found" error — indicating that Supabase migrations have not been applied yet.
+ * Use this to decide whether to fall through to a GitHub-based fallback storage
+ * path instead of surfacing a fatal error to the user.
+ *
+ * @param {unknown} err - the value caught by a catch block or a Supabase error object
+ * @returns {boolean}
+ */
+export function isSchemaError(err) {
+  if (!err) return false;
+  const code = err.code ? String(err.code) : "";
+  const msg  = err.message ? String(err.message) : "";
+  return (
+    code === "42P01" || code === "42703" ||
+    code === "PGRST204" || code === "PGRST200" ||
+    /relation .* does not exist/i.test(msg) ||
+    /table .* (was )?not found/i.test(msg) ||
+    /column .* does not exist/i.test(msg) ||
+    /Could not find the .* in the schema cache/i.test(msg) ||
+    /42P01|42703/.test(msg) // codes may also appear embedded in message text
+  );
+}
+
+/**
  * Given a caught error, return a human-readable string suitable for
  * displaying to an admin user.  The message is informative enough to
  * guide diagnosis without leaking sensitive implementation details.
