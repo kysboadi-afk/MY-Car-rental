@@ -2918,21 +2918,7 @@ function renderProtectionPlans() {
   container.style.display = '';
   empty.style.display     = 'none';
 
-  // Detect whether plans came from Supabase (have real UUIDs) or from the
-  // hardcoded fallback (no id). In fallback mode, edits are impossible until
-  // the Supabase migration has been applied.
-  const usingFallback = allProtectionPlans.every((p) => !p.id);
-
-  const setupBanner = usingFallback
-    ? `<div style="background:var(--warning-bg,#fffbeb);border:1px solid var(--warning,#f59e0b);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
-        ⚠️ <strong>Supabase not set up yet.</strong>
-        Plans shown are read-only defaults. To edit, delete, or add plans you must first run
-        <code>supabase/migrations/COMPLETE_SETUP.sql</code> in your Supabase SQL Editor
-        (see <strong>SUPABASE_SETUP.md</strong> for instructions), then reload this page.
-       </div>`
-    : '';
-
-  container.innerHTML = setupBanner +
+  container.innerHTML =
     `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:8px;">` +
     allProtectionPlans.map((p) => `
       <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--bg);${!p.is_active ? 'opacity:0.6;' : ''}">
@@ -2943,22 +2929,15 @@ function renderProtectionPlans() {
         <div style="color:var(--text-sub);font-size:13px;margin-bottom:8px;">${esc(p.description || '')}</div>
         <div style="font-size:22px;font-weight:800;color:var(--primary);margin-bottom:4px;">$${formatMoney(p.daily_rate)}<span style="font-size:13px;font-weight:400;color:var(--text-sub);">/day</span></div>
         <div style="font-size:12px;color:var(--text-sub);margin-bottom:12px;">Liability cap: ${p.liability_cap > 0 ? '$' + formatMoney(p.liability_cap) : 'None'}</div>
-        ${p.id ? `
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-sm" style="flex:1" onclick="openEditPlanModal('${esc(p.id)}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deletePlan('${esc(p.id)}')">Delete</button>
-        </div>` : `
-        <div style="font-size:11px;color:var(--text-sub);text-align:center;padding-top:4px;">Set up Supabase to edit</div>`}
+        </div>
       </div>
     `).join('') + '</div>';
 }
 
 function openAddPlanModal() {
-  const usingFallback = allProtectionPlans.every((p) => !p.id);
-  if (usingFallback) {
-    showToast('Supabase is not set up yet — run supabase/migrations/COMPLETE_SETUP.sql first, then reload.', 'error');
-    return;
-  }
   document.getElementById('plan-modal-title').textContent = 'Add Protection Plan';
   document.getElementById('plan-id').value          = '';
   document.getElementById('plan-name').value        = '';

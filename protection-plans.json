@@ -1,0 +1,6 @@
+[
+  { "id": "plan-none",     "name": "None",     "description": "No protection plan selected",         "daily_rate": 0,  "liability_cap": 0,    "is_active": true, "sort_order": 0 },
+  { "id": "plan-basic",    "name": "Basic",    "description": "Basic damage protection, $1,000 cap", "daily_rate": 15, "liability_cap": 1000, "is_active": true, "sort_order": 1 },
+  { "id": "plan-standard", "name": "Standard", "description": "Standard coverage, $500 cap",         "daily_rate": 25, "liability_cap": 500,  "is_active": true, "sort_order": 2 },
+  { "id": "plan-premium",  "name": "Premium",  "description": "Full coverage, $0 liability",         "daily_rate": 40, "liability_cap": 0,    "is_active": true, "sort_order": 3 }
+]
