@@ -38,11 +38,6 @@
     return s;
   }
 
-  // ─── Phone OTP state ─────────────────────────────────────────────────────────
-  let phoneOtpToken  = null;
-  let phoneVerified  = false;
-  let resendTimer    = null;
-
   // ─── Open / close ────────────────────────────────────────────────────────────
 
   function openModal() {
@@ -168,119 +163,6 @@
     });
   }
 
-  // ─── Phone OTP wiring ────────────────────────────────────────────────────────
-
-  var phoneInput          = document.getElementById("applyPhone");
-  var sendPhoneOtpBtn     = document.getElementById("applySendPhoneOtpBtn");
-  var phoneOtpGroup       = document.getElementById("applyPhoneOtpGroup");
-  var phoneOtpInput       = document.getElementById("applyPhoneOtpInput");
-  var resendPhoneOtpBtn   = document.getElementById("applyResendPhoneOtpBtn");
-  var phoneVerifiedBadge  = document.getElementById("applyPhoneVerifiedBadge");
-  var phoneStatusEl       = document.getElementById("applyPhoneStatus");
-
-  function setPhoneStatus(text, cls) {
-    if (phoneStatusEl) {
-      phoneStatusEl.textContent = text;
-      phoneStatusEl.className = "apply-status" + (cls ? " " + cls : "");
-    }
-  }
-
-  function startResendCooldown() {
-    resendPhoneOtpBtn.disabled = true;
-    var secs = 30;
-    resendPhoneOtpBtn.textContent = mfmt("applyModal.resendFmt", { secs: secs }, "Resend (" + secs + "s)");
-    clearInterval(resendTimer);
-    resendTimer = setInterval(function () {
-      secs -= 1;
-      if (secs <= 0) {
-        clearInterval(resendTimer);
-        resendPhoneOtpBtn.disabled = false;
-        resendPhoneOtpBtn.textContent = mt("applyModal.resendBtn", "Resend");
-      } else {
-        resendPhoneOtpBtn.textContent = mfmt("applyModal.resendFmt", { secs: secs }, "Resend (" + secs + "s)");
-      }
-    }, 1000);
-  }
-
-  async function sendPhoneOtp() {
-    var phone = phoneInput.value.trim();
-    if (!phone) {
-      setPhoneStatus(mt("applyModal.enterPhoneFirst", "Please enter your phone number first."), "error");
-      phoneInput.focus();
-      return;
-    }
-    sendPhoneOtpBtn.disabled = true;
-    sendPhoneOtpBtn.textContent = mt("applyModal.sendingCode", "Sending\u2026");
-    setPhoneStatus("", "");
-    statusEl.textContent = "";
-    statusEl.className = "apply-status";
-
-    try {
-      var resp = await fetch(API_BASE + "/api/send-phone-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phone }),
-      });
-      var data = await resp.json().catch(function () { return {}; });
-      if (!resp.ok) {
-        setPhoneStatus(data.error || mt("applyModal.otpSentError", "Failed to send verification code. Please try again."), "error");
-        sendPhoneOtpBtn.disabled = false;
-        sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
-        return;
-      }
-      phoneOtpToken = data.token;
-      phoneVerified = false;
-      phoneOtpGroup.style.display = "block";
-      phoneVerifiedBadge.style.display = "none";
-      phoneOtpInput.value = "";
-      phoneOtpInput.focus();
-      sendPhoneOtpBtn.textContent = mt("applyModal.sentDone", "Sent \u2713");
-      startResendCooldown();
-      setPhoneStatus(mt("applyModal.codeSentPhone", "A 6-digit code was sent to your phone."), "sending");
-    } catch (err) {
-      console.error("Send phone OTP error:", err);
-      setPhoneStatus(mt("applyModal.networkError", "Network error. Please check your connection and try again."), "error");
-      sendPhoneOtpBtn.disabled = false;
-      sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
-    }
-  }
-
-  sendPhoneOtpBtn.addEventListener("click", sendPhoneOtp);
-
-  resendPhoneOtpBtn.addEventListener("click", function () {
-    sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
-    sendPhoneOtpBtn.disabled = false;
-    sendPhoneOtp();
-  });
-
-  // Mark phone as verified as soon as all 6 digits are entered
-  phoneOtpInput.addEventListener("input", function () {
-    var code = phoneOtpInput.value.trim();
-    if (code.length === 6) {
-      phoneVerified = true;
-      phoneVerifiedBadge.style.display = "block";
-      phoneOtpGroup.style.display = "none";
-      statusEl.textContent = "";
-      statusEl.className = "apply-status";
-    } else {
-      phoneVerified = false;
-      phoneVerifiedBadge.style.display = "none";
-    }
-  });
-
-  // Reset OTP state when the phone number is edited
-  phoneInput.addEventListener("input", function () {
-    phoneOtpToken = null;
-    phoneVerified = false;
-    phoneOtpGroup.style.display = "none";
-    phoneVerifiedBadge.style.display = "none";
-    phoneOtpInput.value = "";
-    sendPhoneOtpBtn.disabled = false;
-    sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
-    setPhoneStatus("", "");
-    clearInterval(resendTimer);
-  });
-
   // ─── Form submission ──────────────────────────────────────────────────────────
 
   form.addEventListener("submit", async function (e) {
@@ -351,13 +233,6 @@
       return;
     }
 
-    if (!phoneVerified || !phoneOtpToken) {
-      statusEl.textContent = mt("applyModal.verifyPhoneFirst", "Please verify your phone number before submitting.");
-      statusEl.className = "apply-status error";
-      phoneInput.focus();
-      return;
-    }
-
     submitBtn.disabled = true;
     statusEl.textContent = mt("applyModal.submitting", "Submitting your application\u2026");
     statusEl.className = "apply-status sending";
@@ -397,8 +272,6 @@
           apps,
           agreeTerms,
           agreeSmsConsent,
-          phoneOtpToken,
-          phoneOtpCode: phoneOtpInput.value.trim(),
           licenseFileName: licenseFile.name,
           licenseMimeType: licenseFile.type,
           licenseBase64,
@@ -413,20 +286,6 @@
       const result = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
         var errMsg = result.error || mt("applyModal.generalError", "Something went wrong. Please try again.");
-        // If the server flagged an OTP error, reset the phone verification state
-        // so the renter can see the code input again and request a fresh code.
-        if (result.code === "otp_invalid") {
-          phoneVerified = false;
-          phoneOtpToken = null;
-          phoneOtpGroup.style.display = "block";
-          phoneVerifiedBadge.style.display = "none";
-          phoneOtpInput.value = "";
-          sendPhoneOtpBtn.disabled = false;
-          sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
-          setPhoneStatus(errMsg, "error");
-          submitBtn.disabled = false;
-          return;
-        }
         throw new Error(errMsg);
       }
 
