@@ -210,11 +210,11 @@ test("update: 400 on missing vehicleId", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("update: 400 on unknown vehicleId", async () => {
+test("update: 400 on invalid vehicleId format", async () => {
   setSecret("testSecret");
   supabaseMockState.client = makeSupabase();
 
-  const req = makeReq({ body: { secret: "testSecret", action: "update", vehicleId: "unknown_car", updates: { status: "active" } } });
+  const req = makeReq({ body: { secret: "testSecret", action: "update", vehicleId: "INVALID VEHICLE!", updates: { status: "active" } } });
   const res = makeRes();
   await handler(req, res);
 
@@ -490,4 +490,140 @@ test("GET: 500 when Supabase is not configured", async () => {
 
   assert.equal(res._status, 500);
   assert.ok(res._body.error.includes("SUPABASE_URL"));
+});
+
+// ─── create ───────────────────────────────────────────────────────────────────
+
+test("create: 400 on missing vehicleId", async () => {
+  setSecret("testSecret");
+  supabaseMockState.client = makeSupabase();
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleName: "Test Car" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.includes("vehicleId"));
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: 400 on invalid vehicleId format (uppercase / special chars)", async () => {
+  setSecret("testSecret");
+  supabaseMockState.client = makeSupabase();
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleId: "My Car!", vehicleName: "Test" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.includes("vehicleId"));
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: 400 on missing vehicleName", async () => {
+  setSecret("testSecret");
+  supabaseMockState.client = makeSupabase();
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleId: "mynewcar" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.includes("vehicleName"));
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: 400 on invalid type", async () => {
+  setSecret("testSecret");
+  supabaseMockState.client = makeSupabase();
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleId: "mynewcar", vehicleName: "My New Car", type: "spaceship" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.includes("type"));
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: 409 when vehicle already exists", async () => {
+  setSecret("testSecret");
+  supabaseMockState.client = {
+    from: () => ({
+      select:      () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { vehicle_id: "mynewcar" }, error: null }) }) }),
+    }),
+  };
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleId: "mynewcar", vehicleName: "My New Car" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 409);
+  assert.ok(res._body.error.includes("already exists"));
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: inserts new vehicle and returns 201", async () => {
+  setSecret("testSecret");
+  let insertedPayload = null;
+  const insertChain = {
+    select: () => insertChain,
+    single: () => Promise.resolve({
+      data: { data: { vehicle_id: "mynewcar", vehicle_name: "My New Car", type: "economy", status: "active" } },
+      error: null,
+    }),
+  };
+  supabaseMockState.client = {
+    from: () => ({
+      select:      () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+      insert:      (payload) => { insertedPayload = payload; return insertChain; },
+    }),
+  };
+
+  const req = makeReq({ body: {
+    secret: "testSecret", action: "create",
+    vehicleId: "mynewcar", vehicleName: "My New Car",
+    type: "economy", vehicleYear: 2023, purchasePrice: 15000,
+    purchaseDate: "2023-06-01", status: "active",
+  } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 201);
+  assert.equal(res._body.success, true);
+  assert.ok(res._body.vehicle);
+  assert.equal(res._body.vehicle.vehicle_name, "My New Car");
+  assert.ok(insertedPayload);
+  assert.equal(insertedPayload.vehicle_id, "mynewcar");
+  assert.equal(insertedPayload.data.vehicle_name, "My New Car");
+  assert.equal(insertedPayload.data.type, "economy");
+  assert.equal(insertedPayload.data.vehicle_year, 2023);
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("create: defaults type to economy and status to active when omitted", async () => {
+  setSecret("testSecret");
+  let insertedPayload = null;
+  const insertChain = {
+    select: () => insertChain,
+    single: () => Promise.resolve({
+      data: { data: { vehicle_id: "testcar2", vehicle_name: "Test Car 2", type: "economy", status: "active" } },
+      error: null,
+    }),
+  };
+  supabaseMockState.client = {
+    from: () => ({
+      select:      () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+      insert:      (payload) => { insertedPayload = payload; return insertChain; },
+    }),
+  };
+
+  const req = makeReq({ body: { secret: "testSecret", action: "create", vehicleId: "testcar2", vehicleName: "Test Car 2" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 201);
+  assert.equal(insertedPayload.data.type, "economy");
+  assert.equal(insertedPayload.data.status, "active");
+  setSecret(REAL_ADMIN_SECRET);
 });

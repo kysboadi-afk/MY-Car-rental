@@ -1223,6 +1223,64 @@
 </div>
 
 <!-- Booking Detail Modal -->
+<div class="modal-overlay" id="add-vehicle-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add New Vehicle</div>
+      <button class="modal-close" onclick="closeModal('add-vehicle-modal')">✕</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Vehicle ID *</label>
+        <input type="text" class="form-input" id="av-id" placeholder="e.g. camry2022" pattern="[a-z0-9_-]+" maxlength="50">
+        <div class="form-hint">Lowercase letters, digits, hyphens, or underscores (2–50 chars). Cannot be changed later.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle Name *</label>
+        <input type="text" class="form-input" id="av-name" placeholder="e.g. Camry 2022 SE" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-select" id="av-type">
+          <option value="economy">Economy</option>
+          <option value="slingshot">Slingshot</option>
+          <option value="luxury">Luxury</option>
+          <option value="suv">SUV</option>
+          <option value="truck">Truck</option>
+          <option value="van">Van</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-select" id="av-status">
+          <option value="active">Active</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vehicle Year</label>
+        <input type="number" class="form-input" id="av-year" min="1990" max="2030" placeholder="e.g. 2022">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Purchase Price ($)</label>
+        <input type="number" class="form-input" id="av-purchase-price" min="0" step="100" placeholder="0">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Purchase Date</label>
+        <input type="date" class="form-input" id="av-purchase-date">
+      </div>
+    </div>
+    <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-vehicle-modal')">Cancel</button>
+      <button class="btn btn-primary" id="av-save-btn" onclick="saveNewVehicle()">Add Vehicle</button>
+    </div>
+  </div>
+</div>
+
+<!-- Booking Detail Modal -->
 <div class="modal-overlay" id="booking-detail-modal">
   <div class="modal" style="max-width:600px;">
     <div class="modal-header">
@@ -1584,7 +1642,11 @@ function renderVehicles(vehicles, stats) {
   };
 
   document.getElementById('vehicles-content').innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-primary btn-sm" onclick="openAddVehicle()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Vehicle
+      </button>
       <button class="btn btn-secondary btn-sm" onclick="loadVehicles()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
         Refresh
@@ -1778,6 +1840,66 @@ async function saveVehicle() {
     showToast('Error: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+// ── Add Vehicle ────────────────────────────────────────────────────────────
+function openAddVehicle() {
+  document.getElementById('av-id').value = '';
+  document.getElementById('av-name').value = '';
+  document.getElementById('av-type').value = 'economy';
+  document.getElementById('av-status').value = 'active';
+  document.getElementById('av-year').value = '';
+  document.getElementById('av-purchase-price').value = '';
+  document.getElementById('av-purchase-date').value = '';
+  document.getElementById('av-msg').textContent = '';
+  document.getElementById('av-save-btn').disabled = false;
+  document.getElementById('av-save-btn').textContent = 'Add Vehicle';
+  openModal('add-vehicle-modal');
+}
+
+async function saveNewVehicle() {
+  const vehicleId     = (document.getElementById('av-id').value || '').trim().toLowerCase();
+  const vehicleName   = document.getElementById('av-name').value.trim();
+  const type          = document.getElementById('av-type').value;
+  const status        = document.getElementById('av-status').value;
+  const vehicleYear   = parseInt(document.getElementById('av-year').value, 10) || null;
+  const purchasePrice = parseFloat(document.getElementById('av-purchase-price').value) || 0;
+  const purchaseDate  = document.getElementById('av-purchase-date').value;
+
+  const msgEl = document.getElementById('av-msg');
+  const btn   = document.getElementById('av-save-btn');
+
+  if (!vehicleId || !/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Vehicle ID must be 2–50 lowercase letters, digits, hyphens, or underscores.';
+    return;
+  }
+  if (!vehicleName) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Vehicle Name is required.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  msgEl.style.color = 'var(--text-sub)';
+  msgEl.textContent = 'Saving…';
+
+  try {
+    await apiPost('/api/v2-vehicles', {
+      secret: adminSecret, action: 'create',
+      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate,
+    });
+    closeModal('add-vehicle-modal');
+    showToast('Vehicle added successfully.', 'success');
+    allVehicles = {};
+    if (currentPage === 'vehicles') loadVehicles();
+  } catch (err) {
+    msgEl.style.color = 'var(--danger)';
+    msgEl.textContent = 'Error: ' + err.message;
+    btn.disabled = false;
+    btn.textContent = 'Add Vehicle';
   }
 }
 
