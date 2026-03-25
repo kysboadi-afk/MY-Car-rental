@@ -1,6 +1,6 @@
 // api/v2-vehicles.js
 // SLYTRANS FLEET CONTROL v2 — Vehicles CRUD endpoint.
-// Supports listing and updating vehicle data stored in Supabase.
+// Supports listing, creating, and updating vehicle data stored in Supabase.
 //
 // GET  /api/v2-vehicles
 //   Returns an array of vehicle objects: [{ vehicle_id, ...data }, ...]
@@ -9,13 +9,17 @@
 // POST /api/v2-vehicles
 // Actions:
 //   list   — { secret, action:"list" }
+//   create — { secret, action:"create", vehicleId, vehicleName, type?, vehicleYear?, purchasePrice?, purchaseDate?, status? }
 //   update — { secret, action:"update", vehicleId, updates:{...} }
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
 const ALLOWED_STATUSES = ["active", "maintenance", "inactive"];
+const ALLOWED_TYPES    = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
+
+// vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores.
+const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
 
 // Normalize cover_image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
@@ -104,7 +108,7 @@ export default async function handler(req, res) {
     if (action === "update") {
       const { vehicleId, updates } = body;
 
-      if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
+      if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "Invalid or missing vehicleId" });
       }
       if (!updates || typeof updates !== "object") {
@@ -161,6 +165,62 @@ export default async function handler(req, res) {
       if (upsertErr) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
 
       return res.status(200).json({ success: true, vehicle: upserted.data });
+    }
+
+    // ── CREATE ──────────────────────────────────────────────────────────────
+    if (action === "create") {
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status } = body;
+
+      if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
+        return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
+      }
+      if (!vehicleName || typeof vehicleName !== "string" || !vehicleName.trim()) {
+        return res.status(400).json({ error: "vehicleName is required" });
+      }
+
+      const vehicleType = type || "economy";
+      if (!ALLOWED_TYPES.includes(vehicleType)) {
+        return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(", ")}` });
+      }
+
+      const vehicleStatus = status || "active";
+      if (!ALLOWED_STATUSES.includes(vehicleStatus)) {
+        return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(", ")}` });
+      }
+
+      // Check the vehicle doesn't already exist
+      const { data: existing, error: fetchErr } = await supabase
+        .from("vehicles")
+        .select("vehicle_id")
+        .eq("vehicle_id", vehicleId)
+        .maybeSingle();
+
+      if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+      if (existing) {
+        return res.status(409).json({ error: `Vehicle "${vehicleId}" already exists` });
+      }
+
+      // Build the new vehicle data object
+      const newData = {
+        vehicle_id:     vehicleId,
+        vehicle_name:   vehicleName.trim().slice(0, 200),
+        type:           vehicleType,
+        vehicle_year:   vehicleYear ? Math.round(Number(vehicleYear)) : null,
+        purchase_price: purchasePrice ? Math.round(parseFloat(purchasePrice) * 100) / 100 : 0,
+        purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, 20) : "",
+        status:         vehicleStatus,
+        cover_image:    "",
+      };
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("vehicles")
+        .insert({ vehicle_id: vehicleId, data: newData, updated_at: new Date().toISOString() })
+        .select("data")
+        .single();
+
+      if (insertErr) throw new Error(`Supabase insert failed: ${insertErr.message}`);
+
+      return res.status(201).json({ success: true, vehicle: inserted.data });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
