@@ -12,6 +12,7 @@
 import { TEMPLATES } from "./_sms-templates.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -79,14 +80,14 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
+  if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
   const body   = req.body || {};
   const { secret, action } = body;
 
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -122,9 +123,13 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "updates object is required" });
       }
 
-      // Capture the update values before the retry loop
+      // Capture the update values before the retry loop — only accept known fields
       const newMessage  = typeof updates.message === "string" ? updates.message.slice(0, 1000) : undefined;
       const newEnabled  = typeof updates.enabled === "boolean" ? updates.enabled : undefined;
+
+      if (newMessage === undefined && newEnabled === undefined) {
+        return res.status(400).json({ error: "updates must include at least one of: message (string), enabled (boolean)" });
+      }
       const updatedAt   = new Date().toISOString();
 
       let resultOverride;
