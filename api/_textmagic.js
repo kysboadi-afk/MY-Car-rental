@@ -4,8 +4,18 @@
 // Required environment variables (set in Vercel dashboard):
 //   TEXTMAGIC_USERNAME — TextMagic account username
 //   TEXTMAGIC_API_KEY  — TextMagic API key
+//
+// Optional environment variables:
+//   TEXTMAGIC_FROM     — Registered sender number in E.164 format (e.g. +18332521093).
+//                        US carriers require a consistent, registered 10DLC sender so
+//                        that messages are delivered rather than filtered.
+//                        Defaults to the SLY Transportation Services sender number.
 
 const TEXTMAGIC_API_URL = "https://rest.textmagic.com/api/v2/messages";
+
+// Registered TextMagic sender number for SLY Transportation Services.
+// Override with the TEXTMAGIC_FROM environment variable if the number changes.
+const DEFAULT_FROM = "+18332521093";
 
 /**
  * Send an SMS via the TextMagic REST API.
@@ -23,6 +33,8 @@ export async function sendSms(to, text) {
 
   // TextMagic REST API v2: `phones` accepts a single E.164 number or a
   // comma-separated string of multiple numbers.
+  // `from` pins the registered sender number so US carriers deliver the message.
+  const from = process.env.TEXTMAGIC_FROM || DEFAULT_FROM;
   const response = await fetch(TEXTMAGIC_API_URL, {
     method: "POST",
     headers: {
@@ -30,7 +42,7 @@ export async function sendSms(to, text) {
       "X-TM-Key":      apiKey,
       "Content-Type":  "application/json",
     },
-    body: JSON.stringify({ text, phones: to }),
+    body: JSON.stringify({ text, phones: to, from }),
   });
 
   if (!response.ok) {
