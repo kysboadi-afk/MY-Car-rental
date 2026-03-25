@@ -220,29 +220,24 @@ export default async function handler(req, res) {
 
       const toInsert = paidBookings
         .filter((b) => !existingIds.has(b.bookingId))
-        .map((b) => {
-          const days = b.pickupDate && b.returnDate
-            ? Math.max(1, Math.round((new Date(b.returnDate) - new Date(b.pickupDate)) / 86400000))
-            : null;
-          return {
-            booking_id:        b.bookingId,
-            vehicle_id:        b.vehicleId,
-            customer_name:     b.name        || null,
-            customer_phone:    b.phone       || null,
-            customer_email:    b.email       || null,
-            pickup_date:       b.pickupDate  || null,
-            return_date:       b.returnDate  || null,
-            gross_amount:      Number(b.amountPaid || 0),
-            deposit_amount:    0,
-            refund_amount:     0,
-            payment_method:    b.paymentMethod || "cash",
-            payment_status:    "paid",
-            notes:             b.notes || null,
-            is_no_show:        false,
-            is_cancelled:      b.status === "cancelled_rental",
-            override_by_admin: true,
-          };
-        });
+        .map((b) => ({
+          booking_id:        b.bookingId,
+          vehicle_id:        b.vehicleId,
+          customer_name:     b.name        || null,
+          customer_phone:    b.phone       || null,
+          customer_email:    b.email       || null,
+          pickup_date:       b.pickupDate  || null,
+          return_date:       b.returnDate  || null,
+          gross_amount:      Number(b.amountPaid || 0),
+          deposit_amount:    0,
+          refund_amount:     0,
+          payment_method:    b.paymentMethod || "cash",
+          payment_status:    "paid",
+          notes:             b.notes || null,
+          is_no_show:        false,
+          is_cancelled:      b.status === "cancelled_rental",
+          override_by_admin: true,
+        }));
 
       const skipped = paidBookings.length - toInsert.length;
 
