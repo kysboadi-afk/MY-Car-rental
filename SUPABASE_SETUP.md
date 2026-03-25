@@ -1,6 +1,6 @@
 # Supabase Setup Guide — Admin CMS
 
-This document contains everything you need to set up the Supabase database that powers the Admin CMS (Site Settings, Content Blocks, AI Assistant, and Revision History).
+This document contains everything you need to set up the Supabase database that powers the Admin CMS (Site Settings, Content Blocks, AI Assistant, Protection Plans, Revenue, and Revision History).
 
 ---
 
@@ -42,7 +42,39 @@ In Vercel → Your Project → **Settings → Environment Variables**, add:
 
 ---
 
-## Step 3 — Run the SQL Migrations
+## Step 3 — Run the ONE-SHOT Setup Script ⚡ (Recommended)
+
+> **This is the fastest way. One paste, one click, everything is set up.**
+
+1. Open your Supabase project → **SQL Editor → New Query**
+2. Open **`supabase/migrations/COMPLETE_SETUP.sql`** from this repository
+3. Copy the **entire file contents** and paste into the SQL Editor
+4. Click **Run**
+
+That script creates **every table, index, trigger, and view** the app needs, plus seeds all default data. It is completely safe to run more than once.
+
+**Tables created:**
+
+| Table | Used by |
+|-------|---------|
+| `vehicles` | Vehicle editor, admin panel |
+| `protection_plans` | DPP coverage tiers — **required for Edit/Delete to work** |
+| `system_settings` | Pricing, tax rate, automation toggles |
+| `revenue_records` | Revenue ledger |
+| `expenses` | Vehicle expense tracking |
+| `customers` | Customer profiles, ban/flag |
+| `booking_status_history` | Audit trail |
+| `payment_transactions` | Payment layer |
+| `sms_template_overrides` | Custom SMS templates |
+| `site_settings` | CMS — business name, hero text, etc. |
+| `content_blocks` | FAQs, announcements, testimonials |
+| `content_revisions` | Revision history / rollback |
+
+> ✅ After running the script, **reload the Admin Panel**. Edit and Delete buttons on Protection Plans will now be enabled.
+
+---
+
+## Step 3 (Alternative) — Run Individual Migration Files
 
 In your Supabase project, go to **SQL Editor → New Query**, paste each block below and click **Run**.
 
@@ -209,9 +241,11 @@ Once your Vercel environment variables are set and redeployed:
 
 | Problem | Fix |
 |---------|-----|
-| "Supabase is not configured" error | Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel env vars, then Redeploy |
-| `GET /api/v2-vehicles` returns only `vehicle_id` | The `data` column is empty in Supabase. Run migration `0002_seed_fleet_vehicles.sql` in the Supabase SQL Editor to upsert the correct vehicle data |
-| CMS loads but shows no data | Run the SQL migrations in Step 3, then reload the CMS |
+| "Supabase is not configured" error | Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in Vercel env vars, then Redeploy. |
+| Protection Plans show but Edit/Delete buttons are missing or say "Set up Supabase to edit" | The `protection_plans` table doesn't exist yet. Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor, then reload the Admin Panel. |
+| Clicking Edit on a Protection Plan gives "Database schema error" | Same as above — run `supabase/migrations/COMPLETE_SETUP.sql` to create all required tables. |
+| `GET /api/v2-vehicles` returns only `vehicle_id` | The `data` column is empty in Supabase. Run `supabase/migrations/COMPLETE_SETUP.sql` (or just `0002_seed_fleet_vehicles.sql`) in the Supabase SQL Editor. |
+| CMS loads but shows no data | Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor, then reload the page |
 | AI assistant shows "not available" | Add `OPENAI_API_KEY` in Vercel env vars, then Redeploy |
 | Public site still shows old content | Content is cached for 60s. Wait a minute and hard-refresh, or clear CDN cache |
 | 401 Unauthorized error | Make sure the `ADMIN_SECRET` in Vercel matches what you type in the login screen |

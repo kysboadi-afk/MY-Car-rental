@@ -27,6 +27,7 @@ import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
 
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -181,6 +182,11 @@ export default async function handler(req, res) {
       save:    saveBookings,
       message: `Add manual booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`,
     });
+
+    // Auto-sync to Supabase so admin Revenue Tracker and Customer Management
+    // are populated immediately without any manual "Sync" step.
+    await autoCreateRevenueRecord(booking);
+    await autoUpsertCustomer(booking, false);
 
     return res.status(200).json({ success: true, booking });
   } catch (err) {
