@@ -15,7 +15,7 @@
 
 import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -145,8 +145,12 @@ export default async function handler(req, res) {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       if (sb) {
         const { data, error } = await sb.from("protection_plans").select("*").eq("id", body.id).single();
-        if (error) throw error;
-        return res.status(200).json({ plan: data });
+        if (error) {
+          if (!isSchemaError(error)) throw error;
+          // table not found — fall through to GitHub fallback below
+        } else {
+          return res.status(200).json({ plan: data });
+        }
       }
       // GitHub fallback
       const { data: plans } = await loadPlansFromGitHub();
@@ -170,8 +174,12 @@ export default async function handler(req, res) {
       };
       if (sb) {
         const { data, error } = await sb.from("protection_plans").insert(record).select().single();
-        if (error) throw error;
-        return res.status(201).json({ plan: data });
+        if (error) {
+          if (!isSchemaError(error)) throw error;
+          // table not found — fall through to GitHub fallback below
+        } else {
+          return res.status(201).json({ plan: data });
+        }
       }
       // GitHub fallback — assign a UUID as id
       const newPlan = { id: randomUUID(), ...record };
@@ -195,8 +203,12 @@ export default async function handler(req, res) {
           if (Object.prototype.hasOwnProperty.call(body.updates || {}, f)) updates[f] = (body.updates)[f];
         }
         const { data, error } = await sb.from("protection_plans").update(updates).eq("id", body.id).select().single();
-        if (error) throw error;
-        return res.status(200).json({ plan: data });
+        if (error) {
+          if (!isSchemaError(error)) throw error;
+          // table not found — fall through to GitHub fallback below
+        } else {
+          return res.status(200).json({ plan: data });
+        }
       }
       // GitHub fallback
       let updated;
@@ -222,8 +234,12 @@ export default async function handler(req, res) {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       if (sb) {
         const { error } = await sb.from("protection_plans").delete().eq("id", body.id);
-        if (error) throw error;
-        return res.status(200).json({ success: true });
+        if (error) {
+          if (!isSchemaError(error)) throw error;
+          // table not found — fall through to GitHub fallback below
+        } else {
+          return res.status(200).json({ success: true });
+        }
       }
       // GitHub fallback
       await updateJsonFileWithRetry({

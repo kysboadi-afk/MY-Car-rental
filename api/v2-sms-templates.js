@@ -13,7 +13,7 @@
 //   reset  — { secret, action:"reset", templateKey }
 
 import { TEMPLATES } from "./_sms-templates.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -66,7 +66,13 @@ async function upsertOverrideInSupabase(templateKey, message, enabled) {
     .upsert(record, { onConflict: "template_key" })
     .select("message, enabled")
     .single();
-  if (error) throw error;
+  if (error) {
+    if (isSchemaError(error)) {
+      console.warn("v2-sms-templates: sms_template_overrides table missing in Supabase, falling back to GitHub");
+      return null; // signal to caller to use GitHub fallback
+    }
+    throw error;
+  }
   return data;
 }
 
@@ -79,7 +85,13 @@ async function deleteOverrideFromSupabase(templateKey) {
   if (!sb) return false;
   const { error } = await sb.from("sms_template_overrides")
     .delete().eq("template_key", templateKey);
-  if (error) throw error;
+  if (error) {
+    if (isSchemaError(error)) {
+      console.warn("v2-sms-templates: sms_template_overrides table missing in Supabase, falling back to GitHub");
+      return false; // signal to caller to use GitHub fallback
+    }
+    throw error;
+  }
   return true;
 }
 
@@ -204,13 +216,14 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "updates must include at least one of: message (string), enabled (boolean)" });
       }
 
-      // Try Supabase first; fall back to GitHub if unavailable
+      // Try Supabase first; fall back to GitHub if unavailable or table missing
       const sb = getSupabaseAdmin();
       let resultOverride;
       if (sb) {
         resultOverride = await upsertOverrideInSupabase(templateKey, newMessage, newEnabled);
-      } else {
-        // GitHub fallback
+      }
+      if (!sb || resultOverride === null) {
+        // GitHub fallback (Supabase not configured, or table not yet created)
         const updatedAt = new Date().toISOString();
         await updateJsonFileWithRetry({
           load:    loadOverridesFromGitHub,
@@ -245,12 +258,11 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Invalid templateKey" });
       }
 
-      // Try Supabase first; fall back to GitHub if unavailable
+      // Try Supabase first; fall back to GitHub if unavailable or table missing
       const sb = getSupabaseAdmin();
-      if (sb) {
-        await deleteOverrideFromSupabase(templateKey);
-      } else {
-        // GitHub fallback
+      const deletedFromSupabase = sb && await deleteOverrideFromSupabase(templateKey);
+      if (!deletedFromSupabase) {
+        // GitHub fallback (Supabase not configured, or table not yet created)
         await updateJsonFileWithRetry({
           load:    loadOverridesFromGitHub,
           apply:   (data) => { delete data[templateKey]; },
