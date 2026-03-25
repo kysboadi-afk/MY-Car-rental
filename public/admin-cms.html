@@ -605,8 +605,10 @@ function navigate(page) {
 }
 
 // ── API helper ─────────────────────────────────────────────────────────────
+const API_BASE = 'https://sly-rides.vercel.app';
+
 async function apiPost(url, body) {
-  const resp = await fetch(url, {
+  const resp = await fetch(API_BASE + url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
