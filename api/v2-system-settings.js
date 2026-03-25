@@ -131,9 +131,23 @@ export default async function handler(req, res) {
       if (body.description) record.description = body.description;
       if (body.category)    record.category    = body.category;
 
+      // Upsert the setting; if the table is missing or upsert fails, surface a
+      // clear error rather than the generic "unexpected error" fallback.
       const { data, error } = await sb.from("system_settings")
         .upsert(record, { onConflict: "key" }).select().single();
-      if (error) throw error;
+
+      if (error) {
+        // Supabase may return PGRST116 when .single() finds 0/multiple rows even
+        // after a successful upsert (rare but possible under heavy load).  In that
+        // case, confirm the write succeeded by re-fetching.
+        if (String(error.code) === "PGRST116" || /JSON object requested/i.test(error.message)) {
+          const { data: refetched, error: refetchErr } = await sb
+            .from("system_settings").select("*").eq("key", record.key).single();
+          if (refetchErr) throw refetchErr;
+          return res.status(200).json({ setting: refetched });
+        }
+        throw error;
+      }
       return res.status(200).json({ setting: data });
     }
 

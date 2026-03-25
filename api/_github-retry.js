@@ -6,8 +6,8 @@
 // Rather than surfacing that as a user-visible error, we transparently re-load
 // the current file state and re-apply the desired change, up to maxRetries times.
 
-const DEFAULT_MAX_RETRIES = 3;
-const DEFAULT_BACKOFF_MS  = 150;
+const DEFAULT_MAX_RETRIES = 5;   // Increased from 3 to reduce user-visible conflict errors
+const DEFAULT_BACKOFF_MS  = 200; // Increased from 150ms for more spread between retries
 
 /**
  * Returns true if the thrown error looks like a GitHub 409 SHA conflict.

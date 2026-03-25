@@ -119,40 +119,81 @@ export default async function handler(req, res) {
       const { data: bookingsData } = await loadBookings();
       const allBookings = Object.values(bookingsData).flat();
 
-      // Group bookings by phone
-      const byPhone = {};
+      // Group bookings by a stable key:
+      //   • phone-bearing bookings → keyed by phone (exact dedup via unique index)
+      //   • phone-less bookings    → keyed by "name:<lowercase name>" (best-effort dedup by name)
+      const byKey = {};
       for (const b of allBookings) {
-        const key = (b.phone || "").trim();
-        if (!key) continue;
-        if (!byPhone[key]) byPhone[key] = { name: b.name, phone: key, email: b.email || null, bookings: [] };
-        byPhone[key].bookings.push(b);
+        const phone = (b.phone || "").trim();
+        const name  = (b.name  || "").trim();
+        if (!phone && !name) continue; // skip if no identity at all
+        const key = phone || `name:${name.toLowerCase()}`;
+        if (!byKey[key]) byKey[key] = { name, phone: phone || null, email: b.email || null, bookings: [] };
+        // Keep the most recent name / email for this key
+        if (b.name)  byKey[key].name  = b.name;
+        if (b.email) byKey[key].email = b.email;
+        byKey[key].bookings.push(b);
       }
 
-      const paidStatuses = new Set(["booked_paid","active_rental","completed_rental"]);
-      const upserts = [];
-      for (const [phone, c] of Object.entries(byPhone)) {
+      const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+
+      // Split into phone-bearing (batch-upsertable) and phone-less (sequential check-then-upsert)
+      const phoneUpserts = [];
+      const nameFallbacks = [];
+
+      for (const [, c] of Object.entries(byKey)) {
         const paidBookings = c.bookings.filter((b) => paidStatuses.has(b.status));
         const pickupDates  = c.bookings.map((b) => b.pickupDate).filter(Boolean).sort();
-        const spent = paidBookings.reduce((s, b) => s + (b.amountPaid || 0), 0);
-        upserts.push({
-          name:               c.name || "Unknown",
-          phone,
-          email:              c.email,
+        const spent = paidBookings.reduce((s, b) => s + (Number(b.amountPaid || 0)), 0);
+        const record = {
+          name:               c.name  || "Unknown",
+          email:              c.email || null,
           total_bookings:     c.bookings.length,
           total_spent:        Math.round(spent * 100) / 100,
           first_booking_date: pickupDates[0]  || null,
           last_booking_date:  pickupDates[pickupDates.length - 1] || null,
           updated_at:         new Date().toISOString(),
-        });
+        };
+        if (c.phone) {
+          phoneUpserts.push({ ...record, phone: c.phone });
+        } else {
+          nameFallbacks.push(record); // will be inserted/updated below without phone
+        }
       }
 
-      if (upserts.length > 0) {
+      let synced = 0;
+
+      // Batch upsert customers that have a phone number (conflict-safe via unique index)
+      if (phoneUpserts.length > 0) {
         const { error } = await sb.from("customers")
-          .upsert(upserts, { onConflict: "phone", ignoreDuplicates: false });
+          .upsert(phoneUpserts, { onConflict: "phone", ignoreDuplicates: false });
         if (error) throw error;
+        synced += phoneUpserts.length;
       }
 
-      return res.status(200).json({ synced: upserts.length, message: `Synced ${upserts.length} customers from bookings` });
+      // For phone-less customers: check by name + null phone, then update-or-insert
+      for (const record of nameFallbacks) {
+        try {
+          const { data: existing } = await sb
+            .from("customers")
+            .select("id")
+            .eq("name", record.name)
+            .is("phone", null)
+            .maybeSingle();
+          if (existing) {
+            const { error } = await sb.from("customers").update(record).eq("id", existing.id);
+            if (error) { console.error("v2-customers sync name-update error:", error.message); continue; }
+          } else {
+            const { error } = await sb.from("customers").insert({ ...record, phone: null });
+            if (error) { console.error("v2-customers sync name-insert error:", error.message); continue; }
+          }
+          synced++;
+        } catch (nameErr) {
+          console.error("v2-customers sync name-fallback error:", nameErr.message);
+        }
+      }
+
+      return res.status(200).json({ synced, message: `Synced ${synced} customers from bookings` });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

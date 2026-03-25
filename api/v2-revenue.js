@@ -145,7 +145,7 @@ export default async function handler(req, res) {
     // ── SUMMARY (per-vehicle) ────────────────────────────────────────────────
     if (action === "summary") {
       // Return empty summary when Supabase is not configured
-      if (!sb) return res.status(200).json({ summary: [] });
+      if (!sb) return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
       try {
         const { data, error } = await sb.from("vehicle_revenue_summary").select("*");
         if (error) {
@@ -153,9 +153,10 @@ export default async function handler(req, res) {
           const { data: recs, error: err2 } = await sb.from("revenue_records").select("*");
           if (err2) {
             console.error("v2-revenue summary fallback error:", err2.message);
-            return res.status(200).json({ summary: [] });
+            return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
           }
           const summary = {};
+          let totals = { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
           for (const r of (recs || [])) {
             if (!summary[r.vehicle_id]) {
               summary[r.vehicle_id] = { vehicle_id: r.vehicle_id, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_refunds:0, total_net:0, total_deposits:0 };
@@ -168,13 +169,27 @@ export default async function handler(req, res) {
             s.total_refunds  += Number(r.refund_amount  || 0);
             s.total_net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
             s.total_deposits += Number(r.deposit_amount || 0);
+            totals.gross    += Number(r.gross_amount   || 0);
+            totals.refunds  += Number(r.refund_amount  || 0);
+            totals.net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
+            totals.deposits += Number(r.deposit_amount || 0);
+            totals.bookingCount++;
           }
-          return res.status(200).json({ summary: Object.values(summary) });
+          return res.status(200).json({ summary: Object.values(summary), totals });
         }
-        return res.status(200).json({ summary: data || [] });
+        // Compute global totals from the view rows
+        const rows = data || [];
+        const totals = rows.reduce((acc, r) => ({
+          gross:        acc.gross        + Number(r.total_gross    || 0),
+          refunds:      acc.refunds      + Number(r.total_refunds  || 0),
+          net:          acc.net          + Number(r.total_net      || 0),
+          deposits:     acc.deposits     + Number(r.total_deposits || 0),
+          bookingCount: acc.bookingCount + Number(r.booking_count  || 0),
+        }), { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 });
+        return res.status(200).json({ summary: rows, totals });
       } catch (sumErr) {
         console.error("v2-revenue summary error:", sumErr);
-        return res.status(200).json({ summary: [] });
+        return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
       }
     }
 
