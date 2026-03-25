@@ -156,15 +156,29 @@ async function markVehicleUnavailable(vehicleId) {
     }
   }
 
-  await updateJsonFileWithRetry({
-    load:  loadFleetStatus,
-    apply: (data) => {
-      if (!data[vehicleId]) data[vehicleId] = {};
-      data[vehicleId].available = false;
-    },
-    save:    saveFleetStatus,
-    message: `Mark ${vehicleId} unavailable after confirmed booking`,
-  });
+  // Use a sentinel symbol to signal "already unavailable — skip the write"
+  // without extra API calls or shared mutable state.
+  const ALREADY_UNAVAILABLE = Symbol("already_unavailable");
+  try {
+    await updateJsonFileWithRetry({
+      load:  loadFleetStatus,
+      apply: (data) => {
+        // If the vehicle is already marked unavailable, bail out immediately.
+        // updateJsonFileWithRetry will re-throw non-409 errors, so we catch
+        // ALREADY_UNAVAILABLE below and treat it as a no-op.
+        if (data[vehicleId] && data[vehicleId].available === false) {
+          throw ALREADY_UNAVAILABLE;
+        }
+        if (!data[vehicleId]) data[vehicleId] = {};
+        data[vehicleId].available = false;
+      },
+      save:    saveFleetStatus,
+      message: `Mark ${vehicleId} unavailable after confirmed booking`,
+    });
+  } catch (err) {
+    if (err !== ALREADY_UNAVAILABLE) throw err;
+    // Vehicle was already unavailable — no write needed.
+  }
 }
 
 // Escape special HTML characters to prevent XSS in email templates

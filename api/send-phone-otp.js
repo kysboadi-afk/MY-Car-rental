@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     );
     return res
       .status(500)
-      .json({ error: "Server configuration error: TextMagic credentials are not set." });
+      .json({ error: "Unable to send verification code at this time. Please call us at (213) 916-6606 to complete your application." });
   }
 
   const { phone } = req.body || {};
@@ -65,6 +65,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ token });
   } catch (err) {
     console.error("Phone OTP SMS failed:", err);
-    return res.status(500).json({ error: "Failed to send verification SMS." });
+    return res.status(500).json({ error: "Unable to send verification code at this time. Please call us at (213) 916-6606 to complete your application." });
   }
 }

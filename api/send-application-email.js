@@ -213,7 +213,7 @@ export default async function handler(req, res) {
       ? "+" + phoneDigits
       : phoneStr.startsWith("+") ? phoneStr : null;
   if (!phoneE164 || !verifyPhoneOtpToken(phoneOtpToken, phoneE164, phoneOtpCode)) {
-    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again." });
+    return res.status(400).json({ error: "Invalid or expired phone verification code. Please request a new code and try again.", code: "otp_invalid" });
   }
 
   // Build attachment if a license image/PDF was provided
