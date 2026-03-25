@@ -14,9 +14,12 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_STATUSES = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES    = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
+const ALLOWED_TYPES         = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
+const MAX_VEHICLE_NAME_LEN  = 200;
+// ISO 8601 date strings are at most 10 chars (YYYY-MM-DD); allow 20 to be safe.
+const MAX_PURCHASE_DATE_LEN = 20;
 
 // vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores.
 const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
@@ -203,11 +206,11 @@ export default async function handler(req, res) {
       // Build the new vehicle data object
       const newData = {
         vehicle_id:     vehicleId,
-        vehicle_name:   vehicleName.trim().slice(0, 200),
+        vehicle_name:   vehicleName.trim().slice(0, MAX_VEHICLE_NAME_LEN),
         type:           vehicleType,
         vehicle_year:   vehicleYear ? Math.round(Number(vehicleYear)) : null,
         purchase_price: purchasePrice ? Math.round(parseFloat(purchasePrice) * 100) / 100 : 0,
-        purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, 20) : "",
+        purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
         cover_image:    "",
       };
