@@ -15,6 +15,7 @@ Follow these steps **in order**. Each links to the full instructions below.
 | [Step 2](#step-2--add-your-stripe-api-keys-in-vercel) | Add `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — card form won't load without these |
 | [Step 3](#step-3--add-your-email-variables-for-reservation-notifications) | Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — no booking emails without these |
 | [Step 3b](#step-3b--add-your-github-token-for-automatic-calendar-blocking) | Create a GitHub fine-grained PAT and add it as `GITHUB_TOKEN` in Vercel, then Redeploy | ⚠️ Recommended — without it, booked dates won't be blocked automatically |
+| [Step 3c](#step-3c--add-textmagic-variables-for-sms-verification) | Add `TEXTMAGIC_USERNAME`, `TEXTMAGIC_API_KEY`, and `OTP_SECRET` in Vercel → Settings → Environment Variables, then Redeploy | ✅ Yes — renters cannot verify their phone number on the Apply Now form without these |
 | [Step 4](#step-4--add-your-signnow-variables-for-e-signature) | Add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD`, `SIGNNOW_TEMPLATE_ID` in Vercel, then Redeploy | ✅ Yes — rental agreement e-signature won't work without these |
 | [Step 5](#step-5--verify-your-signnow-setup-diagnostic-endpoint) | Visit `https://sly-rides.vercel.app/api/check-signnow` to verify SignNow is working | ✅ Yes — run this after Step 4 to confirm everything is connected |
 | [Step 6](#step-6--test-the-payment-form) | Do a test booking using Stripe test card `4242 4242 4242 4242` | ✅ Yes — confirms the full flow works end-to-end |
@@ -165,6 +166,48 @@ When a booking is confirmed, the API automatically updates `booked-dates.json` i
 
 ---
 
+## Step 3c — Add TextMagic Variables (for SMS Verification & Automated Reminders)
+
+**Required for:**
+- Renters verifying their phone number on the **Apply Now** form
+- Booking confirmation SMS sent to renters after payment
+- Automated SMS reminders (pickup reminders, late warnings, retention messages)
+
+Without these, renters will see an error when they click "Send Code" on the Apply Now form, and **no SMS messages will be sent at all**.
+
+| Variable Name | Value |
+|---|---|
+| `TEXTMAGIC_USERNAME` | Your TextMagic account username |
+| `TEXTMAGIC_API_KEY` | Your TextMagic API key (found in TextMagic dashboard → API settings) |
+| `OTP_SECRET` | A long random string (at least 32 characters) used to sign verification codes — generate one at https://randomkeygen.com |
+
+### How to get your TextMagic credentials
+
+1. Log in at **[https://app.textmagic.com](https://app.textmagic.com)** (create a free account if needed — top-ups required to send SMS).
+2. Go to **Settings → API** (or **My Account → API credentials**).
+3. Copy your **Username** and **API Key**.
+
+### Add them to Vercel
+
+1. In Vercel, open your **sly-rides** project.
+2. Go to **Settings → Environment Variables**.
+3. Add each variable (click **"Add New"** for each):
+
+| Variable Name | Example Value |
+|---|---|
+| `TEXTMAGIC_USERNAME` | `yourname` |
+| `TEXTMAGIC_API_KEY` | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
+| `OTP_SECRET` | `a3f9k2m7p1q8r4s6t0u5v9w2x7y1z3b8c4d6` (use your own random string) |
+
+4. Click **Save**.
+5. Go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
+
+> 💡 **OTP_SECRET** is a secret signing key — keep it private and never share it. If you change it, any pending verification codes will be invalidated. Once set, leave it unchanged.
+
+> ⚠️ Without TextMagic credentials, the automated reminder cron job will still run (every 15 minutes) but will skip sending messages and log a warning. No error will be surfaced to renters for reminders, but the Apply Now form will show an error to anyone trying to verify their phone.
+
+---
+
 ## Step 4 — Add Your SignNow Variables (for E-Signature)
 
 Required for the rental agreement e-signature feature. Without these, the booking page will show an error asking the customer to contact you directly.
@@ -268,6 +311,14 @@ The response will tell you:
 | Card form never appears, no error shown | Browser blocked request | Open browser DevTools → Console/Network tab — look for a red network error and share it |
 | Card form appears but payment fails | Wrong key type | Use test keys for testing (`sk_test_…` / `pk_test_…`) |
 | Vercel deployment shows "Error" | Build or function error | Click the failed deployment in Vercel → check the Functions log |
+| Renters see "Unable to send verification code" on Apply Now form | Missing TextMagic env vars | Add `TEXTMAGIC_USERNAME`, `TEXTMAGIC_API_KEY`, and `OTP_SECRET` in Vercel → Settings → Env Vars, then Redeploy (see **Step 3c** above) |
+| Renters see "Unable to send verification code" but TextMagic is configured | TextMagic credentials wrong or account out of credits | Log in at app.textmagic.com → verify your API key and account balance; update env vars and Redeploy |
+| Apply Now form: "Invalid or expired phone verification code" on submit | Code entered more than 10 minutes after requesting it | Click "Send Code" again to get a fresh code and submit within 10 minutes |
+| No booking confirmation SMS to renters | Missing TextMagic env vars | Add `TEXTMAGIC_USERNAME`, `TEXTMAGIC_API_KEY` in Vercel → Settings → Env Vars, then Redeploy |
+| Automated SMS reminders not sending (pickup, late, etc.) | Missing TextMagic env vars | Add `TEXTMAGIC_USERNAME`, `TEXTMAGIC_API_KEY` in Vercel → Settings → Env Vars, then Redeploy |
+| Owner not receiving booking notification emails | Missing SMTP env vars or SMTP error | Verify `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` are set; check Vercel function logs for "Owner notification email failed" |
+| Customer not receiving booking confirmation email | SMTP error or no email provided | Check Vercel function logs for "Customer confirmation email failed"; ensure customer entered a valid email address |
+| No emails at all (owner or customer) | SMTP credentials missing | Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `OWNER_EMAIL` in Vercel → Settings → Env Vars, then Redeploy |
 | "Sign Agreement" button shows error message | Expired or missing SignNow token | **Use OAuth credentials (Option A):** add `SIGNNOW_CLIENT_ID`, `SIGNNOW_CLIENT_SECRET`, `SIGNNOW_EMAIL`, `SIGNNOW_PASSWORD` in Vercel → Settings → Env Vars, then Redeploy. Static tokens expire after ~30–60 min. |
 | "Sign Agreement" button shows error message | Missing `SIGNNOW_TEMPLATE_ID` | Add `SIGNNOW_TEMPLATE_ID` in Vercel → Settings → Env Vars, then Redeploy |
 | Renters see a previously filled-in contract | `SIGNNOW_TEMPLATE_ID` points to a document, not a template | Go to SignNow → Templates, get the template ID, update the env var, Redeploy |
@@ -285,6 +336,10 @@ The response will tell you:
 | Frontend URL | `https://www.slytrans.com` (GitHub Pages) |
 | `STRIPE_SECRET_KEY` | Must be set in Vercel → Settings → Env Vars |
 | `STRIPE_PUBLISHABLE_KEY` | Must be set in Vercel → Settings → Env Vars |
+| `TEXTMAGIC_USERNAME` | Must be set — required for Apply Now phone verification and all SMS messages |
+| `TEXTMAGIC_API_KEY` | Must be set — required for Apply Now phone verification and all SMS messages |
+| `OTP_SECRET` | Must be set — used to sign verification codes; generate a long random string |
+| `SMTP_HOST` + `SMTP_PORT` + `SMTP_USER` + `SMTP_PASS` + `OWNER_EMAIL` | Must be set — required for all booking and application emails |
 | `SIGNNOW_CLIENT_ID` + `SIGNNOW_CLIENT_SECRET` + `SIGNNOW_EMAIL` + `SIGNNOW_PASSWORD` | **Recommended** — OAuth credentials for reliable, non-expiring SignNow auth |
 | `SIGNNOW_API_TOKEN` | Alternative to OAuth credentials — works but expires after ~30–60 min |
 | `SIGNNOW_TEMPLATE_ID` | Must be set to the **template** ID in Vercel → Settings → Env Vars |

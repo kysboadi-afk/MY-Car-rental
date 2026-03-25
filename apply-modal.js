@@ -176,6 +176,14 @@
   var phoneOtpInput       = document.getElementById("applyPhoneOtpInput");
   var resendPhoneOtpBtn   = document.getElementById("applyResendPhoneOtpBtn");
   var phoneVerifiedBadge  = document.getElementById("applyPhoneVerifiedBadge");
+  var phoneStatusEl       = document.getElementById("applyPhoneStatus");
+
+  function setPhoneStatus(text, cls) {
+    if (phoneStatusEl) {
+      phoneStatusEl.textContent = text;
+      phoneStatusEl.className = "apply-status" + (cls ? " " + cls : "");
+    }
+  }
 
   function startResendCooldown() {
     resendPhoneOtpBtn.disabled = true;
@@ -197,13 +205,13 @@
   async function sendPhoneOtp() {
     var phone = phoneInput.value.trim();
     if (!phone) {
-      statusEl.textContent = mt("applyModal.enterPhoneFirst", "Please enter your phone number first.");
-      statusEl.className = "apply-status error";
+      setPhoneStatus(mt("applyModal.enterPhoneFirst", "Please enter your phone number first."), "error");
       phoneInput.focus();
       return;
     }
     sendPhoneOtpBtn.disabled = true;
     sendPhoneOtpBtn.textContent = mt("applyModal.sendingCode", "Sending\u2026");
+    setPhoneStatus("", "");
     statusEl.textContent = "";
     statusEl.className = "apply-status";
 
@@ -215,8 +223,7 @@
       });
       var data = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        statusEl.textContent = data.error || mt("applyModal.otpSentError", "Failed to send verification code. Please try again.");
-        statusEl.className = "apply-status error";
+        setPhoneStatus(data.error || mt("applyModal.otpSentError", "Failed to send verification code. Please try again."), "error");
         sendPhoneOtpBtn.disabled = false;
         sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
         return;
@@ -229,12 +236,10 @@
       phoneOtpInput.focus();
       sendPhoneOtpBtn.textContent = mt("applyModal.sentDone", "Sent \u2713");
       startResendCooldown();
-      statusEl.textContent = mt("applyModal.codeSentPhone", "A 6-digit code was sent to your phone.");
-      statusEl.className = "apply-status sending";
+      setPhoneStatus(mt("applyModal.codeSentPhone", "A 6-digit code was sent to your phone."), "sending");
     } catch (err) {
       console.error("Send phone OTP error:", err);
-      statusEl.textContent = mt("applyModal.networkError", "Network error. Please check your connection and try again.");
-      statusEl.className = "apply-status error";
+      setPhoneStatus(mt("applyModal.networkError", "Network error. Please check your connection and try again."), "error");
       sendPhoneOtpBtn.disabled = false;
       sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
     }
@@ -272,6 +277,7 @@
     phoneOtpInput.value = "";
     sendPhoneOtpBtn.disabled = false;
     sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
+    setPhoneStatus("", "");
     clearInterval(resendTimer);
   });
 
@@ -406,7 +412,22 @@
 
       const result = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        throw new Error(result.error || mt("applyModal.generalError", "Something went wrong. Please try again."));
+        var errMsg = result.error || mt("applyModal.generalError", "Something went wrong. Please try again.");
+        // If the server flagged an OTP error, reset the phone verification state
+        // so the renter can see the code input again and request a fresh code.
+        if (result.code === "otp_invalid") {
+          phoneVerified = false;
+          phoneOtpToken = null;
+          phoneOtpGroup.style.display = "block";
+          phoneVerifiedBadge.style.display = "none";
+          phoneOtpInput.value = "";
+          sendPhoneOtpBtn.disabled = false;
+          sendPhoneOtpBtn.textContent = mt("applyModal.sendCode", "Send Code");
+          setPhoneStatus(errMsg, "error");
+          submitBtn.disabled = false;
+          return;
+        }
+        throw new Error(errMsg);
       }
 
       // Read the pre-approval decision returned by the API.
