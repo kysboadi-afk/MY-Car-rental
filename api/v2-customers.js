@@ -9,18 +9,21 @@
 //   upsert  — { secret, action:"upsert", phone, name, email?, ...fields } (create or update by phone)
 //   update  — { secret, action:"update", id, updates:{flagged?, banned?, flag_reason?, ban_reason?, notes?} }
 //   sync    — { secret, action:"sync" } — build/refresh customer table from bookings.json
+//
+// Error contract:
+//   • READ actions (list, get) return empty state when Supabase is not configured
+//     or the table does not yet exist, so the admin panel never crashes.
+//   • WRITE actions (upsert, update, sync) return a clear 503 when Supabase is unavailable.
 
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
+/** Returns the Supabase client or null if not configured. */
 function getSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) throw new Error("Supabase not configured");
-  return createClient(url, key);
+  return getSupabaseAdmin();
 }
 
 export default async function handler(req, res) {
@@ -39,27 +42,36 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
-  let sb;
-  try { sb = getSupabase(); }
-  catch (e) { return res.status(500).json({ error: e.message }); }
+  const sb = getSupabase();
 
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
-      let q = sb.from("customers").select("*").order("last_booking_date", { ascending: false, nullsFirst: false });
-      if (body.banned  === true  || body.banned  === "true")  q = q.eq("banned",  true);
-      if (body.flagged === true  || body.flagged === "true")   q = q.eq("flagged", true);
-      if (body.search) {
-        q = q.or(`name.ilike.%${body.search}%,phone.ilike.%${body.search}%,email.ilike.%${body.search}%`);
+      // Return empty state immediately when Supabase is not configured
+      if (!sb) return res.status(200).json({ customers: [] });
+      try {
+        let q = sb.from("customers").select("*").order("last_booking_date", { ascending: false, nullsFirst: false });
+        if (body.banned  === true  || body.banned  === "true")  q = q.eq("banned",  true);
+        if (body.flagged === true  || body.flagged === "true")   q = q.eq("flagged", true);
+        if (body.search) {
+          q = q.or(`name.ilike.%${body.search}%,phone.ilike.%${body.search}%,email.ilike.%${body.search}%`);
+        }
+        const { data, error } = await q;
+        if (error) {
+          console.error("v2-customers list error:", error.message);
+          return res.status(200).json({ customers: [] });
+        }
+        return res.status(200).json({ customers: data || [] });
+      } catch (qErr) {
+        console.error("v2-customers list query error:", qErr);
+        return res.status(200).json({ customers: [] });
       }
-      const { data, error } = await q;
-      if (error) throw error;
-      return res.status(200).json({ customers: data || [] });
     }
 
     // ── GET ─────────────────────────────────────────────────────────────────
     if (action === "get") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
+      if (!sb) return res.status(503).json({ error: "Supabase not configured" });
       const { data, error } = await sb.from("customers").select("*").eq("id", body.id).single();
       if (error) throw error;
       return res.status(200).json({ customer: data });
@@ -67,6 +79,7 @@ export default async function handler(req, res) {
 
     // ── UPSERT ──────────────────────────────────────────────────────────────
     if (action === "upsert") {
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot upsert customer" });
       const { name, phone, email } = body;
       if (!name) return res.status(400).json({ error: "name is required" });
       if (!phone || !String(phone).trim()) return res.status(400).json({ error: "phone is required for upsert" });
@@ -89,6 +102,7 @@ export default async function handler(req, res) {
     // ── UPDATE ──────────────────────────────────────────────────────────────
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot update customer" });
       const allowed = ["flagged","banned","flag_reason","ban_reason","notes","name","phone","email"];
       const updates = { updated_at: new Date().toISOString() };
       for (const f of allowed) {
@@ -101,6 +115,7 @@ export default async function handler(req, res) {
 
     // ── SYNC — rebuild customer table from bookings.json ───────────────────
     if (action === "sync") {
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot sync customers" });
       const { data: bookingsData } = await loadBookings();
       const allBookings = Object.values(bookingsData).flat();
 
