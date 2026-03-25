@@ -9,17 +9,19 @@
 //   create  — { secret, action:"create", name, description?, daily_rate, liability_cap? }
 //   update  — { secret, action:"update", id, updates:{...} }
 //   delete  — { secret, action:"delete", id }
+//
+// Error contract:
+//   • list/get return empty state when Supabase is not configured or table missing.
+//   • create/update/delete return 503 when Supabase is unavailable.
 
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
+/** Returns the Supabase client or null if not configured. */
 function getSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) throw new Error("Supabase not configured");
-  return createClient(url, key);
+  return getSupabaseAdmin();
 }
 
 export default async function handler(req, res) {
@@ -38,26 +40,35 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
-  let sb;
-  try { sb = getSupabase(); }
-  catch (e) { return res.status(500).json({ error: e.message }); }
+  const sb = getSupabase();
 
   try {
     if (!action || action === "list") {
-      const { data, error } = await sb.from("protection_plans")
-        .select("*").order("sort_order").order("name");
-      if (error) throw error;
-      return res.status(200).json({ plans: data || [] });
+      if (!sb) return res.status(200).json({ plans: [] });
+      try {
+        const { data, error } = await sb.from("protection_plans")
+          .select("*").order("sort_order").order("name");
+        if (error) {
+          console.error("v2-protection-plans list error:", error.message);
+          return res.status(200).json({ plans: [] });
+        }
+        return res.status(200).json({ plans: data || [] });
+      } catch (qErr) {
+        console.error("v2-protection-plans list query error:", qErr);
+        return res.status(200).json({ plans: [] });
+      }
     }
 
     if (action === "get") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
+      if (!sb) return res.status(503).json({ error: "Supabase not configured" });
       const { data, error } = await sb.from("protection_plans").select("*").eq("id", body.id).single();
       if (error) throw error;
       return res.status(200).json({ plan: data });
     }
 
     if (action === "create") {
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot create plan" });
       const { name, daily_rate } = body;
       if (!name || daily_rate == null)
         return res.status(400).json({ error: "name and daily_rate are required" });
@@ -76,6 +87,7 @@ export default async function handler(req, res) {
 
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot update plan" });
       const allowed = ["name","description","daily_rate","liability_cap","is_active","sort_order"];
       const updates = { updated_at: new Date().toISOString() };
       for (const f of allowed) {
@@ -88,6 +100,7 @@ export default async function handler(req, res) {
 
     if (action === "delete") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
+      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot delete plan" });
       const { error } = await sb.from("protection_plans").delete().eq("id", body.id);
       if (error) throw error;
       return res.status(200).json({ success: true });

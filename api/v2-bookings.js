@@ -7,6 +7,13 @@
 //   list    — { secret, action:"list", vehicleId?, status? }
 //   update  — { secret, action:"update", vehicleId, bookingId, updates:{status,...} }
 //   create  — { secret, action:"create", ...bookingFields } (manual booking)
+//
+// Booking automation (triggered automatically, non-fatal):
+//   When a booking status transitions to "booked_paid" or "active_rental":
+//   1. A revenue record is created in Supabase (revenue_records table).
+//   2. The customer is upserted in Supabase (customers table) if phone is present.
+//   When a booking status transitions to "completed_rental":
+//   2. The customer stats (total_bookings, total_spent, last_booking_date) are updated.
 
 import crypto from "crypto";
 import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
@@ -14,6 +21,116 @@ import { loadVehicles } from "./_vehicles.js";
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+
+// ── Booking automation helpers ─────────────────────────────────────────────
+
+/**
+ * Auto-creates a revenue record in Supabase for a booking that just became paid.
+ * Non-fatal: any Supabase error is logged but does not fail the booking update.
+ *
+ * @param {object} booking  - the updated booking record from bookings.json
+ */
+async function autoCreateRevenueRecord(booking) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return; // Supabase not configured — skip silently
+
+  try {
+    // Avoid creating duplicate records (idempotent: check by booking_id)
+    const { data: existing } = await sb
+      .from("revenue_records")
+      .select("id")
+      .eq("booking_id", booking.bookingId)
+      .maybeSingle();
+    if (existing) return; // already exists
+
+    const days = booking.pickupDate && booking.returnDate
+      ? Math.max(1, Math.round((new Date(booking.returnDate) - new Date(booking.pickupDate)) / 86400000))
+      : null;
+
+    const record = {
+      booking_id:     booking.bookingId,
+      vehicle_id:     booking.vehicleId,
+      customer_name:  booking.name  || null,
+      customer_phone: booking.phone || null,
+      customer_email: booking.email || null,
+      pickup_date:    booking.pickupDate  || null,
+      return_date:    booking.returnDate  || null,
+      gross_amount:   Number(booking.amountPaid || 0),
+      deposit_amount: 0,
+      refund_amount:  0,
+      payment_method: booking.paymentMethod || "cash",
+      payment_status: "paid",
+      notes:          booking.notes || null,
+      is_no_show:     false,
+      is_cancelled:   false,
+      override_by_admin: true,
+    };
+
+    const { error } = await sb.from("revenue_records").insert(record);
+    if (error) {
+      console.error("v2-bookings auto-revenue insert error (non-fatal):", error.message);
+    } else {
+      console.log(`v2-bookings: auto-created revenue record for booking ${booking.bookingId}`);
+    }
+  } catch (err) {
+    console.error("v2-bookings autoCreateRevenueRecord error (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Auto-upserts a customer record in Supabase from a booking.
+ * Non-fatal: any error is logged but does not fail the booking update.
+ *
+ * @param {object} booking    - the updated booking record from bookings.json
+ * @param {boolean} countStats - when true, increment booking count and total_spent
+ *                               (only pass true for final-state transitions like
+ *                               "completed_rental" to avoid double-counting)
+ */
+async function autoUpsertCustomer(booking, countStats = false) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  if (!booking.phone) return; // phone required for upsert key
+
+  try {
+    const record = {
+      name:       booking.name  || "Unknown",
+      phone:      String(booking.phone).trim(),
+      email:      booking.email || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Fetch existing customer to determine whether to create or update
+    const { data: existing } = await sb
+      .from("customers")
+      .select("total_bookings, total_spent, first_booking_date")
+      .eq("phone", record.phone)
+      .maybeSingle();
+
+    if (existing) {
+      const updates = { name: record.name, email: record.email, updated_at: record.updated_at };
+      // Only increment counters when explicitly requested (e.g. on completed_rental)
+      if (countStats) {
+        updates.total_bookings = (existing.total_bookings || 0) + 1;
+        updates.total_spent    = Math.round(((existing.total_spent || 0) + Number(booking.amountPaid || 0)) * 100) / 100;
+        updates.last_booking_date = booking.pickupDate || null;
+      }
+      await sb.from("customers").update(updates).eq("phone", record.phone);
+    } else {
+      const insert = {
+        ...record,
+        total_bookings:     countStats ? 1 : 0,
+        total_spent:        countStats ? Math.round(Number(booking.amountPaid || 0) * 100) / 100 : 0,
+        first_booking_date: booking.pickupDate || null,
+        last_booking_date:  booking.pickupDate || null,
+      };
+      await sb.from("customers").insert(insert);
+    }
+    console.log(`v2-bookings: auto-upserted customer ${record.phone} (${record.name})`);
+  } catch (err) {
+    console.error("v2-bookings autoUpsertCustomer error (non-fatal):", err.message);
+  }
+}
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
@@ -178,6 +295,19 @@ export default async function handler(req, res) {
         message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
       });
 
+      // ── Booking automation ────────────────────────────────────────────────
+      // When a booking becomes paid, automatically create a revenue record and
+      // upsert the customer in Supabase.  Both operations are non-fatal.
+      // Stats (total_bookings, total_spent) are only incremented on
+      // "completed_rental" to prevent double-counting across status transitions.
+      const newStatus = safeUpdates.status;
+      if (updatedBooking && (newStatus === "booked_paid" || newStatus === "active_rental")) {
+        await autoCreateRevenueRecord(updatedBooking);
+        await autoUpsertCustomer(updatedBooking, false); // create record, no stat increment yet
+      } else if (updatedBooking && newStatus === "completed_rental") {
+        await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
+      }
+
       return res.status(200).json({ success: true, booking: updatedBooking });
     }
 
@@ -265,6 +395,15 @@ export default async function handler(req, res) {
       await blockBookedDates(vehicleId, pickupDate, returnDate).catch((err) => {
         console.warn("v2-bookings: blockBookedDates failed (non-fatal):", err.message);
       });
+
+      // ── Booking automation for new paid bookings ─────────────────────────
+      // For manual bookings created directly as "booked_paid", create the revenue
+      // record immediately. Stats are not yet incremented — they increment when
+      // the booking reaches "completed_rental".
+      if (booking.status === "booked_paid") {
+        await autoCreateRevenueRecord(booking);
+        await autoUpsertCustomer(booking, false);
+      }
 
       return res.status(200).json({ success: true, booking });
     }
