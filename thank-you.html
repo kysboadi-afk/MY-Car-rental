@@ -134,17 +134,17 @@
   </header>
 
   <div class="ty-wrapper">
-    <div class="ty-card">
+    <div class="ty-card" id="tyCard">
       <img src="images/logo.jpg" alt="Sly Transportation Services LLC" class="ty-logo">
-      <h1 data-i18n="thankyou.title">🎉 Thank You!</h1>
-      <p class="ty-sub" data-i18n="thankyou.sub">Your submission has been received!</p>
-      <p class="ty-detail" data-i18n="thankyou.detail">
+      <h1 id="tyTitle" data-i18n="thankyou.title">🎉 Thank You!</h1>
+      <p class="ty-sub" id="tySub" data-i18n="thankyou.sub">Your submission has been received!</p>
+      <p class="ty-detail" id="tyDetail" data-i18n="thankyou.detail">
         Our team at <strong>Sly Transportation Services LLC</strong> will review your information and reach out to you shortly to complete your approval.
       </p>
 
-      <div class="ty-actions">
+      <div class="ty-actions" id="tyActions">
         <!-- Upload rental-agreement.pdf to the repo root to activate this button -->
-        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download data-i18n="thankyou.download">
+        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download data-i18n="thankyou.download" id="tyDownloadBtn">
           📄 Download PDF
         </a>
         <a href="cars.html" class="ty-btn ty-btn-secondary" id="fillAgainBtn" data-i18n="thankyou.fillAgain">
@@ -192,14 +192,98 @@
     }());
   </script>
   <script>
-    // If the user arrived from the contact form, "Fill Again" should go back there.
-    // "Fill Again" destination depends on which form brought the user here.
-    const fromParam = new URLSearchParams(window.location.search).get("from");
-    const btn = document.getElementById("fillAgainBtn");
-    if (btn) {
-      if (fromParam === "contact") btn.href = "contact.html";
-      else if (fromParam === "apply") btn.href = "index.html";
-    }
+    (function () {
+      var fromParam = new URLSearchParams(window.location.search).get("from");
+      var fillBtn   = document.getElementById("fillAgainBtn");
+      var dlBtn     = document.getElementById("tyDownloadBtn");
+
+      // "Fill Again" destination depends on which form brought the user here.
+      if (fillBtn) {
+        if (fromParam === "contact") fillBtn.href = "contact.html";
+        else if (fromParam === "apply") fillBtn.href = "index.html";
+      }
+
+      // For non-apply flows (contact, waitlist) keep the generic card as-is.
+      if (fromParam !== "apply") return;
+
+      // ── Personalise the card based on the pre-approval decision ──────────────
+      var stored = null;
+      try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (e) {
+        console.error("Failed to read applicant data from localStorage:", e);
+      }
+      var decision = stored && stored.decision;
+      function t(key, fallback) {
+        return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t(key) : fallback;
+      }
+
+      // Build an anchor element safely without innerHTML string concatenation.
+      function makeBtn(href, cssClass, label) {
+        var a = document.createElement("a");
+        a.href = href;
+        a.className = "ty-btn " + cssClass;
+        a.textContent = label;
+        return a;
+      }
+
+      // Set detail paragraph using a static HTML fragment (developer-controlled,
+      // no user input). The fragment is chosen by a switch, never injected from
+      // external data, so XSS is not a concern here.
+      function setDetailHtml(el, html) {
+        if (el) el.innerHTML = html;
+      }
+
+      var titleEl   = document.getElementById("tyTitle");
+      var subEl     = document.getElementById("tySub");
+      var detailEl  = document.getElementById("tyDetail");
+      var actionsEl = document.getElementById("tyActions");
+      var card      = document.getElementById("tyCard");
+
+      if (dlBtn) dlBtn.style.display = "none";
+
+      if (decision === "approved") {
+        // ── Approved ──────────────────────────────────────────────────────────
+        if (titleEl) titleEl.textContent = t("thankyou.approvedTitle", "\uD83C\uDF89 You\u2019re Approved!");
+        if (subEl)   subEl.textContent   = t("thankyou.approvedSub",   "Congratulations \u2014 your application has been accepted!");
+        setDetailHtml(detailEl,
+          "You are now cleared to browse and book a vehicle with <strong>Sly Transportation Services LLC</strong>. " +
+          "Check your email for your official approval confirmation and next steps."
+        );
+        if (actionsEl) {
+          actionsEl.textContent = "";
+          actionsEl.appendChild(makeBtn("cars.html",  "ty-btn-primary",   "\uD83D\uDE97 " + t("thankyou.browseCars", "Browse & Book a Car")));
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome",   "Back to Home")));
+        }
+        // Highlight the card with a green accent
+        if (card) card.style.borderColor = "#4caf50";
+
+      } else if (decision === "declined") {
+        // ── Declined ──────────────────────────────────────────────────────────
+        if (titleEl) { titleEl.textContent = t("thankyou.declinedTitle", "Application Update"); titleEl.style.color = "#f44336"; }
+        if (subEl)   subEl.textContent = t("thankyou.declinedSub", "We were unable to approve your application at this time.");
+        setDetailHtml(detailEl,
+          "Your application does not currently meet our rental requirements. " +
+          "A confirmation has been sent to your email. If you believe this is an error or have questions, " +
+          "please call us at <strong>(213) 916-6606</strong>."
+        );
+        if (actionsEl) {
+          actionsEl.textContent = "";
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome", "Back to Home")));
+        }
+
+      } else {
+        // ── Under Review (default for apply) ──────────────────────────────────
+        if (titleEl) titleEl.textContent = t("thankyou.reviewTitle", "\u23F3 Application Received!");
+        if (subEl)   subEl.textContent   = t("thankyou.reviewSub",   "We\u2019re reviewing your information now.");
+        setDetailHtml(detailEl,
+          "Our team at <strong>Sly Transportation Services LLC</strong> will review your application and " +
+          "contact you within <strong>24 hours</strong>. Check your email and phone for updates."
+        );
+        if (actionsEl) {
+          actionsEl.textContent = "";
+          actionsEl.appendChild(makeBtn("index.html", "ty-btn-secondary", "\uD83C\uDFE0 " + t("thankyou.backHome", "Back to Home")));
+        }
+      }
+    }());
   </script>
 </body>
 </html>

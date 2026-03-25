@@ -410,12 +410,23 @@
       },
       // thank-you.html
       thankyou: {
-        title:   "\uD83C\uDF89 Thank You!",
-        sub:     "Your submission has been received!",
-        detail:  "Our team at Sly Transportation Services LLC will review your information and reach out to you shortly to complete your approval.",
-        download:"📄 Download PDF",
-        fillAgain:"🔄 Fill Again",
-        questions:"Questions? Call us:"
+        title:          "\uD83C\uDF89 Thank You!",
+        sub:            "Your submission has been received!",
+        detail:         "Our team at Sly Transportation Services LLC will review your information and reach out to you shortly to complete your approval.",
+        download:       "📄 Download PDF",
+        fillAgain:      "🔄 Fill Again",
+        questions:      "Questions? Call us:",
+        browseCars:     "\uD83D\uDE97 Browse & Book a Car",
+        backHome:       "\uD83C\uDFE0 Back to Home",
+        approvedTitle:  "\uD83C\uDF89 You\u2019re Approved!",
+        approvedSub:    "Congratulations \u2014 your application has been accepted!",
+        approvedDetail: "You are now cleared to browse and book a vehicle with <strong>Sly Transportation Services LLC</strong>. Check your email for your official approval confirmation and next steps.",
+        reviewTitle:    "\u23F3 Application Received!",
+        reviewSub:      "We\u2019re reviewing your information now.",
+        reviewDetail:   "Our team at <strong>Sly Transportation Services LLC</strong> will review your application and contact you within <strong>24 hours</strong>. Check your email and phone for updates.",
+        declinedTitle:  "Application Update",
+        declinedSub:    "We were unable to approve your application at this time.",
+        declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(213) 916-6606</strong>."
       },
       // chatbot UI
       chatbot: {
@@ -831,12 +842,23 @@
         tryAgain: "Intentar Reservar de Nuevo"
       },
       thankyou: {
-        title:    "\uD83C\uDF89 \u00A1Gracias!",
-        sub:      "\u00A1Tu solicitud ha sido recibida!",
-        detail:   "Nuestro equipo en Sly Transportation Services LLC revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
-        download: "📄 Descargar PDF",
-        fillAgain:"🔄 Completar de Nuevo",
-        questions:"¿Preguntas? Ll\u00E1manos:"
+        title:          "\uD83C\uDF89 \u00A1Gracias!",
+        sub:            "\u00A1Tu solicitud ha sido recibida!",
+        detail:         "Nuestro equipo en Sly Transportation Services LLC revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
+        download:       "📄 Descargar PDF",
+        fillAgain:      "🔄 Completar de Nuevo",
+        questions:      "\u00BFPreguntas? Ll\u00E1manos:",
+        browseCars:     "\uD83D\uDE97 Ver y Reservar un Auto",
+        backHome:       "\uD83C\uDFE0 Volver al Inicio",
+        approvedTitle:  "\uD83C\uDF89 \u00A1Est\u00E1s Aprobado!",
+        approvedSub:    "Felicitaciones \u2014 \u00A1tu solicitud ha sido aceptada!",
+        approvedDetail: "Ya puedes ver y reservar un veh\u00EDculo con <strong>Sly Transportation Services LLC</strong>. Revisa tu correo para la confirmaci\u00F3n oficial de aprobaci\u00F3n y los pr\u00F3ximos pasos.",
+        reviewTitle:    "\u23F3 \u00A1Solicitud Recibida!",
+        reviewSub:      "Estamos revisando tu informaci\u00F3n ahora.",
+        reviewDetail:   "Nuestro equipo en <strong>Sly Transportation Services LLC</strong> revisar\u00E1 tu solicitud y se comunicar\u00E1 contigo en <strong>24 horas</strong>. Revisa tu correo y tel\u00E9fono para actualizaciones.",
+        declinedTitle:  "Actualizaci\u00F3n de Solicitud",
+        declinedSub:    "No pudimos aprobar tu solicitud en este momento.",
+        declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(213) 916-6606</strong>."
       },
       chatbot: {
         headerTitle:  "\uD83D\uDE97 Asistente de Sly Transportation Services LLC",
