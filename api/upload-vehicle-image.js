@@ -12,6 +12,7 @@
 //
 // Returns: { url: string } — publicly accessible Supabase Storage URL
 
+import { randomBytes } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -74,7 +75,7 @@ export default async function handler(req, res) {
 
   // Build file path: vehicle-images/<vehicleId>-<timestamp>-<random>.<ext>
   const ext = mime.split("/")[1].replace("jpeg", "jpg");
-  const filePath = `${vehicleId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+  const filePath = `${vehicleId}-${Date.now()}-${randomBytes(4).toString("hex")}.${ext}`;
 
   try {
     const { error: uploadErr } = await supabase.storage

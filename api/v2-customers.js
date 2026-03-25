@@ -1,6 +1,7 @@
 // api/v2-customers.js
 // SLYTRANS Fleet Control v2 — Customer management endpoint.
 // Customers are derived from booking history and stored additively in Supabase.
+// Falls back to GitHub (customers.json) when Supabase is unavailable or tables missing.
 //
 // POST /api/v2-customers
 // Actions:
@@ -13,17 +14,70 @@
 // Error contract:
 //   • READ actions (list, get) return empty state when Supabase is not configured
 //     or the table does not yet exist, so the admin panel never crashes.
-//   • WRITE actions (upsert, update, sync) return a clear 503 when Supabase is unavailable.
+//   • WRITE actions (upsert, update, sync) fall back to GitHub when Supabase is
+//     unavailable or the customers table is missing.
 
+import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings, normalizePhone } from "./_bookings.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const CUSTOMERS_FILE  = "customers.json";
 
 /** Returns the Supabase client or null if not configured. */
 function getSupabase() {
   return getSupabaseAdmin();
+}
+
+// ── GitHub fallback helpers ───────────────────────────────────────────────────
+
+function ghHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  const headers = {
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function loadCustomersFromGitHub() {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${CUSTOMERS_FILE}`;
+  const resp   = await fetch(apiUrl, { headers: ghHeaders() });
+  if (!resp.ok) {
+    if (resp.status === 404) return { data: [], sha: null };
+    return { data: [], sha: null };
+  }
+  const file = await resp.json();
+  let data = [];
+  try {
+    const parsed = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    if (Array.isArray(parsed)) data = parsed;
+  } catch { data = []; }
+  return { data, sha: file.sha };
+}
+
+async function saveCustomersToGitHub(data, sha, message) {
+  if (!process.env.GITHUB_TOKEN) {
+    console.warn("v2-customers: GITHUB_TOKEN not set — customers.json will not be updated");
+    return;
+  }
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${CUSTOMERS_FILE}`;
+  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+  const body = { message, content };
+  if (sha) body.sha = sha;
+  const resp = await fetch(apiUrl, {
+    method:  "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub PUT customers.json failed: ${resp.status} ${text}`);
+  }
 }
 
 export default async function handler(req, res) {
@@ -47,95 +101,150 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
-      // Return empty state immediately when Supabase is not configured
-      if (!sb) return res.status(200).json({ customers: [] });
-      try {
-        let q = sb.from("customers").select("*").order("last_booking_date", { ascending: false, nullsFirst: false });
-        if (body.banned  === true  || body.banned  === "true")  q = q.eq("banned",  true);
-        if (body.flagged === true  || body.flagged === "true")   q = q.eq("flagged", true);
-        if (body.search) {
-          q = q.or(`name.ilike.%${body.search}%,phone.ilike.%${body.search}%,email.ilike.%${body.search}%`);
-        }
-        const { data, error } = await q;
-        if (error) {
+      if (sb) {
+        try {
+          let q = sb.from("customers").select("*").order("last_booking_date", { ascending: false, nullsFirst: false });
+          if (body.banned  === true  || body.banned  === "true")  q = q.eq("banned",  true);
+          if (body.flagged === true  || body.flagged === "true")   q = q.eq("flagged", true);
+          if (body.search) {
+            q = q.or(`name.ilike.%${body.search}%,phone.ilike.%${body.search}%,email.ilike.%${body.search}%`);
+          }
+          const { data, error } = await q;
+          if (!error) return res.status(200).json({ customers: data || [] });
           console.error("v2-customers list error:", error.message);
-          return res.status(200).json({ customers: [] });
+        } catch (qErr) {
+          console.error("v2-customers list query error:", qErr);
         }
-        return res.status(200).json({ customers: data || [] });
-      } catch (qErr) {
-        console.error("v2-customers list query error:", qErr);
-        return res.status(200).json({ customers: [] });
       }
+      // GitHub fallback
+      const { data: ghCustomers } = await loadCustomersFromGitHub();
+      let customers = ghCustomers;
+      if (body.banned  === true  || body.banned  === "true")  customers = customers.filter((c) => c.banned);
+      if (body.flagged === true  || body.flagged === "true")  customers = customers.filter((c) => c.flagged);
+      if (body.search) {
+        const s = String(body.search).toLowerCase();
+        customers = customers.filter((c) =>
+          (c.name  || "").toLowerCase().includes(s) ||
+          (c.phone || "").toLowerCase().includes(s) ||
+          (c.email || "").toLowerCase().includes(s)
+        );
+      }
+      return res.status(200).json({ customers });
     }
 
     // ── GET ─────────────────────────────────────────────────────────────────
     if (action === "get") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      if (!sb) return res.status(503).json({ error: "Supabase not configured" });
-      const { data, error } = await sb.from("customers").select("*").eq("id", body.id).single();
-      if (error) throw error;
-      return res.status(200).json({ customer: data });
+      if (sb) {
+        const { data, error } = await sb.from("customers").select("*").eq("id", body.id).single();
+        if (!error) return res.status(200).json({ customer: data });
+        if (!isSchemaError(error)) throw error;
+      }
+      // GitHub fallback
+      const { data: ghCustomers } = await loadCustomersFromGitHub();
+      const found = ghCustomers.find((c) => c.id === body.id);
+      if (!found) return res.status(404).json({ error: "Customer not found" });
+      return res.status(200).json({ customer: found });
     }
 
     // ── UPSERT ──────────────────────────────────────────────────────────────
     if (action === "upsert") {
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot upsert customer" });
       const { name, phone, email } = body;
       if (!name) return res.status(400).json({ error: "name is required" });
       if (!phone || !String(phone).trim()) return res.status(400).json({ error: "phone is required for upsert" });
 
       const record = {
         name: String(name).trim(),
-        phone:  phone ? normalizePhone(String(phone).trim()) : null,
-        email:  email ? String(email).trim()  : null,
-        notes:  body.notes || null,
+        phone:      normalizePhone(String(phone).trim()),
+        email:      email ? String(email).trim() : null,
+        notes:      body.notes || null,
         updated_at: new Date().toISOString(),
       };
 
-      // Step 1: upsert without RETURNING — avoids PGRST116 across PostgREST versions.
-      const { error: upsertErr } = await sb.from("customers")
-        .upsert(record, { onConflict: "phone", ignoreDuplicates: false });
-      if (upsertErr) throw upsertErr;
-
-      // Step 2: fetch the saved row via plain SELECT.
-      const { data, error: fetchErr } = await sb.from("customers")
-        .select("*").eq("phone", record.phone).single();
-      if (fetchErr) throw fetchErr;
-      return res.status(200).json({ customer: data });
+      if (sb) {
+        try {
+          const { error: upsertErr } = await sb.from("customers")
+            .upsert(record, { onConflict: "phone", ignoreDuplicates: false });
+          if (upsertErr) {
+            if (!isSchemaError(upsertErr)) throw upsertErr;
+            console.warn("v2-customers upsert: customers table missing, falling back to GitHub");
+          } else {
+            const { data, error: fetchErr } = await sb.from("customers")
+              .select("*").eq("phone", record.phone).single();
+            if (!fetchErr) return res.status(200).json({ customer: data });
+            if (!isSchemaError(fetchErr)) throw fetchErr;
+          }
+        } catch (sbErr) {
+          if (!isSchemaError(sbErr)) throw sbErr;
+          console.warn("v2-customers upsert: customers table missing, falling back to GitHub");
+        }
+      }
+      // GitHub fallback
+      let upserted;
+      await updateJsonFileWithRetry({
+        load:    loadCustomersFromGitHub,
+        apply:   (data) => {
+          const idx = data.findIndex((c) => c.phone === record.phone);
+          if (idx !== -1) {
+            Object.assign(data[idx], record);
+            upserted = data[idx];
+          } else {
+            const newCustomer = { id: randomUUID(), ...record, created_at: new Date().toISOString() };
+            data.push(newCustomer);
+            upserted = newCustomer;
+          }
+        },
+        save:    saveCustomersToGitHub,
+        message: `v2: Upsert customer ${record.phone}`,
+      });
+      return res.status(200).json({ customer: upserted });
     }
 
     // ── UPDATE ──────────────────────────────────────────────────────────────
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot update customer" });
       const allowed = ["flagged","banned","flag_reason","ban_reason","notes","name","phone","email"];
       const updates = { updated_at: new Date().toISOString() };
       for (const f of allowed) {
         if (Object.prototype.hasOwnProperty.call(body.updates || {}, f)) updates[f] = (body.updates)[f];
       }
-      const { data, error } = await sb.from("customers").update(updates).eq("id", body.id).select().single();
-      if (error) throw error;
-      return res.status(200).json({ customer: data });
+
+      if (sb) {
+        const { data, error } = await sb.from("customers").update(updates).eq("id", body.id).select().single();
+        if (!error) return res.status(200).json({ customer: data });
+        if (!isSchemaError(error)) throw error;
+        console.warn("v2-customers update: customers table missing, falling back to GitHub");
+      }
+      // GitHub fallback
+      let updated;
+      await updateJsonFileWithRetry({
+        load:    loadCustomersFromGitHub,
+        apply:   (data) => {
+          const idx = data.findIndex((c) => c.id === body.id);
+          if (idx === -1) throw new Error("Customer not found");
+          Object.assign(data[idx], updates);
+          updated = data[idx];
+        },
+        save:    saveCustomersToGitHub,
+        message: `v2: Update customer ${body.id}`,
+      });
+      return res.status(200).json({ customer: updated });
     }
 
     // ── SYNC — rebuild customer table from bookings.json ───────────────────
     if (action === "sync") {
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot sync customers" });
       const { data: bookingsData } = await loadBookings();
-      const allBookings = Object.values(bookingsData).flat();
+      const allBookingsList = Object.values(bookingsData).flat();
 
-      // Group bookings by a stable key:
-      //   • phone-bearing bookings → keyed by E.164-normalized phone (exact dedup via unique index)
-      //   • phone-less bookings    → keyed by "name:<lowercase name>" (best-effort dedup by name)
+      // Group bookings by phone or name
       const byKey = {};
-      for (const b of allBookings) {
+      for (const b of allBookingsList) {
         const rawPhone = (b.phone || "").trim();
         const phone    = rawPhone ? normalizePhone(rawPhone) : "";
         const name     = (b.name  || "").trim();
-        if (!phone && !name) continue; // skip if no identity at all
+        if (!phone && !name) continue;
         const key = phone || `name:${name.toLowerCase()}`;
         if (!byKey[key]) byKey[key] = { name, phone: phone || null, email: b.email || null, bookings: [] };
-        // Keep the most recent name / email for this key
         if (b.name)  byKey[key].name  = b.name;
         if (b.email) byKey[key].email = b.email;
         byKey[key].bookings.push(b);
@@ -143,8 +252,7 @@ export default async function handler(req, res) {
 
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
 
-      // Split into phone-bearing (batch-upsertable) and phone-less (sequential check-then-upsert)
-      const phoneUpserts = [];
+      const phoneUpserts  = [];
       const nameFallbacks = [];
 
       for (const [, c] of Object.entries(byKey)) {
@@ -163,42 +271,69 @@ export default async function handler(req, res) {
         if (c.phone) {
           phoneUpserts.push({ ...record, phone: c.phone });
         } else {
-          nameFallbacks.push(record); // will be inserted/updated below without phone
+          nameFallbacks.push(record);
         }
       }
 
-      let synced = 0;
+      if (sb) {
+        let schemaError = false;
+        let synced = 0;
 
-      // Batch upsert customers that have a phone number (conflict-safe via unique index)
-      if (phoneUpserts.length > 0) {
-        const { error } = await sb.from("customers")
-          .upsert(phoneUpserts, { onConflict: "phone", ignoreDuplicates: false });
-        if (error) throw error;
-        synced += phoneUpserts.length;
-      }
-
-      // For phone-less customers: check by name + null phone, then update-or-insert
-      for (const record of nameFallbacks) {
-        try {
-          const { data: existing } = await sb
-            .from("customers")
-            .select("id")
-            .eq("name", record.name)
-            .is("phone", null)
-            .maybeSingle();
-          if (existing) {
-            const { error } = await sb.from("customers").update(record).eq("id", existing.id);
-            if (error) { console.error("v2-customers sync name-update error:", error.message); continue; }
+        if (phoneUpserts.length > 0) {
+          const { error } = await sb.from("customers")
+            .upsert(phoneUpserts, { onConflict: "phone", ignoreDuplicates: false });
+          if (error) {
+            if (!isSchemaError(error)) throw error;
+            schemaError = true;
           } else {
-            const { error } = await sb.from("customers").insert({ ...record, phone: null });
-            if (error) { console.error("v2-customers sync name-insert error:", error.message); continue; }
+            synced += phoneUpserts.length;
           }
-          synced++;
-        } catch (nameErr) {
-          console.error("v2-customers sync name-fallback error:", nameErr.message);
         }
+
+        if (!schemaError) {
+          for (const record of nameFallbacks) {
+            try {
+              const { data: existing } = await sb.from("customers")
+                .select("id").eq("name", record.name).is("phone", null).maybeSingle();
+              if (existing) {
+                const { error } = await sb.from("customers").update(record).eq("id", existing.id);
+                if (error) { console.error("v2-customers sync name-update error:", error.message); continue; }
+              } else {
+                const { error } = await sb.from("customers").insert({ ...record, phone: null });
+                if (error) { console.error("v2-customers sync name-insert error:", error.message); continue; }
+              }
+              synced++;
+            } catch (nameErr) {
+              console.error("v2-customers sync name-fallback error:", nameErr.message);
+            }
+          }
+          return res.status(200).json({ synced, message: `Synced ${synced} customers from bookings` });
+        }
+        console.warn("v2-customers sync: customers table missing, falling back to GitHub");
       }
 
+      // GitHub fallback for sync
+      const allRecords = [...phoneUpserts, ...nameFallbacks.map((r) => ({ ...r, phone: null }))];
+      let synced = 0;
+      await updateJsonFileWithRetry({
+        load:    loadCustomersFromGitHub,
+        apply:   (data) => {
+          synced = 0;
+          for (const r of allRecords) {
+            const idx = r.phone
+              ? data.findIndex((c) => c.phone === r.phone)
+              : data.findIndex((c) => c.name === r.name && !c.phone);
+            if (idx !== -1) {
+              Object.assign(data[idx], r);
+            } else {
+              data.push({ id: randomUUID(), ...r, created_at: new Date().toISOString() });
+            }
+            synced++;
+          }
+        },
+        save:    saveCustomersToGitHub,
+        message: `v2: Sync ${allRecords.length} customers from bookings`,
+      });
       return res.status(200).json({ synced, message: `Synced ${synced} customers from bookings` });
     }
 
