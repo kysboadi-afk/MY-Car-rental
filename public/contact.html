@@ -431,7 +431,7 @@
       status.className = "contact-status";
 
       try {
-        const res = await fetch(API_BASE + "/api/send-otp", {
+        const res = await fetch(API_BASE + "/api/send-email-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email }),
