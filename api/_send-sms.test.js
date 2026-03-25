@@ -1,5 +1,5 @@
 // Tests for api/send-sms.js
-// Validates that an SMS is sent via TextMagic when a visitor submits the lead form.
+// Validates template-based SMS dispatch via TextMagic.
 //
 // Run with: npm test
 import { test, mock } from "node:test";
@@ -38,7 +38,17 @@ function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
   return { method, headers: { origin }, body };
 }
 
-const VALID_BODY = { name: "Alice Tester", phone: "3105550123" };
+const VALID_BODY = {
+  phone:       "3105550123",
+  templateKey: "booking_confirmed",
+  variables: {
+    customer_name: "Alice",
+    vehicle:       "Slingshot R",
+    pickup_date:   "March 28",
+    pickup_time:   "3:00 PM",
+    location:      "1200 S Figueroa St, Los Angeles, CA 90015",
+  },
+};
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -55,25 +65,141 @@ test("non-POST returns 405", async () => {
 });
 
 test("sets CORS header for allowed origin", async () => {
+  sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY, "https://www.slytrans.com"), res);
   assert.equal(res._headers["Access-Control-Allow-Origin"], "https://www.slytrans.com");
 });
 
 test("does not set CORS header for unknown origin", async () => {
+  sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY, "https://evil.example.com"), res);
   assert.equal(res._headers["Access-Control-Allow-Origin"], undefined);
 });
 
-test("returns 400 when required fields are missing", async () => {
+// ─── phone validation ─────────────────────────────────────────────────────────
+
+test("returns 400 when phone is missing", async () => {
   const res = makeRes();
-  await handler(makeReq("POST", { name: "Alice" }), res);
+  await handler(makeReq("POST", { templateKey: "booking_confirmed" }), res);
   assert.equal(res._status, 400);
-  assert.ok(res._body.error);
+  assert.ok(res._body.error.toLowerCase().includes("phone"));
 });
 
-test("returns 200 and sends SMS for valid request", async () => {
+test("returns 400 when phone is invalid", async () => {
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "notaphone", templateKey: "booking_confirmed" }), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.toLowerCase().includes("phone"));
+});
+
+test("normalises 10-digit US number to E.164", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, phone: "3105550123" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMessages[0].to, "+13105550123");
+});
+
+test("accepts E.164 number as-is", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, phone: "+13105550123" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMessages[0].to, "+13105550123");
+});
+
+test("normalises 11-digit US number to E.164", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { ...VALID_BODY, phone: "13105550123" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(sentMessages[0].to, "+13105550123");
+});
+
+// ─── templateKey validation ───────────────────────────────────────────────────
+
+test("returns 400 when templateKey is missing", async () => {
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "3105550123" }), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.toLowerCase().includes("templatekey"));
+});
+
+test("returns 400 when templateKey is unknown", async () => {
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "3105550123", templateKey: "nonexistent_template" }), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.toLowerCase().includes("unknown"));
+});
+
+// ─── variables validation ─────────────────────────────────────────────────────
+
+test("returns 400 when variables is an array", async () => {
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "3105550123", templateKey: "booking_confirmed", variables: ["x"] }), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body.error.toLowerCase().includes("variables"));
+});
+
+test("variables is optional — omitting it is accepted", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "3105550123", templateKey: "post_rental_thank_you" }), res);
+  assert.equal(res._status, 200);
+});
+
+test("non-string/number values in variables are silently dropped", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  // Use JSON.parse to produce an object with a real '__proto__' string key and
+  // nested objects — exactly as an HTTP request body would be parsed at runtime.
+  const variables = JSON.parse(JSON.stringify({
+    customer_name: "Bob",
+    vehicle:       "Camry 2012",
+    pickup_date:   "April 1",
+    pickup_time:   "10:00 AM",
+    location:      "Downtown LA",
+    evil:          { nested: "object" },
+  }));
+  Object.defineProperty(variables, "__proto__", { value: { polluted: true }, enumerable: true });
+  await handler(makeReq("POST", {
+    phone:       "3105550123",
+    templateKey: "booking_confirmed",
+    variables,
+  }), res);
+  assert.equal(res._status, 200);
+  // object value should not appear in the rendered message
+  assert.ok(!sentMessages[0].text.includes("[object Object]"));
+  // prototype must not have been polluted
+  assert.equal(({}).polluted, undefined);
+});
+
+// ─── message rendering ────────────────────────────────────────────────────────
+
+test("renders template variables into the SMS body", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", VALID_BODY), res);
+  assert.equal(res._status, 200);
+  const text = sentMessages[0].text;
+  assert.ok(text.includes("Alice"),       `expected Alice in: ${text}`);
+  assert.ok(text.includes("Slingshot R"), `expected Slingshot R in: ${text}`);
+  assert.ok(text.includes("March 28"),    `expected March 28 in: ${text}`);
+  assert.ok(text.includes("3:00 PM"),     `expected 3:00 PM in: ${text}`);
+});
+
+test("leaves unresolved placeholders intact when variables is empty", async () => {
+  sentMessages.length = 0;
+  const res = makeRes();
+  await handler(makeReq("POST", { phone: "3105550123", templateKey: "booking_confirmed", variables: {} }), res);
+  assert.equal(res._status, 200);
+  // customer_name placeholder not supplied → stays as literal text
+  assert.ok(sentMessages[0].text.includes("{customer_name}"));
+});
+
+test("returns 200 and { success: true } on valid dispatch", async () => {
   sentMessages.length = 0;
   const res = makeRes();
   await handler(makeReq("POST", VALID_BODY), res);
@@ -82,22 +208,7 @@ test("returns 200 and sends SMS for valid request", async () => {
   assert.equal(sentMessages.length, 1);
 });
 
-test("SMS is sent to the visitor phone number", async () => {
-  sentMessages.length = 0;
-  const res = makeRes();
-  await handler(makeReq("POST", VALID_BODY), res);
-  assert.equal(sentMessages[0].to, "3105550123");
-});
-
-test("SMS body contains the expected message", async () => {
-  sentMessages.length = 0;
-  const res = makeRes();
-  await handler(makeReq("POST", VALID_BODY), res);
-  const body = sentMessages[0].text;
-  assert.ok(body.includes("SLY Services"), `Expected body to mention SLY Services, got: ${body}`);
-  assert.ok(body.includes("for vehicle rentals"), `Expected body to mention vehicle rentals, got: ${body}`);
-  assert.ok(body.includes("Reply STOP"), `Expected body to include opt-out instruction, got: ${body}`);
-});
+// ─── credentials guard ────────────────────────────────────────────────────────
 
 test("returns 500 when TextMagic credentials are missing", async () => {
   const savedUser = process.env.TEXTMAGIC_USERNAME;
