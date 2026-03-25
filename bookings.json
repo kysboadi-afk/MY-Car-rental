@@ -5,7 +5,7 @@
     {
       "bookingId": "bk-ms-2026-0313",
       "name": "Mariatu Sillah",
-      "phone": "2137296017",
+      "phone": "+12137296017",
       "email": "marysillah23@gamil.com",
       "vehicleId": "camry",
       "vehicleName": "Camry 2012",
@@ -26,7 +26,7 @@
     {
       "bookingId": "bk-bg-2026-0219",
       "name": "Bernard Gilot",
-      "phone": "4075586386",
+      "phone": "+14075586386",
       "email": "gilot42@gmail.com",
       "vehicleId": "camry",
       "vehicleName": "Camry 2012",
@@ -39,7 +39,7 @@
       "paymentIntentId": "manual_bg20260219",
       "paymentMethod": "cash",
       "amountPaid": 785,
-      "notes": "$300 refunded — car broke down",
+      "notes": "$300 refunded \u2014 car broke down",
       "smsSentAt": {},
       "createdAt": "2026-02-18T18:00:00.000Z",
       "source": "admin_v2"
@@ -49,7 +49,7 @@
     {
       "bookingId": "bk-da-2026-0321",
       "name": "David Agbebaku",
-      "phone": "3463814616",
+      "phone": "+13463814616",
       "email": "davosama15@gmail.com",
       "vehicleId": "camry2013",
       "vehicleName": "Camry 2013 SE",

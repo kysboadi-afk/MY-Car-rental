@@ -16,7 +16,7 @@
 //   • WRITE actions (upsert, update, sync) return a clear 503 when Supabase is unavailable.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { loadBookings } from "./_bookings.js";
+import { loadBookings, normalizePhone } from "./_bookings.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -86,16 +86,21 @@ export default async function handler(req, res) {
 
       const record = {
         name: String(name).trim(),
-        phone:  phone ? String(phone).trim()  : null,
+        phone:  phone ? normalizePhone(String(phone).trim()) : null,
         email:  email ? String(email).trim()  : null,
         notes:  body.notes || null,
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await sb.from("customers")
-        .upsert(record, { onConflict: "phone", ignoreDuplicates: false })
-        .select().single();
-      if (error) throw error;
+      // Step 1: upsert without RETURNING — avoids PGRST116 across PostgREST versions.
+      const { error: upsertErr } = await sb.from("customers")
+        .upsert(record, { onConflict: "phone", ignoreDuplicates: false });
+      if (upsertErr) throw upsertErr;
+
+      // Step 2: fetch the saved row via plain SELECT.
+      const { data, error: fetchErr } = await sb.from("customers")
+        .select("*").eq("phone", record.phone).single();
+      if (fetchErr) throw fetchErr;
       return res.status(200).json({ customer: data });
     }
 
@@ -120,12 +125,13 @@ export default async function handler(req, res) {
       const allBookings = Object.values(bookingsData).flat();
 
       // Group bookings by a stable key:
-      //   • phone-bearing bookings → keyed by phone (exact dedup via unique index)
+      //   • phone-bearing bookings → keyed by E.164-normalized phone (exact dedup via unique index)
       //   • phone-less bookings    → keyed by "name:<lowercase name>" (best-effort dedup by name)
       const byKey = {};
       for (const b of allBookings) {
-        const phone = (b.phone || "").trim();
-        const name  = (b.name  || "").trim();
+        const rawPhone = (b.phone || "").trim();
+        const phone    = rawPhone ? normalizePhone(rawPhone) : "";
+        const name     = (b.name  || "").trim();
         if (!phone && !name) continue; // skip if no identity at all
         const key = phone || `name:${name.toLowerCase()}`;
         if (!byKey[key]) byKey[key] = { name, phone: phone || null, email: b.email || null, bookings: [] };

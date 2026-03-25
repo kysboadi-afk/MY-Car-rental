@@ -1,5 +1,7 @@
 // api/get-expenses.js
-// Vercel serverless function — returns expense records, optionally filtered by vehicle.
+// Vercel serverless function — returns expense records, optionally filtered by
+// vehicle.  Reads from Supabase when configured; falls back to GitHub
+// (expenses.json) so the endpoint works regardless of environment.
 // Admin-protected: requires ADMIN_SECRET.
 //
 // POST /api/get-expenses
@@ -8,6 +10,7 @@
 //   "vehicle_id": "camry"   (optional — omit to get all expenses)
 // }
 
+import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses } from "./_expenses.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
@@ -34,11 +37,32 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { data } = await loadExpenses();
-    const filtered = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
-    // Newest first (descending by date)
-    filtered.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
-    return res.status(200).json({ expenses: filtered });
+    const sb = getSupabaseAdmin();
+    let expenses;
+
+    if (sb) {
+      // ── Supabase path (preferred) ──────────────────────────────────────
+      let q = sb.from("expenses").select("*").order("date", { ascending: false });
+      if (vehicle_id) q = q.eq("vehicle_id", vehicle_id);
+      const { data, error } = await q;
+      if (error) {
+        // Table may not exist yet — fall through to GitHub fallback
+        console.error("get-expenses supabase error:", error.message);
+        expenses = null;
+      } else {
+        expenses = data || [];
+      }
+    }
+
+    if (!expenses) {
+      // ── GitHub fallback ────────────────────────────────────────────────
+      const { data } = await loadExpenses();
+      expenses = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
+      // Newest first (descending by date)
+      expenses.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
+    }
+
+    return res.status(200).json({ expenses });
   } catch (err) {
     console.error("get-expenses error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

@@ -120,7 +120,8 @@ export default async function handler(req, res) {
 
     if (action === "set") {
       const { key, value } = body;
-      if (!key || value === undefined) return res.status(400).json({ error: "key and value are required" });
+      if (!key || value === undefined || value === null)
+        return res.status(400).json({ error: "key and value are required and cannot be empty" });
       if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot save setting" });
       const record = {
         key:         String(key).trim(),
@@ -131,23 +132,17 @@ export default async function handler(req, res) {
       if (body.description) record.description = body.description;
       if (body.category)    record.category    = body.category;
 
-      // Upsert the setting; if the table is missing or upsert fails, surface a
-      // clear error rather than the generic "unexpected error" fallback.
-      const { data, error } = await sb.from("system_settings")
-        .upsert(record, { onConflict: "key" }).select().single();
+      // Step 1: upsert without RETURNING — avoids PGRST116 and other
+      // PostgREST RETURNING-related errors that vary across versions.
+      const { error: upsertErr } = await sb.from("system_settings")
+        .upsert(record, { onConflict: "key" });
+      if (upsertErr) throw upsertErr;
 
-      if (error) {
-        // Supabase may return PGRST116 when .single() finds 0/multiple rows even
-        // after a successful upsert (rare but possible under heavy load).  In that
-        // case, confirm the write succeeded by re-fetching.
-        if (String(error.code) === "PGRST116" || /JSON object requested/i.test(error.message)) {
-          const { data: refetched, error: refetchErr } = await sb
-            .from("system_settings").select("*").eq("key", record.key).single();
-          if (refetchErr) throw refetchErr;
-          return res.status(200).json({ setting: refetched });
-        }
-        throw error;
-      }
+      // Step 2: fetch the current row via a plain SELECT (always reliable).
+      const { data, error: fetchErr } = await sb.from("system_settings")
+        .select("*").eq("key", record.key).single();
+      if (fetchErr) throw fetchErr;
+
       return res.status(200).json({ setting: data });
     }
 

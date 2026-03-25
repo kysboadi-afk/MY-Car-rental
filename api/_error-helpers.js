@@ -61,6 +61,15 @@ export function adminErrorMessage(err) {
     return "Database schema error — a required table or column was not found. Please ensure all Supabase migrations have been applied (see DEPLOYMENT.md for setup instructions).";
   }
 
+  // ── Supabase: NOT NULL constraint violation ────────────────────────────────
+  // PostgreSQL 23502 = not_null_violation
+  if (
+    code === "23502" ||
+    /23502|violates not-null constraint|null value in column .* violates not-null/i.test(raw)
+  ) {
+    return "A required field is missing a value — please ensure all fields have valid values before saving.";
+  }
+
   // ── Supabase: unique-constraint violation ──────────────────────────────────
   // PostgreSQL 23505 = unique_violation
   if (

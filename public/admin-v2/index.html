@@ -2931,10 +2931,14 @@ function saveSetting(key) {
   const el = document.getElementById('setting-' + key);
   if (!el) return;
   const raw = el.value.trim();
-  let value;
+
   if (raw === '') {
-    value = null;
-  } else if (raw === 'true') {
+    showToast('Value cannot be empty.', 'error');
+    return;
+  }
+
+  let value;
+  if (raw === 'true') {
     value = true;
   } else if (raw === 'false') {
     value = false;
@@ -2943,9 +2947,15 @@ function saveSetting(key) {
     value = !isNaN(num) ? num : raw;
   }
 
+  const btn = [...document.querySelectorAll('button')].find(
+    (b) => b.getAttribute('onclick') === `saveSetting('${key}')`
+  );
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
   apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'set', key, value })
-    .then(() => showToast(`Setting "${key}" saved.`, 'success'))
-    .catch((err) => showToast('Error: ' + err.message, 'error'));
+    .then(() => showToast(`✓ "${key}" saved.`, 'success'))
+    .catch((err) => showToast('Error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

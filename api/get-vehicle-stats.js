@@ -27,8 +27,28 @@ import { loadExpenses }  from "./_expenses.js";
 import { loadBookings }  from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+/**
+ * Load expenses from Supabase when available; fall back to GitHub expenses.json.
+ * @returns {Promise<Array>}
+ */
+async function loadExpensesAny() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from("expenses").select("*");
+      if (!error) return data || [];
+      console.warn("get-vehicle-stats: supabase expenses error, falling back to GitHub:", error.message);
+    } catch (e) {
+      console.warn("get-vehicle-stats: supabase expenses threw, falling back to GitHub:", e.message);
+    }
+  }
+  const { data } = await loadExpenses();
+  return data;
+}
 
 /**
  * Derive the revenue amount from a booking record.
@@ -67,9 +87,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [{ data: vehicles }, { data: expenses }, { data: bookingsData }] = await Promise.all([
+    const [{ data: vehicles }, expenses, { data: bookingsData }] = await Promise.all([
       loadVehicles(),
-      loadExpenses(),
+      loadExpensesAny(),
       loadBookings(),
     ]);
 
