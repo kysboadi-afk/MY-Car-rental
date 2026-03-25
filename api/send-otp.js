@@ -6,18 +6,20 @@
 // to be sent to the fixed business number so the recipient can authenticate.
 //
 // Required environment variables (set in Vercel dashboard):
+//   ADMIN_SECRET         — shared secret for admin authentication
 //   OTP_SECRET           — base32-encoded TOTP secret (shared with authenticator)
 //   TEXTMAGIC_USERNAME   — TextMagic account username
 //   TEXTMAGIC_API_KEY    — TextMagic API key
 //
 // POST /api/send-otp
-//   Body:    (none required)
+//   Body:    { "secret": "<ADMIN_SECRET value>" }
 //   Returns: { success: true, message: "OTP sent" }
 //
 // Installation (if not already in package.json):
 //   npm install speakeasy axios
 import speakeasy from "speakeasy";
 import axios from "axios";
+import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 // Destination phone number in E.164 format (TextMagic requirement)
 const BUSINESS_PHONE = "+18332521093";
@@ -34,6 +36,16 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  // ── Admin authentication ──────────────────────────────────────────────────
+  if (!isAdminConfigured()) {
+    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
+  }
+
+  const { secret } = req.body || {};
+  if (!isAdminAuthorized(secret)) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
   // ── Environment variable validation ───────────────────────────────────────
   const otpSecret          = process.env.OTP_SECRET;
