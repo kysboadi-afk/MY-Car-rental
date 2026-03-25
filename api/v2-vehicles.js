@@ -191,6 +191,22 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(", ")}` });
       }
 
+      // Validate vehicleYear if provided
+      if (vehicleYear !== undefined && vehicleYear !== null && vehicleYear !== "") {
+        const yearNum = Number(vehicleYear);
+        if (isNaN(yearNum) || yearNum < 0) {
+          return res.status(400).json({ error: "vehicle_year must be a non-negative number" });
+        }
+      }
+
+      // Validate purchasePrice if provided
+      if (purchasePrice !== undefined && purchasePrice !== null && purchasePrice !== "") {
+        const priceNum = Number(purchasePrice);
+        if (isNaN(priceNum) || priceNum < 0) {
+          return res.status(400).json({ error: "purchase_price must be a non-negative number" });
+        }
+      }
+
       // Check the vehicle doesn't already exist
       const { data: existing, error: fetchErr } = await supabase
         .from("vehicles")
