@@ -723,6 +723,7 @@
             <option value="booked_paid">Booked &amp; Paid</option>
             <option value="active_rental">Active Rental</option>
             <option value="completed_rental">Completed</option>
+            <option value="cancelled_rental">Cancelled</option>
           </select>
           <input type="text" class="filter-input" id="booking-search" placeholder="Search name or ID…" oninput="applyBookingFilters()">
         </div>
@@ -1195,6 +1196,18 @@
         <input type="text" class="form-input" id="ev-name">
       </div>
       <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-select" id="ev-type">
+          <option value="economy">Economy</option>
+          <option value="slingshot">Slingshot</option>
+          <option value="luxury">Luxury</option>
+          <option value="suv">SUV</option>
+          <option value="truck">Truck</option>
+          <option value="van">Van</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label class="form-label">Status</label>
         <select class="form-select" id="ev-status">
           <option value="active">Active</option>
@@ -1210,9 +1223,22 @@
         <label class="form-label">Purchase Price ($)</label>
         <input type="number" class="form-input" id="ev-purchase-price" min="0" step="100">
       </div>
-      <div class="form-group">
+      <div class="form-group full">
         <label class="form-label">Purchase Date</label>
         <input type="date" class="form-input" id="ev-purchase-date">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Cover Image</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" class="form-input" id="ev-cover-image" placeholder="https://… or /images/car.jpg" style="flex:1;min-width:200px;" oninput="previewImage('ev-cover-image','ev-img-preview')">
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;white-space:nowrap;">
+            📷 Upload
+            <input type="file" id="ev-img-upload" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleImageUpload(this,'ev-cover-image','ev-img-preview','ev-msg')">
+          </label>
+        </div>
+        <div class="form-hint">Enter a URL or upload a photo (max 5 MB).</div>
+        <div id="ev-msg" style="margin-top:4px;font-size:13px;"></div>
+        <div id="ev-img-preview" style="margin-top:8px;display:none;"><img id="ev-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1270,6 +1296,18 @@
       <div class="form-group full">
         <label class="form-label">Purchase Date</label>
         <input type="date" class="form-input" id="av-purchase-date">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Cover Image</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" class="form-input" id="av-cover-image" placeholder="https://… or /images/car.jpg" style="flex:1;min-width:200px;" oninput="previewImage('av-cover-image','av-img-preview')">
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;white-space:nowrap;">
+            📷 Upload
+            <input type="file" id="av-img-upload" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleImageUpload(this,'av-cover-image','av-img-preview','av-msg')">
+          </label>
+        </div>
+        <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
+        <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
     </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
@@ -1788,10 +1826,14 @@ async function openEditVehicle(vehicleId) {
   }
   const v = allVehicles[vehicleId] || {};
   document.getElementById('ev-name').value = v.vehicle_name || '';
+  document.getElementById('ev-type').value = v.type || 'economy';
   document.getElementById('ev-status').value = v.status || 'active';
   document.getElementById('ev-year').value = v.vehicle_year || '';
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
   document.getElementById('ev-purchase-date').value = v.purchase_date || '';
+  document.getElementById('ev-cover-image').value = v.cover_image || '';
+  document.getElementById('ev-msg').textContent = '';
+  previewImage('ev-cover-image', 'ev-img-preview');
   openModal('edit-vehicle-modal');
 }
 
@@ -1799,10 +1841,12 @@ async function saveVehicle() {
   if (!editingVehicleId) return;
   const updates = {
     vehicle_name:   document.getElementById('ev-name').value.trim(),
+    type:           document.getElementById('ev-type').value,
     status:         document.getElementById('ev-status').value,
     vehicle_year:   Number(document.getElementById('ev-year').value) || null,
     purchase_price: parseFloat(document.getElementById('ev-purchase-price').value) || 0,
     purchase_date:  document.getElementById('ev-purchase-date').value,
+    cover_image:    document.getElementById('ev-cover-image').value.trim(),
   };
 
   const btn = document.querySelector('#edit-vehicle-modal .modal-footer .btn-primary');
@@ -1852,6 +1896,8 @@ function openAddVehicle() {
   document.getElementById('av-year').value = '';
   document.getElementById('av-purchase-price').value = '';
   document.getElementById('av-purchase-date').value = '';
+  document.getElementById('av-cover-image').value = '';
+  document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
@@ -1866,6 +1912,7 @@ async function saveNewVehicle() {
   const vehicleYear   = parseInt(document.getElementById('av-year').value, 10) || null;
   const purchasePrice = parseFloat(document.getElementById('av-purchase-price').value) || 0;
   const purchaseDate  = document.getElementById('av-purchase-date').value;
+  const coverImage    = document.getElementById('av-cover-image').value.trim();
 
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
@@ -1889,7 +1936,7 @@ async function saveNewVehicle() {
   try {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
-      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate,
+      vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
@@ -2627,8 +2674,8 @@ async function saveRevenueRecord() {
     override_by_admin: true,
   };
 
-  if (!payload.booking_id || !payload.vehicle_id) {
-    showToast('Booking ID and Vehicle are required.', 'error'); return;
+  if (!payload.vehicle_id) {
+    showToast('Vehicle is required.', 'error'); return;
   }
 
   try {
@@ -2849,6 +2896,16 @@ function viewCustomer(id) {
     </div>
   `;
   document.getElementById('cust-detail-id').value = id;
+  // Action buttons
+  document.getElementById('cust-detail-actions').innerHTML = `
+    ${!c.flagged
+      ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
+      : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Remove Flag</button>`}
+    ${!c.banned
+      ? `<button class="btn btn-danger btn-sm" onclick="banCustomer('${esc(id)}', true)">🚫 Ban</button>`
+      : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(id)}', false)">✓ Unban</button>`}
+    <button class="btn btn-secondary btn-sm" onclick="closeModal('customer-detail-modal')">Close</button>
+  `;
   openModal('customer-detail-modal');
 }
 
@@ -3081,6 +3138,61 @@ function saveSetting(key) {
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
 }
 
+// ── Vehicle Image Upload Helpers ───────────────────────────────────────────
+// Show a preview whenever the URL input changes.
+function previewImage(inputId, previewContainerId) {
+  const url = (document.getElementById(inputId)?.value || '').trim();
+  const container = document.getElementById(previewContainerId);
+  const img = document.getElementById(previewContainerId + '-img');
+  if (!container || !img) return;
+  if (url) {
+    img.src = url;
+    container.style.display = '';
+    img.onerror = () => { container.style.display = 'none'; };
+    img.onload  = () => { container.style.display = ''; };
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+// Handle file selection: read as base64, upload to Supabase Storage via API,
+// then fill the URL input and show a preview.
+async function handleImageUpload(fileInput, urlInputId, previewContainerId, msgId) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+
+  const msgEl = document.getElementById(msgId);
+  if (msgEl) { msgEl.style.color = 'var(--text-sub)'; msgEl.textContent = 'Uploading…'; }
+
+  // Read the file as base64 data URI
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const imageData = e.target.result; // data:image/jpeg;base64,...
+    try {
+      const data = await apiPost('/api/upload-vehicle-image', {
+        secret: adminSecret,
+      vehicleId: (editingVehicleId || document.getElementById('av-id')?.value.trim() || ('img-' + Date.now())),
+        imageData,
+        mimeType: file.type,
+        fileName: file.name,
+      });
+      // Populate the URL field and show preview
+      const urlInput = document.getElementById(urlInputId);
+      if (urlInput) { urlInput.value = data.url; }
+      previewImage(urlInputId, previewContainerId);
+      if (msgEl) { msgEl.style.color = 'var(--success)'; msgEl.textContent = '✓ Image uploaded successfully.'; }
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Upload failed: ' + err.message; }
+    }
+    // Reset the file input so the same file can be re-selected
+    fileInput.value = '';
+  };
+  reader.onerror = () => {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Could not read file.'; }
+  };
+  reader.readAsDataURL(file);
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
 </script>
@@ -3095,8 +3207,8 @@ document.getElementById('mb-pickup-date').min = new Date().toISOString().split('
     <input type="hidden" id="rev-id">
     <div class="form-grid">
       <div class="form-group">
-        <label class="form-label">Booking ID *</label>
-        <input type="text" class="form-input" id="rev-booking-id" placeholder="e.g. abc123">
+        <label class="form-label">Booking ID <span style="font-weight:400;color:var(--text-sub);">(auto-generated if left blank)</span></label>
+        <input type="text" class="form-input" id="rev-booking-id" placeholder="e.g. abc123 — or leave blank">
       </div>
       <div class="form-group">
         <label class="form-label">Vehicle *</label>
@@ -3187,9 +3299,7 @@ document.getElementById('mb-pickup-date').min = new Date().toISOString().split('
     </div>
     <input type="hidden" id="cust-detail-id">
     <div id="cust-detail-content"></div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
-      <button class="btn btn-secondary" onclick="closeModal('customer-detail-modal')">Close</button>
-    </div>
+    <div id="cust-detail-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:16px;"></div>
   </div>
 </div>
 
