@@ -51,21 +51,23 @@ async function loadOverridesFromSupabase() {
 
 /**
  * Upsert a single template override into Supabase.
- * Returns true on success, false on failure.
+ * Returns the resulting record { message, enabled } on success, null on failure.
  */
 async function upsertOverrideInSupabase(templateKey, message, enabled) {
   const sb = getSupabaseAdmin();
-  if (!sb) return false;
+  if (!sb) return null;
   const record = {
     template_key: templateKey,
     updated_at:   new Date().toISOString(),
   };
   if (message  !== undefined) record.message  = message;
   if (enabled  !== undefined) record.enabled  = enabled;
-  const { error } = await sb.from("sms_template_overrides")
-    .upsert(record, { onConflict: "template_key" });
+  const { data, error } = await sb.from("sms_template_overrides")
+    .upsert(record, { onConflict: "template_key" })
+    .select("message, enabled")
+    .single();
   if (error) throw error;
-  return true;
+  return data;
 }
 
 /**
@@ -204,12 +206,12 @@ export default async function handler(req, res) {
 
       // Try Supabase first; fall back to GitHub if unavailable
       const sb = getSupabaseAdmin();
+      let resultOverride;
       if (sb) {
-        await upsertOverrideInSupabase(templateKey, newMessage, newEnabled);
+        resultOverride = await upsertOverrideInSupabase(templateKey, newMessage, newEnabled);
       } else {
         // GitHub fallback
         const updatedAt = new Date().toISOString();
-        let resultOverride;
         await updateJsonFileWithRetry({
           load:    loadOverridesFromGitHub,
           apply:   (data) => {
@@ -228,8 +230,8 @@ export default async function handler(req, res) {
         success: true,
         template: {
           key:          templateKey,
-          message:      newMessage ?? TEMPLATES[templateKey],
-          enabled:      newEnabled ?? true,
+          message:      resultOverride.message ?? TEMPLATES[templateKey],
+          enabled:      resultOverride.enabled ?? true,
           isCustomized: true,
         },
       });
