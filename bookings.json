@@ -1,6 +1,71 @@
 {
   "slingshot": [],
   "slingshot2": [],
-  "camry": [],
-  "camry2013": []
+  "camry": [
+    {
+      "bookingId": "bk-ms-2026-0313",
+      "name": "Mariatu Sillah",
+      "phone": "2137296017",
+      "email": "marysillah23@gamil.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-03-13",
+      "pickupTime": "11:00 AM",
+      "returnDate": "2026-03-17",
+      "returnTime": "11:00 AM",
+      "location": "",
+      "status": "completed_rental",
+      "paymentIntentId": "manual_ms20260313",
+      "paymentMethod": "cash",
+      "amountPaid": 200,
+      "notes": "4-day rental",
+      "smsSentAt": {},
+      "createdAt": "2026-03-12T18:00:00.000Z",
+      "source": "admin_v2"
+    },
+    {
+      "bookingId": "bk-bg-2026-0219",
+      "name": "Bernard Gilot",
+      "phone": "4075586386",
+      "email": "gilot42@gmail.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-02-19",
+      "pickupTime": "9:00 PM",
+      "returnDate": "2026-03-02",
+      "returnTime": "9:00 PM",
+      "location": "",
+      "status": "completed_rental",
+      "paymentIntentId": "manual_bg20260219",
+      "paymentMethod": "cash",
+      "amountPaid": 785,
+      "notes": "$300 refunded — car broke down",
+      "smsSentAt": {},
+      "createdAt": "2026-02-18T18:00:00.000Z",
+      "source": "admin_v2"
+    }
+  ],
+  "camry2013": [
+    {
+      "bookingId": "bk-da-2026-0321",
+      "name": "David Agbebaku",
+      "phone": "3463814616",
+      "email": "davosama15@gmail.com",
+      "vehicleId": "camry2013",
+      "vehicleName": "Camry 2013 SE",
+      "pickupDate": "2026-03-21",
+      "pickupTime": "10:45 PM",
+      "returnDate": "2026-03-28",
+      "returnTime": "5:45 AM",
+      "location": "",
+      "status": "active_rental",
+      "paymentIntentId": "manual_da20260321",
+      "paymentMethod": "stripe",
+      "amountPaid": 479.59,
+      "notes": "7-day rental",
+      "smsSentAt": {},
+      "createdAt": "2026-03-20T18:00:00.000Z",
+      "source": "admin_v2"
+    }
+  ]
 }

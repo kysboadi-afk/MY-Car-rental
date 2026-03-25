@@ -36,8 +36,8 @@ export default async function handler(req, res) {
   try {
     const { data } = await loadExpenses();
     const filtered = vehicle_id ? data.filter((e) => e.vehicle_id === vehicle_id) : data;
-    // Newest first
-    filtered.sort((a, b) => (b.date || "") > (a.date || "") ? -1 : 1);
+    // Newest first (descending by date)
+    filtered.sort((a, b) => (b.date || "") > (a.date || "") ? 1 : -1);
     return res.status(200).json({ expenses: filtered });
   } catch (err) {
     console.error("get-expenses error:", err);
