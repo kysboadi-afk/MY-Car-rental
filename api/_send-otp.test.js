@@ -7,6 +7,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 // ─── Required env vars ────────────────────────────────────────────────────────
+process.env.ADMIN_SECRET        = "test-admin-secret";
 process.env.OTP_SECRET          = "JBSWY3DPEHPK3PXP"; // valid base32 test secret
 process.env.TEXTMAGIC_USERNAME  = "testuser";
 process.env.TEXTMAGIC_API_KEY   = "test-api-key-00000000000000000000000";
@@ -47,7 +48,7 @@ function makeRes() {
   return res;
 }
 
-function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
+function makeReq(method, body = { secret: "test-admin-secret" }, origin = "https://www.slytrans.com") {
   return { method, headers: { origin }, body };
 }
 
