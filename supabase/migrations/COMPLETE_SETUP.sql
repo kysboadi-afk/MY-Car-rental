@@ -431,6 +431,7 @@ BEGIN
     'customers',
     'system_settings',
     'content_blocks',
+    'site_settings',
     'sms_template_overrides'
   ]
   LOOP
@@ -453,6 +454,7 @@ END $$;
 -- DONE
 -- All 12 tables, 1 view, and all triggers are now in place.
 -- You can run this script again at any time — it is fully idempotent.
+-- (Corresponds to migrations 0001 – 0009)
 -- =============================================================================
 
 

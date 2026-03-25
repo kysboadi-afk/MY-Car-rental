@@ -15,7 +15,7 @@
 //   • When the table exists but is empty, defaults are auto-seeded on first list call.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -134,13 +134,55 @@ export default async function handler(req, res) {
 
       // Try UPDATE first (for existing rows); if no rows updated, INSERT the new row.
       // This avoids PostgREST upsert compatibility issues with keyword column names.
-      const { data: updatedData, error: updateErr, count: updateCount } = await sb
+      const { data: updatedData, error: updateErr } = await sb
         .from("system_settings")
         .update(record)
         .eq("key", record.key)
         .select();
 
-      if (updateErr) throw updateErr;
+      if (updateErr) {
+        // If the table is missing, attempt to auto-seed all defaults so that
+        // subsequent saves work without requiring a manual Supabase migration.
+        // (The seed only succeeds when the table has just been created and is
+        // empty; if the table is truly absent this upsert will also fail and
+        // the schema error will be surfaced to the admin.)
+        if (isSchemaError(updateErr)) {
+          const seedRecords = DEFAULT_SETTINGS.map((s) => ({
+            key:         s.key,
+            value:       s.value,
+            description: s.description,
+            category:    s.category,
+            updated_at:  new Date().toISOString(),
+            updated_by:  "system",
+          }));
+      await sb.from("system_settings")
+            .upsert(seedRecords, { onConflict: "key", ignoreDuplicates: true })
+            .select().then(({ error: seedErr }) => {
+              if (seedErr) console.error("v2-system-settings auto-seed error:", seedErr.message);
+            });
+
+          // Retry the original update after seeding
+          const { data: retryData, error: retryErr } = await sb
+            .from("system_settings")
+            .update(record)
+            .eq("key", record.key)
+            .select();
+          if (retryErr) throw retryErr;
+
+          if (retryData && retryData.length > 0) {
+            return res.status(200).json({ setting: retryData[0] });
+          }
+          // Fall through to INSERT if still no row
+          const { data: retryInsert, error: retryInsertErr } = await sb
+            .from("system_settings")
+            .insert(record)
+            .select()
+            .single();
+          if (retryInsertErr) throw retryInsertErr;
+          return res.status(200).json({ setting: retryInsert });
+        }
+        throw updateErr;
+      }
 
       let finalData;
       if (updatedData && updatedData.length > 0) {
