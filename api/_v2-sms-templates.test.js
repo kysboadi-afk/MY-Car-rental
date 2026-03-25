@@ -353,11 +353,15 @@ test("update: truncates message to 1000 characters", async () => {
 test("update: ignores extra unknown fields in updates (only message/enabled accepted)", async () => {
   setSecret("testSecret");
   mockFetch({}, null, null);
+  // Use Object.defineProperty so '__proto__' is an actual enumerable string key,
+  // mirroring how JSON.parse (i.e. a real HTTP body) would deliver the field.
+  const updates = { message: "Valid", injected: "evil" };
+  Object.defineProperty(updates, "__proto__", { value: { polluted: true }, enumerable: true });
   const req = makeReq({ body: {
     secret:      "testSecret",
     action:      "update",
     templateKey: "booking_confirmed",
-    updates:     { message: "Valid", injected: "evil", __proto__: { polluted: true } },
+    updates,
   }});
   const res = makeRes();
   await handler(req, res);
@@ -365,6 +369,8 @@ test("update: ignores extra unknown fields in updates (only message/enabled acce
   // The injected field should NOT appear in the response
   assert.ok(!Object.prototype.hasOwnProperty.call(res._body.template, "injected"));
   assert.equal(res._body.template.message, "Valid");
+  // prototype must not have been polluted
+  assert.equal(({}).polluted, undefined);
   setSecret(REAL_ADMIN_SECRET);
   restoreFetch();
 });

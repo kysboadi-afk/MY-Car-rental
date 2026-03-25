@@ -153,22 +153,27 @@ test("variables is optional — omitting it is accepted", async () => {
 test("non-string/number values in variables are silently dropped", async () => {
   sentMessages.length = 0;
   const res = makeRes();
+  // Use JSON.parse to produce an object with a real '__proto__' string key and
+  // nested objects — exactly as an HTTP request body would be parsed at runtime.
+  const variables = JSON.parse(JSON.stringify({
+    customer_name: "Bob",
+    vehicle:       "Camry 2012",
+    pickup_date:   "April 1",
+    pickup_time:   "10:00 AM",
+    location:      "Downtown LA",
+    evil:          { nested: "object" },
+  }));
+  Object.defineProperty(variables, "__proto__", { value: { polluted: true }, enumerable: true });
   await handler(makeReq("POST", {
     phone:       "3105550123",
     templateKey: "booking_confirmed",
-    variables: {
-      customer_name: "Bob",
-      vehicle:       "Camry 2012",
-      pickup_date:   "April 1",
-      pickup_time:   "10:00 AM",
-      location:      "Downtown LA",
-      __proto__:     { polluted: true },
-      evil:          { nested: "object" },
-    },
+    variables,
   }), res);
   assert.equal(res._status, 200);
   // object value should not appear in the rendered message
   assert.ok(!sentMessages[0].text.includes("[object Object]"));
+  // prototype must not have been polluted
+  assert.equal(({}).polluted, undefined);
 });
 
 // ─── message rendering ────────────────────────────────────────────────────────
