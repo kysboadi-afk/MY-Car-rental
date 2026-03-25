@@ -1,5 +1,6 @@
 // api/delete-expense.js
-// Vercel serverless function — removes an expense record from expenses.json by ID.
+// Vercel serverless function — removes an expense record by ID.
+// Deletes from Supabase when configured; falls back to GitHub (expenses.json).
 // Admin-protected: requires ADMIN_SECRET.
 //
 // POST /api/delete-expense
@@ -8,6 +9,7 @@
 //   "expense_id": "<expense_id to delete>"
 // }
 
+import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -27,9 +29,6 @@ export default async function handler(req, res) {
   if (!process.env.ADMIN_SECRET) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
-  if (!process.env.GITHUB_TOKEN) {
-    return res.status(500).json({ error: "Server configuration error: GITHUB_TOKEN is not set." });
-  }
 
   const { secret, expense_id } = req.body || {};
 
@@ -42,27 +41,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Confirm existence before the retry loop to give a clear 404
-    const { data: checkData } = await loadExpenses();
-    if (!checkData.some((e) => e.expense_id === expense_id)) {
-      return res.status(404).json({ error: "Expense not found" });
+    const sb = getSupabaseAdmin();
+
+    if (sb) {
+      // ── Supabase path (preferred) ──────────────────────────────────────
+      const { data: existing, error: fetchErr } = await sb
+        .from("expenses").select("expense_id").eq("expense_id", expense_id).maybeSingle();
+      if (fetchErr) throw new Error(fetchErr.message);
+      if (!existing) return res.status(404).json({ error: "Expense not found" });
+
+      const { error: delErr } = await sb.from("expenses").delete().eq("expense_id", expense_id);
+      if (delErr) throw new Error(delErr.message);
+    } else {
+      // ── GitHub fallback ────────────────────────────────────────────────
+      if (!process.env.GITHUB_TOKEN) {
+        return res.status(503).json({ error: "Neither Supabase nor GITHUB_TOKEN is configured." });
+      }
+      const { data: checkData } = await loadExpenses();
+      if (!checkData.some((e) => e.expense_id === expense_id)) {
+        return res.status(404).json({ error: "Expense not found" });
+      }
+      await updateJsonFileWithRetry({
+        load:    loadExpenses,
+        apply:   (data) => {
+          const after = data.filter((e) => e.expense_id !== expense_id);
+          data.splice(0, data.length, ...after);
+        },
+        save:    saveExpenses,
+        message: `Delete expense ${expense_id}`,
+      });
     }
 
-    let deletedCount = 0;
-    await updateJsonFileWithRetry({
-      load:    loadExpenses,
-      // apply is idempotent: filter is a pure transform — safe to replay
-      apply:   (data) => {
-        const before = data.length;
-        const after  = data.filter((e) => e.expense_id !== expense_id);
-        deletedCount = before - after.length;
-        data.splice(0, data.length, ...after);
-      },
-      save:    saveExpenses,
-      message: `Delete expense ${expense_id}`,
-    });
-
-    return res.status(200).json({ success: true, deleted: deletedCount });
+    return res.status(200).json({ success: true });
   } catch (err) {
     console.error("delete-expense error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

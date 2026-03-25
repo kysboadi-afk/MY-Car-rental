@@ -13,21 +13,33 @@
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
 const MIN_UTILIZATION_WINDOW_DAYS = 90;
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
-import { createClient } from "@supabase/supabase-js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
-function getSupabaseOptional() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
+/**
+ * Load expenses from Supabase when available; fall back to GitHub expenses.json.
+ * @returns {Promise<Array>}
+ */
+async function loadExpensesAny() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from("expenses").select("*");
+      if (!error) return data || [];
+      console.warn("v2-analytics: supabase expenses error, falling back to GitHub:", error.message);
+    } catch (e) {
+      console.warn("v2-analytics: supabase expenses threw, falling back to GitHub:", e.message);
+    }
+  }
+  const { data } = await loadExpenses();
+  return data;
 }
 
 function bookingRevenue(b) {
@@ -61,10 +73,10 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const [{ data: bookingsData }, { data: vehicles }, { data: expenses }] = await Promise.all([
+    const [{ data: bookingsData }, { data: vehicles }, expenses] = await Promise.all([
       loadBookings(),
       loadVehicles(),
-      loadExpenses(),
+      loadExpensesAny(),
     ]);
 
     const allBookings   = Object.values(bookingsData).flat();

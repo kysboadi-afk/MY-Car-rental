@@ -1,5 +1,7 @@
 // api/add-expense.js
-// Vercel serverless function — appends a new expense record to expenses.json.
+// Vercel serverless function — appends a new expense record to the Supabase
+// `expenses` table.  Falls back to GitHub (expenses.json) when Supabase is
+// not configured so the endpoint never hard-fails due to missing env vars.
 // Admin-protected: requires ADMIN_SECRET.
 //
 // POST /api/add-expense
@@ -13,6 +15,7 @@
 // }
 
 import crypto from "crypto";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -33,9 +36,6 @@ export default async function handler(req, res) {
 
   if (!process.env.ADMIN_SECRET) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-  }
-  if (!process.env.GITHUB_TOKEN) {
-    return res.status(500).json({ error: "Server configuration error: GITHUB_TOKEN is not set." });
   }
 
   const { secret, vehicle_id, date, category, amount, notes } = req.body || {};
@@ -62,28 +62,38 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "amount must be a positive number" });
   }
 
-  try {
-    const expense = {
-      expense_id: crypto.randomBytes(8).toString("hex"),
-      vehicle_id,
-      date,
-      category,
-      amount:     Math.round(parsedAmount * 100) / 100,
-      notes:      typeof notes === "string" ? notes.trim().slice(0, 500) : "",
-      created_at: new Date().toISOString(),
-    };
+  const expense = {
+    expense_id: crypto.randomBytes(8).toString("hex"),
+    vehicle_id,
+    date,
+    category,
+    amount:     Math.round(parsedAmount * 100) / 100,
+    notes:      typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+    created_at: new Date().toISOString(),
+  };
 
-    // apply is idempotent: skips push if expense_id already present (safe on retry)
-    await updateJsonFileWithRetry({
-      load:    loadExpenses,
-      apply:   (data) => {
-        if (!data.some((e) => e.expense_id === expense.expense_id)) {
-          data.push(expense);
-        }
-      },
-      save:    saveExpenses,
-      message: `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`,
-    });
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb) {
+      // ── Supabase path (preferred) ──────────────────────────────────────
+      const { error: sbErr } = await sb.from("expenses").insert(expense);
+      if (sbErr) throw new Error(sbErr.message);
+    } else {
+      // ── GitHub fallback ────────────────────────────────────────────────
+      if (!process.env.GITHUB_TOKEN) {
+        return res.status(503).json({ error: "Neither Supabase nor GITHUB_TOKEN is configured." });
+      }
+      await updateJsonFileWithRetry({
+        load:    loadExpenses,
+        apply:   (data) => {
+          if (!data.some((e) => e.expense_id === expense.expense_id)) {
+            data.push(expense);
+          }
+        },
+        save:    saveExpenses,
+        message: `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`,
+      });
+    }
 
     return res.status(200).json({ success: true, expense });
   } catch (err) {
