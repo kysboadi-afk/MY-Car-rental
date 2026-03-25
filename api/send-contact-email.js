@@ -9,9 +9,7 @@
 //   SMTP_PASS    — email password or app password
 //   OWNER_EMAIL  — business email that receives all contact submissions
 //                  (defaults to slyservices@supports-info.com)
-//   OTP_SECRET   — long random string used to sign OTP tokens (shared with send-otp.js)
 import nodemailer from "nodemailer";
-import { verifyOtpToken } from "./_otp.js";
 
 const OWNER_EMAIL   = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const BUSINESS_PHONE = "(213) 916-6606";
@@ -59,7 +57,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
 
-  const { name, email, phone, message, otpToken, otpCode, honeypot } = req.body || {};
+  const { name, email, phone, message, honeypot } = req.body || {};
 
   // Honeypot check — real users leave this blank; bots typically fill it in.
   // Reject silently without revealing which field triggered the block.
@@ -69,14 +67,6 @@ export default async function handler(req, res) {
 
   if (!name || !email || !phone || !message) {
     return res.status(400).json({ error: "Missing required fields: name, email, phone, message." });
-  }
-
-  if (!otpToken || !otpCode) {
-    return res.status(400).json({ error: "Email verification is required. Please verify your email address before submitting." });
-  }
-
-  if (!verifyOtpToken(otpToken, email, otpCode)) {
-    return res.status(400).json({ error: "Invalid or expired verification code. Please request a new code and try again." });
   }
 
   const submissionId = generateSubmissionId();
