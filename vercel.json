@@ -27,18 +27,6 @@
     "api/v2-sms-templates.js": {
       "maxDuration": 15
     },
-    "api/send-lead-email.js": {
-      "maxDuration": 15
-    },
-    "api/send-sms.js": {
-      "maxDuration": 15
-    },
-    "api/send-otp.js": {
-      "maxDuration": 15
-    },
-    "api/send-phone-otp.js": {
-      "maxDuration": 15
-    },
     "api/send-contact-email.js": {
       "maxDuration": 15
     },
@@ -51,16 +39,7 @@
     "api/send-reservation-email.js": {
       "maxDuration": 30
     },
-    "api/send-signnow-invite.js": {
-      "maxDuration": 30
-    },
-    "api/check-signnow.js": {
-      "maxDuration": 30
-    },
     "api/create-payment-intent.js": {
-      "maxDuration": 15
-    },
-    "api/create-checkout-session.js": {
       "maxDuration": 15
     },
     "api/verify-session.js": {

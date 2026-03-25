@@ -14,9 +14,6 @@ process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
 process.env.OWNER_EMAIL = "owner@test.invalid";
 
-// ─── OTP secret (must be set before importing handler or _otp.js) ─────────────
-process.env.OTP_SECRET = "test-otp-secret-for-application-email-tests";
-
 // ─── TextMagic env vars ───────────────────────────────────────────────────────
 process.env.TEXTMAGIC_USERNAME = "testuser";
 process.env.TEXTMAGIC_API_KEY  = "test-api-key-00000000000000000000000";
@@ -41,15 +38,7 @@ mock.module("./_textmagic.js", {
 
 const { default: handler } = await import("./send-application-email.js");
 
-// ─── Phone OTP helpers ────────────────────────────────────────────────────────
-// Generate a valid signed phone OTP token for use in test request bodies.
-// The handler normalises a bare 10-digit number to E.164 (+1XXXXXXXXXX) before
-// verifying, so the token must be created for the same normalised number.
-import { createPhoneOtpToken } from "./_otp.js";
-const TEST_PHONE      = "3105550199";
-const TEST_PHONE_E164 = "+1" + TEST_PHONE;
-const TEST_OTP_CODE   = "654321";
-const TEST_OTP_TOKEN  = createPhoneOtpToken(TEST_PHONE_E164, TEST_OTP_CODE);
+const TEST_PHONE = "3105550199";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function makeRes() {
@@ -77,8 +66,6 @@ const VALID_BODY = {
   experience: "3–5 years",
   apps: ["DoorDash", "Uber Eats"],
   agreeTerms: true,
-  phoneOtpToken: TEST_OTP_TOKEN,
-  phoneOtpCode: TEST_OTP_CODE,
   licenseFileName: "license.jpg",
   licenseMimeType: "image/jpeg",
   licenseBase64: Buffer.from("fake-image-data").toString("base64"),
@@ -173,7 +160,7 @@ test("attaches license file when base64 data is provided", async () => {
 test("sends without attachment when license fields are omitted", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true, phoneOtpToken: TEST_OTP_TOKEN, phoneOtpCode: TEST_OTP_CODE };
+  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
   await handler(makeReq("POST", body), res);
   assert.equal(res._status, 200);
   assert.equal(sentMails[0].attachments.length, 0);
@@ -188,8 +175,6 @@ test("html-escapes special characters to prevent XSS", async () => {
     age: 25,
     experience: "<img src=x onerror=alert(1)>",
     agreeTerms: true,
-    phoneOtpToken: TEST_OTP_TOKEN,
-    phoneOtpCode: TEST_OTP_CODE,
   }), res);
   assert.equal(res._status, 200);
   const html = sentMails[0].html;
@@ -234,7 +219,7 @@ test("decision is 'declined' when experience is less than 3 months", async () =>
 test("decision is 'review' when license is missing", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true, phoneOtpToken: TEST_OTP_TOKEN, phoneOtpCode: TEST_OTP_CODE };
+  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
   await handler(makeReq("POST", body), res);
   assert.equal(res._body.decision, "review");
 });
@@ -284,7 +269,7 @@ test("sends declined SMS when age is under 21", async () => {
 test("sends review SMS when license is missing", async () => {
   sentMessages.length = 0;
   const res = makeRes();
-  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true, phoneOtpToken: TEST_OTP_TOKEN, phoneOtpCode: TEST_OTP_CODE };
+  const body = { name: "Jane Driver", phone: TEST_PHONE, age: 25, experience: "3–5 years", agreeTerms: true };
   await handler(makeReq("POST", body), res);
   assert.equal(sentMessages.length, 1);
   assert.ok(

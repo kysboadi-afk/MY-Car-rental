@@ -1,18 +1,16 @@
 // Tests for api/send-contact-email.js
-// Validates that contact form submissions are emailed to the owner
-// and that OTP verification is enforced before sending.
+// Validates that contact form submissions are emailed to the owner.
 //
 // Run with: npm test
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-// ─── SMTP + OTP env vars ─────────────────────────────────────────────────────
+// ─── SMTP env vars ────────────────────────────────────────────────────────────
 process.env.SMTP_HOST   = "smtp.test.invalid";
 process.env.SMTP_PORT   = "587";
 process.env.SMTP_USER   = "test@test.invalid";
 process.env.SMTP_PASS   = "test-password";
 process.env.OWNER_EMAIL = "owner@test.invalid";
-process.env.OTP_SECRET  = "test-otp-secret-for-contact-email-tests";
 
 // ─── Nodemailer mock ─────────────────────────────────────────────────────────
 const sentMails = [];
@@ -25,7 +23,6 @@ mock.module("nodemailer", {
 });
 
 const { default: handler } = await import("./send-contact-email.js");
-const { createOtpToken }   = await import("./_otp.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -47,17 +44,12 @@ function makeReq(method, body = {}, origin = "https://www.slytrans.com") {
   return { method, headers: { origin }, body };
 }
 
-// Build a valid body with a fresh OTP token each time (tokens expire in 10 min)
 function makeValidBody(overrides = {}) {
-  const email = overrides.email ?? "bob@example.com";
-  const otp   = "482910";
   return {
-    name:     "Bob Contact",
-    email,
-    phone:    "3105550199",
-    message:  "Hello, I have a question about renting a Camry.",
-    otpCode:  otp,
-    otpToken: createOtpToken(email, otp),
+    name:    "Bob Contact",
+    email:   "bob@example.com",
+    phone:   "3105550199",
+    message: "Hello, I have a question about renting a Camry.",
     ...overrides,
   };
 }
@@ -98,41 +90,6 @@ test("returns 400 when required fields are missing", async () => {
 test("returns 400 when message is missing", async () => {
   const res = makeRes();
   await handler(makeReq("POST", { name: "Bob", email: "bob@example.com", phone: "123" }), res);
-  assert.equal(res._status, 400);
-  assert.ok(res._body.error);
-});
-
-test("returns 400 when OTP token is missing", async () => {
-  const res = makeRes();
-  const body = makeValidBody();
-  delete body.otpToken;
-  await handler(makeReq("POST", body), res);
-  assert.equal(res._status, 400);
-  assert.ok(res._body.error);
-});
-
-test("returns 400 when OTP code is missing", async () => {
-  const res = makeRes();
-  const body = makeValidBody();
-  delete body.otpCode;
-  await handler(makeReq("POST", body), res);
-  assert.equal(res._status, 400);
-  assert.ok(res._body.error);
-});
-
-test("returns 400 for incorrect OTP code", async () => {
-  const res = makeRes();
-  await handler(makeReq("POST", makeValidBody({ otpCode: "000000" })), res);
-  assert.equal(res._status, 400);
-  assert.ok(res._body.error);
-});
-
-test("returns 400 for OTP token bound to different email", async () => {
-  const res = makeRes();
-  const body = makeValidBody();
-  // Override email so it no longer matches the token
-  body.email = "attacker@example.com";
-  await handler(makeReq("POST", body), res);
   assert.equal(res._status, 400);
   assert.ok(res._body.error);
 });
@@ -183,15 +140,11 @@ test("email html contains all four contact fields", async () => {
 test("html-escapes special characters to prevent XSS", async () => {
   sentMails.length = 0;
   const res = makeRes();
-  const xssEmail = "x@example.com";
-  const xssOtp   = "111111";
   await handler(makeReq("POST", {
-    name:     '<script>alert(1)</script>',
-    email:    xssEmail,
-    phone:    "1234567",
-    message:  '<img src=x onerror=alert(2)>',
-    otpCode:  xssOtp,
-    otpToken: createOtpToken(xssEmail, xssOtp),
+    name:    '<script>alert(1)</script>',
+    email:   "x@example.com",
+    phone:   "1234567",
+    message: '<img src=x onerror=alert(2)>',
   }), res);
   assert.equal(res._status, 200);
   const html = sentMails[0].html;
