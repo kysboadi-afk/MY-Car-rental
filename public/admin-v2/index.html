@@ -956,6 +956,17 @@
             </div>
           </div>
         </div>
+
+        <div class="form-section" style="max-width:640px;">
+          <div class="form-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+            System Diagnostics
+            <button id="run-diagnostics-btn" class="btn btn-secondary btn-sm" onclick="runDiagnostics()">Run Check</button>
+          </div>
+          <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">Check that all required environment variables are configured and Supabase tables exist. Run this when you see errors in the admin panel.</p>
+          <div id="diagnostics-result">
+            <p style="font-size:13px;color:var(--text-sub);">Click "Run Check" to test your configuration.</p>
+          </div>
+        </div>
       </div>
 
       <!-- REVENUE PAGE -->
@@ -3202,6 +3213,116 @@ async function handleImageUpload(fileInput, urlInputId, previewContainerId, msgI
     if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Could not read file.'; }
   };
   reader.readAsDataURL(file);
+}
+
+// ── System Diagnostics ────────────────────────────────────────────────────
+async function runDiagnostics() {
+  const btn = document.getElementById('run-diagnostics-btn');
+  const out = document.getElementById('diagnostics-result');
+  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  out.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Checking configuration…</div></div>';
+
+  try {
+    const data = await apiPost('/api/v2-diagnostics', { secret: adminSecret });
+    renderDiagnostics(data);
+  } catch (err) {
+    out.innerHTML = `<p style="color:var(--danger)">Diagnostics failed: ${esc(err.message)}</p>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Run Check'; }
+  }
+}
+
+function renderDiagnostics(data) {
+  const out = document.getElementById('diagnostics-result');
+
+  // ── Environment variables ──────────────────────────────────────────────
+  const envRows = Object.entries(data.env || {}).map(([key, status]) => {
+    const ok       = status === 'ok';
+    const optional = status === 'optional' || status === 'not required';
+    const color = ok ? 'var(--success)' : (optional ? 'var(--text-sub)' : 'var(--danger)');
+    const icon  = ok ? '✅' : (optional ? '⚪' : '❌');
+    return `<tr>
+      <td style="padding:5px 8px;font-family:monospace;font-size:12px;">${esc(key)}</td>
+      <td style="padding:5px 8px;color:${color};font-weight:500;">${icon} ${esc(status)}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Supabase status ────────────────────────────────────────────────────
+  const sb = data.supabase || {};
+  const sbConnected = sb.connected;
+  const sbError     = sb.error;
+
+  let tableRows = '';
+  if (sbConnected && sb.tables) {
+    tableRows = Object.entries(sb.tables).map(([table, status]) => {
+      const ok    = status === 'ok';
+      const color = ok ? 'var(--success)' : 'var(--danger)';
+      const icon  = ok ? '✅' : '❌';
+      return `<tr>
+        <td style="padding:4px 8px;font-family:monospace;font-size:12px;">${esc(table)}</td>
+        <td style="padding:4px 8px;color:${color};font-weight:500;">${icon} ${esc(status)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Actionable fix guidance ────────────────────────────────────────────
+  const envMissing = Object.entries(data.env || {}).filter(([, v]) => v === 'missing').map(([k]) => k);
+  const tablesMissing = sbConnected
+    ? Object.entries(sb.tables || {}).filter(([, v]) => v === 'missing' || v === 'error').map(([k]) => k)
+    : [];
+
+  let guidance = '';
+  if (!sbConnected && sbError && !sbError.includes('missing')) {
+    guidance += `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+      <strong style="color:var(--danger);">⚠ Supabase connection failed</strong><br>
+      ${esc(sbError || 'Unknown error')}.<br>
+      Check that <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> are correct in your Vercel environment.
+    </div>`;
+  }
+  if (envMissing.length > 0) {
+    guidance += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+      <strong style="color:var(--warning);">⚠ Missing environment variable${envMissing.length > 1 ? 's' : ''}</strong><br>
+      <code>${envMissing.map(esc).join('</code>, <code>')}</code> must be added in
+      <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
+      and a new deployment triggered.
+    </div>`;
+  }
+  if (tablesMissing.length > 0) {
+    guidance += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+      <strong style="color:var(--warning);">⚠ Missing Supabase table${tablesMissing.length > 1 ? 's' : ''}</strong><br>
+      <code>${tablesMissing.map(esc).join('</code>, <code>')}</code><br>
+      Run the <strong>COMPLETE_SETUP.sql</strong> migration in your
+      <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Supabase SQL Editor</a>
+      to create all required tables at once.
+      The file is at <code>supabase/migrations/COMPLETE_SETUP.sql</code> in the repository.
+    </div>`;
+  }
+  if (!guidance && sbConnected && tablesMissing.length === 0 && envMissing.length === 0) {
+    guidance = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+      <strong style="color:var(--success);">✅ All systems operational</strong> — Supabase is connected and all required tables exist.
+    </div>`;
+  }
+
+  out.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+      <thead>
+        <tr><th style="text-align:left;padding:5px 8px;color:var(--text-sub);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);" colspan="2">Environment Variables</th></tr>
+      </thead>
+      <tbody>${envRows}</tbody>
+    </table>
+
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px;">
+      <thead>
+        <tr><th style="text-align:left;padding:5px 8px;color:var(--text-sub);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);" colspan="2">
+          Supabase Connection — ${sbConnected
+            ? '<span style="color:var(--success)">✅ Connected</span>'
+            : `<span style="color:var(--danger)">❌ Not connected${sbError ? ': ' + esc(sbError) : ''}</span>`}
+        </th></tr>
+      </thead>
+      ${sbConnected && tableRows ? `<tbody>${tableRows}</tbody>` : ''}
+    </table>
+    ${guidance}
+  `;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

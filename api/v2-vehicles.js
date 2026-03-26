@@ -1,6 +1,8 @@
 // api/v2-vehicles.js
 // SLYTRANS FLEET CONTROL v2 — Vehicles CRUD endpoint.
 // Supports listing, creating, and updating vehicle data stored in Supabase.
+// Falls back to GitHub vehicles.json when Supabase is not configured or the
+// vehicles table does not yet exist — consistent with all other v2 endpoints.
 //
 // GET  /api/v2-vehicles
 //   Returns an array of vehicle objects: [{ vehicle_id, ...data }, ...]
@@ -13,6 +15,9 @@
 //   update — { secret, action:"update", vehicleId, updates:{...} }
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { loadVehicles, saveVehicles } from "./_vehicles.js";
+import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
@@ -49,24 +54,36 @@ export default async function handler(req, res) {
   // ── GET — public listing (no secret required) ──────────────────────────────
   if (req.method === "GET") {
     const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      return res.status(500).json({ error: "Server configuration error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set." });
+    if (supabase) {
+      try {
+        const { data: rows, error } = await supabase
+          .from("vehicles")
+          .select("vehicle_id, data");
+        if (!error) {
+          const vehicles = (rows || []).map((row) => {
+            const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
+            if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
+            return obj;
+          });
+          return res.status(200).json(vehicles);
+        }
+        // Schema error → fall through to GitHub fallback; any other Supabase error → log + fall through
+        console.warn("v2-vehicles GET: Supabase error, falling back to GitHub:", error.message);
+      } catch (err) {
+        console.warn("v2-vehicles GET: Supabase threw, falling back to GitHub:", err.message);
+      }
     }
+    // GitHub fallback — works even when Supabase is not configured
     try {
-      const { data: rows, error } = await supabase
-        .from("vehicles")
-        .select("vehicle_id, data");
-      if (error) throw new Error(`Supabase select failed: ${error.message}`);
-
-      const vehicles = (rows || []).map((row) => {
-        const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
-        if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
-        return obj;
+      const { data: vehicles } = await loadVehicles();
+      const result = Object.values(vehicles).map((v) => {
+        if (v.cover_image) v = { ...v, cover_image: normalizeCoverImage(v.cover_image) };
+        return v;
       });
-      return res.status(200).json(vehicles);
+      return res.status(200).json(result);
     } catch (err) {
-      console.error("v2-vehicles GET error:", err);
-      return res.status(500).json({ error: err.message || "An unexpected error occurred." });
+      console.error("v2-vehicles GET GitHub fallback error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
     }
   }
 
@@ -87,23 +104,28 @@ export default async function handler(req, res) {
   }
 
   const supabase = getSupabaseAdmin();
-  if (!supabase) {
-    return res.status(500).json({ error: "Server configuration error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set." });
-  }
+  // Note: supabase may be null here — all actions below have GitHub fallbacks.
 
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      const { data: rows, error } = await supabase
-        .from("vehicles")
-        .select("vehicle_id, data");
+      if (supabase) {
+        const { data: rows, error } = await supabase
+          .from("vehicles")
+          .select("vehicle_id, data");
 
-      if (error) throw new Error(`Supabase select failed: ${error.message}`);
-
-      const vehicles = {};
-      for (const row of rows || []) {
-        vehicles[row.vehicle_id] = row.data;
+        if (!error) {
+          const vehicles = {};
+          for (const row of rows || []) {
+            vehicles[row.vehicle_id] = row.data;
+          }
+          return res.status(200).json({ vehicles });
+        }
+        // Schema error or other Supabase error → fall back to GitHub
+        console.warn("v2-vehicles list: Supabase error, falling back to GitHub:", error.message);
       }
+      // GitHub fallback
+      const { data: vehicles } = await loadVehicles();
       return res.status(200).json({ vehicles });
     }
 
@@ -148,32 +170,58 @@ export default async function handler(req, res) {
         }
       }
 
-      // Fetch existing row
-      const { data: existing, error: fetchErr } = await supabase
-        .from("vehicles")
-        .select("data")
-        .eq("vehicle_id", vehicleId)
-        .maybeSingle();
+      if (supabase) {
+        // Fetch existing row
+        const { data: existing, error: fetchErr } = await supabase
+          .from("vehicles")
+          .select("data")
+          .eq("vehicle_id", vehicleId)
+          .maybeSingle();
 
-      if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
-      if (!existing) {
-        return res.status(404).json({ error: "Vehicle not found" });
+        if (!fetchErr && existing) {
+          // Merge safe updates into existing data and upsert atomically
+          const updatedData = { ...existing.data, ...safeUpdates };
+          const { data: upserted, error: upsertErr } = await supabase
+            .from("vehicles")
+            .upsert(
+              { vehicle_id: vehicleId, data: updatedData, updated_at: new Date().toISOString() },
+              { onConflict: "vehicle_id" }
+            )
+            .select("data")
+            .single();
+
+          if (!upsertErr) {
+            return res.status(200).json({ success: true, vehicle: upserted.data });
+          }
+          if (!isSchemaError(upsertErr)) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
+          console.warn("v2-vehicles update: Supabase schema error, falling back to GitHub:", upsertErr.message);
+        } else if (fetchErr && !isSchemaError(fetchErr)) {
+          throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+        } else if (!fetchErr && !existing) {
+          // Vehicle not found in Supabase — fall back to GitHub check below
+          console.warn("v2-vehicles update: vehicle not found in Supabase, falling back to GitHub");
+        } else {
+          console.warn("v2-vehicles update: Supabase schema error, falling back to GitHub:", fetchErr.message);
+        }
       }
 
-      // Merge safe updates into existing data and upsert atomically
-      const updatedData = { ...existing.data, ...safeUpdates };
-      const { data: upserted, error: upsertErr } = await supabase
-        .from("vehicles")
-        .upsert(
-          { vehicle_id: vehicleId, data: updatedData, updated_at: new Date().toISOString() },
-          { onConflict: "vehicle_id" }
-        )
-        .select("data")
-        .single();
-
-      if (upsertErr) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
-
-      return res.status(200).json({ success: true, vehicle: upserted.data });
+      // GitHub fallback
+      const { data: ghVehicles, sha } = await loadVehicles();
+      if (!ghVehicles[vehicleId]) {
+        return res.status(404).json({ error: "Vehicle not found" });
+      }
+      let updatedVehicle;
+      await updateJsonFileWithRetry({
+        load:    loadVehicles,
+        apply:   (data) => {
+          if (!data[vehicleId]) return;
+          data[vehicleId] = { ...data[vehicleId], ...safeUpdates };
+          updatedVehicle = data[vehicleId];
+        },
+        save:    saveVehicles,
+        message: `v2: Update vehicle ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+      });
+      return res.status(200).json({ success: true, vehicle: updatedVehicle });
     }
 
     // ── CREATE ──────────────────────────────────────────────────────────────
@@ -213,18 +261,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check the vehicle doesn't already exist
-      const { data: existing, error: fetchErr } = await supabase
-        .from("vehicles")
-        .select("vehicle_id")
-        .eq("vehicle_id", vehicleId)
-        .maybeSingle();
-
-      if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
-      if (existing) {
-        return res.status(409).json({ error: `Vehicle "${vehicleId}" already exists` });
-      }
-
       // Build the new vehicle data object
       const newData = {
         vehicle_id:     vehicleId,
@@ -237,20 +273,58 @@ export default async function handler(req, res) {
         cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
       };
 
-      const { data: inserted, error: insertErr } = await supabase
-        .from("vehicles")
-        .insert({ vehicle_id: vehicleId, data: newData, updated_at: new Date().toISOString() })
-        .select("data")
-        .single();
+      if (supabase) {
+        // Check the vehicle doesn't already exist
+        const { data: existing, error: fetchErr } = await supabase
+          .from("vehicles")
+          .select("vehicle_id")
+          .eq("vehicle_id", vehicleId)
+          .maybeSingle();
 
-      if (insertErr) throw new Error(`Supabase insert failed: ${insertErr.message}`);
+        if (!fetchErr) {
+          if (existing) {
+            return res.status(409).json({ error: `Vehicle "${vehicleId}" already exists` });
+          }
 
-      return res.status(201).json({ success: true, vehicle: inserted.data });
+          const { data: inserted, error: insertErr } = await supabase
+            .from("vehicles")
+            .insert({ vehicle_id: vehicleId, data: newData, updated_at: new Date().toISOString() })
+            .select("data")
+            .single();
+
+          if (!insertErr) {
+            return res.status(201).json({ success: true, vehicle: inserted.data });
+          }
+          if (!isSchemaError(insertErr)) throw new Error(`Supabase insert failed: ${insertErr.message}`);
+          console.warn("v2-vehicles create: Supabase schema error, falling back to GitHub:", insertErr.message);
+        } else if (!isSchemaError(fetchErr)) {
+          throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+        } else {
+          console.warn("v2-vehicles create: Supabase schema error on fetch, falling back to GitHub:", fetchErr.message);
+        }
+      }
+
+      // GitHub fallback
+      let createdVehicle;
+      await updateJsonFileWithRetry({
+        load:    loadVehicles,
+        apply:   (data) => {
+          if (data[vehicleId]) return; // idempotent — skip if already exists
+          data[vehicleId] = newData;
+          createdVehicle = newData;
+        },
+        save:    saveVehicles,
+        message: `v2: Add vehicle ${vehicleId} (${newData.vehicle_name})`,
+      });
+      if (!createdVehicle) {
+        return res.status(409).json({ error: `Vehicle "${vehicleId}" already exists` });
+      }
+      return res.status(201).json({ success: true, vehicle: createdVehicle });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error("v2-vehicles error:", err);
-    return res.status(500).json({ error: err.message || "An unexpected error occurred." });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
