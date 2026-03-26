@@ -26,7 +26,10 @@ SET
   data       = jsonb_set(data, '{cover_image}', to_jsonb('/images/IMG_1749.jpeg'::text)),
   updated_at = now()
 WHERE vehicle_id = 'slingshot2'
-  AND data->>'cover_image' IN ('/images/car3.jpg', 'images/car3.jpg', '/images/car2.jpg', 'images/car2.jpg');
+  AND (
+    data->>'cover_image' IS NULL
+    OR data->>'cover_image' IN ('/images/car3.jpg', 'images/car3.jpg', '/images/car2.jpg', 'images/car2.jpg')
+  );
 
 -- Fix camry: was seeded with /images/car1.jpg (a slingshot photo)
 UPDATE vehicles
@@ -34,7 +37,10 @@ SET
   data       = jsonb_set(data, '{cover_image}', to_jsonb('/images/IMG_0046.png'::text)),
   updated_at = now()
 WHERE vehicle_id = 'camry'
-  AND data->>'cover_image' IN ('/images/car1.jpg', 'images/car1.jpg', '/images/car2.jpg', 'images/car2.jpg');
+  AND (
+    data->>'cover_image' IS NULL
+    OR data->>'cover_image' IN ('/images/car1.jpg', 'images/car1.jpg', '/images/car2.jpg', 'images/car2.jpg')
+  );
 
 -- Fix camry2013: was seeded with /images/camry-beach-hero.png
 -- Update to the dedicated vehicle photo only if still on the original seeded value.
@@ -43,6 +49,9 @@ SET
   data       = jsonb_set(data, '{cover_image}', to_jsonb('/images/IMG_5144.png'::text)),
   updated_at = now()
 WHERE vehicle_id = 'camry2013'
-  AND data->>'cover_image' IN ('/images/camry-beach-hero.png', 'images/camry-beach-hero.png',
+  AND (
+    data->>'cover_image' IS NULL
+    OR data->>'cover_image' IN ('/images/camry-beach-hero.png', 'images/camry-beach-hero.png',
                                 '/images/car1.jpg', 'images/car1.jpg',
-                                '/images/car2.jpg', 'images/car2.jpg');
+                                '/images/car2.jpg', 'images/car2.jpg')
+  );
