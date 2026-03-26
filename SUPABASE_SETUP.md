@@ -4,6 +4,102 @@ This document contains everything you need to set up the Supabase database that 
 
 ---
 
+## ✅ PR Checklist — Confirm These Before Merging Any Supabase-Related Change
+
+Copy this into any pull request that touches `api/`, `supabase/migrations/`, or Vercel environment variables.
+
+### 1 — Environment variables
+
+Confirm the following variables are set in **Vercel → Project Settings → Environment Variables** (and in your local `.env` if testing locally):
+
+| Variable | Required | Notes |
+|---|---|---|
+| `SUPABASE_URL` | ✅ Yes | Your project URL, e.g. `https://kdobrxffhtsigyiwnahs.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ Yes | 🔒 Secret — server-side only, never expose in frontend code |
+| `ADMIN_SECRET` | ✅ Yes | Password used to log into the Admin panels |
+| `GITHUB_TOKEN` | ✅ Yes | Fine-grained PAT with `contents: write` — used as fallback storage when Supabase is unavailable |
+| `GITHUB_REPO` | ⚠️ Optional | Defaults to `kysboadi-afk/SLY-RIDES`; override if you fork the repo |
+| `OPENAI_API_KEY` | ⚠️ Optional | Only needed for the AI assistant panel |
+
+> ⚠️ **This project does NOT use `NEXT_PUBLIC_` prefixed variables.** All Supabase access is server-side via Vercel serverless functions. The frontend never touches Supabase directly.
+
+After adding or changing any variable: **Vercel → Deployments → Redeploy** (required for changes to take effect).
+
+---
+
+### 2 — Admin authentication
+
+This project uses a simple shared-secret model via `ADMIN_SECRET`, **not** Supabase Auth / JWT roles.
+
+- [ ] `ADMIN_SECRET` is set in Vercel (and matches what you type on the login screen)
+- [ ] `ADMIN_SECRET` is a strong, unique password (not `admin`, `password`, etc.)
+- [ ] No Supabase JWT claims or `user_role` columns are needed — `_admin-auth.js` handles auth with a constant-time compare
+- [ ] The `SUPABASE_SERVICE_ROLE_KEY` is **never** referenced in frontend JS files (only in `api/` serverless functions)
+
+> The service-role key bypasses Row Level Security entirely — this is intentional because all Supabase writes go through server-side Vercel functions that gate access with `ADMIN_SECRET` before touching the database.
+
+---
+
+### 3 — Supabase client initialisation
+
+The singleton client lives in `api/_supabase.js`. Confirm:
+
+- [ ] `getSupabaseAdmin()` is the only place a Supabase client is created — all `api/` files import this helper; never call `createClient()` directly in other files
+- [ ] Client is created with `auth: { persistSession: false, autoRefreshToken: false }` (correct for server-side service-role use — sessions are meaningless here)
+- [ ] If you add a new API file that needs Supabase, import `getSupabaseAdmin` and check for `null` before using it:
+
+  ```js
+  import { getSupabaseAdmin } from "./_supabase.js";
+  
+  const sb = getSupabaseAdmin();
+  if (!sb) return res.status(503).json({ error: "Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to your Vercel environment variables." });
+  ```
+
+---
+
+### 4 — CORS
+
+- [ ] Every `api/` handler checks `req.headers.origin` against `ALLOWED_ORIGINS` (`["https://www.slytrans.com", "https://slytrans.com"]`) and sets the `Access-Control-Allow-Origin` header only for those origins
+- [ ] Every handler responds to `OPTIONS` pre-flight requests with `200`
+- [ ] If you add a new endpoint, copy the CORS block from any existing handler (e.g. `api/v2-revenue.js` lines 85-90)
+- [ ] No Supabase Edge Functions are used — CORS is handled at the Vercel function layer only
+
+---
+
+### 5 — Supabase query style — `.select()` after mutations
+
+- [ ] Every `INSERT`, `UPDATE`, or `UPSERT` that needs to return the saved row chains `.select()` (and `.single()` when exactly one row is expected):
+
+  ```js
+  // ✅ Correct — returns the saved record
+  const { data, error } = await sb.from("revenue_records").insert(record).select().single();
+  
+  // ❌ Wrong — PostgREST returns nothing without .select()
+  const { error } = await sb.from("revenue_records").insert(record);
+  ```
+
+- [ ] Delete operations do **not** need `.select()` unless you want to confirm what was deleted
+- [ ] All Supabase calls destructure `{ data, error }` and check `error` before using `data`
+
+---
+
+### 6 (Optional but recommended) — Error surfacing in Admin
+
+- [ ] Admin-facing error messages use `adminErrorMessage(err)` from `api/_error-helpers.js` — this translates raw PostgreSQL/PostgREST codes into human-readable text without leaking internals
+- [ ] Schema errors (PostgreSQL `42P01` / `42703`, PostgREST `PGRST204`) are caught with `isSchemaError(err)` and trigger the GitHub fallback path — not a fatal 500
+- [ ] The Admin CMS (`admin-cms.html`) surfaces errors via the `showToast(msg, 'error')` function — if a save fails, the user sees a red toast with the error message
+- [ ] The Admin panel (`admin.html`) surfaces errors via `showStatus(msg, "error")` / `showFleetMsg()` / `showProfitMsg()` — ensure new panels follow the same pattern
+
+---
+
+### 7 (Optional) — Logging during development
+
+- [ ] `console.error("module action:", err)` is called in every `catch` block in `api/` files before returning a 500 response (already done in all v2 endpoints — maintain this pattern)
+- [ ] `console.warn("module: reason, falling back to GitHub")` is called whenever the code silently falls back to GitHub JSON storage (already done — maintain this pattern)
+- [ ] When debugging a Supabase issue locally, check **Vercel → Functions → Logs** for the `console.error` output — the raw Supabase error message and PostgreSQL error code appear there
+
+---
+
 ## Prerequisites
 
 1. A free Supabase account at [https://supabase.com](https://supabase.com)
