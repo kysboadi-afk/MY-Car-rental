@@ -237,6 +237,205 @@ Once your Vercel environment variables are set and redeployed:
 
 ---
 
+## 🤖 Supabase AI Assistant — Copy-Paste Prompt
+
+If something breaks and you need help from the **Supabase AI assistant** (the chat icon inside the SQL Editor), paste the block below word-for-word. It gives the AI full context about what the app needs.
+
+> **How to open it:** In your Supabase project → SQL Editor → click the **✦ AI** button (top right)
+
+---
+
+```
+I am the owner of the SLY RIDES car rental web app (slytrans.com).
+My backend runs on Vercel (Node.js serverless, ES modules).
+My database is this Supabase project.
+
+The app needs the following tables and objects. Please help me check
+that they all exist and are correct, and run any missing SQL to create them.
+
+=== REQUIRED TABLES ===
+
+1. vehicles
+   - vehicle_id text PRIMARY KEY
+   - data jsonb NOT NULL DEFAULT '{}'
+   - updated_at timestamptz NOT NULL DEFAULT now()
+   Seed rows: slingshot, slingshot2, camry, camry2013
+
+2. protection_plans
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - name text NOT NULL UNIQUE
+   - description text
+   - daily_rate numeric(10,2) NOT NULL DEFAULT 0
+   - liability_cap numeric(10,2) NOT NULL DEFAULT 1000
+   - is_active boolean NOT NULL DEFAULT true
+   - sort_order integer NOT NULL DEFAULT 0
+   - updated_at timestamptz NOT NULL DEFAULT now()
+   Seed rows: None ($0), Basic ($15/day, $1000 cap), Standard ($25/day, $500 cap), Premium ($40/day, $0 cap)
+
+3. system_settings
+   - key text PRIMARY KEY
+   - value jsonb NOT NULL DEFAULT 'null'
+   - description text
+   - category text DEFAULT 'general'
+   - updated_at timestamptz NOT NULL DEFAULT now()
+   - updated_by text
+   Seed rows: la_tax_rate (0.1025), slingshot_daily_rate (350), camry_daily_rate (55),
+              camry_weekly_rate (350), camry_biweekly_rate (650), slingshot_security_deposit (150),
+              automation_enabled (false), reminder_hours_before (24)
+
+4. revenue_records
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - booking_id text NOT NULL UNIQUE
+   - vehicle_id text NOT NULL
+   - customer_name text, customer_phone text, customer_email text
+   - pickup_date date, return_date date
+   - gross_amount numeric(10,2) NOT NULL DEFAULT 0
+   - deposit_amount numeric(10,2) NOT NULL DEFAULT 0
+   - refund_amount numeric(10,2) NOT NULL DEFAULT 0
+   - net_amount numeric(10,2) GENERATED ALWAYS AS (gross_amount - refund_amount) STORED
+   - payment_status text NOT NULL DEFAULT 'pending'
+     CHECK (payment_status IN ('pending','paid','partial','refunded','failed'))
+   - is_cancelled boolean NOT NULL DEFAULT false
+   - is_no_show boolean NOT NULL DEFAULT false
+   - stripe_payment_intent_id text
+   - notes text
+   - created_at timestamptz NOT NULL DEFAULT now()
+   - updated_at timestamptz NOT NULL DEFAULT now()
+
+5. expenses
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - vehicle_id text NOT NULL
+   - date date NOT NULL
+   - category text NOT NULL
+     CHECK (category IN ('maintenance','insurance','repair','fuel','registration','other'))
+   - amount numeric(10,2) NOT NULL CHECK (amount > 0)
+   - notes text NOT NULL DEFAULT ''
+   - created_at timestamptz NOT NULL DEFAULT now()
+
+6. customers
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - name text NOT NULL
+   - phone text, email text
+   - flagged boolean DEFAULT false
+   - banned boolean DEFAULT false
+   - flag_reason text, ban_reason text
+   - total_bookings integer DEFAULT 0
+   - total_spent numeric(10,2) DEFAULT 0
+   - first_booking_date date, last_booking_date date
+   - notes text
+   - created_at timestamptz NOT NULL DEFAULT now()
+   - updated_at timestamptz NOT NULL DEFAULT now()
+
+7. booking_status_history
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - booking_id text NOT NULL
+   - old_status text, new_status text NOT NULL
+   - changed_by text NOT NULL DEFAULT 'system'
+   - changed_at timestamptz NOT NULL DEFAULT now()
+   - notes text
+
+8. payment_transactions
+   - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+   - booking_id text NOT NULL
+   - vehicle_id text NOT NULL
+   - type text NOT NULL CHECK (type IN ('charge','refund','deposit','balance'))
+   - amount numeric(10,2) NOT NULL
+   - stripe_id text
+   - status text NOT NULL DEFAULT 'pending'
+   - notes text
+   - created_at timestamptz NOT NULL DEFAULT now()
+
+9. sms_template_overrides
+   - id text PRIMARY KEY
+   - body text NOT NULL
+   - updated_at timestamptz NOT NULL DEFAULT now()
+
+10. public.site_settings
+    - key text PRIMARY KEY
+    - value text
+    - updated_at timestamptz NOT NULL DEFAULT now()
+    Seed rows: business_name, phone, email, hero_title, hero_subtitle,
+               promo_banner_enabled (false), promo_banner_text
+
+11. public.content_blocks
+    - block_id uuid PRIMARY KEY DEFAULT gen_random_uuid()
+    - type text NOT NULL CHECK (type IN ('faq','announcement','testimonial'))
+    - title text, body text
+    - author_name text, author_location text
+    - sort_order integer NOT NULL DEFAULT 0
+    - active boolean NOT NULL DEFAULT true
+    - expires_at timestamptz
+    - created_at timestamptz NOT NULL DEFAULT now()
+    - updated_at timestamptz NOT NULL DEFAULT now()
+
+12. public.content_revisions
+    - id bigserial PRIMARY KEY
+    - resource_type text NOT NULL
+    - resource_id text NOT NULL
+    - before jsonb, after jsonb
+    - changed_keys text[]
+    - created_at timestamptz NOT NULL DEFAULT now()
+
+=== REQUIRED VIEW ===
+
+CREATE OR REPLACE VIEW vehicle_revenue_summary AS
+SELECT vehicle_id,
+  COUNT(*) FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS booking_count,
+  COUNT(*) FILTER (WHERE is_cancelled)                        AS cancelled_count,
+  COUNT(*) FILTER (WHERE is_no_show)                          AS no_show_count,
+  SUM(gross_amount) FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS total_gross,
+  SUM(refund_amount)                                                     AS total_refunds,
+  SUM(net_amount)   FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS total_net,
+  SUM(deposit_amount) FILTER (WHERE NOT is_cancelled)                   AS total_deposits,
+  MAX(return_date) AS last_return_date,
+  MIN(pickup_date) AS first_pickup_date
+FROM revenue_records
+GROUP BY vehicle_id;
+
+=== REQUIRED STORAGE BUCKET ===
+
+A public Supabase Storage bucket named "vehicle-images" must exist with:
+- public = true
+- file_size_limit = 5242880 (5 MB)
+- allowed_mime_types = ['image/jpeg','image/png','image/webp','image/gif']
+Policies needed:
+- Public SELECT for everyone (bucket_id = 'vehicle-images')
+- ALL operations for service_role only
+
+=== THE PROBLEM I AM SEEING ===
+
+[Describe your error here, e.g.:
+ - "The admin panel shows a 503 / Supabase not configured error on Revenue"
+ - "Protection Plans Edit button is greyed out / schema error"
+ - "Vehicle images fail to upload"
+ - "Customers page shows empty / sync fails"
+ - "The v2-vehicles API returns vehicles with no data fields"
+ - "I get a 42P01 undefined_table error in the Vercel logs"
+]
+
+Please check what exists in my schema, show me the missing pieces,
+and run the SQL needed to fix the problem.
+The fastest fix is usually: run the full one-shot script located at
+supabase/migrations/COMPLETE_SETUP.sql in this repository — it is
+fully idempotent (safe to re-run, uses IF NOT EXISTS everywhere).
+```
+
+---
+
+### Quick reference: the most common issues and what to tell the AI
+
+| What you see | What to paste after the prompt above |
+|---|---|
+| 503 "Supabase not configured" on any admin page | "I get 503 Supabase not configured. My SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in Vercel. Please check if the table exists and create it if missing." |
+| "Database schema error" / `42P01 undefined_table` | "I get error code 42P01 undefined_table for [table name]. Please create the missing table." |
+| Protection Plans Edit/Delete buttons disabled | "The protection_plans table is missing. Please create it and seed None/Basic/Standard/Premium rows." |
+| Revenue page saves nothing / 503 on create | "revenue_records table may be missing. Please create it and the vehicle_revenue_summary view." |
+| Vehicle images fail to upload | "The vehicle-images storage bucket is missing or has wrong policies. Please create it." |
+| `/api/v2-vehicles` returns vehicles with no fields | "The vehicles table data column is empty. Please upsert the 4 fleet seed rows." |
+| Customers sync fails | "The customers table may be missing. Please create it." |
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
