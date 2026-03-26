@@ -1357,6 +1357,34 @@ const VEHICLE_NAMES = {
   camry2013:  'Camry 2013 SE',
 };
 
+// Hard-coded local fallback images — used when the API/DB doesn't provide a cover URL
+// or when the stored URL fails to load. Root-relative so they work from any page depth.
+const VEHICLE_IMAGES_LOCAL = {
+  slingshot:  '/images/car2.jpg',
+  slingshot2: '/images/car3.jpg',
+  camry:      '/images/car1.jpg',
+  camry2013:  '/images/camry-beach-hero.png',
+};
+
+// Normalize a cover_image path to root-relative or absolute form, mirroring the
+// server-side normalizeCoverImage helper in api/v2-vehicles.js.
+// @param {string} val - Raw cover_image value from the database (may be relative,
+//   root-relative like "/images/car.jpg", or an absolute URL like "https://...").
+// @returns {string} Root-relative or absolute URL safe to use as an <img> src,
+//   or an empty string if val is falsy or not a string.
+// NOTE: Keep in sync with normalizeCoverImage() in api/v2-vehicles.js.
+function normalizeCoverImage(val) {
+  if (!val || typeof val !== 'string') return '';
+  if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/')) return val;
+  return '/' + val.replace(/^(\.\.\/)+/, '');
+}
+
+// Returns the HTML for the vehicle card image placeholder (car icon SVG).
+// Defined as a function so onerror handlers can call it without complex escaping.
+function vehicleImgPlaceholder() {
+  return '<div class="vehicle-img-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>';
+}
+
 // Dynamic maps populated from /api/v2-vehicles (override hard-coded fallbacks above)
 let VEHICLE_NAMES_DYNAMIC  = {};
 let VEHICLE_IMAGES_DYNAMIC = {};
@@ -1682,13 +1710,6 @@ function loadVehicles() {
 function renderVehicles(vehicles, stats) {
   document.getElementById('vehicles-loading').style.display = 'none';
   document.getElementById('vehicles-content').style.display = '';
-  // Hard-coded fallback images (used when vehicles.json hasn't loaded or doesn't provide a cover)
-  const vehicleImages = {
-    slingshot:  '../images/car2.jpg',
-    slingshot2: '../images/car3.jpg',
-    camry:      '../images/car1.jpg',
-    camry2013:  '../images/camry-beach-hero.png',
-  };
 
   document.getElementById('vehicles-content').innerHTML = `
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
@@ -1706,11 +1727,21 @@ function renderVehicles(vehicles, stats) {
         const s = stats[id] || {};
         const isActive = v.status === 'active';
         const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
-        // Prefer cover image from API; fall back to hard-coded map
-        const imgSrc = (VEHICLE_IMAGES_DYNAMIC[id] || vehicleImages[id] || '');
+        // Prefer: (1) dynamic image from startup GET, (2) cover_image from vehicle record
+        // (normalised to root-relative), (3) hard-coded local fallback.
+        const imgPrimary  = VEHICLE_IMAGES_DYNAMIC[id] || normalizeCoverImage(v.cover_image);
+        const imgFallback = VEHICLE_IMAGES_LOCAL[id] || '';
+        const imgSrc      = imgPrimary || imgFallback;
+        // data-fallback lets the onerror handler retry with the local static image before
+        // giving up and showing the SVG placeholder (handles broken Supabase Storage URLs).
+        const hasFallback = imgFallback && imgSrc !== imgFallback;
+        const fbAttr = hasFallback ? ` data-fallback="${imgFallback}"` : '';
+        const onerrorHandler = hasFallback
+          ? `if(this.dataset.fallback){var f=this.dataset.fallback;delete this.dataset.fallback;this.src=f;}else{this.outerHTML=vehicleImgPlaceholder();}`
+          : `this.outerHTML=vehicleImgPlaceholder()`;
         return `
           <div class="vehicle-card" onclick="showVehicleProfile('${id}')">
-            ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}" alt="${esc(v.vehicle_name)}" onerror="this.outerHTML='<div class=vehicle-img-placeholder><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><path d=\\'M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5\\'/><circle cx=\\'16\\' cy=\\'17\\' r=\\'3\\'\\'/><circle cx=\\'7\\' cy=\\'17\\' r=\\'3\\'\\'/></svg></div>'">` : `<div class="vehicle-img-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>`}
+            ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}"${fbAttr} alt="${esc(v.vehicle_name)}" onerror="${onerrorHandler}">` : vehicleImgPlaceholder()}
             <div class="vehicle-card-body">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;">
                 <div>
