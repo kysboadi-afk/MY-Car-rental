@@ -1860,13 +1860,14 @@ function renderVehicles(vehicles, stats) {
         const onerrorHandler = hasFallback
           ? `if(this.dataset.fallback){var f=this.dataset.fallback;delete this.dataset.fallback;this.src=f;}else{this.outerHTML=vehicleImgPlaceholder();}`
           : `this.outerHTML=vehicleImgPlaceholder()`;
+        const displayName = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[id] || VEHICLE_NAMES[id] || id;
         return `
           <div class="vehicle-card" onclick="showVehicleProfile('${id}')">
-            ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}"${fbAttr} alt="${esc(v.vehicle_name)}" onerror="${onerrorHandler}">` : vehicleImgPlaceholder()}
+            ${imgSrc ? `<img class="vehicle-img" src="${imgSrc}"${fbAttr} alt="${esc(displayName)}" onerror="${onerrorHandler}">` : vehicleImgPlaceholder()}
             <div class="vehicle-card-body">
               <div style="display:flex;align-items:flex-start;justify-content:space-between;">
                 <div>
-                  <div class="vehicle-card-name">${esc(v.vehicle_name)}</div>
+                  <div class="vehicle-card-name">${esc(displayName)}</div>
                   <div class="vehicle-card-type">${esc(v.type)}</div>
                 </div>
                 <span class="badge ${isActive ? 'badge-green' : 'badge-orange'}">${esc(v.status)}</span>
@@ -1900,7 +1901,7 @@ function renderVehicles(vehicles, stats) {
 function showVehicleProfile(vehicleId) {
   navigate('vehicle-profile');
   const v = allVehicles[vehicleId] || {};
-  document.getElementById('page-title').textContent = v.vehicle_name || vehicleId;
+  document.getElementById('page-title').textContent = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[vehicleId] || VEHICLE_NAMES[vehicleId] || vehicleId;
 
   // Load fresh stats
   apiPost('/api/v2-dashboard', { secret: adminSecret })
@@ -1919,6 +1920,7 @@ function renderVehicleProfile(id, v, s) {
   const roi      = s.roi != null ? s.roi.toFixed(2) + '%' : '–';
   const profit   = s.netProfit || 0;
   const profitCls = profit < 0 ? 'negative' : (profit > 0 ? 'positive' : '');
+  const displayName = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[id] || VEHICLE_NAMES[id] || id;
 
   // Resolve the best available image for this vehicle (same priority as fleet cards)
   const imgPrimary  = VEHICLE_IMAGES_DYNAMIC[id] || normalizeCoverImage(v.cover_image);
@@ -1940,7 +1942,7 @@ function renderVehicleProfile(id, v, s) {
       <button class="btn btn-secondary btn-sm" onclick="openEditVehicle('${id}')">Edit Vehicle</button>
     </div>
 
-    ${imgSrc ? `<img src="${imgSrc}"${fbAttr} alt="${esc(v.vehicle_name || id)}" onerror="${onerrorHandler}" style="width:100%;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;">` : ''}
+    ${imgSrc ? `<img src="${imgSrc}"${fbAttr} alt="${esc(displayName)}" onerror="${onerrorHandler}" style="width:100%;max-height:300px;object-fit:cover;border-radius:12px;margin-bottom:16px;">` : ''}
 
     <div class="fin-grid">
       <div class="fin-card">

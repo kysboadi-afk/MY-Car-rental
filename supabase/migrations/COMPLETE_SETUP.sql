@@ -492,3 +492,26 @@ CREATE POLICY "vehicle-images: service write"
   FOR ALL
   USING     (bucket_id = 'vehicle-images' AND auth.role() = 'service_role')
   WITH CHECK (bucket_id = 'vehicle-images' AND auth.role() = 'service_role');
+
+
+-- =============================================================================
+-- 16. ENSURE VEHICLE NAMES IN JSONB DATA
+-- =============================================================================
+-- (Migration 0012) — Patches any vehicle rows where vehicle_name is missing or
+-- empty inside the JSONB data column.  Safe to re-run.
+
+UPDATE vehicles
+SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R'::text)), updated_at = now()
+WHERE vehicle_id = 'slingshot'   AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+
+UPDATE vehicles
+SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R (2)'::text)), updated_at = now()
+WHERE vehicle_id = 'slingshot2'  AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+
+UPDATE vehicles
+SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2012'::text)), updated_at = now()
+WHERE vehicle_id = 'camry'       AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+
+UPDATE vehicles
+SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2013 SE'::text)), updated_at = now()
+WHERE vehicle_id = 'camry2013'   AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');

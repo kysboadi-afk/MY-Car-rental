@@ -540,6 +540,7 @@ fully idempotent (safe to re-run, uses IF NOT EXISTS everywhere).
 | Protection Plans show but Edit/Delete buttons are missing or say "Set up Supabase to edit" | The `protection_plans` table doesn't exist yet. Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor, then reload the Admin Panel. |
 | Clicking Edit on a Protection Plan gives "Database schema error" | Same as above — run `supabase/migrations/COMPLETE_SETUP.sql` to create all required tables. |
 | `GET /api/v2-vehicles` returns only `vehicle_id` | The `data` column is empty in Supabase. Run `supabase/migrations/COMPLETE_SETUP.sql` (or just `0002_seed_fleet_vehicles.sql`) in the Supabase SQL Editor. |
+| Admin portal Vehicles tab shows blank vehicle names | The `vehicle_name` field is missing from the `data` JSONB column. Run `supabase/migrations/0012_ensure_vehicle_names.sql` (or the updated `COMPLETE_SETUP.sql`) in the Supabase SQL Editor. |
 | CMS loads but shows no data | Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor, then reload the page |
 | AI assistant shows "not available" | Add `OPENAI_API_KEY` in Vercel env vars, then Redeploy |
 | Public site still shows old content | Content is cached for 60s. Wait a minute and hard-refresh, or clear CDN cache |
