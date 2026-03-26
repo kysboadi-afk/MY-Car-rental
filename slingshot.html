@@ -694,7 +694,7 @@
 <section class="sl-section sl-vehicles" id="vehicle">
   <div class="sl-section-inner">
     <h2 class="sl-section-title sl-fade-in">Choose Your <span class="sl-gold">Slingshot</span></h2>
-    <p class="sl-section-subtitle sl-fade-in">Two Slingshots available. Pick yours and book instantly.</p>
+    <p class="sl-section-subtitle sl-fade-in">Three Slingshots available. Pick yours and book instantly.</p>
     <div class="sl-vehicle-grid">
 
       <!-- Slingshot #1 -->
@@ -728,6 +728,23 @@
             <span style="background:#111;border:1px solid #333;color:#aaa;font-size:0.75rem;padding:3px 9px;border-radius:12px;">$150 Deposit</span>
           </div>
           <a href="car.html?vehicle=slingshot2" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
+        </div>
+      </div>
+
+      <!-- Slingshot #3 -->
+      <div class="sl-vehicle-card sl-fade-in sl-fade-in-delay-2">
+        <div style="position:relative;">
+          <img src="images/car2.jpg" alt="Polaris Slingshot R — Unit 3" class="sl-vehicle-img">
+          <span id="sl-status-slingshot3" style="position:absolute;top:12px;left:12px;background:#111;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;font-weight:700;letter-spacing:1px;padding:4px 10px;border-radius:3px;">● AVAILABLE</span>
+        </div>
+        <div class="sl-vehicle-info">
+          <h3>Polaris Slingshot R — Unit 3</h3>
+          <p>Third unit ready to roll. Same open-air 3-wheeler thrills, same pricing. Your backup when Units 1 &amp; 2 are booked. Starting at $200 / 3 hrs.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
+            <span style="background:#1a1500;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">Sports • 2-Seater</span>
+            <span style="background:#111;border:1px solid #333;color:#aaa;font-size:0.75rem;padding:3px 9px;border-radius:12px;">$150 Deposit</span>
+          </div>
+          <a href="car.html?vehicle=slingshot3" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
         </div>
       </div>
 
@@ -1000,9 +1017,10 @@
     fetch('/api/fleet-status')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        var s = data.slingshot, s2 = data.slingshot2;
+        var s = data.slingshot, s2 = data.slingshot2, s3 = data.slingshot3;
         if (s)  updateBadge('sl-status-slingshot',  s.status  !== 'unavailable');
         if (s2) updateBadge('sl-status-slingshot2', s2.status !== 'unavailable');
+        if (s3) updateBadge('sl-status-slingshot3', s3.status !== 'unavailable');
       })
       .catch(function() { /* keep default AVAILABLE if fetch fails */ });
   })();

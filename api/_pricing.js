@@ -51,6 +51,18 @@ export const CARS = {
       { hours: 72, price: 1050 },
     ],
   },
+  slingshot3: {
+    name: "Slingshot R",
+    deposit: 150,
+    // Same pricing tiers as slingshot — third unit.
+    hourlyTiers: [
+      { hours: 3,  price: 200 },
+      { hours: 6,  price: 250 },
+      { hours: 24, price: 350 },
+      { hours: 48, price: 700 },
+      { hours: 72, price: 1050 },
+    ],
+  },
   camry:      { name: "Camry 2012",     pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };

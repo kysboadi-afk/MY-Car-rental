@@ -19,7 +19,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_STATUSES = ["active", "maintenance", "inactive"];
-const ALLOWED_IDS      = ["slingshot", "slingshot2", "camry", "camry2013"];
+const ALLOWED_IDS      = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

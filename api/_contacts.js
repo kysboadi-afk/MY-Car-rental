@@ -24,6 +24,7 @@ const TM_BASE = "https://rest.textmagic.com/api/v2";
 const VEHICLE_TAG_MAP = {
   slingshot:  "slingshot",
   slingshot2: "slingshot",
+  slingshot3: "slingshot",
   camry:      "economy",
   camry2013:  "economy",
 };

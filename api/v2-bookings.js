@@ -27,10 +27,11 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "camry", "camry2013"];
+const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (2)",
+  slingshot3: "Slingshot R (3)",
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };
