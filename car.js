@@ -151,24 +151,12 @@ document.getElementById("carPrice").textContent = (carData.hourlyTiers)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
 
-// Redirect all navigation links to slingshot.html when viewing a slingshot vehicle
+// Hide the nav bar entirely for slingshot booking pages (slingshot has its own landing page)
 if (vehicleId.startsWith("slingshot")) {
+  const siteNav = document.querySelector(".site-nav");
+  if (siteNav) siteNav.style.display = "none";
   const logoLink = document.querySelector(".logo-link");
   if (logoLink) logoLink.href = "slingshot.html";
-  document.querySelectorAll(".site-nav a").forEach(function(a) {
-    const href = a.getAttribute("href") || "";
-    if (href === "cars.html" || href.startsWith("index.html")) {
-      if (href.includes("#about")) {
-        a.href = "slingshot.html#why";
-      } else if (href.includes("#how-it-works")) {
-        a.href = "slingshot.html#experience";
-      } else if (href.includes("#video-testimonial")) {
-        a.href = "slingshot.html#testimonials";
-      } else {
-        a.href = "slingshot.html";
-      }
-    }
-  });
 }
 
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block
