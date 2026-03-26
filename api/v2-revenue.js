@@ -50,7 +50,8 @@ async function loadRecordsFromGitHub() {
   const resp   = await fetch(apiUrl, { headers: ghHeaders() });
   if (!resp.ok) {
     if (resp.status === 404) return { data: [], sha: null };
-    return { data: [], sha: null };
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub GET revenue-records.json failed: ${resp.status} ${text}`);
   }
   const file = await resp.json();
   let data = [];
@@ -348,19 +349,20 @@ export default async function handler(req, res) {
       }));
 
       if (sb) {
-        let schemaError = false;
+        let useGithubFallback = false;
         // Pre-check existing booking_ids to compute accurate counts
         let existingIds = new Set();
         try {
           const { data: existing, error: existErr } = await sb.from("revenue_records").select("booking_id");
           if (existErr) {
-            if (isSchemaError(existErr)) { schemaError = true; }
+            // Any error (schema or otherwise) on the pre-check: fall through to GitHub
+            useGithubFallback = true;
           } else {
             existingIds = new Set((existing || []).map((r) => r.booking_id));
           }
-        } catch (_) { /* non-fatal */ }
+        } catch (_) { useGithubFallback = true; /* if SELECT throws, fall through to GitHub */ }
 
-        if (!schemaError) {
+        if (!useGithubFallback) {
           const newRecords = toInsertBase.filter((r) => !existingIds.has(r.booking_id));
           const skipped = toInsertBase.length - newRecords.length;
 
@@ -376,10 +378,10 @@ export default async function handler(req, res) {
             const { error: upsertErr } = await sb.from("revenue_records")
               .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
             if (upsertErr) {
-              if (isSchemaError(upsertErr)) { batchFailed = true; schemaError = true; break; }
+              if (isSchemaError(upsertErr)) { batchFailed = true; useGithubFallback = true; break; }
               const { error: insertErr } = await sb.from("revenue_records").insert(batch);
               if (insertErr) {
-                if (isSchemaError(insertErr)) { batchFailed = true; schemaError = true; break; }
+                if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
                 throw insertErr;
               }
             }
@@ -394,26 +396,31 @@ export default async function handler(req, res) {
             });
           }
         }
-        console.warn("v2-revenue sync: revenue_records table missing, falling back to GitHub");
+        console.warn("v2-revenue sync: Supabase unavailable or error, falling back to GitHub");
       }
 
       // GitHub fallback for sync — include client-generated UUIDs
       const toInsert = toInsertBase.map((r) => ({ id: crypto.randomUUID(), ...r }));
       let synced = 0;
       let skipped = 0;
+      let needsGithubWrite = false;
       await updateJsonFileWithRetry({
         load:    loadRecordsFromGitHub,
         apply:   (data) => {
           const existingBookingIds = new Set(data.map((r) => r.booking_id));
-          synced = 0; skipped = 0;
+          synced = 0; skipped = 0; needsGithubWrite = false;
           for (const r of toInsert) {
             if (existingBookingIds.has(r.booking_id)) { skipped++; continue; }
             data.push(r);
             existingBookingIds.add(r.booking_id);
             synced++;
           }
+          needsGithubWrite = synced > 0;
         },
-        save:    saveRecordsToGitHub,
+        save:    async (data, sha, message) => {
+          if (!needsGithubWrite) return; // nothing changed — skip the commit
+          return saveRecordsToGitHub(data, sha, message);
+        },
         message: `v2: Sync ${toInsert.length} revenue records from bookings`,
       });
 
