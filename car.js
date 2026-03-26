@@ -33,7 +33,8 @@ const cars = {
       { hours: 48, price: 700,  label: "2 Days" },
       { hours: 72, price: 1050, label: "3 Days" },
     ],
-    deposit: 150,
+    // Security deposit = rental tier price (charged at booking, refundable after return).
+    // No fixed deposit — computed dynamically from the selected tier.
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
     // TO ADD PHOTOS FOR SLINGSHOT 1:
     // 1. Upload your image file to the /images folder in the repository.
@@ -58,7 +59,6 @@ const cars = {
       { hours: 48, price: 700,  label: "2 Days" },
       { hours: 72, price: 1050, label: "3 Days" },
     ],
-    deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
     // TO ADD PHOTOS FOR SLINGSHOT 2:
     // 1. Upload your image file to the /images folder in the repository.
@@ -71,7 +71,7 @@ const cars = {
     color: null
   },
   // Third Slingshot unit — same pricing.
-  // TODO: update vin and add dedicated photos once available.
+  // TODO: update vin once available.
   slingshot3: {
     name: "Slingshot R",
     subtitle: "Sports \u2022 2-Seater",
@@ -83,12 +83,8 @@ const cars = {
       { hours: 48, price: 700,  label: "2 Days" },
       { hours: 72, price: 1050, label: "3 Days" },
     ],
-    deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    // TO ADD PHOTOS FOR SLINGSHOT 3:
-    // 1. Upload your image file to the /images folder in the repository.
-    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg","images/photo_2026-03-22_11-38-56.jpg"],
+    images: ["images/photo_1_2026-03-26_16-27-08.jpg","images/photo_2_2026-03-26_16-27-08.jpg","images/photo_3_2026-03-26_16-27-08.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
@@ -278,29 +274,27 @@ let _pendingPaymentMode = null;
 let selectedProtectionTier = "standard";
 
 // ----- Slingshot: set up the insurance/protection UI -----
-// For Slingshot, replace the generic insurance question/options with the two-choice
-// system: Option A (own insurance) or Option B (no insurance, DPP included).
-// The old $50 non-refundable reserveBtn is removed.
+// For Slingshot: simplify the insurance question — no Damage Protection Plan offered.
 if (carData.hourlyTiers) {
   // Update the question heading
   const qEl = document.getElementById("insuranceQuestionText");
   if (qEl) {
     qEl.removeAttribute("data-i18n");
-    qEl.textContent = "\uD83D\uDEE1\uFE0F Insurance & Damage Protection — Choose One";
+    qEl.textContent = "\uD83D\uDEE1\uFE0F Do you have personal auto insurance?";
   }
-  // Update Option A label
+  // Update "Yes" label — upload required
   const hasInsTextEl = document.getElementById("hasInsuranceText");
   if (hasInsTextEl) {
     hasInsTextEl.removeAttribute("data-i18n");
-    hasInsTextEl.innerHTML = `<strong>Option A:</strong> I have valid personal auto insurance<br><small style='color:#ffb400'>Upload required &rarr; no Damage Protection Plan included</small>`;
+    hasInsTextEl.innerHTML = `<strong>Yes</strong> \u2014 I have valid personal auto insurance<br><small style='color:#ffb400'>Upload required before checkout</small>`;
   }
-  // Update Option B label
+  // Update "No" label — no DPP; renter assumes full liability
   const noInsTextEl = document.getElementById("noInsuranceText");
   if (noInsTextEl) {
     noInsTextEl.removeAttribute("data-i18n");
-    noInsTextEl.innerHTML = `<strong>Option B:</strong> I do not have insurance &mdash; add Damage Protection Plan<br><small style='color:#ffb400'>No upload required &rarr; Damage Protection Plan ($${PROTECTION_PLAN_DAILY}/day) included</small>`;
+    noInsTextEl.innerHTML = `<strong>No</strong> \u2014 I do not have personal auto insurance<br><small style='color:#aaa'>No Damage Protection Plan \u2014 renter assumes full liability for damages</small>`;
   }
-  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot any more
+  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot
   const oldDepositNotice = document.getElementById("slingshotDepositNotice");
   if (oldDepositNotice) oldDepositNotice.style.display = "none";
   const reserveBtnEl = document.getElementById("reserveBtn");
@@ -499,29 +493,33 @@ document.getElementById("noInsurance").addEventListener("change", function() {
 });
 
 // Update the Slingshot insurance info box (shown below the radio buttons)
-// to reflect the selected option and its associated deposit amount.
+// to reflect the selected option. No DPP is offered for Slingshot.
 function _updateSlingshotInsuranceInfo(choice) {
   const infoEl = document.getElementById("slingshotInsuranceInfo");
   if (!infoEl) return;
+  // Determine the security deposit for the currently selected tier (= rental fee)
+  const selectedTier = carData.hourlyTiers && currentSlingshotDuration
+    ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
+    : null;
+  const depositAmt = selectedTier ? `$${selectedTier.price}` : "equal to your rental fee";
   if (choice === "yes") {
     infoEl.innerHTML = `
       <div class="deposit-notice" style="margin-top:10px">
-        <strong>✅ Option A selected: Own Insurance</strong>
+        <strong>✅ Insurance confirmed</strong>
         <ul>
           <li>Upload your proof of insurance below (required before checkout).</li>
-          <li>Damage Protection Plan is <strong>not</strong> included.</li>
-          <li>A <strong>$150 refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
+          <li>A <strong>${depositAmt} refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
         </ul>
       </div>`;
     infoEl.style.display = "";
   } else if (choice === "no") {
     infoEl.innerHTML = `
       <div class="deposit-notice" style="margin-top:10px">
-        <strong>✅ Option B selected: Damage Protection Plan Included</strong>
+        <strong>⚠️ No personal insurance on file</strong>
         <ul>
-          <li>The <strong>Damage Protection Plan ($${PROTECTION_PLAN_DAILY}/day)</strong> is automatically included in your rental.</li>
-          <li>No insurance upload required.</li>
-          <li>A <strong>$150 refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
+          <li>No Damage Protection Plan is available for Slingshot rentals.</li>
+          <li>Renter assumes <strong>full financial liability</strong> for any damage to the vehicle.</li>
+          <li>A <strong>${depositAmt} refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
         </ul>
       </div>`;
     infoEl.style.display = "";
@@ -680,8 +678,8 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (elColor) elColor.textContent = carData.color || "";
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
-  // Update the Security Deposit section to reflect actual vehicle pricing.
-  // Slingshot charges a $150 refundable security deposit as part of the full payment online.
+  // Update the Security Deposit section.
+  // Slingshot: deposit = rental tier price (dynamic), charged at booking, refundable.
   // Camry vehicles have no security deposit — the entire section is hidden for economy cars.
   const depositHeadingEl = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
@@ -690,6 +688,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
   const speedSection      = document.getElementById("slingshotSpeedSection");
   if (carData.hourlyTiers) {
+    // Compute the deposit for the currently selected tier (= rental fee)
+    const currentTier = currentSlingshotDuration
+      ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
+      : null;
+    const depositDisplay = currentTier ? `$${currentTier.price}` : "an amount equal to your rental fee";
+
     // Slingshot: full payment (including security deposit) charged at booking
     if (depositHeadingEl) {
       depositHeadingEl.removeAttribute("data-i18n");
@@ -698,18 +702,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     }
     if (depositIntroEl) {
       depositIntroEl.innerHTML =
-        `A <strong>$150 refundable security deposit</strong> is included in your total payment. ` +
+        `A <strong>${depositDisplay} refundable security deposit</strong> (equal to your rental fee) is included in your total payment. ` +
         `It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). ` +
         `The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.`;
     }
-    if (depositDppEl) {
-      if (insuranceCoverageChoice === "no") {
-        depositDppEl.style.display = "";
-        depositDppEl.innerHTML = "<strong>Damage Protection Plan ($" + PROTECTION_PLAN_DAILY + "/day):</strong> automatically included &mdash; reduces your damage liability to $1,000";
-      } else {
-        depositDppEl.style.display = "none";
-      }
-    }
+    // No DPP for Slingshot — hide DPP element
+    if (depositDppEl) depositDppEl.style.display = "none";
     if (depositInsEl) depositInsEl.style.display = "none";
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
 
@@ -796,8 +794,12 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
     if (carData.hourlyTiers) {
-      // Slingshot: full payment (including $150 refundable security deposit) charged online at booking
-      paymentTermsBodyEl.textContent = `Full payment (including a $150 refundable security deposit) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
+      // Slingshot: full payment (rental + refundable security deposit equal to rental fee) charged online
+      const currentTierForTerms = currentSlingshotDuration
+        ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
+        : null;
+      const depositForTerms = currentTierForTerms ? `$${currentTierForTerms.price}` : "an amount equal to your rental fee";
+      paymentTermsBodyEl.textContent = `Full payment (including a ${depositForTerms} refundable security deposit equal to your rental fee) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
     } else {
       // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
       paymentTermsBodyEl.textContent = lang === "es"
@@ -1824,32 +1826,21 @@ function updateTotal() {
     if (!pickup.value || !currentSlingshotDuration) return;
     const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
     if (!tier) return;
-    // For DPP and day-count purposes: 3hr/6hr = 1 day; 24hr = 1 day; 48hr = 2 days; 72hr = 3 days.
+    // For day-count purposes: 3hr/6hr = 1 day; 24hr = 1 day; 48hr = 2 days; 72hr = 3 days.
     const slingshotDays = Math.max(1, Math.ceil(currentSlingshotDuration / 24));
     currentDayCount = slingshotDays;
 
-    // Compute the full rental cost: tier price + $150 security deposit + DPP (if Option B).
-    // Everything is charged online at booking — no split payment.
-    const dppCost = insuranceCoverageChoice === "no" ? PROTECTION_PLAN_DAILY * slingshotDays : 0;
-    const rentalBase = tier.price + carData.deposit + dppCost;
-    // Store full rental total on carData for the booking payload.
-    carData._fullRentalCost = rentalBase.toFixed(2);
+    // Security deposit = rental tier price (refundable after return).
+    // No DPP for Slingshot. Total = rental fee + deposit (= rental fee × 2) + tax.
+    const securityDeposit = tier.price;
+    const rentalBase = tier.price + securityDeposit;
 
     // Show the rental breakdown so renters know exactly what they're paying.
     const lines = [];
     lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
 
-    // Security deposit — refundable after return with no damage
-    lines.push({ label: "\uD83D\uDCB0 Security Deposit (refundable)", amount: carData.deposit });
-
-    // DPP scales with the number of rental days when Option B is selected
-    if (insuranceCoverageChoice === "no") {
-      const dppFmtKey = slingshotDays === 1 ? "booking.dppSlingshotFmt1" : "booking.dppSlingshotFmtN";
-      const dppLabel = slingshotDays === 1
-        ? `Damage Protection Plan (1 day \u00D7 $${PROTECTION_PLAN_DAILY}/day)`
-        : `Damage Protection Plan (${slingshotDays} days \u00D7 $${PROTECTION_PLAN_DAILY}/day)`;
-      lines.push({ label: _fmt(dppFmtKey, { days: slingshotDays, price: PROTECTION_PLAN_DAILY }, dppLabel), amount: dppCost });
-    }
+    // Security deposit — equals the rental fee, refundable after return with no damage
+    lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
 
     // Compute LA sales tax (10.25%) on the full rental base.
     const taxAmount = Math.round(rentalBase * LA_TAX_RATE * 100) / 100;
@@ -1884,7 +1875,7 @@ function updateTotal() {
     document.getElementById("tax").textContent = taxAmount.toFixed(2);
     taxLineEl.style.display = "";
     if (taxNoteEl) taxNoteEl.style.display = "none";
-    // Total shows the full amount charged online (rental + deposit + DPP + tax)
+    // Total shows the full amount charged online (rental + deposit + tax)
     totalEl.textContent = afterTaxRental.toFixed(2);
     // Standard pay button — full amount charged online
     stripeBtn.textContent = window.slyI18n.t("booking.payNow");

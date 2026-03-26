@@ -43,7 +43,7 @@ export const PRICING_DEFAULTS = {
   slingshot_2day_rate:        700,
   slingshot_3day_rate:        1050,
   // Deposits / booking fees
-  slingshot_security_deposit: CARS.slingshot.deposit,
+  // Note: Slingshot security deposit = rental tier price (dynamic, not a fixed admin setting).
   slingshot_booking_deposit:  SLINGSHOT_BOOKING_DEPOSIT,
   camry_booking_deposit:      CAMRY_BOOKING_DEPOSIT,
 };
@@ -120,11 +120,11 @@ export function computeCamryAmountFromSettings(vehicleId, pickup, returnDate, se
 
 /**
  * Compute total pre-tax + deposit charge for a Slingshot rental using live rates.
- * Mirrors computeSlingshotAmount() in _pricing.js but uses system_settings rates.
+ * Security deposit = rental tier price. Total = tier price × 2.
  *
  * @param {number} durationHours - 3 | 6 | 24 | 48 | 72
  * @param {object} settings      - result of loadPricingSettings()
- * @returns {number|null} total in dollars (tier price + security deposit), or null
+ * @returns {number|null} total in dollars (tier price × 2), or null
  */
 export function computeSlingshotAmountFromSettings(durationHours, settings) {
   const tierMap = {
@@ -136,7 +136,8 @@ export function computeSlingshotAmountFromSettings(durationHours, settings) {
   };
   const tierPrice = tierMap[Number(durationHours)];
   if (tierPrice == null) return null;
-  return tierPrice + settings.slingshot_security_deposit;
+  // Deposit = tier price; total = tier price × 2.
+  return tierPrice * 2;
 }
 
 /**

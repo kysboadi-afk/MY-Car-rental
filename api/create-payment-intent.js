@@ -48,10 +48,6 @@ export default async function handler(req, res) {
       if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
         return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
       }
-      // Slingshot now requires the renter to make an insurance/deposit choice
-      if (!insuranceCoverageChoice || !["yes", "no"].includes(insuranceCoverageChoice)) {
-        return res.status(400).json({ error: "Please select an insurance or damage protection option." });
-      }
     }
 
     // Validate dates
@@ -95,19 +91,13 @@ export default async function handler(req, res) {
       : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
     const carData = CARS[vehicleId];
 
-    // Add Damage Protection Plan cost when the renter opted in.
-    // For Slingshot multi-day tiers (48 hr = 2 days, 72 hr = 3 days), DPP scales with days.
-    // Sub-day tiers (3 hr, 6 hr) are billed as 1 day for DPP purposes.
-    // For Economy cars, protectionPlanTier ("basic"|"standard"|"premium") selects the flat daily rate.
-    // For Slingshot Option B and legacy callers, tier is null and the greedy logic is used.
+    // Slingshot: no Damage Protection Plan — DPP has been removed for Slingshot.
+    // Economy cars: add DPP cost when the renter opted in.
     const days = isSlingshotVehicle ? Math.max(1, Math.ceil(Number(slingshotDuration) / 24)) : computeRentalDays(pickup, returnDate);
     const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
-    const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
+    const protectionCost = (!isSlingshotVehicle && protectionPlan) ? computeDppCostFromSettings(days, tier) : 0;
 
-    // For Slingshot: charge the full rental amount upfront as a single automatic payment.
-    // `computeSlingshotAmountFromSettings` returns rental fee + security deposit combined,
-    // so no separate deposit addition is needed here. DPP (Option B) and LA tax are added
-    // below. The security deposit portion is refunded after the vehicle is returned.
+    // For Slingshot: charge full rental upfront (tier price × 2 — rental + refundable deposit) + tax.
     // For Camry with paymentMode:'deposit': charge only the booking deposit now; rest at pickup.
     // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
@@ -116,7 +106,7 @@ export default async function handler(req, res) {
     let totalAmount;
 
     if (isSlingshotVehicle) {
-      // Full payment upfront — rental fee + security deposit + DPP (if Option B) + tax
+      // Full payment upfront — rental fee + security deposit (= rental fee) + tax
       totalAmount = afterTaxFullRental;
     } else if (paymentMode === "deposit") {
       totalAmount = settings.camry_booking_deposit;
