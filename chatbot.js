@@ -14,6 +14,7 @@ function escHtml(str) {
 var CHATBOT_API_BASE = "https://sly-rides.vercel.app";
 var slyFleetStatus  = null;
 var slyBookedDates  = null;
+var slyChatPricing  = null;
 
 (function fetchChatbotFleetStatus() {
   fetch(CHATBOT_API_BASE + "/api/fleet-status")
@@ -29,7 +30,152 @@ var slyBookedDates  = null;
     .catch(function() { /* fail silently */ });
 })();
 
-// ── Booking-info helpers ───────────────────────────────────────────────────────
+(function fetchChatbotPricing() {
+  fetch(CHATBOT_API_BASE + "/api/public-pricing")
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) { if (data) slyChatPricing = data; })
+    .catch(function() { /* fail silently — hardcoded fallbacks used instead */ });
+})();
+
+/**
+ * Returns live pricing from the API if loaded, otherwise hardcoded fallback.
+ * @returns {{ slingshot: {3hr,6hr,24hr,48hr,72hr,booking_deposit,security_deposit},
+ *             economy:   {daily,weekly,biweekly,monthly,booking_deposit},
+ *             tax_rate:  number }}
+ */
+function getChatPricing() {
+  return slyChatPricing || {
+    slingshot: { "3hr": 200, "6hr": 250, "24hr": 350, "48hr": 700, "72hr": 1050,
+                 security_deposit: 150, booking_deposit: 50 },
+    economy:   { daily: 55, weekly: 350, biweekly: 650, monthly: 1300, booking_deposit: 50 },
+    tax_rate:  0.1025,
+  };
+}
+
+/** Build the general pricing message for all vehicles in the given language. */
+function buildChatPricingText(lang) {
+  var p = getChatPricing(), s = p.slingshot, e = p.economy;
+  if (lang === "es") {
+    return "Aquí están nuestras tarifas actuales 🚗\n\n" +
+      "🔴 Slingshot R — Deportivo 2 plazas (2 unidades disponibles)\n" +
+      "  • 3 Horas  — $" + s["3hr"] + "\n" +
+      "  • 6 Horas  — $" + s["6hr"] + "\n" +
+      "  • 24 Horas — $" + s["24hr"] + "\n" +
+      "  • 🔒 $" + s.booking_deposit + " depósito de reserva no reembolsable (al reservar)\n" +
+      "  • 💳 $" + s.security_deposit + " depósito de seguridad (al recoger)\n\n" +
+      "🔵 Camry 2012\n" +
+      "  • Diario    — $" + e.daily + " / día\n" +
+      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
+      "  • Sin depósito\n\n" +
+      "🟢 Camry 2013 SE\n" +
+      "  • Diario    — $" + e.daily + " / día\n" +
+      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
+      "  • Sin depósito\n\n" +
+      "¡Pregúntame sobre un auto específico para más detalles!";
+  }
+  return "Here are our current rates 🚗\n\n" +
+    "🔴 Slingshot R — Sports 2-Seater (2 units available)\n" +
+    "  • 3 Hours  — $" + s["3hr"] + "\n" +
+    "  • 6 Hours  — $" + s["6hr"] + "\n" +
+    "  • 24 Hours — $" + s["24hr"] + "\n" +
+    "  • 🔒 $" + s.booking_deposit + " non-refundable reservation deposit (to book)\n" +
+    "  • 💳 $" + s.security_deposit + " security deposit (due at pickup)\n\n" +
+    "🔵 Camry 2012\n" +
+    "  • Daily     — $" + e.daily + " / day\n" +
+    "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
+    "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
+    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
+    "  • No deposit required\n\n" +
+    "🟢 Camry 2013 SE\n" +
+    "  • Daily     — $" + e.daily + " / day\n" +
+    "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
+    "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
+    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
+    "  • No deposit required\n\n" +
+    "Ask me about a specific car for more details!";
+}
+
+/** Build the Slingshot-only pricing message. */
+function buildChatSlingshotPricingText(lang) {
+  var s = getChatPricing().slingshot;
+  if (lang === "es") {
+    return "Aquí están las tarifas del Slingshot R 🔴 (tenemos 2 unidades)\n\n" +
+      "⏱ Tarifas por Horas (Deportivo 2 plazas):\n" +
+      "  • 3 Horas  — $" + s["3hr"] + "\n" +
+      "  • 6 Horas  — $" + s["6hr"] + "\n" +
+      "  • 24 Horas — $" + s["24hr"] + "\n\n" +
+      "🔒 $" + s.booking_deposit + " de depósito de reserva no reembolsable (para asegurar tu reserva)\n" +
+      "💳 $" + s.security_deposit + " de depósito de seguridad reembolsable (a pagar al recoger)\n\n" +
+      "¿Listo para reservar? ¡Visita nuestra página de autos!";
+  }
+  return "Here are the Slingshot R rates 🔴 (we have 2 units)\n\n" +
+    "⏱ Hourly Tiers (Sports 2-Seater):\n" +
+    "  • 3 Hours  — $" + s["3hr"] + "\n" +
+    "  • 6 Hours  — $" + s["6hr"] + "\n" +
+    "  • 24 Hours — $" + s["24hr"] + "\n\n" +
+    "🔒 $" + s.booking_deposit + " non-refundable reservation deposit required to book\n" +
+    "   (applied toward your total at pickup)\n" +
+    "💳 $" + s.security_deposit + " refundable security deposit due at pickup\n\n" +
+    "Ready to book? Visit our Cars page!";
+}
+
+/** Build the Camry-only pricing message. */
+function buildChatCamryPricingText(lang) {
+  var e = getChatPricing().economy;
+  if (lang === "es") {
+    return "Aquí están las tarifas del Camry 🔵🟢\n\n" +
+      "🔵 Camry 2012\n" +
+      "  • Diario    — $" + e.daily + " / día\n" +
+      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n\n" +
+      "🟢 Camry 2013 SE\n" +
+      "  • Diario    — $" + e.daily + " / día\n" +
+      "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
+      "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n\n" +
+      "✅ No se requiere depósito de seguridad\n\n" +
+      "¿Listo para reservar?\n\n📋 ¿Tienes una licencia de conducir válida?";
+  }
+  return "Here are the Camry rates 🔵🟢\n\n" +
+    "🔵 Camry 2012\n" +
+    "  • Daily       — $" + e.daily + " / day\n" +
+    "  • 1 Week    — $" + e.weekly + " 🚗 Unlimited Miles\n" +
+    "  • 2 Weeks  — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
+    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n\n" +
+    "🟢 Camry 2013 SE\n" +
+    "  • Daily       — $" + e.daily + " / day\n" +
+    "  • 1 Week    — $" + e.weekly + " 🚗 Unlimited Miles\n" +
+    "  • 2 Weeks  — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
+    "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n\n" +
+    "✅ No security deposit required\n\n" +
+    "Ready to book? Visit our Cars page!\n\n📋 Do you have a valid driving license?";
+}
+
+/** Build the deposit info message. */
+function buildChatDepositText(lang) {
+  var s = getChatPricing().slingshot;
+  if (lang === "es") {
+    return "Aquí está nuestra información de depósito 💰\n\n" +
+      "🔴 Slingshot R:\n" +
+      "  • $" + s.booking_deposit + " depósito de reserva no reembolsable (cobrado al reservar)\n" +
+      "  • $" + s.security_deposit + " depósito de seguridad reembolsable (a pagar al recoger)\n" +
+      "🔵 Camry 2012: No se requiere depósito\n" +
+      "🟢 Camry 2013 SE: No se requiere depósito\n\n" +
+      "⚠️ El depósito de $" + s.booking_deposit + " del Slingshot es NO REEMBOLSABLE y se pierde si cancelas o no te presentas.";
+  }
+  return "Here's our deposit info 💰\n\n" +
+    "🔴 Slingshot R:\n" +
+    "  • $" + s.booking_deposit + " non-refundable reservation deposit (charged at booking to secure your reservation)\n" +
+    "  • $" + s.security_deposit + " refundable security deposit (due at pickup)\n" +
+    "🔵 Camry 2012: No deposit required\n" +
+    "🟢 Camry 2013 SE: No deposit required\n\n" +
+    "⚠️ The Slingshot $" + s.booking_deposit + " deposit is NON-REFUNDABLE and forfeited if you cancel or no-show.";
+}
 
 /** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". */
 function fmtDateChatbot(iso, locale) {
@@ -200,26 +346,28 @@ function buildFleetMessage(lang) {
   }
 
   if (lang === "es") {
+    var p = getChatPricing(), s = p.slingshot, e = p.economy;
     return "Contamos con <strong>4 vehículos</strong> en nuestra flota:\n\n" +
       "🔴 Slingshot R #1 — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
-      "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-      "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
+      "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
+      "   🔒 $" + s.booking_deposit + " depósito no reembolsable al reservar · $" + s.security_deposit + " seguridad al recoger\n\n" +
       "🔴 Slingshot R #2 — Deportivo 2 plazas" + statusLine("slingshot2") + "\n" +
-      "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-      "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
-      "🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
-      "🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry2013") + "\n\n" +
+      "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
+      "   🔒 $" + s.booking_deposit + " depósito no reembolsable al reservar · $" + s.security_deposit + " seguridad al recoger\n\n" +
+      "🔵 Camry 2012 — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
+      "🟢 Camry 2013 SE — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry2013") + "\n\n" +
       "¡Visita nuestra página de Autos para ver y reservar!";
   }
+  var pricing2 = getChatPricing(), slingshot2 = pricing2.slingshot, economy2 = pricing2.economy;
   return "We have <strong>4 vehicles</strong> in our fleet:\n\n" +
     "🔴 Slingshot R #1 — Sports 2-Seater" + statusLine("slingshot") + "\n" +
-    "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-    "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
+    "   3 hrs $" + slingshot2["3hr"] + " · 6 hrs $" + slingshot2["6hr"] + " · 24 hrs $" + slingshot2["24hr"] + "\n" +
+    "   🔒 $" + slingshot2.booking_deposit + " non-refundable deposit to book · $" + slingshot2.security_deposit + " security deposit at pickup\n\n" +
     "🔴 Slingshot R #2 — Sports 2-Seater" + statusLine("slingshot2") + "\n" +
-    "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-    "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
-    "🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +
-    "🟢 Camry 2013 SE — $55/day or $350/week, Unlimited Miles (no deposit)" + statusLine("camry2013") + "\n\n" +
+    "   3 hrs $" + slingshot2["3hr"] + " · 6 hrs $" + slingshot2["6hr"] + " · 24 hrs $" + slingshot2["24hr"] + "\n" +
+    "   🔒 $" + slingshot2.booking_deposit + " non-refundable deposit to book · $" + slingshot2.security_deposit + " security deposit at pickup\n\n" +
+    "🔵 Camry 2012 — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +
+    "🟢 Camry 2013 SE — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine("camry2013") + "\n\n" +
     "Visit our Cars page to browse and book!";
 }
 
@@ -231,15 +379,15 @@ var botResponses = {
     },
     {
       patterns: ["slingshot price","slingshot cost","slingshot rate","slingshot how much","slingshot fee","how much is the slingshot","how much for the slingshot","how much slingshot","price of slingshot","cost of slingshot"],
-      reply: "Here are the Slingshot R rates 🔴 (we have 2 units)\n\n⏱ Hourly Tiers (Sports 2-Seater):\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n\n🔒 $50 non-refundable reservation deposit required to book\n   (applied toward your total at pickup)\n💳 $150 refundable security deposit due at pickup\n\nReady to book? Visit our Cars page!"
+      reply: function() { return buildChatSlingshotPricingText("en"); }
     },
     {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
-      reply: "Here are the Camry rates 🔵🟢\n\n🔵 Camry 2012\n  • Daily       — $55 / day\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n\n🟢 Camry 2013 SE\n  • Daily       — $55 / day\n  • 1 Week    — $350 🚗 Unlimited Miles\n  • 2 Weeks  — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n\n✅ No security deposit required\n\nReady to book? Visit our Cars page!\n\n📋 Do you have a valid driving license?"
+      reply: function() { return buildChatCamryPricingText("en"); }
     },
     {
       patterns: ["price","cost","how much","rate","rates","fee","fees","daily","weekly","monthly"],
-      reply: "Here are our current rates 🚗\n\n🔴 Slingshot R — Sports 2-Seater (2 units available)\n  • 3 Hours  — $200\n  • 6 Hours  — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\n🟢 Camry 2013 SE\n  • Daily     — $55 / day\n  • 1 Week   — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650 🚗 Unlimited Miles\n  • 1 Month  — $1,300 🚗 Unlimited Miles\n  • No deposit required\n\nAsk me about a specific car for more details!"
+      reply: function() { return buildChatPricingText("en"); }
     },
     {
       patterns: ["earn","earnings","income","make money","how much can","how much money","revenue"],
@@ -302,7 +450,7 @@ var botResponses = {
     },
     {
       patterns: ["deposit","security"],
-      reply: "Here's our deposit info 💰\n\n🔴 Slingshot R:\n  • $50 non-refundable reservation deposit (charged at booking to secure your reservation)\n  • $150 refundable security deposit (due at pickup)\n🔵 Camry 2012: No deposit required\n🟢 Camry 2013 SE: No deposit required\n\n⚠️ The Slingshot $50 deposit is NON-REFUNDABLE and forfeited if you cancel or no-show."
+      reply: function() { return buildChatDepositText("en"); }
     },
     {
       patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
@@ -337,15 +485,15 @@ var botResponses = {
     },
     {
       patterns: ["precio slingshot","costo slingshot","cuánto slingshot","cuanto slingshot","tarifa slingshot","slingshot precio","slingshot costo"],
-      reply: "Aquí están las tarifas del Slingshot R 🔴 (tenemos 2 unidades)\n\n⏱ Tarifas por Horas (Deportivo 2 plazas):\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n\n🔒 $50 de depósito de reserva no reembolsable (para asegurar tu reserva)\n💳 $150 de depósito de seguridad reembolsable (a pagar al recoger)\n\n¿Listo para reservar? ¡Visita nuestra página de autos!"
+      reply: function() { return buildChatSlingshotPricingText("es"); }
     },
     {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
-      reply: "Aquí están las tarifas del Camry 🔵🟢\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n\n✅ No se requiere depósito de seguridad\n\n¿Listo para reservar?\n\n📋 ¿Tienes una licencia de conducir válida?"
+      reply: function() { return buildChatCamryPricingText("es"); }
     },
     {
       patterns: ["precio","costo","cuánto cuesta","cuanto cuesta","cuánto es","cuanto es","tarifa","tarifas","cobran","cobras","diario","semanal","mensual"],
-      reply: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R — Deportivo 2 plazas (2 unidades disponibles)\n  • 3 Horas  — $200\n  • 6 Horas  — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario    — $55 / día\n  • 1 Semana  — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650 🚗 Millaje Ilimitado\n  • 1 Mes     — $1,300 🚗 Millaje Ilimitado\n  • Sin depósito\n\n¡Pregúntame sobre un auto específico para más detalles!"
+      reply: function() { return buildChatPricingText("es"); }
     },
     {
       patterns: ["ganar","ganancias","ingresos","cuánto puedo ganar","cuanto puedo ganar","dinero"],
@@ -397,7 +545,7 @@ var botResponses = {
     },
     {
       patterns: ["depósito","deposito","fianza","garantía","garantia","seguridad"],
-      reply: "Aquí está nuestra información de depósito 💰\n\n🔴 Slingshot R:\n  • $50 depósito de reserva no reembolsable (cobrado al reservar)\n  • $150 depósito de seguridad reembolsable (a pagar al recoger)\n🔵 Camry 2012: No se requiere depósito\n🟢 Camry 2013 SE: No se requiere depósito\n\n⚠️ El depósito de $50 del Slingshot es NO REEMBOLSABLE y se pierde si cancelas o no te presentas."
+      reply: function() { return buildChatDepositText("es"); }
     },
     {
       patterns: ["cancelar","cancelación","cancelacion","reembolso","reembolsar","no presentarse"],
@@ -597,8 +745,8 @@ function buildChatbot() {
     var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
     var replies = {
       pricing: {
-        en: "Here are our current rates 🚗\n\n🔴 Slingshot R — Sports 2-Seater (2 units)\n  • 3 Hours — $200\n  • 6 Hours — $250\n  • 24 Hours — $350\n  • 🔒 $50 non-refundable reservation deposit (to book)\n  • 💳 $150 security deposit (due at pickup)\n\n🔵 Camry 2012\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit\n\n🟢 Camry 2013 SE\n  • Daily — $55 / day\n  • 1 Week — $350 🚗 Unlimited Miles\n  • 2 Weeks — $650\n  • 1 Month — $1,300\n  • No deposit",
-        es: "Aquí están nuestras tarifas actuales 🚗\n\n🔴 Slingshot R — Deportivo 2 plazas (2 unidades)\n  • 3 Horas — $200\n  • 6 Horas — $250\n  • 24 Horas — $350\n  • 🔒 $50 depósito de reserva no reembolsable (al reservar)\n  • 💳 $150 depósito de seguridad (al recoger)\n\n🔵 Camry 2012\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito\n\n🟢 Camry 2013 SE\n  • Diario — $55 / día\n  • 1 Semana — $350 🚗 Millaje Ilimitado\n  • 2 Semanas — $650\n  • 1 Mes — $1,300\n  • Sin depósito"
+        en: function() { return buildChatPricingText("en"); },
+        es: function() { return buildChatPricingText("es"); }
       },
       cars: {
         en: function() { return buildFleetMessage("en"); },

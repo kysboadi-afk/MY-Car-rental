@@ -3152,3 +3152,38 @@ button.hero-btn {
   from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* ── Fleet page: dynamic loading & empty states ─────────────────────────────── */
+.fleet-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 0;
+  color: #888;
+  font-size: 15px;
+  grid-column: 1 / -1; /* span all columns when inside a grid */
+}
+
+.fleet-loading-spinner {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #ffb400;
+  border-radius: 50%;
+  animation: fleetSpinnerRotate 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes fleetSpinnerRotate {
+  to { transform: rotate(360deg); }
+}
+
+.fleet-empty {
+  padding: 48px 0;
+  color: #888;
+  font-size: 15px;
+  grid-column: 1 / -1;
+}
+
+.fleet-empty a { color: #ffb400; }

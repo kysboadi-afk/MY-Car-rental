@@ -63,127 +63,13 @@
       <nav class="sidebar-nav">
         <button class="sidebar-btn active" data-filter="all" data-i18n="fleet.filterAll">All Cars</button>
         <button class="sidebar-btn" data-filter="economy" data-i18n="fleet.filterEconomy">Economy / Ridesharing</button>
-        <button class="sidebar-btn" data-filter="slingshot" data-i18n="fleet.filterSlingshot">Slingshots</button>
       </nav>
     </aside>
 
-    <!-- CAR GRID -->
+    <!-- CAR GRID — populated dynamically by cars.js from /api/v2-vehicles -->
     <section class="cars" id="car-grid">
-
-      <!-- Slingshot -->
-      <div class="car-card" data-category="slingshot" data-vehicle="slingshot">
-        <img src="images/car2.jpg" alt="Slingshot R" class="img-slingshot">
-        <div class="car-info">
-          <span class="status-badge" id="status-badge-slingshot" data-i18n="fleet.available">● Available</span>
-          <h3>Slingshot R</h3>
-          <p class="car-subtitle" data-i18n="fleet.sports2seater">Sports • 2-Seater</p>
-          <div class="slingshot-desc">
-            <p class="slingshot-desc-tagline" data-i18n="fleet.slingshotTagline">Built for Thrills • Pure Fun</p>
-            <p class="slingshot-desc-sub" data-i18n="fleet.slingshotSub">Experience the Ultimate City Ride</p>
-            <ul class="slingshot-desc-list">
-              <li data-i18n="fleet.slingshotLi1">🌴 Cruise the streets of Los Angeles in style</li>
-              <li data-i18n="fleet.slingshotLi2">⚡ Feel the open-air rush of a 3-wheeled sports car</li>
-              <li data-i18n="fleet.slingshotLi3">🎯 Perfect for exploring LA, photo shoots &amp; special occasions</li>
-            </ul>
-            <p class="slingshot-desc-cta" data-i18n="fleet.slingshotCta">Limited availability — reserve yours today</p>
-          </div>
-          <p class="price" data-i18n="fleet.slingshotPrice">$200 / 3hrs &bull; $250 / 6hrs &bull; $350 / 24hrs &bull; $150 deposit</p>
-          <a href="car.html?vehicle=slingshot" class="select-link" id="select-link-slingshot">
-            <button class="select-btn" id="select-btn-slingshot" data-i18n="fleet.bookNow">Book Now</button>
-          </a>
-        </div>
-      </div>
-
-      <!-- Slingshot #2 — TODO: update the VIN in car.js once it is available. -->
-      <div class="car-card" data-category="slingshot" data-vehicle="slingshot2">
-        <img src="images/IMG_1749.jpeg" alt="Slingshot R" class="img-slingshot2">
-        <div class="car-info">
-          <span class="status-badge" id="status-badge-slingshot2" data-i18n="fleet.available">● Available</span>
-          <h3>Slingshot R</h3>
-          <p class="car-subtitle" data-i18n="fleet.sports2seater">Sports • 2-Seater</p>
-          <div class="slingshot-desc">
-            <p class="slingshot-desc-tagline" data-i18n="fleet.slingshotTagline">Built for Thrills • Pure Fun</p>
-            <p class="slingshot-desc-sub" data-i18n="fleet.slingshotSub">Experience the Ultimate City Ride</p>
-            <ul class="slingshot-desc-list">
-              <li data-i18n="fleet.slingshotLi1">🌴 Cruise the streets of Los Angeles in style</li>
-              <li data-i18n="fleet.slingshotLi2">⚡ Feel the open-air rush of a 3-wheeled sports car</li>
-              <li data-i18n="fleet.slingshotLi3">🎯 Perfect for exploring LA, photo shoots &amp; special occasions</li>
-            </ul>
-            <p class="slingshot-desc-cta" data-i18n="fleet.slingshotCta">Limited availability — reserve yours today</p>
-          </div>
-          <p class="price" data-i18n="fleet.slingshotPrice">$200 / 3hrs &bull; $250 / 6hrs &bull; $350 / 24hrs &bull; $150 deposit</p>
-          <a href="car.html?vehicle=slingshot2" class="select-link" id="select-link-slingshot2">
-            <button class="select-btn" id="select-btn-slingshot2" data-i18n="fleet.bookNow">Book Now</button>
-          </a>
-        </div>
-      </div>
-
-      <!-- Camry -->
-      <div class="car-card" data-category="economy" data-vehicle="camry">
-        <img src="images/IMG_0046.png" alt="Camry 2012">
-        <div class="car-info">
-          <span class="status-badge" id="status-badge-camry" data-i18n="fleet.available">● Available</span>
-          <h3>Camry 2012</h3>
-          <p class="car-subtitle" data-i18n="fleet.sedan5seater">Sedan • 5 Seater</p>
-          <div class="rideshare-badges">
-            <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">🚗 Uber &amp; Lyft Ready</span>
-            <span class="rideshare-badge" data-i18n="fleet.unlimitedMilesBadge">∞ Unlimited Miles</span>
-          </div>
-          <p class="price-list-label" data-i18n="fleet.rentalPlans">Rental Plans</p>
-          <div class="price-list">
-            <div class="price-item">$55 / <span data-i18n="fleet.unitDay">day</span></div>
-            <div class="price-item price-item--popular">$350 / <span data-i18n="fleet.unitWeek">week</span> <span class="popular-tag" data-i18n="fleet.mostPopular">Most Popular</span></div>
-            <div class="price-item">$650 / <span data-i18n="fleet.unitBiweek">2 weeks</span></div>
-            <div class="price-item">$1,300 / <span data-i18n="fleet.unitMonth">month</span> <span class="best-value-tag" data-i18n="fleet.bestValue">Best Value</span></div>
-          </div>
-          <div class="earnings-breakdown">
-            <p class="earnings-breakdown-title" data-i18n="fleet.driverEarnings">💰 Driver Earnings Example (Los Angeles)</p>
-            <ul class="earnings-breakdown-list">
-              <li><span data-i18n="fleet.earningsLi1">Avg. weekly Uber/Lyft earnings:</span> <strong>$1,200 – $1,600</strong></li>
-              <li><span data-i18n="fleet.earningsLi2">Weekly rental:</span> <strong>$350</strong></li>
-              <li><span data-i18n="fleet.earningsLi3">Est. driver take-home:</span> <strong>$850 – $1,250</strong></li>
-            </ul>
-          </div>
-          <p class="scarcity-notice" data-i18n="fleet.highDemand">🔥 High demand — reserve today</p>
-          <a href="car.html?vehicle=camry" class="select-link" id="select-link-camry">
-            <button class="select-btn" id="select-btn-camry" data-i18n="fleet.bookNow">Book Now</button>
-          </a>
-        </div>
-      </div>
-
-      <!-- Camry 2013 SE -->
-      <div class="car-card" data-category="economy" data-vehicle="camry2013">
-        <img src="images/IMG_5144.png" alt="Camry 2013 SE">
-        <div class="car-info">
-          <span class="status-badge" id="status-badge-camry2013" data-i18n="fleet.available">● Available</span>
-          <h3>Camry 2013 SE</h3>
-          <p class="car-subtitle" data-i18n="fleet.sedan5seater">Sedan • 5 Seater</p>
-          <div class="rideshare-badges">
-            <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">🚗 Uber &amp; Lyft Ready</span>
-            <span class="rideshare-badge" data-i18n="fleet.unlimitedMilesBadge">∞ Unlimited Miles</span>
-          </div>
-          <p class="price-list-label" data-i18n="fleet.rentalPlans">Rental Plans</p>
-          <div class="price-list">
-            <div class="price-item">$55 / <span data-i18n="fleet.unitDay">day</span></div>
-            <div class="price-item price-item--popular">$350 / <span data-i18n="fleet.unitWeek">week</span> <span class="popular-tag" data-i18n="fleet.mostPopular">Most Popular</span></div>
-            <div class="price-item">$650 / <span data-i18n="fleet.unitBiweek">2 weeks</span></div>
-            <div class="price-item">$1,300 / <span data-i18n="fleet.unitMonth">month</span> <span class="best-value-tag" data-i18n="fleet.bestValue">Best Value</span></div>
-          </div>
-          <div class="earnings-breakdown">
-            <p class="earnings-breakdown-title" data-i18n="fleet.driverEarnings">💰 Driver Earnings Example (Los Angeles)</p>
-            <ul class="earnings-breakdown-list">
-              <li><span data-i18n="fleet.earningsLi1">Avg. weekly Uber/Lyft earnings:</span> <strong>$1,200 – $1,600</strong></li>
-              <li><span data-i18n="fleet.earningsLi2">Weekly rental:</span> <strong>$350</strong></li>
-              <li><span data-i18n="fleet.earningsLi3">Est. driver take-home:</span> <strong>$850 – $1,250</strong></li>
-            </ul>
-          </div>
-          <p class="scarcity-notice" data-i18n="fleet.limitedAvail">⚡ Limited vehicles available</p>
-          <a href="car.html?vehicle=camry2013" class="select-link" id="select-link-camry2013">
-            <button class="select-btn" id="select-btn-camry2013" data-i18n="fleet.bookNow">Book Now</button>
-          </a>
-        </div>
-      </div>
-
+      <!-- Vehicles load here. Add/remove vehicles via the admin portal → Fleet Management,
+           no code change needed. -->
     </section>
   </div>
 </div>
@@ -220,36 +106,6 @@
     <h2 class="fleet-cta-heading" data-i18n="fleet.ctaHeading">Start Driving Today</h2>
     <p class="fleet-cta-sub" data-i18n="fleet.ctaSub">Reserve your rideshare vehicle and begin earning with Uber, Lyft, or delivery apps immediately.</p>
     <a href="#car-grid" class="fleet-cta-btn" data-i18n="fleet.ctaBtn">Browse Available Vehicles ↑</a>
-  </div>
-</section>
-
-<!-- SLINGSHOT: EXPLORE LA (shown only when Slingshots filter is active) -->
-<section class="fleet-info-section slingshot-explore-section" id="slingshot-explore-section" style="display:none">
-  <div class="fleet-info-container">
-    <h2 class="fleet-info-heading">Explore Los Angeles Like Never Before</h2>
-    <p class="slingshot-explore-body">From the Hollywood Hills to the Pacific Coast Highway, every drive becomes unforgettable in a Slingshot.</p>
-    <ul class="slingshot-explore-list">
-      <li>Cruise the coast on PCH 🌊</li>
-      <li>Watch the sunset at Griffith Observatory 🌇</li>
-      <li>Pull up to Santa Monica in style 🌴</li>
-      <li>Light up Downtown LA at night 🌆</li>
-    </ul>
-  </div>
-</section>
-
-<!-- SLINGSHOT: WHY THIS CAR IS DIFFERENT (shown only when Slingshots filter is active) -->
-<section class="fleet-info-section slingshot-why-section" id="slingshot-why-section" style="display:none">
-  <div class="fleet-info-container">
-    <h2 class="fleet-info-heading">Not a Car. Not a Motorcycle. Something Better.</h2>
-    <div class="why-drivers-grid">
-      <div class="why-drivers-item">🌬️ Open-air driving experience</div>
-      <div class="why-drivers-item">✨ Exotic, head-turning design</div>
-      <div class="why-drivers-item">📸 Perfect for content &amp; dates</div>
-      <div class="why-drivers-item">🎯 Easy to drive</div>
-    </div>
-    <div class="slingshot-cta-wrap">
-      <a href="#car-grid" class="fleet-cta-btn">Book a Slingshot ↑</a>
-    </div>
   </div>
 </section>
 
