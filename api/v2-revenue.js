@@ -80,7 +80,6 @@ async function saveRecordsToGitHub(data, sha, message) {
     throw new Error(`GitHub PUT revenue-records.json failed: ${resp.status} ${text}`);
   }
 }
-}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
