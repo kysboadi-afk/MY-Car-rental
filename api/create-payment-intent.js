@@ -104,10 +104,10 @@ export default async function handler(req, res) {
     const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
 
-    // For Slingshot: charge the full rental amount (rental + security deposit + DPP + tax)
-    // upfront as a single automatic payment. No split payment or auth hold — everything is
-    // collected online at booking. The security deposit is included in the total and
-    // will be refunded after the vehicle is returned and inspected with no issues.
+    // For Slingshot: charge the full rental amount upfront as a single automatic payment.
+    // `computeSlingshotAmountFromSettings` returns rental fee + security deposit combined,
+    // so no separate deposit addition is needed here. DPP (Option B) and LA tax are added
+    // below. The security deposit portion is refunded after the vehicle is returned.
     // For Camry with paymentMode:'deposit': charge only the booking deposit now; rest at pickup.
     // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;

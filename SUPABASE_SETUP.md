@@ -545,3 +545,245 @@ fully idempotent (safe to re-run, uses IF NOT EXISTS everywhere).
 | Public site still shows old content | Content is cached for 60s. Wait a minute and hard-refresh, or clear CDN cache |
 | 401 Unauthorized error | Make sure the `ADMIN_SECRET` in Vercel matches what you type in the login screen |
 | Rollback fails "no before snapshot" | That revision was an initial create — there is no "before" state to roll back to |
+
+---
+
+## 👑 Admin Control Guide — What You Can Change Without Code
+
+This section explains everything you can change from the admin portal **without any code deployment**.  
+Think of it like Turo or Airbnb — you control your listing, your prices, and your settings from a dashboard.
+
+---
+
+### 🚗 Fleet Management (Add/Remove/Update Vehicles)
+
+**Where:** Admin Portal → Fleet Management
+
+**What you can do:**
+- ✅ **Add a new vehicle** — it appears on `cars.html` automatically
+- ✅ **Remove a vehicle** — set its status to `inactive` and it disappears from the fleet page
+- ✅ **Change a vehicle's name, photo, type** — updates live immediately
+- ✅ **Mark a vehicle as "maintenance"** — hides it from customers
+- ✅ **Set a custom scarcity notice** — e.g. "🔥 Only 1 left!" (store in the `subtitle` or `scarcity_text` field)
+
+**How it works technically:** `cars.html` now loads all `status=active` vehicles from `/api/v2-vehicles` (Supabase → `vehicles` table). No code needed.
+
+**To update a vehicle's display in Supabase directly:**
+```sql
+-- Change a vehicle's cover image
+UPDATE vehicles 
+SET data = data || '{"cover_image": "/images/your-new-photo.jpg"}'::jsonb
+WHERE vehicle_id = 'camry';
+
+-- Add a scarcity notice to a vehicle card
+UPDATE vehicles 
+SET data = data || '{"scarcity_text": "🔥 Only 1 left — reserve today!"}'::jsonb
+WHERE vehicle_id = 'camry2013';
+
+-- Mark a vehicle as inactive (hides it from fleet page)
+UPDATE vehicles 
+SET data = data || '{"status": "inactive"}'::jsonb
+WHERE vehicle_id = 'slingshot2';
+
+-- Reactivate a vehicle
+UPDATE vehicles 
+SET data = data || '{"status": "active"}'::jsonb
+WHERE vehicle_id = 'slingshot2';
+
+-- Control the order vehicles appear on the page (lower = first)
+UPDATE vehicles 
+SET data = data || '{"display_order": 1}'::jsonb
+WHERE vehicle_id = 'camry';
+```
+
+---
+
+### 💰 Pricing (Change Prices for Promotions)
+
+**Where:** Admin Portal → System Settings → Pricing
+
+**What you can change:**
+
+| Field | What it does |
+|---|---|
+| `camry_daily_rate` | Daily price for all Camry / economy cars |
+| `camry_weekly_rate` | Weekly rental price |
+| `camry_biweekly_rate` | 2-week rental price |
+| `camry_monthly_rate` | Monthly rental price |
+| `slingshot_3hr_rate` | Slingshot 3-hour tier |
+| `slingshot_6hr_rate` | Slingshot 6-hour tier |
+| `slingshot_daily_rate` | Slingshot 24-hour tier |
+| `slingshot_2day_rate` | Slingshot 2-day tier |
+| `slingshot_3day_rate` | Slingshot 3-day tier |
+| `slingshot_security_deposit` | Refundable security deposit (Slingshot) |
+| `la_tax_rate` | Los Angeles sales tax rate (e.g. `0.1025` = 10.25%) |
+
+**Result:** Payment amounts, email receipts, and chatbot price quotes all update **immediately** — no deployment needed.
+
+**To update a price via Supabase SQL:**
+```sql
+-- Run a 20% off promo on the Camry weekly rate ($350 → $280)
+UPDATE system_settings SET value = '280' WHERE key = 'camry_weekly_rate';
+
+-- Change Slingshot 24-hour rate from $350 to $300
+UPDATE system_settings SET value = '300' WHERE key = 'slingshot_daily_rate';
+
+-- Restore original prices
+UPDATE system_settings SET value = '350' WHERE key = 'camry_weekly_rate';
+UPDATE system_settings SET value = '350' WHERE key = 'slingshot_daily_rate';
+```
+
+---
+
+### 📝 Site Content (Hero Text, About, Policies)
+
+**Where:** Admin Portal → Site Settings (or `admin-cms.html`)
+
+**What you can change:**
+
+| Setting | Where it shows |
+|---|---|
+| `hero_title` | Hero section heading on the homepage |
+| `hero_subtitle` | Subtitle below the hero heading |
+| `about_text` | About section on the homepage |
+| `promo_banner_text` | Banner displayed at the top of the site |
+| `promo_banner_enabled` | Set to `true` to show the promo banner |
+| `policies_cancellation` | Cancellation policy text |
+| `policies_damage` | Damage policy text |
+| `policies_fuel` | Fuel policy text |
+| `pickup_instructions` | Pickup/dropoff instructions shown at booking |
+| `phone` | Business phone number |
+| `email` | Business email |
+| `instagram_url`, `facebook_url`, `tiktok_url` | Social media links |
+
+**To update site content via Supabase SQL:**
+```sql
+-- Change the hero headline
+UPDATE site_settings SET value = 'Drive LA in Style — Affordable Rentals for Rideshare & Delivery' WHERE key = 'hero_title';
+
+-- Enable a promo banner
+UPDATE site_settings SET value = 'true'                        WHERE key = 'promo_banner_enabled';
+UPDATE site_settings SET value = '🎉 Summer Special: $300/week — Limited Time!' WHERE key = 'promo_banner_text';
+
+-- Disable promo banner
+UPDATE site_settings SET value = 'false' WHERE key = 'promo_banner_enabled';
+```
+
+---
+
+### 💬 Chatbot FAQ Answers
+
+**Where:** Admin Portal → Content Blocks → FAQ tab
+
+**What you can change:**
+- ✅ Edit any FAQ question or answer
+- ✅ Add new FAQ items (e.g. "What is your cancellation policy?")
+- ✅ Delete FAQ items
+- ✅ Change the sort order of FAQs
+- ✅ Deactivate an FAQ (hide it without deleting)
+
+Note: The chatbot's pricing replies update automatically from System Settings pricing — you do NOT need to edit the FAQ to change prices.
+
+**To add a new FAQ via Supabase SQL:**
+```sql
+INSERT INTO content_blocks (type, title, body, sort_order, active)
+VALUES (
+  'faq',
+  'What is your cancellation policy?',
+  'All payments are final once a booking is confirmed. The Slingshot $50 booking deposit is non-refundable. Refunds are only issued if we cancel or cannot fulfill the rental.',
+  10,
+  true
+);
+```
+
+**To edit an existing FAQ:**
+```sql
+UPDATE content_blocks
+SET body = 'Updated answer text here'
+WHERE type = 'faq' AND title = 'What is the minimum rental age?';
+```
+
+---
+
+### 📣 Announcements & Testimonials
+
+**Where:** Admin Portal → Content Blocks
+
+**What you can add:**
+- Announcements (show on homepage, auto-expire by date)
+- Customer testimonials (show on homepage)
+
+**To add a time-limited announcement via SQL:**
+```sql
+INSERT INTO content_blocks (type, title, body, active, expires_at)
+VALUES (
+  'announcement',
+  'Holiday Hours',
+  'We will be closed December 24–25. Normal hours resume December 26.',
+  true,
+  '2024-12-26T00:00:00Z'   -- auto-hides after this date
+);
+```
+
+---
+
+### 🚫 What Still Requires a Code Change
+
+The following things are not yet controllable from the admin portal and require editing files in the repository:
+
+| What | Why | Workaround |
+|---|---|---|
+| Legal text (rental agreement) | Safety/legal compliance — must be reviewed before changing | Edit `rental-agreement.html` in GitHub |
+| Booking form fields | Structural change to how customers book | Edit `car.html` |
+| Navigation menu items | Site-wide layout | Edit HTML files |
+| CSS / visual design | Styling | Edit `style.css` |
+| Adding brand-new pages | Requires new HTML file | Create in GitHub |
+
+> 💡 **Tip:** For Turo-style platforms, the things above rarely change. What changes constantly — prices, promotions, vehicle availability — is now 100% controllable without code.
+
+---
+
+### 📋 Quick Supabase Setup Checklist for Full Admin Control
+
+Run the following ONE-SHOT SQL in your Supabase project SQL Editor to make everything work:
+
+```sql
+-- Paste the full contents of: supabase/migrations/COMPLETE_SETUP.sql
+-- This creates all tables, seeds default data, and is safe to re-run.
+```
+
+Then in Vercel, confirm these environment variables are set:
+
+```
+SUPABASE_URL                = https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY   = eyJhbGc...  (from Supabase → Settings → API)
+ADMIN_SECRET                = (your chosen admin password)
+STRIPE_SECRET_KEY           = sk_live_...
+STRIPE_PUBLISHABLE_KEY      = pk_live_...
+SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS
+OWNER_EMAIL
+TEXTMAGIC_USERNAME / TEXTMAGIC_API_KEY
+```
+
+After setting env vars: **Vercel → Deployments → Redeploy**.
+
+---
+
+### 🤖 Giving These Instructions to an AI Assistant
+
+If you want an AI assistant to help you make changes via Supabase SQL, paste the following:
+
+```
+I am the owner of SLY Transportation Services LLC, a car rental company in Los Angeles.
+My website (slytrans.com) uses Supabase as its database. Here is what I want to change:
+
+[DESCRIBE YOUR CHANGE HERE — e.g., "I want to run a promotion where the Camry weekly rate is $300 instead of $350 for the next 2 weeks."]
+
+The relevant tables are:
+- system_settings (key, value) — pricing and settings
+- vehicles (vehicle_id, data JSONB) — fleet vehicles
+- site_settings (key, value) — homepage content
+- content_blocks (type, title, body, ...) — FAQs, announcements, testimonials
+
+Please write the SQL I need to run in the Supabase SQL Editor to make this change.
+```
