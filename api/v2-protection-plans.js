@@ -77,7 +77,11 @@ function ghHeaders() {
 async function loadPlansFromGitHub() {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${PLANS_FILE_PATH}`;
   const resp   = await fetch(apiUrl, { headers: ghHeaders() });
-  if (!resp.ok) return { data: [...DEFAULT_PLANS], sha: null };
+  if (!resp.ok) {
+    if (resp.status === 404) return { data: [...DEFAULT_PLANS], sha: null };
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub GET protection-plans.json failed: ${resp.status} ${text}`);
+  }
   const file = await resp.json();
   let data = DEFAULT_PLANS;
   try {

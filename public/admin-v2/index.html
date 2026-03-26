@@ -976,7 +976,7 @@
             <option value="refunded">Refunded</option>
           </select>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
-          <button class="btn btn-secondary btn-sm" onclick="syncRevenueFromBookings()" title="Create revenue records for any paid bookings that are missing from the Revenue Tracker">↺ Sync from Bookings</button>
+          <button id="sync-bookings-btn" class="btn btn-secondary btn-sm" onclick="syncRevenueFromBookings()" title="Create revenue records for any paid bookings that are missing from the Revenue Tracker">↺ Sync from Bookings</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
         <div class="card">
@@ -2678,6 +2678,8 @@ async function saveRevenueRecord() {
     showToast('Vehicle is required.', 'error'); return;
   }
 
+  const btn = document.querySelector('#revenue-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     if (id) {
       await apiPost('/api/v2-revenue', { secret: adminSecret, action: 'update', id, updates: payload });
@@ -2690,6 +2692,8 @@ async function saveRevenueRecord() {
     loadRevenue();
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
   }
 }
 
@@ -2702,6 +2706,8 @@ function deleteRevenueRecord(id) {
 
 function syncRevenueFromBookings() {
   if (!confirm('Sync revenue records from bookings? This will create revenue records for any paid bookings that are missing from the Revenue Tracker. Existing records will not be modified.')) return;
+  const btn = document.getElementById('sync-bookings-btn');
+  if (btn) { btn.disabled = true; }
   showToast('Syncing revenue from bookings…', 'info');
   apiPost('/api/v2-revenue', { secret: adminSecret, action: 'sync' })
     .then((data) => {
@@ -2709,7 +2715,8 @@ function syncRevenueFromBookings() {
       allRevenueRecords = [];
       loadRevenue();
     })
-    .catch((err) => showToast('Sync error: ' + err.message, 'error'));
+    .catch((err) => showToast('Sync error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; } });
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────
@@ -3029,6 +3036,8 @@ async function savePlan() {
   };
   if (!payload.name) { showToast('Plan name is required.', 'error'); return; }
 
+  const btn = document.querySelector('#plan-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
     if (id) {
       await apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'update', id, updates: payload });
@@ -3041,6 +3050,8 @@ async function savePlan() {
     loadProtectionPlans();
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Plan'; }
   }
 }
 
