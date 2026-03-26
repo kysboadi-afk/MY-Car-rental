@@ -176,7 +176,7 @@
       },
       // car.html (booking page)
       booking: {
-        backToCars:    "\u2B05 Back to Cars",
+        backToHome:    "\u2B05 Back to Home",
         pickupDate:    "Pickup Date",
         returnDate:    "Return Date",
         duration:      "Duration",
@@ -612,7 +612,7 @@
         slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 dep\u00F3sito"
       },
       booking: {
-        backToCars:    "\u2B05 Volver a Autos",
+        backToHome:    "\u2B05 Volver al Inicio",
         pickupDate:    "Fecha de Recogida",
         returnDate:    "Fecha de Devoluci\u00F3n",
         duration:      "Duraci\u00F3n",

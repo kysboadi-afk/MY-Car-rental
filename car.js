@@ -213,7 +213,7 @@ document.getElementById("prevSlide").addEventListener("click", prevSlide);
 function goToSlide(idx){ showSlide(idx); }
 
 // ----- Back Button -----
-document.getElementById("backBtn").addEventListener("click", ()=>window.location.href="cars.html");
+document.getElementById("backBtn").addEventListener("click", ()=>window.location.href="index.html");
 
 // ----- Booking Form Automation -----
 const pickup = document.getElementById("pickup");
