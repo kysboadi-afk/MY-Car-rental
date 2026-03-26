@@ -481,6 +481,27 @@
       color: #ffb400;
     }
 
+    .sl-video-testimonial {
+      margin-top: 40px;
+      text-align: center;
+    }
+    .sl-video-testimonial-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #ffb400;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .sl-video-testimonial video {
+      width: 100%;
+      max-width: 340px;
+      border-radius: 10px;
+      border: 2px solid #222;
+      display: block;
+      margin: 0 auto;
+    }
+
     /* ── FAQ ──────────────────────────────────────────────────────────────── */
     .sl-faq {
       background: #000;
@@ -891,11 +912,15 @@
         <div class="sl-testimonial-author">— Alicia M., Compton</div>
       </div>
     </div>
+    <div class="sl-video-testimonial sl-fade-in">
+      <div class="sl-video-testimonial-label">🎥 See what our riders say</div>
+      <video controls preload="metadata" aria-label="Customer video testimonial">
+        <source src="videos/IMG_5201.MOV" type="video/quicktime">
+        Your browser does not support the video tag.
+      </video>
+    </div>
   </div>
 </section>
-
-<!-- ═══════════════════════════════════════════════════════════════════════ -->
-<!-- FAQ (OPTIONAL)                                                         -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <section class="sl-section sl-faq" id="faq">
   <div class="sl-section-inner">
