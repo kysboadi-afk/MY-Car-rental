@@ -340,6 +340,24 @@
     }
     .toggle input:checked + .toggle-slider { background: var(--success); }
     .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
+    /* Fleet status toggle — larger version of .toggle */
+    .toggle-switch {
+      position: relative; width: 46px; height: 26px;
+      display: inline-flex; align-items: center; cursor: pointer;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute; inset: 0; background: #d1d5db;
+      border-radius: 26px; transition: 0.2s;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute; width: 20px; height: 20px;
+      background: white; border-radius: 50%; top: 3px; left: 3px; transition: 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--success); }
+    .toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
+    .toggle-switch input:disabled + .toggle-track { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Modal ──────────────────────────────────────────────────── */
     .modal-overlay {
@@ -412,6 +430,7 @@
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       .vehicles-grid { grid-template-columns: 1fr; }
       .content { padding: 16px; }
+      .block-dates-grid { grid-template-columns: 1fr !important; }
     }
     .mobile-menu-btn {
       display: none; background: none; border: none; cursor: pointer;
@@ -528,6 +547,14 @@
       <a class="nav-item" data-page="manual-booking" href="#" onclick="navigate('manual-booking');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Manual Booking
+      </a>
+      <a class="nav-item" data-page="fleet-status" href="#" onclick="navigate('fleet-status');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        Fleet Status
+      </a>
+      <a class="nav-item" data-page="block-dates" href="#" onclick="navigate('block-dates');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Block Dates
       </a>
     </nav>
 
@@ -846,6 +873,94 @@
             </button>
           </div>
         </form>
+      </div>
+
+      <!-- FLEET STATUS PAGE -->
+      <div class="page" id="page-fleet-status">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Fleet Availability</div>
+              <div class="card-sub">Toggle each vehicle on or off for online bookings</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadFleetStatusPage()">Refresh</button>
+          </div>
+          <div id="fleet-status-loading" class="loading"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="fleet-status-list" style="display:none;padding:8px 0;"></div>
+        </div>
+      </div>
+
+      <!-- BLOCK DATES PAGE -->
+      <div class="page" id="page-block-dates">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;" class="block-dates-grid">
+          <!-- Block form -->
+          <div class="form-section" style="margin-bottom:0;">
+            <div class="form-section-title">🔒 Block Dates</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Vehicle *</label>
+                <select class="form-select" id="bd-vehicle">
+                  <option value="">Select vehicle…</option>
+                  <option value="slingshot">Slingshot R</option>
+                  <option value="slingshot2">Slingshot R (2)</option>
+                  <option value="camry">Camry 2012</option>
+                  <option value="camry2013">Camry 2013 SE</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">From *</label>
+                <input type="date" class="form-input" id="bd-from">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To *</label>
+                <input type="date" class="form-input" id="bd-to">
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-primary" id="bd-block-btn" onclick="blockDates()">🔒 Block Dates</button>
+            </div>
+          </div>
+          <!-- Unblock form -->
+          <div class="form-section" style="margin-bottom:0;">
+            <div class="form-section-title">🔓 Unblock Dates</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Vehicle *</label>
+                <select class="form-select" id="ub-vehicle">
+                  <option value="">Select vehicle…</option>
+                  <option value="slingshot">Slingshot R</option>
+                  <option value="slingshot2">Slingshot R (2)</option>
+                  <option value="camry">Camry 2012</option>
+                  <option value="camry2013">Camry 2013 SE</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">From *</label>
+                <input type="date" class="form-input" id="ub-from">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To *</label>
+                <input type="date" class="form-input" id="ub-to">
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-secondary" id="bd-unblock-btn" onclick="unblockDates()">🔓 Unblock Dates</button>
+            </div>
+          </div>
+        </div>
+        <!-- Current blocked ranges -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Current Blocked Date Ranges</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadBlockedDates()">Refresh</button>
+          </div>
+          <div id="blocked-dates-loading" class="loading"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="blocked-dates-list" style="display:none;padding:8px 0;"></div>
+          <div id="blocked-dates-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <p>No dates are currently blocked.</p>
+          </div>
+        </div>
       </div>
 
       <!-- EXPENSES PAGE -->
@@ -1502,6 +1617,8 @@ function navigate(page) {
     'vehicle-profile':  'Vehicle Profile',
     bookings:           'Bookings',
     'manual-booking':   'Manual Booking',
+    'fleet-status':     'Fleet Status',
+    'block-dates':      'Block / Unblock Dates',
     expenses:           'Expenses',
     sms:                'SMS Automation',
     settings:           'Settings',
@@ -1530,6 +1647,8 @@ function navigate(page) {
   else if (page === 'customers') loadCustomers();
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'system-settings') loadSystemSettings();
+  else if (page === 'fleet-status') loadFleetStatusPage();
+  else if (page === 'block-dates') loadBlockedDates();
 }
 
 function refreshCurrentPage() {
@@ -1552,6 +1671,8 @@ function refreshCurrentPage() {
   else if (currentPage === 'customers') loadCustomers();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'system-settings') loadSystemSettings();
+  else if (currentPage === 'fleet-status') loadFleetStatusPage();
+  else if (currentPage === 'block-dates') loadBlockedDates();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -3370,6 +3491,206 @@ function renderDiagnostics(data) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
+
+// ── Fleet Status ──────────────────────────────────────────────────────────
+const FLEET_VEHICLES = [
+  { id: 'slingshot',  name: 'Slingshot R' },
+  { id: 'slingshot2', name: 'Slingshot R (2)' },
+  { id: 'camry',      name: 'Camry 2012' },
+  { id: 'camry2013',  name: 'Camry 2013 SE' },
+];
+let fleetStatusData = {};
+
+function loadFleetStatusPage() {
+  const loading = document.getElementById('fleet-status-loading');
+  const list    = document.getElementById('fleet-status-list');
+  if (loading) loading.style.display = '';
+  if (list)    list.style.display = 'none';
+
+  fetch(API_BASE + '/api/fleet-status')
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then((data) => {
+      fleetStatusData = data || {};
+      renderFleetStatus();
+      if (loading) loading.style.display = 'none';
+      if (list)    list.style.display = '';
+    })
+    .catch((err) => {
+      showToast('Fleet status load error: ' + err.message, 'error');
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderFleetStatus() {
+  const list = document.getElementById('fleet-status-list');
+  if (!list) return;
+  list.innerHTML = FLEET_VEHICLES.map((v) => {
+    const available = fleetStatusData[v.id]?.available ?? true;
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);"
+           data-vehicle-id="${esc(v.id)}">
+        <div>
+          <div style="font-weight:600;font-size:14px;">${esc(v.name)}</div>
+          <div id="fleet-status-label-${esc(v.id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
+            ${available ? '● Available for booking' : '● Unavailable (hidden from renters)'}
+          </div>
+        </div>
+        <label class="toggle-switch" title="${available ? 'Click to mark unavailable' : 'Click to mark available'}">
+          <input type="checkbox" id="fleet-toggle-${esc(v.id)}" ${available ? 'checked' : ''}
+            data-vehicle-id="${esc(v.id)}" onchange="handleFleetToggle(this)">
+          <span class="toggle-track"></span>
+        </label>
+      </div>`;
+  }).join('');
+}
+
+function handleFleetToggle(inputEl) {
+  const vehicleId = inputEl.dataset.vehicleId;
+  if (!vehicleId) return;
+  updateFleetVehicleStatus(vehicleId, inputEl.checked, inputEl);
+}
+
+function updateFleetVehicleStatus(vehicleId, available, inputEl) {
+  if (inputEl) inputEl.disabled = true;
+  const label = document.getElementById('fleet-status-label-' + vehicleId);
+
+  fetch(API_BASE + '/api/update-fleet-status', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, available }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+        // Revert toggle
+        if (inputEl) { inputEl.checked = !available; }
+      } else {
+        fleetStatusData[vehicleId] = { available };
+        if (label) {
+          label.textContent = available ? '● Available for booking' : '● Unavailable (hidden from renters)';
+          label.style.color = available ? 'var(--success)' : 'var(--danger)';
+        }
+        showToast(
+          (VEHICLE_NAMES[vehicleId] || vehicleId) + ' marked as ' + (available ? 'Available' : 'Unavailable') + '.',
+          'success'
+        );
+      }
+    })
+    .catch((err) => {
+      showToast('Network error: ' + err.message, 'error');
+      if (inputEl) { inputEl.checked = !available; }
+    })
+    .finally(() => { if (inputEl) inputEl.disabled = false; });
+}
+
+// ── Block / Unblock Dates ─────────────────────────────────────────────────
+function loadBlockedDates() {
+  const loading = document.getElementById('blocked-dates-loading');
+  const list    = document.getElementById('blocked-dates-list');
+  const empty   = document.getElementById('blocked-dates-empty');
+  if (loading) loading.style.display = '';
+  if (list)    list.style.display = 'none';
+  if (empty)   empty.style.display = 'none';
+
+  fetch(API_BASE + '/api/booked-dates')
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then((data) => {
+      if (loading) loading.style.display = 'none';
+      const entries = [];
+      Object.keys(data).forEach((vid) => {
+        (data[vid] || []).forEach((range) => entries.push({ vehicleId: vid, from: range.from, to: range.to }));
+      });
+      if (!entries.length) {
+        if (empty) empty.style.display = '';
+        return;
+      }
+      entries.sort((a, b) => a.from.localeCompare(b.from));
+      if (list) {
+        list.style.display = '';
+        list.innerHTML = `
+          <table style="width:100%;" class="table-wrap">
+            <thead><tr><th>Vehicle</th><th>From</th><th>To</th></tr></thead>
+            <tbody>
+              ${entries.map((e) => `
+                <tr>
+                  <td>${esc(VEHICLE_NAMES[e.vehicleId] || e.vehicleId)}</td>
+                  <td>${esc(e.from)}</td>
+                  <td>${esc(e.to)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+    })
+    .catch((err) => {
+      showToast('Error loading blocked dates: ' + err.message, 'error');
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function blockDates() {
+  const vehicleId = document.getElementById('bd-vehicle').value;
+  const from      = document.getElementById('bd-from').value;
+  const to        = document.getElementById('bd-to').value;
+  if (!vehicleId) { showToast('Please select a vehicle.', 'error'); return; }
+  if (!from)      { showToast('Please select a start date.', 'error'); return; }
+  if (!to)        { showToast('Please select an end date.', 'error'); return; }
+  if (from > to)  { showToast('Start date must be on or before end date.', 'error'); return; }
+
+  const btn = document.getElementById('bd-block-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Blocking…'; }
+
+  fetch(API_BASE + '/api/block-dates', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+      } else if (data.added === 0) {
+        showToast('These dates already overlap with an existing blocked range.', 'info');
+      } else {
+        showToast('✅ Dates blocked successfully.', 'success');
+        loadBlockedDates();
+      }
+    })
+    .catch((err) => showToast('Network error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔒 Block Dates'; } });
+}
+
+function unblockDates() {
+  const vehicleId = document.getElementById('ub-vehicle').value;
+  const from      = document.getElementById('ub-from').value;
+  const to        = document.getElementById('ub-to').value;
+  if (!vehicleId) { showToast('Please select a vehicle.', 'error'); return; }
+  if (!from)      { showToast('Please select a start date.', 'error'); return; }
+  if (!to)        { showToast('Please select an end date.', 'error'); return; }
+  if (!confirm('Unblock ' + esc(from) + ' → ' + esc(to) + ' for ' + esc(VEHICLE_NAMES[vehicleId] || vehicleId) + '?')) return;
+
+  const btn = document.getElementById('bd-unblock-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Unblocking…'; }
+
+  fetch(API_BASE + '/api/open-dates', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+      } else if (data.removed === 0) {
+        showToast('No matching blocked range found for those exact dates.', 'info');
+      } else {
+        showToast('✅ Dates unblocked. Those dates are now available for booking.', 'success');
+        loadBlockedDates();
+      }
+    })
+    .catch((err) => showToast('Network error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔓 Unblock Dates'; } });
+}
 </script>
 
 <!-- Revenue Record Modal -->

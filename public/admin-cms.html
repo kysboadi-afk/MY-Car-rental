@@ -317,6 +317,18 @@
         <div class="card">
           <div class="card-header">
             <div>
+              <div class="card-title">🏍️ Slingshot Page</div>
+              <div class="card-sub">Settings specific to the Slingshot rental page (slingshot.html)</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Slingshot Business Name</label><input type="text" id="s-slingshot_business_name" placeholder="SLY SLINGSHOT RENTALS"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
               <div class="card-title">Social Links</div>
               <div class="card-sub">Paste full URLs (leave blank to hide)</div>
             </div>
@@ -643,7 +655,7 @@ async function loadSettings(initialData) {
 
 function renderSettings(s) {
   const fields = [
-    'business_name','email','phone','whatsapp',
+    'business_name','slingshot_business_name','email','phone','whatsapp',
     'instagram_url','facebook_url','tiktok_url','twitter_url',
     'hero_title','hero_subtitle','about_text',
     'promo_banner_text',
@@ -663,7 +675,7 @@ async function saveSettings() {
   btn.disabled = true; btn.textContent = 'Saving…';
 
   const fields = [
-    'business_name','email','phone','whatsapp',
+    'business_name','slingshot_business_name','email','phone','whatsapp',
     'instagram_url','facebook_url','tiktok_url','twitter_url',
     'hero_title','hero_subtitle','about_text',
     'promo_banner_text',
