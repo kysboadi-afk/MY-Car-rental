@@ -218,8 +218,10 @@
     }
     .sl-vehicle-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 24px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 28px;
+      max-width: 860px;
+      margin: 0 auto;
     }
     .sl-vehicle-card {
       background: #111;
@@ -586,7 +588,7 @@
     /* ── RESPONSIVE ───────────────────────────────────────────────────────── */
     @media (max-width: 900px) {
       .sl-experience-grid { grid-template-columns: 1fr; }
-      .sl-vehicle-grid { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
+      .sl-vehicle-grid { grid-template-columns: 1fr; max-width: 480px; }
       .sl-why-grid { grid-template-columns: 1fr; }
       .sl-testimonials-grid { grid-template-columns: 1fr; }
       .sl-gallery-grid { grid-template-columns: repeat(2, 1fr); }
@@ -630,7 +632,7 @@
     <h1 class="sl-hero-title">Drive the Ultimate<br><span style="color:#ffb400;">LA Experience</span></h1>
     <p class="sl-hero-sub">Turn heads in a Slingshot. Perfect for dates, birthdays, and unforgettable rides.</p>
     <div class="sl-hero-btns">
-      <a href="car.html?vehicle=slingshot" class="sl-btn-primary">Book Now</a>
+      <a href="#vehicle" class="sl-btn-primary">Book Now</a>
       <a href="#pricing" class="sl-btn-secondary">View Pricing</a>
     </div>
   </div>
@@ -672,33 +674,44 @@
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <section class="sl-section sl-vehicles" id="vehicle">
   <div class="sl-section-inner">
-    <h2 class="sl-section-title sl-fade-in">Our <span class="sl-gold">Slingshot Fleet</span></h2>
-    <p class="sl-section-subtitle sl-fade-in">Clean, maintained, and ready to turn your day into a memory.</p>
+    <h2 class="sl-section-title sl-fade-in">Choose Your <span class="sl-gold">Slingshot</span></h2>
+    <p class="sl-section-subtitle sl-fade-in">Two Slingshots available. Pick yours and book instantly.</p>
     <div class="sl-vehicle-grid">
+
+      <!-- Slingshot #1 -->
       <div class="sl-vehicle-card sl-fade-in sl-fade-in-delay-1">
-        <img src="images/photo_2026-03-22_11-38-56.jpg" alt="Polaris Slingshot SL — White" class="sl-vehicle-img">
+        <div style="position:relative;">
+          <img src="images/car2.jpg" alt="Polaris Slingshot R — Unit 1" class="sl-vehicle-img">
+          <span id="sl-status-slingshot" style="position:absolute;top:12px;left:12px;background:#111;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;font-weight:700;letter-spacing:1px;padding:4px 10px;border-radius:3px;">● AVAILABLE</span>
+        </div>
         <div class="sl-vehicle-info">
-          <h3>Polaris Slingshot SL</h3>
-          <p>Turn heads with the classic white-and-black finish. Open cockpit, sporty handling, and pure LA energy. Starting at $200 for 3 hours.</p>
-          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle">Book This Vehicle →</a>
+          <h3>Polaris Slingshot R — Unit 1</h3>
+          <p>Open-air 3-wheeler built for the streets of LA. Perfect for dates, photo shoots, and city cruises. Starting at $200 / 3 hrs.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
+            <span style="background:#1a1500;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">Sports • 2-Seater</span>
+            <span style="background:#111;border:1px solid #333;color:#aaa;font-size:0.75rem;padding:3px 9px;border-radius:12px;">$150 Deposit</span>
+          </div>
+          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
         </div>
       </div>
+
+      <!-- Slingshot #2 -->
       <div class="sl-vehicle-card sl-fade-in sl-fade-in-delay-2">
-        <img src="images/photo_2026-03-19_00-34-36.jpg" alt="Polaris Slingshot — Night Lights" class="sl-vehicle-img">
+        <div style="position:relative;">
+          <img src="images/IMG_1749.jpeg" alt="Polaris Slingshot R — Unit 2" class="sl-vehicle-img">
+          <span id="sl-status-slingshot2" style="position:absolute;top:12px;left:12px;background:#111;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;font-weight:700;letter-spacing:1px;padding:4px 10px;border-radius:3px;">● AVAILABLE</span>
+        </div>
         <div class="sl-vehicle-info">
-          <h3>Polaris Slingshot — Night Edition</h3>
-          <p>Experience LA after dark. The Slingshot shines brightest under city lights — perfect for a night out or a sunset cruise.</p>
-          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle">Book This Vehicle →</a>
+          <h3>Polaris Slingshot XR — Unit 2</h3>
+          <p>The XR trim with premium finish. Same head-turning experience, same pricing. Ideal when Unit 1 is booked. Starting at $200 / 3 hrs.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
+            <span style="background:#1a1500;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">Sports • 2-Seater</span>
+            <span style="background:#111;border:1px solid #333;color:#aaa;font-size:0.75rem;padding:3px 9px;border-radius:12px;">$150 Deposit</span>
+          </div>
+          <a href="car.html?vehicle=slingshot2" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
         </div>
       </div>
-      <div class="sl-vehicle-card sl-fade-in sl-fade-in-delay-3">
-        <img src="images/car1.jpg" alt="Polaris Slingshot — LA Street" class="sl-vehicle-img">
-        <div class="sl-vehicle-info">
-          <h3>Polaris Slingshot — Weekend Special</h3>
-          <p>Weekend vibes, no compromises. Book a full day or multi-day rental and explore the coast from Santa Monica to Malibu.</p>
-          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle">Book This Vehicle →</a>
-        </div>
-      </div>
+
     </div>
   </div>
 </section>
@@ -943,7 +956,7 @@
     <h2 class="sl-section-title" style="margin-bottom:16px;">Ready to <span class="sl-gold">Ride?</span></h2>
     <p class="sl-section-subtitle">Book your Slingshot now and experience LA like never before.</p>
     <div class="sl-final-cta-btns">
-      <a href="car.html?vehicle=slingshot" class="sl-btn-large">🔥 Book Your Slingshot</a>
+      <a href="#vehicle" class="sl-btn-large">🔥 Pick Your Slingshot</a>
       <a href="tel:+12139166606" class="sl-btn-secondary" style="padding:17px 36px;">📞 Call (213) 916-6606</a>
     </div>
   </div>
@@ -959,6 +972,31 @@
 
 <script src="chatbot.js"></script>
 <script>
+  // ── Live availability badges ──────────────────────────────────────────────
+  (function() {
+    function updateBadge(id, available) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      if (available) {
+        el.textContent = '● AVAILABLE';
+        el.style.color = '#ffb400';
+        el.style.borderColor = '#ffb400';
+      } else {
+        el.textContent = '● BOOKED';
+        el.style.color = '#ff4444';
+        el.style.borderColor = '#ff4444';
+      }
+    }
+    fetch('/api/fleet-status')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var s = data.slingshot, s2 = data.slingshot2;
+        if (s)  updateBadge('sl-status-slingshot',  s.status  !== 'unavailable');
+        if (s2) updateBadge('sl-status-slingshot2', s2.status !== 'unavailable');
+      })
+      .catch(function() { /* keep default AVAILABLE if fetch fails */ });
+  })();
+
   // ── FAQ accordion ────────────────────────────────────────────────────────
   document.querySelectorAll('.sl-faq-q').forEach(function(btn) {
     btn.addEventListener('click', function() {
