@@ -27,6 +27,9 @@
     "api/v2-vehicles.js": {
       "maxDuration": 15
     },
+    "api/v2-diagnostics.js": {
+      "maxDuration": 15
+    },
     "api/v2-sms-templates.js": {
       "maxDuration": 15
     },

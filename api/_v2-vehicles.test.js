@@ -64,6 +64,36 @@ mock.module("./_supabase.js", {
   },
 });
 
+// Mock _vehicles.js to avoid real GitHub HTTP calls in tests.
+// vehiclesMockState.result is returned by loadVehicles(); set it per-test.
+const vehiclesMockState = {
+  result: { data: {}, sha: null },
+  throwErr: null,
+};
+
+mock.module("./_vehicles.js", {
+  namedExports: {
+    loadVehicles: async () => {
+      if (vehiclesMockState.throwErr) throw vehiclesMockState.throwErr;
+      return vehiclesMockState.result;
+    },
+    saveVehicles: async () => {},
+  },
+});
+
+// Mock _github-retry.js so update/create GitHub fallback tests don't hit real HTTP.
+const githubRetryMockState = { fn: null };
+mock.module("./_github-retry.js", {
+  namedExports: {
+    updateJsonFileWithRetry: async ({ load, apply, save, message }) => {
+      if (githubRetryMockState.fn) return githubRetryMockState.fn({ load, apply, save, message });
+      const { data, sha } = await load();
+      apply(data);
+      await save(data, sha, message);
+    },
+  },
+});
+
 const { default: handler } = await import("./v2-vehicles.js");
 
 // ── Environment setup ─────────────────────────────────────────────────────────
@@ -121,16 +151,24 @@ test("500 when ADMIN_SECRET env var is not set", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("500 when Supabase env vars are missing", async () => {
+test("list: falls back to GitHub when Supabase env vars are missing", async () => {
   setSecret("testSecret");
   supabaseMockState.client = null; // getSupabaseAdmin() returns null
+  vehiclesMockState.result = {
+    data: {
+      slingshot: { vehicle_id: "slingshot", vehicle_name: "Slingshot R", status: "active" },
+    },
+    sha: null,
+  };
+  vehiclesMockState.throwErr = null;
 
   const req = makeReq({ body: { secret: "testSecret", action: "list" } });
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(res._status, 500);
-  assert.ok(res._body.error.includes("SUPABASE_URL"));
+  assert.equal(res._status, 200);
+  assert.ok(res._body.vehicles);
+  assert.equal(res._body.vehicles.slingshot.vehicle_id, "slingshot");
   setSecret(REAL_ADMIN_SECRET);
 });
 
@@ -178,20 +216,28 @@ test("list: returns object keyed by vehicle_id", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("list: 500 when Supabase select returns an error", async () => {
+test("list: falls back to GitHub when Supabase select returns an error", async () => {
   setSecret("testSecret");
   supabaseMockState.client = {
     from: () => ({
-      select: () => Promise.resolve({ data: null, error: { message: "connection refused" } }),
+      select: () => Promise.resolve({ data: null, error: { message: "connection refused", code: "ECONNRESET" } }),
     }),
   };
+  vehiclesMockState.result = {
+    data: {
+      camry: { vehicle_id: "camry", status: "active" },
+    },
+    sha: null,
+  };
+  vehiclesMockState.throwErr = null;
 
   const req = makeReq({ body: { secret: "testSecret", action: "list" } });
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(res._status, 500);
-  assert.ok(res._body.error.includes("connection refused"));
+  assert.equal(res._status, 200);
+  assert.ok(res._body.vehicles);
+  assert.equal(res._body.vehicles.camry.vehicle_id, "camry");
   setSecret(REAL_ADMIN_SECRET);
 });
 
@@ -466,30 +512,61 @@ test("GET: normalizes various cover_image path formats", async () => {
   assert.equal(res._body[4].cover_image, undefined);
 });
 
-test("GET: 500 when Supabase select returns an error", async () => {
+test("GET: falls back to GitHub when Supabase select returns an error", async () => {
   supabaseMockState.client = {
     from: () => ({
-      select: () => Promise.resolve({ data: null, error: { message: "db timeout" } }),
+      select: () => Promise.resolve({ data: null, error: { message: "db timeout", code: "ECONNRESET" } }),
     }),
   };
+  vehiclesMockState.result = {
+    data: {
+      camry: { vehicle_id: "camry", vehicle_name: "Camry 2012", status: "active", cover_image: "images/car1.jpg" },
+    },
+    sha: null,
+  };
+  vehiclesMockState.throwErr = null;
 
   const req = makeReq({ method: "GET" });
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(res._status, 500);
-  assert.ok(res._body.error.includes("db timeout"));
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body));
+  assert.equal(res._body.length, 1);
+  assert.equal(res._body[0].vehicle_id, "camry");
 });
 
-test("GET: 500 when Supabase is not configured", async () => {
+test("GET: falls back to GitHub when Supabase is not configured", async () => {
   supabaseMockState.client = null;
+  vehiclesMockState.result = {
+    data: {
+      slingshot: { vehicle_id: "slingshot", vehicle_name: "Slingshot R", status: "active", cover_image: "/images/car2.jpg" },
+    },
+    sha: null,
+  };
+  vehiclesMockState.throwErr = null;
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body));
+  assert.equal(res._body.length, 1);
+  assert.equal(res._body[0].vehicle_id, "slingshot");
+});
+
+test("GET: 500 when Supabase error AND GitHub fallback also fails", async () => {
+  supabaseMockState.client = null;
+  vehiclesMockState.throwErr = new Error("GitHub unreachable");
+  vehiclesMockState.result = { data: {}, sha: null };
 
   const req = makeReq({ method: "GET" });
   const res = makeRes();
   await handler(req, res);
 
   assert.equal(res._status, 500);
-  assert.ok(res._body.error.includes("SUPABASE_URL"));
+  vehiclesMockState.throwErr = null;
 });
 
 // ─── create ───────────────────────────────────────────────────────────────────
