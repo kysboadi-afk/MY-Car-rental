@@ -151,6 +151,14 @@ document.getElementById("carPrice").textContent = (carData.hourlyTiers)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
 
+// Hide the nav bar entirely for slingshot booking pages (slingshot has its own landing page)
+if (vehicleId.startsWith("slingshot")) {
+  const siteNav = document.querySelector(".site-nav");
+  if (siteNav) siteNav.style.display = "none";
+  const logoLink = document.querySelector(".logo-link");
+  if (logoLink) logoLink.href = "slingshot.html";
+}
+
 // Show the Slingshot fun description instead of the Uber/Lyft earnings block
 if (carData.hourlyTiers) {
   document.getElementById("earningsBlock").style.display = "none";
