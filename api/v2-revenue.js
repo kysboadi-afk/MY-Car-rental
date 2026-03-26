@@ -15,19 +15,71 @@
 // Error contract:
 //   • READ actions (list, get, summary) return empty state when Supabase is not
 //     configured or the table does not yet exist, so the admin panel never crashes.
-//   • WRITE actions (create, update, delete, sync) return a clear 503 when Supabase is
-//     unavailable so callers know the operation did not persist.
+//   • WRITE actions fall back to GitHub (revenue-records.json) when Supabase is
+//     unavailable or the table does not yet exist, so saves never fail silently.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const RECORDS_FILE    = "revenue-records.json";
 
 /** Returns the Supabase client or null if not configured. */
 function getSupabase() {
   return getSupabaseAdmin();
+}
+
+// ── GitHub fallback helpers ───────────────────────────────────────────────────
+
+function ghHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  const headers = {
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function loadRecordsFromGitHub() {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${RECORDS_FILE}`;
+  const resp   = await fetch(apiUrl, { headers: ghHeaders() });
+  if (!resp.ok) {
+    if (resp.status === 404) return { data: [], sha: null };
+    return { data: [], sha: null };
+  }
+  const file = await resp.json();
+  let data = [];
+  try {
+    const parsed = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    if (Array.isArray(parsed)) data = parsed;
+  } catch { data = []; }
+  return { data, sha: file.sha };
+}
+
+async function saveRecordsToGitHub(data, sha, message) {
+  if (!process.env.GITHUB_TOKEN) {
+    console.warn("v2-revenue: GITHUB_TOKEN not set — revenue-records.json will not be updated");
+    return;
+  }
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${RECORDS_FILE}`;
+  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+  const body = { message, content };
+  if (sha) body.sha = sha;
+  const resp = await fetch(apiUrl, {
+    method:  "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub PUT revenue-records.json failed: ${resp.status} ${text}`);
+  }
+}
 }
 
 export default async function handler(req, res) {
@@ -51,76 +103,106 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
-      // Return empty state immediately when Supabase is not configured so the
-      // admin Revenue page loads with an empty table rather than crashing.
-      if (!sb) return res.status(200).json({ records: [] });
-      try {
-        let q = sb.from("revenue_records").select("*").order("created_at", { ascending: false });
-        if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
-        if (body.status)     q = q.eq("payment_status", body.status);
-        if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
-        if (body.endDate)    q = q.lte("return_date",   body.endDate);
-        if (body.limit)      q = q.limit(Number(body.limit));
-        const { data, error } = await q;
-        if (error) {
-          // Table may not exist yet (migration not applied): return empty rather than crash
+      // Try Supabase first; fall back to GitHub when not configured or table missing.
+      if (sb) {
+        try {
+          let q = sb.from("revenue_records").select("*").order("created_at", { ascending: false });
+          if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
+          if (body.status)     q = q.eq("payment_status", body.status);
+          if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
+          if (body.endDate)    q = q.lte("return_date",   body.endDate);
+          if (body.limit)      q = q.limit(Number(body.limit));
+          const { data, error } = await q;
+          if (!error) return res.status(200).json({ records: data || [] });
           console.error("v2-revenue list error:", error.message);
-          return res.status(200).json({ records: [] });
+        } catch (qErr) {
+          console.error("v2-revenue list query error:", qErr);
         }
-        return res.status(200).json({ records: data || [] });
-      } catch (qErr) {
-        console.error("v2-revenue list query error:", qErr);
-        return res.status(200).json({ records: [] });
       }
+      // GitHub fallback
+      const { data: ghRecords } = await loadRecordsFromGitHub();
+      let records = ghRecords;
+      if (body.vehicleId)  records = records.filter((r) => r.vehicle_id    === body.vehicleId);
+      if (body.status)     records = records.filter((r) => r.payment_status === body.status);
+      if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
+      if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
+      records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
+      if (body.limit) records = records.slice(0, Number(body.limit));
+      return res.status(200).json({ records });
     }
 
     // ── GET ─────────────────────────────────────────────────────────────────
     if (action === "get") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      if (!sb) return res.status(503).json({ error: "Supabase not configured" });
-      const { data, error } = await sb.from("revenue_records").select("*").eq("id", body.id).single();
-      if (error) throw error;
-      return res.status(200).json({ record: data });
+      if (sb) {
+        const { data, error } = await sb.from("revenue_records").select("*").eq("id", body.id).single();
+        if (!error) return res.status(200).json({ record: data });
+        if (!isSchemaError(error)) throw error;
+      }
+      // GitHub fallback
+      const { data: ghRecords } = await loadRecordsFromGitHub();
+      const found = ghRecords.find((r) => r.id === body.id);
+      if (!found) return res.status(404).json({ error: "Record not found" });
+      return res.status(200).json({ record: found });
     }
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot create revenue record" });
       const { vehicle_id, gross_amount } = body;
       // booking_id is optional for manual entries; auto-generate a unique id if not supplied
       const booking_id = body.booking_id || ("manual-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex"));
       if (!vehicle_id || gross_amount == null)
         return res.status(400).json({ error: "vehicle_id and gross_amount are required" });
 
-      const record = {
+      const commonFields = {
         booking_id,
         vehicle_id,
-        customer_name:     body.customer_name   || null,
-        customer_phone:    body.customer_phone  || null,
-        customer_email:    body.customer_email  || null,
-        pickup_date:       body.pickup_date      || null,
-        return_date:       body.return_date      || null,
-        gross_amount:      Number(gross_amount),
-        deposit_amount:    Number(body.deposit_amount  || 0),
-        refund_amount:     Number(body.refund_amount   || 0),
-        payment_method:    body.payment_method   || "stripe",
-        payment_status:    body.payment_status   || "paid",
+        customer_name:      body.customer_name   || null,
+        customer_phone:     body.customer_phone  || null,
+        customer_email:     body.customer_email  || null,
+        pickup_date:        body.pickup_date      || null,
+        return_date:        body.return_date      || null,
+        gross_amount:       Number(gross_amount),
+        deposit_amount:     Number(body.deposit_amount  || 0),
+        refund_amount:      Number(body.refund_amount   || 0),
+        payment_method:     body.payment_method   || "stripe",
+        payment_status:     body.payment_status   || "paid",
         protection_plan_id: body.protection_plan_id || null,
-        notes:             body.notes            || null,
-        is_no_show:        Boolean(body.is_no_show),
-        is_cancelled:      Boolean(body.is_cancelled),
-        override_by_admin: Boolean(body.override_by_admin),
+        notes:              body.notes            || null,
+        is_no_show:         Boolean(body.is_no_show),
+        is_cancelled:       Boolean(body.is_cancelled),
+        override_by_admin:  Boolean(body.override_by_admin),
+        created_at:         new Date().toISOString(),
+        updated_at:         new Date().toISOString(),
       };
 
-      const { data, error } = await sb.from("revenue_records").insert(record).select().single();
-      if (error) throw error;
-      return res.status(201).json({ record: data });
+      if (sb) {
+        // Do NOT pass `id` — Supabase generates it via gen_random_uuid()
+        const { data, error } = await sb.from("revenue_records").insert(commonFields).select().single();
+        if (!error) return res.status(201).json({ record: data });
+        if (!isSchemaError(error)) throw error;
+        console.warn("v2-revenue create: revenue_records table missing, falling back to GitHub");
+      }
+      // GitHub fallback — include a client-generated UUID for the id field
+      const ghRecord = { id: crypto.randomUUID(), ...commonFields };
+      let created;
+      await updateJsonFileWithRetry({
+        load:    loadRecordsFromGitHub,
+        apply:   (data) => {
+          if (!data.some((r) => r.booking_id === ghRecord.booking_id)) {
+            data.push(ghRecord);
+          }
+          created = ghRecord;
+        },
+        save:    saveRecordsToGitHub,
+        message: `v2: Add revenue record for ${vehicle_id}`,
+      });
+      return res.status(201).json({ record: created });
     }
 
     // ── UPDATE ──────────────────────────────────────────────────────────────
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot update revenue record" });
       const allowed = [
         "gross_amount","deposit_amount","refund_amount","payment_method","payment_status",
         "protection_plan_id","notes","is_no_show","is_cancelled","override_by_admin",
@@ -133,78 +215,108 @@ export default async function handler(req, res) {
       if (!Object.keys(updates).length)
         return res.status(400).json({ error: "No valid update fields provided" });
 
-      const { data, error } = await sb.from("revenue_records").update(updates).eq("id", body.id).select().single();
-      if (error) throw error;
-      return res.status(200).json({ record: data });
+      if (sb) {
+        const { data, error } = await sb.from("revenue_records").update(updates).eq("id", body.id).select().single();
+        if (!error) return res.status(200).json({ record: data });
+        if (!isSchemaError(error)) throw error;
+        console.warn("v2-revenue update: revenue_records table missing, falling back to GitHub");
+      }
+      // GitHub fallback
+      let updated;
+      await updateJsonFileWithRetry({
+        load:    loadRecordsFromGitHub,
+        apply:   (data) => {
+          const idx = data.findIndex((r) => r.id === body.id);
+          if (idx === -1) throw new Error("Record not found");
+          Object.assign(data[idx], updates, { updated_at: new Date().toISOString() });
+          updated = data[idx];
+        },
+        save:    saveRecordsToGitHub,
+        message: `v2: Update revenue record ${body.id}`,
+      });
+      return res.status(200).json({ record: updated });
     }
 
     // ── DELETE ──────────────────────────────────────────────────────────────
     if (action === "delete") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot delete revenue record" });
-      const { error } = await sb.from("revenue_records").delete().eq("id", body.id);
-      if (error) throw error;
+      if (sb) {
+        const { error } = await sb.from("revenue_records").delete().eq("id", body.id);
+        if (!error) return res.status(200).json({ success: true });
+        if (!isSchemaError(error)) throw error;
+        console.warn("v2-revenue delete: revenue_records table missing, falling back to GitHub");
+      }
+      // GitHub fallback
+      await updateJsonFileWithRetry({
+        load:    loadRecordsFromGitHub,
+        apply:   (data) => {
+          const idx = data.findIndex((r) => r.id === body.id);
+          if (idx !== -1) data.splice(idx, 1);
+        },
+        save:    saveRecordsToGitHub,
+        message: `v2: Delete revenue record ${body.id}`,
+      });
       return res.status(200).json({ success: true });
     }
 
     // ── SUMMARY (per-vehicle) ────────────────────────────────────────────────
     if (action === "summary") {
-      // Return empty summary when Supabase is not configured
-      if (!sb) return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
-      try {
-        const { data, error } = await sb.from("vehicle_revenue_summary").select("*");
-        if (error) {
-          // Fallback: aggregate manually if view not yet created
-          const { data: recs, error: err2 } = await sb.from("revenue_records").select("*");
-          if (err2) {
-            console.error("v2-revenue summary fallback error:", err2.message);
-            return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
+      // Helper to aggregate records manually
+      function aggregateRecords(recs) {
+        const summary = {};
+        const totals = { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
+        for (const r of (recs || [])) {
+          if (!summary[r.vehicle_id]) {
+            summary[r.vehicle_id] = { vehicle_id: r.vehicle_id, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_refunds:0, total_net:0, total_deposits:0 };
           }
-          const summary = {};
-          let totals = { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
-          for (const r of (recs || [])) {
-            if (!summary[r.vehicle_id]) {
-              summary[r.vehicle_id] = { vehicle_id: r.vehicle_id, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_refunds:0, total_net:0, total_deposits:0 };
-            }
-            const s = summary[r.vehicle_id];
-            if (r.is_cancelled) { s.cancelled_count++; continue; }
-            if (r.is_no_show)   { s.no_show_count++;   continue; }
-            s.booking_count++;
-            s.total_gross    += Number(r.gross_amount   || 0);
-            s.total_refunds  += Number(r.refund_amount  || 0);
-            s.total_net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
-            s.total_deposits += Number(r.deposit_amount || 0);
-            totals.gross    += Number(r.gross_amount   || 0);
-            totals.refunds  += Number(r.refund_amount  || 0);
-            totals.net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
-            totals.deposits += Number(r.deposit_amount || 0);
-            totals.bookingCount++;
-          }
-          return res.status(200).json({ summary: Object.values(summary), totals });
+          const s = summary[r.vehicle_id];
+          if (r.is_cancelled) { s.cancelled_count++; continue; }
+          if (r.is_no_show)   { s.no_show_count++;   continue; }
+          s.booking_count++;
+          s.total_gross    += Number(r.gross_amount   || 0);
+          s.total_refunds  += Number(r.refund_amount  || 0);
+          s.total_net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
+          s.total_deposits += Number(r.deposit_amount || 0);
+          totals.gross    += Number(r.gross_amount   || 0);
+          totals.refunds  += Number(r.refund_amount  || 0);
+          totals.net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
+          totals.deposits += Number(r.deposit_amount || 0);
+          totals.bookingCount++;
         }
-        // Compute global totals from the view rows
-        const rows = data || [];
-        const totals = rows.reduce((acc, r) => ({
-          gross:        acc.gross        + Number(r.total_gross    || 0),
-          refunds:      acc.refunds      + Number(r.total_refunds  || 0),
-          net:          acc.net          + Number(r.total_net      || 0),
-          deposits:     acc.deposits     + Number(r.total_deposits || 0),
-          bookingCount: acc.bookingCount + Number(r.booking_count  || 0),
-        }), { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 });
-        return res.status(200).json({ summary: rows, totals });
-      } catch (sumErr) {
-        console.error("v2-revenue summary error:", sumErr);
-        return res.status(200).json({ summary: [], totals: { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 } });
+        return { summary: Object.values(summary), totals };
       }
+
+      if (sb) {
+        try {
+          const { data, error } = await sb.from("vehicle_revenue_summary").select("*");
+          if (!error) {
+            const rows = data || [];
+            const totals = rows.reduce((acc, r) => ({
+              gross:        acc.gross        + Number(r.total_gross    || 0),
+              refunds:      acc.refunds      + Number(r.total_refunds  || 0),
+              net:          acc.net          + Number(r.total_net      || 0),
+              deposits:     acc.deposits     + Number(r.total_deposits || 0),
+              bookingCount: acc.bookingCount + Number(r.booking_count  || 0),
+            }), { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 });
+            return res.status(200).json({ summary: rows, totals });
+          }
+          // View may not exist — try raw table
+          const { data: recs, error: err2 } = await sb.from("revenue_records").select("*");
+          if (!err2) return res.status(200).json(aggregateRecords(recs));
+          console.error("v2-revenue summary error:", err2.message);
+        } catch (sumErr) {
+          console.error("v2-revenue summary error:", sumErr);
+        }
+      }
+      // GitHub fallback
+      const { data: ghRecords } = await loadRecordsFromGitHub();
+      return res.status(200).json(aggregateRecords(ghRecords));
     }
 
     // ── SYNC — build/refresh revenue_records from bookings.json ─────────────
     // Finds all paid bookings in bookings.json that don't yet have a revenue
-    // record in Supabase and creates them. Existing records (matched by
-    // booking_id) are skipped to avoid duplicates.
+    // record and creates them. Falls back to GitHub when Supabase table is missing.
     if (action === "sync") {
-      if (!sb) return res.status(503).json({ error: "Supabase not configured — cannot sync revenue records" });
-
       const { data: bookingsData } = await loadBookings();
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
       const paidBookings = Object.values(bookingsData).flat()
@@ -214,63 +326,97 @@ export default async function handler(req, res) {
         return res.status(200).json({ synced: 0, skipped: 0, message: "No paid bookings found to sync." });
       }
 
-      // Pre-check existing booking_ids to compute accurate counts and skip
-      // records that are already present. Errors here are non-fatal: if the
-      // query fails (e.g., table not yet migrated), we try to insert anyway.
-      let existingIds = new Set();
-      try {
-        const { data: existing, error: existErr } = await sb
-          .from("revenue_records")
-          .select("booking_id");
-        if (!existErr) {
-          existingIds = new Set((existing || []).map((r) => r.booking_id));
+      // Build records without `id` so Supabase can generate it via gen_random_uuid()
+      const toInsertBase = paidBookings.map((b) => ({
+        booking_id:        b.bookingId,
+        vehicle_id:        b.vehicleId || "unknown",
+        customer_name:     b.name        || null,
+        customer_phone:    b.phone       || null,
+        customer_email:    b.email       || null,
+        pickup_date:       b.pickupDate  || null,
+        return_date:       b.returnDate  || null,
+        gross_amount:      Number(b.amountPaid || 0),
+        deposit_amount:    0,
+        refund_amount:     0,
+        payment_method:    b.paymentMethod || "cash",
+        payment_status:    "paid",
+        notes:             b.notes || null,
+        is_no_show:        false,
+        is_cancelled:      b.status === "cancelled_rental",
+        override_by_admin: true,
+        created_at:        new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
+      }));
+
+      if (sb) {
+        let schemaError = false;
+        // Pre-check existing booking_ids to compute accurate counts
+        let existingIds = new Set();
+        try {
+          const { data: existing, error: existErr } = await sb.from("revenue_records").select("booking_id");
+          if (existErr) {
+            if (isSchemaError(existErr)) { schemaError = true; }
+          } else {
+            existingIds = new Set((existing || []).map((r) => r.booking_id));
+          }
+        } catch (_) { /* non-fatal */ }
+
+        if (!schemaError) {
+          const newRecords = toInsertBase.filter((r) => !existingIds.has(r.booking_id));
+          const skipped = toInsertBase.length - newRecords.length;
+
+          if (newRecords.length === 0) {
+            return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} booking${skipped !== 1 ? "s" : ""} already have revenue records.` });
+          }
+
+          let synced = 0;
+          const BATCH = 100;
+          let batchFailed = false;
+          for (let i = 0; i < newRecords.length; i += BATCH) {
+            const batch = newRecords.slice(i, i + BATCH);
+            const { error: upsertErr } = await sb.from("revenue_records")
+              .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
+            if (upsertErr) {
+              if (isSchemaError(upsertErr)) { batchFailed = true; schemaError = true; break; }
+              const { error: insertErr } = await sb.from("revenue_records").insert(batch);
+              if (insertErr) {
+                if (isSchemaError(insertErr)) { batchFailed = true; schemaError = true; break; }
+                throw insertErr;
+              }
+            }
+            synced += batch.length;
+          }
+
+          if (!batchFailed) {
+            return res.status(200).json({
+              synced,
+              skipped,
+              message: `Synced ${synced} revenue record${synced !== 1 ? "s" : ""} from bookings.${skipped > 0 ? ` ${skipped} already existed and were skipped.` : ""}`,
+            });
+          }
         }
-      } catch (_) {
-        // Non-fatal: proceed with empty set; upsert will handle conflicts
+        console.warn("v2-revenue sync: revenue_records table missing, falling back to GitHub");
       }
 
-      const toInsert = paidBookings
-        .filter((b) => !existingIds.has(b.bookingId))
-        .map((b) => ({
-          booking_id:        b.bookingId,
-          vehicle_id:        b.vehicleId || "unknown",
-          customer_name:     b.name        || null,
-          customer_phone:    b.phone       || null,
-          customer_email:    b.email       || null,
-          pickup_date:       b.pickupDate  || null,
-          return_date:       b.returnDate  || null,
-          gross_amount:      Number(b.amountPaid || 0),
-          deposit_amount:    0,
-          refund_amount:     0,
-          payment_method:    b.paymentMethod || "cash",
-          payment_status:    "paid",
-          notes:             b.notes || null,
-          is_no_show:        false,
-          is_cancelled:      b.status === "cancelled_rental",
-          override_by_admin: true,
-        }));
-
-      const skipped = paidBookings.length - toInsert.length;
-
-      if (toInsert.length === 0) {
-        return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} booking${skipped !== 1 ? "s" : ""} already have revenue records.` });
-      }
-
-      // Insert in batches of 100, using upsert with ignoreDuplicates as a
-      // safety net against race conditions when the UNIQUE constraint exists.
+      // GitHub fallback for sync — include client-generated UUIDs
+      const toInsert = toInsertBase.map((r) => ({ id: crypto.randomUUID(), ...r }));
       let synced = 0;
-      const BATCH = 100;
-      for (let i = 0; i < toInsert.length; i += BATCH) {
-        const batch = toInsert.slice(i, i + BATCH);
-        const { error: upsertErr } = await sb.from("revenue_records")
-          .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
-        if (upsertErr) {
-          // onConflict upsert failed (UNIQUE constraint may not exist) — fall back to plain INSERT
-          const { error: insertErr } = await sb.from("revenue_records").insert(batch);
-          if (insertErr) throw insertErr;
-        }
-        synced += batch.length;
-      }
+      let skipped = 0;
+      await updateJsonFileWithRetry({
+        load:    loadRecordsFromGitHub,
+        apply:   (data) => {
+          const existingBookingIds = new Set(data.map((r) => r.booking_id));
+          synced = 0; skipped = 0;
+          for (const r of toInsert) {
+            if (existingBookingIds.has(r.booking_id)) { skipped++; continue; }
+            data.push(r);
+            existingBookingIds.add(r.booking_id);
+            synced++;
+          }
+        },
+        save:    saveRecordsToGitHub,
+        message: `v2: Sync ${toInsert.length} revenue records from bookings`,
+      });
 
       return res.status(200).json({
         synced,
