@@ -13,7 +13,8 @@ import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
-import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { appendBooking, normalizePhone } from "./_bookings.js";
@@ -794,10 +795,17 @@ export default async function handler(req, res) {
   // Extract the customer's IP address from reverse-proxy headers (Vercel sets x-forwarded-for).
   const customerIp = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || null;
 
-  // Compute server-side pricing breakdown lines for daily/weekly rentals.
+  // Compute server-side pricing breakdown lines for daily/weekly rentals using
+  // live admin-configurable rates from system_settings.
   // Slingshot (hourly tier) or missing dates fall back gracefully to null.
-  const breakdownLines = (vehicleId && pickup && returnDate && !slingshotDuration)
-    ? computeBreakdownLines(vehicleId, pickup, returnDate, !!protectionPlan, protectionPlanTier || null)
+  const pricingSettings = (vehicleId && pickup && returnDate && !slingshotDuration)
+    ? await loadPricingSettings()
+    : null;
+  // Slingshot bookings use hourly tier pricing and do not produce a line-item
+  // breakdown table in the email — the total charged is displayed directly.
+  // loadPricingSettings() is only needed for Camry / economy car breakdowns.
+  const breakdownLines = pricingSettings
+    ? computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, pricingSettings, !!protectionPlan, protectionPlanTier || null)
     : null;
   const breakdownText = breakdownLines ? breakdownLines.join("\n") : null;
   const breakdownHtml = breakdownLines

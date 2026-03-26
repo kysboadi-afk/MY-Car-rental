@@ -6,7 +6,8 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeAmount, computeProtectionPlanCost, computeRentalDays, computeSlingshotAmount, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE, LA_TAX_RATE } from "./_pricing.js";
+import { CARS, computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { loadPricingSettings, computeCamryAmountFromSettings, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -83,11 +84,15 @@ export default async function handler(req, res) {
     }
     const trimmedName = name.trim();
 
+    // Load live pricing from Supabase system_settings (admin-configurable).
+    // Falls back to hardcoded _pricing.js defaults when Supabase is unavailable.
+    const settings = await loadPricingSettings();
+
     // Compute amount server-side — never trust a client-supplied amount.
     const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
     const computedFullRental = isSlingshotVehicle
-      ? computeSlingshotAmount(Number(slingshotDuration), vehicleId)
-      : computeAmount(vehicleId, pickup, returnDate);
+      ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
+      : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
     const carData = CARS[vehicleId];
 
     // Add Damage Protection Plan cost when the renter opted in.
@@ -97,24 +102,24 @@ export default async function handler(req, res) {
     // For Slingshot Option B and legacy callers, tier is null and the greedy logic is used.
     const days = isSlingshotVehicle ? Math.max(1, Math.ceil(Number(slingshotDuration) / 24)) : computeRentalDays(pickup, returnDate);
     const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
-    const protectionCost = protectionPlan ? computeProtectionPlanCost(days, tier) : 0;
+    const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
 
-    // For Slingshot: charge the full rental amount (rental + $150 security deposit + DPP + tax)
+    // For Slingshot: charge the full rental amount (rental + security deposit + DPP + tax)
     // upfront as a single automatic payment. No split payment or auth hold — everything is
-    // collected online at booking. The $150 security deposit is included in the total and
+    // collected online at booking. The security deposit is included in the total and
     // will be refunded after the vehicle is returned and inspected with no issues.
-    // For Camry with paymentMode:'deposit': charge only CAMRY_BOOKING_DEPOSIT now; rest at pickup.
+    // For Camry with paymentMode:'deposit': charge only the booking deposit now; rest at pickup.
     // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
-    const afterTaxFullRental = Math.round(preTaxFullRental * (1 + LA_TAX_RATE) * 100) / 100;
+    const afterTaxFullRental = applyTax(preTaxFullRental, settings);
 
     let totalAmount;
 
     if (isSlingshotVehicle) {
-      // Full payment upfront — rental fee + $150 security deposit + DPP (if Option B) + tax
+      // Full payment upfront — rental fee + security deposit + DPP (if Option B) + tax
       totalAmount = afterTaxFullRental;
     } else if (paymentMode === "deposit") {
-      totalAmount = CAMRY_BOOKING_DEPOSIT;
+      totalAmount = settings.camry_booking_deposit;
     } else {
       totalAmount = afterTaxFullRental;
     }
@@ -165,7 +170,7 @@ export default async function handler(req, res) {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",
           full_rental_amount:  afterTaxFullRental.toFixed(2),
-          balance_at_pickup:   (afterTaxFullRental - CAMRY_BOOKING_DEPOSIT).toFixed(2),
+          balance_at_pickup:   (afterTaxFullRental - settings.camry_booking_deposit).toFixed(2),
         } : {}),
       },
     };

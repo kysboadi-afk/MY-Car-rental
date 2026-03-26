@@ -28,13 +28,21 @@ function getSupabase() {
 // Used when Supabase is unavailable or the table is empty.
 const DEFAULT_SETTINGS = [
   { key: "la_tax_rate",                 value: 0.1025,  description: "Los Angeles combined sales tax rate",             category: "tax" },
-  { key: "slingshot_daily_rate",        value: 350,     description: "Slingshot R daily rate (USD)",                    category: "pricing" },
+  // Slingshot tier rates (rental price before security deposit)
+  { key: "slingshot_3hr_rate",          value: 200,     description: "Slingshot R 3-hour tier rate (USD)",              category: "pricing" },
+  { key: "slingshot_6hr_rate",          value: 250,     description: "Slingshot R 6-hour tier rate (USD)",              category: "pricing" },
+  { key: "slingshot_daily_rate",        value: 350,     description: "Slingshot R 1-day (24 hr) tier rate (USD)",       category: "pricing" },
+  { key: "slingshot_2day_rate",         value: 700,     description: "Slingshot R 2-day (48 hr) tier rate (USD)",       category: "pricing" },
+  { key: "slingshot_3day_rate",         value: 1050,    description: "Slingshot R 3-day (72 hr) tier rate (USD)",       category: "pricing" },
+  // Camry / economy car rates
   { key: "camry_daily_rate",            value: 55,      description: "Camry daily rate (USD)",                          category: "pricing" },
   { key: "camry_weekly_rate",           value: 350,     description: "Camry weekly rate (USD)",                         category: "pricing" },
   { key: "camry_biweekly_rate",         value: 650,     description: "Camry bi-weekly rate (USD)",                      category: "pricing" },
   { key: "camry_monthly_rate",          value: 1300,    description: "Camry monthly rate (USD)",                        category: "pricing" },
+  // Deposits / booking fees
   { key: "slingshot_security_deposit",  value: 150,     description: "Slingshot refundable security deposit (USD)",     category: "pricing" },
-  { key: "slingshot_booking_deposit",   value: 50,      description: "Slingshot non-refundable booking deposit",        category: "pricing" },
+  { key: "slingshot_booking_deposit",   value: 50,      description: "Slingshot non-refundable booking deposit (USD)",  category: "pricing" },
+  { key: "camry_booking_deposit",       value: 50,      description: "Camry non-refundable booking deposit (USD)",      category: "pricing" },
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },
   { key: "auto_create_revenue_on_pay",  value: true,    description: "Auto-create revenue record when payment received",category: "automation" },
   { key: "auto_update_customer_stats",  value: true,    description: "Auto-update customer stats on booking events",    category: "automation" },

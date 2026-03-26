@@ -12,13 +12,14 @@
 import Stripe from "stripe";
 import {
   CARS,
-  computeAmount,
-  computeProtectionPlanCost,
   computeRentalDays,
-  computeSlingshotAmount,
-  SLINGSHOT_BOOKING_DEPOSIT,
-  CAMRY_BOOKING_DEPOSIT,
 } from "./_pricing.js";
+import {
+  loadPricingSettings,
+  computeCamryAmountFromSettings,
+  computeSlingshotAmountFromSettings,
+  computeDppCostFromSettings,
+} from "./_settings.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -79,15 +80,18 @@ export default async function handler(req, res) {
     }
     const trimmedName = name.trim();
 
+    // Load live pricing from Supabase system_settings (admin-configurable).
+    const settings = await loadPricingSettings();
+
     // Compute amounts server-side — never trust a client-supplied amount.
     const computedFullRental = isSlingshotVehicle
-      ? computeSlingshotAmount(Number(slingshotDuration), vehicleId)
-      : computeAmount(vehicleId, pickup, returnDate);
+      ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
+      : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
 
     const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
-    const protectionCost = protectionPlan ? computeProtectionPlanCost(days) : 0;
+    const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
 
-    const depositPaid = isSlingshotVehicle ? SLINGSHOT_BOOKING_DEPOSIT : CAMRY_BOOKING_DEPOSIT;
+    const depositPaid = isSlingshotVehicle ? settings.slingshot_booking_deposit : settings.camry_booking_deposit;
     const preTaxAmount = computedFullRental + protectionCost;
     // Balance = pre-tax rental amount minus the deposit already paid.
     // Tax is calculated by Stripe automatically at checkout.
