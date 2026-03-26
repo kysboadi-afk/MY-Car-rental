@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="description" content="Rent a Polaris Slingshot in Los Angeles. Turn heads on every street — perfect for dates, birthdays, and unforgettable LA experiences. Book online with SLY Rides.">
   <title>Rent a Slingshot in LA | SLY Rides — Drive the Ultimate LA Experience</title>
-  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="icon" href="https://github.com/user-attachments/assets/77e7beb8-b447-47c7-82cc-59e3685b257e" type="image/png">
   <link rel="stylesheet" href="style.css">
   <!-- Meta Pixel Code -->
   <script>
@@ -629,10 +629,9 @@
 
 <!-- HEADER -->
 <header class="site-header">
-  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+  <a href="slingshot.html" class="logo-link"><img src="https://github.com/user-attachments/assets/77e7beb8-b447-47c7-82cc-59e3685b257e" alt="SLY Slingshot Rentals Logo" class="site-logo"></a>
   <nav class="site-nav">
-    <a href="index.html">Home</a>
-    <a href="cars.html">Browse Cars</a>
+    <a href="slingshot.html">Home</a>
     <a href="slingshot.html" style="color:#ffb400;">Slingshot</a>
     <a href="contact.html">Contact</a>
   </nav>
@@ -832,18 +831,6 @@
       <div class="sl-gallery-item sl-gallery-item--wide sl-fade-in">
         <img src="images/photo_2026-03-22_11-38-56.jpg" alt="Slingshot on LA streets at sunset">
       </div>
-      <div class="sl-gallery-item sl-fade-in sl-fade-in-delay-1">
-        <img src="images/photo_2026-03-19_00-34-36.jpg" alt="Slingshot at night in Los Angeles">
-      </div>
-      <div class="sl-gallery-item sl-fade-in sl-fade-in-delay-1">
-        <img src="images/IMG_5139.jpeg" alt="Slingshot lifestyle Los Angeles">
-      </div>
-      <div class="sl-gallery-item sl-fade-in sl-fade-in-delay-2">
-        <img src="images/IMG_5140.jpeg" alt="Slingshot open cockpit view">
-      </div>
-      <div class="sl-gallery-item sl-gallery-item--wide sl-fade-in sl-fade-in-delay-2">
-        <img src="images/IMG_4486.jpeg" alt="Slingshot cruising Beverly Hills">
-      </div>
     </div>
   </div>
 </section>
@@ -853,7 +840,7 @@
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <section class="sl-section sl-why" id="why">
   <div class="sl-section-inner">
-    <h2 class="sl-section-title sl-fade-in">Why <span class="sl-gold">SLY Rides</span>?</h2>
+    <h2 class="sl-section-title sl-fade-in">Why <span class="sl-gold" id="slingshot-biz-name">SLY SLINGSHOT RENTALS</span>?</h2>
     <p class="sl-section-subtitle sl-fade-in">LA's most trusted Slingshot rental — clean, fast, and hassle-free.</p>
     <div class="sl-why-grid">
       <div class="sl-why-item sl-fade-in sl-fade-in-delay-1">
@@ -1067,6 +1054,20 @@
       }
     });
   });
+
+  // ── Load slingshot business name from site settings ───────────────────────
+  (function() {
+    fetch('/api/site-content')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        var name = data && data.settings && data.settings.slingshot_business_name;
+        if (name) {
+          var el = document.getElementById('slingshot-biz-name');
+          if (el) el.textContent = name;
+        }
+      })
+      .catch(function(err) { console.error('Failed to load slingshot business name:', err); });
+  })();
 </script>
 </body>
 </html>
