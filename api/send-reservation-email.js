@@ -247,7 +247,7 @@ function generateRentalAgreementHtml(body) {
       : "";
     depositSection = `
       <h4>SECURITY DEPOSIT (Refundable)</h4>
-      <p>A <strong>$150 refundable security deposit</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
+      <p>A <strong>refundable security deposit equal to your rental fee</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
       <p><strong>Insurance/Protection Choice:</strong> ${insuranceCoverageChoice === "no" ? "Option B — No personal insurance (Damage Protection Plan included)" : "Option A — Renter provided own insurance (proof required at pickup)"}</p>
       ${dppLine}
     `;
@@ -393,7 +393,7 @@ function generateRentalAgreementHtml(body) {
   <p>SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
 
   <h4>PAYMENT TERMS</h4>
-  <p>${isHourly ? "Full payment (including a $150 refundable security deposit) was charged at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues." : "All fees are due at pickup."} Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+  <p>${isHourly ? "Full payment (including a refundable security deposit equal to your rental fee) was charged at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues." : "All fees are due at pickup."} Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
   <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
 
   <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
@@ -593,7 +593,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     sectionHeader("Deposit & Protection Plan");
     if (isHourly && carInfo) {
       // Full payment system: security deposit included in total
-      bodyText(`Security Deposit: A $150 refundable security deposit is included in your total payment. Released within 5–7 business days after return and inspection with no issues. May be retained to cover damages, loss of use, cleaning, tolls, or fuel.`);
+      bodyText(`Security Deposit: A refundable security deposit equal to your rental fee is included in your total payment. Released within 5–7 business days after return and inspection with no issues. May be retained to cover damages, loss of use, cleaning, tolls, or fuel.`);
       doc.moveDown(0.2);
       if (insuranceCoverageChoice === "no") {
         bodyText(`Option B selected: No personal insurance — Damage Protection Plan automatically included.`);
@@ -665,7 +665,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     // ── Payment Terms ──────────────────────────────────────────────────────────
     sectionHeader("Payment Terms");
     if (isHourly) {
-      bodyText(`Full payment (including a $150 refundable security deposit) was charged at the time of booking. The security deposit will be released within 5–7 business days after return and inspection with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
+      bodyText(`Full payment (including a refundable security deposit equal to your rental fee) was charged at the time of booking. The security deposit will be released within 5–7 business days after return and inspection with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
     } else {
       bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
     }
@@ -846,7 +846,7 @@ export default async function handler(req, res) {
       bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   }
 
-  // For Slingshot bookings, 'total' is the full rental amount charged at booking (including $150 security deposit).
+  // For Slingshot bookings, 'total' is the full rental amount charged at booking (including refundable security deposit equal to the rental fee).
   const isHourlyEmail = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
   const totalChargedLabel = isBalancePayment
     ? "Balance Paid"
