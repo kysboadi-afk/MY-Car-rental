@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="description" content="Rent a Polaris Slingshot in Los Angeles. Turn heads on every street — perfect for dates, birthdays, and unforgettable LA experiences. Book online with SLY Rides.">
-  <title>Rent a Slingshot in LA | SLY Rides — Drive the Ultimate LA Experience</title>
+  <meta name="description" content="Rent a Polaris Slingshot in Los Angeles. Turn heads on every street — perfect for dates, birthdays, and unforgettable LA experiences. Book online with SLY Slingshot Rentals.">
+  <title>Rent a Slingshot in LA | SLY Slingshot Rentals — Drive the Ultimate LA Experience</title>
   <link rel="icon" href="images/logo.jpg" type="image/jpeg">
   <link rel="stylesheet" href="style.css">
   <!-- Meta Pixel Code -->
@@ -216,9 +216,9 @@
     }
     .sl-vehicle-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 28px;
-      max-width: 860px;
+      max-width: 1100px;
       margin: 0 auto;
     }
     .sl-vehicle-card {
@@ -312,6 +312,17 @@
     .sl-price-duration {
       font-size: 0.85rem;
       color: #888;
+    }
+    .sl-price-deposit {
+      font-size: 0.75rem;
+      color: #aaa;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #2a2a2a;
+    }
+    .sl-price-deposit span {
+      color: #ffb400;
+      font-weight: 600;
     }
     .sl-pricing-note {
       text-align: center;
@@ -631,7 +642,6 @@
   <nav class="site-nav">
     <a href="slingshot.html">Home</a>
     <a href="slingshot.html" style="color:#ffb400;">Slingshot</a>
-    <a href="contact.html">Contact</a>
   </nav>
   <a href="tel:+12139166606" class="header-phone">
     <span class="phone-urgency">Call Now to Book Today</span>
@@ -707,7 +717,7 @@
           <p>Open-air 3-wheeler built for the streets of LA. Perfect for dates, photo shoots, and city cruises. Starting at $200 / 3 hrs.</p>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
             <span style="background:#1a1500;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">Sports • 2-Seater</span>
-            <span style="background:#111;border:1px solid #333;color:#aaa;font-size:0.75rem;padding:3px 9px;border-radius:12px;">$150 Deposit</span>
+            <span style="background:#111;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">💰 Deposit = Rental Fee</span>
           </div>
           <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
         </div>
@@ -729,33 +739,35 @@
         <div class="sl-price-label">Quick Cruise</div>
         <div class="sl-price-amount">$200</div>
         <div class="sl-price-duration">3 Hours</div>
+        <div class="sl-price-deposit">💰 Deposit: <span>$200</span> refundable</div>
       </div>
       <div class="sl-price-card sl-fade-in sl-fade-in-delay-1">
         <div class="sl-price-label">Half Day</div>
         <div class="sl-price-amount">$250</div>
         <div class="sl-price-duration">6 Hours</div>
+        <div class="sl-price-deposit">💰 Deposit: <span>$250</span> refundable</div>
       </div>
       <div class="sl-price-card sl-price-featured sl-fade-in sl-fade-in-delay-2">
         <div class="sl-price-label">Full Day ⭐</div>
         <div class="sl-price-amount">$350</div>
         <div class="sl-price-duration">24 Hours</div>
+        <div class="sl-price-deposit">💰 Deposit: <span>$350</span> refundable</div>
       </div>
       <div class="sl-price-card sl-fade-in sl-fade-in-delay-3">
         <div class="sl-price-label">Weekend</div>
         <div class="sl-price-amount">$700</div>
         <div class="sl-price-duration">48 Hours</div>
+        <div class="sl-price-deposit">💰 Deposit: <span>$700</span> refundable</div>
       </div>
       <div class="sl-price-card sl-fade-in sl-fade-in-delay-3">
         <div class="sl-price-label">3-Day Getaway</div>
         <div class="sl-price-amount">$1,050</div>
         <div class="sl-price-duration">72 Hours</div>
+        <div class="sl-price-deposit">💰 Deposit: <span>$1,050</span> refundable</div>
       </div>
     </div>
-    <p class="sl-pricing-note">All rates include a <span>$150 refundable security deposit</span>. Protection plan available.</p>
+    <p class="sl-pricing-note">Deposit equals your rental fee and is <span>fully refunded</span> after return &amp; inspection.</p>
     <div class="sl-pricing-cta">
-      <div style="margin-bottom:24px;">
-        <span class="sl-protection-badge">🛡️ Damage Protection Plan Available</span>
-      </div>
       <a href="car.html?vehicle=slingshot" class="sl-btn-primary">Check Availability →</a>
     </div>
   </div>
@@ -786,15 +798,15 @@
       <div class="sl-req-item sl-fade-in sl-fade-in-delay-2">
         <div class="sl-req-icon">🛡️</div>
         <div>
-          <h4>Insurance or Protection Plan</h4>
-          <p>Bring your own auto insurance or add our Damage Protection Plan during checkout.</p>
+          <h4>Auto Insurance</h4>
+          <p>Bring your own valid personal auto insurance. Proof is required at pickup.</p>
         </div>
       </div>
       <div class="sl-req-item sl-fade-in sl-fade-in-delay-2">
         <div class="sl-req-icon">💳</div>
         <div>
           <h4>Security Deposit</h4>
-          <p>A $150 refundable security deposit is collected at booking and returned after the vehicle is returned in good condition.</p>
+          <p>A refundable security deposit equal to your rental fee is charged at booking and returned after the vehicle is returned in good condition.</p>
         </div>
       </div>
     </div>
@@ -869,7 +881,7 @@
     <div class="sl-testimonials-grid">
       <div class="sl-testimonial-card sl-fade-in sl-fade-in-delay-1">
         <div class="sl-stars">★★★★★</div>
-        <blockquote>"Rented the Slingshot for my birthday and it was INSANE. Everyone on the street was staring. SLY Rides made the whole process super easy."</blockquote>
+        <blockquote>"Rented the Slingshot for my birthday and it was INSANE. Everyone on the street was staring. SLY Slingshot Rentals made the whole process super easy."</blockquote>
         <div class="sl-testimonial-author">— Marcus T., Los Angeles</div>
       </div>
       <div class="sl-testimonial-card sl-fade-in sl-fade-in-delay-2">
@@ -910,21 +922,21 @@
           What is the minimum age to rent?
           <span class="sl-faq-q-icon">+</span>
         </button>
-        <div class="sl-faq-a">You must be at least 21 years old with a valid driver's license to rent a Slingshot from SLY Rides.</div>
+        <div class="sl-faq-a">You must be at least 21 years old with a valid driver's license to rent a Slingshot from SLY Slingshot Rentals.</div>
       </div>
       <div class="sl-faq-item">
         <button class="sl-faq-q" aria-expanded="false">
           What is the Damage Protection Plan?
           <span class="sl-faq-q-icon">+</span>
         </button>
-        <div class="sl-faq-a">Our Damage Protection Plan (DPP) covers you in the event of an accident or damage to the vehicle, up to a $1,000 liability cap. It's available as an add-on if you don't have your own auto insurance. You can select it during the online booking process.</div>
+        <div class="sl-faq-a">SLY Slingshot Rentals does not currently offer a Damage Protection Plan. Renters must provide their own valid personal auto insurance. Proof of insurance is required at pickup. Without insurance, the renter assumes full financial liability for any damage to the vehicle.</div>
       </div>
       <div class="sl-faq-item">
         <button class="sl-faq-q" aria-expanded="false">
           Is the security deposit refundable?
           <span class="sl-faq-q-icon">+</span>
         </button>
-        <div class="sl-faq-a">Yes. The $150 security deposit is fully refundable after the vehicle is returned in the same condition it was rented. The authorization hold is released within a few business days.</div>
+        <div class="sl-faq-a">Yes. The security deposit equals your rental fee (e.g. $200 for a 3-hour rental) and is fully refundable after the vehicle is returned in the same condition it was rented. The deposit is released within 5–7 business days after inspection.</div>
       </div>
       <div class="sl-faq-item">
         <button class="sl-faq-q" aria-expanded="false">
@@ -1051,5 +1063,8 @@
       .catch(function(err) { console.error('Failed to load slingshot business name:', err); });
   })();
 </script>
+<!-- Slingshot-focused chatbot (only talks about the Slingshot) -->
+<script>window.slyChatbotMode = "slingshot";</script>
+<script src="chatbot.js"></script>
 </body>
 </html>
