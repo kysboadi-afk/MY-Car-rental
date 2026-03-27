@@ -30,8 +30,6 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-
 // All tables that the v2 admin panel reads from or writes to.
 const REQUIRED_TABLES = [
   "vehicles",
@@ -53,16 +51,12 @@ const OPTIONAL_TABLES = [
   "content_revisions",
 ];
 
-function corsHeaders(req) {
-  const origin = req.headers.origin;
-  const headers = {
+function corsHeaders() {
+  return {
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
-  if (ALLOWED_ORIGINS.includes(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  }
-  return headers;
 }
 
 /**
@@ -88,9 +82,9 @@ async function checkTable(sb, tableName) {
 }
 
 export default async function handler(req, res) {
-  const headers = corsHeaders(req);
+  const headers = corsHeaders();
   if (req.method === "OPTIONS") {
-    return res.status(204).set(headers).end();
+    return res.status(200).set(headers).end();
   }
   if (req.method !== "POST") {
     return res.status(405).set(headers).json({ error: "Method not allowed" });
