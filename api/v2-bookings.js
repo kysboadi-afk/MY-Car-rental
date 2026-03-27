@@ -22,7 +22,7 @@
 import crypto from "crypto";
 import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
-import { hasOverlap } from "./_availability.js";
+import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import {
@@ -31,6 +31,9 @@ import {
   autoUpsertBooking,
   autoCreateBlockedDate,
 } from "./_booking-automation.js";
+import { sendSms } from "./_textmagic.js";
+import { normalizePhone } from "./_bookings.js";
+import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -213,6 +216,24 @@ export default async function handler(req, res) {
           updatedBooking.returnDate,
           "booking"
         );
+        // Send booking confirmation SMS when status transitions to booked_paid
+        if (newStatus === "booked_paid" && updatedBooking.phone &&
+            process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          try {
+            await sendSms(
+              normalizePhone(updatedBooking.phone),
+              render(BOOKING_CONFIRMED, {
+                vehicle:       updatedBooking.vehicleName || updatedBooking.vehicleId || "",
+                customer_name: (updatedBooking.name || "Customer").split(" ")[0],
+                pickup_date:   updatedBooking.pickupDate  || "",
+                pickup_time:   updatedBooking.pickupTime  || "",
+                location:      DEFAULT_LOCATION,
+              })
+            );
+          } catch (smsErr) {
+            console.error("v2-bookings: booking confirmation SMS failed (non-fatal):", smsErr.message);
+          }
+        }
       } else if (updatedBooking && newStatus === "completed_rental") {
         await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
         await autoUpsertBooking(updatedBooking);
@@ -254,7 +275,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "returnDate must not be before pickupDate" });
       }
 
-      // Check for overlapping bookings
+      // Check for overlapping bookings — uses datetime-aware comparison so that
+      // back-to-back bookings on the same day (different time slots) are allowed.
       const { data: existingBookings } = await loadBookings();
       const vehicleBookings = existingBookings[vehicleId] || [];
       const activeOverlap = vehicleBookings.filter(
@@ -263,10 +285,13 @@ export default async function handler(req, res) {
       for (const existing of activeOverlap) {
         const eFrom = existing.pickupDate;
         const eTo   = existing.returnDate;
-        if (eFrom && eTo && !(returnDate < eFrom || pickupDate > eTo)) {
-          return res.status(409).json({
-            error: `Date conflict: vehicle already booked from ${eFrom} to ${eTo} for ${existing.name}`,
-          });
+        if (eFrom && eTo) {
+          const conflictRanges = [{ from: eFrom, to: eTo, fromTime: existing.pickupTime, toTime: existing.returnTime }];
+          if (hasDateTimeOverlap(conflictRanges, pickupDate, returnDate, pickupTime, returnTime)) {
+            return res.status(409).json({
+              error: `Date/time conflict: vehicle already booked from ${eFrom} ${existing.pickupTime || ""} to ${eTo} ${existing.returnTime || ""} for ${existing.name}`.trim(),
+            });
+          }
         }
       }
 

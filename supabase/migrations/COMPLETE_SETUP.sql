@@ -810,3 +810,107 @@ INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
 SELECT b.id, b.vehicle_id, b.deposit_paid, 0 FROM bookings b
 WHERE b.booking_ref IN ('bk-ms-2026-0313','bk-bg-2026-0219','bk-da-2026-0321') AND b.deposit_paid > 0
 ON CONFLICT (booking_id) DO NOTHING;
+
+
+-- =============================================================================
+-- 18. CONFLICT & STATUS FIXES
+-- =============================================================================
+-- (Migration 0015) — Adds 'reserved' rental_status, datetime-aware conflict
+-- check, and full status-flow vehicle sync.
+
+-- 18a. Drop and recreate rental_status constraint to include 'reserved'
+ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_rental_status_check;
+ALTER TABLE vehicles ADD CONSTRAINT vehicles_rental_status_check
+  CHECK (rental_status IN ('available', 'reserved', 'rented', 'maintenance'));
+
+-- 18b. Helper function for combining date + time columns into a timestamp
+CREATE OR REPLACE FUNCTION booking_datetime(d date, t time, is_end boolean DEFAULT false)
+RETURNS timestamptz LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN t IS NOT NULL THEN (d + t)::timestamptz
+    WHEN is_end        THEN (d + interval '1 day')::timestamptz
+    ELSE                    d::timestamptz
+  END
+$$;
+
+-- 18c. Datetime-aware booking conflict check
+CREATE OR REPLACE FUNCTION check_booking_conflicts()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE v_conflict_id uuid; v_blocked_vid text; new_start timestamptz; new_end timestamptz;
+BEGIN
+  IF NEW.status = 'cancelled' THEN RETURN NEW; END IF;
+  IF NEW.pickup_date IS NULL THEN RETURN NEW; END IF;
+  new_start := booking_datetime(NEW.pickup_date, NEW.pickup_time, false);
+  new_end   := booking_datetime(NEW.return_date, NEW.return_time, true);
+  SELECT b.id INTO v_conflict_id FROM bookings b
+  WHERE b.vehicle_id = NEW.vehicle_id AND b.status NOT IN ('cancelled')
+    AND b.id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
+    AND booking_datetime(b.pickup_date, b.pickup_time, false) < new_end
+    AND booking_datetime(b.return_date, b.return_time, true)  > new_start LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'Booking conflict: vehicle % overlapping % to % (booking %)',
+      NEW.vehicle_id, new_start AT TIME ZONE 'UTC', new_end AT TIME ZONE 'UTC', v_conflict_id;
+  END IF;
+  SELECT bd.vehicle_id INTO v_blocked_vid FROM blocked_dates bd
+  WHERE bd.vehicle_id = NEW.vehicle_id AND bd.reason != 'booking'
+    AND bd.start_date <= COALESCE(NEW.return_date, NEW.pickup_date)
+    AND bd.end_date   >= NEW.pickup_date LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'Date conflict: vehicle % has blocked dates overlapping % to %',
+      NEW.vehicle_id, NEW.pickup_date, COALESCE(NEW.return_date, NEW.pickup_date);
+  END IF;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS bookings_check_conflicts ON bookings;
+CREATE TRIGGER bookings_check_conflicts
+  BEFORE INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION check_booking_conflicts();
+
+-- 18d. Updated on_booking_create: approved → reserved, active → rented
+CREATE OR REPLACE FUNCTION on_booking_create()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.pickup_date IS NOT NULL AND NEW.return_date IS NOT NULL AND NEW.status NOT IN ('cancelled') THEN
+    INSERT INTO blocked_dates (vehicle_id, start_date, end_date, reason)
+    VALUES (NEW.vehicle_id, NEW.pickup_date, NEW.return_date, 'booking')
+    ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
+  END IF;
+  IF NEW.total_price > 0 AND NEW.status NOT IN ('cancelled') THEN
+    INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
+    VALUES (NEW.id, NEW.vehicle_id, NEW.total_price, 0) ON CONFLICT (booking_id) DO NOTHING;
+  END IF;
+  CASE NEW.status
+    WHEN 'approved' THEN UPDATE vehicles SET rental_status = 'reserved' WHERE vehicle_id = NEW.vehicle_id;
+    WHEN 'active'   THEN UPDATE vehicles SET rental_status = 'rented'   WHERE vehicle_id = NEW.vehicle_id;
+    ELSE NULL;
+  END CASE;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS bookings_after_insert ON bookings;
+CREATE TRIGGER bookings_after_insert
+  AFTER INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_create();
+
+-- 18e. Updated on_booking_status_change: full flow
+CREATE OR REPLACE FUNCTION on_booking_status_change()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.status = NEW.status THEN RETURN NEW; END IF;
+  CASE NEW.status
+    WHEN 'pending'   THEN UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+    WHEN 'approved'  THEN UPDATE vehicles SET rental_status = 'reserved'  WHERE vehicle_id = NEW.vehicle_id;
+    WHEN 'active'    THEN UPDATE vehicles SET rental_status = 'rented'    WHERE vehicle_id = NEW.vehicle_id;
+    WHEN 'completed' THEN UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+    WHEN 'cancelled' THEN
+      DELETE FROM blocked_dates WHERE vehicle_id = NEW.vehicle_id
+        AND start_date = NEW.pickup_date AND end_date = NEW.return_date AND reason = 'booking';
+      IF NEW.deposit_paid = 0 THEN DELETE FROM revenue WHERE booking_id = NEW.id; END IF;
+      UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+    ELSE NULL;
+  END CASE;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS bookings_after_status_change ON bookings;
+CREATE TRIGGER bookings_after_status_change
+  AFTER UPDATE OF status ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_status_change();
