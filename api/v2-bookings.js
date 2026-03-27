@@ -9,22 +9,31 @@
 //   create  — { secret, action:"create", ...bookingFields } (manual booking)
 //
 // Booking automation (triggered automatically, non-fatal):
-//   When a booking status transitions to "booked_paid" or "active_rental":
-//   1. A revenue record is created in Supabase (revenue_records table).
-//   2. The customer is upserted in Supabase (customers table) if phone is present.
-//   When a booking status transitions to "completed_rental":
-//   2. The customer stats (total_bookings, total_spent, last_booking_date) are updated.
-//   When a booking status transitions to "cancelled_rental":
-//   1. No revenue record is created.
-//   2. No customer stats are updated.
+//   On create (booked_paid) or status → "booked_paid" / "active_rental":
+//   1. Revenue record created in Supabase revenue_records table.
+//   2. Customer upserted in Supabase customers table.
+//   3. Booking synced to Supabase bookings table.
+//   4. Blocked dates inserted in Supabase blocked_dates table.
+//   On status → "completed_rental":
+//   5. Customer stats incremented.
+//   On status → "cancelled_rental":
+//   1-4 skipped; no revenue or stats updated.
 
 import crypto from "crypto";
 import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
-import { hasOverlap } from "./_availability.js";
+import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
+import {
+  autoCreateRevenueRecord,
+  autoUpsertCustomer,
+  autoUpsertBooking,
+  autoCreateBlockedDate,
+} from "./_booking-automation.js";
+import { sendSms } from "./_textmagic.js";
+import { normalizePhone } from "./_bookings.js";
+import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -166,7 +175,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "paymentMethod", "cancelReason"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -191,16 +200,46 @@ export default async function handler(req, res) {
       });
 
       // ── Booking automation ────────────────────────────────────────────────
-      // When a booking becomes paid, automatically create a revenue record and
-      // upsert the customer in Supabase.  Both operations are non-fatal.
+      // When a booking becomes paid, automatically create a revenue record,
+      // upsert the customer, sync to the Supabase bookings table, and create
+      // a blocked_dates entry.  All operations are non-fatal.
       // Stats (total_bookings, total_spent) are only incremented on
       // "completed_rental" to prevent double-counting across status transitions.
       const newStatus = safeUpdates.status;
       if (updatedBooking && (newStatus === "booked_paid" || newStatus === "active_rental")) {
         await autoCreateRevenueRecord(updatedBooking);
         await autoUpsertCustomer(updatedBooking, false); // create record, no stat increment yet
+        await autoUpsertBooking(updatedBooking);
+        await autoCreateBlockedDate(
+          updatedBooking.vehicleId,
+          updatedBooking.pickupDate,
+          updatedBooking.returnDate,
+          "booking"
+        );
+        // Send booking confirmation SMS when status transitions to booked_paid
+        if (newStatus === "booked_paid" && updatedBooking.phone &&
+            process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          try {
+            await sendSms(
+              normalizePhone(updatedBooking.phone),
+              render(BOOKING_CONFIRMED, {
+                vehicle:       updatedBooking.vehicleName || updatedBooking.vehicleId || "",
+                customer_name: (updatedBooking.name || "Customer").split(" ")[0],
+                pickup_date:   updatedBooking.pickupDate  || "",
+                pickup_time:   updatedBooking.pickupTime  || "",
+                location:      DEFAULT_LOCATION,
+              })
+            );
+          } catch (smsErr) {
+            console.error("v2-bookings: booking confirmation SMS failed (non-fatal):", smsErr.message);
+          }
+        }
       } else if (updatedBooking && newStatus === "completed_rental") {
         await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
+        await autoUpsertBooking(updatedBooking);
+      } else if (updatedBooking) {
+        // Sync any other status change (cancelled, reserved_unpaid, etc.)
+        await autoUpsertBooking(updatedBooking);
       }
       // "cancelled_rental" intentionally skips revenue creation and stat updates
 
@@ -216,7 +255,7 @@ export default async function handler(req, res) {
       const {
         vehicleId, name, phone, email,
         pickupDate, pickupTime, returnDate, returnTime,
-        amountPaid, paymentMethod, notes,
+        amountPaid, totalPrice, paymentMethod, notes,
       } = body;
 
       if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
@@ -236,7 +275,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "returnDate must not be before pickupDate" });
       }
 
-      // Check for overlapping bookings
+      // Check for overlapping bookings — uses datetime-aware comparison so that
+      // back-to-back bookings on the same day (different time slots) are allowed.
       const { data: existingBookings } = await loadBookings();
       const vehicleBookings = existingBookings[vehicleId] || [];
       const activeOverlap = vehicleBookings.filter(
@@ -245,14 +285,18 @@ export default async function handler(req, res) {
       for (const existing of activeOverlap) {
         const eFrom = existing.pickupDate;
         const eTo   = existing.returnDate;
-        if (eFrom && eTo && !(returnDate < eFrom || pickupDate > eTo)) {
-          return res.status(409).json({
-            error: `Date conflict: vehicle already booked from ${eFrom} to ${eTo} for ${existing.name}`,
-          });
+        if (eFrom && eTo) {
+          const conflictRanges = [{ from: eFrom, to: eTo, fromTime: existing.pickupTime, toTime: existing.returnTime }];
+          if (hasDateTimeOverlap(conflictRanges, pickupDate, returnDate, pickupTime, returnTime)) {
+            return res.status(409).json({
+              error: `Date/time conflict: vehicle already booked from ${eFrom} ${existing.pickupTime || ""} to ${eTo} ${existing.returnTime || ""} for ${existing.name}`.trim(),
+            });
+          }
         }
       }
 
       const parsedAmount = typeof amountPaid === "number" ? amountPaid : parseFloat(amountPaid) || 0;
+      const parsedTotal  = typeof totalPrice === "number" ? totalPrice  : parseFloat(totalPrice)  || 0;
 
       // Build the booking record once; bookingId is stable across retries for idempotency
       const booking = {
@@ -267,6 +311,7 @@ export default async function handler(req, res) {
         returnDate,
         returnTime:     typeof returnTime === "string" ? returnTime.trim() : "",
         amountPaid:     Math.round(parsedAmount * 100) / 100,
+        totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
         paymentMethod:  typeof paymentMethod === "string" ? paymentMethod : "cash",
         status:         parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
         notes:          typeof notes === "string" ? notes.trim().slice(0, 500) : "",
@@ -294,12 +339,16 @@ export default async function handler(req, res) {
 
       // ── Booking automation for new paid bookings ─────────────────────────
       // For manual bookings created directly as "booked_paid", create the revenue
-      // record immediately. Stats are not yet incremented — they increment when
-      // the booking reaches "completed_rental".
+      // record immediately and sync to the Supabase bookings / blocked_dates tables.
+      // Stats are not yet incremented — they increment when the booking reaches
+      // "completed_rental".
       if (booking.status === "booked_paid") {
         await autoCreateRevenueRecord(booking);
         await autoUpsertCustomer(booking, false);
       }
+      // Always sync new bookings to Supabase (includes pending/reserved bookings)
+      await autoUpsertBooking(booking);
+      await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
 
       return res.status(200).json({ success: true, booking });
     }
