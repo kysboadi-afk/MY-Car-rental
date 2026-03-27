@@ -35,7 +35,7 @@ const cars = {
     ],
     deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: [],
+    images: ["images/slingshot.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
