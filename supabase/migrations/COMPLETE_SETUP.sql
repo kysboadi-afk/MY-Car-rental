@@ -43,15 +43,17 @@ CREATE TABLE IF NOT EXISTS vehicles (
 
 CREATE INDEX IF NOT EXISTS vehicles_updated_at_idx ON vehicles (updated_at);
 
--- Seed the four fleet vehicles (safe to re-run — ignores conflicts)
+-- Seed the three fleet vehicles (safe to re-run — ignores conflicts)
 INSERT INTO vehicles (vehicle_id, data) VALUES
-  ('slingshot',  '{"vehicle_id":"slingshot",  "vehicle_name":"Slingshot R",     "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"/images/car2.jpg"}'::jsonb),
-  ('slingshot2', '{"vehicle_id":"slingshot2", "vehicle_name":"Slingshot R (2)", "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"/images/IMG_1749.jpeg"}'::jsonb),
-  ('camry',      '{"vehicle_id":"camry",      "vehicle_name":"Camry 2012",      "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"/images/IMG_0046.png"}'::jsonb),
-  ('camry2013',  '{"vehicle_id":"camry2013",  "vehicle_name":"Camry 2013 SE",   "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"/images/IMG_5144.png"}'::jsonb)
+  ('slingshot',  '{"vehicle_id":"slingshot",  "vehicle_name":"Slingshot R",   "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/slingshot.jpg"}'::jsonb),
+  ('camry',      '{"vehicle_id":"camry",      "vehicle_name":"Camry 2012",    "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_0046.png"}'::jsonb),
+  ('camry2013',  '{"vehicle_id":"camry2013",  "vehicle_name":"Camry 2013 SE", "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_5144.png"}'::jsonb)
 ON CONFLICT (vehicle_id) DO UPDATE
   SET data = excluded.data
   WHERE vehicles.data = '{}'::jsonb OR vehicles.data IS NULL;
+
+-- Remove legacy extra Slingshot units if they were seeded previously
+DELETE FROM vehicles WHERE vehicle_id IN ('slingshot2', 'slingshot3');
 
 
 -- =============================================================================
@@ -503,10 +505,6 @@ CREATE POLICY "vehicle-images: service write"
 UPDATE vehicles
 SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R'::text)), updated_at = now()
 WHERE vehicle_id = 'slingshot'   AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
-
-UPDATE vehicles
-SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R (2)'::text)), updated_at = now()
-WHERE vehicle_id = 'slingshot2'  AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
 
 UPDATE vehicles
 SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2012'::text)), updated_at = now()

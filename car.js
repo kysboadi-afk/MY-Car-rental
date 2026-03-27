@@ -36,56 +36,11 @@ const cars = {
     // Security deposit = rental tier price (charged at booking, refundable after return).
     // No fixed deposit — computed dynamically from the selected tier.
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: ["images/photo_2026-03-22_11-38-56.jpg","images/photo_2026-03-19_00-34-36.jpg"],
+    images: [],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
     vin: "57XAARHB8P8156561",
-    color: null
-  },
-  // Second Slingshot unit — same pricing, different photos.
-  // TODO: update vin once available.
-  slingshot2: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    // TO ADD PHOTOS FOR SLINGSHOT 2:
-    // 1. Upload your image file to the /images folder in the repository.
-    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg", "images/photo_2026-03-22_11-38-56.jpg"],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: "TBD",
-    color: null
-  },
-  // Third Slingshot unit — same pricing.
-  // TODO: update vin once available.
-  slingshot3: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: ["images/photo_1_2026-03-26_16-27-08.jpg","images/photo_2_2026-03-26_16-27-08.jpg","images/photo_3_2026-03-26_16-27-08.jpg"],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: "TBD",
     color: null
   },
   camry: {

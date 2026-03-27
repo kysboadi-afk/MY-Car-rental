@@ -61,10 +61,6 @@ test("vehicleTag returns 'slingshot' for slingshot", () => {
   assert.equal(vehicleTag("slingshot"), "slingshot");
 });
 
-test("vehicleTag returns 'slingshot' for slingshot2", () => {
-  assert.equal(vehicleTag("slingshot2"), "slingshot");
-});
-
 test("vehicleTag returns 'economy' for camry", () => {
   assert.equal(vehicleTag("camry"), "economy");
 });

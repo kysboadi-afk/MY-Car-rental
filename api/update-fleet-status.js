@@ -21,9 +21,9 @@ const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const DEFAULT_STATUS = {
-  slingshot: { available: true },
-  camry:     { available: true },
-  camry2013: { available: true },
+  slingshot:  { available: true },
+  camry:      { available: true },
+  camry2013:  { available: true },
 };
 
 export default async function handler(req, res) {

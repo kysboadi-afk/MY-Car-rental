@@ -220,7 +220,7 @@ export default async function handler(req, res) {
 
                 // Send extension confirmed SMS
                 if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-                  const isSlingshot = vehicle_id === "slingshot" || vehicle_id === "slingshot2" || vehicle_id === "slingshot3";
+                  const isSlingshot = vehicle_id === "slingshot";
                   const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
                   const vars = {
                     return_time: ext.newReturnTime || "",

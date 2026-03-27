@@ -52,7 +52,7 @@ function nextDayChatbot(iso) {
  */
 function getVehicleBookingInfo(vehicleId, lang) {
   var locale = lang === "es" ? "es-US" : "en-US";
-  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+  var names = { slingshot: "Slingshot R",
                 camry: "Camry 2012", camry2013: "Camry 2013 SE" };
   var vName = names[vehicleId] || vehicleId;
 
@@ -116,9 +116,9 @@ function getVehicleBookingInfo(vehicleId, lang) {
  * Build a summary for ALL vehicles combining fleet-status + next-available info.
  */
 function buildAvailabilityMessage(lang) {
-  var ids   = ["slingshot", "slingshot2", "camry", "camry2013"];
-  var icons = { slingshot: "🔴", slingshot2: "🔴", camry: "🔵", camry2013: "🟢" };
-  var names = { slingshot: "Slingshot R #1", slingshot2: "Slingshot R #2",
+  var ids   = ["slingshot", "camry", "camry2013"];
+  var icons = { slingshot: "🔴", camry: "🔵", camry2013: "🟢" };
+  var names = { slingshot: "Slingshot R",
                 camry: "Camry 2012", camry2013: "Camry 2013 SE" };
   var locale = lang === "es" ? "es-US" : "en-US";
   var today  = new Date().toISOString().slice(0, 10);
@@ -200,22 +200,16 @@ function buildFleetMessage(lang) {
   }
 
   if (lang === "es") {
-    return "Contamos con <strong>4 vehículos</strong> en nuestra flota:\n\n" +
-      "🔴 Slingshot R #1 — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
-      "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-      "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
-      "🔴 Slingshot R #2 — Deportivo 2 plazas" + statusLine("slingshot2") + "\n" +
+    return "Contamos con <strong>3 vehículos</strong> en nuestra flota:\n\n" +
+      "🔴 Slingshot R — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
       "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
       "   🔒 $50 depósito no reembolsable al reservar · $150 seguridad al recoger\n\n" +
       "🔵 Camry 2012 — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
       "🟢 Camry 2013 SE — $55/día o $350/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry2013") + "\n\n" +
       "¡Visita nuestra página de Autos para ver y reservar!";
   }
-  return "We have <strong>4 vehicles</strong> in our fleet:\n\n" +
-    "🔴 Slingshot R #1 — Sports 2-Seater" + statusLine("slingshot") + "\n" +
-    "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
-    "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
-    "🔴 Slingshot R #2 — Sports 2-Seater" + statusLine("slingshot2") + "\n" +
+  return "We have <strong>3 vehicles</strong> in our fleet:\n\n" +
+    "🔴 Slingshot R — Sports 2-Seater" + statusLine("slingshot") + "\n" +
     "   3 hrs $200 · 6 hrs $250 · 24 hrs $350\n" +
     "   🔒 $50 non-refundable deposit to book · $150 security deposit at pickup\n\n" +
     "🔵 Camry 2012 — $55/day or $350/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +
@@ -253,9 +247,7 @@ var botResponses = {
       patterns: ["when is slingshot","slingshot available","slingshot booked","how long slingshot","slingshot rented","when will slingshot","slingshot free","slingshot when available","slingshot when free","slingshot status","slingshot availability"],
       reply: function() {
         var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-        return "Here's the status of both Slingshot R units:\n\n" +
-          getVehicleBookingInfo("slingshot", lang) + "\n\n────────────────────\n\n" +
-          getVehicleBookingInfo("slingshot2", lang);
+        return getVehicleBookingInfo("slingshot", lang);
       }
     },
     {
@@ -358,9 +350,7 @@ var botResponses = {
     {
       patterns: ["cuando slingshot","slingshot disponible","slingshot reservado","cuánto tiempo slingshot","cuanto tiempo slingshot","slingshot alquilado","cuando estará slingshot","slingshot libre","slingshot cuando disponible","disponibilidad slingshot"],
       reply: function() {
-        return "Aquí está el estado de las dos unidades Slingshot R:\n\n" +
-          getVehicleBookingInfo("slingshot", "es") + "\n\n────────────────────\n\n" +
-          getVehicleBookingInfo("slingshot2", "es");
+        return getVehicleBookingInfo("slingshot", "es");
       }
     },
     {
