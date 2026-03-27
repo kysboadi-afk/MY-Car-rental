@@ -35,10 +35,7 @@ const cars = {
     ],
     deposit: 150,
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    // TO ADD THE SLINGSHOT PHOTO:
-    // 1. Upload your image file to the /images folder and name it "slingshot.jpg"
-    // 2. The image will automatically appear on slingshot.html and the booking page.
-    images: ["images/slingshot.jpg"],
+    images: [],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
