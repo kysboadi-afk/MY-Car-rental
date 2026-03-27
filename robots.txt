@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin.html
+Disallow: /admin-cms.html
+Disallow: /balance.html
+Disallow: /public/
+
+Sitemap: https://www.slytrans.com/sitemap.xml
