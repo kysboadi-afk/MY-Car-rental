@@ -671,12 +671,14 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   // Update the Security Deposit section.
   // Slingshot: deposit = rental tier price (dynamic), charged at booking, refundable.
   // Camry vehicles have no security deposit — the entire section is hidden for economy cars.
-  const depositHeadingEl = document.getElementById("agreementDepositHeading");
+  const depositHeadingEl  = document.getElementById("agreementDepositHeading");
   const depositIntroEl    = document.getElementById("agreementDepositIntro");
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
   const speedSection      = document.getElementById("slingshotSpeedSection");
+  const lateFeeGenericEl  = document.getElementById("lateFeeGeneric");
+  const slingshotLateFeeEl = document.getElementById("slingshotLateFeeBody");
   if (carData.hourlyTiers) {
     // Compute the deposit for the currently selected tier (= rental fee)
     const currentTier = currentSlingshotDuration
@@ -703,6 +705,10 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
 
     // Show Slingshot speed & strike policy
     if (speedSection) speedSection.style.display = "";
+
+    // Show Slingshot-specific late fee, hide generic late fee
+    if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "none";
+    if (slingshotLateFeeEl) slingshotLateFeeEl.style.display = "";
   } else {
     // For Camry (economy): no security deposit — hide the entire deposit section.
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
@@ -712,6 +718,10 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
     // Hide Slingshot speed & strike policy for non-Slingshot vehicles
     if (speedSection) speedSection.style.display = "none";
+
+    // Show generic late fee, hide Slingshot-specific late fee
+    if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "";
+    if (slingshotLateFeeEl) slingshotLateFeeEl.style.display = "none";
 
     // For economy cars: populate the protection choice summary and update the
     // tier-specific liability cap text in the Insurance & Liability section.

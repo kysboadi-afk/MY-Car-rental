@@ -340,7 +340,7 @@ function generateRentalAgreementHtml(body) {
     ${!isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
     <tr><th>Insurance / Protection</th><td>${esc(insuranceSummary)}</td></tr>
   </table>
-  <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
+  <p><strong>Late Fee:</strong> ${isHourly ? "$100/hour after a 30-minute grace period." : "$50/day after a 2-hour grace period."}</p>
 
   <h4>MILEAGE, GEOGRAPHIC USE &amp; FUEL</h4>
   <p><strong>Mileage &amp; Geographic Limit:</strong> Unlimited miles are included within a designated local area only. All vehicle use must remain within <strong>Los Angeles County</strong> or within a <strong>50-mile radius of Los Angeles</strong>, unless otherwise approved in writing by the host. Travel outside this area — including trips to San Diego, San Francisco, Las Vegas, or any out-of-state destination — is not allowed without prior written authorization. Unauthorized use outside the approved area will result in a <strong>$500 penalty fee</strong> and may lead to early termination of the rental without refund. The vehicle is equipped with a GPS tracking system for security and compliance; by renting, you consent to location monitoring during the rental period.</p>
@@ -581,7 +581,7 @@ function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     if (!isHourly && balanceAtPickup) tableRow("Balance Due at Pickup", `$${balanceAtPickup}`);
     tableRow("Insurance / Protection", insuranceSummary);
     doc.moveDown(0.3);
-    bodyText("Late Fee: $50/day after a 2-hour grace period.");
+    bodyText(isHourly ? "Late Fee: $100/hour after a 30-minute grace period." : "Late Fee: $50/day after a 2-hour grace period.");
 
     // ── Mileage & Fuel ─────────────────────────────────────────────────────────
     sectionHeader("Mileage, Geographic Use & Fuel");
