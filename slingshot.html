@@ -1027,9 +1027,9 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var s = data.slingshot, s2 = data.slingshot2, s3 = data.slingshot3;
-        if (s)  updateBadge('sl-status-slingshot',  s.status  !== 'unavailable');
-        if (s2) updateBadge('sl-status-slingshot2', s2.status !== 'unavailable');
-        if (s3) updateBadge('sl-status-slingshot3', s3.status !== 'unavailable');
+        if (s)  updateBadge('sl-status-slingshot',  s.available !== false);
+        if (s2) updateBadge('sl-status-slingshot2', s2.available !== false);
+        if (s3) updateBadge('sl-status-slingshot3', s3.available !== false);
       })
       .catch(function() { /* keep default AVAILABLE if fetch fails */ });
   })();
