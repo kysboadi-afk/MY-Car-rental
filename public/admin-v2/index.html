@@ -740,6 +740,8 @@
           <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
             <option value="">All Vehicles</option>
             <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (Unit 2)</option>
+            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -806,6 +808,8 @@
                 <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
                   <option value="">Select vehicle…</option>
                   <option value="slingshot">Slingshot R ($350/day)</option>
+                  <option value="slingshot2">Slingshot R Unit 2 ($350/day)</option>
+                  <option value="slingshot3">Slingshot R Unit 3 ($350/day)</option>
                   <option value="camry">Camry 2012 ($55/day)</option>
                   <option value="camry2013">Camry 2013 SE ($55/day)</option>
                 </select>
@@ -900,6 +904,8 @@
                 <select class="form-select" id="bd-vehicle">
                   <option value="">Select vehicle…</option>
                   <option value="slingshot">Slingshot R</option>
+                  <option value="slingshot2">Slingshot R (Unit 2)</option>
+                  <option value="slingshot3">Slingshot R (Unit 3)</option>
                   <option value="camry">Camry 2012</option>
                   <option value="camry2013">Camry 2013 SE</option>
                 </select>
@@ -926,6 +932,8 @@
                 <select class="form-select" id="ub-vehicle">
                   <option value="">Select vehicle…</option>
                   <option value="slingshot">Slingshot R</option>
+                  <option value="slingshot2">Slingshot R (Unit 2)</option>
+                  <option value="slingshot3">Slingshot R (Unit 3)</option>
                   <option value="camry">Camry 2012</option>
                   <option value="camry2013">Camry 2013 SE</option>
                 </select>
@@ -971,6 +979,8 @@
           <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
             <option value="">All Vehicles</option>
             <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (Unit 2)</option>
+            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -1085,6 +1095,8 @@
           <select class="filter-select" id="rev-filter-vehicle" onchange="applyRevenueFilters()">
             <option value="">All Vehicles</option>
             <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (Unit 2)</option>
+            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -1240,6 +1252,8 @@
         <select class="form-select" id="exp-vehicle">
           <option value="">Select vehicle…</option>
           <option value="slingshot">Slingshot R</option>
+          <option value="slingshot2">Slingshot R (Unit 2)</option>
+          <option value="slingshot3">Slingshot R (Unit 3)</option>
           <option value="camry">Camry 2012</option>
           <option value="camry2013">Camry 2013 SE</option>
         </select>
@@ -1460,6 +1474,8 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
 
 const VEHICLE_NAMES = {
   slingshot:  'Slingshot R',
+  slingshot2: 'Slingshot R (Unit 2)',
+  slingshot3: 'Slingshot R (Unit 3)',
   camry:      'Camry 2012',
   camry2013:  'Camry 2013 SE',
 };
@@ -1468,6 +1484,8 @@ const VEHICLE_NAMES = {
 // or when the stored URL fails to load. Root-relative so they work from any page depth.
 const VEHICLE_IMAGES_LOCAL = {
   slingshot:  '/images/slingshot.jpg',
+  slingshot2: '/images/slingshot.jpg',
+  slingshot3: '/images/slingshot.jpg',
   camry:      '/images/IMG_0046.png',
   camry2013:  '/images/IMG_5144.png',
 };
@@ -1521,6 +1539,8 @@ loadVehiclesFromApi();
 
 const VEHICLE_RATES = {
   slingshot:  { perDay: 350, perWeek: null },
+  slingshot2: { perDay: 350, perWeek: null },
+  slingshot3: { perDay: 350, perWeek: null },
   camry:      { perDay: 55,  perWeek: 350  },
   camry2013:  { perDay: 55,  perWeek: 350  },
 };
@@ -3487,6 +3507,8 @@ document.getElementById('mb-pickup-date').min = new Date().toISOString().split('
 // ── Fleet Status ──────────────────────────────────────────────────────────
 const FLEET_VEHICLES = [
   { id: 'slingshot',  name: 'Slingshot R' },
+  { id: 'slingshot2', name: 'Slingshot R (Unit 2)' },
+  { id: 'slingshot3', name: 'Slingshot R (Unit 3)' },
   { id: 'camry',      name: 'Camry 2012' },
   { id: 'camry2013',  name: 'Camry 2013 SE' },
 ];
@@ -3702,6 +3724,8 @@ function unblockDates() {
         <select class="form-select" id="rev-vehicle">
           <option value="">Select vehicle…</option>
           <option value="slingshot">Slingshot R</option>
+          <option value="slingshot2">Slingshot R (Unit 2)</option>
+          <option value="slingshot3">Slingshot R (Unit 3)</option>
           <option value="camry">Camry 2012</option>
           <option value="camry2013">Camry 2013 SE</option>
         </select>
