@@ -52,7 +52,7 @@ async function appendWaitlistEntry(vehicleId, entry) {
     "X-GitHub-Api-Version": "2022-11-28",
   };
 
-  const EMPTY_WAITLIST = { slingshot: [], slingshot2: [], slingshot3: [], camry: [], camry2013: [] };
+  const EMPTY_WAITLIST = { slingshot: [], camry: [], camry2013: [] };
 
   async function loadWaitlist() {
     const resp = await fetch(apiUrl, { headers });

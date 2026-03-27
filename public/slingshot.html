@@ -979,9 +979,8 @@
     fetch('/api/fleet-status')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        var s = data.slingshot, s2 = data.slingshot2;
+        var s = data.slingshot;
         if (s)  updateBadge('sl-status-slingshot',  s.status  !== 'unavailable');
-        if (s2) updateBadge('sl-status-slingshot2', s2.status !== 'unavailable');
       })
       .catch(function() { /* keep default AVAILABLE if fetch fails */ });
   })();

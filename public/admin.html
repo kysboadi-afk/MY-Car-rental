@@ -340,7 +340,6 @@
         <option value="camry">Camry 2012</option>
         <option value="camry2013">Camry 2013 SE</option>
         <option value="slingshot">Slingshot R</option>
-        <option value="slingshot2">Slingshot R (2)</option>
       </select>
     </div>
 
@@ -374,24 +373,13 @@
       <div id="fleetVehicles">
         <!-- Slingshot R -->
         <div class="fleet-vehicle-row" id="fleet-row-slingshot">
+          <img src="images/slingshot.jpg" alt="Slingshot R" class="fleet-thumb">
           <div class="fleet-vehicle-info">
             <div class="fleet-vehicle-name">Slingshot R</div>
             <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot">● Available</span>
           </div>
           <label class="toggle-switch" aria-label="Toggle Slingshot R availability">
             <input type="checkbox" id="toggle-slingshot" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Slingshot R (2) -->
-        <div class="fleet-vehicle-row" id="fleet-row-slingshot2">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Slingshot R (2)</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot2">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Slingshot R (2) availability">
-            <input type="checkbox" id="toggle-slingshot2" checked>
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -436,7 +424,6 @@
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
             <option value="slingshot">Slingshot R</option>
-            <option value="slingshot2">Slingshot R (2)</option>
           </select>
         </div>
 
@@ -732,7 +719,6 @@
       var API_BASE = "https://sly-rides.vercel.app";
       var VEHICLES = [
         { id: "slingshot",  name: "Slingshot R" },
-        { id: "slingshot2", name: "Slingshot R (2)" },
         { id: "camry",      name: "Camry 2012" },
         { id: "camry2013",  name: "Camry 2013 SE" },
       ];
@@ -873,7 +859,7 @@
       // ── Render vehicle cards ───────────────────────────────────────────────
       function renderCards(stats) {
         var container = document.getElementById("vehicleCards");
-        var VEHICLE_ORDER = ["slingshot", "slingshot2", "camry", "camry2013"];
+        var VEHICLE_ORDER = ["slingshot", "camry", "camry2013"];
         var html = "";
         VEHICLE_ORDER.forEach(function (vid) {
           var s = stats[vid];

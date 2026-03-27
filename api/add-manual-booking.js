@@ -10,7 +10,7 @@
 // POST /api/add-manual-booking
 // Body: {
 //   "secret":     "<ADMIN_SECRET>",
-//   "vehicleId":  "camry" | "camry2013" | "slingshot" | "slingshot2",
+//   "vehicleId":  "camry" | "camry2013" | "slingshot",
 //   "name":       "Customer Full Name",
 //   "phone":      "2135551234",        (optional)
 //   "email":      "customer@email.com",(optional)
@@ -32,11 +32,9 @@ import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automati
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES  = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES  = ["slingshot", "camry", "camry2013"];
 const VEHICLE_NAMES     = {
   slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (2)",
-  slingshot3: "Slingshot R (3)",
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };

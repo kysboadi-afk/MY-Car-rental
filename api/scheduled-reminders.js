@@ -55,8 +55,6 @@ import { CARS } from "./_pricing.js";
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
   slingshot:  15,
-  slingshot2: 15,
-  slingshot3: 15,
   camry:      60,
   camry2013:  60,
 };
@@ -64,8 +62,6 @@ const GRACE_PERIODS = {
 // ─── Late fee amounts ($) per vehicle type ────────────────────────────────────
 const LATE_FEE_AMOUNTS = {
   slingshot:  50,   // $50 per hour after grace
-  slingshot2: 50,
-  slingshot3: 50,
   camry:      50,   // $50 flat after 2h; full day after 4–6h (simplified to $50 here)
   camry2013:  50,
 };

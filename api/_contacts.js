@@ -23,8 +23,6 @@ const TM_BASE = "https://rest.textmagic.com/api/v2";
 /** Map vehicle IDs to tag names for contact categorization. */
 const VEHICLE_TAG_MAP = {
   slingshot:  "slingshot",
-  slingshot2: "slingshot",
-  slingshot3: "slingshot",
   camry:      "economy",
   camry2013:  "economy",
 };

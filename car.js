@@ -46,51 +46,6 @@ const cars = {
     vin: "57XAARHB8P8156561",
     color: null
   },
-  // Second Slingshot unit — same pricing, different photos.
-  // TODO: update vin once available.
-  slingshot2: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    // TO ADD PHOTOS FOR SLINGSHOT 2:
-    // 1. Upload your image file to the /images folder in the repository.
-    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: [],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: "TBD",
-    color: null
-  },
-  // Third Slingshot unit — same pricing.
-  // TODO: update vin once available.
-  slingshot3: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: [],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: "TBD",
-    color: null
-  },
   camry: {
     name: "Camry 2012",
     subtitle: "",

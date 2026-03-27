@@ -123,7 +123,7 @@ function parseDateTime(date, time) {
 }
 
 function isSlingshotVehicle(vehicleId) {
-  return vehicleId === "slingshot" || vehicleId === "slingshot2" || vehicleId === "slingshot3";
+  return vehicleId === "slingshot";
 }
 
 /**
