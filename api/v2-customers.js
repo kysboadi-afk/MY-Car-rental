@@ -251,19 +251,22 @@ export default async function handler(req, res) {
       }
 
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      const noShowStatuses = new Set(["cancelled_rental"]);
 
       const phoneUpserts  = [];
       const nameFallbacks = [];
 
       for (const [, c] of Object.entries(byKey)) {
-        const paidBookings = c.bookings.filter((b) => paidStatuses.has(b.status));
-        const pickupDates  = c.bookings.map((b) => b.pickupDate).filter(Boolean).sort();
+        const paidBookings   = c.bookings.filter((b) => paidStatuses.has(b.status));
+        const noShowBookings = c.bookings.filter((b) => b.isNoShow === true || b.no_show === true);
+        const pickupDates    = c.bookings.map((b) => b.pickupDate).filter(Boolean).sort();
         const spent = paidBookings.reduce((s, b) => s + (Number(b.amountPaid || 0)), 0);
         const record = {
           name:               c.name  || "Unknown",
           email:              c.email || null,
           total_bookings:     c.bookings.length,
           total_spent:        Math.round(spent * 100) / 100,
+          no_show_count:      noShowBookings.length,
           first_booking_date: pickupDates[0]  || null,
           last_booking_date:  pickupDates[pickupDates.length - 1] || null,
           updated_at:         new Date().toISOString(),

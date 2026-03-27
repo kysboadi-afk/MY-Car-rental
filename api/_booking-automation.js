@@ -77,8 +77,10 @@ export async function autoCreateRevenueRecord(booking) {
  *                                Pass true only for final completion transitions to
  *                                avoid double-counting (e.g. "completed_rental").
  *                                Leave false (default) for initial creation.
+ * @param {boolean} isNoShow    - when true, increments no_show_count.  Only used on
+ *                                completion transitions for no-show bookings.
  */
-export async function autoUpsertCustomer(booking, countStats = false) {
+export async function autoUpsertCustomer(booking, countStats = false, isNoShow = false) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
   if (!booking.phone) return;
@@ -94,7 +96,7 @@ export async function autoUpsertCustomer(booking, countStats = false) {
 
     const { data: existing } = await sb
       .from("customers")
-      .select("total_bookings, total_spent, first_booking_date")
+      .select("total_bookings, total_spent, first_booking_date, no_show_count")
       .eq("phone", phone)
       .maybeSingle();
 
@@ -105,12 +107,16 @@ export async function autoUpsertCustomer(booking, countStats = false) {
         updates.total_spent    = Math.round(((existing.total_spent || 0) + Number(booking.amountPaid || 0)) * 100) / 100;
         updates.last_booking_date = booking.pickupDate || null;
       }
+      if (isNoShow) {
+        updates.no_show_count = (existing.no_show_count || 0) + 1;
+      }
       await sb.from("customers").update(updates).eq("phone", phone);
     } else {
       await sb.from("customers").insert({
         ...record,
         total_bookings:     countStats ? 1 : 0,
         total_spent:        countStats ? Math.round(Number(booking.amountPaid || 0) * 100) / 100 : 0,
+        no_show_count:      isNoShow ? 1 : 0,
         first_booking_date: booking.pickupDate || null,
         last_booking_date:  booking.pickupDate || null,
       });

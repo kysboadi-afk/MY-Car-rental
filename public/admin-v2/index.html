@@ -1206,6 +1206,7 @@
                   <th>Email</th>
                   <th>Bookings</th>
                   <th>Total Spent</th>
+                  <th>No Shows</th>
                   <th>Last Booking</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -3052,6 +3053,7 @@ function applyCustomerFilters() {
       <td style="font-size:12px;">${esc(c.email || '–')}</td>
       <td>${c.total_bookings || 0}</td>
       <td>$${formatMoney(c.total_spent || 0)}</td>
+      <td style="color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};">${c.no_show_count || 0}</td>
       <td style="font-size:12px;">${esc(c.last_booking_date || '–')}</td>
       <td>${statusBadges}</td>
       <td class="td-actions">
@@ -3073,6 +3075,7 @@ function viewCustomer(id) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
       ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
