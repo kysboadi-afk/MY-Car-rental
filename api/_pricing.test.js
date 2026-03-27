@@ -65,26 +65,26 @@ test("camry: 60 days = 2 × $1300 monthly = $2600", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-08-30"), 2600);
 });
 
-// ─── Slingshot hourly tiers (deposit always $150) ────────────────────────────
+// ─── Slingshot hourly tiers (deposit = rental tier price; total = tier × 2) ──
 
-test("slingshot: 3 hours = $200 + $150 deposit = $350", () => {
-  assert.equal(computeSlingshotAmount(3), 350);
+test("slingshot: 3 hours = $200 rental + $200 deposit = $400", () => {
+  assert.equal(computeSlingshotAmount(3), 400);
 });
 
-test("slingshot: 6 hours = $250 + $150 deposit = $400", () => {
-  assert.equal(computeSlingshotAmount(6), 400);
+test("slingshot: 6 hours = $250 rental + $250 deposit = $500", () => {
+  assert.equal(computeSlingshotAmount(6), 500);
 });
 
-test("slingshot: 24 hours = $350 + $150 deposit = $500", () => {
-  assert.equal(computeSlingshotAmount(24), 500);
+test("slingshot: 24 hours = $350 rental + $350 deposit = $700", () => {
+  assert.equal(computeSlingshotAmount(24), 700);
 });
 
-test("slingshot: 48 hours (2 days) = $700 + $150 deposit = $850", () => {
-  assert.equal(computeSlingshotAmount(48), 850);
+test("slingshot: 48 hours (2 days) = $700 rental + $700 deposit = $1400", () => {
+  assert.equal(computeSlingshotAmount(48), 1400);
 });
 
-test("slingshot: 72 hours (3 days) = $1050 + $150 deposit = $1200", () => {
-  assert.equal(computeSlingshotAmount(72), 1200);
+test("slingshot: 72 hours (3 days) = $1050 rental + $1050 deposit = $2100", () => {
+  assert.equal(computeSlingshotAmount(72), 2100);
 });
 
 test("slingshot: invalid duration returns null", () => {
@@ -238,13 +238,13 @@ test("SLINGSHOT_BOOKING_DEPOSIT equals $50", () => {
 });
 
 test("Slingshot full rental (3 hours) minus booking deposit = balance at pickup", () => {
-  // 3hr full rental = $200 + $150 security = $350; minus $50 deposit = $300 balance
-  assert.equal(computeSlingshotAmount(3) - SLINGSHOT_BOOKING_DEPOSIT, 300);
+  // 3hr full rental = $200 rental + $200 security deposit = $400; minus $50 booking deposit = $350 balance
+  assert.equal(computeSlingshotAmount(3) - SLINGSHOT_BOOKING_DEPOSIT, 350);
 });
 
 test("Slingshot full rental (24 hours) minus booking deposit = balance at pickup", () => {
-  // 24hr full rental = $350 + $150 security = $500; minus $50 deposit = $450 balance
-  assert.equal(computeSlingshotAmount(24) - SLINGSHOT_BOOKING_DEPOSIT, 450);
+  // 24hr full rental = $350 rental + $350 security deposit = $700; minus $50 booking deposit = $650 balance
+  assert.equal(computeSlingshotAmount(24) - SLINGSHOT_BOOKING_DEPOSIT, 650);
 });
 
 // ─── CAMRY_BOOKING_DEPOSIT constant ──────────────────────────────────────────
