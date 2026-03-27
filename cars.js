@@ -84,7 +84,7 @@ function buildEconomyCard(v, pricing) {
 function buildSlingshotCard(v, pricing) {
   const vid  = esc(v.vehicle_id);
   const name = esc(v.vehicle_name || v.vehicle_id);
-  const img  = esc(v.cover_image || "/images/car2.jpg");
+  const img  = esc(v.cover_image || "");
 
   const r3h  = pricing ? fmtMoney(pricing.slingshot["3hr"])  : "$200";
   const r6h  = pricing ? fmtMoney(pricing.slingshot["6hr"])  : "$250";
