@@ -780,6 +780,17 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (bookingDepositSection) {
     bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
     if (carData.hourlyTiers) {
+      // Dynamically populate the deposit body text with the tier-specific amount
+      const slingshotDepBodyEl = document.getElementById("slingshotDepositAgreementBody");
+      if (slingshotDepBodyEl) {
+        const currentTierForDep = currentSlingshotDuration
+          ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
+          : null;
+        const depositDisplayDep = currentTierForDep ? `$${currentTierForDep.price}` : "an amount equal to your rental fee";
+        slingshotDepBodyEl.innerHTML =
+          `A <strong>${depositDisplayDep} refundable security deposit</strong> (equal to your rental fee) is included in your total payment. ` +
+          `It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days).`;
+      }
       // Update option A / option B bullet visibility in the agreement section
       const optAEl = document.getElementById("slingshotDepositAgreementOptionA");
       const optBEl = document.getElementById("slingshotDepositAgreementOptionB");
