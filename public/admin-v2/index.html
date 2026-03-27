@@ -1115,7 +1115,6 @@
             <option value="refunded">Refunded</option>
           </select>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
-          <button id="sync-bookings-btn" class="btn btn-secondary btn-sm" onclick="syncRevenueFromBookings()" title="Create revenue records for any paid bookings that are missing from the Revenue Tracker">↺ Sync from Bookings</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
         <div class="card">
@@ -2896,21 +2895,6 @@ function deleteRevenueRecord(id) {
   apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id })
     .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
-}
-
-function syncRevenueFromBookings() {
-  if (!confirm('Sync revenue records from bookings? This will create revenue records for any paid bookings that are missing from the Revenue Tracker. Existing records will not be modified.')) return;
-  const btn = document.getElementById('sync-bookings-btn');
-  if (btn) { btn.disabled = true; }
-  showToast('Syncing revenue from bookings…', 'info');
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'sync' })
-    .then((data) => {
-      showToast(data.message || 'Sync complete.', 'success');
-      allRevenueRecords = [];
-      loadRevenue();
-    })
-    .catch((err) => showToast('Sync error: ' + err.message, 'error'))
-    .finally(() => { if (btn) { btn.disabled = false; } });
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────
