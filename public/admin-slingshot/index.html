@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="description" content="SLYTRANS Slingshot Fleet Admin">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Slingshot Fleet Admin | SLYTRANS</title>
+  <link rel="icon" href="../images/logo.jpg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Reset & Base ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:          #f5f6fa;
+      --surface:     #ffffff;
+      --sidebar-bg:  #1a0a00;
+      --sidebar-w:   240px;
+      --topbar-h:    64px;
+      --primary:     #d97706;
+      --primary-dim: #b45309;
+      --success:     #16a34a;
+      --warning:     #d97706;
+      --danger:      #dc2626;
+      --info:        #0891b2;
+      --text:        #111827;
+      --text-sub:    #6b7280;
+      --border:      #e5e7eb;
+      --radius:      10px;
+      --shadow:      0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+      --shadow-md:   0 4px 20px rgba(0,0,0,0.1);
+      --font:        'Inter', system-ui, sans-serif;
+    }
+    html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+
+    /* ── Auth Screen ────────────────────────────────────────────── */
+    #auth-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; background: var(--sidebar-bg);
+    }
+    .auth-card {
+      background: #2a1200; border: 1px solid #4a2800; border-radius: 16px;
+      padding: 40px 36px; width: 100%; max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+    .auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .auth-logo img { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; }
+    .auth-logo span { color: #fff; font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .auth-logo small { display: block; color: #9a6a30; font-size: 11px; font-weight: 400; }
+    .auth-card h2 { color: #fff; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .auth-card p { color: #9a7a50; font-size: 13px; margin-bottom: 28px; }
+    .auth-field { margin-bottom: 16px; }
+    .auth-field label { display: block; color: #9ca3af; font-size: 12px; font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .auth-field input {
+      width: 100%; padding: 11px 14px; background: #1a0a00;
+      border: 1px solid #4a2800; border-radius: 8px; color: #fff;
+      font-size: 14px; font-family: var(--font); transition: border-color 0.2s;
+    }
+    .auth-field input:focus { outline: none; border-color: var(--primary); }
+    .auth-btn {
+      width: 100%; padding: 12px; background: var(--primary); color: #fff;
+      border: none; border-radius: 8px; font-size: 15px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s; margin-top: 8px; font-family: var(--font);
+    }
+    .auth-btn:hover { background: var(--primary-dim); }
+    .auth-error { color: #f87171; font-size: 13px; margin-top: 12px; text-align: center; min-height: 18px; }
+    .auth-full-link { margin-top: 20px; text-align: center; font-size: 12px; color: #9a7a50; }
+    .auth-full-link a { color: var(--primary); text-decoration: none; }
+    .auth-full-link a:hover { text-decoration: underline; }
+
+    /* ── App Layout ─────────────────────────────────────────────── */
+    #app { display: none; }
+    #app.ready { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ────────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w); background: var(--sidebar-bg);
+      position: fixed; top: 0; left: 0; bottom: 0;
+      display: flex; flex-direction: column; z-index: 100;
+      overflow-y: auto; transition: transform 0.3s;
+    }
+    .sidebar-logo {
+      padding: 20px 20px 16px; display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #2a1800;
+    }
+    .sidebar-logo img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+    .sidebar-logo .brand { color: #fff; }
+    .sidebar-logo .brand-name { font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .sidebar-logo .brand-sub { font-size: 10px; color: #7a4a20; text-transform: uppercase; letter-spacing: 0.8px; }
+
+    .nav-section { padding: 16px 12px 8px; }
+    .nav-section-label { color: #4a2800; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; padding: 0 8px; margin-bottom: 6px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+      border-radius: 8px; cursor: pointer; color: #9a6a30; font-size: 13px;
+      font-weight: 500; transition: all 0.15s; text-decoration: none; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: #2a1800; color: #f0b060; }
+    .nav-item.active { background: rgba(217,119,6,0.15); color: #f0b060; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .nav-badge {
+      margin-left: auto; background: var(--danger); color: #fff;
+      font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center;
+    }
+
+    .sidebar-footer {
+      margin-top: auto; padding: 16px; border-top: 1px solid #2a1800;
+    }
+    .sidebar-user { display: flex; align-items: center; gap: 10px; }
+    .user-avatar {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--primary);
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .user-name { font-size: 13px; font-weight: 600; color: #fff; }
+    .user-role { font-size: 11px; color: #7a4a20; }
+    .logout-btn {
+      margin-left: auto; background: none; border: none; color: #7a4a20; cursor: pointer;
+      padding: 4px; border-radius: 4px; transition: color 0.15s;
+    }
+    .logout-btn:hover { color: #f87171; }
+
+    /* Mobile sidebar overlay */
+    .sidebar-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99;
+    }
+    .sidebar-overlay.open { display: block; }
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu-btn { display: flex !important; }
+    }
+
+    /* ── Main Content ───────────────────────────────────────────── */
+    .main {
+      flex: 1; margin-left: var(--sidebar-w); display: flex;
+      flex-direction: column; min-height: 100vh; min-width: 0;
+    }
+    @media (max-width: 768px) { .main { margin-left: 0; } }
+
+    /* ── Topbar ─────────────────────────────────────────────────── */
+    .topbar {
+      height: var(--topbar-h); background: var(--surface);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center;
+      padding: 0 24px; gap: 12px; position: sticky; top: 0; z-index: 50;
+    }
+    .mobile-menu-btn {
+      display: none; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border: none; background: none;
+      cursor: pointer; color: var(--text); border-radius: 8px;
+    }
+    .mobile-menu-btn:hover { background: var(--bg); }
+    .topbar-page-title { font-size: 18px; font-weight: 700; flex: 1; }
+    .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+    /* ── Content ────────────────────────────────────────────────── */
+    .content { flex: 1; padding: 24px; overflow-x: hidden; }
+
+    /* ── Pages ──────────────────────────────────────────────────── */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── Buttons ────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+      border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+      border: none; font-family: var(--font); transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dim); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: #e9eaf0; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 16px;
+    }
+    .card-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .card-title { font-size: 15px; font-weight: 600; }
+    .card-sub { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+
+    /* ── KPI Grid ───────────────────────────────────────────────── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow);
+    }
+    .kpi-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; margin-bottom: 12px;
+    }
+    .kpi-icon svg { width: 18px; height: 18px; }
+    .kpi-icon.blue  { background: #dbeafe; color: #1d4ed8; }
+    .kpi-icon.green { background: #dcfce7; color: #15803d; }
+    .kpi-icon.orange { background: #fef3c7; color: #b45309; }
+    .kpi-icon.red   { background: #fee2e2; color: #b91c1c; }
+    .kpi-label { font-size: 12px; color: var(--text-sub); font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; }
+    .kpi-value { font-size: 28px; font-weight: 800; margin: 4px 0; line-height: 1; }
+    .kpi-change { font-size: 12px; color: var(--text-sub); }
+
+    /* ── Charts Grid ─────────────────────────────────────────────── */
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+    .chart-wrap { height: 220px; padding: 16px; }
+
+    /* ── Alerts Grid ─────────────────────────────────────────────── */
+    .alerts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .alerts-grid { grid-template-columns: 1fr; } }
+    .alert-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 20px; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .alert-item.warning .alert-dot { background: var(--warning); }
+    .alert-item.info .alert-dot { background: var(--info); }
+    .alert-item.error .alert-dot { background: var(--danger); }
+
+    /* ── Table ──────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { border-bottom: 1px solid var(--border); }
+    th { padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .td-actions { display: flex; gap: 6px; align-items: center; }
+
+    /* ── Filters Row ────────────────────────────────────────────── */
+    .filters-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .filter-select, .filter-input {
+      padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 13px; font-family: var(--font); background: var(--surface); color: var(--text);
+    }
+    .filter-select { min-width: 160px; }
+    .filter-input { flex: 1; min-width: 160px; }
+
+    /* ── Forms ──────────────────────────────────────────────────── */
+    .form-section {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 24px; margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+    .form-section-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+    .form-grid.one { grid-template-columns: 1fr; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group.full { grid-column: 1 / -1; }
+    .form-label { font-size: 12px; font-weight: 500; color: var(--text-sub); }
+    .form-input, .form-select, .form-textarea {
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: var(--font); background: var(--surface); color: var(--text);
+      transition: border-color 0.2s;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .form-hint { font-size: 11px; color: var(--text-sub); }
+    .price-display { font-size: 20px; font-weight: 700; color: var(--primary); padding: 8px 0; }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .form-group.full { grid-column: 1; } }
+
+    /* ── Badges ─────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center; padding: 3px 10px;
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+    }
+    .badge-green  { background: #dcfce7; color: #15803d; }
+    .badge-orange { background: #fef3c7; color: #b45309; }
+    .badge-blue   { background: #dbeafe; color: #1d4ed8; }
+    .badge-red    { background: #fee2e2; color: #b91c1c; }
+    .badge-gray   { background: #f3f4f6; color: #4b5563; }
+
+    /* ── Loading ────────────────────────────────────────────────── */
+    .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px; color: var(--text-sub); font-size: 14px; }
+    .loading-spinner {
+      width: 20px; height: 20px; border: 2px solid var(--border);
+      border-top-color: var(--primary); border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty State ────────────────────────────────────────────── */
+    .empty-state { display: flex; flex-direction: column; align-items: center; padding: 48px 24px; color: var(--text-sub); gap: 12px; }
+    .empty-state svg { width: 40px; height: 40px; opacity: 0.35; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── Block dates grid responsive ────────────────────────────── */
+    .block-dates-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 700px) { .block-dates-grid { grid-template-columns: 1fr; } }
+
+    /* ── Toggle Switch ──────────────────────────────────────────── */
+    .toggle-switch { position: relative; display: inline-block; width: 46px; height: 26px; cursor: pointer; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0; background: #d1d5db; border-radius: 13px; transition: 0.2s;
+    }
+    .toggle-track::before {
+      content: ''; position: absolute; width: 20px; height: 20px; background: #fff;
+      border-radius: 50%; top: 3px; left: 3px; transition: 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--primary); }
+    .toggle-switch input:checked + .toggle-track::before { transform: translateX(20px); }
+
+    /* ── Modal ──────────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 200;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 12px;
+      box-shadow: var(--shadow-md); width: 100%; max-width: 520px;
+      max-height: 90vh; overflow-y: auto;
+      padding: 24px;
+    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .modal-title { font-size: 16px; font-weight: 700; }
+    .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-sub); padding: 4px; line-height: 1; }
+    .modal-close:hover { color: var(--danger); }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      box-shadow: var(--shadow-md); max-width: 340px; animation: slideIn 0.2s;
+    }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .toast.success { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; }
+    .toast.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; }
+    .toast.info    { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
+
+    /* ── Action Required Tiles ──────────────────────────────────── */
+    .action-req-tile {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px; text-align: center; cursor: pointer; transition: all 0.15s;
+    }
+    .action-req-tile:hover { border-color: var(--primary); background: #fffbeb; }
+    .action-req-tile.has-items { border-color: var(--warning); }
+    .action-req-tile.has-urgent { border-color: var(--danger); background: #fef2f2; }
+    .ar-icon { font-size: 22px; margin-bottom: 6px; }
+    .ar-count { font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+    .ar-label { font-size: 12px; color: var(--text-sub); font-weight: 500; }
+
+    /* ── Slingshot badge ────────────────────────────────────────── */
+    .slingshot-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(217,119,6,0.12); color: var(--primary);
+      padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+      border: 1px solid rgba(217,119,6,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+      <span>SLYTRANS<small>Slingshot Fleet Admin</small></span>
+    </div>
+    <h2>🏍️ Slingshot Admin</h2>
+    <p>Sign in to manage the Slingshot fleet</p>
+    <div class="auth-field">
+      <label>Admin Password</label>
+      <input type="password" id="auth-password" placeholder="Enter admin password" autocomplete="current-password">
+    </div>
+    <button class="auth-btn" id="auth-btn">Sign In</button>
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-full-link">
+      Full fleet access? <a href="../admin-v2/">Full Admin Portal ↗</a>
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <img src="../images/logo.jpg" alt="Logo" onerror="this.style.display='none'">
+      <div class="brand">
+        <div class="brand-name">🏍️ Slingshot</div>
+        <div class="brand-sub">Fleet Admin</div>
+      </div>
+    </div>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Overview</div>
+      <a class="nav-item active" data-page="dashboard" href="#" onclick="navigate('dashboard');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Reservations</div>
+      <a class="nav-item" data-page="bookings" href="#" onclick="navigate('bookings');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        Bookings
+        <span class="nav-badge" id="pending-badge" style="display:none">0</span>
+      </a>
+      <a class="nav-item" data-page="manual-booking" href="#" onclick="navigate('manual-booking');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Manual Booking
+      </a>
+      <a class="nav-item" data-page="fleet-status" href="#" onclick="navigate('fleet-status');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        Fleet Status
+      </a>
+      <a class="nav-item" data-page="block-dates" href="#" onclick="navigate('block-dates');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Block Dates
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div style="margin-bottom:10px;">
+        <a href="../admin-v2/" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9a6a30;text-decoration:none;padding:6px 8px;border-radius:6px;transition:all 0.15s;" onmouseover="this.style.color='#f0b060'" onmouseout="this.style.color='#9a6a30'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Full Admin Portal ↗
+        </a>
+      </div>
+      <div class="sidebar-user">
+        <div class="user-avatar">S</div>
+        <div>
+          <div class="user-name">Slingshot Admin</div>
+          <div class="user-role">Limited Access</div>
+        </div>
+        <button class="logout-btn" onclick="logout()" title="Sign Out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="mobile-menu-btn" onclick="openSidebar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="topbar-page-title" id="page-title">Dashboard</div>
+      <div class="topbar-actions">
+        <span class="slingshot-badge">🏍️ Slingshot Only</span>
+        <button class="btn btn-secondary btn-sm" onclick="refreshCurrentPage()" title="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('manual-booking')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Booking
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- DASHBOARD PAGE -->
+      <div class="page active" id="page-dashboard">
+        <div id="dashboard-loading" class="loading">
+          <div class="loading-spinner"></div>
+          <div>Loading Slingshot dashboard…</div>
+        </div>
+        <div id="dashboard-content" style="display:none">
+          <div class="kpi-grid" id="kpi-grid"></div>
+          <div class="charts-grid">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Revenue Over Time</div>
+                  <div class="card-sub">Slingshot monthly revenue</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Bookings by Unit</div>
+                  <div class="card-sub">Paid bookings per Slingshot</div>
+                </div>
+              </div>
+              <div class="chart-wrap"><canvas id="bookings-chart"></canvas></div>
+            </div>
+          </div>
+          <!-- Action Required -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">⚡ Action Required</div>
+                <div class="card-sub">Items needing immediate attention</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">Refresh</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:16px;">
+              <div class="action-req-tile" onclick="navigate('bookings')">
+                <div class="ar-icon">📋</div>
+                <div class="ar-count" id="ar-pending-count">–</div>
+                <div class="ar-label">Pending Approvals</div>
+              </div>
+              <div class="action-req-tile" onclick="navigate('bookings')">
+                <div class="ar-icon">🔑</div>
+                <div class="ar-count" id="ar-pickups-count">–</div>
+                <div class="ar-label">Pickups Today</div>
+              </div>
+              <div class="action-req-tile" onclick="navigate('bookings')">
+                <div class="ar-icon">🏁</div>
+                <div class="ar-count" id="ar-returns-count">–</div>
+                <div class="ar-label">Returns Today</div>
+              </div>
+              <div class="action-req-tile">
+                <div class="ar-icon">⚠️</div>
+                <div class="ar-count" id="ar-overdue-count">–</div>
+                <div class="ar-label">Overdue</div>
+              </div>
+            </div>
+          </div>
+          <div class="alerts-grid">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Alerts &amp; Actions</div></div>
+              <div id="alerts-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Recent Slingshot Bookings</div></div>
+              <div id="recent-bookings-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOOKINGS PAGE -->
+      <div class="page" id="page-bookings">
+        <div class="filters-row">
+          <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
+            <option value="">All Slingshots</option>
+            <option value="slingshot">Slingshot R (Unit 1)</option>
+            <option value="slingshot2">Slingshot R (Unit 2)</option>
+            <option value="slingshot3">Slingshot R (Unit 3)</option>
+          </select>
+          <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
+            <option value="">All Statuses</option>
+            <option value="reserved_unpaid">Pending / Unpaid</option>
+            <option value="booked_paid">Booked &amp; Paid</option>
+            <option value="active_rental">Active Rental</option>
+            <option value="completed_rental">Completed</option>
+            <option value="cancelled_rental">Cancelled</option>
+          </select>
+          <input type="text" class="filter-input" id="booking-search" placeholder="Search name or ID…" oninput="applyBookingFilters()">
+        </div>
+        <div class="card">
+          <div id="bookings-loading" class="loading"><div class="loading-spinner"></div><div>Loading bookings…</div></div>
+          <div id="bookings-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Unit</th>
+                  <th>Dates</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="bookings-tbody"></tbody>
+            </table>
+          </div>
+          <div id="bookings-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            <p>No Slingshot bookings found.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- MANUAL BOOKING PAGE -->
+      <div class="page" id="page-manual-booking">
+        <form id="manual-booking-form" onsubmit="submitManualBooking(event)">
+          <div class="form-section">
+            <div class="form-section-title">Customer Information</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Full Name *</label>
+                <input type="text" class="form-input" id="mb-name" required placeholder="John Doe">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone</label>
+                <input type="tel" class="form-input" id="mb-phone" placeholder="(213) 555-1234">
+              </div>
+              <div class="form-group full">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="mb-email" placeholder="customer@email.com">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Rental Details</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Slingshot Unit *</label>
+                <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
+                  <option value="">Select unit…</option>
+                  <option value="slingshot">Slingshot R – Unit 1 ($350/day)</option>
+                  <option value="slingshot2">Slingshot R – Unit 2 ($350/day)</option>
+                  <option value="slingshot3">Slingshot R – Unit 3 ($350/day)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Payment Method</label>
+                <select class="form-select" id="mb-payment-method">
+                  <option value="cash">Cash</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="stripe">Stripe / Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pickup Date *</label>
+                <input type="date" class="form-input" id="mb-pickup-date" required onchange="updateManualPrice()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pickup Time</label>
+                <input type="time" class="form-input" id="mb-pickup-time">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Return Date *</label>
+                <input type="date" class="form-input" id="mb-return-date" required onchange="updateManualPrice()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Return Time</label>
+                <input type="time" class="form-input" id="mb-return-time">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Pricing</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Auto-Calculated Price</label>
+                <div class="price-display" id="mb-auto-price">–</div>
+                <div class="form-hint">Based on unit &amp; dates ($350/day)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Amount Paid (Override)</label>
+                <input type="number" class="form-input" id="mb-amount-paid" min="0" step="0.01" placeholder="Leave blank to use auto-price">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title">Notes</div>
+            <div class="form-grid one">
+              <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-textarea" id="mb-notes" placeholder="Cash payment, VIN, agreement number, etc."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+            <button type="button" class="btn btn-secondary" onclick="clearManualBookingForm()">Clear Form</button>
+            <button type="submit" class="btn btn-primary" id="mb-submit-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg>
+              Save Booking
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- FLEET STATUS PAGE -->
+      <div class="page" id="page-fleet-status">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Slingshot Availability</div>
+              <div class="card-sub">Toggle each unit on or off for online bookings</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadFleetStatusPage()">Refresh</button>
+          </div>
+          <div id="fleet-status-loading" class="loading"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="fleet-status-list" style="display:none;padding:8px 0;"></div>
+        </div>
+      </div>
+
+      <!-- BLOCK DATES PAGE -->
+      <div class="page" id="page-block-dates">
+        <div class="block-dates-grid">
+          <!-- Block form -->
+          <div class="form-section" style="margin-bottom:0;">
+            <div class="form-section-title">🔒 Block Dates</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Slingshot Unit *</label>
+                <select class="form-select" id="bd-vehicle">
+                  <option value="">Select unit…</option>
+                  <option value="slingshot">Slingshot R (Unit 1)</option>
+                  <option value="slingshot2">Slingshot R (Unit 2)</option>
+                  <option value="slingshot3">Slingshot R (Unit 3)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">From *</label>
+                <input type="date" class="form-input" id="bd-from">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To *</label>
+                <input type="date" class="form-input" id="bd-to">
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-primary" id="bd-block-btn" onclick="blockDates()">🔒 Block Dates</button>
+            </div>
+          </div>
+          <!-- Unblock form -->
+          <div class="form-section" style="margin-bottom:0;">
+            <div class="form-section-title">🔓 Unblock Dates</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Slingshot Unit *</label>
+                <select class="form-select" id="ub-vehicle">
+                  <option value="">Select unit…</option>
+                  <option value="slingshot">Slingshot R (Unit 1)</option>
+                  <option value="slingshot2">Slingshot R (Unit 2)</option>
+                  <option value="slingshot3">Slingshot R (Unit 3)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">From *</label>
+                <input type="date" class="form-input" id="ub-from">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To *</label>
+                <input type="date" class="form-input" id="ub-to">
+              </div>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-secondary" id="bd-unblock-btn" onclick="unblockDates()">🔓 Unblock Dates</button>
+            </div>
+          </div>
+        </div>
+        <!-- Current blocked ranges -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Current Blocked Date Ranges</div>
+            <button class="btn btn-secondary btn-sm" onclick="loadBlockedDates()">Refresh</button>
+          </div>
+          <div id="blocked-dates-loading" class="loading"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="blocked-dates-list" style="display:none;padding:8px 0;"></div>
+          <div id="blocked-dates-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <p>No dates are currently blocked for Slingshot units.</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- Booking Detail Modal -->
+<div class="modal-overlay" id="booking-detail-modal">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-header">
+      <div class="modal-title">Booking Details</div>
+      <button class="modal-close" onclick="closeModal('booking-detail-modal')">✕</button>
+    </div>
+    <div id="booking-detail-content"></div>
+    <div class="modal-footer" id="booking-detail-actions"></div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script>
+// ── Configuration ──────────────────────────────────────────────────────────
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? ''
+  : 'https://sly-rides.vercel.app';
+
+const SLINGSHOT_IDS = ['slingshot', 'slingshot2', 'slingshot3'];
+
+const VEHICLE_NAMES = {
+  slingshot:  'Slingshot R (Unit 1)',
+  slingshot2: 'Slingshot R (Unit 2)',
+  slingshot3: 'Slingshot R (Unit 3)',
+};
+
+const VEHICLE_RATES = {
+  slingshot:  { perDay: 350, perWeek: null },
+  slingshot2: { perDay: 350, perWeek: null },
+  slingshot3: { perDay: 350, perWeek: null },
+};
+
+// ── State ──────────────────────────────────────────────────────────────────
+let adminSecret   = '';
+let dashboardData = null;
+let allBookings   = [];
+let currentPage   = 'dashboard';
+let revenueChart  = null;
+let bookingsChart = null;
+let fleetStatusData = {};
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+document.getElementById('auth-password').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') signIn();
+});
+document.getElementById('auth-btn').addEventListener('click', signIn);
+
+function signIn() {
+  const pw = document.getElementById('auth-password').value.trim();
+  if (!pw) { showAuthError('Please enter a password.'); return; }
+  adminSecret = pw;
+  const btn = document.getElementById('auth-btn');
+  btn.textContent = 'Signing in…';
+  btn.disabled = true;
+
+  apiPost('/api/v2-dashboard', { secret: adminSecret })
+    .then((data) => {
+      dashboardData = data;
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app').classList.add('ready');
+      renderDashboard(data);
+    })
+    .catch((err) => {
+      adminSecret = '';
+      btn.textContent = 'Sign In';
+      btn.disabled = false;
+      showAuthError(err.message === 'Unauthorized' ? 'Incorrect password.' : `Error: ${err.message}`);
+    });
+}
+
+function showAuthError(msg) {
+  document.getElementById('auth-error').textContent = msg;
+}
+
+function logout() {
+  adminSecret = '';
+  dashboardData = null;
+  allBookings = [];
+  document.getElementById('app').classList.remove('ready');
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('auth-password').value = '';
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('auth-btn').textContent = 'Sign In';
+  document.getElementById('auth-btn').disabled = false;
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function apiPost(path, body) {
+  const resp = await fetch(API_BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+
+  const titles = {
+    dashboard:       '🏍️ Slingshot Dashboard',
+    bookings:        'Slingshot Bookings',
+    'manual-booking':'Manual Booking',
+    'fleet-status':  'Fleet Status',
+    'block-dates':   'Block / Unblock Dates',
+  };
+
+  const pageEl = document.getElementById(`page-${page}`);
+  if (!pageEl) return;
+  pageEl.classList.add('active');
+
+  const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (navItem) navItem.classList.add('active');
+  document.getElementById('page-title').textContent = titles[page] || page;
+  currentPage = page;
+  closeSidebar();
+
+  if (page === 'bookings') loadBookings();
+  else if (page === 'fleet-status') loadFleetStatusPage();
+  else if (page === 'block-dates') loadBlockedDates();
+  else if (page === 'dashboard' && !dashboardData) refreshDashboard();
+}
+
+function refreshCurrentPage() {
+  dashboardData = null;
+  allBookings = [];
+  if (currentPage === 'dashboard') refreshDashboard();
+  else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
+  else if (currentPage === 'fleet-status') loadFleetStatusPage();
+  else if (currentPage === 'block-dates') loadBlockedDates();
+}
+
+// ── Sidebar Mobile ─────────────────────────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function refreshDashboard() {
+  document.getElementById('dashboard-loading').style.display = '';
+  document.getElementById('dashboard-content').style.display = 'none';
+  apiPost('/api/v2-dashboard', { secret: adminSecret })
+    .then((data) => { dashboardData = data; renderDashboard(data); })
+    .catch((err) => {
+      document.getElementById('dashboard-loading').innerHTML =
+        `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderDashboard(data) {
+  document.getElementById('dashboard-loading').style.display = 'none';
+  document.getElementById('dashboard-content').style.display = '';
+
+  // Filter bookings to slingshot only
+  const bpv = data.bookingsPerVehicle || {};
+  const slingshotBpv = {};
+  let slingshotRevenue = 0;
+  let slingshotBookings = 0;
+  let slingshotPending = 0;
+
+  SLINGSHOT_IDS.forEach((id) => {
+    if (bpv[id] !== undefined) slingshotBpv[id] = bpv[id];
+  });
+
+  // Compute slingshot-specific stats from vehicleStats
+  const vstats = data.vehicleStats || {};
+  SLINGSHOT_IDS.forEach((id) => {
+    const s = vstats[id] || {};
+    slingshotRevenue += s.revenue || 0;
+    slingshotBookings += s.bookings || 0;
+  });
+
+  // Filter recent bookings and compute slingshot-specific KPIs
+  const recentAll = data.recentBookings || [];
+  const recent = recentAll.filter((b) => SLINGSHOT_IDS.includes(b.vehicleId));
+
+  // Pending approvals: count from recentBookings filtered to slingshot (best-effort from dashboard data)
+  slingshotPending = recent.filter((b) => b.status === 'reserved_unpaid').length;
+
+  // Slingshot active bookings from vehicleStats
+  let slingshotActive = 0;
+  SLINGSHOT_IDS.forEach((id) => {
+    const s = vstats[id] || {};
+    slingshotActive += s.activeBookings || 0;
+  });
+
+  const pendingCount = slingshotPending;
+  const badge = document.getElementById('pending-badge');
+  if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; }
+  else { badge.style.display = 'none'; }
+
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div class="kpi-label">Slingshot Revenue</div>
+      <div class="kpi-value">$${formatMoney(slingshotRevenue)}</div>
+      <div class="kpi-change">Lifetime paid bookings</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>
+      <div class="kpi-label">Slingshot Bookings</div>
+      <div class="kpi-value">${slingshotBookings}</div>
+      <div class="kpi-change">Total paid Slingshot rentals</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+      <div class="kpi-label">Slingshot Units</div>
+      <div class="kpi-value">${SLINGSHOT_IDS.length}</div>
+      <div class="kpi-change">Total Slingshot R units</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+      <div class="kpi-label">Pending Approvals</div>
+      <div class="kpi-value">${pendingCount}</div>
+      <div class="kpi-change" style="${pendingCount > 0 ? 'color:var(--danger)' : ''}">Slingshot bookings awaiting action</div>
+    </div>
+  `;
+
+  // Revenue chart (use fleet revenue trend — API doesn't split by vehicle here)
+  const rcData = data.revenueChart || [];
+  const rcLabels = rcData.map((d) => d.month);
+  const rcValues = rcData.map((d) => d.amount);
+  if (revenueChart) revenueChart.destroy();
+  const rcCtx = document.getElementById('revenue-chart').getContext('2d');
+  revenueChart = new Chart(rcCtx, {
+    type: 'line',
+    data: {
+      labels: rcLabels,
+      datasets: [{
+        label: 'Revenue ($)',
+        data: rcValues,
+        borderColor: '#d97706',
+        backgroundColor: 'rgba(217,119,6,0.08)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointBackgroundColor: '#d97706',
+        pointRadius: 4,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 11 }, callback: (v) => '$' + formatMoney(v) } },
+      },
+    },
+  });
+
+  // Bookings per slingshot unit chart
+  const bpvLabels = SLINGSHOT_IDS.map((id) => VEHICLE_NAMES[id] || id);
+  const bpvValues = SLINGSHOT_IDS.map((id) => bpv[id] || 0);
+  const chartColors = ['#d97706', '#b45309', '#92400e'];
+  if (bookingsChart) bookingsChart.destroy();
+  const bcCtx = document.getElementById('bookings-chart').getContext('2d');
+  bookingsChart = new Chart(bcCtx, {
+    type: 'doughnut',
+    data: {
+      labels: bpvLabels,
+      datasets: [{ data: bpvValues, backgroundColor: chartColors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } } },
+      cutout: '65%',
+    },
+  });
+
+  // Alerts — filter to slingshot-relevant ones
+  const allAlerts = data.alerts || [];
+  const alerts = allAlerts.filter((a) => {
+    const msg = (a.message || '').toLowerCase();
+    return SLINGSHOT_IDS.some((id) => msg.includes(id)) || msg.includes('slingshot') || !msg.match(/\bcamry\b/);
+  });
+  document.getElementById('alerts-list').innerHTML = alerts.length === 0
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No alerts.</div>'
+    : alerts.slice(0, 6).map((a) => `
+      <div class="alert-item ${a.type || 'info'}">
+        <div class="alert-dot"></div>
+        <div>${esc(a.message)}</div>
+      </div>`).join('');
+
+  // Recent Slingshot bookings
+  document.getElementById('recent-bookings-list').innerHTML = recent.length === 0
+    ? '<div style="padding:16px;color:var(--text-sub);font-size:13px;text-align:center;">No recent Slingshot bookings.</div>'
+    : recent.map((b) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
+          <div style="font-size:11px;color:var(--text-sub);">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId)} · ${esc(b.pickupDate || '')}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:13px;font-weight:700;">$${formatMoney(b.amountPaid)}</div>
+          <div>${statusBadge(b.status)}</div>
+        </div>
+      </div>`).join('');
+
+  // Action Required tiles
+  const today = new Date().toISOString().split('T')[0];
+  const pending  = (data.kpis || {}).pendingApprovals || 0;
+  const pickups  = recent.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
+  const returns  = recent.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const overdue  = recent.filter((b) => b.status === 'active_rental' && b.returnDate && b.returnDate < today).length;
+
+  const setTile = (id, count, urgency) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = count;
+    const tile = el ? el.closest('.action-req-tile') : null;
+    if (tile) {
+      tile.classList.toggle('has-urgent', urgency && count > 0);
+      tile.classList.toggle('has-items',  !urgency && count > 0);
+    }
+  };
+  setTile('ar-pending-count', pending, false);
+  setTile('ar-pickups-count', pickups, false);
+  setTile('ar-returns-count', returns, false);
+  setTile('ar-overdue-count', overdue, true);
+}
+
+// ── Bookings ───────────────────────────────────────────────────────────────
+function loadBookings() {
+  document.getElementById('bookings-loading').style.display = '';
+  document.getElementById('bookings-table-wrap').style.display = 'none';
+  document.getElementById('bookings-empty').style.display = 'none';
+
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      // Filter to slingshot vehicles only
+      allBookings = (data.bookings || []).filter((b) => SLINGSHOT_IDS.includes(b.vehicleId));
+      renderBookings();
+    })
+    .catch((err) => {
+      document.getElementById('bookings-loading').innerHTML =
+        `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderBookings() {
+  document.getElementById('bookings-loading').style.display = 'none';
+  applyBookingFilters();
+}
+
+function applyBookingFilters() {
+  const vFilter = document.getElementById('booking-filter-vehicle').value;
+  const sFilter = document.getElementById('booking-filter-status').value;
+  const search  = (document.getElementById('booking-search').value || '').toLowerCase();
+
+  const filtered = allBookings.filter((b) => {
+    if (vFilter && b.vehicleId !== vFilter) return false;
+    if (sFilter && b.status !== sFilter) return false;
+    if (search && !(b.name || '').toLowerCase().includes(search) && !(b.bookingId || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    document.getElementById('bookings-table-wrap').style.display = 'none';
+    document.getElementById('bookings-empty').style.display = '';
+    return;
+  }
+
+  document.getElementById('bookings-table-wrap').style.display = '';
+  document.getElementById('bookings-empty').style.display = 'none';
+
+  document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => `
+    <tr>
+      <td>
+        <div style="font-weight:600;">${esc(b.name || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
+      </td>
+      <td>${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+      <td>
+        <div>${esc(b.pickupDate || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}</div>
+      </td>
+      <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
+      <td>${statusBadge(b.status)}</td>
+      <td>
+        <div class="td-actions">
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}')">View</button>
+          ${b.status === 'reserved_unpaid' ? `
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
+            <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
+          ` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function viewBooking(bookingId) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) return;
+  document.getElementById('booking-detail-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Unit</div><div style="font-weight:600;">${esc(VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(b.returnTime || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Amount Paid</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountPaid || 0)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${statusBadge(b.status)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div>${esc(b.paymentMethod || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
+      ${b.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
+    </div>
+  `;
+  document.getElementById('booking-detail-actions').innerHTML = `
+    ${b.status === 'reserved_unpaid' ? `
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this);closeModal('booking-detail-modal')">✓ Mark as Paid</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">✗ Decline</button>
+    ` : ''}
+    ${b.status === 'booked_paid' ? `
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+    ` : ''}
+    ${b.status === 'active_rental' ? `
+      <button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">Mark Completed</button>
+      <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
+    ` : ''}
+    <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
+  `;
+  openModal('booking-detail-modal');
+}
+
+function updateBookingStatus(vehicleId, bookingId, status, triggerBtn) {
+  if (triggerBtn) triggerBtn.disabled = true;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId,
+    updates: { status },
+  }).then(() => {
+    showToast('Booking updated.', 'success');
+    const idx = allBookings.findIndex((b) => b.bookingId === bookingId);
+    if (idx >= 0) allBookings[idx].status = status;
+    renderBookings();
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+  }).finally(() => {
+    if (triggerBtn) triggerBtn.disabled = false;
+  });
+}
+
+// ── Manual Booking ─────────────────────────────────────────────────────────
+function updateManualPrice() {
+  const vehicleId  = document.getElementById('mb-vehicle').value;
+  const pickupDate = document.getElementById('mb-pickup-date').value;
+  const returnDate = document.getElementById('mb-return-date').value;
+  const el = document.getElementById('mb-auto-price');
+
+  if (!vehicleId || !pickupDate || !returnDate || returnDate < pickupDate) {
+    el.textContent = '–';
+    return;
+  }
+
+  const rate = VEHICLE_RATES[vehicleId];
+  if (!rate) { el.textContent = '–'; return; }
+  const days = Math.max(1, Math.round((new Date(returnDate) - new Date(pickupDate)) / 86400000));
+  el.textContent = '$' + formatMoney(days * rate.perDay);
+}
+
+async function submitManualBooking(e) {
+  e.preventDefault();
+  const btn = document.getElementById('mb-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const vehicleId  = document.getElementById('mb-vehicle').value;
+  const pickupDate = document.getElementById('mb-pickup-date').value;
+  const returnDate = document.getElementById('mb-return-date').value;
+  const autoText   = document.getElementById('mb-auto-price').textContent;
+  const overrideAmount = parseFloat(document.getElementById('mb-amount-paid').value);
+  const autoAmount = autoText !== '–' ? parseFloat(autoText.replace(/\$/g, '').replace(/,/g, '')) : 0;
+  const amountPaid = !isNaN(overrideAmount) && overrideAmount >= 0 ? overrideAmount : autoAmount;
+
+  const formatTime = (val) => {
+    if (!val) return '';
+    const [h, m] = val.split(':');
+    const hr = parseInt(h), mn = m;
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    return `${hr % 12 || 12}:${mn} ${ampm}`;
+  };
+
+  try {
+    await apiPost('/api/v2-bookings', {
+      secret:        adminSecret,
+      action:        'create',
+      vehicleId,
+      name:          document.getElementById('mb-name').value.trim(),
+      phone:         document.getElementById('mb-phone').value.trim(),
+      email:         document.getElementById('mb-email').value.trim(),
+      pickupDate,
+      pickupTime:    formatTime(document.getElementById('mb-pickup-time').value),
+      returnDate,
+      returnTime:    formatTime(document.getElementById('mb-return-time').value),
+      amountPaid,
+      paymentMethod: document.getElementById('mb-payment-method').value,
+      notes:         document.getElementById('mb-notes').value.trim(),
+    });
+    showToast('Booking saved successfully.', 'success');
+    clearManualBookingForm();
+    allBookings = [];
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg> Save Booking';
+  }
+}
+
+function clearManualBookingForm() {
+  document.getElementById('manual-booking-form').reset();
+  document.getElementById('mb-auto-price').textContent = '–';
+}
+
+// ── Fleet Status ──────────────────────────────────────────────────────────
+const SLINGSHOT_VEHICLES = [
+  { id: 'slingshot',  name: 'Slingshot R (Unit 1)' },
+  { id: 'slingshot2', name: 'Slingshot R (Unit 2)' },
+  { id: 'slingshot3', name: 'Slingshot R (Unit 3)' },
+];
+
+function loadFleetStatusPage() {
+  const loading = document.getElementById('fleet-status-loading');
+  const list    = document.getElementById('fleet-status-list');
+  if (loading) loading.style.display = '';
+  if (list)    list.style.display = 'none';
+
+  fetch(API_BASE + '/api/fleet-status')
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then((data) => {
+      fleetStatusData = data || {};
+      renderFleetStatus();
+      if (loading) loading.style.display = 'none';
+      if (list)    list.style.display = '';
+    })
+    .catch((err) => {
+      showToast('Fleet status load error: ' + err.message, 'error');
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderFleetStatus() {
+  const list = document.getElementById('fleet-status-list');
+  if (!list) return;
+  list.innerHTML = SLINGSHOT_VEHICLES.map((v) => {
+    const available = fleetStatusData[v.id]?.available ?? true;
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);"
+           data-vehicle-id="${esc(v.id)}">
+        <div>
+          <div style="font-weight:600;font-size:14px;">${esc(v.name)}</div>
+          <div id="fleet-status-label-${esc(v.id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
+            ${available ? '● Available for booking' : '● Unavailable (hidden from renters)'}
+          </div>
+        </div>
+        <label class="toggle-switch" title="${available ? 'Click to mark unavailable' : 'Click to mark available'}">
+          <input type="checkbox" id="fleet-toggle-${esc(v.id)}" ${available ? 'checked' : ''}
+            data-vehicle-id="${esc(v.id)}" onchange="handleFleetToggle(this)">
+          <span class="toggle-track"></span>
+        </label>
+      </div>`;
+  }).join('');
+}
+
+function handleFleetToggle(inputEl) {
+  const vehicleId = inputEl.dataset.vehicleId;
+  if (!vehicleId) return;
+  if (inputEl) inputEl.disabled = true;
+  const label = document.getElementById('fleet-status-label-' + vehicleId);
+
+  fetch(API_BASE + '/api/update-fleet-status', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, available: inputEl.checked }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      const available = inputEl.checked;
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+        if (inputEl) inputEl.checked = !available;
+      } else {
+        fleetStatusData[vehicleId] = { available };
+        if (label) {
+          label.textContent = available ? '● Available for booking' : '● Unavailable (hidden from renters)';
+          label.style.color = available ? 'var(--success)' : 'var(--danger)';
+        }
+        showToast((VEHICLE_NAMES[vehicleId] || vehicleId) + ' marked as ' + (available ? 'Available' : 'Unavailable') + '.', 'success');
+      }
+    })
+    .catch((err) => {
+      showToast('Network error: ' + err.message, 'error');
+      if (inputEl) inputEl.checked = !inputEl.checked;
+    })
+    .finally(() => { if (inputEl) inputEl.disabled = false; });
+}
+
+// ── Block / Unblock Dates ─────────────────────────────────────────────────
+function loadBlockedDates() {
+  const loading = document.getElementById('blocked-dates-loading');
+  const list    = document.getElementById('blocked-dates-list');
+  const empty   = document.getElementById('blocked-dates-empty');
+  if (loading) loading.style.display = '';
+  if (list)    list.style.display = 'none';
+  if (empty)   empty.style.display = 'none';
+
+  fetch(API_BASE + '/api/booked-dates')
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then((data) => {
+      if (loading) loading.style.display = 'none';
+      const entries = [];
+      // Only show slingshot vehicle entries
+      SLINGSHOT_IDS.forEach((vid) => {
+        (data[vid] || []).forEach((range) => entries.push({ vehicleId: vid, from: range.from, to: range.to }));
+      });
+      if (!entries.length) {
+        if (empty) empty.style.display = '';
+        return;
+      }
+      entries.sort((a, b) => a.from.localeCompare(b.from));
+      if (list) {
+        list.style.display = '';
+        list.innerHTML = `
+          <table style="width:100%;" class="table-wrap">
+            <thead><tr><th>Unit</th><th>From</th><th>To</th></tr></thead>
+            <tbody>
+              ${entries.map((e) => `
+                <tr>
+                  <td>${esc(VEHICLE_NAMES[e.vehicleId] || e.vehicleId)}</td>
+                  <td>${esc(e.from)}</td>
+                  <td>${esc(e.to)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+    })
+    .catch((err) => {
+      showToast('Error loading blocked dates: ' + err.message, 'error');
+      if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function blockDates() {
+  const vehicleId = document.getElementById('bd-vehicle').value;
+  const from      = document.getElementById('bd-from').value;
+  const to        = document.getElementById('bd-to').value;
+  if (!vehicleId) { showToast('Please select a Slingshot unit.', 'error'); return; }
+  if (!from)      { showToast('Please select a start date.', 'error'); return; }
+  if (!to)        { showToast('Please select an end date.', 'error'); return; }
+  if (from > to)  { showToast('Start date must be on or before end date.', 'error'); return; }
+
+  const btn = document.getElementById('bd-block-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Blocking…'; }
+
+  fetch(API_BASE + '/api/block-dates', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+      } else if (data.added === 0) {
+        showToast('These dates already overlap with an existing blocked range.', 'info');
+      } else {
+        showToast('✅ Dates blocked successfully.', 'success');
+        loadBlockedDates();
+      }
+    })
+    .catch((err) => showToast('Network error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔒 Block Dates'; } });
+}
+
+function unblockDates() {
+  const vehicleId = document.getElementById('ub-vehicle').value;
+  const from      = document.getElementById('ub-from').value;
+  const to        = document.getElementById('ub-to').value;
+  if (!vehicleId) { showToast('Please select a Slingshot unit.', 'error'); return; }
+  if (!from)      { showToast('Please select a start date.', 'error'); return; }
+  if (!to)        { showToast('Please select an end date.', 'error'); return; }
+  if (!confirm('Unblock ' + esc(from) + ' → ' + esc(to) + ' for ' + esc(VEHICLE_NAMES[vehicleId] || vehicleId) + '?')) return;
+
+  const btn = document.getElementById('bd-unblock-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Unblocking…'; }
+
+  fetch(API_BASE + '/api/open-dates', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ secret: adminSecret, vehicleId, from, to }),
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+      } else if (data.removed === 0) {
+        showToast('No matching blocked range found for those exact dates.', 'info');
+      } else {
+        showToast('✅ Dates unblocked. Those dates are now available for booking.', 'success');
+        loadBlockedDates();
+      }
+    })
+    .catch((err) => showToast('Network error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔓 Unblock Dates'; } });
+}
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach((overlay) => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+// ── Utility ────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatMoney(n) {
+  const num = Number(n) || 0;
+  return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function statusBadge(status) {
+  const map = {
+    reserved_unpaid:  'badge-orange',
+    booked_paid:      'badge-green',
+    active_rental:    'badge-blue',
+    completed_rental: 'badge-gray',
+    cancelled_rental: 'badge-red',
+  };
+  const labels = {
+    reserved_unpaid:  'Pending',
+    booked_paid:      'Confirmed',
+    active_rental:    'Active',
+    completed_rental: 'Completed',
+    cancelled_rental: 'Cancelled',
+  };
+  return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status)}</span>`;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
+</script>
+</body>
+</html>
