@@ -55,10 +55,6 @@ test("PRICING_DEFAULTS.slingshot_3day_rate = 1050", () => {
   assert.equal(PRICING_DEFAULTS.slingshot_3day_rate, 1050);
 });
 
-test("PRICING_DEFAULTS.slingshot_security_deposit = 150", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_security_deposit, 150);
-});
-
 test("PRICING_DEFAULTS.la_tax_rate = 0.1025", () => {
   assert.equal(PRICING_DEFAULTS.la_tax_rate, 0.1025);
 });
@@ -133,24 +129,24 @@ test("camry promo $1200/month: 30 days = $1200", () => {
 
 // ─── computeSlingshotAmountFromSettings (default rates) ─────────────────────
 
-test("slingshot default: 3 hr = $200 + $150 deposit = $350", () => {
-  assert.equal(computeSlingshotAmountFromSettings(3, S), 350);
+test("slingshot default: 3 hr = $200 rental + $200 deposit = $400", () => {
+  assert.equal(computeSlingshotAmountFromSettings(3, S), 400);
 });
 
-test("slingshot default: 6 hr = $250 + $150 deposit = $400", () => {
-  assert.equal(computeSlingshotAmountFromSettings(6, S), 400);
+test("slingshot default: 6 hr = $250 rental + $250 deposit = $500", () => {
+  assert.equal(computeSlingshotAmountFromSettings(6, S), 500);
 });
 
-test("slingshot default: 24 hr = $350 + $150 deposit = $500", () => {
-  assert.equal(computeSlingshotAmountFromSettings(24, S), 500);
+test("slingshot default: 24 hr = $350 rental + $350 deposit = $700", () => {
+  assert.equal(computeSlingshotAmountFromSettings(24, S), 700);
 });
 
-test("slingshot default: 48 hr = $700 + $150 deposit = $850", () => {
-  assert.equal(computeSlingshotAmountFromSettings(48, S), 850);
+test("slingshot default: 48 hr = $700 rental + $700 deposit = $1400", () => {
+  assert.equal(computeSlingshotAmountFromSettings(48, S), 1400);
 });
 
-test("slingshot default: 72 hr = $1050 + $150 deposit = $1200", () => {
-  assert.equal(computeSlingshotAmountFromSettings(72, S), 1200);
+test("slingshot default: 72 hr = $1050 rental + $1050 deposit = $2100", () => {
+  assert.equal(computeSlingshotAmountFromSettings(72, S), 2100);
 });
 
 test("slingshot default: invalid duration returns null", () => {
@@ -159,19 +155,14 @@ test("slingshot default: invalid duration returns null", () => {
 
 // ─── computeSlingshotAmountFromSettings (promo / admin-overridden rates) ─────
 
-test("slingshot promo $300/day: 24 hr = $300 + $150 deposit = $450", () => {
+test("slingshot promo $300/day: 24 hr = $300 rental + $300 deposit = $600", () => {
   const promo = { ...S, slingshot_daily_rate: 300 };
-  assert.equal(computeSlingshotAmountFromSettings(24, promo), 450);
+  assert.equal(computeSlingshotAmountFromSettings(24, promo), 600);
 });
 
-test("slingshot promo $600/2-day: 48 hr = $600 + $150 deposit = $750", () => {
+test("slingshot promo $600/2-day: 48 hr = $600 rental + $600 deposit = $1200", () => {
   const promo = { ...S, slingshot_2day_rate: 600 };
-  assert.equal(computeSlingshotAmountFromSettings(48, promo), 750);
-});
-
-test("slingshot promo deposit $100: 24 hr = $350 + $100 deposit = $450", () => {
-  const promo = { ...S, slingshot_security_deposit: 100 };
-  assert.equal(computeSlingshotAmountFromSettings(24, promo), 450);
+  assert.equal(computeSlingshotAmountFromSettings(48, promo), 1200);
 });
 
 // ─── applyTax ────────────────────────────────────────────────────────────────
