@@ -175,7 +175,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "paymentMethod", "cancelReason"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -255,7 +255,7 @@ export default async function handler(req, res) {
       const {
         vehicleId, name, phone, email,
         pickupDate, pickupTime, returnDate, returnTime,
-        amountPaid, paymentMethod, notes,
+        amountPaid, totalPrice, paymentMethod, notes,
       } = body;
 
       if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
@@ -296,6 +296,7 @@ export default async function handler(req, res) {
       }
 
       const parsedAmount = typeof amountPaid === "number" ? amountPaid : parseFloat(amountPaid) || 0;
+      const parsedTotal  = typeof totalPrice === "number" ? totalPrice  : parseFloat(totalPrice)  || 0;
 
       // Build the booking record once; bookingId is stable across retries for idempotency
       const booking = {
@@ -310,6 +311,7 @@ export default async function handler(req, res) {
         returnDate,
         returnTime:     typeof returnTime === "string" ? returnTime.trim() : "",
         amountPaid:     Math.round(parsedAmount * 100) / 100,
+        totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
         paymentMethod:  typeof paymentMethod === "string" ? paymentMethod : "cash",
         status:         parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
         notes:          typeof notes === "string" ? notes.trim().slice(0, 500) : "",
