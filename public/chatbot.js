@@ -211,6 +211,8 @@ function nextDayChatbot(iso) {
 function getVehicleBookingInfo(vehicleId, lang) {
   var locale = lang === "es" ? "es-US" : "en-US";
   var names = { slingshot: "Slingshot R",
+                slingshot2: "Slingshot R (Unit 2)",
+                slingshot3: "Slingshot R (Unit 3)",
                 camry: "Camry 2012", camry2013: "Camry 2013 SE" };
   var vName = names[vehicleId] || vehicleId;
 
@@ -274,9 +276,11 @@ function getVehicleBookingInfo(vehicleId, lang) {
  * Build a summary for ALL vehicles combining fleet-status + next-available info.
  */
 function buildAvailabilityMessage(lang) {
-  var ids   = ["slingshot", "camry", "camry2013"];
-  var icons = { slingshot: "🔴", camry: "🔵", camry2013: "🟢" };
+  var ids   = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+  var icons = { slingshot: "🔴", slingshot2: "🔴", slingshot3: "🔴", camry: "🔵", camry2013: "🟢" };
   var names = { slingshot: "Slingshot R",
+                slingshot2: "Slingshot R (Unit 2)",
+                slingshot3: "Slingshot R (Unit 3)",
                 camry: "Camry 2012", camry2013: "Camry 2013 SE" };
   var locale = lang === "es" ? "es-US" : "en-US";
   var today  = new Date().toISOString().slice(0, 10);
@@ -384,8 +388,10 @@ function buildFleetMessage(lang) {
 
   if (lang === "es") {
     var p = getChatPricing(), s = p.slingshot, e = p.economy;
-    return "Contamos con <strong>3 vehículos</strong> en nuestra flota:\n\n" +
+    return "Contamos con <strong>5 vehículos</strong> en nuestra flota:\n\n" +
       "🔴 Slingshot R — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
+      "🔴 Slingshot R (Unidad 2)" + statusLine("slingshot2") + "\n" +
+      "🔴 Slingshot R (Unidad 3)" + statusLine("slingshot3") + "\n" +
       "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
       "   💰 Depósito reembolsable igual al precio del alquiler\n\n" +
       "🔵 Camry 2012 — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
@@ -393,8 +399,10 @@ function buildFleetMessage(lang) {
       "¡Visita nuestra página de Autos para ver y reservar!";
   }
   var pricing2 = getChatPricing(), slPricing = pricing2.slingshot, economy2 = pricing2.economy;
-  return "We have <strong>3 vehicles</strong> in our fleet:\n\n" +
+  return "We have <strong>5 vehicles</strong> in our fleet:\n\n" +
     "🔴 Slingshot R — Sports 2-Seater" + statusLine("slingshot") + "\n" +
+    "🔴 Slingshot R (Unit 2)" + statusLine("slingshot2") + "\n" +
+    "🔴 Slingshot R (Unit 3)" + statusLine("slingshot3") + "\n" +
     "   3 hrs $" + slPricing["3hr"] + " · 6 hrs $" + slPricing["6hr"] + " · 24 hrs $" + slPricing["24hr"] + "\n" +
     "   💰 Refundable deposit equals your rental fee\n\n" +
     "🔵 Camry 2012 — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +

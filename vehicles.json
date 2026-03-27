@@ -9,6 +9,26 @@
     "status": "active",
     "cover_image": "images/slingshot.jpg"
   },
+  "slingshot2": {
+    "vehicle_id": "slingshot2",
+    "vehicle_name": "Slingshot R (Unit 2)",
+    "type": "slingshot",
+    "vehicle_year": null,
+    "purchase_date": "",
+    "purchase_price": 0,
+    "status": "active",
+    "cover_image": "images/slingshot.jpg"
+  },
+  "slingshot3": {
+    "vehicle_id": "slingshot3",
+    "vehicle_name": "Slingshot R (Unit 3)",
+    "type": "slingshot",
+    "vehicle_year": null,
+    "purchase_date": "",
+    "purchase_price": 0,
+    "status": "active",
+    "cover_image": "images/slingshot.jpg"
+  },
   "camry": {
     "vehicle_id": "camry",
     "vehicle_name": "Camry 2012",
