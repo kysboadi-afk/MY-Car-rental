@@ -26,11 +26,9 @@ export const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
 export const CARS = {
   slingshot:  {
     name: "Slingshot R",
-    deposit: 150,
     // Slingshot uses hourly/daily tier pricing.
-    // Sub-day tiers: $200 / 3 hrs · $250 / 6 hrs.
-    // Daily tiers: $350 / 1 day · $700 / 2 days · $1,050 / 3 days (max).
-    // Multi-day tiers use hours = days × 24 so the existing duration logic stays consistent.
+    // Security deposit = rental tier price (refundable, charged at booking).
+    // Total charged = tier price × 2 (rental + deposit) + tax.
     hourlyTiers: [
       { hours: 3,  price: 200 },
       { hours: 6,  price: 250 },
@@ -41,8 +39,18 @@ export const CARS = {
   },
   slingshot2: {
     name: "Slingshot R",
-    deposit: 150,
     // Same pricing tiers as slingshot — different unit with different photos.
+    hourlyTiers: [
+      { hours: 3,  price: 200 },
+      { hours: 6,  price: 250 },
+      { hours: 24, price: 350 },
+      { hours: 48, price: 700 },
+      { hours: 72, price: 1050 },
+    ],
+  },
+  slingshot3: {
+    name: "Slingshot R",
+    // Same pricing tiers as slingshot — third unit.
     hourlyTiers: [
       { hours: 3,  price: 200 },
       { hours: 6,  price: 250 },
@@ -70,7 +78,8 @@ export const PROTECTION_PLAN_PREMIUM  = 50;  // $50/day — limits liability to 
 
 /**
  * Compute the total charge for an hourly/daily-tier rental (Slingshot vehicles).
- * The security deposit is always included.
+ * The security deposit equals the rental tier price (deposit = tier.price).
+ * Total = tier.price × 2 (rental + refundable security deposit).
  * @param {number} durationHours - rental duration in hours (must be 3, 6, 24, 48, or 72)
  * @param {string} [vehicleId="slingshot"] - key from CARS for the vehicle
  * @returns {number|null} total in dollars (rental + deposit), or null if invalid
@@ -80,7 +89,8 @@ export function computeSlingshotAmount(durationHours, vehicleId = "slingshot") {
   if (!car || !car.hourlyTiers) return null;
   const tier = car.hourlyTiers.find(t => t.hours === durationHours);
   if (!tier) return null;
-  return tier.price + car.deposit;
+  // Deposit equals the rental tier price; total = tier.price × 2.
+  return tier.price * 2;
 }
 
 /**

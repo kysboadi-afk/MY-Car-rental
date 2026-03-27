@@ -23,6 +23,7 @@ const VEHICLES_PATH  = "vehicles.json";
 const EMPTY_VEHICLES = {
   slingshot:  { vehicle_id: "slingshot",  vehicle_name: "Slingshot R",      type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
   slingshot2: { vehicle_id: "slingshot2", vehicle_name: "Slingshot R (2)",  type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
+  slingshot3: { vehicle_id: "slingshot3", vehicle_name: "Slingshot R (3)",  type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
   camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",       type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
   camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE",    type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
 };
