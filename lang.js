@@ -172,7 +172,7 @@
         unitHrs: "hrs",
         priceFrom: "from",
         hours: "Hours",
-        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 deposit"
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 deposit equal to rental fee"
       },
       // car.html (booking page)
       booking: {
@@ -609,7 +609,7 @@
         unitHrs: "hrs",
         priceFrom: "desde",
         hours: "Horas",
-        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 dep\u00F3sito"
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 dep\u00F3sito igual al costo de renta"
       },
       booking: {
         backToHome:    "\u2B05 Volver al Inicio",
