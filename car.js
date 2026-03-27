@@ -43,6 +43,44 @@ const cars = {
     vin: "57XAARHB8P8156561",
     color: null
   },
+  slingshot2: {
+    name: "Slingshot R",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
+    hourlyTiers: [
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
+    ],
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
+    images: ["images/slingshot.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: null,
+    color: null
+  },
+  slingshot3: {
+    name: "Slingshot R",
+    subtitle: "Sports \u2022 2-Seater",
+    subtitleKey: "fleet.sports2seater",
+    hourlyTiers: [
+      { hours: 3,  price: 200,  label: "3 Hours" },
+      { hours: 6,  price: 250,  label: "6 Hours" },
+      { hours: 24, price: 350,  label: "1 Day" },
+      { hours: 48, price: 700,  label: "2 Days" },
+      { hours: 72, price: 1050, label: "3 Days" },
+    ],
+    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
+    images: ["images/slingshot.jpg"],
+    make: "Polaris",
+    model: "Slingshot XR",
+    year: 2023,
+    vin: null,
+    color: null
+  },
   camry: {
     name: "Camry 2012",
     subtitle: "",
