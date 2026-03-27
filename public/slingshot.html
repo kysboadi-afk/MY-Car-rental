@@ -980,7 +980,7 @@
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var s = data.slingshot;
-        if (s)  updateBadge('sl-status-slingshot',  s.status  !== 'unavailable');
+        if (s)  updateBadge('sl-status-slingshot',  s.available !== false);
       })
       .catch(function() { /* keep default AVAILABLE if fetch fails */ });
   })();
