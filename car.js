@@ -36,10 +36,7 @@ const cars = {
     // Security deposit = rental tier price (charged at booking, refundable after return).
     // No fixed deposit — computed dynamically from the selected tier.
     bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    // TO ADD PHOTOS FOR SLINGSHOT 1:
-    // 1. Upload your image file to the /images folder in the repository.
-    // 2. Add the filename as a new entry below, e.g. "images/your-photo.jpg"
-    images: ["images/car2.jpg","images/car1.jpg","images/car3.jpg","images/photo_2026-03-22_11-38-56.jpg"],
+    images: ["images/photo_2026-03-22_11-38-56.jpg","images/photo_2026-03-19_00-34-36.jpg"],
     make: "Polaris",
     model: "Slingshot XR",
     year: 2023,
