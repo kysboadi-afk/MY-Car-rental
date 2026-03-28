@@ -123,7 +123,7 @@ function parseDateTime(date, time) {
 }
 
 function isSlingshotVehicle(vehicleId) {
-  return vehicleId === "slingshot";
+  return typeof vehicleId === "string" && vehicleId.startsWith("slingshot");
 }
 
 /**
@@ -163,6 +163,7 @@ async function createExtensionPaymentIntent(booking, amount, label) {
         payment_type:    "rental_extension",
         original_booking_id: booking.bookingId || booking.paymentIntentId,
         vehicle_id:      booking.vehicleId,
+        vehicle_name:    booking.vehicleName || booking.vehicleId,
         renter_name:     booking.name || "",
         extension_label: label,
       },
@@ -176,12 +177,15 @@ async function createExtensionPaymentIntent(booking, amount, label) {
 
 /**
  * Build the payment link for an extension.
- * The client secret is passed as a query parameter so balance.html can
- * confirm the PaymentIntent in extension mode.
+ * The client secret and PaymentIntent ID are passed as query parameters so
+ * balance.html can confirm the PaymentIntent in extension mode.
  */
-function buildExtensionPaymentLink(clientSecret) {
-  if (!clientSecret) return "https://www.slytrans.com/balance.html?ext=1";
-  return `https://www.slytrans.com/balance.html?ext=1&cs=${encodeURIComponent(clientSecret)}`;
+function buildExtensionPaymentLink(clientSecret, piId) {
+  const base = "https://www.slytrans.com/balance.html?ext=1";
+  if (!clientSecret) return base;
+  let url = `${base}&cs=${encodeURIComponent(clientSecret)}`;
+  if (piId) url += `&piId=${encodeURIComponent(piId)}`;
+  return url;
 }
 
 /**
@@ -265,7 +269,7 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   // Create Stripe PaymentIntent for extension charge
   const pi = await createExtensionPaymentIntent(booking, selected.price, selected.label);
   const paymentLink = pi
-    ? buildExtensionPaymentLink(pi.client_secret)
+    ? buildExtensionPaymentLink(pi.client_secret, pi.id)
     : (booking.paymentLink || "https://www.slytrans.com/balance.html");
 
   // Compute new return time / date

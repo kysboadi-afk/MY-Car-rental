@@ -137,6 +137,23 @@
       // tailored confirmation message.
       var isWaitlist = urlParams.get("waitlist") === "1";
 
+      // ── Extension payment flow ─────────────────────────────────────────────
+      // When ?ext=1 is present the customer paid to extend their active rental.
+      // No confirmation email is needed — the Stripe webhook updates the booking
+      // and sends an SMS with the new return time/date.
+      var isExtension = urlParams.get("ext") === "1";
+      if (isExtension) {
+        var extTitle  = document.getElementById("messageTitle");
+        var extBody   = document.getElementById("messageBody");
+        var extStatus = document.getElementById("emailStatus");
+        var extBtn    = document.getElementById("homeBtn");
+        if (extTitle) { extTitle.textContent = "✅ Extension Confirmed!"; extTitle.style.color = "#4caf50"; }
+        if (extBody)  { extBody.textContent  = "Your rental has been extended. You'll receive a text message shortly with your new return time."; }
+        if (extStatus){ extStatus.style.display = "none"; }
+        if (extBtn)   { extBtn.href = "index.html"; extBtn.textContent = "Back to Homepage"; extBtn.style.pointerEvents = ""; extBtn.style.opacity = ""; }
+        return;
+      }
+
       function saveWaitlistEntry(waitlistData, piId) {
         var t = getT();
         var title  = document.getElementById("messageTitle");
