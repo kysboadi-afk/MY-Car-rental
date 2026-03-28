@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -239,6 +239,10 @@ async function saveWebhookBookingRecord(paymentIntent) {
   try {
     await autoCreateRevenueRecord(bookingRecord);
     await autoUpsertCustomer(bookingRecord, false);
+    await autoUpsertBooking(bookingRecord);
+    if (bookingRecord.pickupDate && bookingRecord.returnDate) {
+      await autoCreateBlockedDate(bookingRecord.vehicleId, bookingRecord.pickupDate, bookingRecord.returnDate, "booking");
+    }
   } catch (err) {
     console.error("stripe-webhook: Supabase sync error:", err.message);
   }
@@ -452,6 +456,13 @@ export default async function handler(req, res) {
                 data[vehicle_id][idx].extensionCount = (booking.extensionCount || 0) + 1;
                 await saveBookings(data, sha, `Confirm extension for booking ${original_booking_id}`);
 
+                // Sync updated return date to Supabase bookings table
+                try {
+                  await autoUpsertBooking(data[vehicle_id][idx]);
+                } catch (syncErr) {
+                  console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
+                }
+
                 // Send extension confirmed SMS
                 if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
                   const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
@@ -488,6 +499,14 @@ export default async function handler(req, res) {
       if (vehicle_id && originalPiId) {
         try {
           await updateBooking(vehicle_id, originalPiId, { status: "booked_paid" });
+          // Sync the status change to Supabase bookings table
+          const { data: updatedData } = await loadBookings();
+          const updatedBooking = (updatedData[vehicle_id] || []).find(
+            (b) => b.bookingId === originalPiId || b.paymentIntentId === originalPiId
+          );
+          if (updatedBooking) {
+            await autoUpsertBooking(updatedBooking);
+          }
         } catch (err) {
           console.error("stripe-webhook: updateBooking (balance) error:", err);
         }
