@@ -914,3 +914,60 @@ END; $$;
 DROP TRIGGER IF EXISTS bookings_after_status_change ON bookings;
 CREATE TRIGGER bookings_after_status_change
   AFTER UPDATE OF status ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_status_change();
+
+-- =============================================================================
+-- (Migration 0016) — Adds no_show_count to customers and an automatic trigger
+-- to keep it in sync whenever is_no_show changes on a revenue_records row.
+-- =============================================================================
+
+-- 19a. Add no_show_count column
+ALTER TABLE customers
+  ADD COLUMN IF NOT EXISTS no_show_count integer NOT NULL DEFAULT 0;
+
+DO $$
+BEGIN
+  ALTER TABLE customers
+    ADD CONSTRAINT customers_no_show_count_non_negative
+    CHECK (no_show_count >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 19b. Trigger function: increment / decrement on is_no_show changes
+CREATE OR REPLACE FUNCTION update_customer_no_show_count()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  v_phone text;
+  v_delta integer := 0;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_phone := OLD.customer_phone;
+    IF OLD.is_no_show THEN v_delta := -1; END IF;
+  ELSIF TG_OP = 'INSERT' THEN
+    v_phone := NEW.customer_phone;
+    IF NEW.is_no_show THEN v_delta := 1; END IF;
+  ELSE  -- UPDATE
+    v_phone := NEW.customer_phone;
+    IF     OLD.is_no_show = false AND NEW.is_no_show = true  THEN v_delta :=  1;
+    ELSIF  OLD.is_no_show = true  AND NEW.is_no_show = false THEN v_delta := -1;
+    END IF;
+  END IF;
+
+  IF v_delta = 0 OR v_phone IS NULL OR v_phone = '' THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  UPDATE customers
+     SET no_show_count = GREATEST(0, no_show_count + v_delta),
+         updated_at    = now()
+   WHERE phone = v_phone;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+-- 19c. Attach trigger to revenue_records
+DROP TRIGGER IF EXISTS on_revenue_no_show_change ON revenue_records;
+CREATE TRIGGER on_revenue_no_show_change
+  AFTER INSERT OR UPDATE OF is_no_show OR DELETE
+  ON revenue_records
+  FOR EACH ROW EXECUTE FUNCTION update_customer_no_show_count();
