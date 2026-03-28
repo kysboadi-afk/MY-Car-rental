@@ -269,9 +269,9 @@ async function loadFleet() {
   const vehicles = vehiclesResult.status === "fulfilled" ? (vehiclesResult.value || []) : [];
   const pricing  = pricingResult.status  === "fulfilled" ? pricingResult.value           : null;
 
-  // Only render vehicles the admin has marked as active
+  // Only render vehicles the admin has marked as active and that are available for booking
   const active = vehicles
-    .filter(v => !v.status || v.status === "active")
+    .filter(v => (!v.status || v.status === "active") && (!v.rental_status || v.rental_status === "available"))
     .sort((a, b) => {
       // Slingshot first, then economy, then anything else
       const VEHICLE_TYPE_ORDER = { slingshot: 0, economy: 1 };
