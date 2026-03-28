@@ -600,6 +600,24 @@ test("lifecycle: completing a booking auto-sets completedAt", async () => {
   assert.ok(r2._body.booking.completedAt, "completedAt must be set automatically on completion");
 });
 
+test("lifecycle: activating a booking auto-sets activatedAt", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), r2);
+  assert.equal(r2._status, 200);
+  assert.ok(r2._body.booking.activatedAt, "activatedAt must be set automatically on activation");
+});
+
 test("lifecycle: completing a booking removes its date range from booked-dates.json", async () => {
   resetStore(); resetCalls();
   // Track GitHub API calls

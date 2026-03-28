@@ -154,6 +154,17 @@ function parseTime12h(timeStr) {
 }
 
 /**
+ * Converts a date string to an ISO-8601 string, or undefined if the input is
+ * absent or cannot be parsed.  Used to safely pass optional timestamp fields
+ * to Supabase without risking 'Invalid Date' strings in the payload.
+ */
+function safeIso(value) {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+/**
  * Syncs a booking record into the normalised Supabase `bookings` table.
  * Does an INSERT for new booking_refs and an UPDATE for existing ones.
  * Skipped silently when Supabase is not configured.
@@ -205,6 +216,12 @@ export async function autoUpsertBooking(booking) {
       payment_status:    paymentStatus,
       notes:             booking.notes          || null,
       payment_method:    booking.paymentMethod  || null,
+      // Mirror the JS-side auto-stamps so the Supabase row is consistent with
+      // the bookings.json record.  The DB trigger on_booking_status_timestamps
+      // will also stamp these automatically, but passing the JS value ensures
+      // idempotent re-syncs preserve the original timestamp.
+      activated_at:      safeIso(booking.activatedAt),
+      completed_at:      safeIso(booking.completedAt),
     };
 
     // Check whether the booking already exists in Supabase
