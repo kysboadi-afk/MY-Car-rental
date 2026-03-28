@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -140,6 +140,7 @@ export default async function handler(req, res) {
       // needed here — values are only rendered in the Stripe dashboard.
       metadata: {
         renter_name:  trimmedName,
+        renter_phone: phone && String(phone).trim() ? String(phone).trim() : "",
         vehicle_id:   vehicleId,
         vehicle_name: carData.name,
         pickup_date:  pickup,

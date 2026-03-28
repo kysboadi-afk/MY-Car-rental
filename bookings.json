@@ -44,6 +44,27 @@
       "smsSentAt": {},
       "createdAt": "2026-02-18T18:00:00.000Z",
       "source": "admin_v2"
+    },
+    {
+      "bookingId": "bk-df-2026-0327",
+      "name": "Damon Fleming",
+      "phone": "",
+      "email": "damonf357@gmail.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-03-27",
+      "pickupTime": "",
+      "returnDate": "2026-04-03",
+      "returnTime": "",
+      "location": "",
+      "status": "booked_paid",
+      "paymentIntentId": "pm_1TFjQrPo7fICjrtZWisqeEQ8",
+      "paymentMethod": "stripe",
+      "amountPaid": 350,
+      "notes": "7-day weekly rental. Mastercard debit ending 4916. Booking recorded via admin after webhook email fallback missed.",
+      "smsSentAt": {},
+      "createdAt": "2026-03-27T23:40:00.000Z",
+      "source": "admin_v2"
     }
   ],
   "camry2013": [

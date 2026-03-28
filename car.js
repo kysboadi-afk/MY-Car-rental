@@ -2075,6 +2075,7 @@ stripeBtn.addEventListener("click", async () => {
         name: nameVal,
         car: carData.name,
         email: email,
+        phone: phone,
         pickup: pickup.value,
         returnDate: returnDate.value,
         protectionPlan: insuranceCoverageChoice === "no",

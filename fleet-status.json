@@ -2,6 +2,6 @@
   "slingshot": { "available": true },
   "slingshot2": { "available": true },
   "slingshot3": { "available": true },
-  "camry": { "available": true },
+  "camry": { "available": false },
   "camry2013": { "available": false }
 }

@@ -17,11 +17,14 @@
 //   Events: payment_intent.succeeded
 
 import Stripe from "stripe";
-import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
+import { updateBooking, loadBookings, saveBookings, normalizePhone, appendBooking } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
+import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -159,6 +162,237 @@ async function markVehicleUnavailable(vehicleId) {
   });
 }
 
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+
+/**
+ * Escape HTML special characters to prevent XSS in email templates.
+ */
+function esc(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Save a booking record to bookings.json from PaymentIntent metadata.
+ *
+ * This is the guaranteed server-side fallback for the browser-side record
+ * creation in send-reservation-email.js.  appendBooking() is idempotent:
+ * it deduplicates by paymentIntentId so a double-save is always safe.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ */
+async function saveWebhookBookingRecord(paymentIntent) {
+  const meta = paymentIntent.metadata || {};
+  const {
+    renter_name,
+    renter_phone,
+    vehicle_id,
+    vehicle_name,
+    pickup_date,
+    return_date,
+    email,
+    payment_type,
+  } = meta;
+
+  if (!vehicle_id || !pickup_date || !return_date) {
+    console.log("stripe-webhook: skipping booking record — missing vehicle/dates in metadata");
+    return;
+  }
+
+  const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
+  const status = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
+
+  const bookingRecord = {
+    bookingId:       "wh-" + crypto.randomBytes(8).toString("hex"),
+    name:            renter_name || "",
+    phone:           renter_phone ? normalizePhone(renter_phone) : "",
+    email:           email || "",
+    vehicleId:       vehicle_id,
+    vehicleName:     vehicle_name || vehicle_id,
+    pickupDate:      pickup_date,
+    pickupTime:      "",
+    returnDate:      return_date,
+    returnTime:      "",
+    location:        DEFAULT_LOCATION,
+    status,
+    amountPaid,
+    paymentIntentId: paymentIntent.id,
+    paymentMethod:   "stripe",
+    smsSentAt:       {},
+    createdAt:       new Date().toISOString(),
+    source:          "stripe_webhook",
+  };
+
+  try {
+    await appendBooking(bookingRecord);
+    console.log(`stripe-webhook: booking record saved for PI ${paymentIntent.id} (${vehicle_id})`);
+  } catch (err) {
+    console.error("stripe-webhook: saveWebhookBookingRecord error:", err.message);
+  }
+
+  // Non-fatal Supabase sync
+  try {
+    await autoCreateRevenueRecord(bookingRecord);
+    await autoUpsertCustomer(bookingRecord, false);
+  } catch (err) {
+    console.error("stripe-webhook: Supabase sync error:", err.message);
+  }
+}
+
+/**
+ * Send a server-side fallback notification email to the owner and customer
+ * using data extracted from the PaymentIntent metadata.
+ *
+ * This is the guaranteed backup path that fires even when the customer's
+ * browser loses sessionStorage during a 3DS redirect and never calls
+ * send-reservation-email.js.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ */
+async function sendWebhookNotificationEmails(paymentIntent) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn("stripe-webhook: SMTP not configured — skipping fallback email");
+    return;
+  }
+
+  const meta = paymentIntent.metadata || {};
+  const {
+    renter_name,
+    renter_phone,
+    vehicle_id,
+    vehicle_name,
+    pickup_date,
+    return_date,
+    email,
+    payment_type,
+    full_rental_amount,
+    balance_at_pickup,
+  } = meta;
+
+  const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
+  const isDepositMode = payment_type === "reservation_deposit";
+  const totalLabel    = isDepositMode ? "Booking Deposit Charged" : "Total Charged";
+  const totalDisplay  = isDepositMode
+    ? `$${amountDollars} (non-refundable deposit — balance due at pickup)`
+    : `$${amountDollars}`;
+
+  const transporter = nodemailer.createTransport({
+    host:   process.env.SMTP_HOST,
+    port:   parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_PORT === "465",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  // ── Owner notification ────────────────────────────────────────────────────
+  const ownerSubject = `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)} (Server Backup)`;
+  const ownerHtml = `
+    <h2>💰 Payment Confirmed – New Booking (Server-Side Backup Notification)</h2>
+    <p><strong>⚠️ This is an automatic server-side backup email.</strong> It fires whenever a payment succeeds on Stripe, regardless of what happened in the customer's browser. If you already received a separate "Payment Confirmed" email with the signed rental agreement, this duplicate can be ignored.</p>
+    <table style="border-collapse:collapse;width:100%;margin-top:16px">
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_name || "Not provided")}</td></tr>
+      ${renter_phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_phone)}</td></tr>` : ""}
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email || "Not provided")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
+      ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
+      ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
+    </table>
+    <p style="margin-top:16px">⚠️ <strong>Action required:</strong> The signed rental agreement, renter's ID, and insurance documents are only attached to the full confirmation email sent from the customer's browser. If that email did not arrive, please contact the customer directly at ${esc(email || "the email above")} to collect a signed agreement.</p>
+    <p>Dates have been automatically blocked on the booking calendar.</p>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:      OWNER_EMAIL,
+      ...(email ? { replyTo: email } : {}),
+      subject: ownerSubject,
+      text:    [
+        "Payment Confirmed – New Booking (Server-Side Backup Notification)",
+        "",
+        "NOTE: This is a server-side backup email. It fires on every confirmed Stripe payment.",
+        "If you already received a full confirmation with the signed agreement, this can be ignored.",
+        "",
+        `Stripe Payment ID  : ${paymentIntent.id}`,
+        `Vehicle            : ${vehicle_name || vehicle_id || "N/A"}`,
+        `Renter Name        : ${renter_name || "Not provided"}`,
+        renter_phone ? `Phone              : ${renter_phone}` : "",
+        `Customer Email     : ${email || "Not provided"}`,
+        `Pickup Date        : ${pickup_date || "N/A"}`,
+        `Return Date        : ${return_date || "N/A"}`,
+        `${totalLabel.padEnd(19)}: ${totalDisplay}`,
+        isDepositMode && full_rental_amount ? `Full Rental Cost   : $${full_rental_amount}` : "",
+        isDepositMode && balance_at_pickup  ? `Balance at Pickup  : $${balance_at_pickup}` : "",
+      ].filter(Boolean).join("\n"),
+      html: ownerHtml,
+    });
+    console.log(`stripe-webhook: backup owner email sent for PI ${paymentIntent.id}`);
+  } catch (emailErr) {
+    console.error("stripe-webhook: backup owner email failed:", emailErr.message);
+  }
+
+  // ── Customer confirmation ─────────────────────────────────────────────────
+  if (email) {
+    const customerSubject = "Your Booking is Confirmed – Sly Transportation Services LLC";
+    const customerHtml = `
+      <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
+      <p>Hi ${esc(renter_name ? renter_name.split(" ")[0] : "there")}, your payment has been received and your booking is confirmed!</p>
+      <table style="border-collapse:collapse;width:100%;margin-top:12px">
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
+        ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
+        ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
+      </table>
+      <p style="margin-top:16px">We will be in touch shortly to confirm your rental pick-up details.</p>
+      <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
+      <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+    `;
+    try {
+      await transporter.sendMail({
+        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:      email,
+        subject: customerSubject,
+        text:    [
+          "Payment Confirmed – Sly Transportation Services LLC",
+          "",
+          `Hi ${renter_name ? renter_name.split(" ")[0] : "there"}, your payment has been received and your booking is confirmed!`,
+          "",
+          `Vehicle            : ${vehicle_name || vehicle_id || "N/A"}`,
+          `Pickup Date        : ${pickup_date || "N/A"}`,
+          `Return Date        : ${return_date || "N/A"}`,
+          `${totalLabel.padEnd(19)}: ${totalDisplay}`,
+          isDepositMode && full_rental_amount ? `Full Rental Cost   : $${full_rental_amount}` : "",
+          isDepositMode && balance_at_pickup  ? `Balance at Pickup  : $${balance_at_pickup}` : "",
+          "",
+          "We will be in touch shortly to confirm your rental pick-up details.",
+          `If you have any questions contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
+          "",
+          "Sly Transportation Services LLC",
+        ].filter(Boolean).join("\n"),
+        html: customerHtml,
+      });
+      console.log(`stripe-webhook: backup customer email sent to ${email} for PI ${paymentIntent.id}`);
+    } catch (custErr) {
+      console.error("stripe-webhook: backup customer email failed:", custErr.message);
+    }
+  }
+}
+
 /**
  * Read the raw request body from a Node.js IncomingMessage stream.
  */
@@ -220,7 +454,7 @@ export default async function handler(req, res) {
 
                 // Send extension confirmed SMS
                 if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-                  const isSlingshot = vehicle_id === "slingshot";
+                  const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
                   const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
                   const vars = {
                     return_time: ext.newReturnTime || "",
@@ -280,6 +514,27 @@ export default async function handler(req, res) {
       } catch (err) {
         console.error("stripe-webhook: markVehicleUnavailable error:", err);
       }
+    }
+
+    // Send server-side backup notification emails to the owner and customer.
+    // These fire on every confirmed payment as a guaranteed fallback for the
+    // browser-side send-reservation-email call (which can fail if the customer's
+    // sessionStorage is lost during a 3DS redirect or if the browser is closed
+    // before success.html completes).
+    try {
+      await sendWebhookNotificationEmails(paymentIntent);
+    } catch (emailErr) {
+      console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
+    }
+
+    // Save a booking record from PI metadata — fallback for when success.html
+    // never completes (lost sessionStorage, browser closed, 3DS redirect).
+    // appendBooking() is idempotent (deduplicates on paymentIntentId), so a
+    // double-save with the browser-side record is always safe.
+    try {
+      await saveWebhookBookingRecord(paymentIntent);
+    } catch (bookingErr) {
+      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr.message);
     }
   }
 
