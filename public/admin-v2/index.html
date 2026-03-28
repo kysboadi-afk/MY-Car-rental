@@ -1052,21 +1052,128 @@
           </div>
         </div>
 
+        <div class="form-section" style="max-width:640px;">
+          <div class="form-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+            Site Content <span style="font-size:12px;font-weight:400;color:var(--text-sub);">Changes go live on the public website immediately</span>
+            <button class="btn btn-secondary btn-sm" onclick="loadSiteContent()" id="site-content-refresh-btn">↻ Refresh</button>
+          </div>
+          <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">Edit what appears on the public-facing website: hero text, contact info, social links, and policy blurbs.</p>
+          <div id="site-content-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="site-content-form" style="display:none;">
+            <!-- Contact & Business -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;">Contact &amp; Business</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Business Name</label>
+                <input type="text" class="form-input" id="sc-business_name" placeholder="SLY Transportation Services">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Phone Number</label>
+                <input type="text" class="form-input" id="sc-phone" placeholder="+1 (213) 555-0100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">WhatsApp</label>
+                <input type="text" class="form-input" id="sc-whatsapp" placeholder="+1 (213) 555-0100">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="text" class="form-input" id="sc-email" placeholder="info@slytrans.com">
+              </div>
+            </div>
+
+            <!-- Hero -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Hero Section</div>
+            <div class="form-grid one">
+              <div class="form-group">
+                <label class="form-label">Hero Title</label>
+                <input type="text" class="form-input" id="sc-hero_title" placeholder="Explore LA in Style">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Hero Subtitle</label>
+                <input type="text" class="form-input" id="sc-hero_subtitle" placeholder="Affordable car rentals in Los Angeles">
+              </div>
+              <div class="form-group">
+                <label class="form-label">About Us Text</label>
+                <textarea class="form-input" id="sc-about_text" rows="4" placeholder="Short paragraph shown in the About section…" style="resize:vertical;"></textarea>
+              </div>
+            </div>
+
+            <!-- Social Links -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Social Links</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Instagram URL</label>
+                <input type="text" class="form-input" id="sc-instagram_url" placeholder="https://instagram.com/…">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Facebook URL</label>
+                <input type="text" class="form-input" id="sc-facebook_url" placeholder="https://facebook.com/…">
+              </div>
+              <div class="form-group">
+                <label class="form-label">TikTok URL</label>
+                <input type="text" class="form-input" id="sc-tiktok_url" placeholder="https://tiktok.com/…">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Twitter / X URL</label>
+                <input type="text" class="form-input" id="sc-twitter_url" placeholder="https://twitter.com/…">
+              </div>
+            </div>
+
+            <!-- Promo Banner -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Promo Banner</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">Enable Banner</label>
+                <select class="form-input" id="sc-promo_banner_enabled">
+                  <option value="false">Off</option>
+                  <option value="true">On</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Banner Text</label>
+                <input type="text" class="form-input" id="sc-promo_banner_text" placeholder="Limited time offer — 10% off weekday rentals!">
+              </div>
+            </div>
+
+            <!-- Policies -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Policies &amp; Instructions</div>
+            <div class="form-grid one">
+              <div class="form-group">
+                <label class="form-label">Cancellation Policy</label>
+                <textarea class="form-input" id="sc-policies_cancellation" rows="3" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Damage Policy</label>
+                <textarea class="form-input" id="sc-policies_damage" rows="3" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Fuel Policy</label>
+                <textarea class="form-input" id="sc-policies_fuel" rows="3" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Age Policy</label>
+                <textarea class="form-input" id="sc-policies_age" rows="2" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Service Area Notes</label>
+                <textarea class="form-input" id="sc-service_area_notes" rows="2" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Pickup Instructions</label>
+                <textarea class="form-input" id="sc-pickup_instructions" rows="3" style="resize:vertical;"></textarea>
+              </div>
+            </div>
+
+            <div style="margin-top:16px;display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-primary" id="site-content-save-btn" onclick="saveSiteContent()">💾 Save All Changes</button>
+              <span id="site-content-status" style="font-size:13px;color:var(--text-sub);"></span>
+            </div>
+          </div>
+        </div>
+
         <div class="form-section" style="max-width:480px;">
-          <div class="form-section-title">Business Information</div>
+          <div class="form-section-title">Quick Links</div>
           <div class="form-grid one">
-            <div class="form-group">
-              <label class="form-label">Business Name</label>
-              <input type="text" class="form-input" value="SLY Transportation Services LLC" readonly>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Location</label>
-              <input type="text" class="form-input" value="Los Angeles, CA" readonly>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Website</label>
-              <input type="text" class="form-input" value="https://www.slytrans.com" readonly>
-            </div>
             <div class="form-group">
               <label class="form-label">Legacy Admin</label>
               <a href="../admin.html" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
@@ -1095,6 +1202,7 @@
           </div>
         </div>
       </div>
+
 
       <!-- REVENUE PAGE -->
       <div class="page" id="page-revenue">
@@ -1195,6 +1303,7 @@
             <option value="banned">Banned</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddCustomerModal()">+ Add Customer</button>
         </div>
         <div class="card">
           <div id="customers-loading" class="loading"><div class="loading-spinner"></div><div>Loading customers…</div></div>
@@ -1673,6 +1782,7 @@ function navigate(page) {
   else if (page === 'system-settings') loadSystemSettings();
   else if (page === 'fleet-status') loadFleetStatusPage();
   else if (page === 'block-dates') loadBlockedDates();
+  else if (page === 'settings') loadSiteContent();
 }
 
 function refreshCurrentPage() {
@@ -1697,6 +1807,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'system-settings') loadSystemSettings();
   else if (currentPage === 'fleet-status') loadFleetStatusPage();
   else if (currentPage === 'block-dates') loadBlockedDates();
+  else if (currentPage === 'settings') loadSiteContent();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -2261,13 +2372,11 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn) {
     secret: adminSecret, action: 'update', vehicleId, bookingId,
     updates: { status },
   }).then(() => {
-    showToast('Booking updated.', 'success');
-    const idx = allBookings.findIndex((b) => b.bookingId === bookingId);
-    if (idx >= 0) allBookings[idx].status = status;
-    renderBookings();
+    showToast('Booking updated to ' + (status.replace(/_/g, ' ')) + '.', 'success');
+    // Reload from server to get the authoritative state
+    loadBookings();
   }).catch((err) => {
-    showToast('Error: ' + err.message, 'error');
-  }).finally(() => {
+    showToast('Error updating booking: ' + err.message, 'error');
     if (triggerBtn) triggerBtn.disabled = false;
   });
 }
@@ -3088,14 +3197,20 @@ function applyCustomerFilters() {
 function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
   if (!c) return;
+  const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
+  const riskColor = riskColors[c.risk_flag] || 'inherit';
   document.getElementById('cust-detail-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Name</div><div style="font-weight:600;">${esc(c.name || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(c.phone || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
+      ${c.full_name ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Full Name</div><div>${esc(c.full_name)}</div></div>` : '<div></div>'}
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Risk Level</div><div style="font-weight:600;color:${riskColor};text-transform:capitalize;">${esc(c.risk_flag || 'low')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
       ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
@@ -3106,6 +3221,7 @@ function viewCustomer(id) {
   document.getElementById('cust-detail-id').value = id;
   // Action buttons
   document.getElementById('cust-detail-actions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="openEditCustomerModal('${esc(id)}')">✏️ Edit</button>
     ${!c.flagged
       ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
       : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Remove Flag</button>`}
@@ -3124,6 +3240,7 @@ function flagCustomer(id, flagged) {
     updates: { flagged, flag_reason: reason || null }
   }).then(() => {
     showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
+    closeModal('customer-detail-modal');
     loadCustomers();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -3150,6 +3267,73 @@ function syncCustomers() {
       loadCustomers();
     })
     .catch((err) => showToast('Sync error: ' + err.message, 'error'));
+}
+
+function openAddCustomerModal() {
+  document.getElementById('cust-modal-title').textContent = 'Add Customer';
+  document.getElementById('cust-modal-id').value = '';
+  document.getElementById('cust-modal-name').value = '';
+  document.getElementById('cust-modal-full-name').value = '';
+  document.getElementById('cust-modal-phone').value = '';
+  document.getElementById('cust-modal-email').value = '';
+  document.getElementById('cust-modal-license').value = '';
+  document.getElementById('cust-modal-risk').value = 'low';
+  document.getElementById('cust-modal-notes').value = '';
+  openModal('customer-edit-modal');
+}
+
+function openEditCustomerModal(id) {
+  const c = allCustomers.find((x) => x.id === id);
+  if (!c) return;
+  closeModal('customer-detail-modal');
+  document.getElementById('cust-modal-title').textContent = 'Edit Customer';
+  document.getElementById('cust-modal-id').value = id;
+  document.getElementById('cust-modal-name').value = c.name || '';
+  document.getElementById('cust-modal-full-name').value = c.full_name || '';
+  document.getElementById('cust-modal-phone').value = c.phone || '';
+  document.getElementById('cust-modal-email').value = c.email || '';
+  document.getElementById('cust-modal-license').value = c.driver_license || '';
+  document.getElementById('cust-modal-risk').value = c.risk_flag || 'low';
+  document.getElementById('cust-modal-notes').value = c.notes || '';
+  openModal('customer-edit-modal');
+}
+
+async function saveCustomer() {
+  const id    = document.getElementById('cust-modal-id').value;
+  const name  = document.getElementById('cust-modal-name').value.trim();
+  const phone = document.getElementById('cust-modal-phone').value.trim();
+  if (!name) { showToast('Name is required.', 'error'); return; }
+
+  const btn = document.querySelector('#customer-edit-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  const fields = {
+    name,
+    full_name:      document.getElementById('cust-modal-full-name').value.trim() || null,
+    phone:          phone || null,
+    email:          document.getElementById('cust-modal-email').value.trim() || null,
+    driver_license: document.getElementById('cust-modal-license').value.trim() || null,
+    risk_flag:      document.getElementById('cust-modal-risk').value || 'low',
+    notes:          document.getElementById('cust-modal-notes').value.trim() || null,
+  };
+
+  try {
+    if (id) {
+      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'update', id, updates: fields });
+      showToast('Customer updated.', 'success');
+    } else {
+      if (!phone) { showToast('Phone is required for new customers.', 'error'); return; }
+      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'upsert', ...fields });
+      showToast('Customer added.', 'success');
+    }
+    closeModal('customer-edit-modal');
+    allCustomers = [];
+    loadCustomers();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
 }
 
 // ── Protection Plans ──────────────────────────────────────────────────────
@@ -3349,6 +3533,93 @@ function saveSetting(key) {
     .catch((err) => showToast('Error: ' + err.message, 'error'))
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
 }
+
+// ── Site Content (Settings page) ─────────────────────────────────────────────
+// Loads and saves the public website content (hero, contact, social, policies)
+// via the admin-site-settings.js API → Supabase site_settings table.
+
+const SITE_CONTENT_FIELDS = [
+  'business_name', 'phone', 'whatsapp', 'email',
+  'hero_title', 'hero_subtitle', 'about_text',
+  'instagram_url', 'facebook_url', 'tiktok_url', 'twitter_url',
+  'promo_banner_enabled', 'promo_banner_text',
+  'policies_cancellation', 'policies_damage', 'policies_fuel',
+  'policies_age', 'service_area_notes', 'pickup_instructions',
+];
+
+function loadSiteContent() {
+  const loading = document.getElementById('site-content-loading');
+  const form    = document.getElementById('site-content-form');
+  if (!loading || !form) return;
+  loading.style.display = '';
+  form.style.display = 'none';
+  const status = document.getElementById('site-content-status');
+  if (status) status.textContent = '';
+
+  apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'get' })
+    .then((data) => {
+      const s = data.settings || {};
+      for (const key of SITE_CONTENT_FIELDS) {
+        const el = document.getElementById('sc-' + key);
+        if (!el) continue;
+        if (el.tagName === 'SELECT') {
+          el.value = String(s[key] ?? 'false');
+        } else {
+          el.value = s[key] != null ? String(s[key]) : '';
+        }
+      }
+      loading.style.display = 'none';
+      form.style.display = '';
+      if (data.source === 'default' || !data.source) {
+        if (status) {
+          status.textContent = '⚠ Using defaults — Supabase site_settings table may be empty or not configured.';
+          status.style.color = 'var(--warning, #f59e0b)';
+        }
+      }
+    })
+    .catch((err) => {
+      loading.innerHTML = `<p style="color:var(--danger);padding:8px 0;">Error loading site content: ${esc(err.message)}</p>`;
+    });
+}
+
+function saveSiteContent() {
+  const btn    = document.getElementById('site-content-save-btn');
+  const status = document.getElementById('site-content-status');
+
+  const settings = {};
+  for (const key of SITE_CONTENT_FIELDS) {
+    const el = document.getElementById('sc-' + key);
+    if (!el) continue;
+    let val = el.tagName === 'SELECT' ? el.value : el.value;
+    // Convert boolean-ish strings
+    if (val === 'true') val = true;
+    else if (val === 'false') val = false;
+    settings[key] = val;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  if (status) { status.textContent = ''; status.style.color = ''; }
+
+  apiPost('/api/admin-site-settings', { secret: adminSecret, action: 'update', settings })
+    .then((data) => {
+      showToast('✓ Site content saved — changes are now live on the public site.', 'success');
+      if (status) {
+        status.textContent = `✓ Saved ${(data.updated || []).length} field(s)`;
+        status.style.color = 'var(--success)';
+      }
+    })
+    .catch((err) => {
+      showToast('Error saving site content: ' + err.message, 'error');
+      if (status) {
+        status.textContent = 'Error: ' + err.message;
+        status.style.color = 'var(--danger)';
+      }
+    })
+    .finally(() => {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Save All Changes'; }
+    });
+}
+
 
 // ── Vehicle Image Upload Helpers ───────────────────────────────────────────
 // Show a preview whenever the URL input changes.
@@ -3861,6 +4132,54 @@ function unblockDates() {
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
       <button class="btn btn-secondary" onclick="closeModal('plan-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="savePlan()">Save Plan</button>
+    </div>
+  </div>
+</div>
+<!-- Customer Edit / Add Modal -->
+<div class="modal-overlay" id="customer-edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="cust-modal-title">Add Customer</div>
+      <button class="modal-close" onclick="closeModal('customer-edit-modal')">✕</button>
+    </div>
+    <input type="hidden" id="cust-modal-id">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" class="form-input" id="cust-modal-name" placeholder="Display name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input type="text" class="form-input" id="cust-modal-full-name" placeholder="Full legal name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="tel" class="form-input" id="cust-modal-phone" placeholder="+1 (555) 000-0000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="cust-modal-email" placeholder="customer@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Driver License</label>
+        <input type="text" class="form-input" id="cust-modal-license" placeholder="License number">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Risk Level</label>
+        <select class="form-select" id="cust-modal-risk">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="cust-modal-notes" placeholder="Internal notes…" style="min-height:60px;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal('customer-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCustomer()">Save</button>
     </div>
   </div>
 </div>

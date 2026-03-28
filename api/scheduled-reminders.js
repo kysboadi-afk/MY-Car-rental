@@ -10,9 +10,11 @@
 //
 //  reserved_unpaid  → UNPAID_REMINDER_24H, UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
 //  booked_paid      → PICKUP_REMINDER_24H, PICKUP_REMINDER_2H, PICKUP_REMINDER_30MIN
+//                     + auto-activated → active_rental once pickup time arrives
 //  active_rental    → ACTIVE_RENTAL_MID, ACTIVE_RENTAL_1H_BEFORE_END,
 //                     ACTIVE_RENTAL_15MIN_BEFORE_END, LATE_WARNING_30MIN,
 //                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
+//                     + auto-completed → completed_rental after AUTO_COMPLETE_HOURS
 //  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_1/3/7/14/30
 //
 // Required environment variables:
@@ -523,6 +525,59 @@ async function persistSentMarks(sentMarks) {
 }
 
 /**
+ * Auto-activate booked_paid bookings whose pickup date/time has arrived.
+ * Transitions status from "booked_paid" → "active_rental" in bookings.json
+ * and syncs to Supabase.  Non-fatal: errors are logged and never propagate.
+ *
+ * @param {object} allBookings - current bookings data snapshot
+ * @param {Date}   now
+ */
+export async function processAutoActivations(allBookings, now) {
+  if (!process.env.GITHUB_TOKEN) return;
+
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "booked_paid") continue;
+
+      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      if (isNaN(pickupDt.getTime())) continue;
+
+      // Only activate once pickup time has arrived (or passed)
+      if (now < pickupDt) continue;
+
+      const id          = booking.bookingId || booking.paymentIntentId;
+      const activatedAt = now.toISOString();
+
+      console.log(
+        `scheduled-reminders: auto-activating ${vehicleId} booking ${id} ` +
+        `(pickup was ${booking.pickupDate} ${booking.pickupTime || ""})`
+      );
+
+      try {
+        await updateBooking(vehicleId, id, {
+          status:      "active_rental",
+          activatedAt,
+          updatedAt:   activatedAt,
+        });
+
+        const activatedBooking = {
+          ...booking,
+          status:      "active_rental",
+          activatedAt,
+          updatedAt:   activatedAt,
+        };
+        await autoUpsertBooking(activatedBooking);
+      } catch (err) {
+        console.error(
+          `scheduled-reminders: auto-activation failed for ${vehicleId}/${id} (non-fatal):`,
+          err.message
+        );
+      }
+    }
+  }
+}
+
+/**
  * Auto-complete active_rental bookings that are past their return time by
  * AUTO_COMPLETE_HOURS hours.  Updates bookings.json status to
  * "completed_rental", removes blocked dates, and syncs to Supabase.
@@ -623,6 +678,10 @@ export default async function handler(req, res) {
   ]);
 
   await persistSentMarks(sentMarks);
+
+  // Auto-activate booked_paid bookings whose pickup time has arrived.
+  // Runs after reminders so pickup-day reminders still fire before activation.
+  await processAutoActivations(allBookings, now);
 
   // Auto-complete bookings that are past their return time by AUTO_COMPLETE_HOURS.
   // Runs after sentMarks are persisted to avoid racing with the same bookings.json write.
