@@ -146,6 +146,28 @@ UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 201
 UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2013 SE'::text)), updated_at = now()
   WHERE vehicle_id = 'camry2013'  AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
 
+-- Fix cover_image paths: patch any bare filenames (e.g. "camry2013.jpg") that do
+-- not start with "images/" or "http" to use the correct repo-relative paths.
+-- Safe to re-run; only overwrites values that are already wrong.
+UPDATE vehicles
+  SET data = jsonb_set(data, '{cover_image}', '"images/slingshot.jpg"'::jsonb), updated_at = now()
+  WHERE vehicle_id IN ('slingshot', 'slingshot2', 'slingshot3')
+    AND NOT (data->>'cover_image' LIKE 'images/%' OR data->>'cover_image' LIKE '/images/%'
+          OR data->>'cover_image' LIKE 'http%'    OR data->>'cover_image' IS NULL
+          OR data->>'cover_image' = '');
+UPDATE vehicles
+  SET data = jsonb_set(data, '{cover_image}', '"images/IMG_0046.png"'::jsonb), updated_at = now()
+  WHERE vehicle_id = 'camry'
+    AND NOT (data->>'cover_image' LIKE 'images/%' OR data->>'cover_image' LIKE '/images/%'
+          OR data->>'cover_image' LIKE 'http%'    OR data->>'cover_image' IS NULL
+          OR data->>'cover_image' = '');
+UPDATE vehicles
+  SET data = jsonb_set(data, '{cover_image}', '"images/IMG_5144.png"'::jsonb), updated_at = now()
+  WHERE vehicle_id = 'camry2013'
+    AND NOT (data->>'cover_image' LIKE 'images/%' OR data->>'cover_image' LIKE '/images/%'
+          OR data->>'cover_image' LIKE 'http%'    OR data->>'cover_image' IS NULL
+          OR data->>'cover_image' = '');
+
 
 -- =============================================================================
 -- STEP 2  PROTECTION PLANS

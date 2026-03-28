@@ -15,7 +15,9 @@ const CAMRY_BOOKING_DEPOSIT = 50;
 const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
 const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
+// Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
+function getTaxRate() { return window._dynamicTaxRate || LA_TAX_RATE; }
 
 // ----- Car Data -----
 const cars = {
@@ -145,7 +147,85 @@ function _fmt(key, vars, fallback) {
   return s;
 }
 
-// ----- Load Car Data -----
+// ----- Dynamic Pricing -----
+// Fetches live prices from the admin System Settings (Supabase) so that any
+// rate change in the admin panel is immediately reflected on the booking page.
+// Runs asynchronously after page load — falls back to the hard-coded values
+// above if the API is unreachable or returns an error.
+(function loadDynamicPricing() {
+  fetch(API_BASE + "/api/public-pricing")
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+    .then(function(pricing) {
+      // ── Economy cars ──────────────────────────────────────────────────────
+      var ecDaily   = (pricing.economy && pricing.economy.daily)   ? Number(pricing.economy.daily)   : 0;
+      var ecWeekly  = (pricing.economy && pricing.economy.weekly)  ? Number(pricing.economy.weekly)  : 0;
+      var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
+      var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
+
+      ["camry","camry2013"].forEach(function(vid) {
+        if (!cars[vid]) return;
+        if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
+        if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
+        if (ecBiWeek  > 0) cars[vid].biweekly    = ecBiWeek;
+        if (ecMonthly > 0) cars[vid].monthly     = ecMonthly;
+      });
+
+      // ── Slingshot tiers ───────────────────────────────────────────────────
+      var slTiers = [
+        { hours: 3,  key: "3hr"  },
+        { hours: 6,  key: "6hr"  },
+        { hours: 24, key: "24hr" },
+        { hours: 48, key: "48hr" },
+        { hours: 72, key: "72hr" },
+      ];
+      ["slingshot","slingshot2","slingshot3"].forEach(function(vid) {
+        if (!cars[vid] || !cars[vid].hourlyTiers) return;
+        cars[vid].hourlyTiers.forEach(function(tier) {
+          var match = slTiers.find(function(t) { return t.hours === tier.hours; });
+          if (match && pricing.slingshot && pricing.slingshot[match.key] > 0) {
+            tier.price = Number(pricing.slingshot[match.key]);
+          }
+        });
+      });
+
+      // ── Tax rate ─────────────────────────────────────────────────────────
+      // (already set as a module-level const; we update the global so
+      //  any later calculation that references LA_TAX_RATE by closure reads
+      //  the updated value — functions that captured it directly are re-called
+      //  naturally through user interaction.)
+      if (pricing.tax_rate) {
+        window._dynamicTaxRate = Number(pricing.tax_rate);
+      }
+
+      // Refresh the displayed price for the current vehicle
+      if (carData) {
+        var priceEl = document.getElementById("carPrice");
+        if (priceEl) {
+          priceEl.textContent = carData.hourlyTiers
+            ? carData.hourlyTiers.map(function(t) { return "$" + t.price + " / " + t.label; }).join(" \u2022 ")
+            : (carData.weekly
+                ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
+                : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day"));
+        }
+        // Refresh Slingshot duration radio labels
+        if (carData.hourlyTiers) {
+          document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(radio) {
+            var hours = Number(radio.value);
+            var tier  = carData.hourlyTiers.find(function(t) { return t.hours === hours; });
+            if (tier && radio.parentElement) {
+              var spans = radio.parentElement.querySelectorAll("span");
+              if (spans.length > 0) spans[spans.length - 1].textContent = tier.label + " \u2014 $" + tier.price;
+            }
+          });
+        }
+      }
+    })
+    .catch(function(err) {
+      // Non-fatal — hard-coded values remain in effect
+      console.warn("car.js: could not load dynamic pricing, using defaults:", err.message);
+    });
+}());
+
 const vehicleId = getVehicleFromURL();
 if (!vehicleId || !cars[vehicleId]) {
   alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
@@ -1854,9 +1934,9 @@ function updateTotal() {
     lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
 
     // Compute LA sales tax (10.25%) on the full rental base.
-    const taxAmount = Math.round(rentalBase * LA_TAX_RATE * 100) / 100;
+    const taxAmount = Math.round(rentalBase * getTaxRate() * 100) / 100;
     const afterTaxRental = Math.round((rentalBase + taxAmount) * 100) / 100;
-    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
+    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (getTaxRate() * 100).toFixed(2) }, `Sales tax (${(getTaxRate() * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
     currentSubtotal = rentalBase;
     carData._fullRentalCost = afterTaxRental.toFixed(2);
@@ -1957,9 +2037,9 @@ function updateTotal() {
   currentSubtotal = rentalSubtotal;
 
   // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
-  const taxAmount = Math.round(rentalSubtotal * LA_TAX_RATE * 100) / 100;
+  const taxAmount = Math.round(rentalSubtotal * getTaxRate() * 100) / 100;
   const afterTaxTotal = Math.round((rentalSubtotal + taxAmount) * 100) / 100;
-  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
+  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (getTaxRate() * 100).toFixed(2) }, `Sales tax (${(getTaxRate() * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
   const rowsEl = document.getElementById("breakdownRows");
   const frag = document.createDocumentFragment();

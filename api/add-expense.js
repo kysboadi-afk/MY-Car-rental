@@ -79,12 +79,10 @@ export default async function handler(req, res) {
       // ── Supabase path (preferred) ──────────────────────────────────────
       const { error: sbErr } = await sb.from("expenses").insert(expense);
       if (sbErr) {
-        if (isSchemaError(sbErr)) {
-          console.warn("add-expense: expenses table missing in Supabase, falling back to GitHub");
-          useGitHub = true;
-        } else {
-          throw new Error(sbErr.message);
-        }
+        // Fall back to GitHub for any Supabase error (missing table, constraint
+        // violation, network hiccup, etc.) so the admin never gets a hard 500.
+        console.warn("add-expense: Supabase insert failed, falling back to GitHub:", sbErr.message);
+        useGitHub = true;
       }
     }
     if (useGitHub) {
