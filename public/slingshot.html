@@ -669,7 +669,7 @@
     <h1 class="sl-hero-title">Drive the Ultimate<br><span style="color:#ffb400;">LA Experience</span></h1>
     <p class="sl-hero-sub">Turn heads in a Slingshot. Perfect for dates, birthdays, and unforgettable rides.</p>
     <div class="sl-hero-btns">
-      <a href="car.html?vehicle=slingshot" class="sl-btn-primary">Book Now</a>
+      <a href="car.html?vehicle=slingshot" class="sl-btn-primary sl-book-slingshot">Book Now</a>
       <a href="#pricing" class="sl-btn-secondary">View Pricing</a>
     </div>
   </div>
@@ -712,7 +712,7 @@
 <section class="sl-section sl-vehicles" id="vehicle">
   <div class="sl-section-inner">
     <h2 class="sl-section-title sl-fade-in">Book Your <span class="sl-gold">Slingshot</span></h2>
-    <p class="sl-section-subtitle sl-fade-in">One Slingshot available. Book it instantly.</p>
+    <p class="sl-section-subtitle sl-fade-in">Book your Slingshot instantly online.</p>
     <div class="sl-vehicle-grid">
 
       <!-- Slingshot -->
@@ -728,7 +728,7 @@
             <span style="background:#1a1500;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">Sports • 2-Seater</span>
             <span style="background:#111;border:1px solid #ffb400;color:#ffb400;font-size:0.75rem;padding:3px 9px;border-radius:12px;">💰 Deposit = Rental Fee</span>
           </div>
-          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
+          <a href="car.html?vehicle=slingshot" class="sl-btn-vehicle sl-book-slingshot" style="display:block;text-align:center;padding:13px 22px;font-size:0.95rem;">Book This Slingshot →</a>
         </div>
       </div>
 
@@ -777,7 +777,7 @@
     </div>
     <p class="sl-pricing-note">Deposit equals your rental fee and is <span>fully refunded</span> after return &amp; inspection.</p>
     <div class="sl-pricing-cta">
-      <a href="car.html?vehicle=slingshot" class="sl-btn-primary">Check Availability →</a>
+      <a href="car.html?vehicle=slingshot" class="sl-btn-primary sl-book-slingshot">Check Availability →</a>
     </div>
   </div>
 </section>
@@ -973,7 +973,7 @@
     <h2 class="sl-section-title" style="margin-bottom:16px;">Ready to <span class="sl-gold">Ride?</span></h2>
     <p class="sl-section-subtitle">Book your Slingshot now and experience LA like never before.</p>
     <div class="sl-final-cta-btns">
-      <a href="car.html?vehicle=slingshot" class="sl-btn-large">🔥 Pick Your Slingshot</a>
+      <a href="car.html?vehicle=slingshot" class="sl-btn-large sl-book-slingshot">🔥 Pick Your Slingshot</a>
       <a href="tel:+12139166606" class="sl-btn-secondary" style="padding:17px 36px;">📞 Call (213) 916-6606</a>
     </div>
   </div>
@@ -1006,10 +1006,24 @@
     fetch('/api/fleet-status')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        var s = data.slingshot;
-        if (s)  updateBadge('sl-status-slingshot',  s.available !== false);
+        // All three Slingshot units are interchangeable from the customer's
+        // perspective. Show AVAILABLE if ANY unit is free; BOOKED only when
+        // every unit is confirmed unavailable.
+        var unitIds = ['slingshot', 'slingshot2', 'slingshot3'];
+        var firstAvailable = unitIds.find(function(id) {
+          return !data[id] || data[id].available !== false;
+        });
+        var anyAvailable = !!firstAvailable;
+        updateBadge('sl-status-slingshot', anyAvailable);
+
+        // Point every booking button to the first available unit so customers
+        // can always complete their booking even when unit 1 is already taken.
+        var target = firstAvailable || 'slingshot';
+        document.querySelectorAll('a.sl-book-slingshot').forEach(function(link) {
+          link.href = 'car.html?vehicle=' + target;
+        });
       })
-      .catch(function() { /* keep default AVAILABLE if fetch fails */ });
+      .catch(function() { /* keep default AVAILABLE / unit 1 href if fetch fails */ });
   })();
 
   // ── FAQ accordion ────────────────────────────────────────────────────────

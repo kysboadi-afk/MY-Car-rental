@@ -17,12 +17,14 @@
 //   Events: payment_intent.succeeded
 
 import Stripe from "stripe";
+import crypto from "crypto";
 import nodemailer from "nodemailer";
-import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { updateBooking, loadBookings, saveBookings, normalizePhone, appendBooking } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY } from "./_sms-templates.js";
+import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -173,6 +175,73 @@ function esc(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * Save a booking record to bookings.json from PaymentIntent metadata.
+ *
+ * This is the guaranteed server-side fallback for the browser-side record
+ * creation in send-reservation-email.js.  appendBooking() is idempotent:
+ * it deduplicates by paymentIntentId so a double-save is always safe.
+ *
+ * @param {object} paymentIntent - Stripe PaymentIntent object
+ */
+async function saveWebhookBookingRecord(paymentIntent) {
+  const meta = paymentIntent.metadata || {};
+  const {
+    renter_name,
+    renter_phone,
+    vehicle_id,
+    vehicle_name,
+    pickup_date,
+    return_date,
+    email,
+    payment_type,
+  } = meta;
+
+  if (!vehicle_id || !pickup_date || !return_date) {
+    console.log("stripe-webhook: skipping booking record — missing vehicle/dates in metadata");
+    return;
+  }
+
+  const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
+  const status = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
+
+  const bookingRecord = {
+    bookingId:       "wh-" + crypto.randomBytes(8).toString("hex"),
+    name:            renter_name || "",
+    phone:           renter_phone ? normalizePhone(renter_phone) : "",
+    email:           email || "",
+    vehicleId:       vehicle_id,
+    vehicleName:     vehicle_name || vehicle_id,
+    pickupDate:      pickup_date,
+    pickupTime:      "",
+    returnDate:      return_date,
+    returnTime:      "",
+    location:        DEFAULT_LOCATION,
+    status,
+    amountPaid,
+    paymentIntentId: paymentIntent.id,
+    paymentMethod:   "stripe",
+    smsSentAt:       {},
+    createdAt:       new Date().toISOString(),
+    source:          "stripe_webhook",
+  };
+
+  try {
+    await appendBooking(bookingRecord);
+    console.log(`stripe-webhook: booking record saved for PI ${paymentIntent.id} (${vehicle_id})`);
+  } catch (err) {
+    console.error("stripe-webhook: saveWebhookBookingRecord error:", err.message);
+  }
+
+  // Non-fatal Supabase sync
+  try {
+    await autoCreateRevenueRecord(bookingRecord);
+    await autoUpsertCustomer(bookingRecord, false);
+  } catch (err) {
+    console.error("stripe-webhook: Supabase sync error:", err.message);
+  }
 }
 
 /**
@@ -385,7 +454,7 @@ export default async function handler(req, res) {
 
                 // Send extension confirmed SMS
                 if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-                  const isSlingshot = vehicle_id === "slingshot";
+                  const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
                   const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
                   const vars = {
                     return_time: ext.newReturnTime || "",
@@ -456,6 +525,16 @@ export default async function handler(req, res) {
       await sendWebhookNotificationEmails(paymentIntent);
     } catch (emailErr) {
       console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
+    }
+
+    // Save a booking record from PI metadata — fallback for when success.html
+    // never completes (lost sessionStorage, browser closed, 3DS redirect).
+    // appendBooking() is idempotent (deduplicates on paymentIntentId), so a
+    // double-save with the browser-side record is always safe.
+    try {
+      await saveWebhookBookingRecord(paymentIntent);
+    } catch (bookingErr) {
+      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr.message);
     }
   }
 
