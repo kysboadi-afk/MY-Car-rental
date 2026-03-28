@@ -1617,7 +1617,13 @@ async function apiPost(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await resp.json();
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    // Server returned a non-JSON body (e.g. Vercel HTML error page).
+    throw new Error(`Server error (HTTP ${resp.status}). Check the Diagnostics tab for configuration issues.`);
+  }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
@@ -2327,6 +2333,7 @@ async function submitManualBooking(e) {
       returnDate,
       returnTime:     formatTime(document.getElementById('mb-return-time').value),
       amountPaid,
+      totalPrice:     autoAmount || amountPaid,
       paymentMethod:  document.getElementById('mb-payment-method').value,
       notes:          document.getElementById('mb-notes').value.trim(),
     });
