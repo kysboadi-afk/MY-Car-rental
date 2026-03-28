@@ -198,6 +198,10 @@ export default async function handler(req, res) {
         }
       }
       safeUpdates.updatedAt = new Date().toISOString();
+      // Auto-stamp activatedAt when an admin marks the vehicle as picked up
+      if (safeUpdates.status === "active_rental" && !safeUpdates.activatedAt) {
+        safeUpdates.activatedAt = safeUpdates.updatedAt;
+      }
       // Auto-stamp completedAt when an admin marks the rental as finished
       if (safeUpdates.status === "completed_rental" && !safeUpdates.completedAt) {
         safeUpdates.completedAt = safeUpdates.updatedAt;

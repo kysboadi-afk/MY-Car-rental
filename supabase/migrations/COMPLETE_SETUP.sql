@@ -595,6 +595,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_status    text          NOT NULL DEFAULT 'unpaid',
   notes             text,
   payment_method    text,
+  activated_at      timestamptz,
+  completed_at      timestamptz,
   created_at        timestamptz   NOT NULL DEFAULT now(),
   updated_at        timestamptz   NOT NULL DEFAULT now()
 );
@@ -618,6 +620,22 @@ DROP TRIGGER IF EXISTS bookings_updated_at ON bookings;
 CREATE TRIGGER bookings_updated_at
   BEFORE UPDATE ON bookings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE OR REPLACE FUNCTION on_booking_status_timestamps()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF;
+  CASE NEW.status
+    WHEN 'active'    THEN IF NEW.activated_at IS NULL THEN NEW.activated_at := now(); END IF;
+    WHEN 'completed' THEN IF NEW.completed_at IS NULL THEN NEW.completed_at := now(); END IF;
+  END CASE;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS bookings_status_timestamps ON bookings;
+CREATE TRIGGER bookings_status_timestamps
+  BEFORE INSERT OR UPDATE OF status ON bookings
+  FOR EACH ROW EXECUTE FUNCTION on_booking_status_timestamps();
 
 -- ── 17d. payments table ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS payments (
