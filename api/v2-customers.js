@@ -203,10 +203,14 @@ export default async function handler(req, res) {
     // ── UPDATE ──────────────────────────────────────────────────────────────
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
-      const allowed = ["flagged","banned","flag_reason","ban_reason","notes","name","phone","email"];
+      const allowed = ["flagged","banned","flag_reason","ban_reason","notes","name","full_name","phone","email","driver_license","risk_flag"];
       const updates = { updated_at: new Date().toISOString() };
       for (const f of allowed) {
         if (Object.prototype.hasOwnProperty.call(body.updates || {}, f)) updates[f] = (body.updates)[f];
+      }
+      if (updates.risk_flag !== undefined && updates.risk_flag !== null &&
+          !["low","medium","high"].includes(updates.risk_flag)) {
+        return res.status(400).json({ error: "risk_flag must be low, medium, or high" });
       }
 
       if (sb) {

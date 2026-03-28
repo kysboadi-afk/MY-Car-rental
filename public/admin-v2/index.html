@@ -1195,6 +1195,7 @@
             <option value="banned">Banned</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddCustomerModal()">+ Add Customer</button>
         </div>
         <div class="card">
           <div id="customers-loading" class="loading"><div class="loading-spinner"></div><div>Loading customers…</div></div>
@@ -3088,14 +3089,20 @@ function applyCustomerFilters() {
 function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
   if (!c) return;
+  const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
+  const riskColor = riskColors[c.risk_flag] || 'inherit';
   document.getElementById('cust-detail-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Name</div><div style="font-weight:600;">${esc(c.name || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(c.phone || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
+      ${c.full_name ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Full Name</div><div>${esc(c.full_name)}</div></div>` : '<div></div>'}
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Risk Level</div><div style="font-weight:600;color:${riskColor};text-transform:capitalize;">${esc(c.risk_flag || 'low')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
       ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
@@ -3106,6 +3113,7 @@ function viewCustomer(id) {
   document.getElementById('cust-detail-id').value = id;
   // Action buttons
   document.getElementById('cust-detail-actions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="openEditCustomerModal('${esc(id)}')">✏️ Edit</button>
     ${!c.flagged
       ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
       : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Remove Flag</button>`}
@@ -3124,6 +3132,7 @@ function flagCustomer(id, flagged) {
     updates: { flagged, flag_reason: reason || null }
   }).then(() => {
     showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
+    closeModal('customer-detail-modal');
     loadCustomers();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -3150,6 +3159,73 @@ function syncCustomers() {
       loadCustomers();
     })
     .catch((err) => showToast('Sync error: ' + err.message, 'error'));
+}
+
+function openAddCustomerModal() {
+  document.getElementById('cust-modal-title').textContent = 'Add Customer';
+  document.getElementById('cust-modal-id').value = '';
+  document.getElementById('cust-modal-name').value = '';
+  document.getElementById('cust-modal-full-name').value = '';
+  document.getElementById('cust-modal-phone').value = '';
+  document.getElementById('cust-modal-email').value = '';
+  document.getElementById('cust-modal-license').value = '';
+  document.getElementById('cust-modal-risk').value = 'low';
+  document.getElementById('cust-modal-notes').value = '';
+  openModal('customer-edit-modal');
+}
+
+function openEditCustomerModal(id) {
+  const c = allCustomers.find((x) => x.id === id);
+  if (!c) return;
+  closeModal('customer-detail-modal');
+  document.getElementById('cust-modal-title').textContent = 'Edit Customer';
+  document.getElementById('cust-modal-id').value = id;
+  document.getElementById('cust-modal-name').value = c.name || '';
+  document.getElementById('cust-modal-full-name').value = c.full_name || '';
+  document.getElementById('cust-modal-phone').value = c.phone || '';
+  document.getElementById('cust-modal-email').value = c.email || '';
+  document.getElementById('cust-modal-license').value = c.driver_license || '';
+  document.getElementById('cust-modal-risk').value = c.risk_flag || 'low';
+  document.getElementById('cust-modal-notes').value = c.notes || '';
+  openModal('customer-edit-modal');
+}
+
+async function saveCustomer() {
+  const id    = document.getElementById('cust-modal-id').value;
+  const name  = document.getElementById('cust-modal-name').value.trim();
+  const phone = document.getElementById('cust-modal-phone').value.trim();
+  if (!name) { showToast('Name is required.', 'error'); return; }
+
+  const btn = document.querySelector('#customer-edit-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  const fields = {
+    name,
+    full_name:      document.getElementById('cust-modal-full-name').value.trim() || null,
+    phone:          phone || null,
+    email:          document.getElementById('cust-modal-email').value.trim() || null,
+    driver_license: document.getElementById('cust-modal-license').value.trim() || null,
+    risk_flag:      document.getElementById('cust-modal-risk').value || 'low',
+    notes:          document.getElementById('cust-modal-notes').value.trim() || null,
+  };
+
+  try {
+    if (id) {
+      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'update', id, updates: fields });
+      showToast('Customer updated.', 'success');
+    } else {
+      if (!phone) { showToast('Phone is required for new customers.', 'error'); return; }
+      await apiPost('/api/v2-customers', { secret: adminSecret, action: 'upsert', ...fields });
+      showToast('Customer added.', 'success');
+    }
+    closeModal('customer-edit-modal');
+    allCustomers = [];
+    loadCustomers();
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
 }
 
 // ── Protection Plans ──────────────────────────────────────────────────────
@@ -3861,6 +3937,54 @@ function unblockDates() {
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
       <button class="btn btn-secondary" onclick="closeModal('plan-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="savePlan()">Save Plan</button>
+    </div>
+  </div>
+</div>
+<!-- Customer Edit / Add Modal -->
+<div class="modal-overlay" id="customer-edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="cust-modal-title">Add Customer</div>
+      <button class="modal-close" onclick="closeModal('customer-edit-modal')">✕</button>
+    </div>
+    <input type="hidden" id="cust-modal-id">
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" class="form-input" id="cust-modal-name" placeholder="Display name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input type="text" class="form-input" id="cust-modal-full-name" placeholder="Full legal name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="tel" class="form-input" id="cust-modal-phone" placeholder="+1 (555) 000-0000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="cust-modal-email" placeholder="customer@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Driver License</label>
+        <input type="text" class="form-input" id="cust-modal-license" placeholder="License number">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Risk Level</label>
+        <select class="form-select" id="cust-modal-risk">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="cust-modal-notes" placeholder="Internal notes…" style="min-height:60px;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal('customer-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCustomer()">Save</button>
     </div>
   </div>
 </div>
