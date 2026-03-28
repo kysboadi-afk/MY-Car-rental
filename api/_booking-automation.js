@@ -100,25 +100,70 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
       .eq("phone", phone)
       .maybeSingle();
 
+    /**
+     * Fetches revenue-record stats for a phone number.
+     * Returns { totalBookings, totalSpent, firstDate, lastDate } or null on failure.
+     */
+    async function fetchRrStats(ph) {
+      const { data: rr } = await sb
+        .from("revenue_records")
+        .select("gross_amount, refund_amount, is_cancelled, pickup_date")
+        .eq("customer_phone", ph);
+      if (!rr) return null;
+      const valid  = rr.filter((r) => !r.is_cancelled);
+      const dates  = rr.map((r) => r.pickup_date).filter(Boolean).sort();
+      return {
+        totalBookings: valid.length,
+        totalSpent:    Math.round(valid.reduce((s, r) => s + Number(r.gross_amount || 0) - Number(r.refund_amount || 0), 0) * 100) / 100,
+        firstDate:     dates[0] || null,
+        lastDate:      dates[dates.length - 1] || null,
+      };
+    }
+
     if (existing) {
       const updates = { name: record.name, email: record.email, updated_at: record.updated_at };
       if (countStats) {
-        updates.total_bookings = (existing.total_bookings || 0) + 1;
-        updates.total_spent    = Math.round(((existing.total_spent || 0) + Number(booking.amountPaid || 0)) * 100) / 100;
-        updates.last_booking_date = booking.pickupDate || null;
+        // Use SET semantics: recompute totals from revenue_records so this
+        // function is idempotent even when called multiple times for the same
+        // customer (e.g. repeated scheduler runs or status re-transitions).
+        const stats = await fetchRrStats(phone);
+        if (stats) {
+          updates.total_bookings     = stats.totalBookings;
+          updates.total_spent        = stats.totalSpent;
+          updates.first_booking_date = stats.firstDate || existing.first_booking_date || null;
+          updates.last_booking_date  = stats.lastDate  || booking.pickupDate || null;
+        } else {
+          // Fallback: increment if revenue_records is unavailable
+          updates.total_bookings = (existing.total_bookings || 0) + 1;
+          updates.total_spent    = Math.round(((existing.total_spent || 0) + Number(booking.amountPaid || 0)) * 100) / 100;
+          updates.last_booking_date = booking.pickupDate || null;
+        }
       }
       if (isNoShow) {
         updates.no_show_count = (existing.no_show_count || 0) + 1;
       }
       await sb.from("customers").update(updates).eq("phone", phone);
     } else {
+      let totalBookings = 0, totalSpent = 0, firstDate = booking.pickupDate || null, lastDate = booking.pickupDate || null;
+      if (countStats) {
+        const stats = await fetchRrStats(phone);
+        if (stats) {
+          totalBookings = stats.totalBookings;
+          totalSpent    = stats.totalSpent;
+          firstDate     = stats.firstDate || firstDate;
+          lastDate      = stats.lastDate  || lastDate;
+        } else {
+          totalBookings = 1;
+          totalSpent    = Math.round(Number(booking.amountPaid || 0) * 100) / 100;
+        }
+      }
       await sb.from("customers").insert({
         ...record,
-        total_bookings:     countStats ? 1 : 0,
-        total_spent:        countStats ? Math.round(Number(booking.amountPaid || 0) * 100) / 100 : 0,
+        total_bookings:     totalBookings,
+        total_spent:        totalSpent,
         no_show_count:      isNoShow ? 1 : 0,
-        first_booking_date: booking.pickupDate || null,
-        last_booking_date:  booking.pickupDate || null,
+        first_booking_date: firstDate,
+        last_booking_date:  lastDate,
       });
     }
     console.log(`_booking-automation: upserted customer ${phone} (${record.name})`);

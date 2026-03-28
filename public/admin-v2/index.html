@@ -2262,13 +2262,11 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn) {
     secret: adminSecret, action: 'update', vehicleId, bookingId,
     updates: { status },
   }).then(() => {
-    showToast('Booking updated.', 'success');
-    const idx = allBookings.findIndex((b) => b.bookingId === bookingId);
-    if (idx >= 0) allBookings[idx].status = status;
-    renderBookings();
+    showToast('Booking updated to ' + (status.replace(/_/g, ' ')) + '.', 'success');
+    // Reload from server to get the authoritative state
+    loadBookings();
   }).catch((err) => {
-    showToast('Error: ' + err.message, 'error');
-  }).finally(() => {
+    showToast('Error updating booking: ' + err.message, 'error');
     if (triggerBtn) triggerBtn.disabled = false;
   });
 }

@@ -235,8 +235,67 @@ export default async function handler(req, res) {
       return res.status(200).json({ customer: updated });
     }
 
-    // ── SYNC — rebuild customer table from bookings.json ───────────────────
+    // ── SYNC — rebuild customer table from revenue_records (Supabase) or bookings.json ───────────────────
     if (action === "sync") {
+      // When Supabase is available, compute accurate customer stats directly from
+      // revenue_records (the authoritative financial ledger) rather than bookings.json.
+      // This prevents the double-counting bug where incremental autoUpsertCustomer
+      // calls accumulate incorrect totals over time.
+      if (sb) {
+        try {
+          const { data: rrData, error: rrError } = await sb
+            .from("revenue_records")
+            .select("customer_phone, customer_name, customer_email, gross_amount, refund_amount, is_cancelled, pickup_date");
+
+          if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
+            // Group revenue records by customer_phone
+            const byPhone = {};
+            for (const r of rrData) {
+              if (!r.customer_phone) continue;
+              if (!byPhone[r.customer_phone]) {
+                byPhone[r.customer_phone] = { name: r.customer_name || "Unknown", email: r.customer_email || null, records: [] };
+              }
+              if (r.customer_name) byPhone[r.customer_phone].name  = r.customer_name;
+              if (r.customer_email) byPhone[r.customer_phone].email = r.customer_email;
+              byPhone[r.customer_phone].records.push(r);
+            }
+
+            const upserts = [];
+            for (const [phone, cust] of Object.entries(byPhone)) {
+              const valid       = cust.records.filter((r) => !r.is_cancelled);
+              const totalSpent  = Math.round(valid.reduce((s, r) => s + Number(r.gross_amount || 0) - Number(r.refund_amount || 0), 0) * 100) / 100;
+              const pickupDates = cust.records.map((r) => r.pickup_date).filter(Boolean).sort();
+              upserts.push({
+                name:               cust.name,
+                phone,
+                email:              cust.email,
+                total_bookings:     valid.length,
+                total_spent:        totalSpent,
+                first_booking_date: pickupDates[0] || null,
+                last_booking_date:  pickupDates[pickupDates.length - 1] || null,
+                updated_at:         new Date().toISOString(),
+              });
+            }
+
+            if (upserts.length > 0) {
+              const { error: upsertErr } = await sb.from("customers")
+                .upsert(upserts, { onConflict: "phone", ignoreDuplicates: false });
+              if (upsertErr) {
+                if (!isSchemaError(upsertErr)) throw upsertErr;
+                console.warn("v2-customers sync: customers table missing");
+              } else {
+                return res.status(200).json({ synced: upserts.length, message: `Synced ${upserts.length} customers from revenue records` });
+              }
+            }
+          } else if (rrError) {
+            console.warn("v2-customers sync: revenue_records query failed:", rrError.message);
+          }
+        } catch (sbSyncErr) {
+          console.warn("v2-customers sync: Supabase sync error, falling back to bookings.json:", sbSyncErr.message);
+        }
+      }
+
+      // Fallback: compute stats from bookings.json
       const { data: bookingsData } = await loadBookings();
       const allBookingsList = Object.values(bookingsData).flat();
 
@@ -255,7 +314,6 @@ export default async function handler(req, res) {
       }
 
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
-      const noShowStatuses = new Set(["cancelled_rental"]);
 
       const phoneUpserts  = [];
       const nameFallbacks = [];
@@ -268,7 +326,7 @@ export default async function handler(req, res) {
         const record = {
           name:               c.name  || "Unknown",
           email:              c.email || null,
-          total_bookings:     c.bookings.length,
+          total_bookings:     paidBookings.length,
           total_spent:        Math.round(spent * 100) / 100,
           no_show_count:      noShowBookings.length,
           first_booking_date: pickupDates[0]  || null,
