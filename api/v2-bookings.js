@@ -16,8 +16,11 @@
 //   4. Blocked dates inserted in Supabase blocked_dates table.
 //   On status → "completed_rental":
 //   5. Customer stats incremented.
+//   6. completedAt timestamp stamped automatically.
+//   7. Blocked date range removed from booked-dates.json (restores availability).
 //   On status → "cancelled_rental":
 //   1-4 skipped; no revenue or stats updated.
+//   8. Blocked date range removed from booked-dates.json.
 
 import crypto from "crypto";
 import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
@@ -106,6 +109,19 @@ async function blockBookedDates(vehicleId, from, to) {
   });
 }
 
+async function unblockBookedDates(vehicleId, from, to) {
+  if (!vehicleId || !from || !to) return;
+  await updateJsonFileWithRetry({
+    load:    loadBookedDates,
+    apply:   (data) => {
+      if (!Array.isArray(data[vehicleId])) return;
+      data[vehicleId] = data[vehicleId].filter((r) => !(r.from === from && r.to === to));
+    },
+    save:    saveBookedDates,
+    message: `Unblock dates for ${vehicleId}: ${from} to ${to}`,
+  });
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -182,6 +198,10 @@ export default async function handler(req, res) {
         }
       }
       safeUpdates.updatedAt = new Date().toISOString();
+      // Auto-stamp completedAt when an admin marks the rental as finished
+      if (safeUpdates.status === "completed_rental" && !safeUpdates.completedAt) {
+        safeUpdates.completedAt = safeUpdates.updatedAt;
+      }
 
       let updatedBooking;
       await updateJsonFileWithRetry({
@@ -242,6 +262,19 @@ export default async function handler(req, res) {
         await autoUpsertBooking(updatedBooking);
       }
       // "cancelled_rental" intentionally skips revenue creation and stat updates
+
+      // Restore availability in booked-dates.json when a rental ends
+      if (updatedBooking && (newStatus === "completed_rental" || newStatus === "cancelled_rental")) {
+        try {
+          await unblockBookedDates(
+            updatedBooking.vehicleId,
+            updatedBooking.pickupDate,
+            updatedBooking.returnDate
+          );
+        } catch (err) {
+          console.error("v2-bookings: unblockBookedDates failed (non-fatal):", err.message);
+        }
+      }
 
       return res.status(200).json({ success: true, booking: updatedBooking });
     }

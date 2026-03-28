@@ -582,6 +582,91 @@ test("lifecycle: complete booking (active_rental → completed_rental) increment
   assert.ok(statsCall, "autoUpsertCustomer must be called with countStats=true on completion");
 });
 
+test("lifecycle: completing a booking auto-sets completedAt", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), r2);
+  assert.equal(r2._status, 200);
+  assert.ok(r2._body.booking.completedAt, "completedAt must be set automatically on completion");
+});
+
+test("lifecycle: completing a booking removes its date range from booked-dates.json", async () => {
+  resetStore(); resetCalls();
+  // Track GitHub API calls
+  const githubPuts = [];
+  const origFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    try {
+      const parsed = new URL(typeof url === "string" ? url : String(url));
+      if (parsed.hostname === "api.github.com") {
+        if (opts && opts.method === "PUT") githubPuts.push(String(url));
+        return { ok: true, json: async () => ({ content: btoa("{}"), sha: "sha1" }) };
+      }
+    } catch { /* not a valid URL — fall through */ }
+    return { ok: false };
+  };
+
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+  githubPuts.length = 0; // clear setup calls
+
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), makeRes());
+
+  global.fetch = origFetch;
+  assert.ok(githubPuts.some((u) => u.includes("booked-dates")),
+    "booked-dates.json must be updated when rental completes");
+});
+
+test("lifecycle: cancelling a booking removes its date range from booked-dates.json", async () => {
+  resetStore(); resetCalls();
+  const githubPuts = [];
+  const origFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    try {
+      const parsed = new URL(typeof url === "string" ? url : String(url));
+      if (parsed.hostname === "api.github.com") {
+        if (opts && opts.method === "PUT") githubPuts.push(String(url));
+        return { ok: true, json: async () => ({ content: btoa("{}"), sha: "sha1" }) };
+      }
+    } catch { /* not a valid URL — fall through */ }
+    return { ok: false };
+  };
+
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 50, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+  githubPuts.length = 0;
+
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "cancelled_rental" },
+  }), makeRes());
+
+  global.fetch = origFetch;
+  assert.ok(githubPuts.some((u) => u.includes("booked-dates")),
+    "booked-dates.json must be updated when rental is cancelled");
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 9. PAYMENT FIELD COMPUTATION (via autoUpsertBooking args)
 // ═══════════════════════════════════════════════════════════════════════════════
