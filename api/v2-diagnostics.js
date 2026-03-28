@@ -30,6 +30,8 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
 // All tables that the v2 admin panel reads from or writes to.
 const REQUIRED_TABLES = [
   "vehicles",
@@ -52,14 +54,6 @@ const OPTIONAL_TABLES = [
   "content_blocks",
   "content_revisions",
 ];
-
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin":  "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
-}
 
 /**
  * Check whether a table exists in the connected Supabase project by selecting
@@ -84,15 +78,14 @@ async function checkTable(sb, tableName) {
 }
 
 export default async function handler(req, res) {
-  const headers = corsHeaders();
-  if (req.method === "OPTIONS") {
-    return res.status(200).set(headers).end();
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
   }
-  if (req.method !== "POST") {
-    return res.status(405).set(headers).json({ error: "Method not allowed" });
-  }
-
-  Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
