@@ -48,9 +48,11 @@ import {
   RETENTION_DAY_14,
   RETENTION_DAY_30,
 } from "./_sms-templates.js";
-import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
 import { CARS } from "./_pricing.js";
+import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
@@ -65,6 +67,80 @@ const LATE_FEE_AMOUNTS = {
   camry:      50,   // $50 flat after 2h; full day after 4–6h (simplified to $50 here)
   camry2013:  50,
 };
+
+// ─── Auto-completion threshold ────────────────────────────────────────────────
+// Active rentals that are still open this many hours past the scheduled return
+// time are automatically transitioned to "completed_rental".  This frees up
+// the vehicle for new bookings without requiring manual admin intervention.
+const AUTO_COMPLETE_HOURS = 4;
+
+const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const BOOKED_DATES_PATH = "booked-dates.json";
+
+function ghHeaders() {
+  const token = process.env.GITHUB_TOKEN;
+  const headers = {
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function loadBookedDates() {
+  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  if (!getResp.ok) {
+    if (getResp.status === 404) return { data: {}, sha: null };
+    return { data: {}, sha: null };
+  }
+  const fileData = await getResp.json();
+  let data = {};
+  try {
+    data = JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    if (typeof data !== "object" || Array.isArray(data)) data = {};
+  } catch { data = {}; }
+  return { data, sha: fileData.sha };
+}
+
+async function saveBookedDates(data, sha, message) {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+  const body = { message, content };
+  if (sha) body.sha = sha;
+  const resp = await fetch(apiUrl, {
+    method:  "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+  }
+}
+
+/**
+ * Remove a specific date range from booked-dates.json (non-fatal).
+ * @param {string} vehicleId
+ * @param {string} from - YYYY-MM-DD
+ * @param {string} to   - YYYY-MM-DD
+ */
+async function removeFromBookedDates(vehicleId, from, to) {
+  if (!process.env.GITHUB_TOKEN || !vehicleId || !from || !to) return;
+  try {
+    await updateJsonFileWithRetry({
+      load:    loadBookedDates,
+      apply:   (data) => {
+        if (!Array.isArray(data[vehicleId])) return;
+        data[vehicleId] = data[vehicleId].filter((r) => !(r.from === from && r.to === to));
+      },
+      save:    saveBookedDates,
+      message: `Auto-complete: unblock ${vehicleId} ${from}→${to}`,
+    });
+  } catch (err) {
+    console.error("scheduled-reminders: removeFromBookedDates failed (non-fatal):", err.message);
+  }
+}
 
 /**
  * Parse a booking's pickup/return into a JS Date.
@@ -446,6 +522,67 @@ async function persistSentMarks(sentMarks) {
   }
 }
 
+/**
+ * Auto-complete active_rental bookings that are past their return time by
+ * AUTO_COMPLETE_HOURS hours.  Updates bookings.json status to
+ * "completed_rental", removes blocked dates, and syncs to Supabase.
+ * Non-fatal: errors are logged and never propagate.
+ *
+ * @param {object} allBookings - current bookings data snapshot
+ * @param {Date}   now
+ */
+export async function processAutoCompletions(allBookings, now) {
+  if (!process.env.GITHUB_TOKEN) return;
+
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (booking.status !== "active_rental") continue;
+
+      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+      if (isNaN(returnDt.getTime())) continue;
+
+      const minsOverdue = (now - returnDt) / 60000;
+      if (minsOverdue < AUTO_COMPLETE_HOURS * 60) continue;
+
+      const id          = booking.bookingId || booking.paymentIntentId;
+      const completedAt = now.toISOString();
+
+      console.log(
+        `scheduled-reminders: auto-completing ${vehicleId} booking ${id} ` +
+        `(${Math.round(minsOverdue)} min past return time)`
+      );
+
+      try {
+        // Update status and completedAt in bookings.json
+        await updateBooking(vehicleId, id, {
+          status:      "completed_rental",
+          completedAt,
+          updatedAt:   completedAt,
+        });
+
+        // Sync to Supabase
+        const completedBooking = {
+          ...booking,
+          status:      "completed_rental",
+          completedAt,
+          updatedAt:   completedAt,
+        };
+        await autoUpsertCustomer(completedBooking, true); // countStats=true: increment total_bookings/total_spent
+        await autoUpsertBooking(completedBooking);
+
+        // Free up the dates in booked-dates.json
+        await removeFromBookedDates(vehicleId, booking.pickupDate, booking.returnDate);
+      } catch (err) {
+        console.error(
+          `scheduled-reminders: auto-completion failed for ${vehicleId}/${id} (non-fatal):`,
+          err.message
+        );
+      }
+    }
+  }
+}
+
+
 export default async function handler(req, res) {
   // Accept GET (Vercel cron) or POST (manual admin trigger)
   if (req.method !== "GET" && req.method !== "POST") {
@@ -486,6 +623,10 @@ export default async function handler(req, res) {
   ]);
 
   await persistSentMarks(sentMarks);
+
+  // Auto-complete bookings that are past their return time by AUTO_COMPLETE_HOURS.
+  // Runs after sentMarks are persisted to avoid racing with the same bookings.json write.
+  await processAutoCompletions(allBookings, now);
 
   return res.status(200).json({ ok: true, remindersSent: sentMarks.filter(m => !m.key.startsWith("_")).length });
 }
