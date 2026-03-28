@@ -1114,6 +1114,7 @@
             <option value="partial">Partial</option>
             <option value="refunded">Refunded</option>
           </select>
+          <button class="btn btn-secondary btn-sm" onclick="syncRevenue(this)">↺ Sync from Bookings</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
@@ -2903,6 +2904,18 @@ function deleteRevenueRecord(id) {
   apiPost('/api/v2-revenue', { secret: adminSecret, action: 'delete', id })
     .then(() => { showToast('Deleted.', 'success'); loadRevenue(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+function syncRevenue(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'sync' })
+    .then((data) => {
+      showToast(data.message || 'Sync complete.', 'success');
+      allRevenueRecords = [];
+      loadRevenue();
+    })
+    .catch((err) => showToast('Sync error: ' + err.message, 'error'))
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Sync from Bookings'; } });
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────
