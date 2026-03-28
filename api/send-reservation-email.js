@@ -20,7 +20,7 @@ import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js
 import { appendBooking, normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1162,12 +1162,17 @@ export default async function handler(req, res) {
           paymentLink:     balancePayUrl || "",
           smsSentAt:       {},
           createdAt:       new Date().toISOString(),
+          source:          "public_booking",
         };
         await appendBooking(bookingRecord);
-        // Auto-sync to Supabase so admin Revenue Tracker and Customer Management
-        // are populated immediately without any manual "Sync" step.
+        // Auto-sync to Supabase so admin Revenue Tracker, Customer Management,
+        // Bookings table, and Blocked Dates are all populated immediately.
         await autoCreateRevenueRecord(bookingRecord);
         await autoUpsertCustomer(bookingRecord, false);
+        await autoUpsertBooking(bookingRecord);
+        if (pickup && returnDate) {
+          await autoCreateBlockedDate(vehicleId, pickup, returnDate, "booking");
+        }
       } catch (bookingErr) {
         console.error("Failed to save booking record:", bookingErr);
       }

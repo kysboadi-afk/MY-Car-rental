@@ -39,6 +39,8 @@ const REQUIRED_TABLES = [
   "expenses",
   "customers",
   "sms_template_overrides",
+  "bookings",
+  "blocked_dates",
 ];
 
 // Optional tables — present in the full schema but not strictly required for

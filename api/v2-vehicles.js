@@ -58,10 +58,10 @@ export default async function handler(req, res) {
       try {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data");
+          .select("vehicle_id, data, rental_status");
         if (!error) {
           const vehicles = (rows || []).map((row) => {
-            const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}) };
+            const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}), rental_status: row.rental_status || null };
             if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
             return obj;
           });

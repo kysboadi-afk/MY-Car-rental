@@ -546,6 +546,9 @@ fully idempotent (safe to re-run, uses IF NOT EXISTS everywhere).
 | Public site still shows old content | Content is cached for 60s. Wait a minute and hard-refresh, or clear CDN cache |
 | 401 Unauthorized error | Make sure the `ADMIN_SECRET` in Vercel matches what you type in the login screen |
 | Rollback fails "no before snapshot" | That revision was an initial create — there is no "before" state to roll back to |
+| Public bookings are not appearing in admin (missing customer details) | The `bookings` and `blocked_dates` tables are missing. Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor. These tables are required for the full booking pipeline. |
+| Vehicle marked inactive in admin still shows on the public site | The `rental_status` column or the booking-status PG triggers on `vehicles` are missing. Run `supabase/migrations/COMPLETE_SETUP.sql` in the Supabase SQL Editor. |
+| Customers tab shows no `no_show_count` column / always shows 0 | Migration 0016 has not been applied. Run `supabase/migrations/0016_customer_no_show_count.sql` (or the updated `COMPLETE_SETUP.sql`) in the Supabase SQL Editor. |
 
 ---
 
