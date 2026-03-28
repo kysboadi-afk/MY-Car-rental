@@ -113,8 +113,13 @@ export default async function handler(req, res) {
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
           const { data, error } = await q;
-          if (!error) return res.status(200).json({ records: data || [] });
-          console.error("v2-revenue list error:", error.message);
+          if (!error) {
+            // If Supabase has records, return them directly.
+            if ((data || []).length > 0) return res.status(200).json({ records: data });
+            // Supabase table exists but is empty — fall through to bookings-derived view below.
+          } else {
+            console.error("v2-revenue list error:", error.message);
+          }
         } catch (qErr) {
           console.error("v2-revenue list query error:", qErr);
         }
@@ -128,7 +133,49 @@ export default async function handler(req, res) {
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
       records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
       if (body.limit) records = records.slice(0, Number(body.limit));
-      return res.status(200).json({ records });
+      if (records.length > 0) return res.status(200).json({ records });
+
+      // Both Supabase and revenue-records.json are empty.
+      // Derive a live view directly from bookings.json so the Finance tab
+      // is always populated without requiring a manual "Sync" step.
+      try {
+        const { data: bookingsData } = await loadBookings();
+        const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+        let derived = Object.values(bookingsData).flat()
+          .filter((b) => paidStatuses.has(b.status) && b.bookingId && Number(b.amountPaid || 0) > 0)
+          .map((b) => ({
+            id:             b.bookingId,
+            booking_id:     b.bookingId,
+            vehicle_id:     b.vehicleId   || null,
+            customer_name:  b.name        || null,
+            customer_phone: b.phone       || null,
+            customer_email: b.email       || null,
+            pickup_date:    b.pickupDate  || null,
+            return_date:    b.returnDate  || null,
+            gross_amount:   Number(b.amountPaid || 0),
+            deposit_amount: 0,
+            refund_amount:  0,
+            payment_method: b.paymentMethod || "cash",
+            payment_status: "paid",
+            notes:          b.notes       || null,
+            is_no_show:     false,
+            is_cancelled:   false,
+            override_by_admin: false,
+            created_at:     b.createdAt   || null,
+            updated_at:     b.updatedAt   || null,
+            _derived:       true,
+          }));
+        if (body.vehicleId) derived = derived.filter((r) => r.vehicle_id    === body.vehicleId);
+        if (body.status)    derived = derived.filter((r) => r.payment_status === body.status);
+        if (body.startDate) derived = derived.filter((r) => r.pickup_date   >= body.startDate);
+        if (body.endDate)   derived = derived.filter((r) => r.return_date   <= body.endDate);
+        derived.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
+        if (body.limit) derived = derived.slice(0, Number(body.limit));
+        return res.status(200).json({ records: derived, _source: "bookings_derived" });
+      } catch (bookingsErr) {
+        console.error("v2-revenue: bookings fallback error:", bookingsErr.message);
+      }
+      return res.status(200).json({ records: [] });
     }
 
     // ── GET ─────────────────────────────────────────────────────────────────

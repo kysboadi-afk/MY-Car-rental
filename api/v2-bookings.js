@@ -23,8 +23,7 @@
 //   8. Blocked date range removed from booked-dates.json.
 
 import crypto from "crypto";
-import { loadBookings, saveBookings, appendBooking } from "./_bookings.js";
-import { loadVehicles } from "./_vehicles.js";
+import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";

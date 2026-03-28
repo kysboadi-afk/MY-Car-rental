@@ -1,189 +1,310 @@
 -- =============================================================================
--- SLY RIDES — COMPLETE SUPABASE SETUP (ONE-SHOT SCRIPT)
+-- SLY RIDES — COMPLETE SUPABASE SETUP  (v2 — All Migrations 0001-0017)
 -- =============================================================================
 --
 -- HOW TO USE
 -- ----------
 -- 1. Open your Supabase project → SQL Editor → New Query
--- 2. Paste this ENTIRE file and click Run
--- 3. That's it. Every table, index, trigger, view, and seed row is created.
---    Safe to re-run: all statements use IF NOT EXISTS / ON CONFLICT guards.
+-- 2. Paste this ENTIRE file and click Run  (or share with the Supabase AI
+--    Assistant and say "run this SQL exactly as written")
+-- 3. That's it. Every table, index, function, trigger, view, and seed row
+--    is created in the correct dependency order.
+--    Safe to re-run: every statement uses IF NOT EXISTS / ON CONFLICT guards
+--    or CREATE OR REPLACE — nothing is lost on a second run.
 --
--- TABLES CREATED
--- --------------
---   vehicles               — fleet vehicles (vehicle editor, admin panel)
---   protection_plans       — DPP coverage tiers (admin configurable)
---   system_settings        — pricing, tax-rate, automation toggles
---   revenue_records        — per-booking revenue ledger
---   expenses               — vehicle expense tracking
---   customers              — customer profiles / ban / flag
---   booking_status_history — audit trail for status changes
---   payment_transactions   — additive payment layer
---   sms_template_overrides — custom SMS message templates
---   site_settings          — site-wide CMS settings (name, hero text, etc.)
---   content_blocks         — FAQs, announcements, testimonials
---   content_revisions      — revision history for CMS changes
+-- WHAT IS CREATED
+-- ---------------
+--   Tables (16):
+--     vehicles               — fleet of 5 rental vehicles
+--     protection_plans       — Damage Protection Plan tiers
+--     system_settings        — pricing, tax-rate & automation flags
+--     revenue_records        — per-booking revenue ledger (Finance tab)
+--     expenses               — vehicle expense tracking
+--     customers              — customer profiles, bans, no-show count
+--     booking_status_history — audit trail for booking status changes
+--     payment_transactions   — full payment audit log
+--     sms_template_overrides — custom SMS message templates
+--     site_settings          — CMS: business name, hero text, policies
+--     content_blocks         — FAQs, announcements, testimonials
+--     content_revisions      — CMS revision history
+--     bookings               — normalised rental bookings (with timestamps)
+--     payments               — individual payment transactions
+--     blocked_dates          — vehicle availability blocks
+--     revenue                — trigger-managed revenue (FK → bookings)
 --
--- VIEWS CREATED
--- -------------
---   vehicle_revenue_summary — per-vehicle revenue aggregation
+--   Views (1):
+--     vehicle_revenue_summary — per-vehicle aggregated revenue for admin KPIs
+--
+--   Trigger functions (8):
+--     update_updated_at_column      — auto-update updated_at on every row change
+--     booking_datetime              — combine date+time columns for overlap math
+--     check_booking_conflicts       — prevent double-bookings (datetime-aware)
+--     on_booking_create             — auto blocked_dates + revenue on INSERT
+--     on_booking_status_change      — vehicle rental_status sync on status UPDATE
+--     on_booking_status_timestamps  — stamp activated_at / completed_at
+--     on_payment_create             — recompute booking payment fields on payment
+--     update_customer_no_show_count — keep no_show_count in sync with revenue_records
+--
+-- VEHICLE IDs (must match bookings.json and the admin portal):
+--   slingshot   — Slingshot R (Unit 1)
+--   slingshot2  — Slingshot R (Unit 2)
+--   slingshot3  — Slingshot R (Unit 3)
+--   camry       — Camry 2012
+--   camry2013   — Camry 2013 SE
+--
+-- ENVIRONMENT VARIABLES required in Vercel:
+--   SUPABASE_URL               — from Supabase project → Settings → API
+--   SUPABASE_SERVICE_ROLE_KEY  — from Supabase project → Settings → API
+--   ADMIN_SECRET               — any strong secret string (your admin password)
+--   STRIPE_SECRET_KEY          — from Stripe dashboard
+--   GITHUB_TOKEN               — GitHub PAT (repo + contents write scope)
+--   GITHUB_REPO                — e.g. "kysboadi-afk/SLY-RIDES"
+--   SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS — email config
+--   OWNER_EMAIL                — business email for reservation alerts
+--   TEXTMAGIC_USERNAME / TEXTMAGIC_API_KEY — SMS via TextMagic
 --
 -- =============================================================================
 
 
 -- =============================================================================
--- 1. VEHICLES
+-- STEP 0  SHARED TRIGGER HELPER
+-- Must exist before any other trigger references it.
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+
+-- =============================================================================
+-- STEP 1  VEHICLES
+-- All 5 fleet vehicles with normalized columns.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS vehicles (
-  vehicle_id  text        PRIMARY KEY,
-  data        jsonb       NOT NULL DEFAULT '{}'::jsonb,
-  updated_at  timestamptz NOT NULL DEFAULT now()
+  vehicle_id     text          PRIMARY KEY,
+  data           jsonb         NOT NULL DEFAULT '{}'::jsonb,
+  updated_at     timestamptz   NOT NULL DEFAULT now(),
+  vehicle_name   text,
+  vehicle_type   text,
+  daily_price    numeric(10,2),
+  deposit_amount numeric(10,2),
+  rental_status  text          DEFAULT 'available',
+  mileage        numeric(10,0) DEFAULT 0,
+  created_at     timestamptz   DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS vehicles_updated_at_idx ON vehicles (updated_at);
 
--- Seed the three fleet vehicles (safe to re-run — ignores conflicts)
-INSERT INTO vehicles (vehicle_id, data) VALUES
-  ('slingshot',  '{"vehicle_id":"slingshot",  "vehicle_name":"Slingshot R",   "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/slingshot.jpg"}'::jsonb),
-  ('camry',      '{"vehicle_id":"camry",      "vehicle_name":"Camry 2012",    "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_0046.png"}'::jsonb),
-  ('camry2013',  '{"vehicle_id":"camry2013",  "vehicle_name":"Camry 2013 SE", "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_5144.png"}'::jsonb)
-ON CONFLICT (vehicle_id) DO UPDATE
-  SET data = excluded.data
-  WHERE vehicles.data = '{}'::jsonb OR vehicles.data IS NULL;
+-- rental_status constraint — includes 'reserved' (migration 0015)
+ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_rental_status_check;
+ALTER TABLE vehicles ADD CONSTRAINT vehicles_rental_status_check
+  CHECK (rental_status IN ('available', 'reserved', 'rented', 'maintenance'));
 
--- Remove legacy extra Slingshot units if they were seeded previously
-DELETE FROM vehicles WHERE vehicle_id IN ('slingshot2', 'slingshot3');
+-- ── Seed all 5 fleet vehicles ─────────────────────────────────────────────────
+INSERT INTO vehicles (vehicle_id, data, vehicle_name, vehicle_type, daily_price, deposit_amount, rental_status, mileage) VALUES
+  ('slingshot',
+   '{"vehicle_id":"slingshot","vehicle_name":"Slingshot R","type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/slingshot.jpg"}'::jsonb,
+   'Slingshot R', 'slingshot', 350, 150, 'available', 0),
+  ('slingshot2',
+   '{"vehicle_id":"slingshot2","vehicle_name":"Slingshot R (Unit 2)","type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/slingshot.jpg"}'::jsonb,
+   'Slingshot R (Unit 2)', 'slingshot', 350, 150, 'available', 0),
+  ('slingshot3',
+   '{"vehicle_id":"slingshot3","vehicle_name":"Slingshot R (Unit 3)","type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/slingshot.jpg"}'::jsonb,
+   'Slingshot R (Unit 3)', 'slingshot', 350, 150, 'available', 0),
+  ('camry',
+   '{"vehicle_id":"camry","vehicle_name":"Camry 2012","type":"economy","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_0046.png"}'::jsonb,
+   'Camry 2012', 'economy', 55, 0, 'available', 0),
+  ('camry2013',
+   '{"vehicle_id":"camry2013","vehicle_name":"Camry 2013 SE","type":"economy","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"images/IMG_5144.png"}'::jsonb,
+   'Camry 2013 SE', 'economy', 55, 0, 'available', 0)
+ON CONFLICT (vehicle_id) DO UPDATE
+  SET vehicle_name   = EXCLUDED.vehicle_name,
+      vehicle_type   = EXCLUDED.vehicle_type,
+      daily_price    = COALESCE(vehicles.daily_price,    EXCLUDED.daily_price),
+      deposit_amount = COALESCE(vehicles.deposit_amount, EXCLUDED.deposit_amount),
+      rental_status  = COALESCE(vehicles.rental_status,  EXCLUDED.rental_status),
+      data           = CASE
+                         WHEN vehicles.data = '{}'::jsonb OR vehicles.data IS NULL
+                         THEN EXCLUDED.data
+                         ELSE vehicles.data
+                       END;
+
+-- Ensure JSONB vehicle_name is populated for all 5 vehicles
+UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R'::text)), updated_at = now()
+  WHERE vehicle_id = 'slingshot'  AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R (Unit 2)'::text)), updated_at = now()
+  WHERE vehicle_id = 'slingshot2' AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R (Unit 3)'::text)), updated_at = now()
+  WHERE vehicle_id = 'slingshot3' AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2012'::text)), updated_at = now()
+  WHERE vehicle_id = 'camry'      AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
+UPDATE vehicles SET data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2013 SE'::text)), updated_at = now()
+  WHERE vehicle_id = 'camry2013'  AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
 
 
 -- =============================================================================
--- 2. PROTECTION PLANS
+-- STEP 2  PROTECTION PLANS
+-- Damage Protection Plan tiers shown in the booking flow.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS protection_plans (
-  id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          text        NOT NULL,
+  id            uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          text          NOT NULL,
   description   text,
   daily_rate    numeric(10,2) NOT NULL DEFAULT 0,
   liability_cap numeric(10,2) DEFAULT 1000,
-  is_active     boolean     DEFAULT true,
-  sort_order    integer     DEFAULT 0,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
+  is_active     boolean       DEFAULT true,
+  sort_order    integer       DEFAULT 0,
+  created_at    timestamptz   NOT NULL DEFAULT now(),
+  updated_at    timestamptz   NOT NULL DEFAULT now()
 );
 
--- Seed default tiers (only when table is empty)
+DROP TRIGGER IF EXISTS protection_plans_updated_at ON protection_plans;
+CREATE TRIGGER protection_plans_updated_at
+  BEFORE UPDATE ON protection_plans
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Seed default DPP tiers (only when table is empty)
 INSERT INTO protection_plans (name, description, daily_rate, liability_cap, is_active, sort_order)
 SELECT * FROM (VALUES
-  ('None',     'No protection plan selected',          0::numeric,  0::numeric,    true, 0),
-  ('Basic',    'Basic damage protection, $1,000 cap',  15::numeric, 1000::numeric, true, 1),
-  ('Standard', 'Standard coverage, $500 cap',          25::numeric, 500::numeric,  true, 2),
-  ('Premium',  'Full coverage, $0 liability',          40::numeric, 0::numeric,    true, 3)
+  ('None',     'No protection plan selected',           0::numeric,    0::numeric, true, 0),
+  ('Basic',    'Basic damage protection – $1,000 cap', 15::numeric, 1000::numeric, true, 1),
+  ('Standard', 'Standard coverage – $500 cap',         25::numeric,  500::numeric, true, 2),
+  ('Premium',  'Full coverage – $0 liability',         40::numeric,    0::numeric, true, 3)
 ) AS v(name, description, daily_rate, liability_cap, is_active, sort_order)
 WHERE NOT EXISTS (SELECT 1 FROM protection_plans);
 
 
 -- =============================================================================
--- 3. SYSTEM SETTINGS  (pricing, tax, automation toggles)
+-- STEP 3  SYSTEM SETTINGS
+-- All pricing and tax keys expected by api/_settings.js.
+-- ON CONFLICT DO NOTHING — never overwrites admin-customised values.
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS system_settings (
-  key         text  PRIMARY KEY,
-  value       jsonb NOT NULL DEFAULT 'null'::jsonb,
+  key         text        PRIMARY KEY,
+  value       jsonb       NOT NULL DEFAULT 'null'::jsonb,
   description text,
-  category    text  DEFAULT 'general',
+  category    text        DEFAULT 'general',
   updated_at  timestamptz NOT NULL DEFAULT now(),
   updated_by  text
 );
 
+DROP TRIGGER IF EXISTS system_settings_updated_at ON system_settings;
+CREATE TRIGGER system_settings_updated_at
+  BEFORE UPDATE ON system_settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 INSERT INTO system_settings (key, value, description, category) VALUES
-  ('la_tax_rate',                  '0.1025',  'Los Angeles combined sales tax rate',             'tax'),
-  ('slingshot_daily_rate',         '350',     'Slingshot R daily rate (USD)',                    'pricing'),
-  ('camry_daily_rate',             '55',      'Camry daily rate (USD)',                          'pricing'),
-  ('camry_weekly_rate',            '350',     'Camry weekly rate (USD)',                         'pricing'),
-  ('camry_biweekly_rate',          '650',     'Camry bi-weekly rate (USD)',                      'pricing'),
-  ('camry_monthly_rate',           '1300',    'Camry monthly rate (USD)',                        'pricing'),
-  ('slingshot_security_deposit',   '150',     'Slingshot refundable security deposit (USD)',     'pricing'),
-  ('slingshot_booking_deposit',    '50',      'Slingshot non-refundable booking deposit',        'pricing'),
-  ('auto_block_dates_on_approve',  'true',    'Auto-block vehicle dates when booking approved',  'automation'),
-  ('auto_create_revenue_on_pay',   'true',    'Auto-create revenue record when payment received','automation'),
-  ('auto_update_customer_stats',   'true',    'Auto-update customer stats on booking events',    'automation'),
-  ('notify_sms_on_approve',        'true',    'Send SMS to customer when booking approved',      'notification'),
-  ('notify_email_on_approve',      'true',    'Send email to customer when booking approved',    'notification'),
-  ('overdue_grace_period_hours',   '2',       'Hours after return time before booking flagged overdue','automation')
+  -- Tax
+  ('la_tax_rate',                 '0.1025', 'Los Angeles combined sales tax rate',                          'tax'),
+  -- Camry / economy daily-weekly tiers
+  ('camry_daily_rate',            '55',     'Camry daily rate (USD)',                                       'pricing'),
+  ('camry_weekly_rate',           '350',    'Camry 7-day rate (USD)',                                       'pricing'),
+  ('camry_biweekly_rate',         '650',    'Camry 14-day rate (USD)',                                      'pricing'),
+  ('camry_monthly_rate',          '1300',   'Camry 30-day rate (USD)',                                      'pricing'),
+  -- Slingshot hourly/day tiers (all 5 tiers used by api/_settings.js)
+  ('slingshot_3hr_rate',          '200',    'Slingshot 3-hour tier price (USD)',                            'pricing'),
+  ('slingshot_6hr_rate',          '250',    'Slingshot 6-hour tier price (USD)',                            'pricing'),
+  ('slingshot_daily_rate',        '350',    'Slingshot 24-hour / 1-day tier price (USD)',                   'pricing'),
+  ('slingshot_2day_rate',         '700',    'Slingshot 48-hour / 2-day tier price (USD)',                   'pricing'),
+  ('slingshot_3day_rate',         '1050',   'Slingshot 72-hour / 3-day tier price (USD)',                   'pricing'),
+  -- Deposits / booking fees
+  ('slingshot_security_deposit',  '150',    'Slingshot refundable security deposit (USD)',                  'pricing'),
+  ('slingshot_booking_deposit',   '50',     'Slingshot non-refundable booking deposit (USD)',               'pricing'),
+  ('camry_booking_deposit',       '50',     'Camry non-refundable booking deposit (USD)',                   'pricing'),
+  -- Automation toggles
+  ('auto_block_dates_on_approve', 'true',   'Auto-block vehicle dates when booking approved',               'automation'),
+  ('auto_create_revenue_on_pay',  'true',   'Auto-create revenue record when payment received',             'automation'),
+  ('auto_update_customer_stats',  'true',   'Auto-update customer stats on booking events',                 'automation'),
+  ('notify_sms_on_approve',       'true',   'Send SMS to customer when booking approved',                   'notification'),
+  ('notify_email_on_approve',     'true',   'Send email to customer when booking approved',                 'notification'),
+  ('overdue_grace_period_hours',  '2',      'Hours after return time before booking flagged overdue',       'automation')
 ON CONFLICT (key) DO NOTHING;
 
 
 -- =============================================================================
--- 4. REVENUE RECORDS
+-- STEP 4  REVENUE RECORDS  (Finance tab — primary admin ledger)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS revenue_records (
-  id                uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id        text        NOT NULL,
-  vehicle_id        text        NOT NULL,
-  customer_name     text,
-  customer_phone    text,
-  customer_email    text,
-  pickup_date       date,
-  return_date       date,
-  gross_amount      numeric(10,2) NOT NULL DEFAULT 0,
-  deposit_amount    numeric(10,2) NOT NULL DEFAULT 0,
-  refund_amount     numeric(10,2) NOT NULL DEFAULT 0,
-  net_amount        numeric(10,2) GENERATED ALWAYS AS (gross_amount - refund_amount) STORED,
-  payment_method    text        DEFAULT 'stripe',
-  payment_status    text        DEFAULT 'pending',
+  id                 uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_id         text          NOT NULL,
+  vehicle_id         text          NOT NULL,
+  customer_name      text,
+  customer_phone     text,
+  customer_email     text,
+  pickup_date        date,
+  return_date        date,
+  gross_amount       numeric(10,2) NOT NULL DEFAULT 0,
+  deposit_amount     numeric(10,2) NOT NULL DEFAULT 0,
+  refund_amount      numeric(10,2) NOT NULL DEFAULT 0,
+  net_amount         numeric(10,2) GENERATED ALWAYS AS (gross_amount - refund_amount) STORED,
+  payment_method     text          DEFAULT 'stripe',
+  payment_status     text          DEFAULT 'pending',
   protection_plan_id uuid,
-  notes             text,
-  is_no_show        boolean     DEFAULT false,
-  is_cancelled      boolean     DEFAULT false,
-  override_by_admin boolean     DEFAULT false,
-  created_at        timestamptz NOT NULL DEFAULT now(),
-  updated_at        timestamptz NOT NULL DEFAULT now()
+  notes              text,
+  is_no_show         boolean       DEFAULT false,
+  is_cancelled       boolean       DEFAULT false,
+  override_by_admin  boolean       DEFAULT false,
+  created_at         timestamptz   NOT NULL DEFAULT now(),
+  updated_at         timestamptz   NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS revenue_records_booking_id_idx    ON revenue_records (booking_id);
-CREATE INDEX IF NOT EXISTS revenue_records_vehicle_id_idx    ON revenue_records (vehicle_id);
+CREATE INDEX IF NOT EXISTS revenue_records_booking_id_idx     ON revenue_records (booking_id);
+CREATE INDEX IF NOT EXISTS revenue_records_vehicle_id_idx     ON revenue_records (vehicle_id);
 CREATE INDEX IF NOT EXISTS revenue_records_payment_status_idx ON revenue_records (payment_status);
-CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx    ON revenue_records (created_at);
+CREATE INDEX IF NOT EXISTS revenue_records_pickup_date_idx    ON revenue_records (pickup_date);
+CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx     ON revenue_records (created_at DESC);
 
--- Unique constraint on booking_id (safe to add even if table pre-exists)
+-- Unique booking_id constraint (idempotent — safe even if table already has rows)
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'revenue_records'
-      AND constraint_name = 'revenue_records_booking_id_unique'
-      AND constraint_type = 'UNIQUE'
+    WHERE  table_name      = 'revenue_records'
+      AND  constraint_name = 'revenue_records_booking_id_unique'
+      AND  constraint_type = 'UNIQUE'
   ) THEN
-    -- Remove duplicates first (keeps oldest row per booking_id)
+    -- Remove duplicates first (keep oldest per booking_id)
     DELETE FROM revenue_records
     WHERE id NOT IN (
       SELECT DISTINCT ON (booking_id) id
-      FROM revenue_records
-      ORDER BY booking_id, created_at ASC
+      FROM   revenue_records
+      ORDER  BY booking_id, created_at ASC
     );
-    ALTER TABLE revenue_records ADD CONSTRAINT revenue_records_booking_id_unique UNIQUE (booking_id);
+    ALTER TABLE revenue_records
+      ADD CONSTRAINT revenue_records_booking_id_unique UNIQUE (booking_id);
   END IF;
 END $$;
 
--- Seed real 2026 revenue records
+DROP TRIGGER IF EXISTS revenue_records_updated_at ON revenue_records;
+CREATE TRIGGER revenue_records_updated_at
+  BEFORE UPDATE ON revenue_records
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ── Seed real paid bookings ───────────────────────────────────────────────────
 INSERT INTO revenue_records (
   booking_id, vehicle_id, customer_name, customer_phone, customer_email,
   pickup_date, return_date, gross_amount, deposit_amount, refund_amount,
   payment_method, payment_status, notes, override_by_admin
 ) VALUES
-  ('bk-da-2026-0321', 'camry2013', 'David Agbebaku', '+13463814616', 'davosama15@gmail.com',
-   '2026-03-21', '2026-03-28', 479.59, 0, 0, 'stripe', 'paid', '7-day rental', true),
-  ('bk-ms-2026-0313', 'camry',     'Mariatu Sillah',  '+12137296017', 'marysillah23@gamil.com',
-   '2026-03-13', '2026-03-17', 200.00, 0, 0, 'cash',   'paid', '4-day rental', true),
-  ('bk-bg-2026-0219', 'camry',     'Bernard Gilot',   '+14075586386', 'gilot42@gmail.com',
-   '2026-02-19', '2026-03-02', 785.00, 0, 300.00, 'cash', 'partial', '11-day rental — $300 refunded (car broke down)', true)
+  ('bk-da-2026-0321', 'camry2013', 'David Agbebaku',  '+13463814616', 'davosama15@gmail.com',
+   '2026-03-21', '2026-03-28',  479.59, 0,   0,      'stripe', 'paid',    '7-day rental',                                   true),
+  ('bk-ms-2026-0313', 'camry',     'Mariatu Sillah',   '+12137296017', 'marysillah23@gmail.com',
+   '2026-03-13', '2026-03-17',  200.00, 0,   0,      'cash',   'paid',    '4-day rental',                                   true),
+  ('bk-bg-2026-0219', 'camry',     'Bernard Gilot',    '+14075586386', 'gilot42@gmail.com',
+   '2026-02-19', '2026-03-02',  785.00, 0, 300.00,   'cash',   'partial', '11-day rental — $300 refunded (car broke down)', true)
 ON CONFLICT (booking_id) DO NOTHING;
 
 
 -- =============================================================================
--- 5. EXPENSES
+-- STEP 5  EXPENSES
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS expenses (
@@ -202,52 +323,83 @@ CREATE INDEX IF NOT EXISTS expenses_date_idx       ON expenses (date DESC);
 
 
 -- =============================================================================
--- 6. CUSTOMERS
+-- STEP 6  CUSTOMERS
+-- Includes all columns from migrations 0014 (full_name, driver_license, risk_flag)
+-- and 0016 (no_show_count).
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS customers (
-  id                 uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name               text        NOT NULL,
+  id                 uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+  name               text          NOT NULL,
   phone              text,
   email              text,
-  flagged            boolean     DEFAULT false,
-  banned             boolean     DEFAULT false,
+  flagged            boolean       DEFAULT false,
+  banned             boolean       DEFAULT false,
   flag_reason        text,
   ban_reason         text,
-  total_bookings     integer     DEFAULT 0,
+  total_bookings     integer       DEFAULT 0,
   total_spent        numeric(10,2) DEFAULT 0,
   first_booking_date date,
   last_booking_date  date,
   notes              text,
-  created_at         timestamptz NOT NULL DEFAULT now(),
-  updated_at         timestamptz NOT NULL DEFAULT now()
+  full_name          text,
+  driver_license     text,
+  risk_flag          text          DEFAULT 'low',
+  no_show_count      integer       NOT NULL DEFAULT 0,
+  created_at         timestamptz   NOT NULL DEFAULT now(),
+  updated_at         timestamptz   NOT NULL DEFAULT now()
 );
+
+DO $$ BEGIN ALTER TABLE customers ADD CONSTRAINT customers_risk_flag_check
+  CHECK (risk_flag IN ('low','medium','high'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE customers ADD CONSTRAINT customers_no_show_count_non_negative
+  CHECK (no_show_count >= 0);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS customers_phone_idx ON customers (phone)
   WHERE phone IS NOT NULL AND phone != '';
-CREATE INDEX IF NOT EXISTS customers_email_idx ON customers (email)
-  WHERE email IS NOT NULL AND email != '';
+CREATE INDEX IF NOT EXISTS customers_email_idx  ON customers (email)  WHERE email  IS NOT NULL AND email  != '';
 CREATE INDEX IF NOT EXISTS customers_banned_idx ON customers (banned);
 
+DROP TRIGGER IF EXISTS customers_updated_at ON customers;
+CREATE TRIGGER customers_updated_at
+  BEFORE UPDATE ON customers
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Seed real customers
-INSERT INTO customers (name, phone, email, total_bookings, total_spent, first_booking_date, last_booking_date)
+INSERT INTO customers (name, full_name, phone, email, total_bookings, total_spent,
+                       first_booking_date, last_booking_date, risk_flag, no_show_count)
 VALUES
-  ('David Agbebaku', '+13463814616', 'davosama15@gmail.com',   1, 479.59, '2026-03-21', '2026-03-28'),
-  ('Mariatu Sillah', '+12137296017', 'marysillah23@gamil.com', 1, 200.00, '2026-03-13', '2026-03-17'),
-  ('Bernard Gilot',  '+14075586386', 'gilot42@gmail.com',      1, 485.00, '2026-02-19', '2026-03-02')
+  ('David Agbebaku', 'David Agbebaku', '+13463814616', 'davosama15@gmail.com',   1, 479.59, '2026-03-21', '2026-03-28', 'low', 0),
+  ('Mariatu Sillah', 'Mariatu Sillah', '+12137296017', 'marysillah23@gmail.com', 1, 200.00, '2026-03-13', '2026-03-17', 'low', 0),
+  ('Bernard Gilot',  'Bernard Gilot',  '+14075586386', 'gilot42@gmail.com',      1, 485.00, '2026-02-19', '2026-03-02', 'low', 0)
 ON CONFLICT (phone) DO UPDATE
-  SET
-    name               = EXCLUDED.name,
-    email              = EXCLUDED.email,
-    total_bookings     = EXCLUDED.total_bookings,
-    total_spent        = EXCLUDED.total_spent,
-    first_booking_date = EXCLUDED.first_booking_date,
-    last_booking_date  = EXCLUDED.last_booking_date,
-    updated_at         = now();
+  SET full_name          = COALESCE(customers.full_name, EXCLUDED.full_name),
+      name               = EXCLUDED.name,
+      email              = COALESCE(customers.email, EXCLUDED.email),
+      total_bookings     = GREATEST(customers.total_bookings, EXCLUDED.total_bookings),
+      total_spent        = GREATEST(customers.total_spent,    EXCLUDED.total_spent),
+      first_booking_date = LEAST   (customers.first_booking_date, EXCLUDED.first_booking_date),
+      last_booking_date  = GREATEST(customers.last_booking_date,  EXCLUDED.last_booking_date),
+      updated_at         = now();
+
+-- Back-fill full_name / risk_flag for any pre-existing rows that lack them
+UPDATE customers
+   SET full_name = COALESCE(full_name, name),
+       risk_flag = CASE
+                     WHEN risk_flag IS NOT NULL AND risk_flag != 'low' THEN risk_flag
+                     WHEN banned  = true THEN 'high'
+                     WHEN flagged = true THEN 'medium'
+                     ELSE 'low'
+                   END
+ WHERE full_name IS NULL
+    OR (risk_flag = 'low' AND (flagged = true OR banned = true));
 
 
 -- =============================================================================
--- 7. BOOKING STATUS HISTORY  (audit trail)
+-- STEP 7  BOOKING STATUS HISTORY  (audit trail)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS booking_status_history (
@@ -266,7 +418,7 @@ CREATE INDEX IF NOT EXISTS bsh_changed_at_idx ON booking_status_history (changed
 
 
 -- =============================================================================
--- 8. PAYMENT TRANSACTIONS
+-- STEP 8  PAYMENT TRANSACTIONS  (full payment audit log)
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS payment_transactions (
@@ -286,11 +438,11 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
 
 CREATE INDEX IF NOT EXISTS pt_booking_id_idx ON payment_transactions (booking_id);
 CREATE INDEX IF NOT EXISTS pt_vehicle_id_idx ON payment_transactions (vehicle_id);
-CREATE INDEX IF NOT EXISTS pt_created_at_idx ON payment_transactions (created_at);
+CREATE INDEX IF NOT EXISTS pt_created_at_idx ON payment_transactions (created_at DESC);
 
 
 -- =============================================================================
--- 9. SMS TEMPLATE OVERRIDES
+-- STEP 9  SMS TEMPLATE OVERRIDES
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS sms_template_overrides (
@@ -300,288 +452,126 @@ CREATE TABLE IF NOT EXISTS sms_template_overrides (
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
+DROP TRIGGER IF EXISTS sms_template_overrides_updated_at ON sms_template_overrides;
+CREATE TRIGGER sms_template_overrides_updated_at
+  BEFORE UPDATE ON sms_template_overrides
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 
 -- =============================================================================
--- 10. SITE SETTINGS  (Admin CMS — business name, hero text, etc.)
+-- STEP 10  SITE SETTINGS  (Admin CMS — business info, hero text, policies)
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS public.site_settings (
-  key        TEXT        PRIMARY KEY,
-  value      TEXT,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS site_settings (
+  key        text        PRIMARY KEY,
+  value      text,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_site_settings_key ON public.site_settings (key);
+CREATE INDEX IF NOT EXISTS idx_site_settings_key ON site_settings (key);
 
--- Seed default site settings
-INSERT INTO public.site_settings (key, value) VALUES
-  ('business_name',        'SLY Transportation Services'),
-  ('phone',                ''),
-  ('whatsapp',             ''),
-  ('email',                ''),
-  ('instagram_url',        ''),
-  ('facebook_url',         ''),
-  ('tiktok_url',           ''),
-  ('twitter_url',          ''),
-  ('promo_banner_enabled', 'false'),
-  ('promo_banner_text',    ''),
-  ('hero_title',           'Explore LA in Style'),
-  ('hero_subtitle',        'Affordable car rentals in Los Angeles'),
-  ('about_text',           ''),
-  ('policies_cancellation',''),
-  ('policies_damage',      ''),
-  ('policies_fuel',        ''),
-  ('policies_age',         ''),
-  ('service_area_notes',   ''),
-  ('pickup_instructions',  '')
+DROP TRIGGER IF EXISTS site_settings_updated_at ON site_settings;
+CREATE TRIGGER site_settings_updated_at
+  BEFORE UPDATE ON site_settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Seed defaults — never overwrite admin-customised values
+INSERT INTO site_settings (key, value) VALUES
+  ('business_name',           'SLY Transportation Services'),
+  ('slingshot_business_name', 'SLY SLINGSHOT RENTALS'),
+  ('phone',                   ''),
+  ('whatsapp',                ''),
+  ('email',                   ''),
+  ('instagram_url',           ''),
+  ('facebook_url',            ''),
+  ('tiktok_url',              ''),
+  ('twitter_url',             ''),
+  ('promo_banner_enabled',    'false'),
+  ('promo_banner_text',       ''),
+  ('hero_title',              'Explore LA in Style'),
+  ('hero_subtitle',           'Affordable car rentals in Los Angeles'),
+  ('about_text',              ''),
+  ('policies_cancellation',   ''),
+  ('policies_damage',         ''),
+  ('policies_fuel',           ''),
+  ('policies_age',            ''),
+  ('service_area_notes',      ''),
+  ('pickup_instructions',     '')
 ON CONFLICT (key) DO NOTHING;
 
 
 -- =============================================================================
--- 11. CONTENT BLOCKS  (FAQs, announcements, testimonials)
+-- STEP 11  CONTENT BLOCKS  (FAQs, announcements, testimonials)
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS public.content_blocks (
-  block_id        UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  type            TEXT        NOT NULL CHECK (type IN ('faq', 'announcement', 'testimonial')),
-  title           TEXT,
-  body            TEXT,
-  author_name     TEXT,
-  author_location TEXT,
-  sort_order      INTEGER     NOT NULL DEFAULT 0,
-  active          BOOLEAN     NOT NULL DEFAULT TRUE,
-  expires_at      TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS content_blocks (
+  block_id        uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  type            text        NOT NULL CHECK (type IN ('faq','announcement','testimonial')),
+  title           text,
+  body            text,
+  author_name     text,
+  author_location text,
+  sort_order      integer     NOT NULL DEFAULT 0,
+  active          boolean     NOT NULL DEFAULT true,
+  expires_at      timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_content_blocks_type   ON public.content_blocks (type);
-CREATE INDEX IF NOT EXISTS idx_content_blocks_active ON public.content_blocks (active);
-CREATE INDEX IF NOT EXISTS idx_content_blocks_sort   ON public.content_blocks (sort_order, created_at);
+CREATE INDEX IF NOT EXISTS idx_content_blocks_type   ON content_blocks (type);
+CREATE INDEX IF NOT EXISTS idx_content_blocks_active ON content_blocks (active);
+CREATE INDEX IF NOT EXISTS idx_content_blocks_sort   ON content_blocks (sort_order, created_at);
 
--- Seed starter FAQ content blocks (only if table is empty)
-INSERT INTO public.content_blocks (type, title, body, sort_order, active)
+DROP TRIGGER IF EXISTS content_blocks_updated_at ON content_blocks;
+CREATE TRIGGER content_blocks_updated_at
+  BEFORE UPDATE ON content_blocks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Seed starter FAQs (only when table is empty)
+INSERT INTO content_blocks (type, title, body, sort_order, active)
 SELECT type, title, body, sort_order, active FROM (VALUES
-  ('faq', 'What is the minimum rental age?',    'The minimum age to rent is 21 years old. A valid driver''s license is required.', 1, true),
-  ('faq', 'Do you offer airport pickup?',        'Yes, we offer pickup and drop-off at major LA area airports. Please contact us to arrange.', 2, true),
-  ('faq', 'What forms of payment do you accept?','We accept all major credit cards via Stripe. Payments are processed securely online.', 3, true),
-  ('faq', 'Is there a security deposit?',        'The Slingshot requires a $150 refundable security deposit collected at pickup. The Camry has no deposit.', 4, true)
+  ('faq'::text, 'What is the minimum rental age?',
+   'The minimum age to rent is 21 years old. A valid driver''s license is required.',         1, true),
+  ('faq'::text, 'Do you offer airport pickup?',
+   'Yes, we offer pickup and drop-off at major LA area airports. Contact us to arrange.',     2, true),
+  ('faq'::text, 'What forms of payment do you accept?',
+   'We accept all major credit cards via Stripe. Payments are processed securely online.',    3, true),
+  ('faq'::text, 'Is there a security deposit?',
+   'The Slingshot requires a $150 refundable security deposit. The Camry has no deposit.',   4, true)
 ) AS v(type, title, body, sort_order, active)
-WHERE NOT EXISTS (SELECT 1 FROM public.content_blocks);
+WHERE NOT EXISTS (SELECT 1 FROM content_blocks);
 
 
 -- =============================================================================
--- 12. CONTENT REVISIONS  (Admin CMS revision history / rollback)
+-- STEP 12  CONTENT REVISIONS  (CMS revision history / rollback)
 -- =============================================================================
 
-CREATE TABLE IF NOT EXISTS public.content_revisions (
-  id            BIGSERIAL   PRIMARY KEY,
-  resource_type TEXT        NOT NULL,
-  resource_id   TEXT        NOT NULL,
-  before        JSONB,
-  after         JSONB,
-  changed_keys  TEXT[],
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS content_revisions (
+  id            bigserial   PRIMARY KEY,
+  resource_type text        NOT NULL,
+  resource_id   text        NOT NULL,
+  before        jsonb,
+  after         jsonb,
+  changed_keys  text[],
+  created_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_content_revisions_resource
-  ON public.content_revisions (resource_type, resource_id);
+  ON content_revisions (resource_type, resource_id);
 CREATE INDEX IF NOT EXISTS idx_content_revisions_created
-  ON public.content_revisions (created_at DESC);
+  ON content_revisions (created_at DESC);
 
 
 -- =============================================================================
--- 13. VIEW — vehicle_revenue_summary
+-- STEP 13  NORMALISED RENTAL TABLES
+--          bookings + payments + blocked_dates + revenue
+--          (Migrations 0014, 0015, 0017 fully integrated)
 -- =============================================================================
 
-CREATE OR REPLACE VIEW vehicle_revenue_summary AS
-SELECT
-  vehicle_id,
-  COUNT(*) FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS booking_count,
-  COUNT(*) FILTER (WHERE is_cancelled)                        AS cancelled_count,
-  COUNT(*) FILTER (WHERE is_no_show)                          AS no_show_count,
-  SUM(gross_amount)  FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS total_gross,
-  SUM(refund_amount)                                                      AS total_refunds,
-  SUM(net_amount)    FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS total_net,
-  SUM(deposit_amount) FILTER (WHERE NOT is_cancelled)                    AS total_deposits,
-  MAX(return_date)  AS last_return_date,
-  MIN(pickup_date)  AS first_pickup_date
-FROM revenue_records
-GROUP BY vehicle_id;
-
-
--- =============================================================================
--- 14. AUTO-UPDATE updated_at TRIGGER FUNCTION
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$;
-
--- Attach trigger to every table that has an updated_at column
-DO $$
-DECLARE
-  tbl TEXT;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'revenue_records',
-    'protection_plans',
-    'customers',
-    'system_settings',
-    'content_blocks',
-    'site_settings',
-    'sms_template_overrides'
-  ]
-  LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_trigger
-      WHERE tgname = tbl || '_updated_at'
-    ) THEN
-      EXECUTE format(
-        'CREATE TRIGGER %I
-         BEFORE UPDATE ON %I
-         FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()',
-        tbl || '_updated_at', tbl
-      );
-    END IF;
-  END LOOP;
-END $$;
-
-
--- =============================================================================
--- DONE
--- All 12 tables, 1 view, and all triggers are now in place.
--- You can run this script again at any time — it is fully idempotent.
--- (Corresponds to migrations 0001 – 0010)
--- =============================================================================
-
-
--- =============================================================================
--- 15. VEHICLE IMAGE STORAGE BUCKET
--- =============================================================================
--- Creates a public Supabase Storage bucket called "vehicle-images" so the admin
--- panel can upload vehicle photos directly from the Edit/Add Vehicle modal.
-
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'vehicle-images',
-  'vehicle-images',
-  true,
-  5242880,
-  ARRAY['image/jpeg','image/png','image/webp','image/gif']
-)
-ON CONFLICT (id) DO UPDATE
-  SET public             = true,
-      file_size_limit    = 5242880,
-      allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','image/gif'];
-
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "vehicle-images: public read"   ON storage.objects;
-DROP POLICY IF EXISTS "vehicle-images: service write" ON storage.objects;
-
-CREATE POLICY "vehicle-images: public read"
-  ON storage.objects
-  FOR SELECT
-  USING (bucket_id = 'vehicle-images');
-
-CREATE POLICY "vehicle-images: service write"
-  ON storage.objects
-  FOR ALL
-  USING     (bucket_id = 'vehicle-images' AND auth.role() = 'service_role')
-  WITH CHECK (bucket_id = 'vehicle-images' AND auth.role() = 'service_role');
-
-
--- =============================================================================
--- 16. ENSURE VEHICLE NAMES IN JSONB DATA
--- =============================================================================
--- (Migration 0012) — Patches any vehicle rows where vehicle_name is missing or
--- empty inside the JSONB data column.  Safe to re-run.
-
-UPDATE vehicles
-SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Slingshot R'::text)), updated_at = now()
-WHERE vehicle_id = 'slingshot'   AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
-
-UPDATE vehicles
-SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2012'::text)), updated_at = now()
-WHERE vehicle_id = 'camry'       AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
-
-UPDATE vehicles
-SET   data = jsonb_set(data, '{vehicle_name}', to_jsonb('Camry 2013 SE'::text)), updated_at = now()
-WHERE vehicle_id = 'camry2013'   AND (data->>'vehicle_name' IS NULL OR data->>'vehicle_name' = '');
-
-
--- =============================================================================
--- 17. RENTAL MANAGEMENT BACKEND
--- =============================================================================
--- (Migration 0014) — Adds normalized columns to vehicles/customers, creates
--- bookings, payments, blocked_dates, revenue tables, and PG triggers.
--- Safe to re-run: all statements use IF NOT EXISTS / ON CONFLICT guards.
-
--- ── 17a. Normalized vehicle columns ──────────────────────────────────────────
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_name   text;
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vehicle_type   text;
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS daily_price    numeric(10,2);
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS deposit_amount numeric(10,2);
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS rental_status  text DEFAULT 'available';
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mileage        numeric(10,0) DEFAULT 0;
-ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS created_at     timestamptz   DEFAULT now();
-
-DO $$
-BEGIN
-  ALTER TABLE vehicles ADD CONSTRAINT vehicles_rental_status_check
-    CHECK (rental_status IN ('available', 'rented', 'maintenance'));
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-UPDATE vehicles SET
-  vehicle_name   = COALESCE(vehicle_name,   data->>'vehicle_name'),
-  vehicle_type   = COALESCE(vehicle_type,   data->>'type'),
-  daily_price    = COALESCE(daily_price,    CASE
-    WHEN vehicle_id IN ('slingshot','slingshot2','slingshot3') THEN 350
-    WHEN vehicle_id IN ('camry','camry2013')                   THEN  55
-    ELSE 0
-  END),
-  deposit_amount = COALESCE(deposit_amount, CASE
-    WHEN vehicle_id IN ('slingshot','slingshot2','slingshot3') THEN 150
-    ELSE 0
-  END),
-  rental_status  = COALESCE(rental_status, 'available'),
-  mileage        = COALESCE(mileage, 0),
-  created_at     = COALESCE(created_at, now())
-WHERE vehicle_name IS NULL OR vehicle_type IS NULL OR daily_price IS NULL;
-
--- ── 17b. Normalized customer columns ─────────────────────────────────────────
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS full_name      text;
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS driver_license text;
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS risk_flag      text DEFAULT 'low';
-
-DO $$
-BEGIN
-  ALTER TABLE customers ADD CONSTRAINT customers_risk_flag_check
-    CHECK (risk_flag IN ('low', 'medium', 'high'));
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
-
-UPDATE customers SET
-  full_name = COALESCE(full_name, name),
-  risk_flag = CASE
-    WHEN risk_flag IS NOT NULL AND risk_flag NOT IN ('low') THEN risk_flag
-    WHEN banned  = true THEN 'high'
-    WHEN flagged = true THEN 'medium'
-    ELSE 'low'
-  END
-WHERE full_name IS NULL
-   OR (risk_flag = 'low' AND (flagged = true OR banned = true));
-
--- ── 17c. bookings table ───────────────────────────────────────────────────────
+-- ── 13a. bookings ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS bookings (
   id                uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_ref       text          UNIQUE,
+  booking_ref       text          UNIQUE,          -- bookingId in bookings.json
   customer_id       uuid          REFERENCES customers(id) ON DELETE SET NULL,
   vehicle_id        text          REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
   pickup_date       date,
@@ -595,8 +585,8 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_status    text          NOT NULL DEFAULT 'unpaid',
   notes             text,
   payment_method    text,
-  activated_at      timestamptz,
-  completed_at      timestamptz,
+  activated_at      timestamptz,  -- stamped when status → 'active'   (migration 0017)
+  completed_at      timestamptz,  -- stamped when status → 'completed' (migration 0017)
   created_at        timestamptz   NOT NULL DEFAULT now(),
   updated_at        timestamptz   NOT NULL DEFAULT now()
 );
@@ -615,29 +605,14 @@ CREATE INDEX IF NOT EXISTS bookings_pickup_date_idx ON bookings (pickup_date);
 CREATE INDEX IF NOT EXISTS bookings_return_date_idx ON bookings (return_date);
 CREATE INDEX IF NOT EXISTS bookings_status_idx      ON bookings (status);
 CREATE INDEX IF NOT EXISTS bookings_created_at_idx  ON bookings (created_at DESC);
+CREATE INDEX IF NOT EXISTS bookings_booking_ref_idx ON bookings (booking_ref);
 
 DROP TRIGGER IF EXISTS bookings_updated_at ON bookings;
 CREATE TRIGGER bookings_updated_at
   BEFORE UPDATE ON bookings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE OR REPLACE FUNCTION on_booking_status_timestamps()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF TG_OP = 'UPDATE' AND OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF;
-  CASE NEW.status
-    WHEN 'active'    THEN IF NEW.activated_at IS NULL THEN NEW.activated_at := now(); END IF;
-    WHEN 'completed' THEN IF NEW.completed_at IS NULL THEN NEW.completed_at := now(); END IF;
-  END CASE;
-  RETURN NEW;
-END; $$;
-
-DROP TRIGGER IF EXISTS bookings_status_timestamps ON bookings;
-CREATE TRIGGER bookings_status_timestamps
-  BEFORE INSERT OR UPDATE OF status ON bookings
-  FOR EACH ROW EXECUTE FUNCTION on_booking_status_timestamps();
-
--- ── 17d. payments table ───────────────────────────────────────────────────────
+-- ── 13b. payments ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS payments (
   id          uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id  uuid          REFERENCES bookings(id) ON DELETE CASCADE,
@@ -660,7 +635,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE INDEX IF NOT EXISTS payments_booking_id_idx ON payments (booking_id);
 CREATE INDEX IF NOT EXISTS payments_created_at_idx ON payments (created_at DESC);
 
--- ── 17e. blocked_dates table ──────────────────────────────────────────────────
+-- ── 13c. blocked_dates ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS blocked_dates (
   id          uuid  PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_id  text  REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
@@ -678,7 +653,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS blocked_dates_vehicle_dates_reason_idx
 CREATE INDEX IF NOT EXISTS blocked_dates_vehicle_id_idx ON blocked_dates (vehicle_id);
 CREATE INDEX IF NOT EXISTS blocked_dates_start_date_idx ON blocked_dates (start_date);
 
--- ── 17f. revenue table ────────────────────────────────────────────────────────
+-- ── 13d. revenue  (trigger-managed FK ledger — lightweight) ───────────────────
 CREATE TABLE IF NOT EXISTS revenue (
   id          uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id  uuid          UNIQUE REFERENCES bookings(id) ON DELETE CASCADE,
@@ -692,156 +667,16 @@ CREATE TABLE IF NOT EXISTS revenue (
 CREATE INDEX IF NOT EXISTS revenue_vehicle_id_idx ON revenue (vehicle_id);
 CREATE INDEX IF NOT EXISTS revenue_created_at_idx ON revenue (created_at DESC);
 
--- ── 17g. Trigger functions ────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION check_booking_conflicts()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE v_conflict_id uuid; v_blocked_vid text;
-BEGIN
-  IF NEW.status = 'cancelled' THEN RETURN NEW; END IF;
-  IF NEW.pickup_date IS NULL OR NEW.return_date IS NULL THEN RETURN NEW; END IF;
-  SELECT id INTO v_conflict_id FROM bookings
-  WHERE vehicle_id = NEW.vehicle_id AND status NOT IN ('cancelled')
-    AND pickup_date <= NEW.return_date AND return_date >= NEW.pickup_date LIMIT 1;
-  IF FOUND THEN
-    RAISE EXCEPTION 'Booking conflict: vehicle % is already booked for % to % (conflicts with %)',
-      NEW.vehicle_id, NEW.pickup_date, NEW.return_date, v_conflict_id;
-  END IF;
-  SELECT vehicle_id INTO v_blocked_vid FROM blocked_dates
-  WHERE vehicle_id = NEW.vehicle_id AND reason != 'booking'
-    AND start_date <= NEW.return_date AND end_date >= NEW.pickup_date LIMIT 1;
-  IF FOUND THEN
-    RAISE EXCEPTION 'Date conflict: vehicle % has blocked dates overlapping with % to %',
-      NEW.vehicle_id, NEW.pickup_date, NEW.return_date;
-  END IF;
-  RETURN NEW;
-END; $$;
-
-DROP TRIGGER IF EXISTS bookings_check_conflicts ON bookings;
-CREATE TRIGGER bookings_check_conflicts
-  BEFORE INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION check_booking_conflicts();
-
-CREATE OR REPLACE FUNCTION on_booking_create()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.pickup_date IS NOT NULL AND NEW.return_date IS NOT NULL AND NEW.status NOT IN ('cancelled') THEN
-    INSERT INTO blocked_dates (vehicle_id, start_date, end_date, reason)
-    VALUES (NEW.vehicle_id, NEW.pickup_date, NEW.return_date, 'booking')
-    ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
-  END IF;
-  IF NEW.total_price > 0 AND NEW.status NOT IN ('cancelled') THEN
-    INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
-    VALUES (NEW.id, NEW.vehicle_id, NEW.total_price, 0) ON CONFLICT (booking_id) DO NOTHING;
-  END IF;
-  IF NEW.status = 'active' THEN
-    UPDATE vehicles SET rental_status = 'rented' WHERE vehicle_id = NEW.vehicle_id;
-  END IF;
-  RETURN NEW;
-END; $$;
-
-DROP TRIGGER IF EXISTS bookings_after_insert ON bookings;
-CREATE TRIGGER bookings_after_insert
-  AFTER INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_create();
-
-CREATE OR REPLACE FUNCTION on_booking_status_change()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF OLD.status = NEW.status THEN RETURN NEW; END IF;
-  CASE NEW.status
-    WHEN 'active' THEN
-      UPDATE vehicles SET rental_status = 'rented' WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'completed' THEN
-      UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'cancelled' THEN
-      DELETE FROM blocked_dates WHERE vehicle_id = NEW.vehicle_id
-        AND start_date = NEW.pickup_date AND end_date = NEW.return_date AND reason = 'booking';
-      IF NEW.deposit_paid = 0 THEN DELETE FROM revenue WHERE booking_id = NEW.id; END IF;
-      IF OLD.status = 'active' THEN
-        UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
-      END IF;
-    ELSE NULL;
-  END CASE;
-  RETURN NEW;
-END; $$;
-
-DROP TRIGGER IF EXISTS bookings_after_status_change ON bookings;
-CREATE TRIGGER bookings_after_status_change
-  AFTER UPDATE OF status ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_status_change();
-
-CREATE OR REPLACE FUNCTION on_payment_create()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE v_total numeric; v_paid numeric; v_pstatus text;
-BEGIN
-  SELECT total_price, deposit_paid INTO v_total, v_paid FROM bookings WHERE id = NEW.booking_id;
-  IF NOT FOUND THEN RETURN NEW; END IF;
-  IF NEW.type = 'refund' THEN v_paid := GREATEST(0, v_paid - NEW.amount);
-  ELSE v_paid := v_paid + NEW.amount; END IF;
-  IF v_total > 0 AND v_paid >= v_total THEN v_pstatus := 'paid';
-  ELSIF v_paid > 0 THEN v_pstatus := 'partial';
-  ELSE v_pstatus := 'unpaid'; END IF;
-  UPDATE bookings SET deposit_paid = v_paid,
-    remaining_balance = GREATEST(0, v_total - v_paid), payment_status = v_pstatus
-  WHERE id = NEW.booking_id;
-  IF NEW.type != 'refund' THEN
-    UPDATE revenue SET gross = v_paid WHERE booking_id = NEW.booking_id;
-  END IF;
-  RETURN NEW;
-END; $$;
-
-DROP TRIGGER IF EXISTS payments_after_insert ON payments;
-CREATE TRIGGER payments_after_insert
-  AFTER INSERT ON payments FOR EACH ROW EXECUTE FUNCTION on_payment_create();
-
--- ── 17h. Seed migrated bookings ───────────────────────────────────────────────
-INSERT INTO customers (name, full_name, phone, email, risk_flag)
-VALUES
-  ('Mariatu Sillah', 'Mariatu Sillah', '+12137296017', 'marysillah23@gamil.com', 'low'),
-  ('Bernard Gilot',  'Bernard Gilot',  '+14075586386', 'gilot42@gmail.com',      'low'),
-  ('David Agbebaku', 'David Agbebaku', '+13463814616', 'davosama15@gmail.com',   'low')
-ON CONFLICT (phone) DO UPDATE SET
-  full_name  = COALESCE(customers.full_name,  EXCLUDED.full_name),
-  email      = COALESCE(customers.email,      EXCLUDED.email),
-  risk_flag  = COALESCE(customers.risk_flag,  EXCLUDED.risk_flag),
-  updated_at = now();
-
-ALTER TABLE bookings DISABLE TRIGGER bookings_check_conflicts;
-
-INSERT INTO bookings (booking_ref, customer_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, remaining_balance, payment_status, notes, payment_method, created_at)
-SELECT 'bk-ms-2026-0313', c.id, 'camry', '2026-03-13', '2026-03-17', '11:00:00', '11:00:00', 'completed', 200.00, 200.00, 0.00, 'paid', '4-day rental', 'cash', '2026-03-12 18:00:00+00'
-FROM customers c WHERE c.phone = '+12137296017' ON CONFLICT (booking_ref) DO NOTHING;
-
-INSERT INTO bookings (booking_ref, customer_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, remaining_balance, payment_status, notes, payment_method, created_at)
-SELECT 'bk-bg-2026-0219', c.id, 'camry', '2026-02-19', '2026-03-02', '21:00:00', '21:00:00', 'completed', 485.00, 485.00, 0.00, 'paid', '$300 refunded — car broke down', 'cash', '2026-02-18 18:00:00+00'
-FROM customers c WHERE c.phone = '+14075586386' ON CONFLICT (booking_ref) DO NOTHING;
-
-INSERT INTO bookings (booking_ref, customer_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, remaining_balance, payment_status, notes, payment_method, created_at)
-SELECT 'bk-da-2026-0321', c.id, 'camry2013', '2026-03-21', '2026-03-28', '22:45:00', '05:45:00', 'active', 479.59, 479.59, 0.00, 'paid', '7-day rental', 'stripe', '2026-03-20 18:00:00+00'
-FROM customers c WHERE c.phone = '+13463814616' ON CONFLICT (booking_ref) DO NOTHING;
-
-ALTER TABLE bookings ENABLE TRIGGER bookings_check_conflicts;
-
-INSERT INTO blocked_dates (vehicle_id, start_date, end_date, reason)
-SELECT b.vehicle_id, b.pickup_date, b.return_date, 'booking' FROM bookings b
-WHERE b.booking_ref IN ('bk-ms-2026-0313','bk-bg-2026-0219','bk-da-2026-0321') AND b.status NOT IN ('cancelled')
-ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
-
-INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
-SELECT b.id, b.vehicle_id, b.deposit_paid, 0 FROM bookings b
-WHERE b.booking_ref IN ('bk-ms-2026-0313','bk-bg-2026-0219','bk-da-2026-0321') AND b.deposit_paid > 0
-ON CONFLICT (booking_id) DO NOTHING;
-
 
 -- =============================================================================
--- 18. CONFLICT & STATUS FIXES
+-- STEP 14  TRIGGER FUNCTIONS
+-- All migrations 0014 / 0015 / 0016 / 0017 combined into one authoritative set.
 -- =============================================================================
--- (Migration 0015) — Adds 'reserved' rental_status, datetime-aware conflict
--- check, and full status-flow vehicle sync.
 
--- 18a. Drop and recreate rental_status constraint to include 'reserved'
-ALTER TABLE vehicles DROP CONSTRAINT IF EXISTS vehicles_rental_status_check;
-ALTER TABLE vehicles ADD CONSTRAINT vehicles_rental_status_check
-  CHECK (rental_status IN ('available', 'reserved', 'rented', 'maintenance'));
-
--- 18b. Helper function for combining date + time columns into a timestamp
+-- ── 14a. booking_datetime helper (migration 0015) ─────────────────────────────
+-- Combines a date column and an optional time column into a precise timestamp.
+-- When time is NULL and is_end=false → midnight of d (start of day).
+-- When time is NULL and is_end=true  → midnight of d+1 (exclusive end boundary).
 CREATE OR REPLACE FUNCTION booking_datetime(d date, t time, is_end boolean DEFAULT false)
 RETURNS timestamptz LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE
@@ -851,113 +686,229 @@ RETURNS timestamptz LANGUAGE sql IMMUTABLE AS $$
   END
 $$;
 
--- 18c. Datetime-aware booking conflict check
+-- ── 14b. check_booking_conflicts  (datetime-aware, migration 0015) ────────────
+-- BEFORE INSERT on bookings — rejects any booking that overlaps an existing one.
 CREATE OR REPLACE FUNCTION check_booking_conflicts()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE v_conflict_id uuid; v_blocked_vid text; new_start timestamptz; new_end timestamptz;
+DECLARE
+  v_conflict_id uuid;
+  v_blocked_vid text;
+  new_start     timestamptz;
+  new_end       timestamptz;
 BEGIN
   IF NEW.status = 'cancelled' THEN RETURN NEW; END IF;
-  IF NEW.pickup_date IS NULL THEN RETURN NEW; END IF;
+  IF NEW.pickup_date IS NULL  THEN RETURN NEW; END IF;
+
   new_start := booking_datetime(NEW.pickup_date, NEW.pickup_time, false);
   new_end   := booking_datetime(NEW.return_date, NEW.return_time, true);
-  SELECT b.id INTO v_conflict_id FROM bookings b
-  WHERE b.vehicle_id = NEW.vehicle_id AND b.status NOT IN ('cancelled')
-    AND b.id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
-    AND booking_datetime(b.pickup_date, b.pickup_time, false) < new_end
-    AND booking_datetime(b.return_date, b.return_time, true)  > new_start LIMIT 1;
+
+  SELECT b.id INTO v_conflict_id
+  FROM   bookings b
+  WHERE  b.vehicle_id = NEW.vehicle_id
+    AND  b.status NOT IN ('cancelled')
+    AND  b.id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
+    AND  booking_datetime(b.pickup_date, b.pickup_time, false) < new_end
+    AND  booking_datetime(b.return_date, b.return_time, true)  > new_start
+  LIMIT 1;
+
   IF FOUND THEN
-    RAISE EXCEPTION 'Booking conflict: vehicle % overlapping % to % (booking %)',
-      NEW.vehicle_id, new_start AT TIME ZONE 'UTC', new_end AT TIME ZONE 'UTC', v_conflict_id;
+    RAISE EXCEPTION
+      'Booking conflict: vehicle % is already booked overlapping % to % (conflicts with %)',
+      NEW.vehicle_id,
+      new_start AT TIME ZONE 'UTC',
+      new_end   AT TIME ZONE 'UTC',
+      v_conflict_id;
   END IF;
-  SELECT bd.vehicle_id INTO v_blocked_vid FROM blocked_dates bd
-  WHERE bd.vehicle_id = NEW.vehicle_id AND bd.reason != 'booking'
-    AND bd.start_date <= COALESCE(NEW.return_date, NEW.pickup_date)
-    AND bd.end_date   >= NEW.pickup_date LIMIT 1;
+
+  -- Check maintenance / manual blocked_dates only (not 'booking' — managed by bookings table)
+  SELECT bd.vehicle_id INTO v_blocked_vid
+  FROM   blocked_dates bd
+  WHERE  bd.vehicle_id = NEW.vehicle_id
+    AND  bd.reason    != 'booking'
+    AND  bd.start_date <= COALESCE(NEW.return_date, NEW.pickup_date)
+    AND  bd.end_date   >= NEW.pickup_date
+  LIMIT 1;
+
   IF FOUND THEN
-    RAISE EXCEPTION 'Date conflict: vehicle % has blocked dates overlapping % to %',
+    RAISE EXCEPTION
+      'Date conflict: vehicle % has blocked dates overlapping % to %',
       NEW.vehicle_id, NEW.pickup_date, COALESCE(NEW.return_date, NEW.pickup_date);
   END IF;
+
   RETURN NEW;
-END; $$;
+END;
+$$;
 
 DROP TRIGGER IF EXISTS bookings_check_conflicts ON bookings;
 CREATE TRIGGER bookings_check_conflicts
-  BEFORE INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION check_booking_conflicts();
+  BEFORE INSERT ON bookings
+  FOR EACH ROW EXECUTE FUNCTION check_booking_conflicts();
 
--- 18d. Updated on_booking_create: approved → reserved, active → rented
+-- ── 14c. on_booking_create  (migration 0015) ──────────────────────────────────
+-- AFTER INSERT on bookings — auto-creates blocked_dates entry + revenue row,
+-- and syncs vehicle rental_status for 'approved' and 'active' inserts.
 CREATE OR REPLACE FUNCTION on_booking_create()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.pickup_date IS NOT NULL AND NEW.return_date IS NOT NULL AND NEW.status NOT IN ('cancelled') THEN
+  -- Block the vehicle dates for this booking period
+  IF NEW.pickup_date IS NOT NULL AND NEW.return_date IS NOT NULL
+     AND NEW.status NOT IN ('cancelled') THEN
     INSERT INTO blocked_dates (vehicle_id, start_date, end_date, reason)
     VALUES (NEW.vehicle_id, NEW.pickup_date, NEW.return_date, 'booking')
     ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
   END IF;
+
+  -- Auto-create a revenue row when the booking has a price
   IF NEW.total_price > 0 AND NEW.status NOT IN ('cancelled') THEN
     INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
-    VALUES (NEW.id, NEW.vehicle_id, NEW.total_price, 0) ON CONFLICT (booking_id) DO NOTHING;
+    VALUES (NEW.id, NEW.vehicle_id, NEW.total_price, 0)
+    ON CONFLICT (booking_id) DO NOTHING;
   END IF;
+
+  -- Sync vehicle rental_status based on initial status
   CASE NEW.status
     WHEN 'approved' THEN UPDATE vehicles SET rental_status = 'reserved' WHERE vehicle_id = NEW.vehicle_id;
     WHEN 'active'   THEN UPDATE vehicles SET rental_status = 'rented'   WHERE vehicle_id = NEW.vehicle_id;
     ELSE NULL;
   END CASE;
+
   RETURN NEW;
-END; $$;
+END;
+$$;
 
 DROP TRIGGER IF EXISTS bookings_after_insert ON bookings;
 CREATE TRIGGER bookings_after_insert
-  AFTER INSERT ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_create();
+  AFTER INSERT ON bookings
+  FOR EACH ROW EXECUTE FUNCTION on_booking_create();
 
--- 18e. Updated on_booking_status_change: full flow
+-- ── 14d. on_booking_status_change  (migration 0015) ──────────────────────────
+-- AFTER UPDATE OF status — implements the full rental lifecycle:
+--   pending   → vehicle available
+--   approved  → vehicle reserved
+--   active    → vehicle rented
+--   completed → vehicle available
+--   cancelled → remove blocked_dates, remove unpaid revenue, vehicle available
 CREATE OR REPLACE FUNCTION on_booking_status_change()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.status = NEW.status THEN RETURN NEW; END IF;
+  IF OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF;
+
   CASE NEW.status
-    WHEN 'pending'   THEN UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'approved'  THEN UPDATE vehicles SET rental_status = 'reserved'  WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'active'    THEN UPDATE vehicles SET rental_status = 'rented'    WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'completed' THEN UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
-    WHEN 'cancelled' THEN
-      DELETE FROM blocked_dates WHERE vehicle_id = NEW.vehicle_id
-        AND start_date = NEW.pickup_date AND end_date = NEW.return_date AND reason = 'booking';
-      IF NEW.deposit_paid = 0 THEN DELETE FROM revenue WHERE booking_id = NEW.id; END IF;
+    WHEN 'pending' THEN
       UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+
+    WHEN 'approved' THEN
+      UPDATE vehicles SET rental_status = 'reserved' WHERE vehicle_id = NEW.vehicle_id;
+
+    WHEN 'active' THEN
+      UPDATE vehicles SET rental_status = 'rented' WHERE vehicle_id = NEW.vehicle_id;
+
+    WHEN 'completed' THEN
+      UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+
+    WHEN 'cancelled' THEN
+      -- Remove the date block created for this booking
+      DELETE FROM blocked_dates
+      WHERE  vehicle_id = NEW.vehicle_id
+        AND  start_date = NEW.pickup_date
+        AND  end_date   = NEW.return_date
+        AND  reason     = 'booking';
+
+      -- Remove revenue row only when no payment has been collected
+      IF NEW.deposit_paid = 0 THEN
+        DELETE FROM revenue WHERE booking_id = NEW.id;
+      END IF;
+
+      UPDATE vehicles SET rental_status = 'available' WHERE vehicle_id = NEW.vehicle_id;
+
     ELSE NULL;
   END CASE;
+
   RETURN NEW;
-END; $$;
+END;
+$$;
 
 DROP TRIGGER IF EXISTS bookings_after_status_change ON bookings;
 CREATE TRIGGER bookings_after_status_change
-  AFTER UPDATE OF status ON bookings FOR EACH ROW EXECUTE FUNCTION on_booking_status_change();
+  AFTER UPDATE OF status ON bookings
+  FOR EACH ROW EXECUTE FUNCTION on_booking_status_change();
 
--- =============================================================================
--- (Migration 0016) — Adds no_show_count to customers and an automatic trigger
--- to keep it in sync whenever is_no_show changes on a revenue_records row.
--- =============================================================================
-
--- 19a. Add no_show_count column
-ALTER TABLE customers
-  ADD COLUMN IF NOT EXISTS no_show_count integer NOT NULL DEFAULT 0;
-
-DO $$
+-- ── 14e. on_booking_status_timestamps  (migration 0017) ──────────────────────
+-- BEFORE INSERT OR UPDATE OF status — auto-stamps activated_at / completed_at.
+CREATE OR REPLACE FUNCTION on_booking_status_timestamps()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-  ALTER TABLE customers
-    ADD CONSTRAINT customers_no_show_count_non_negative
-    CHECK (no_show_count >= 0);
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+  IF TG_OP = 'UPDATE' AND OLD.status IS NOT DISTINCT FROM NEW.status THEN
+    RETURN NEW;
+  END IF;
 
--- 19b. Trigger function: increment / decrement on is_no_show changes
+  CASE NEW.status
+    WHEN 'active'    THEN IF NEW.activated_at IS NULL THEN NEW.activated_at := now(); END IF;
+    WHEN 'completed' THEN IF NEW.completed_at IS NULL THEN NEW.completed_at := now(); END IF;
+    ELSE NULL;
+  END CASE;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS bookings_status_timestamps ON bookings;
+CREATE TRIGGER bookings_status_timestamps
+  BEFORE INSERT OR UPDATE OF status ON bookings
+  FOR EACH ROW EXECUTE FUNCTION on_booking_status_timestamps();
+
+-- ── 14f. on_payment_create ────────────────────────────────────────────────────
+-- AFTER INSERT on payments — recomputes deposit_paid / remaining_balance /
+-- payment_status on the parent booking row.
+CREATE OR REPLACE FUNCTION on_payment_create()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  v_total   numeric;
+  v_paid    numeric;
+  v_pstatus text;
+BEGIN
+  SELECT total_price, deposit_paid INTO v_total, v_paid FROM bookings WHERE id = NEW.booking_id;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+
+  IF   NEW.type = 'refund' THEN v_paid := GREATEST(0, v_paid - NEW.amount);
+  ELSE                          v_paid := v_paid + NEW.amount;
+  END IF;
+
+  v_pstatus := CASE
+    WHEN v_total > 0 AND v_paid >= v_total THEN 'paid'
+    WHEN v_paid  > 0                       THEN 'partial'
+    ELSE                                        'unpaid'
+  END;
+
+  UPDATE bookings
+     SET deposit_paid      = v_paid,
+         remaining_balance = GREATEST(0, v_total - v_paid),
+         payment_status    = v_pstatus
+   WHERE id = NEW.booking_id;
+
+  IF NEW.type != 'refund' THEN
+    UPDATE revenue SET gross = v_paid WHERE booking_id = NEW.booking_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS payments_after_insert ON payments;
+CREATE TRIGGER payments_after_insert
+  AFTER INSERT ON payments
+  FOR EACH ROW EXECUTE FUNCTION on_payment_create();
+
+-- ── 14g. update_customer_no_show_count  (migration 0016) ─────────────────────
+-- AFTER INSERT / UPDATE OF is_no_show / DELETE on revenue_records —
+-- keeps customers.no_show_count automatically in sync.
 CREATE OR REPLACE FUNCTION update_customer_no_show_count()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
   v_phone text;
   v_delta integer := 0;
 BEGIN
-  IF TG_OP = 'DELETE' THEN
+  IF    TG_OP = 'DELETE' THEN
     v_phone := OLD.customer_phone;
     IF OLD.is_no_show THEN v_delta := -1; END IF;
   ELSIF TG_OP = 'INSERT' THEN
@@ -983,9 +934,214 @@ BEGIN
 END;
 $$;
 
--- 19c. Attach trigger to revenue_records
 DROP TRIGGER IF EXISTS on_revenue_no_show_change ON revenue_records;
 CREATE TRIGGER on_revenue_no_show_change
   AFTER INSERT OR UPDATE OF is_no_show OR DELETE
   ON revenue_records
   FOR EACH ROW EXECUTE FUNCTION update_customer_no_show_count();
+
+
+-- =============================================================================
+-- STEP 15  VIEW: vehicle_revenue_summary
+-- Used by the Finance tab KPI cards and the Analytics page in admin-v2.
+-- =============================================================================
+
+CREATE OR REPLACE VIEW vehicle_revenue_summary AS
+SELECT
+  vehicle_id,
+  COUNT(*)                     FILTER (WHERE NOT is_cancelled AND NOT is_no_show) AS booking_count,
+  COUNT(*)                     FILTER (WHERE is_cancelled)                        AS cancelled_count,
+  COUNT(*)                     FILTER (WHERE is_no_show)                          AS no_show_count,
+  COALESCE(SUM(gross_amount)   FILTER (WHERE NOT is_cancelled AND NOT is_no_show), 0) AS total_gross,
+  COALESCE(SUM(refund_amount),                                                     0) AS total_refunds,
+  COALESCE(SUM(net_amount)     FILTER (WHERE NOT is_cancelled AND NOT is_no_show), 0) AS total_net,
+  COALESCE(SUM(deposit_amount) FILTER (WHERE NOT is_cancelled),                    0) AS total_deposits,
+  MAX(return_date)                                                                     AS last_return_date,
+  MIN(pickup_date)                                                                     AS first_pickup_date
+FROM revenue_records
+GROUP BY vehicle_id;
+
+
+-- =============================================================================
+-- STEP 16  VEHICLE IMAGE STORAGE BUCKET
+-- Public bucket for admin panel vehicle photo uploads.
+-- =============================================================================
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'vehicle-images', 'vehicle-images', true,
+  5242880,
+  ARRAY['image/jpeg','image/png','image/webp','image/gif']
+)
+ON CONFLICT (id) DO UPDATE
+  SET public             = true,
+      file_size_limit    = 5242880,
+      allowed_mime_types = ARRAY['image/jpeg','image/png','image/webp','image/gif'];
+
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "vehicle-images: public read"   ON storage.objects;
+DROP POLICY IF EXISTS "vehicle-images: service write" ON storage.objects;
+
+CREATE POLICY "vehicle-images: public read"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'vehicle-images');
+
+CREATE POLICY "vehicle-images: service write"
+  ON storage.objects FOR ALL
+  USING     (bucket_id = 'vehicle-images' AND auth.role() = 'service_role')
+  WITH CHECK (bucket_id = 'vehicle-images' AND auth.role() = 'service_role');
+
+
+-- =============================================================================
+-- STEP 17  DISABLE ROW LEVEL SECURITY
+-- The API uses SUPABASE_SERVICE_ROLE_KEY which bypasses RLS automatically,
+-- but disabling it explicitly prevents accidental permission errors.
+-- =============================================================================
+
+ALTER TABLE vehicles               DISABLE ROW LEVEL SECURITY;
+ALTER TABLE protection_plans       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE revenue_records        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses               DISABLE ROW LEVEL SECURITY;
+ALTER TABLE customers              DISABLE ROW LEVEL SECURITY;
+ALTER TABLE bookings               DISABLE ROW LEVEL SECURITY;
+ALTER TABLE payments               DISABLE ROW LEVEL SECURITY;
+ALTER TABLE blocked_dates          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE revenue                DISABLE ROW LEVEL SECURITY;
+ALTER TABLE booking_status_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_transactions   DISABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_template_overrides DISABLE ROW LEVEL SECURITY;
+ALTER TABLE site_settings          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE content_blocks         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE content_revisions      DISABLE ROW LEVEL SECURITY;
+
+
+-- =============================================================================
+-- STEP 18  SEED NORMALISED BOOKINGS  (real 2026 rentals)
+-- Must run after all triggers are in place. The conflict-check trigger is
+-- temporarily disabled so historical overlapping dates can be inserted cleanly.
+-- =============================================================================
+
+-- Ensure customers exist (already seeded in STEP 6 — this is idempotent)
+INSERT INTO customers (name, full_name, phone, email, risk_flag) VALUES
+  ('Mariatu Sillah', 'Mariatu Sillah', '+12137296017', 'marysillah23@gmail.com', 'low'),
+  ('Bernard Gilot',  'Bernard Gilot',  '+14075586386', 'gilot42@gmail.com',      'low'),
+  ('David Agbebaku', 'David Agbebaku', '+13463814616', 'davosama15@gmail.com',   'low')
+ON CONFLICT (phone) DO UPDATE
+  SET full_name  = COALESCE(customers.full_name,  EXCLUDED.full_name),
+      email      = COALESCE(customers.email,      EXCLUDED.email),
+      updated_at = now();
+
+-- Disable conflict trigger so historical data can be inserted cleanly
+ALTER TABLE bookings DISABLE TRIGGER bookings_check_conflicts;
+
+INSERT INTO bookings (booking_ref, customer_id, vehicle_id,
+                      pickup_date, return_date, pickup_time, return_time,
+                      status, total_price, deposit_paid, remaining_balance,
+                      payment_status, notes, payment_method, created_at)
+SELECT 'bk-ms-2026-0313', c.id, 'camry',
+       '2026-03-13', '2026-03-17', '11:00:00', '11:00:00',
+       'completed', 200.00, 200.00, 0.00, 'paid', '4-day rental', 'cash',
+       '2026-03-12 18:00:00+00'
+FROM customers c WHERE c.phone = '+12137296017'
+ON CONFLICT (booking_ref) DO NOTHING;
+
+INSERT INTO bookings (booking_ref, customer_id, vehicle_id,
+                      pickup_date, return_date, pickup_time, return_time,
+                      status, total_price, deposit_paid, remaining_balance,
+                      payment_status, notes, payment_method, created_at)
+SELECT 'bk-bg-2026-0219', c.id, 'camry',
+       '2026-02-19', '2026-03-02', '21:00:00', '21:00:00',
+       'completed', 485.00, 485.00, 0.00, 'paid', '$300 refunded — car broke down', 'cash',
+       '2026-02-18 18:00:00+00'
+FROM customers c WHERE c.phone = '+14075586386'
+ON CONFLICT (booking_ref) DO NOTHING;
+
+INSERT INTO bookings (booking_ref, customer_id, vehicle_id,
+                      pickup_date, return_date, pickup_time, return_time,
+                      status, total_price, deposit_paid, remaining_balance,
+                      payment_status, notes, payment_method, created_at)
+SELECT 'bk-da-2026-0321', c.id, 'camry2013',
+       '2026-03-21', '2026-03-28', '22:45:00', '05:45:00',
+       'completed', 479.59, 479.59, 0.00, 'paid', '7-day rental', 'stripe',
+       '2026-03-20 18:00:00+00'
+FROM customers c WHERE c.phone = '+13463814616'
+ON CONFLICT (booking_ref) DO NOTHING;
+
+-- Re-enable conflict trigger for all future bookings
+ALTER TABLE bookings ENABLE TRIGGER bookings_check_conflicts;
+
+-- Seed matching blocked_dates rows
+INSERT INTO blocked_dates (vehicle_id, start_date, end_date, reason)
+SELECT b.vehicle_id, b.pickup_date, b.return_date, 'booking'
+FROM   bookings b
+WHERE  b.booking_ref IN ('bk-ms-2026-0313','bk-bg-2026-0219','bk-da-2026-0321')
+  AND  b.status NOT IN ('cancelled')
+ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
+
+-- Seed matching revenue rows (the trigger-managed revenue table)
+INSERT INTO revenue (booking_id, vehicle_id, gross, expenses)
+SELECT b.id, b.vehicle_id, b.deposit_paid, 0
+FROM   bookings b
+WHERE  b.booking_ref IN ('bk-ms-2026-0313','bk-bg-2026-0219','bk-da-2026-0321')
+  AND  b.deposit_paid > 0
+ON CONFLICT (booking_id) DO NOTHING;
+
+
+-- =============================================================================
+-- STEP 19  VERIFICATION QUERIES
+-- Run these after the main script to confirm everything was set up correctly.
+-- Just look for the expected counts / names in the Results panel.
+-- =============================================================================
+
+-- 19a. Tables (expect 16 tables)
+SELECT table_name
+FROM   information_schema.tables
+WHERE  table_schema = 'public'
+ORDER  BY table_name;
+
+-- 19b. All 5 fleet vehicles
+SELECT vehicle_id, vehicle_name, vehicle_type, daily_price, deposit_amount, rental_status
+FROM   vehicles
+ORDER  BY vehicle_id;
+
+-- 19c. Pricing + tax settings  (expect 14 rows)
+SELECT key, value::text AS rate
+FROM   system_settings
+WHERE  category IN ('pricing','tax')
+ORDER  BY category, key;
+
+-- 19d. Revenue records seeded  (expect 3 rows)
+SELECT booking_id, vehicle_id, customer_name, gross_amount, refund_amount, net_amount, payment_status
+FROM   revenue_records
+ORDER  BY pickup_date;
+
+-- 19e. Customers  (expect >= 3 rows)
+SELECT name, phone, total_bookings, no_show_count, risk_flag
+FROM   customers
+ORDER  BY name;
+
+-- 19f. Normalised bookings  (expect 3 rows)
+SELECT booking_ref, vehicle_id, status, total_price, deposit_paid, payment_status
+FROM   bookings
+ORDER  BY pickup_date;
+
+-- 19g. Finance tab summary view  (expect 3 rows — one per vehicle that has bookings)
+SELECT vehicle_id, booking_count, total_gross, total_refunds, total_net
+FROM   vehicle_revenue_summary
+ORDER  BY vehicle_id;
+
+-- 19h. Trigger functions installed (expect >= 7)
+SELECT routine_name
+FROM   information_schema.routines
+WHERE  routine_type   = 'FUNCTION'
+  AND  routine_schema = 'public'
+ORDER  BY routine_name;
+
+-- =============================================================================
+-- ALL DONE
+-- Every table, index, trigger function, view, storage bucket, and seed row for
+-- SLY RIDES is now in place.  Covers migrations 0001 – 0017.
+-- Safe to run again at any time — fully idempotent.
+-- =============================================================================
