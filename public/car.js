@@ -1066,9 +1066,9 @@ initDatePickers();
 
 // ----- Fleet Status Check -----
 // Fetch the vehicle's availability from fleet-status.json. If the vehicle is
-// globally marked unavailable (e.g. already booked or taken offline), show a
-// clear "Currently Booked" notice and replace the booking form with the
-// waitlist sign-up section.  Fails open on any API error so transient outages
+// globally marked unavailable (e.g. already rented or taken offline), show a
+// clear "Currently Rented" notice and replace the booking form with the
+// Extend Rental section.  Fails open on any API error so transient outages
 // do not lock out the form.
 (async function checkFleetStatus() {
   try {
@@ -1107,7 +1107,7 @@ function showVehicleUnavailable(nextAvailableISO) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
-  // ── 1. Insert / update the "Currently Booked" notice at the top ──────────
+  // ── 1. Insert / update the "Currently Rented" notice at the top ──────────
   let notice = document.getElementById("vehicleUnavailableNotice");
   if (!notice) {
     notice = document.createElement("div");
@@ -1122,30 +1122,18 @@ function showVehicleUnavailable(nextAvailableISO) {
     const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
 
-    // Pre-fill the preferred pickup date in the waitlist form
-    const wlPickup = document.getElementById("waitlistPickup");
-    if (wlPickup) {
-      wlPickup.value = nextAvailableISO;
-      wlPickup.setAttribute("min", nextAvailableISO);
-    }
-    const wlReturn = document.getElementById("waitlistReturn");
-    if (wlReturn) wlReturn.setAttribute("min", nextAvailableISO);
-
-    // Also update the inline "next available" line inside the waitlist section
-    const nextLine2 = document.getElementById("waitlistNextAvailLine");
-    if (nextLine2) {
-      nextLine2.textContent = _fmt("fleet.waitlistNextLine", { date: formatted }, `Next available: ${formatted}`);
-      nextLine2.style.display = "";
-    }
+    // Set minimum new return date in the extend form
+    const extReturn = document.getElementById("extNewReturn");
+    if (extReturn) extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
   }
 
   notice.innerHTML = `
-    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Booked")}</strong></p>
+    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Rented")}</strong></p>
     ${nextLine}
     <p><a href="${vehicleId.startsWith('slingshot') ? 'slingshot.html' : 'cars.html'}">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
 
   // ── 2. Hide the regular booking form elements ────────────────────────────
-  // Hide the heading and all regular form inputs/sections.  The waitlist
+  // Hide the heading and all regular form inputs/sections.  The extend rental
   // section is shown below instead so there are no duplicate "reserve" CTAs.
   const bookingHeading = bookingSection.querySelector("h2");
   if (bookingHeading) bookingHeading.style.display = "none";
@@ -1182,362 +1170,252 @@ function showVehicleUnavailable(nextAvailableISO) {
 
   // Disable all remaining interactive elements so they cannot be submitted
   bookingSection.querySelectorAll("input, button, select, textarea").forEach(function(el) {
-    if (!el.closest("#waitlistSection")) el.disabled = true;
+    if (!el.closest("#extendRentalSection")) el.disabled = true;
   });
 
-  // ── 3. Show the waitlist sign-up section ─────────────────────────────────
-  const waitlistSection = document.getElementById("waitlistSection");
-  if (waitlistSection) {
-    waitlistSection.style.display = "";
-    // Initialize the waitlist form interactions
-    initWaitlistForm();
+  // ── 3. Show the Extend Rental section ────────────────────────────────────
+  const extendSection = document.getElementById("extendRentalSection");
+  if (extendSection) {
+    extendSection.style.display = "";
+    // Set minimum new return date to today
+    const extReturn = document.getElementById("extNewReturn");
+    if (extReturn && !extReturn.getAttribute("min")) {
+      extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
+    }
+    // Initialize the extend rental form interactions
+    initExtendRentalForm();
   }
 }
 
-// ----- Waitlist Form -----
-// Manages the waitlist sign-up form that is shown when the vehicle is booked.
-// Validates inputs and launches the Stripe $50 deposit payment flow.
-function initWaitlistForm() {
-  const wlName    = document.getElementById("waitlistName");
-  const wlEmail   = document.getElementById("waitlistEmail");
-  const wlPickup  = document.getElementById("waitlistPickup");
-  const wlReturn  = document.getElementById("waitlistReturn");
-  const wlLicense = document.getElementById("waitlistLicense");
-  const wlJoinBtn = document.getElementById("waitlistJoinBtn");
-  const wlHint    = document.getElementById("waitlistPayHint");
+// ----- Extend Rental Form -----
+// Manages the "Extend Rental" form that is shown when the vehicle is currently
+// rented.  The current renter enters their email/phone and new return date,
+// then pays the extension charge via Stripe.
+function initExtendRentalForm() {
+  var extEmail      = document.getElementById("extEmail");
+  var extPhone      = document.getElementById("extPhone");
+  var extNewReturn  = document.getElementById("extNewReturn");
+  var extReturnTime = document.getElementById("extNewReturnTime");
+  var extSubmitBtn  = document.getElementById("extSubmitBtn");
+  var extPayHint    = document.getElementById("extPayHint");
+  var extPriceDisplay = document.getElementById("extPriceDisplay");
+  var extPriceAmount  = document.getElementById("extPriceAmount");
 
-  // Insurance & protection plan elements
-  const wlInsYes       = document.getElementById("waitlistHasInsuranceYes");
-  const wlInsNo        = document.getElementById("waitlistHasInsuranceNo");
-  const wlInsUploadSec = document.getElementById("waitlistInsuranceUploadSection");
-  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
-  const wlInsFileInfo  = document.getElementById("waitlistInsuranceFileInfo");
-  const wlInsNoneOpt   = document.getElementById("waitlistProtectionNoneOption");
-  const wlInsNoneRad   = document.getElementById("waitlistProtectionNone");
-  const wlInsStdRad    = document.getElementById("waitlistProtectionStandard");
-
-  // Set minimum dates
-  const todayISO = new Date().toISOString().slice(0, 10);
-  if (wlPickup && !wlPickup.value) wlPickup.setAttribute("min", todayISO);
-  if (wlReturn) wlReturn.setAttribute("min", todayISO);
-
-  function updateWaitlistBtn() {
-    const nameOk    = wlName    && isValidName(wlName.value.trim());
-    const emailOk   = wlEmail   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
-    const licenseOk = wlLicense && wlLicense.files && wlLicense.files.length > 0;
-    const insAnswered = (wlInsYes && wlInsYes.checked) || (wlInsNo && wlInsNo.checked);
-    const insProofOk  = !wlInsYes || !wlInsYes.checked || (wlInsUpload && wlInsUpload.files && wlInsUpload.files.length > 0);
-    const ready     = nameOk && emailOk && licenseOk && insAnswered && insProofOk;
-    if (wlJoinBtn) wlJoinBtn.disabled = !ready;
-    if (wlHint)    wlHint.style.display = ready ? "none" : "";
+  // Set today as the minimum new return date
+  var todayISO = new Date().toISOString().slice(0, 10);
+  if (extNewReturn && !extNewReturn.getAttribute("min")) {
+    extNewReturn.setAttribute("min", todayISO);
   }
 
-  // Insurance radio change handler
-  function onWlInsuranceChange() {
-    const hasIns = wlInsYes && wlInsYes.checked;
-    if (wlInsUploadSec) wlInsUploadSec.style.display = hasIns ? "" : "none";
-    if (!hasIns) {
-      // Disable Decline when no insurance
-      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = "0.4"; wlInsNoneOpt.title = "A protection plan is required when you have no insurance."; }
-      if (wlInsNoneRad && wlInsNoneRad.checked && wlInsStdRad) wlInsStdRad.checked = true;
+  function isValidEmailFmt(val) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  }
+
+  // Compute and display a client-side extension price estimate.
+  // The server will recompute the authoritative amount; this is just a preview.
+  function updatePriceEstimate() {
+    if (!extNewReturn || !extNewReturn.value) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    var today = new Date().toISOString().slice(0, 10);
+    var newReturn = extNewReturn.value;
+    if (newReturn <= today) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    if (!carData) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    var isSlingshot = carData.hourlyTiers;
+
+    if (isSlingshot) {
+      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
+      var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
+      if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
     } else {
-      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = ""; wlInsNoneOpt.title = ""; }
+      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var daily   = carData.pricePerDay  || 55;
+      var weekly  = carData.weekly       || 350;
+      var biweek  = carData.biweekly     || 650;
+      var monthly = carData.monthly      || 1300;
+
+      var cost2 = 0;
+      var rem   = extraDays2;
+      if (rem >= 30) { cost2 += Math.floor(rem / 30) * monthly;  rem = rem % 30; }
+      if (rem >= 14) { cost2 += Math.floor(rem / 14) * biweek;   rem = rem % 14; }
+      if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
+      cost2 += rem * daily;
+
+      if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
     }
-    updateWaitlistBtn();
+
+    if (extPriceDisplay) extPriceDisplay.style.display = "";
   }
 
-  if (wlInsYes) wlInsYes.addEventListener("change", onWlInsuranceChange);
-  if (wlInsNo)  wlInsNo.addEventListener("change", onWlInsuranceChange);
-
-  // Prevent selecting Decline when No insurance is chosen
-  if (wlInsNoneRad) {
-    wlInsNoneRad.addEventListener("change", function() {
-      if (wlInsNo && wlInsNo.checked && wlInsStdRad) {
-        wlInsStdRad.checked = true;
-      }
-    });
+  function updateExtBtn() {
+    var emailOk  = extEmail && isValidEmailFmt(extEmail.value.trim());
+    var phoneOk  = extPhone && extPhone.value.trim().length >= 7;
+    var dateOk   = extNewReturn && extNewReturn.value;
+    var contactOk = emailOk || phoneOk;
+    var ready    = contactOk && dateOk;
+    if (extSubmitBtn) extSubmitBtn.disabled = !ready;
+    if (extPayHint) extPayHint.style.display = ready ? "none" : "";
   }
 
-  // Insurance proof file validation
-  if (wlInsUpload) {
-    wlInsUpload.addEventListener("change", function() {
-      const file = this.files[0];
-      if (wlInsFileInfo) { wlInsFileInfo.textContent = ""; wlInsFileInfo.style.color = ""; }
-      if (!file) { updateWaitlistBtn(); return; }
-      const allowed = ["image/jpeg", "image/png", "application/pdf"];
-      if (!allowed.includes(file.type)) {
-        if (wlInsFileInfo) { wlInsFileInfo.textContent = "Only JPG, PNG, or PDF files are accepted."; wlInsFileInfo.style.color = "#f44336"; }
-        this.value = "";
-        updateWaitlistBtn();
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        if (wlInsFileInfo) { wlInsFileInfo.textContent = "File must be under 5 MB."; wlInsFileInfo.style.color = "#f44336"; }
-        this.value = "";
-        updateWaitlistBtn();
-        return;
-      }
-      if (wlInsFileInfo) { wlInsFileInfo.textContent = "\u2713 " + file.name; wlInsFileInfo.style.color = "#4caf50"; }
-      updateWaitlistBtn();
-    });
-  }
-
-  [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
-    if (el) el.addEventListener("input", updateWaitlistBtn);
+  [extEmail, extPhone].forEach(function(el) {
+    if (el) el.addEventListener("input", updateExtBtn);
   });
-  if (wlLicense) wlLicense.addEventListener("change", updateWaitlistBtn);
-  updateWaitlistBtn();
 
-  // When pickup changes, keep return ≥ pickup
-  if (wlPickup) {
-    wlPickup.addEventListener("change", function() {
-      if (wlReturn) wlReturn.setAttribute("min", wlPickup.value || todayISO);
-      if (wlReturn && wlReturn.value && wlReturn.value < wlPickup.value) {
-        wlReturn.value = wlPickup.value;
-      }
+  if (extNewReturn) {
+    extNewReturn.addEventListener("change", function() {
+      updateExtBtn();
+      updatePriceEstimate();
     });
   }
+  if (extReturnTime) {
+    extReturnTime.addEventListener("change", updateExtBtn);
+  }
 
-  if (wlJoinBtn) {
-    wlJoinBtn.addEventListener("click", launchWaitlistPayment);
+  updateExtBtn();
+
+  if (extSubmitBtn) {
+    extSubmitBtn.addEventListener("click", launchExtendRentalPayment);
   }
 }
 
-async function launchWaitlistPayment() {
-  const wlName    = document.getElementById("waitlistName").value.trim();
-  const wlEmail   = document.getElementById("waitlistEmail").value.trim();
-  const wlPhone   = (document.getElementById("waitlistPhone") || {}).value || "";
-  const wlPickup  = (document.getElementById("waitlistPickup") || {}).value || "";
-  const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
-  const wlLicense = document.getElementById("waitlistLicense");
+async function launchExtendRentalPayment() {
+  var extEmail      = document.getElementById("extEmail").value.trim();
+  var extPhone      = (document.getElementById("extPhone") || {}).value || "";
+  var newReturnDate = document.getElementById("extNewReturn").value;
+  var newReturnTime = document.getElementById("extNewReturnTime") ? document.getElementById("extNewReturnTime").value : "";
 
-  // Insurance & protection plan values
-  const wlInsChecked   = document.querySelector('input[name="waitlistInsuranceCoverage"]:checked');
-  const wlHasInsurance = wlInsChecked ? wlInsChecked.value : null;
-  const wlPlanChecked  = document.querySelector('input[name="waitlistProtectionPlan"]:checked');
-  const wlProtectionPlanPref = wlPlanChecked ? wlPlanChecked.value : "standard";
-  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
-
-  // Validate insurance question (should be already enforced by button state)
-  if (!wlHasInsurance) {
-    alert(_t("booking.insuranceRequired", "Please answer the insurance question."));
-    return;
+  // Convert native time input (HH:MM) to 12-hour format for readability in emails/SMS
+  function to12Hour(hhmm) {
+    if (!hhmm) return "";
+    var parts = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+    if (!parts) return hhmm;
+    var h = parseInt(parts[1], 10);
+    var m = parts[2];
+    var period = h >= 12 ? "PM" : "AM";
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return h + ":" + m + " " + period;
   }
-  if (wlHasInsurance === "no" && wlProtectionPlanPref === "none") {
-    alert(_t("booking.planRequiredNoInsurance", "A protection plan is required when you have no personal auto insurance."));
-    return;
-  }
+  var newReturnTime12 = to12Hour(newReturnTime);
 
-  // Defensive guard — the button should already be disabled when no file is
-  // selected (enforced by updateWaitlistBtn), but guard here in case this
-  // function is called programmatically.
-  if (!wlLicense || !wlLicense.files || !wlLicense.files[0]) return;
-  const licenseFile = wlLicense.files[0];
-
-  const joinBtn = document.getElementById("waitlistJoinBtn");
-  if (joinBtn) { joinBtn.disabled = true; joinBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
-
-  // Read license file as base64 before launching payment (must happen before redirect)
-  let licenseBase64 = null;
-  let licenseMimeType = licenseFile.type || "application/octet-stream";
-  let licenseFileName = licenseFile.name || "drivers-license";
-  try {
-    licenseBase64 = await new Promise(function(resolve, reject) {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        // result is "data:<mime>;base64,<data>" — strip the prefix
-        const result = e.target.result;
-        const commaIdx = result.indexOf(",");
-        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(licenseFile);
-    });
-  } catch (fileErr) {
-    console.error("Failed to read license file:", fileErr);
-    if (joinBtn) { joinBtn.disabled = false; joinBtn.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit"); }
-    alert(_t("booking.loadError", "Could not read your ID file. Please try again."));
-    return;
-  }
-
-  // Read insurance proof file if provided
-  let wlInsBase64 = null;
-  let wlInsMimeType = null;
-  let wlInsFileName = null;
-  if (wlHasInsurance === "yes" && wlInsUpload && wlInsUpload.files && wlInsUpload.files[0]) {
-    const insFile = wlInsUpload.files[0];
-    try {
-      wlInsBase64 = await new Promise(function(resolve, reject) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-          const result = e.target.result;
-          const commaIdx = result.indexOf(",");
-          resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(insFile);
-      });
-      wlInsMimeType = insFile.type || "application/octet-stream";
-      wlInsFileName = insFile.name || "insurance-proof";
-    } catch (insErr) {
-      console.warn("Could not read insurance file:", insErr);
-    }
-  }
-
-  // Store license in IndexedDB so it survives the Stripe redirect
-  try {
-    await new Promise(function(resolve) {
-      const idbReq = indexedDB.open("slyRidesDB", 1);
-      idbReq.onupgradeneeded = function(e) { e.target.result.createObjectStore("files"); };
-      idbReq.onsuccess = function(e) {
-        const db = e.target.result;
-        try {
-          const tx = db.transaction("files", "readwrite");
-          tx.objectStore("files").put(
-            { licenseBase64, licenseMimeType, licenseFileName },
-            "waitlistLicense"
-          );
-          // Also store insurance proof if available
-          if (wlInsBase64) {
-            tx.objectStore("files").put(
-              { base64: wlInsBase64, mimeType: wlInsMimeType, fileName: wlInsFileName },
-              "waitlistInsurance"
-            );
-          }
-          tx.oncomplete = function() { db.close(); resolve(); };
-          tx.onerror    = function() { db.close(); resolve(); };
-        } catch (err) { db.close(); resolve(); }
-      };
-      idbReq.onerror = function() { resolve(); };
-    });
-  } catch (idbErr) {
-    console.warn("Could not save license to IndexedDB:", idbErr);
-  }
+  var submitBtn = document.getElementById("extSubmitBtn");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
 
   try {
-    const res = await fetch(`${API_BASE}/api/join-waitlist`, {
+    var resp = await fetch(API_BASE + "/api/extend-rental", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         vehicleId,
-        name:            wlName,
-        email:           wlEmail,
-        phone:           wlPhone.trim(),
-        preferredPickup: wlPickup,
-        preferredReturn: wlReturn,
+        email:         extEmail,
+        phone:         extPhone.trim(),
+        newReturnDate,
+        newReturnTime: newReturnTime12,
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Server error");
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Server error");
 
-    const { clientSecret, publishableKey } = data;
+    var { clientSecret, publishableKey, extensionAmount, extensionLabel, newReturnDate: confirmedDate, newReturnTime: confirmedTime, vehicleName, renterName } = data;
     if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
 
-    // Save waitlist data to sessionStorage so success.html can call save-waitlist-entry
-    sessionStorage.setItem("slyStripePublishable", publishableKey);
-    sessionStorage.setItem("slyPiSecret", clientSecret);
-    sessionStorage.setItem("slyWaitlistEntry", JSON.stringify({
-      isWaitlist:          true,
-      vehicleId,
-      car:                 carData.name,
-      name:                wlName,
-      email:               wlEmail,
-      phone:               wlPhone.trim(),
-      preferredPickup:     wlPickup,
-      preferredReturn:     wlReturn,
-      hasInsurance:        wlHasInsurance,
-      protectionPlanPref:  wlProtectionPlanPref,
-    }));
-
-    const stripe   = Stripe(publishableKey);
-    const elements = stripe.elements({
+    var stripe   = Stripe(publishableKey);
+    var elements = stripe.elements({
       clientSecret,
       locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
-      defaultValues: { billingDetails: { name: wlName, email: wlEmail } },
+      ...(extEmail ? { defaultValues: { billingDetails: { email: extEmail } } } : {}),
     });
 
-    const paymentElement = elements.create("payment", {
-      fields: { billingDetails: { name: "never" } },
-    });
+    var paymentElement = elements.create("payment");
 
     // Show the Stripe payment form; hide the sign-up form
-    document.getElementById("waitlistSection").querySelector(".waitlist-form").style.display = "none";
-    const wlPayForm = document.getElementById("waitlistPaymentForm");
-    wlPayForm.style.display = "";
-    paymentElement.mount("#waitlist-payment-element");
+    var extForm = document.getElementById("extendRentalForm");
+    if (extForm) extForm.style.display = "none";
+    var extPayForm = document.getElementById("extPaymentForm");
+    if (extPayForm) extPayForm.style.display = "";
 
-    // Submit + cancel handlers for this payment attempt.
-    // { once: true } on submit prevents double-fire if the user clicks rapidly.
-    let submitting = false;
-    const submitBtn = document.getElementById("waitlist-submit-payment");
-    const cancelBtn = document.getElementById("waitlist-cancel-payment");
-    const msgEl     = document.getElementById("waitlist-payment-message");
+    // Populate the summary box
+    var summaryEl = document.getElementById("ext-rental-summary");
+    if (summaryEl) {
+      var displayReturn = confirmedDate + (confirmedTime ? " at " + confirmedTime : "");
+      summaryEl.innerHTML =
+        "<strong>⏱️ Rental Extension</strong><br>" +
+        (vehicleName ? "Vehicle: " + vehicleName + "<br>" : "") +
+        (renterName  ? "Renter: "  + renterName  + "<br>" : "") +
+        "Extension: " + extensionLabel + "<br>" +
+        "<strong>New Return: " + displayReturn + "</strong><br>" +
+        "<strong style='color:#ffb400'>Total: $" + extensionAmount + "</strong>";
+    }
 
-    const handleWaitlistSubmit = async function() {
+    // Update the pay button label
+    var extPayAmount = document.getElementById("extPayAmount");
+    if (extPayAmount) extPayAmount.textContent = extensionAmount;
+
+    paymentElement.mount("#ext-payment-element");
+
+    var submitPayBtn = document.getElementById("ext-submit-payment");
+    var cancelPayBtn = document.getElementById("ext-cancel-payment");
+    var msgEl        = document.getElementById("ext-payment-message");
+
+    var submitting = false;
+
+    var handleExtSubmit = async function() {
       if (submitting) return;
       submitting = true;
-      submitBtn.disabled = true;
-      submitBtn.textContent = _t("booking.processingPayment", "Processing…");
-      msgEl.textContent = "";
+      submitPayBtn.disabled    = true;
+      submitPayBtn.innerHTML   = _t("booking.processingPayment", "Processing…");
+      if (msgEl) msgEl.textContent = "";
 
-      const { error } = await stripe.confirmPayment({
+      var result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: "https://www.slytrans.com/success.html?waitlist=1&vehicle=" + encodeURIComponent(vehicleId),
-          receipt_email: wlEmail,
-          payment_method_data: {
-            billing_details: { name: wlName, email: wlEmail },
-          },
+          return_url: "https://www.slytrans.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          ...(extEmail ? { receipt_email: extEmail } : {}),
         },
       });
 
-      if (error) {
-        msgEl.textContent = error.message;
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Pay $50 Deposit";
+      if (result.error) {
+        if (msgEl) msgEl.textContent = result.error.message;
+        submitPayBtn.disabled  = false;
+        submitPayBtn.innerHTML = "Pay $" + extensionAmount + " Now 🔒";
         submitting = false;
       }
       // On success Stripe redirects — no cleanup needed here
     };
-    submitBtn.addEventListener("click", handleWaitlistSubmit);
+    submitPayBtn.addEventListener("click", handleExtSubmit);
 
-    const handleWaitlistCancel = function() {
+    var handleExtCancel = function() {
       submitting = false;
-      submitBtn.removeEventListener("click", handleWaitlistSubmit);
-      cancelBtn.removeEventListener("click", handleWaitlistCancel);
+      submitPayBtn.removeEventListener("click", handleExtSubmit);
+      cancelPayBtn.removeEventListener("click", handleExtCancel);
       paymentElement.unmount();
-      msgEl.textContent = "";
-      wlPayForm.style.display = "none";
-      const wlForm = document.getElementById("waitlistSection").querySelector(".waitlist-form");
-      if (wlForm) wlForm.style.display = "";
-      const joinBtnReset = document.getElementById("waitlistJoinBtn");
-      if (joinBtnReset) {
-        joinBtnReset.disabled = false;
-        joinBtnReset.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+      if (msgEl) msgEl.textContent = "";
+      if (extPayForm) extPayForm.style.display = "none";
+      if (extForm) extForm.style.display = "";
+      // Re-enable the extend button
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "⏱️ Extend Rental";
       }
-      // Clean up the stored license and insurance proof from IndexedDB on cancel
-      try {
-        const idbReq = indexedDB.open("slyRidesDB", 1);
-        idbReq.onsuccess = function(e) {
-          const db = e.target.result;
-          try {
-            const tx = db.transaction("files", "readwrite");
-            tx.objectStore("files").delete("waitlistLicense");
-            tx.objectStore("files").delete("waitlistInsurance");
-            tx.oncomplete = function() { db.close(); };
-            tx.onerror    = function() { db.close(); };
-          } catch (err) { db.close(); }
-        };
-      } catch (idbErr) { /* ignore */ }
     };
-    cancelBtn.addEventListener("click", handleWaitlistCancel);
+    cancelPayBtn.addEventListener("click", handleExtCancel);
 
   } catch (err) {
-    console.error("Waitlist payment error:", err);
-    const joinBtn2 = document.getElementById("waitlistJoinBtn");
-    if (joinBtn2) {
-      joinBtn2.disabled = false;
-      joinBtn2.textContent = _t("fleet.waitlistJoinBtn", "🔔 Join Waitlist — Pay $50 Deposit");
+    console.error("Extend rental payment error:", err);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "⏱️ Extend Rental";
     }
     alert(err.message || _t("booking.loadError", "Could not launch payment. Please try again."));
   }
