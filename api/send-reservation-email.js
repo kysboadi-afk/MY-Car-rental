@@ -17,10 +17,10 @@ import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BI
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
-import { appendBooking, normalizePhone } from "./_bookings.js";
+import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
+import { persistBooking } from "./_booking-pipeline.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1023,6 +1023,40 @@ export default async function handler(req, res) {
       `,
     };
 
+    // ── PHASE 3 FIX: Persist booking to database BEFORE sending any emails ────
+    // This ensures we never send confirmation emails for bookings that were not
+    // saved.  The pipeline logs every step (start, DB attempt, DB result) so
+    // there are NO silent failures.
+    let persistedBooking = null;
+    if (isConfirmed && !isBalancePayment && vehicleId && phone) {
+      console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
+      const pipelineResult = await persistBooking({
+        vehicleId,
+        vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+        name:            name || "",
+        phone,
+        email:           email || "",
+        pickupDate:      pickup || "",
+        pickupTime:      pickupTime || "",
+        returnDate:      returnDate || "",
+        returnTime:      returnTime || "",
+        location:        DEFAULT_LOCATION,
+        status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
+        amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
+        totalPrice:      fullRentalCost ? Math.round(parseFloat(fullRentalCost) * 100) / 100 : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
+        paymentIntentId: paymentIntentId || "",
+        paymentLink:     balancePayUrl || "",
+        paymentMethod:   "stripe",
+        source:          "public_booking",
+      });
+      persistedBooking = pipelineResult.booking;
+      if (!pipelineResult.ok) {
+        console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);
+      } else {
+        console.log(`[send-reservation-email] booking_persisted bookingId=${pipelineResult.bookingId} supabaseOk=${pipelineResult.supabaseOk}`);
+      }
+    }
+
     let ownerEmailErr = null;
     try {
       await transporter.sendMail(ownerEmailOpts);
@@ -1140,43 +1174,9 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Reservation owner notification email failed. Please contact slyservices@supports-info.com to confirm your booking." });
     }
 
-    // ── Save booking record for scheduled reminders ───────────────────────────
-    // Only save on initial booking — balance payments update the existing record.
-    if (isConfirmed && !isBalancePayment && vehicleId && phone) {
-      try {
-        const bookingRecord = {
-          bookingId:       crypto.randomBytes(16).toString("hex"),
-          name:            name || "",
-          phone,
-          email:           email || "",
-          vehicleId,
-          vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
-          pickupDate:      pickup || "",
-          pickupTime:      pickupTime || "",
-          returnDate:      returnDate || "",
-          returnTime:      returnTime || "",
-          location:        DEFAULT_LOCATION,
-          status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
-          amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
-          paymentIntentId: paymentIntentId || "",
-          paymentLink:     balancePayUrl || "",
-          smsSentAt:       {},
-          createdAt:       new Date().toISOString(),
-          source:          "public_booking",
-        };
-        await appendBooking(bookingRecord);
-        // Auto-sync to Supabase so admin Revenue Tracker, Customer Management,
-        // Bookings table, and Blocked Dates are all populated immediately.
-        await autoCreateRevenueRecord(bookingRecord);
-        await autoUpsertCustomer(bookingRecord, false);
-        await autoUpsertBooking(bookingRecord);
-        if (pickup && returnDate) {
-          await autoCreateBlockedDate(vehicleId, pickup, returnDate, "booking");
-        }
-      } catch (bookingErr) {
-        console.error("Failed to save booking record:", bookingErr);
-      }
-    }
+    // ── Booking record was already persisted above (BEFORE emails) ───────────
+    // persistedBooking holds the saved record; nothing more to do here.
+    // This comment replaces the old save block to make the ordering clear.
 
     // ── Booking confirmation SMS ──────────────────────────────────────────────
     if (isConfirmed && !fullRentalCost && phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {

@@ -544,6 +544,10 @@
         Bookings
         <span class="nav-badge" id="pending-badge" style="display:none">0</span>
       </a>
+      <a class="nav-item" data-page="bookings-raw" href="#" onclick="navigate('bookings-raw');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 10h16M4 14h8M4 18h8"/><rect x="14" y="13" width="8" height="8" rx="1"/></svg>
+        Raw Bookings
+      </a>
       <a class="nav-item" data-page="manual-booking" href="#" onclick="navigate('manual-booking');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Manual Booking
@@ -775,6 +779,42 @@
           <div id="bookings-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
             <p>No bookings found.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOOKINGS RAW PAGE (Phase 6 — direct Supabase read, no filters) -->
+      <div class="page" id="page-bookings-raw">
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 12px 0;">
+            <div>
+              <div style="font-weight:700;font-size:15px;">Raw Bookings — Supabase Direct Read</div>
+              <div style="font-size:12px;color:var(--text-sub);margin-top:2px;">Unfiltered, no aggregation. Falls back to bookings.json when Supabase is unavailable.</div>
+            </div>
+            <button class="btn btn-secondary" onclick="loadRawBookings()" style="font-size:13px;">↺ Refresh</button>
+          </div>
+          <div id="raw-bookings-loading" class="loading"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="raw-bookings-meta" style="display:none;font-size:12px;color:var(--text-sub);padding-bottom:8px;"></div>
+          <div id="raw-bookings-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Booking Ref</th>
+                  <th>Customer</th>
+                  <th>Vehicle</th>
+                  <th>Pickup</th>
+                  <th>Return</th>
+                  <th>Paid</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody id="raw-bookings-tbody"></tbody>
+            </table>
+          </div>
+          <div id="raw-bookings-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            <p>No bookings found in database.</p>
           </div>
         </div>
       </div>
@@ -1749,6 +1789,7 @@ function navigate(page) {
     vehicles:           'Vehicles',
     'vehicle-profile':  'Vehicle Profile',
     bookings:           'Bookings',
+    'bookings-raw':     'Raw Bookings',
     'manual-booking':   'Manual Booking',
     'fleet-status':     'Fleet Status',
     'block-dates':      'Block / Unblock Dates',
@@ -1771,6 +1812,7 @@ function navigate(page) {
 
   // Load data if needed
   if (page === 'bookings') loadBookings();
+  else if (page === 'bookings-raw') loadRawBookings();
   else if (page === 'vehicles') loadVehicles();
   else if (page === 'expenses') loadExpenses();
   else if (page === 'sms') loadSmsTemplates();
@@ -1797,6 +1839,7 @@ function refreshCurrentPage() {
 
   if (currentPage === 'dashboard') refreshDashboard();
   else if (currentPage === 'bookings') { allBookings = []; loadBookings(); }
+  else if (currentPage === 'bookings-raw') loadRawBookings();
   else if (currentPage === 'vehicles') { allVehicles = {}; loadVehicles(); }
   else if (currentPage === 'expenses') { allExpenses = []; loadExpenses(); }
   else if (currentPage === 'sms') { smsTemplates = []; loadSmsTemplates(); }
@@ -2313,7 +2356,7 @@ function applyBookingFilters() {
       <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
       <td>
         <div>${esc(b.pickupDate || '–')}</div>
-        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
       </td>
       <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
       <td>${statusBadge(b.status)}</td>
@@ -2346,6 +2389,25 @@ function viewBooking(bookingId, vehicleId) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div>${esc(b.paymentMethod || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
       ${b.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
+    </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Date</label>
+          <input type="date" id="bd-return-date" class="form-input" value="${esc(b.returnDate || '')}" style="font-size:13px;padding:6px 8px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Return Time (optional)</label>
+          <input type="text" id="bd-return-time" class="form-input" value="${esc(b.returnTime || '')}" placeholder="e.g. 5:00 PM" style="font-size:13px;padding:6px 8px;">
+        </div>
+        <div style="grid-column:1/-1;">
+          <button class="btn btn-secondary" style="font-size:13px;width:100%;"
+            onclick="updateBookingReturnDate('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">
+            ✏️ Save Return Date
+          </button>
+        </div>
+      </div>
     </div>
   `;
   document.getElementById('booking-detail-actions').innerHTML = `
@@ -2389,7 +2451,84 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
   });
 }
 
+function updateBookingReturnDate(vehicleId, bookingId, btn) {
+  const newReturnDate = (document.getElementById('bd-return-date')?.value || '').trim();
+  const newReturnTime = (document.getElementById('bd-return-time')?.value || '').trim();
+  if (!newReturnDate || !/^\d{4}-\d{2}-\d{2}$/.test(newReturnDate)) {
+    showToast('Please enter a valid return date (YYYY-MM-DD).', 'error');
+    return;
+  }
+  if (btn) btn.disabled = true;
+  const updates = { returnDate: newReturnDate };
+  if (newReturnTime) updates.returnTime = newReturnTime;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId, updates,
+  }).then(() => {
+    showToast('Return date updated. Availability will refresh shortly.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
+  });
+}
+
 // ── Manual Booking ─────────────────────────────────────────────────────────
+// ── Raw Bookings (Phase 6) ─────────────────────────────────────────────────
+function loadRawBookings() {
+  const loadEl  = document.getElementById('raw-bookings-loading');
+  const tableEl = document.getElementById('raw-bookings-table-wrap');
+  const emptyEl = document.getElementById('raw-bookings-empty');
+  const metaEl  = document.getElementById('raw-bookings-meta');
+  loadEl.style.display  = '';
+  tableEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+  metaEl.style.display  = 'none';
+
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list_raw' })
+    .then((data) => {
+      loadEl.style.display = 'none';
+      const rows = data.bookings || [];
+      metaEl.textContent = `Source: ${data.source || 'unknown'} · ${data.total || rows.length} row(s)`;
+      metaEl.style.display = '';
+
+      if (rows.length === 0) { emptyEl.style.display = ''; return; }
+      tableEl.style.display = '';
+
+      const STATUS_LABELS = {
+        pending: 'Pending', approved: 'Approved', active: 'Active',
+        completed: 'Completed', cancelled: 'Cancelled',
+        reserved_unpaid: 'Reserved', booked_paid: 'Paid', active_rental: 'Active',
+        completed_rental: 'Done', cancelled_rental: 'Cancelled',
+      };
+
+      document.getElementById('raw-bookings-tbody').innerHTML = rows.map((b) => {
+        const statusLabel = STATUS_LABELS[b.status] || esc(b.status || '–');
+        const statusColor = ['active','active_rental','approved','booked_paid'].includes(b.status) ? 'var(--success)'
+          : ['completed','completed_rental'].includes(b.status) ? 'var(--text-sub)'
+          : ['cancelled','cancelled_rental'].includes(b.status) ? 'var(--danger)'
+          : ['pending','reserved_unpaid'].includes(b.status) ? 'var(--warning)'
+          : 'var(--text)';
+        return `<tr>
+          <td style="font-family:monospace;font-size:11px;">${esc((b.bookingId || '').slice(0,12))}…</td>
+          <td>
+            <div style="font-weight:600;">${esc(b.name || '–')}</div>
+            <div style="font-size:11px;color:var(--text-sub);">${esc(b.phone || b.email || '')}</div>
+          </td>
+          <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+          <td>${esc(b.pickupDate || '–')}${b.pickupTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.pickupTime)+'</span>' : ''}</td>
+          <td>${esc(b.returnDate || '–')}${b.returnTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.returnTime)+'</span>' : ''}</td>
+          <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
+          <td><span style="font-weight:600;color:${statusColor};">${statusLabel}</span></td>
+          <td style="font-size:11px;color:var(--text-sub);">${esc(b._source || '–')}</td>
+        </tr>`;
+      }).join('');
+    })
+    .catch((err) => {
+      loadEl.innerHTML = `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
 function updateManualPrice() {
   const vehicleId  = document.getElementById('mb-vehicle').value;
   const pickupDate = document.getElementById('mb-pickup-date').value;
