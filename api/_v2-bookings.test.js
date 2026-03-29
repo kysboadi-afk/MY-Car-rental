@@ -903,3 +903,113 @@ test("list: falls back to bookings.json when Supabase errors", async () => {
     supabaseMockState.client = null;
   }
 });
+
+// ── Status mapping tests ──────────────────────────────────────────────────────
+
+test("list: maps Supabase DB status 'approved' → 'booked_paid' in response", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-2", booking_ref: "bk-test-001", vehicle_id: "camry",
+      pickup_date: "2026-04-01", return_date: "2026-04-03",
+      pickup_time: "10:00 AM",  return_time: "10:00 AM",
+      status: "approved",        deposit_paid: 100, total_price: 100,
+      remaining_balance: 0,      payment_status: "paid",
+      payment_method: "stripe",  payment_intent_id: "pi_test",
+      notes: "",                 created_at: "2026-04-01T10:00:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-2", name: "Test User", phone: "+15555550001", email: "test@example.com" },
+    },
+  ];
+  const makeChain = (rows) => {
+    const chain = {
+      select() { return this; },
+      eq()     { return this; },
+      in()     { return this; },
+      order()  { return Promise.resolve({ data: rows, error: null }); },
+    };
+    return chain;
+  };
+  supabaseMockState.client = { from: () => makeChain(fakeRows) };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].status, "booked_paid",
+      "Supabase 'approved' status must be mapped to 'booked_paid' for admin UI button compatibility");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
+test("list: maps Supabase DB status 'active' → 'active_rental' in response", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-3", booking_ref: "bk-test-002", vehicle_id: "camry",
+      pickup_date: "2026-04-01", return_date: "2026-04-03",
+      pickup_time: "10:00 AM",  return_time: "10:00 AM",
+      status: "active",          deposit_paid: 100, total_price: 100,
+      remaining_balance: 0,      payment_status: "paid",
+      payment_method: "stripe",  payment_intent_id: "pi_test2",
+      notes: "",                 created_at: "2026-04-01T10:00:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-3", name: "Test User 2", phone: "+15555550002", email: "test2@example.com" },
+    },
+  ];
+  const makeChain = (rows) => {
+    const chain = {
+      select() { return this; },
+      eq()     { return this; },
+      in()     { return this; },
+      order()  { return Promise.resolve({ data: rows, error: null }); },
+    };
+    return chain;
+  };
+  supabaseMockState.client = { from: () => makeChain(fakeRows) };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings[0].status, "active_rental",
+      "Supabase 'active' status must be mapped to 'active_rental'");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
+test("update: Supabase direct update is attempted before bookings.json write", async () => {
+  resetStore(); resetCalls();
+  // Create a booking first
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 100, totalPrice: 100 })), r1);
+  const { bookingId } = r1._body.booking;
+  resetCalls();
+
+  // Track whether Supabase update was called
+  let sbUpdateCalled = false;
+  const makeUpdateChain = () => {
+    const chain = {};
+    chain.update  = () => { sbUpdateCalled = true; return chain; };
+    chain.eq      = () => chain;
+    chain.select  = () => chain;
+    chain.maybeSingle = () => Promise.resolve({ data: { id: "uuid-sb-1" }, error: null });
+    return chain;
+  };
+  supabaseMockState.client = { from: () => makeUpdateChain() };
+
+  try {
+    const r2 = makeRes();
+    await handler(makeReq({
+      secret: "test-admin-secret", action: "update",
+      vehicleId: "camry", bookingId,
+      updates: { status: "active_rental" },
+    }), r2);
+    assert.equal(r2._status, 200, "update should succeed");
+    assert.equal(r2._body.booking.status, "active_rental", "booking status must reflect new value");
+    assert.ok(sbUpdateCalled, "Supabase direct update should have been called");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
