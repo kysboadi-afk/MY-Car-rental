@@ -493,32 +493,35 @@ async function processCompleted(allBookings, now, sentMarks) {
 
 /**
  * Persist all reminder sent-marks back to bookings.json.
- * Groups marks by vehicleId/id to minimize GitHub API calls.
+ * Uses updateJsonFileWithRetry so stale-SHA conflicts are retried automatically.
  */
 async function persistSentMarks(sentMarks) {
   if (sentMarks.length === 0) return;
   if (!process.env.GITHUB_TOKEN) return;
 
   try {
-    const { data, sha } = await loadBookings();
+    await updateJsonFileWithRetry({
+      load:  loadBookings,
+      apply: (data) => {
+        for (const mark of sentMarks) {
+          const { vehicleId, id, key, value } = mark;
+          if (!Array.isArray(data[vehicleId])) continue;
+          const idx = data[vehicleId].findIndex(
+            (b) => b.bookingId === id || b.paymentIntentId === id
+          );
+          if (idx === -1) continue;
 
-    for (const mark of sentMarks) {
-      const { vehicleId, id, key, value } = mark;
-      if (!Array.isArray(data[vehicleId])) continue;
-      const idx = data[vehicleId].findIndex(
-        (b) => b.bookingId === id || b.paymentIntentId === id
-      );
-      if (idx === -1) continue;
-
-      if (key === "_late_fee_amount") {
-        data[vehicleId][idx].lateFeeApplied = value;
-      } else {
-        if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
-        data[vehicleId][idx].smsSentAt[key] = new Date().toISOString();
-      }
-    }
-
-    await saveBookings(data, sha, `scheduled-reminders: record ${sentMarks.length} sent marks`);
+          if (key === "_late_fee_amount") {
+            data[vehicleId][idx].lateFeeApplied = value;
+          } else {
+            if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
+            data[vehicleId][idx].smsSentAt[key] = new Date().toISOString();
+          }
+        }
+      },
+      save:    saveBookings,
+      message: `scheduled-reminders: record ${sentMarks.length} sent marks`,
+    });
   } catch (err) {
     console.error("scheduled-reminders: failed to persist sent marks:", err);
   }
@@ -653,11 +656,6 @@ export default async function handler(req, res) {
     }
   }
 
-  if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
-    console.warn("scheduled-reminders: TextMagic credentials not set — SMS will not be sent");
-    return res.status(200).json({ skipped: true, reason: "TextMagic not configured" });
-  }
-
   let allBookings;
   try {
     const loaded = await loadBookings();
@@ -668,6 +666,18 @@ export default async function handler(req, res) {
   }
 
   const now = new Date();
+
+  // Auto-activate and auto-complete bookings regardless of SMS configuration.
+  // These must run on every cron tick so overdue bookings never stay stuck.
+  await processAutoActivations(allBookings, now);
+  await processAutoCompletions(allBookings, now);
+
+  // SMS reminders require TextMagic credentials.
+  if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
+    console.warn("scheduled-reminders: TextMagic credentials not set — SMS will not be sent");
+    return res.status(200).json({ skipped: true, reason: "TextMagic not configured" });
+  }
+
   const sentMarks = [];
 
   await Promise.allSettled([
@@ -678,14 +688,6 @@ export default async function handler(req, res) {
   ]);
 
   await persistSentMarks(sentMarks);
-
-  // Auto-activate booked_paid bookings whose pickup time has arrived.
-  // Runs after reminders so pickup-day reminders still fire before activation.
-  await processAutoActivations(allBookings, now);
-
-  // Auto-complete bookings that are past their return time by AUTO_COMPLETE_HOURS.
-  // Runs after sentMarks are persisted to avoid racing with the same bookings.json write.
-  await processAutoCompletions(allBookings, now);
 
   return res.status(200).json({ ok: true, remindersSent: sentMarks.filter(m => !m.key.startsWith("_")).length });
 }
