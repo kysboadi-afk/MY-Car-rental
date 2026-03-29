@@ -36,26 +36,23 @@ const DEFAULT_SETTINGS = {
 
 const ALLOWED_BLOCK_TYPES = ["faq", "announcement", "testimonial"];
 
-function corsHeaders(req) {
-  const origin = req.headers.origin || "";
-  const allow  = ALLOWED_ORIGINS.includes(origin) ? origin : "*";
-  return {
-    "Access-Control-Allow-Origin":  allow,
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
-}
-
 export default async function handler(req, res) {
-  const headers = corsHeaders(req);
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
   if (req.method === "OPTIONS") {
-    return res.status(204).set(headers).end();
+    return res.status(200).end();
   }
   if (req.method !== "GET") {
-    return res.status(405).set(headers).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
   res.setHeader("Cache-Control", `public, max-age=${CACHE_SECONDS}, stale-while-revalidate=120`);
 
   const typeFilter = req.query?.type;

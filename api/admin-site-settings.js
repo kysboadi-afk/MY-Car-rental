@@ -62,26 +62,20 @@ const DEFAULT_SETTINGS = {
   pickup_instructions:    "",
 };
 
-function corsHeaders(req) {
-  const origin = req.headers.origin || "";
-  const allow  = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-  return {
-    "Access-Control-Allow-Origin":  allow,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
-}
-
 export default async function handler(req, res) {
-  const headers = corsHeaders(req);
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
   if (req.method === "OPTIONS") {
-    return res.status(204).set(headers).end();
+    return res.status(200).end();
   }
   if (req.method !== "POST") {
-    return res.status(405).set(headers).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
-
-  Object.entries(headers).forEach(([k, v]) => res.setHeader(k, v));
 
   if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
