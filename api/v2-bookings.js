@@ -146,10 +146,84 @@ export default async function handler(req, res) {
 
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
+    // Primary source: Supabase bookings table (includes all Stripe webhook
+    // bookings saved by saveWebhookBookingRecord).  Falls back to bookings.json
+    // so the admin always sees data even when Supabase is unreachable.
     if (action === "list" || !action) {
-      const { data } = await loadBookings();
       const { vehicleId, status } = body;
 
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        // Build the query with filters BEFORE .order() so the chain terminates
+        // correctly (the Supabase JS SDK — and our test stubs — resolve on .order()).
+        let q = sb
+          .from("bookings")
+          .select(`
+            id,
+            booking_ref,
+            vehicle_id,
+            pickup_date,
+            return_date,
+            pickup_time,
+            return_time,
+            status,
+            total_price,
+            deposit_paid,
+            remaining_balance,
+            payment_status,
+            payment_method,
+            payment_intent_id,
+            notes,
+            created_at,
+            updated_at,
+            customers ( id, name, phone, email )
+          `);
+
+        if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
+          q = q.eq("vehicle_id", vehicleId);
+        } else {
+          q = q.in("vehicle_id", ALLOWED_VEHICLES);
+        }
+        if (status) {
+          q = q.eq("status", status);
+        }
+
+        const { data: rows, error } = await q.order("created_at", { ascending: false });
+
+        if (!error) {
+          const bookings = (rows || []).map((r) => ({
+            bookingId:       r.booking_ref || r.id,
+            vehicleId:       r.vehicle_id,
+            vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+            name:            r.customers?.name  || "",
+            phone:           r.customers?.phone || "",
+            email:           r.customers?.email || "",
+            pickupDate:      r.pickup_date  || "",
+            pickupTime:      r.pickup_time  || "",
+            returnDate:      r.return_date  || "",
+            returnTime:      r.return_time  || "",
+            location:        "",
+            status:          r.status,
+            amountPaid:      Number(r.deposit_paid      || 0),
+            totalPrice:      Number(r.total_price       || 0),
+            remaining:       Number(r.remaining_balance || 0),
+            paymentStatus:   r.payment_status  || "",
+            paymentMethod:   r.payment_method  || "",
+            paymentIntentId: r.payment_intent_id || "",
+            notes:           r.notes || "",
+            smsSentAt:       {},
+            createdAt:       r.created_at,
+            updatedAt:       r.updated_at || null,
+            _source:         "supabase",
+          }));
+          return res.status(200).json({ bookings });
+        }
+
+        console.error("v2-bookings list: Supabase error, falling back to bookings.json:", error.message);
+      }
+
+      // Fallback: bookings.json
+      const { data } = await loadBookings();
       let result = [];
       if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
         result = data[vehicleId] || [];

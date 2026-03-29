@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice, pickupTime, returnTime } = req.body;
 
     // Validate vehicleId against the server-side allowlist
     if (!vehicleId || !CARS[vehicleId]) {
@@ -145,23 +145,31 @@ export default async function handler(req, res) {
         vehicle_name: carData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
+        pickup_time:  pickupTime  ? String(pickupTime).trim()  : "",
+        return_time:  returnTime  ? String(returnTime).trim()  : "",
+        email,
         ...(isSlingshotVehicle ? {
           rental_duration: Number(slingshotDuration) >= 48
             ? `${Number(slingshotDuration) / 24} days`
             : `${slingshotDuration} hours`,
         } : {}),
-        email,
         ...(isSlingshotVehicle ? {
           payment_type:       "full_payment",
           insurance_status:   insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_dpp_included",
           protection_plan:    insuranceCoverageChoice === "no" ? "included" : "not_included",
           full_rental_amount: afterTaxFullRental.toFixed(2),
         } : {}),
+        ...(!isSlingshotVehicle && !isCamryDepositMode ? {
+          payment_type:        "full_payment",
+          full_rental_amount:  afterTaxFullRental.toFixed(2),
+          ...( protectionPlan && tier ? { protection_plan_tier: tier } : {} ),
+        } : {}),
         ...(isCamryDepositMode ? {
           payment_type:        "reservation_deposit",
           deposit_refundable:  "false",
           full_rental_amount:  afterTaxFullRental.toFixed(2),
           balance_at_pickup:   (afterTaxFullRental - settings.camry_booking_deposit).toFixed(2),
+          ...( protectionPlan && tier ? { protection_plan_tier: tier } : {} ),
         } : {}),
       },
     };
