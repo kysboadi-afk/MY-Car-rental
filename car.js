@@ -1167,13 +1167,28 @@ initDatePickers();
         a.from < b.from ? -1 : 1
       ));
       let nextAvail = null;
+      // 1. Preferred: find a range that covers today
       for (const r of ranges) {
         if (r.from <= today && today <= r.to) {
-          // Add one day after the booking ends
           const d = new Date(r.to + "T00:00:00");
           d.setDate(d.getDate() + 1);
           nextAvail = d.toISOString().slice(0, 10);
           break;
+        }
+      }
+      // 2. Fallback: vehicle is unavailable but recorded range already expired
+      //    (rental extended past original return date). Use most recently ended range.
+      if (!nextAvail) {
+        let latestExpired = null;
+        for (const r of ranges) {
+          if (r.to < today) {
+            if (!latestExpired || r.to > latestExpired.to) latestExpired = r;
+          }
+        }
+        if (latestExpired) {
+          const d = new Date(latestExpired.to + "T00:00:00");
+          d.setDate(d.getDate() + 1);
+          nextAvail = d.toISOString().slice(0, 10);
         }
       }
       showVehicleUnavailable(nextAvail);

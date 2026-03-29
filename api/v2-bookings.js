@@ -266,7 +266,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -338,7 +338,22 @@ export default async function handler(req, res) {
         await autoUpsertBooking(updatedBooking);
       } else if (updatedBooking) {
         // Sync any other status change (cancelled, reserved_unpaid, etc.)
+        // Also re-sync when returnDate/returnTime were edited so Supabase and
+        // booked-dates.json stay consistent with the updated dates.
         await autoUpsertBooking(updatedBooking);
+        if (safeUpdates.returnDate && updatedBooking.pickupDate && updatedBooking.returnDate) {
+          // Re-block with the corrected date range so /api/booked-dates returns
+          // the updated range and "Next Available" badges show correctly.
+          await autoCreateBlockedDate(
+            updatedBooking.vehicleId,
+            updatedBooking.pickupDate,
+            updatedBooking.returnDate,
+            "booking"
+          );
+          await blockBookedDates(updatedBooking.vehicleId, updatedBooking.pickupDate, updatedBooking.returnDate).catch((err) => {
+            console.warn("v2-bookings: blockBookedDates on returnDate update failed (non-fatal):", err.message);
+          });
+        }
       }
       // "cancelled_rental" intentionally skips revenue creation and stat updates
 

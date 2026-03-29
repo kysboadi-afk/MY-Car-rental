@@ -2390,6 +2390,25 @@ function viewBooking(bookingId, vehicleId) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
       ${b.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
     </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Date</label>
+          <input type="date" id="bd-return-date" class="form-input" value="${esc(b.returnDate || '')}" style="font-size:13px;padding:6px 8px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Return Time (optional)</label>
+          <input type="text" id="bd-return-time" class="form-input" value="${esc(b.returnTime || '')}" placeholder="e.g. 5:00 PM" style="font-size:13px;padding:6px 8px;">
+        </div>
+        <div style="grid-column:1/-1;">
+          <button class="btn btn-secondary" style="font-size:13px;width:100%;"
+            onclick="updateBookingReturnDate('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}',this)">
+            ✏️ Save Return Date
+          </button>
+        </div>
+      </div>
+    </div>
   `;
   document.getElementById('booking-detail-actions').innerHTML = `
     ${b.status === 'reserved_unpaid' ? `
@@ -2429,6 +2448,28 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
       showToast('Error updating booking: ' + err.message, 'error');
       if (triggerBtn) triggerBtn.disabled = false;
     }
+  });
+}
+
+function updateBookingReturnDate(vehicleId, bookingId, btn) {
+  const newReturnDate = (document.getElementById('bd-return-date')?.value || '').trim();
+  const newReturnTime = (document.getElementById('bd-return-time')?.value || '').trim();
+  if (!newReturnDate || !/^\d{4}-\d{2}-\d{2}$/.test(newReturnDate)) {
+    showToast('Please enter a valid return date (YYYY-MM-DD).', 'error');
+    return;
+  }
+  if (btn) btn.disabled = true;
+  const updates = { returnDate: newReturnDate };
+  if (newReturnTime) updates.returnTime = newReturnTime;
+  apiPost('/api/v2-bookings', {
+    secret: adminSecret, action: 'update', vehicleId, bookingId, updates,
+  }).then(() => {
+    showToast('Return date updated. Availability will refresh shortly.', 'success');
+    closeModal('booking-detail-modal');
+    loadBookings();
+  }).catch((err) => {
+    showToast('Error: ' + err.message, 'error');
+    if (btn) btn.disabled = false;
   });
 }
 

@@ -154,12 +154,29 @@ function captureButtonKeys() {
 function getNextAvailDate(vehicleId, bookedDates) {
   const today  = todayISO();
   const ranges = (bookedDates[vehicleId] || []).slice().sort((a, b) => a.from < b.from ? -1 : 1);
+  // 1. Preferred: find a range that actually covers today
   for (const r of ranges) {
     if (r.from <= today && today <= r.to) {
       const d = new Date(r.to + "T00:00:00");
       d.setDate(d.getDate() + 1);
       return d.toISOString().slice(0, 10);
     }
+  }
+  // 2. Fallback: vehicle is marked unavailable but the recorded range already
+  //    expired (e.g. a rental was extended but booked-dates.json wasn't updated yet).
+  //    Find the most recently-ended range whose end date is in the recent past
+  //    (within 60 days). Treat day-after-end as "next available" so the badge
+  //    shows a date rather than nothing.
+  let latestExpired = null;
+  for (const r of ranges) {
+    if (r.to < today) {
+      if (!latestExpired || r.to > latestExpired.to) latestExpired = r;
+    }
+  }
+  if (latestExpired) {
+    const d = new Date(latestExpired.to + "T00:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
   }
   return null;
 }

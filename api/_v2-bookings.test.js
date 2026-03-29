@@ -817,3 +817,27 @@ test("list: filters by vehicleId", async () => {
   assert.equal(res._body.bookings.length, 1);
   assert.equal(res._body.bookings[0].vehicleId, "camry");
 });
+
+test("update: returnDate and returnTime are accepted and persisted", async () => {
+  resetStore(); resetCalls();
+  // Create a booking first
+  const createRes = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 300, pickupDate: "2026-04-01", returnDate: "2026-04-07" })), createRes);
+  const bookingId = createRes._body.booking.bookingId;
+
+  // Update the return date (simulates admin correcting an extension)
+  const updateRes = makeRes();
+  await handler(makeReq({
+    secret: "test-admin-secret",
+    action: "update",
+    vehicleId: "camry",
+    bookingId,
+    updates: { returnDate: "2026-04-10", returnTime: "5:00 PM" },
+  }), updateRes);
+
+  assert.equal(updateRes._status, 200, "update should succeed");
+  assert.equal(updateRes._body.booking.returnDate, "2026-04-10", "returnDate should be updated");
+  assert.equal(updateRes._body.booking.returnTime, "5:00 PM", "returnTime should be updated");
+  // autoUpsertBooking should have been called to sync to Supabase
+  assert.ok(automationCalls.booking.length > 0, "Supabase booking sync should be triggered");
+});
