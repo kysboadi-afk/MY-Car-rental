@@ -49,6 +49,19 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
 };
 
+// Mapping between app-level status values (used in bookings.json and the admin UI)
+// and database-level status values (used in the Supabase bookings table).
+const APP_TO_DB_STATUS = {
+  reserved_unpaid:  "pending",
+  booked_paid:      "approved",
+  active_rental:    "active",
+  completed_rental: "completed",
+  cancelled_rental: "cancelled",
+};
+const DB_TO_APP_STATUS = Object.fromEntries(
+  Object.entries(APP_TO_DB_STATUS).map(([app, db]) => [db, app])
+);
+
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 
@@ -203,7 +216,7 @@ export default async function handler(req, res) {
             returnDate:      r.return_date  || "",
             returnTime:      r.return_time  || "",
             location:        "",
-            status:          r.status,
+            status:          DB_TO_APP_STATUS[r.status] || r.status,
             amountPaid:      Number(r.deposit_paid      || 0),
             totalPrice:      Number(r.total_price       || 0),
             remaining:       Number(r.remaining_balance || 0),
@@ -291,7 +304,7 @@ export default async function handler(req, res) {
             pickupTime:      r.pickup_time  || "",
             returnDate:      r.return_date  || "",
             returnTime:      r.return_time  || "",
-            status:          r.status,
+            status:          DB_TO_APP_STATUS[r.status] || r.status,
             amountPaid:      Number(r.deposit_paid   || 0),
             totalPrice:      Number(r.total_price    || 0),
             remaining:       Number(r.remaining_balance || 0),
@@ -356,21 +369,77 @@ export default async function handler(req, res) {
         safeUpdates.completedAt = safeUpdates.updatedAt;
       }
 
+      // ── Supabase direct update (primary path when configured) ──────────────
+      // Update the Supabase bookings table directly so that status transitions
+      // ("Mark Active", "Mark Completed", etc.) succeed immediately even if
+      // the GitHub bookings.json write is temporarily blocked by a SHA conflict.
+      // This is intentionally done BEFORE the bookings.json write so that, if
+      // GitHub fails after all retries, we can fall back to the Supabase result.
+      let sbUpdateSuccess = false;
+      const sbInstance = getSupabaseAdmin();
+      if (sbInstance && safeUpdates.status) {
+        const dbStatus = APP_TO_DB_STATUS[safeUpdates.status];
+        if (dbStatus) {
+          try {
+            const sbPayload = {
+              status:     dbStatus,
+              updated_at: safeUpdates.updatedAt,
+              ...(safeUpdates.activatedAt ? { activated_at: safeUpdates.activatedAt } : {}),
+              ...(safeUpdates.completedAt ? { completed_at: safeUpdates.completedAt } : {}),
+              ...(safeUpdates.notes !== undefined  ? { notes: safeUpdates.notes } : {}),
+            };
+            const { data: sbRow, error: sbErr } = await sbInstance
+              .from("bookings")
+              .update(sbPayload)
+              .eq("booking_ref", bookingId)
+              .select("id")
+              .maybeSingle();
+            if (!sbErr && sbRow) {
+              sbUpdateSuccess = true;
+            } else if (sbErr) {
+              console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
+            }
+          } catch (sbCatchErr) {
+            console.error("v2-bookings: Supabase direct update threw (non-fatal):", sbCatchErr.message);
+          }
+        }
+      }
+
       let updatedBooking;
-      await updateJsonFileWithRetry({
-        load:    loadBookings,
-        apply:   (data) => {
-          if (!Array.isArray(data[vehicleId])) return;
-          const idx = data[vehicleId].findIndex(
+      try {
+        await updateJsonFileWithRetry({
+          load:    loadBookings,
+          apply:   (data) => {
+            if (!Array.isArray(data[vehicleId])) return;
+            const idx = data[vehicleId].findIndex(
+              (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+            );
+            if (idx === -1) return;
+            data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
+            updatedBooking = data[vehicleId][idx];
+          },
+          save:    saveBookings,
+          message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+        });
+      } catch (githubErr) {
+        if (sbUpdateSuccess) {
+          // Supabase already has the updated status — treat the GitHub write
+          // failure as non-fatal and reconstruct updatedBooking from local state.
+          console.error(
+            "v2-bookings: bookings.json write failed after Supabase update succeeded (non-fatal):",
+            githubErr.message
+          );
+          const preCheckBooking = checkData[vehicleId].find(
             (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
           );
-          if (idx === -1) return;
-          data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
-          updatedBooking = data[vehicleId][idx];
-        },
-        save:    saveBookings,
-        message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
-      });
+          if (preCheckBooking) {
+            updatedBooking = { ...preCheckBooking, ...safeUpdates };
+          }
+        } else {
+          // No Supabase fallback available — propagate the error to the client.
+          throw githubErr;
+        }
+      }
 
       // ── Booking automation ────────────────────────────────────────────────
       // When a booking becomes paid, automatically create a revenue record,

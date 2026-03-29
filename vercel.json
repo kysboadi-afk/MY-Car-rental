@@ -22,7 +22,7 @@
       "maxDuration": 15
     },
     "api/v2-bookings.js": {
-      "maxDuration": 15
+      "maxDuration": 30
     },
     "api/v2-vehicles.js": {
       "maxDuration": 15
