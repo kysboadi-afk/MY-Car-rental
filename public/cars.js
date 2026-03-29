@@ -104,6 +104,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       btn.setAttribute("data-i18n", i18nKey);
       btn.textContent = i18n.t(i18nKey);
       btn.disabled = false;
+      btn.style.display = "";
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
 
@@ -134,13 +135,8 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
-      // "Join Waitlist" button — enabled so customers can click through to car.html
-      btn.setAttribute("data-i18n", "fleet.joinWaitlist");
-      btn.textContent = i18n.t("fleet.joinWaitlist");
-      btn.disabled = false;
-      btn.classList.add("btn-booked");
-      btn.classList.add("btn-waitlist");
-      link.style.pointerEvents = "";
+      btn.style.display = "none";
+      link.style.pointerEvents = "none";
     }
   });
 }
