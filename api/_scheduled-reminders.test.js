@@ -93,11 +93,15 @@ mock.module("./_sms-templates.js", {
   },
 });
 
-// GitHub API stubs (for booked-dates reads/writes inside removeFromBookedDates)
-global.fetch = async (url) => {
+// GitHub API stubs (for booked-dates and fleet-status reads/writes)
+global.fetch = async (url, opts) => {
   try {
     const parsed = new URL(typeof url === "string" ? url : String(url));
     if (parsed.hostname === "api.github.com") {
+      // Track PUT calls so tests can assert on fleet-status writes
+      if (opts && opts.method === "PUT") {
+        retryApplies; // already tracked via updateJsonFileWithRetry mock
+      }
       return {
         ok: true,
         json: async () => ({
@@ -296,4 +300,62 @@ test("processAutoCompletions: no-ops when GITHUB_TOKEN is absent", async () => {
 
   process.env.GITHUB_TOKEN = saved;
   assert.equal(updatedBookings.length, 0, "Without GITHUB_TOKEN, nothing should be updated");
+});
+
+test("processAutoCompletions: restores fleet-status.json to available after completion", async () => {
+  reset();
+  const now = new Date("2026-03-22T15:00:00"); // 5h past 10:00 AM return
+  const allBookings = { camry: [makeBooking()] };
+
+  await processAutoCompletions(allBookings, now);
+
+  const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
+  assert.ok(restoreCall, "fleet-status.json restore must be attempted after completion");
+});
+
+test("processAutoCompletions: does NOT restore fleet-status when another active_rental remains", async () => {
+  reset();
+  const now = new Date("2026-03-22T15:00:00");
+  const allBookings = {
+    camry: [
+      makeBooking({ bookingId: "bk-001", returnDate: "2026-03-22", returnTime: "10:00 AM" }),
+      makeBooking({ bookingId: "bk-002", status: "active_rental" }), // still active
+    ],
+  };
+
+  await processAutoCompletions(allBookings, now);
+
+  const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
+  assert.equal(restoreCall, undefined, "Must NOT restore fleet-status when another active_rental exists");
+});
+
+test("processAutoCompletions: restores fleet-status when completing the only active_rental", async () => {
+  reset();
+  const now = new Date("2026-03-22T15:00:00");
+  // One active_rental overdue, one completed_rental (already done)
+  const allBookings = {
+    camry: [
+      makeBooking({ bookingId: "bk-current", status: "active_rental" }),
+      makeBooking({ bookingId: "bk-old",     status: "completed_rental" }),
+    ],
+  };
+
+  await processAutoCompletions(allBookings, now);
+
+  const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
+  assert.ok(restoreCall, "Should restore fleet-status when the only active_rental is completed");
+});
+
+test("processAutoCompletions: restores fleet-status for each vehicle independently", async () => {
+  reset();
+  const now = new Date("2026-03-22T15:00:00");
+  const allBookings = {
+    camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
+    camry2013: [makeBooking({ bookingId: "bk-c2013",     vehicleId: "camry2013" })],
+  };
+
+  await processAutoCompletions(allBookings, now);
+
+  const restoreCalls = retryApplies.filter((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
+  assert.equal(restoreCalls.length, 2, "Each vehicle should get its own fleet-status restore call");
 });

@@ -78,6 +78,7 @@ const AUTO_COMPLETE_HOURS = 4;
 
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
+const FLEET_STATUS_PATH = "fleet-status.json";
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -141,6 +142,61 @@ async function removeFromBookedDates(vehicleId, from, to) {
     });
   } catch (err) {
     console.error("scheduled-reminders: removeFromBookedDates failed (non-fatal):", err.message);
+  }
+}
+
+async function loadFleetStatus() {
+  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
+  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  if (!getResp.ok) {
+    if (getResp.status === 404) return { data: {}, sha: null };
+    return { data: {}, sha: null };
+  }
+  const fileData = await getResp.json();
+  let data = {};
+  try {
+    data = JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    if (typeof data !== "object" || Array.isArray(data)) data = {};
+  } catch { data = {}; }
+  return { data, sha: fileData.sha };
+}
+
+async function saveFleetStatus(data, sha, message) {
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
+  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+  const body = { message, content };
+  if (sha) body.sha = sha;
+  const resp = await fetch(apiUrl, {
+    method:  "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body:    JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`GitHub PUT fleet-status.json failed: ${resp.status} ${text}`);
+  }
+}
+
+/**
+ * Mark a vehicle as available in fleet-status.json (non-fatal).
+ * Called after a booking is auto-completed and no other active_rental bookings
+ * remain for this vehicle, so the website immediately shows it as bookable again.
+ * @param {string} vehicleId
+ */
+async function markVehicleAvailable(vehicleId) {
+  if (!process.env.GITHUB_TOKEN || !vehicleId) return;
+  try {
+    await updateJsonFileWithRetry({
+      load:    loadFleetStatus,
+      apply:   (data) => {
+        if (!data[vehicleId]) data[vehicleId] = {};
+        data[vehicleId].available = true;
+      },
+      save:    saveFleetStatus,
+      message: `Auto-complete: mark ${vehicleId} available`,
+    });
+  } catch (err) {
+    console.error("scheduled-reminders: markVehicleAvailable failed (non-fatal):", err.message);
   }
 }
 
@@ -583,7 +639,8 @@ export async function processAutoActivations(allBookings, now) {
 /**
  * Auto-complete active_rental bookings that are past their return time by
  * AUTO_COMPLETE_HOURS hours.  Updates bookings.json status to
- * "completed_rental", removes blocked dates, and syncs to Supabase.
+ * "completed_rental", removes blocked dates, restores fleet-status.json to
+ * available, and syncs to Supabase.
  * Non-fatal: errors are logged and never propagate.
  *
  * @param {object} allBookings - current bookings data snapshot
@@ -630,6 +687,17 @@ export async function processAutoCompletions(allBookings, now) {
 
         // Free up the dates in booked-dates.json
         await removeFromBookedDates(vehicleId, booking.pickupDate, booking.returnDate);
+
+        // Re-enable the vehicle in fleet-status.json so the website shows it
+        // as bookable again — but only if no other active_rental remains for
+        // this vehicle (handles the case where a follow-on booking is already
+        // active at the same time).
+        const otherActiveRentals = (allBookings[vehicleId] || []).filter(
+          (b) => (b.bookingId || b.paymentIntentId) !== id && b.status === "active_rental"
+        );
+        if (otherActiveRentals.length === 0) {
+          await markVehicleAvailable(vehicleId);
+        }
       } catch (err) {
         console.error(
           `scheduled-reminders: auto-completion failed for ${vehicleId}/${id} (non-fatal):`,
