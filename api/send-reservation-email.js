@@ -1052,6 +1052,11 @@ export default async function handler(req, res) {
       persistedBooking = pipelineResult.booking;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);
+        // PHASE 3: Do NOT allow confirmation emails if booking is not saved
+        return res.status(500).json({
+          error: "Booking could not be saved. Please contact slyservices@supports-info.com to confirm your booking.",
+          bookingId: pipelineResult.bookingId,
+        });
       } else {
         console.log(`[send-reservation-email] booking_persisted bookingId=${pipelineResult.bookingId} supabaseOk=${pipelineResult.supabaseOk}`);
       }
