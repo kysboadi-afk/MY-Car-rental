@@ -191,7 +191,8 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       btn.setAttribute("data-i18n", i18nKey);
       btn.textContent = i18n.t(i18nKey);
       btn.disabled = false;
-      btn.classList.remove("btn-booked", "btn-waitlist");
+      btn.style.display = "";
+      btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
 
       if (!isBookedToday(bookedDates[vid])) {
@@ -217,10 +218,11 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
-      btn.setAttribute("data-i18n", "fleet.joinWaitlist");
-      btn.textContent = i18n.t("fleet.joinWaitlist");
+      btn.setAttribute("data-i18n", "fleet.extendRental");
+      btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
       btn.disabled = false;
-      btn.classList.add("btn-booked", "btn-waitlist");
+      btn.style.display = "";
+      btn.classList.add("btn-booked");
       link.style.pointerEvents = "";
     }
   });
