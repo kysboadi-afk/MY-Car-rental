@@ -178,11 +178,13 @@ function esc(str) {
 }
 
 /**
- * Save a booking record to bookings.json from PaymentIntent metadata.
+ * Save a booking record to bookings.json and Supabase from PaymentIntent metadata.
  *
- * This is the guaranteed server-side fallback for the browser-side record
- * creation in send-reservation-email.js.  appendBooking() is idempotent:
- * it deduplicates by paymentIntentId so a double-save is always safe.
+ * This is the guaranteed server-side path for every new booking — it fires on
+ * every payment_intent.succeeded event, meaning bookings land in the admin
+ * portal automatically without requiring the browser to complete success.html.
+ * appendBooking() is idempotent: it deduplicates by paymentIntentId so a
+ * double-save with the browser-side record is always safe.
  *
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
@@ -195,8 +197,12 @@ async function saveWebhookBookingRecord(paymentIntent) {
     vehicle_name,
     pickup_date,
     return_date,
+    pickup_time,
+    return_time,
     email,
     payment_type,
+    full_rental_amount,
+    protection_plan_tier,
   } = meta;
 
   if (!vehicle_id || !pickup_date || !return_date) {
@@ -204,28 +210,31 @@ async function saveWebhookBookingRecord(paymentIntent) {
     return;
   }
 
-  const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
-  const status = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
+  const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
+  const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
+  const status      = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
 
   const bookingRecord = {
-    bookingId:       "wh-" + crypto.randomBytes(8).toString("hex"),
-    name:            renter_name || "",
-    phone:           renter_phone ? normalizePhone(renter_phone) : "",
-    email:           email || "",
-    vehicleId:       vehicle_id,
-    vehicleName:     vehicle_name || vehicle_id,
-    pickupDate:      pickup_date,
-    pickupTime:      "",
-    returnDate:      return_date,
-    returnTime:      "",
-    location:        DEFAULT_LOCATION,
+    bookingId:           "wh-" + crypto.randomBytes(8).toString("hex"),
+    name:                renter_name || "",
+    phone:               renter_phone ? normalizePhone(renter_phone) : "",
+    email:               email || "",
+    vehicleId:           vehicle_id,
+    vehicleName:         vehicle_name || vehicle_id,
+    pickupDate:          pickup_date,
+    pickupTime:          pickup_time  || "",
+    returnDate:          return_date,
+    returnTime:          return_time  || "",
+    location:            DEFAULT_LOCATION,
     status,
     amountPaid,
-    paymentIntentId: paymentIntent.id,
-    paymentMethod:   "stripe",
-    smsSentAt:       {},
-    createdAt:       new Date().toISOString(),
-    source:          "stripe_webhook",
+    totalPrice,
+    paymentIntentId:     paymentIntent.id,
+    paymentMethod:       "stripe",
+    ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
+    smsSentAt:           {},
+    createdAt:           new Date().toISOString(),
+    source:              "stripe_webhook",
   };
 
   try {
@@ -235,7 +244,7 @@ async function saveWebhookBookingRecord(paymentIntent) {
     console.error("stripe-webhook: saveWebhookBookingRecord error:", err.message);
   }
 
-  // Non-fatal Supabase sync
+  // Non-fatal Supabase sync — this is what the admin portal reads via list action
   try {
     await autoCreateRevenueRecord(bookingRecord);
     await autoUpsertCustomer(bookingRecord, false);

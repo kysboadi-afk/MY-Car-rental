@@ -121,7 +121,10 @@ export default async function handler(req, res) {
   }
 
   const sb = getSupabaseAdmin();
-  const fallback = sb ? {} : await fetchGitHubBookedDates();
+  // Always pre-fetch booked-dates.json so that if Supabase IS configured but a
+  // query fails we still return accurate data instead of treating every vehicle
+  // as available (which could allow double-bookings during Supabase outages).
+  const fallback = await fetchGitHubBookedDates();
 
   if (vehicleId) {
     // Single vehicle check

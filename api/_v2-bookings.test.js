@@ -841,3 +841,65 @@ test("update: returnDate and returnTime are accepted and persisted", async () =>
   // autoUpsertBooking should have been called to sync to Supabase
   assert.ok(automationCalls.booking.length > 0, "Supabase booking sync should be triggered");
 });
+
+test("list: returns Supabase rows when client is available", async () => {
+  resetStore(); resetCalls();
+  // Simulate Supabase returning two bookings directly
+  const fakeRows = [
+    {
+      id: "uuid-1", booking_ref: "wh-abc123", vehicle_id: "camry2013",
+      pickup_date: "2026-03-29", return_date: "2026-04-01",
+      pickup_time: "8:38 PM",   return_time: "8:38 PM",
+      status: "booked_paid",    deposit_paid: 231.53, total_price: 231.53,
+      remaining_balance: 0,     payment_status: "paid",
+      payment_method: "stripe", payment_intent_id: "pi_test123",
+      notes: "",                created_at: "2026-03-29T20:38:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-1", name: "David Agbebaku", phone: "+13463814616", email: "davosama15@gmail.com" },
+    },
+  ];
+  // Build a minimal Supabase-stub that chains eq/in/order and resolves with fakeRows
+  const makeChain = (rows) => {
+    const chain = {
+      select() { return this; },
+      eq()     { return this; },
+      in()     { return this; },
+      order()  { return Promise.resolve({ data: rows, error: null }); },
+    };
+    return chain;
+  };
+  supabaseMockState.client = { from: () => makeChain(fakeRows) };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].bookingId, "wh-abc123");
+    assert.equal(res._body.bookings[0].name, "David Agbebaku");
+    assert.equal(res._body.bookings[0].pickupTime, "8:38 PM");
+    assert.equal(res._body.bookings[0]._source, "supabase");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
+test("list: falls back to bookings.json when Supabase errors", async () => {
+  resetStore(); resetCalls();
+  await handler(makeReq(createPayload({ amountPaid: 100 })), makeRes()); // seed one booking
+  // Supabase client that always errors
+  const errChain = {
+    select() { return this; },
+    eq()     { return this; },
+    in()     { return this; },
+    order()  { return Promise.resolve({ data: null, error: { message: "DB down" } }); },
+  };
+  supabaseMockState.client = { from: () => errChain };
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1, "should fall back to bookings.json booking");
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
