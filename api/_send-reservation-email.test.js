@@ -652,7 +652,7 @@ test("owner email notes when no insurance was uploaded", async () => {
   await handler(req, res);
 
   const { html } = sentMails[0];
-  assert.ok(html.includes("No insurance document was uploaded"), "Should warn when no insurance uploaded");
+  assert.ok(html.includes("verify insurance at pickup before releasing the vehicle"), "Should warn when no insurance uploaded");
 });
 
 test("owner email plain-text notes insurance attachment", async () => {
