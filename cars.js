@@ -271,9 +271,12 @@ async function loadFleet() {
   const vehicles = vehiclesResult.status === "fulfilled" ? (vehiclesResult.value || []) : [];
   const pricing  = pricingResult.status  === "fulfilled" ? pricingResult.value           : null;
 
-  // Only render vehicles the admin has marked as active and that are available for booking
+  // Only render vehicles the admin has marked as active.
+  // Vehicles with rental_status "rented"/"reserved" are kept in the grid but
+  // shown as "Currently Booked" by applyFleetStatus — they must NOT be hidden
+  // here or the "Extend Rental" button and "Next Available" badge disappear.
   const active = vehicles
-    .filter(v => (!v.status || v.status === "active") && (!v.rental_status || v.rental_status === "available"))
+    .filter(v => !v.status || v.status === "active")
     .sort((a, b) => {
       // Slingshot first, then economy, then anything else
       const VEHICLE_TYPE_ORDER = { slingshot: 0, economy: 1 };

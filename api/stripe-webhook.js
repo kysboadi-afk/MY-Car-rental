@@ -596,6 +596,8 @@ export default async function handler(req, res) {
               if (ext) {
                 const updatedReturnDate = ext.newReturnDate || booking.returnDate;
                 const updatedReturnTime = ext.newReturnTime || booking.returnTime;
+                const oldReturnDate     = booking.returnDate;
+                const pickupDate        = booking.pickupDate;
                 data[vehicle_id][idx].returnDate = updatedReturnDate;
                 data[vehicle_id][idx].returnTime = updatedReturnTime;
                 data[vehicle_id][idx].extensionPendingPayment = null;
@@ -607,6 +609,31 @@ export default async function handler(req, res) {
                   await autoUpsertBooking(data[vehicle_id][idx]);
                 } catch (syncErr) {
                   console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
+                }
+
+                // Update booked-dates.json: replace old range with the extended range.
+                // The old range (pickupDate → oldReturnDate) is removed and the new
+                // range (pickupDate → updatedReturnDate) is added so that:
+                //   • the "Next Available" badge on cars.html shows the correct date
+                //   • the availability calendar blocks the full extended period
+                if (pickupDate && updatedReturnDate) {
+                  try {
+                    await blockBookedDates(vehicle_id, pickupDate, updatedReturnDate);
+                    console.log(`stripe-webhook: booked-dates.json updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
+                  } catch (bdErr) {
+                    console.error("stripe-webhook: booked-dates.json extension update failed (non-fatal):", bdErr.message);
+                  }
+                }
+
+                // Update Supabase blocked_dates: replace old end date with new one.
+                // autoCreateBlockedDate uses upsert so it will insert or update in place.
+                if (pickupDate && updatedReturnDate) {
+                  try {
+                    await autoCreateBlockedDate(vehicle_id, pickupDate, updatedReturnDate, "booking");
+                    console.log(`stripe-webhook: Supabase blocked_dates updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
+                  } catch (sbBlockErr) {
+                    console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
+                  }
                 }
 
                 // Send extension confirmed SMS

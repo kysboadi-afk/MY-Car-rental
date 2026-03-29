@@ -4,9 +4,10 @@
 //
 // POST /api/v2-bookings
 // Actions:
-//   list    — { secret, action:"list", vehicleId?, status? }
-//   update  — { secret, action:"update", vehicleId, bookingId, updates:{status,...} }
-//   create  — { secret, action:"create", ...bookingFields } (manual booking)
+//   list      — { secret, action:"list", vehicleId?, status? }
+//   list_raw  — { secret, action:"list_raw" }  (unfiltered Supabase read — Phase 6)
+//   update    — { secret, action:"update", vehicleId, bookingId, updates:{status,...} }
+//   create    — { secret, action:"create", ...bookingFields } (manual booking)
 //
 // Booking automation (triggered automatically, non-fatal):
 //   On create (booked_paid) or status → "booked_paid" / "active_rental":
@@ -33,6 +34,7 @@ import {
   autoUpsertBooking,
   autoCreateBlockedDate,
 } from "./_booking-automation.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
@@ -165,6 +167,80 @@ export default async function handler(req, res) {
       result.sort((a, b) => (b.createdAt || b.pickupDate || "") > (a.createdAt || a.pickupDate || "") ? 1 : -1);
 
       return res.status(200).json({ bookings: result });
+    }
+
+    // ── LIST_RAW (Phase 6) — unfiltered direct Supabase read ─────────────────
+    // Returns every row from the Supabase bookings table with no status/vehicle
+    // filters and no aggregation.  Used by the admin panel to verify data
+    // consistency independently of the bookings.json flat-file store.
+    // Falls back to the same flat-file data as "list" when Supabase is not
+    // configured, so the admin never sees an empty table due to misconfiguration.
+    if (action === "list_raw") {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        const { data: rows, error } = await sb
+          .from("bookings")
+          .select(`
+            id,
+            booking_ref,
+            vehicle_id,
+            pickup_date,
+            return_date,
+            pickup_time,
+            return_time,
+            status,
+            total_price,
+            deposit_paid,
+            remaining_balance,
+            payment_status,
+            payment_method,
+            notes,
+            created_at,
+            updated_at,
+            activated_at,
+            completed_at,
+            customers ( id, name, phone, email )
+          `)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("v2-bookings list_raw Supabase error:", error.message);
+          // Fall through to JSON fallback
+        } else {
+          const bookings = (rows || []).map((r) => ({
+            bookingId:       r.booking_ref || r.id,
+            vehicleId:       r.vehicle_id,
+            name:            r.customers?.name  || "",
+            phone:           r.customers?.phone || "",
+            email:           r.customers?.email || "",
+            pickupDate:      r.pickup_date  || "",
+            pickupTime:      r.pickup_time  || "",
+            returnDate:      r.return_date  || "",
+            returnTime:      r.return_time  || "",
+            status:          r.status,
+            amountPaid:      Number(r.deposit_paid   || 0),
+            totalPrice:      Number(r.total_price    || 0),
+            remaining:       Number(r.remaining_balance || 0),
+            paymentStatus:   r.payment_status,
+            paymentMethod:   r.payment_method || "",
+            notes:           r.notes || "",
+            createdAt:       r.created_at,
+            activatedAt:     r.activated_at  || null,
+            completedAt:     r.completed_at  || null,
+            _source:         "supabase",
+          }));
+          return res.status(200).json({ bookings, source: "supabase", total: bookings.length });
+        }
+      }
+
+      // Fallback: return the same flat-file bookings as "list"
+      const { data: fbData } = await loadBookings();
+      let fbResult = [];
+      for (const vid of ALLOWED_VEHICLES) {
+        fbResult = fbResult.concat((fbData[vid] || []).map((b) => ({ ...b, vehicleId: b.vehicleId || vid, _source: "bookings_json" })));
+      }
+      fbResult.sort((a, b) => (b.createdAt || b.pickupDate || "") > (a.createdAt || a.pickupDate || "") ? 1 : -1);
+      return res.status(200).json({ bookings: fbResult, source: "bookings_json", total: fbResult.length });
     }
 
     // ── UPDATE ──────────────────────────────────────────────────────────────
