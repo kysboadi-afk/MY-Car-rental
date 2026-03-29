@@ -50,6 +50,20 @@ export default async function handler(req, res) {
       }
     }
 
+    // For economy (non-Slingshot) vehicles: enforce that the renter declared either
+    // personal auto insurance (verified at pickup) OR selected a valid DPP tier.
+    // This is a server-side guard that cannot be bypassed via browser DevTools.
+    if (!CARS[vehicleId].hourlyTiers) {
+      if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
+        return res.status(400).json({ error: "Please indicate whether you have personal auto insurance or would like to add a Damage Protection Plan." });
+      }
+      if (insuranceCoverageChoice === "no") {
+        if (protectionPlan !== true || !["basic", "standard", "premium"].includes(protectionPlanTier)) {
+          return res.status(400).json({ error: "A valid Damage Protection Plan (Basic, Standard, or Premium) is required when you do not have personal auto insurance." });
+        }
+      }
+    }
+
     // Validate dates
     const pickupD = new Date(pickup + "T00:00:00");
     const returnD = new Date(returnDate + "T00:00:00");

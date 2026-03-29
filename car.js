@@ -2057,8 +2057,8 @@ stripeBtn.addEventListener("click", async () => {
         // For Economy cars: pass the selected tier so the server uses the correct flat rate.
         ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
-        // Pass insurance choice for Slingshot auth-hold selection
-        ...(carData.hourlyTiers ? { insuranceCoverageChoice } : {}),
+        // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
+        insuranceCoverageChoice,
         paymentMode,
       })
     });
