@@ -379,96 +379,45 @@
       <button id="cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change booking details</button>
     </div>
 
-    <!-- ── Waitlist section ──────────────────────────────────────────────────
-         Shown by car.js INSTEAD of the regular form when the vehicle is
-         currently booked (fleet-status available=false).
-         The existing #reserveBtn / #stripePay buttons are hidden in that state
-         so there is no duplication of "reserve" CTAs.
+    <!-- ── Extend Rental section ─────────────────────────────────────────────
+         Shown by car.js INSTEAD of the regular booking form when the vehicle
+         is currently rented (fleet-status available=false).
+         Only the current renter can use this — identity is verified server-side.
     ─────────────────────────────────────────────────────────────────────── -->
-    <div id="waitlistSection" class="waitlist-section" style="display:none">
-      <h3 class="waitlist-heading" data-i18n="fleet.waitlistHeading">🔔 Join the Waitlist</h3>
-      <p class="waitlist-subtitle" data-i18n="fleet.waitlistSubtitle">This vehicle is currently booked. Pay a $50 non-refundable deposit to lock your place in line — it goes toward your rental when the car becomes available.</p>
-      <p class="waitlist-next-line" id="waitlistNextAvailLine" style="display:none"></p>
-      <p class="waitlist-queue-note" data-i18n="fleet.waitlistQueueNote">First come, first served. You'll receive a payment link when the car is ready for your dates.</p>
+    <div id="extendRentalSection" class="waitlist-section" style="display:none">
+      <h3 class="waitlist-heading">⏱️ Extend Your Rental</h3>
+      <p class="waitlist-subtitle">This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.</p>
 
-      <div class="waitlist-form">
-        <label for="waitlistName" data-i18n="booking.fullName">Full Name</label>
-        <input type="text" id="waitlistName" placeholder="Enter your full name" data-i18n-placeholder="booking.namePh" autocomplete="off">
+      <div class="waitlist-form" id="extendRentalForm">
+        <label for="extEmail">Email Address</label>
+        <input type="email" id="extEmail" placeholder="Enter your booking email" autocomplete="email">
 
-        <label for="waitlistEmail" data-i18n="booking.email">Email Address</label>
-        <input type="email" id="waitlistEmail" placeholder="Enter your email" data-i18n-placeholder="booking.emailPh" autocomplete="email">
+        <label for="extPhone">Phone Number <span style="font-size:12px;font-weight:400;color:#aaa">(if email doesn't work)</span></label>
+        <input type="tel" id="extPhone" placeholder="Enter your phone number" autocomplete="tel">
 
-        <label for="waitlistPhone" data-i18n="booking.phone">Phone Number</label>
-        <input type="tel" id="waitlistPhone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel">
+        <label for="extNewReturn">New Return Date</label>
+        <input type="date" id="extNewReturn">
 
-        <label for="waitlistPickup" data-i18n="fleet.waitlistPrefPickup">Preferred Pickup Date</label>
-        <input type="date" id="waitlistPickup">
+        <label for="extNewReturnTime">New Return Time <span style="font-size:12px;font-weight:400;color:#aaa">(optional)</span></label>
+        <input type="time" id="extNewReturnTime">
 
-        <label for="waitlistReturn" data-i18n="fleet.waitlistPrefReturn">Preferred Return Date</label>
-        <input type="date" id="waitlistReturn">
-
-        <label for="waitlistLicense" data-i18n="fleet.waitlistIdUpload">Driver's License / State ID <span style="color:#dc3545">*</span></label>
-        <input type="file" id="waitlistLicense" accept="image/*,application/pdf" style="margin-bottom:4px">
-        <p class="pay-hint" id="waitlistLicenseHint" style="margin-top:0;margin-bottom:12px" data-i18n="fleet.waitlistIdHint">Upload a clear photo or scan of your driver's license or state ID (required).</p>
-
-        <!-- Insurance Question -->
-        <p style="font-weight:600;color:#ddd;margin-bottom:8px">🛡️ Do you have personal auto insurance that covers rental vehicles? <span style="color:#dc3545">*</span></p>
-        <div class="insurance-options" style="margin-bottom:12px">
-          <label class="insurance-option">
-            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceYes" value="yes">
-            <span>Yes, I have personal auto insurance</span>
-          </label>
-          <label class="insurance-option">
-            <input type="radio" name="waitlistInsuranceCoverage" id="waitlistHasInsuranceNo" value="no">
-            <span>No, I do not have personal auto insurance</span>
-          </label>
+        <div id="extPriceDisplay" style="display:none;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:12px">
+          <p style="margin:0;color:#aaa;font-size:14px">Estimated extension cost (before tax):</p>
+          <p style="margin:4px 0 0;font-size:22px;font-weight:bold;color:#ffb400">$<span id="extPriceAmount">0</span></p>
+          <p style="margin:4px 0 0;font-size:12px;color:#888">Final amount including tax is confirmed at checkout.</p>
         </div>
 
-        <!-- Insurance Proof Upload (shown when Yes is selected) -->
-        <div id="waitlistInsuranceUploadSection" style="display:none;margin-bottom:12px">
-          <label for="waitlistInsuranceUpload">📎 Upload Proof of Insurance <span style="color:#dc3545">*</span></label>
-          <input type="file" id="waitlistInsuranceUpload" accept="image/*,application/pdf" style="margin-bottom:4px">
-          <p class="pay-hint" style="margin-top:0;margin-bottom:4px">Accepted: JPG, PNG, PDF &middot; max 5&nbsp;MB</p>
-          <div id="waitlistInsuranceFileInfo" style="font-size:12px;margin-bottom:8px"></div>
-        </div>
-
-        <!-- Protection Plan Pre-Selection -->
-        <div id="waitlistProtectionSection" style="margin-bottom:12px">
-          <p style="font-weight:600;color:#ddd;margin-bottom:4px">Protection Plan <span style="font-size:12px;font-weight:400;color:#aaa">(Select Now, Pay at Booking)</span></p>
-          <p class="pay-hint" style="margin-top:0;margin-bottom:8px">Choose a protection plan now to speed up your booking. Final pricing will be applied at checkout.</p>
-          <div class="insurance-options">
-            <label class="insurance-option">
-              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionBasic" value="basic">
-              <span>Basic Protection<br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $2,500</small></span>
-            </label>
-            <label class="insurance-option">
-              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionStandard" value="standard" checked>
-              <span>Standard Protection <span class="popular-tag">Most Popular</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $1,000</small></span>
-            </label>
-            <label class="insurance-option">
-              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionPremium" value="premium">
-              <span>Premium Protection <span class="best-value-tag">Best Value</span><br><small style="font-weight:400;color:#aaa">Reduces financial responsibility up to $500</small></span>
-            </label>
-            <label class="insurance-option" id="waitlistProtectionNoneOption">
-              <input type="radio" name="waitlistProtectionPlan" id="waitlistProtectionNone" value="none">
-              <span>Decline Protection<br><small style="font-weight:400;color:#aaa">You are fully responsible for all damage or loss</small></span>
-            </label>
-          </div>
-          <p style="font-size:12px;color:#888;margin-top:8px;line-height:1.5">⚠️ Protection plans are optional and not insurance. Final pricing and terms are applied during booking.</p>
-        </div>
-
-        <p class="waitlist-deposit-note">💰 <strong>$50 non-refundable deposit</strong> is charged now to secure your priority. It is applied toward your total rental price at pickup.</p>
-
-        <button id="waitlistJoinBtn" class="waitlist-join-btn" disabled data-i18n="fleet.waitlistJoinBtn">🔔 Join Waitlist — Pay $50 Deposit</button>
-        <p class="pay-hint" id="waitlistPayHint" data-i18n="fleet.waitlistPayHint">Enter your name, email, preferred dates, and upload your driver's license to reserve your spot.</p>
+        <button id="extSubmitBtn" class="pay-button" disabled>⏱️ Extend Rental</button>
+        <p class="pay-hint" id="extPayHint">Enter your email or phone and select a new return date to enable payment.</p>
       </div>
 
-      <!-- Stripe payment form for the $50 waitlist deposit -->
-      <div id="waitlistPaymentForm" style="display:none">
-        <div id="waitlist-payment-element"></div>
-        <div id="waitlist-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
-        <button id="waitlist-submit-payment" type="button">Pay $50 Deposit</button>
-        <button id="waitlist-cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change details</button>
+      <!-- Stripe payment form for the extension charge -->
+      <div id="extPaymentForm" style="display:none">
+        <div id="ext-rental-summary" style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px"></div>
+        <div id="ext-payment-element"></div>
+        <div id="ext-payment-message" role="alert" style="color:#ff4444;margin:8px 0;min-height:20px"></div>
+        <button id="ext-submit-payment" type="button">Pay $<span id="extPayAmount">0</span> Now 🔒</button>
+        <button id="ext-cancel-payment" type="button" data-i18n="booking.cancelPayment">← Change details</button>
       </div>
     </div>
 

@@ -249,6 +249,133 @@ async function saveWebhookBookingRecord(paymentIntent) {
 }
 
 /**
+ * Send confirmation emails to the owner and renter after a rental extension
+ * payment is confirmed.
+ *
+ * @param {object} opts
+ * @param {object} opts.paymentIntent        - Stripe PaymentIntent object
+ * @param {object} opts.booking              - booking record from bookings.json
+ * @param {string} opts.updatedReturnDate    - new return date (YYYY-MM-DD)
+ * @param {string} opts.updatedReturnTime    - new return time (e.g. "3:00 PM")
+ * @param {string} opts.extensionLabel       - human-readable label (e.g. "+2 days")
+ * @param {string} opts.vehicleId            - vehicle ID
+ * @param {string} opts.renterEmail          - renter's email address
+ * @param {string} opts.renterName           - renter's name
+ */
+async function sendExtensionConfirmationEmails({
+  paymentIntent,
+  booking,
+  updatedReturnDate,
+  updatedReturnTime,
+  extensionLabel,
+  vehicleId,
+  renterEmail,
+  renterName,
+}) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn("stripe-webhook: SMTP not configured — skipping extension email");
+    return;
+  }
+
+  const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
+  const vehicleName   = (paymentIntent.metadata || {}).vehicle_name || vehicleId;
+
+  const transporter = nodemailer.createTransport({
+    host:   process.env.SMTP_HOST,
+    port:   parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_PORT === "465",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const newReturnDisplay = updatedReturnDate +
+    (updatedReturnTime ? ` at ${updatedReturnTime}` : "");
+
+  // ── Owner notification ─────────────────────────────────────────────────
+  try {
+    await transporter.sendMail({
+      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:      OWNER_EMAIL,
+      ...(renterEmail ? { replyTo: renterEmail } : {}),
+      subject: `⏱️ Rental Extension Confirmed — ${esc(vehicleName)} — ${esc(renterName || "Renter")}`,
+      html: `
+        <h2>⏱️ Rental Extension Confirmed</h2>
+        <table style="border-collapse:collapse;width:100%;margin-top:16px">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterName || "N/A")}</td></tr>
+          ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
+          ${booking && booking.phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(booking.phone)}</td></tr>` : ""}
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
+        </table>
+        <p style="margin-top:16px">The booking has been updated with the new return date/time.</p>
+      `,
+      text: [
+        "⏱️ Rental Extension Confirmed",
+        "",
+        `Renter         : ${renterName || "N/A"}`,
+        renterEmail ? `Email          : ${renterEmail}` : "",
+        booking && booking.phone ? `Phone          : ${booking.phone}` : "",
+        `Vehicle        : ${vehicleName}`,
+        `Extension      : ${extensionLabel}`,
+        `New Return Date: ${newReturnDisplay}`,
+        `Amount Charged : $${amountDollars}`,
+        `Stripe PI      : ${paymentIntent.id}`,
+      ].filter(Boolean).join("\n"),
+    });
+    console.log(`stripe-webhook: extension owner email sent for PI ${paymentIntent.id}`);
+  } catch (ownerEmailErr) {
+    console.error("stripe-webhook: extension owner email failed:", ownerEmailErr.message);
+  }
+
+  // ── Renter confirmation ────────────────────────────────────────────────
+  if (renterEmail) {
+    try {
+      await transporter.sendMail({
+        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:      renterEmail,
+        subject: "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+        html: `
+          <h2>✅ Rental Extension Confirmed</h2>
+          <p>Hi ${esc(renterName ? renterName.split(" ")[0] : "there")}, your rental extension payment has been received!</p>
+          <table style="border-collapse:collapse;width:100%;margin-top:12px">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return Date</strong></td><td style="padding:8px;border:1px solid #ddd"><strong style="color:#4caf50">${esc(newReturnDisplay)}</strong></td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
+          </table>
+          <p style="margin-top:16px">Your rental period has been updated. Please return the vehicle by <strong>${esc(newReturnDisplay)}</strong>.</p>
+          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
+          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+        `,
+        text: [
+          "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+          "",
+          `Hi ${renterName ? renterName.split(" ")[0] : "there"}, your rental extension payment has been received!`,
+          "",
+          `Vehicle        : ${vehicleName}`,
+          `Extension      : ${extensionLabel}`,
+          `New Return Date: ${newReturnDisplay}`,
+          `Amount Charged : $${amountDollars}`,
+          "",
+          `Your rental period has been updated. Please return the vehicle by ${newReturnDisplay}.`,
+          `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
+          "",
+          "Sly Transportation Services LLC",
+        ].join("\n"),
+      });
+      console.log(`stripe-webhook: extension renter email sent to ${renterEmail} for PI ${paymentIntent.id}`);
+    } catch (renterEmailErr) {
+      console.error("stripe-webhook: extension renter email failed:", renterEmailErr.message);
+    }
+  }
+}
+
+/**
  * Send a server-side fallback notification email to the owner and customer
  * using data extracted from the PaymentIntent metadata.
  *
@@ -438,7 +565,16 @@ export default async function handler(req, res) {
 
     // Handle rental extension payment confirmations.
     if ((paymentIntent.metadata || {}).payment_type === "rental_extension") {
-      const { vehicle_id, original_booking_id } = paymentIntent.metadata || {};
+      const {
+        vehicle_id,
+        original_booking_id,
+        renter_name,
+        renter_email,
+        extension_label,
+        new_return_date,
+        new_return_time,
+      } = paymentIntent.metadata || {};
+
       if (vehicle_id && original_booking_id) {
         try {
           const { data, sha } = await loadBookings();
@@ -448,10 +584,20 @@ export default async function handler(req, res) {
             );
             if (idx !== -1) {
               const booking = data[vehicle_id][idx];
-              const ext = booking.extensionPendingPayment;
+              // Use extensionPendingPayment from booking record if available,
+              // otherwise fall back to PI metadata (for web-initiated extensions
+              // where the booking update may not have completed yet).
+              const ext = booking.extensionPendingPayment || (new_return_date ? {
+                newReturnDate: new_return_date,
+                newReturnTime: new_return_time || "",
+                label:         extension_label || "",
+              } : null);
+
               if (ext) {
-                data[vehicle_id][idx].returnDate = ext.newReturnDate || booking.returnDate;
-                data[vehicle_id][idx].returnTime = ext.newReturnTime || booking.returnTime;
+                const updatedReturnDate = ext.newReturnDate || booking.returnDate;
+                const updatedReturnTime = ext.newReturnTime || booking.returnTime;
+                data[vehicle_id][idx].returnDate = updatedReturnDate;
+                data[vehicle_id][idx].returnTime = updatedReturnTime;
                 data[vehicle_id][idx].extensionPendingPayment = null;
                 data[vehicle_id][idx].extensionCount = (booking.extensionCount || 0) + 1;
                 await saveBookings(data, sha, `Confirm extension for booking ${original_booking_id}`);
@@ -468,14 +614,30 @@ export default async function handler(req, res) {
                   const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
                   const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
                   const vars = {
-                    return_time: ext.newReturnTime || "",
-                    return_date: ext.newReturnDate || "",
+                    return_time: updatedReturnTime,
+                    return_date: updatedReturnDate,
                   };
                   try {
                     await sendSms(normalizePhone(booking.phone), render(template, vars));
                   } catch (smsErr) {
                     console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
                   }
+                }
+
+                // Send extension confirmation emails to owner and renter
+                try {
+                  await sendExtensionConfirmationEmails({
+                    paymentIntent,
+                    booking,
+                    updatedReturnDate,
+                    updatedReturnTime,
+                    extensionLabel: ext.label || extension_label || "",
+                    vehicleId:      vehicle_id,
+                    renterEmail:    booking.email || renter_email || "",
+                    renterName:     booking.name  || renter_name  || "",
+                  });
+                } catch (emailErr) {
+                  console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
                 }
               }
             }

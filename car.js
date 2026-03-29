@@ -1187,7 +1187,7 @@ function showVehicleUnavailable(nextAvailableISO) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
-  // ── 1. Insert / update the "Currently Booked" notice at the top ──────────
+  // ── 1. Insert / update the "Currently Rented" notice at the top ──────────
   let notice = document.getElementById("vehicleUnavailableNotice");
   if (!notice) {
     notice = document.createElement("div");
@@ -1202,30 +1202,18 @@ function showVehicleUnavailable(nextAvailableISO) {
     const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
 
-    // Pre-fill the preferred pickup date in the waitlist form
-    const wlPickup = document.getElementById("waitlistPickup");
-    if (wlPickup) {
-      wlPickup.value = nextAvailableISO;
-      wlPickup.setAttribute("min", nextAvailableISO);
-    }
-    const wlReturn = document.getElementById("waitlistReturn");
-    if (wlReturn) wlReturn.setAttribute("min", nextAvailableISO);
-
-    // Also update the inline "next available" line inside the waitlist section
-    const nextLine2 = document.getElementById("waitlistNextAvailLine");
-    if (nextLine2) {
-      nextLine2.textContent = _fmt("fleet.waitlistNextLine", { date: formatted }, `Next available: ${formatted}`);
-      nextLine2.style.display = "";
-    }
+    // Set minimum new return date in the extend form
+    const extReturn = document.getElementById("extNewReturn");
+    if (extReturn) extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
   }
 
   notice.innerHTML = `
-    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Booked")}</strong></p>
+    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Rented")}</strong></p>
     ${nextLine}
     <p><a href="${vehicleId.startsWith('slingshot') ? 'slingshot.html' : 'cars.html'}">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
 
   // ── 2. Hide the regular booking form elements ────────────────────────────
-  // Hide the heading and all regular form inputs/sections.  The waitlist
+  // Hide the heading and all regular form inputs/sections.  The extend rental
   // section is shown below instead so there are no duplicate "reserve" CTAs.
   const bookingHeading = bookingSection.querySelector("h2");
   if (bookingHeading) bookingHeading.style.display = "none";
@@ -1262,141 +1250,261 @@ function showVehicleUnavailable(nextAvailableISO) {
 
   // Disable all remaining interactive elements so they cannot be submitted
   bookingSection.querySelectorAll("input, button, select, textarea").forEach(function(el) {
-    if (!el.closest("#waitlistSection")) el.disabled = true;
+    if (!el.closest("#extendRentalSection")) el.disabled = true;
   });
 
-  // ── 3. Show the waitlist sign-up section ─────────────────────────────────
-  const waitlistSection = document.getElementById("waitlistSection");
-  if (waitlistSection) {
-    waitlistSection.style.display = "";
-    // Initialize the waitlist form interactions
-    initWaitlistForm();
-  }
-}
-
-// ----- Waitlist Form -----
-// Manages the waitlist sign-up form that is shown when the vehicle is booked.
-// Validates inputs and launches the Stripe $50 deposit payment flow.
-function initWaitlistForm() {
-  const wlName    = document.getElementById("waitlistName");
-  const wlEmail   = document.getElementById("waitlistEmail");
-  const wlPickup  = document.getElementById("waitlistPickup");
-  const wlReturn  = document.getElementById("waitlistReturn");
-  const wlLicense = document.getElementById("waitlistLicense");
-  const wlJoinBtn = document.getElementById("waitlistJoinBtn");
-  const wlHint    = document.getElementById("waitlistPayHint");
-
-  // Insurance & protection plan elements
-  const wlInsYes       = document.getElementById("waitlistHasInsuranceYes");
-  const wlInsNo        = document.getElementById("waitlistHasInsuranceNo");
-  const wlInsUploadSec = document.getElementById("waitlistInsuranceUploadSection");
-  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
-  const wlInsFileInfo  = document.getElementById("waitlistInsuranceFileInfo");
-  const wlInsNoneOpt   = document.getElementById("waitlistProtectionNoneOption");
-  const wlInsNoneRad   = document.getElementById("waitlistProtectionNone");
-  const wlInsStdRad    = document.getElementById("waitlistProtectionStandard");
-
-  // Set minimum dates
-  const todayISO = new Date().toISOString().slice(0, 10);
-  if (wlPickup && !wlPickup.value) wlPickup.setAttribute("min", todayISO);
-  if (wlReturn) wlReturn.setAttribute("min", todayISO);
-
-  function updateWaitlistBtn() {
-    const nameOk    = wlName    && isValidName(wlName.value.trim());
-    const emailOk   = wlEmail   && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wlEmail.value.trim());
-    const licenseOk = wlLicense && wlLicense.files && wlLicense.files.length > 0;
-    const insAnswered = (wlInsYes && wlInsYes.checked) || (wlInsNo && wlInsNo.checked);
-    const insProofOk  = !wlInsYes || !wlInsYes.checked || (wlInsUpload && wlInsUpload.files && wlInsUpload.files.length > 0);
-    const ready     = nameOk && emailOk && licenseOk && insAnswered && insProofOk;
-    if (wlJoinBtn) wlJoinBtn.disabled = !ready;
-    if (wlHint)    wlHint.style.display = ready ? "none" : "";
-  }
-
-  // Insurance radio change handler
-  function onWlInsuranceChange() {
-    const hasIns = wlInsYes && wlInsYes.checked;
-    if (wlInsUploadSec) wlInsUploadSec.style.display = hasIns ? "" : "none";
-    if (!hasIns) {
-      // Disable Decline when no insurance
-      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = "0.4"; wlInsNoneOpt.title = "A protection plan is required when you have no insurance."; }
-      if (wlInsNoneRad && wlInsNoneRad.checked && wlInsStdRad) wlInsStdRad.checked = true;
-    } else {
-      if (wlInsNoneOpt) { wlInsNoneOpt.style.opacity = ""; wlInsNoneOpt.title = ""; }
+  // ── 3. Show the Extend Rental section ────────────────────────────────────
+  const extendSection = document.getElementById("extendRentalSection");
+  if (extendSection) {
+    extendSection.style.display = "";
+    // Set minimum new return date to today
+    const extReturn = document.getElementById("extNewReturn");
+    if (extReturn && !extReturn.getAttribute("min")) {
+      extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
     }
-    updateWaitlistBtn();
-  }
-
-  if (wlInsYes) wlInsYes.addEventListener("change", onWlInsuranceChange);
-  if (wlInsNo)  wlInsNo.addEventListener("change", onWlInsuranceChange);
-
-  // Prevent selecting Decline when No insurance is chosen
-  if (wlInsNoneRad) {
-    wlInsNoneRad.addEventListener("change", function() {
-      if (wlInsNo && wlInsNo.checked && wlInsStdRad) {
-        wlInsStdRad.checked = true;
-      }
-    });
-  }
-
-  // Insurance proof file validation
-  if (wlInsUpload) {
-    wlInsUpload.addEventListener("change", function() {
-      const file = this.files[0];
-      if (wlInsFileInfo) { wlInsFileInfo.textContent = ""; wlInsFileInfo.style.color = ""; }
-      if (!file) { updateWaitlistBtn(); return; }
-      const allowed = ["image/jpeg", "image/png", "application/pdf"];
-      if (!allowed.includes(file.type)) {
-        if (wlInsFileInfo) { wlInsFileInfo.textContent = "Only JPG, PNG, or PDF files are accepted."; wlInsFileInfo.style.color = "#f44336"; }
-        this.value = "";
-        updateWaitlistBtn();
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        if (wlInsFileInfo) { wlInsFileInfo.textContent = "File must be under 5 MB."; wlInsFileInfo.style.color = "#f44336"; }
-        this.value = "";
-        updateWaitlistBtn();
-        return;
-      }
-      if (wlInsFileInfo) { wlInsFileInfo.textContent = "\u2713 " + file.name; wlInsFileInfo.style.color = "#4caf50"; }
-      updateWaitlistBtn();
-    });
-  }
-
-  [wlName, wlEmail, wlPickup, wlReturn].forEach(function(el) {
-    if (el) el.addEventListener("input", updateWaitlistBtn);
-  });
-  if (wlLicense) wlLicense.addEventListener("change", updateWaitlistBtn);
-  updateWaitlistBtn();
-
-  // When pickup changes, keep return ≥ pickup
-  if (wlPickup) {
-    wlPickup.addEventListener("change", function() {
-      if (wlReturn) wlReturn.setAttribute("min", wlPickup.value || todayISO);
-      if (wlReturn && wlReturn.value && wlReturn.value < wlPickup.value) {
-        wlReturn.value = wlPickup.value;
-      }
-    });
-  }
-
-  if (wlJoinBtn) {
-    wlJoinBtn.addEventListener("click", launchWaitlistPayment);
+    // Initialize the extend rental form interactions
+    initExtendRentalForm();
   }
 }
 
-async function launchWaitlistPayment() {
-  const wlName    = document.getElementById("waitlistName").value.trim();
-  const wlEmail   = document.getElementById("waitlistEmail").value.trim();
-  const wlPhone   = (document.getElementById("waitlistPhone") || {}).value || "";
-  const wlPickup  = (document.getElementById("waitlistPickup") || {}).value || "";
-  const wlReturn  = (document.getElementById("waitlistReturn") || {}).value || "";
-  const wlLicense = document.getElementById("waitlistLicense");
+// ----- Extend Rental Form -----
+// Manages the "Extend Rental" form that is shown when the vehicle is currently
+// rented.  The current renter enters their email/phone and new return date,
+// then pays the extension charge via Stripe.
+function initExtendRentalForm() {
+  var extEmail      = document.getElementById("extEmail");
+  var extPhone      = document.getElementById("extPhone");
+  var extNewReturn  = document.getElementById("extNewReturn");
+  var extReturnTime = document.getElementById("extNewReturnTime");
+  var extSubmitBtn  = document.getElementById("extSubmitBtn");
+  var extPayHint    = document.getElementById("extPayHint");
+  var extPriceDisplay = document.getElementById("extPriceDisplay");
+  var extPriceAmount  = document.getElementById("extPriceAmount");
 
-  // Insurance & protection plan values
-  const wlInsChecked   = document.querySelector('input[name="waitlistInsuranceCoverage"]:checked');
-  const wlHasInsurance = wlInsChecked ? wlInsChecked.value : null;
-  const wlPlanChecked  = document.querySelector('input[name="waitlistProtectionPlan"]:checked');
-  const wlProtectionPlanPref = wlPlanChecked ? wlPlanChecked.value : "standard";
-  const wlInsUpload    = document.getElementById("waitlistInsuranceUpload");
+  // Set today as the minimum new return date
+  var todayISO = new Date().toISOString().slice(0, 10);
+  if (extNewReturn && !extNewReturn.getAttribute("min")) {
+    extNewReturn.setAttribute("min", todayISO);
+  }
+
+  function isValidEmailFmt(val) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+  }
+
+  // Compute and display a client-side extension price estimate.
+  // The server will recompute the authoritative amount; this is just a preview.
+  function updatePriceEstimate() {
+    if (!extNewReturn || !extNewReturn.value) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    var today = new Date().toISOString().slice(0, 10);
+    var newReturn = extNewReturn.value;
+    if (newReturn <= today) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    if (!carData) {
+      if (extPriceDisplay) extPriceDisplay.style.display = "none";
+      return;
+    }
+
+    var isSlingshot = carData.hourlyTiers;
+
+    if (isSlingshot) {
+      // For Slingshot: rough estimate based on current return date being today
+      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
+      var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
+      if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
+    } else {
+      // Economy cars: use the same tiered pricing as the main booking flow
+      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var daily   = carData.pricePerDay  || 55;
+      var weekly  = carData.weekly       || 350;
+      var biweek  = carData.biweekly     || 650;
+      var monthly = carData.monthly      || 1300;
+
+      var cost2 = 0;
+      var rem   = extraDays2;
+      if (rem >= 30) { cost2 += Math.floor(rem / 30) * monthly;  rem = rem % 30; }
+      if (rem >= 14) { cost2 += Math.floor(rem / 14) * biweek;   rem = rem % 14; }
+      if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
+      cost2 += rem * daily;
+
+      if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
+    }
+
+    if (extPriceDisplay) extPriceDisplay.style.display = "";
+  }
+
+  function updateExtBtn() {
+    var emailOk  = extEmail && isValidEmailFmt(extEmail.value.trim());
+    var phoneOk  = extPhone && extPhone.value.trim().length >= 7;
+    var dateOk   = extNewReturn && extNewReturn.value;
+    var contactOk = emailOk || phoneOk;
+    var ready    = contactOk && dateOk;
+    if (extSubmitBtn) extSubmitBtn.disabled = !ready;
+    if (extPayHint) extPayHint.style.display = ready ? "none" : "";
+  }
+
+  [extEmail, extPhone].forEach(function(el) {
+    if (el) el.addEventListener("input", updateExtBtn);
+  });
+
+  if (extNewReturn) {
+    extNewReturn.addEventListener("change", function() {
+      updateExtBtn();
+      updatePriceEstimate();
+    });
+  }
+  if (extReturnTime) {
+    extReturnTime.addEventListener("change", updateExtBtn);
+  }
+
+  updateExtBtn();
+
+  if (extSubmitBtn) {
+    extSubmitBtn.addEventListener("click", launchExtendRentalPayment);
+  }
+}
+
+async function launchExtendRentalPayment() {
+  var extEmail      = document.getElementById("extEmail").value.trim();
+  var extPhone      = (document.getElementById("extPhone") || {}).value || "";
+  var newReturnDate = document.getElementById("extNewReturn").value;
+  var newReturnTime = document.getElementById("extNewReturnTime") ? document.getElementById("extNewReturnTime").value : "";
+
+  // Convert native time input (HH:MM) to 12-hour format for readability in emails/SMS
+  function to12Hour(hhmm) {
+    if (!hhmm) return "";
+    var parts = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+    if (!parts) return hhmm;
+    var h = parseInt(parts[1], 10);
+    var m = parts[2];
+    var period = h >= 12 ? "PM" : "AM";
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return h + ":" + m + " " + period;
+  }
+  var newReturnTime12 = to12Hour(newReturnTime);
+
+  var submitBtn = document.getElementById("extSubmitBtn");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
+
+  try {
+    var resp = await fetch(API_BASE + "/api/extend-rental", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vehicleId,
+        email:         extEmail,
+        phone:         extPhone.trim(),
+        newReturnDate,
+        newReturnTime: newReturnTime12,
+      }),
+    });
+    var data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Server error");
+
+    var { clientSecret, publishableKey, extensionAmount, extensionLabel, newReturnDate: confirmedDate, newReturnTime: confirmedTime, vehicleName, renterName } = data;
+    if (!clientSecret || !publishableKey) throw new Error("Invalid server response");
+
+    var stripe   = Stripe(publishableKey);
+    var elements = stripe.elements({
+      clientSecret,
+      locale: (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en",
+      ...(extEmail ? { defaultValues: { billingDetails: { email: extEmail } } } : {}),
+    });
+
+    var paymentElement = elements.create("payment");
+
+    // Show the Stripe payment form; hide the sign-up form
+    var extForm = document.getElementById("extendRentalForm");
+    if (extForm) extForm.style.display = "none";
+    var extPayForm = document.getElementById("extPaymentForm");
+    if (extPayForm) extPayForm.style.display = "";
+
+    // Populate the summary box
+    var summaryEl = document.getElementById("ext-rental-summary");
+    if (summaryEl) {
+      var displayReturn = confirmedDate + (confirmedTime ? " at " + confirmedTime : "");
+      summaryEl.innerHTML =
+        "<strong>⏱️ Rental Extension</strong><br>" +
+        (vehicleName ? "Vehicle: " + vehicleName + "<br>" : "") +
+        (renterName  ? "Renter: "  + renterName  + "<br>" : "") +
+        "Extension: " + extensionLabel + "<br>" +
+        "<strong>New Return: " + displayReturn + "</strong><br>" +
+        "<strong style='color:#ffb400'>Total: $" + extensionAmount + "</strong>";
+    }
+
+    // Update the pay button label
+    var extPayAmount = document.getElementById("extPayAmount");
+    if (extPayAmount) extPayAmount.textContent = extensionAmount;
+
+    paymentElement.mount("#ext-payment-element");
+
+    var submitPayBtn = document.getElementById("ext-submit-payment");
+    var cancelPayBtn = document.getElementById("ext-cancel-payment");
+    var msgEl        = document.getElementById("ext-payment-message");
+
+    var submitting = false;
+
+    var handleExtSubmit = async function() {
+      if (submitting) return;
+      submitting = true;
+      submitPayBtn.disabled    = true;
+      submitPayBtn.innerHTML   = _t("booking.processingPayment", "Processing…");
+      if (msgEl) msgEl.textContent = "";
+
+      var result = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: "https://www.slytrans.com/success.html?ext=1&vehicle=" + encodeURIComponent(vehicleId),
+          ...(extEmail ? { receipt_email: extEmail } : {}),
+        },
+      });
+
+      if (result.error) {
+        if (msgEl) msgEl.textContent = result.error.message;
+        submitPayBtn.disabled  = false;
+        submitPayBtn.innerHTML = "Pay $" + extensionAmount + " Now 🔒";
+        submitting = false;
+      }
+      // On success Stripe redirects — no cleanup needed here
+    };
+    submitPayBtn.addEventListener("click", handleExtSubmit);
+
+    var handleExtCancel = function() {
+      submitting = false;
+      submitPayBtn.removeEventListener("click", handleExtSubmit);
+      cancelPayBtn.removeEventListener("click", handleExtCancel);
+      paymentElement.unmount();
+      if (msgEl) msgEl.textContent = "";
+      if (extPayForm) extPayForm.style.display = "none";
+      if (extForm) extForm.style.display = "";
+      // Re-enable the extend button
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "⏱️ Extend Rental";
+      }
+    };
+    cancelPayBtn.addEventListener("click", handleExtCancel);
+
+  } catch (err) {
+    console.error("Extend rental payment error:", err);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "⏱️ Extend Rental";
+    }
+    alert(err.message || _t("booking.loadError", "Could not launch payment. Please try again."));
+  }
+}
+
+
+// ----- Payment Retry Pre-fill -----
 
   // Validate insurance question (should be already enforced by button state)
   if (!wlHasInsurance) {
