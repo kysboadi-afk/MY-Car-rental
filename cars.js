@@ -218,8 +218,12 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
-      btn.style.display = "none";
-      link.style.pointerEvents = "none";
+      btn.setAttribute("data-i18n", "fleet.extendRental");
+      btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
+      btn.disabled = false;
+      btn.style.display = "";
+      btn.classList.add("btn-booked");
+      link.style.pointerEvents = "";
     }
   });
 }
