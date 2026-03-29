@@ -2366,8 +2366,10 @@ function viewBooking(bookingId, vehicleId) {
   openModal('booking-detail-modal');
 }
 
-function updateBookingStatus(vehicleId, bookingId, status, triggerBtn) {
+function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) {
   if (triggerBtn) { triggerBtn.disabled = true; }
+  const maxAttempts = 3;
+  const currentAttempt = attempt || 0;
   apiPost('/api/v2-bookings', {
     secret: adminSecret, action: 'update', vehicleId, bookingId,
     updates: { status },
@@ -2376,8 +2378,14 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn) {
     // Reload from server to get the authoritative state
     loadBookings();
   }).catch((err) => {
-    showToast('Error updating booking: ' + err.message, 'error');
-    if (triggerBtn) triggerBtn.disabled = false;
+    const isConcurrentConflict = err.message && err.message.toLowerCase().includes('concurrent update conflict');
+    if (isConcurrentConflict && currentAttempt < maxAttempts - 1) {
+      // Auto-retry after a short delay — another process (cron/webhook) was writing at the same time
+      setTimeout(() => updateBookingStatus(vehicleId, bookingId, status, triggerBtn, currentAttempt + 1), 1500);
+    } else {
+      showToast('Error updating booking: ' + err.message, 'error');
+      if (triggerBtn) triggerBtn.disabled = false;
+    }
   });
 }
 
