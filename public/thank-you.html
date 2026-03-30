@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Thank you for your submission! Sly Transportation Services LLC has received your information and will be in touch shortly.">
+  <title>Thank You | Sly Transportation Services LLC</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .ty-wrapper {
+      min-height: calc(100vh - 120px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .ty-card {
+      max-width: 600px;
+      width: 100%;
+      background: #1a1a1a;
+      padding: 50px 40px;
+      border-radius: 16px;
+      text-align: center;
+      border: 1px solid #2a2a2a;
+      box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    }
+    .ty-logo {
+      width: 110px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 50%;
+      border: 3px solid #ffb400;
+      margin-bottom: 28px;
+    }
+    .ty-card h1 {
+      color: #4caf50;
+      font-size: 42px;
+      margin-bottom: 14px;
+      line-height: 1.15;
+    }
+    .ty-card .ty-sub {
+      font-size: 19px;
+      color: #ddd;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .ty-card .ty-detail {
+      font-size: 15px;
+      color: #999;
+      margin-bottom: 36px;
+      line-height: 1.6;
+    }
+    .ty-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      margin-bottom: 32px;
+    }
+    .ty-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 26px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+      transition: background 0.2s, transform 0.2s;
+      white-space: nowrap;
+    }
+    .ty-btn-primary {
+      background: #ffb400;
+      color: #000;
+    }
+    .ty-btn-primary:hover { background: #e0a000; transform: scale(1.04); }
+    .ty-btn-secondary {
+      background: transparent;
+      color: #ffb400;
+      border: 2px solid #ffb400;
+    }
+    .ty-btn-secondary:hover { background: #ffb400; color: #000; transform: scale(1.04); }
+    .ty-divider {
+      border: none;
+      border-top: 1px solid #2a2a2a;
+      margin: 0 0 24px;
+    }
+    .ty-phone-row {
+      font-size: 15px;
+      color: #aaa;
+    }
+    .ty-phone-row a {
+      color: #ffb400;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .ty-phone-row a:hover { color: #fff; }
+
+    @media (max-width: 520px) {
+      .ty-card { padding: 36px 20px; }
+      .ty-card h1 { font-size: 34px; }
+      .ty-btn { width: 100%; justify-content: center; }
+    }
+  </style>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+  <header class="site-header">
+    <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+    <nav class="site-nav">
+      <a href="index.html" data-i18n="nav.homeLink">Home</a>
+      <a href="cars.html" id="browseCarsNavLink" data-i18n="nav.browseCars">Browse Cars</a>
+      <a href="index.html#how-it-works" data-i18n="nav.howItWorks">How It Works</a>
+      <a href="index.html#video-testimonial" data-i18n="nav.videoTestimonial">Video Testimonial</a>
+      <a href="index.html#about" data-i18n="nav.about">About</a>
+    </nav>
+    <a href="tel:+12139166606" class="header-phone">
+      <span class="phone-urgency" data-i18n="nav.callNow">Call Now to Get Approved Today</span>
+      📞 (213) 916-6606
+    </a>
+  </header>
+
+  <div class="ty-wrapper">
+    <div class="ty-card">
+      <img src="images/logo.jpg" alt="Sly Transportation Services LLC" class="ty-logo">
+      <h1 data-i18n="thankyou.title">🎉 Thank You!</h1>
+      <p class="ty-sub" data-i18n="thankyou.sub">Your submission has been received!</p>
+      <p class="ty-detail" data-i18n="thankyou.detail">
+        Our team at <strong>Sly Transportation Services LLC</strong> will review your information and reach out to you shortly to complete your approval.
+      </p>
+
+      <div class="ty-actions">
+        <!-- Upload rental-agreement.pdf to the repo root to activate this button -->
+        <a href="rental-agreement.pdf" class="ty-btn ty-btn-primary" download data-i18n="thankyou.download">
+          📄 Download PDF
+        </a>
+        <a href="cars.html" class="ty-btn ty-btn-secondary" id="fillAgainBtn" data-i18n="thankyou.fillAgain">
+          🔄 Fill Again
+        </a>
+      </div>
+
+      <hr class="ty-divider">
+      <p class="ty-phone-row">
+        <span data-i18n="thankyou.questions">Questions? Call us:</span> <a href="tel:+12139166606">📞 (213) 916-6606</a>
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a>
+  </footer>
+  <script src="lang.js"></script>
+  <script src="chatbot.js"></script>
+  <script>
+    // Gate the "Browse Cars" nav link — only approved applicants may navigate there.
+    (function () {
+      var link = document.getElementById("browseCarsNavLink");
+      if (!link) return;
+      link.addEventListener("click", function (e) {
+        var stored = null;
+        try { stored = JSON.parse(localStorage.getItem("slyApplicant") || "null"); } catch (_) {}
+        if (stored && stored.decision === "approved") return; // allow
+
+        e.preventDefault();
+
+        var msg = (stored && stored.decision === "review")
+          ? "Your application is still under review. You\u2019ll receive an SMS once you\u2019re approved."
+          : "Please complete and submit an application before browsing our vehicles.";
+
+        var existing = document.getElementById("browseGateToast");
+        if (existing) existing.remove();
+        var toast = document.createElement("div");
+        toast.id = "browseGateToast";
+        toast.className = "browse-gate-toast";
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(function () { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+      });
+    }());
+  </script>
+  <script>
+    // If the user arrived from the contact form, "Fill Again" should go back there.
+    // "Fill Again" destination depends on which form brought the user here.
+    const fromParam = new URLSearchParams(window.location.search).get("from");
+    const btn = document.getElementById("fillAgainBtn");
+    if (btn) {
+      if (fromParam === "contact") btn.href = "contact.html";
+      else if (fromParam === "apply") btn.href = "index.html";
+    }
+  </script>
+</body>
+</html>

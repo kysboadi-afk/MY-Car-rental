@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Admin panel for managing booking calendar — Sly Transportation Services LLC.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin – Booking Calendar | Sly Transportation Services LLC</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <style>
+    .admin-box {
+      max-width: 560px;
+      margin: 80px auto 40px;
+      background: #1a1a1a;
+      padding: 36px 32px;
+      border-radius: 16px;
+      border: 1px solid #2a2a2a;
+      box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    }
+    .admin-box h1 { font-size: 24px; color: #ffb400; margin-bottom: 6px; }
+    .admin-box p.subtitle { color: #888; font-size: 14px; margin-bottom: 28px; }
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+    .form-group input:focus,
+    .form-group select:focus { outline: none; border-color: #ffb400; }
+    .btn-row { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-block {
+      flex: 1;
+      padding: 12px;
+      background: #ffb400;
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-block:hover { background: #e0a000; }
+    .btn-unblock {
+      flex: 1;
+      padding: 12px;
+      background: #333;
+      color: #ccc;
+      border: 1px solid #444;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .btn-unblock:hover { background: #444; color: #fff; }
+    #statusMsg {
+      margin-top: 20px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #statusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #statusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #statusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+    .current-bookings { margin-top: 36px; }
+    .current-bookings h2 { font-size: 16px; color: #aaa; margin-bottom: 12px; }
+    .booking-entry {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #ccc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .booking-entry .vehicle-badge {
+      font-size: 11px;
+      background: #2a2a2a;
+      padding: 2px 8px;
+      border-radius: 12px;
+      color: #888;
+      text-transform: capitalize;
+    }
+    .no-bookings { color: #555; font-size: 14px; font-style: italic; }
+
+    /* ── Fleet Management ────────────────────────────────────────── */
+    .fleet-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .fleet-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .fleet-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+    .fleet-vehicle-row {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .fleet-thumb {
+      width: 56px;
+      height: 44px;
+      object-fit: cover;
+      border-radius: 6px;
+      flex-shrink: 0;
+      border: 1px solid #333;
+    }
+    .fleet-vehicle-info { flex: 1; min-width: 0; }
+    .fleet-vehicle-name { font-size: 15px; color: #fff; font-weight: 600; }
+    .fleet-vehicle-status {
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 3px;
+      display: inline-block;
+    }
+    .fleet-vehicle-status.available  { color: #22c55e; }
+    .fleet-vehicle-status.unavailable { color: #ef4444; }
+
+    /* Toggle switch */
+    .toggle-switch { position: relative; display: inline-block; width: 46px; height: 24px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: #444; border-radius: 24px;
+      cursor: pointer; transition: background 0.25s;
+    }
+    .toggle-slider:before {
+      content: "";
+      position: absolute;
+      height: 18px; width: 18px;
+      left: 3px; top: 3px;
+      background: #fff; border-radius: 50%;
+      transition: transform 0.25s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: #22c55e; }
+    .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
+    .toggle-switch input:disabled + .toggle-slider { opacity: 0.5; cursor: wait; }
+
+    #fleetStatusMsg {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    #fleetStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #fleetStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #fleetStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* ── Manual Booking Entry ────────────────────────────────────────── */
+    .manual-booking-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .manual-booking-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .manual-booking-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .manual-booking-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+    @media (max-width: 480px) { .manual-booking-grid { grid-template-columns: 1fr; } }
+    #mbStatusMsg {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #mbStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #mbStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #mbStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* ── Vehicle Tracking & Profit ───────────────────────────────────── */
+    .profit-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .profit-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
+    .profit-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+    /* Vehicle cards grid */
+    .vehicle-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 560px) { .vehicle-cards { grid-template-columns: 1fr; } }
+
+    .vehicle-card {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .vehicle-card:hover { border-color: #ffb400; }
+    .vehicle-card.active { border-color: #ffb400; background: #1a1500; }
+
+    .vc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .vc-name { font-size: 14px; font-weight: 700; color: #fff; }
+    .vc-status-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .vc-status-badge.active      { background: #1b3a1b; color: #4caf50; }
+    .vc-status-badge.maintenance { background: #3a2e0a; color: #ffb400; }
+    .vc-status-badge.inactive    { background: #2a1b1b; color: #ef4444; }
+
+    .vc-stat { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .vc-stat .lbl { color: #888; }
+    .vc-stat .val { color: #fff; font-weight: 600; }
+    .vc-stat .val.green { color: #4caf50; }
+    .vc-stat .val.red   { color: #ef4444; }
+
+    /* Progress bar */
+    .break-even-bar { margin-top: 10px; }
+    .break-even-label { font-size: 11px; color: #888; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .bar-bg { background: #222; border-radius: 4px; height: 6px; overflow: hidden; }
+    .bar-fill { height: 6px; background: #ffb400; border-radius: 4px; transition: width 0.5s; }
+    .bar-fill.full { background: #4caf50; }
+
+    /* Detail panel */
+    .vehicle-detail {
+      background: #0d0d0d;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .vehicle-detail.open { display: block; }
+    .detail-title { font-size: 16px; color: #ffb400; font-weight: 700; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .detail-close { cursor: pointer; font-size: 20px; color: #666; line-height: 1; }
+    .detail-close:hover { color: #fff; }
+
+    /* Metric grid */
+    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    @media (max-width: 480px) { .metric-grid { grid-template-columns: repeat(2, 1fr); } }
+    .metric-box { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 12px 10px; text-align: center; }
+    .metric-box .m-val { font-size: 18px; font-weight: 700; color: #ffb400; }
+    .metric-box .m-val.green { color: #4caf50; }
+    .metric-box .m-val.red   { color: #ef4444; }
+    .metric-box .m-lbl { font-size: 11px; color: #888; margin-top: 2px; }
+
+    /* Sub-section heading */
+    .detail-sub { font-size: 13px; color: #aaa; font-weight: 700; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; margin: 18px 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* Monthly table */
+    .monthly-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+    .monthly-table th { text-align: left; color: #888; padding: 4px 8px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+    .monthly-table td { padding: 5px 8px; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+    .monthly-table tr:last-child td { border-bottom: none; }
+    .monthly-table td.green { color: #4caf50; }
+    .monthly-table td.red   { color: #ef4444; }
+
+    /* Edit vehicle info */
+    .edit-vehicle-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 480px) { .edit-vehicle-form { grid-template-columns: 1fr; } }
+    .edit-vehicle-form .form-group { margin-bottom: 0; }
+    .edit-vehicle-form .form-group label { font-size: 12px; }
+
+    /* Expense list */
+    .expense-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #111; border: 1px solid #222; border-radius: 8px;
+      padding: 8px 12px; margin-bottom: 6px; font-size: 13px; gap: 10px;
+    }
+    .expense-item .exp-info { flex: 1; min-width: 0; }
+    .expense-item .exp-cat  { font-size: 11px; color: #888; text-transform: capitalize; }
+    .expense-item .exp-amt  { color: #ef4444; font-weight: 700; white-space: nowrap; }
+    .expense-item .exp-del  { background: none; border: none; color: #555; cursor: pointer; font-size: 16px; padding: 0 4px; }
+    .expense-item .exp-del:hover { color: #ef4444; }
+    .no-expenses { color: #555; font-size: 13px; font-style: italic; }
+
+    /* Add expense form */
+    .add-expense-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: end; margin-top: 10px; }
+    @media (max-width: 500px) { .add-expense-form { grid-template-columns: 1fr 1fr; } }
+    .add-expense-form .form-group { margin-bottom: 0; }
+    .add-expense-form .form-group label { font-size: 11px; }
+    .add-expense-form .form-group input,
+    .add-expense-form .form-group select { font-size: 13px; padding: 8px 10px; }
+    .btn-add-exp {
+      padding: 9px 14px; background: #ffb400; color: #000; border: none;
+      border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+      white-space: nowrap; transition: 0.2s;
+    }
+    .btn-add-exp:hover { background: #e0a000; }
+    .btn-save-vehicle {
+      padding: 9px 16px; background: #1a3a5c; color: #64b5f6; border: 1px solid #2a5a8a;
+      border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.2s;
+      margin-top: 12px;
+    }
+    .btn-save-vehicle:hover { background: #224a72; }
+
+    #profitMsg {
+      margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none;
+    }
+    #profitMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #profitMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #profitMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* Recent bookings */
+    .booking-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+    .booking-row:last-child { border-bottom: none; }
+    .booking-row .bk-dates { color: #888; font-size: 11px; }
+    .booking-row .bk-amt   { color: #4caf50; font-weight: 600; }
+  </style>
+  <!-- Meta Pixel Code -->
+  <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '2523014024800101');
+    fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=2523014024800101&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+  <header class="site-header">
+    <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+    <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
+  </header>
+
+  <div class="admin-box">
+    <h1>📅 Admin — Booking Calendar</h1>
+    <p class="subtitle">Manually block or unblock dates for a vehicle. Use this when a booking was made but the calendar was not updated automatically.</p>
+
+    <div class="form-group">
+      <label for="adminSecret">Admin Password</label>
+      <input type="password" id="adminSecret" placeholder="Enter admin password" autocomplete="current-password">
+    </div>
+
+    <div class="form-group">
+      <label for="vehicleSelect">Vehicle</label>
+      <select id="vehicleSelect">
+        <option value="camry">Camry 2012</option>
+        <option value="camry2013">Camry 2013 SE</option>
+        <option value="slingshot">Slingshot R</option>
+        <option value="slingshot2">Slingshot R (Unit 2)</option>
+        <option value="slingshot3">Slingshot R (Unit 3)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="fromDate">Pickup Date</label>
+      <input type="text" id="fromDate" placeholder="YYYY-MM-DD">
+    </div>
+
+    <div class="form-group">
+      <label for="toDate">Return Date</label>
+      <input type="text" id="toDate" placeholder="YYYY-MM-DD">
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-block" id="blockBtn">🔒 Block Dates</button>
+      <button class="btn-unblock" id="unblockBtn">🔓 Unblock Dates</button>
+    </div>
+
+    <div id="statusMsg"></div>
+
+    <div class="current-bookings">
+      <h2>Current Blocked Dates</h2>
+      <div id="bookingsList"><span class="no-bookings">Loading…</span></div>
+    </div>
+
+    <!-- ── Fleet Management ──────────────────────────────────────── -->
+    <div class="fleet-section">
+      <h2>🚗 Fleet Management</h2>
+      <p class="subtitle">Toggle a vehicle's availability. Changes appear on the website immediately.</p>
+
+      <div id="fleetVehicles">
+        <!-- Slingshot R -->
+        <div class="fleet-vehicle-row" id="fleet-row-slingshot">
+          <img src="images/slingshot.jpg" alt="Slingshot R" class="fleet-thumb">
+          <div class="fleet-vehicle-info">
+            <div class="fleet-vehicle-name">Slingshot R</div>
+            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot">● Available</span>
+          </div>
+          <label class="toggle-switch" aria-label="Toggle Slingshot R availability">
+            <input type="checkbox" id="toggle-slingshot" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Slingshot R Unit 2 -->
+        <div class="fleet-vehicle-row" id="fleet-row-slingshot2">
+          <img src="images/slingshot.jpg" alt="Slingshot R Unit 2" class="fleet-thumb">
+          <div class="fleet-vehicle-info">
+            <div class="fleet-vehicle-name">Slingshot R (Unit 2)</div>
+            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot2">● Available</span>
+          </div>
+          <label class="toggle-switch" aria-label="Toggle Slingshot R Unit 2 availability">
+            <input type="checkbox" id="toggle-slingshot2" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Slingshot R Unit 3 -->
+        <div class="fleet-vehicle-row" id="fleet-row-slingshot3">
+          <img src="images/slingshot.jpg" alt="Slingshot R Unit 3" class="fleet-thumb">
+          <div class="fleet-vehicle-info">
+            <div class="fleet-vehicle-name">Slingshot R (Unit 3)</div>
+            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot3">● Available</span>
+          </div>
+          <label class="toggle-switch" aria-label="Toggle Slingshot R Unit 3 availability">
+            <input type="checkbox" id="toggle-slingshot3" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Camry 2012 -->
+        <div class="fleet-vehicle-row" id="fleet-row-camry">
+          <img src="images/IMG_0046.png" alt="Camry 2012" class="fleet-thumb">
+          <div class="fleet-vehicle-info">
+            <div class="fleet-vehicle-name">Camry 2012</div>
+            <span class="fleet-vehicle-status available" id="fleet-status-text-camry">● Available</span>
+          </div>
+          <label class="toggle-switch" aria-label="Toggle Camry 2012 availability">
+            <input type="checkbox" id="toggle-camry" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- Camry 2013 SE -->
+        <div class="fleet-vehicle-row" id="fleet-row-camry2013">
+          <img src="images/IMG_5144.png" alt="Camry 2013 SE" class="fleet-thumb">
+          <div class="fleet-vehicle-info">
+            <div class="fleet-vehicle-name">Camry 2013 SE</div>
+            <span class="fleet-vehicle-status available" id="fleet-status-text-camry2013">● Available</span>
+          </div>
+          <label class="toggle-switch" aria-label="Toggle Camry 2013 SE availability">
+            <input type="checkbox" id="toggle-camry2013" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div id="fleetStatusMsg"></div>
+    </div>
+
+    <!-- ── Manual Booking Entry ──────────────────────────────────────── -->
+    <div class="manual-booking-section">
+      <h2>✍️ Manual Booking Entry</h2>
+      <p class="subtitle">Record a booking paid in cash or arranged offline. Saves the customer record and blocks the calendar dates automatically.</p>
+
+      <div class="manual-booking-grid">
+        <div class="form-group">
+          <label for="mbVehicle">Vehicle</label>
+          <select id="mbVehicle">
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+            <option value="slingshot">Slingshot R</option>
+            <option value="slingshot2">Slingshot R (Unit 2)</option>
+            <option value="slingshot3">Slingshot R (Unit 3)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="mbName">Customer Name <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbName" placeholder="Full name" maxlength="100" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPhone">Phone</label>
+          <input type="tel" id="mbPhone" placeholder="(213) 555-1234" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbEmail">Email</label>
+          <input type="email" id="mbEmail" placeholder="customer@email.com" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPickupDate">Pickup Date <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbPickupDate" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="form-group">
+          <label for="mbPickupTime">Pickup Time</label>
+          <input type="text" id="mbPickupTime" placeholder="e.g. 10:00 AM" maxlength="20">
+        </div>
+
+        <div class="form-group">
+          <label for="mbReturnDate">Return Date <span style="color:#f44336">*</span></label>
+          <input type="text" id="mbReturnDate" placeholder="YYYY-MM-DD">
+        </div>
+
+        <div class="form-group">
+          <label for="mbReturnTime">Return Time</label>
+          <input type="text" id="mbReturnTime" placeholder="e.g. 5:00 PM" maxlength="20">
+        </div>
+
+        <div class="form-group">
+          <label for="mbAmount">Amount Paid ($)</label>
+          <input type="number" id="mbAmount" placeholder="0.00" min="0" step="0.01">
+        </div>
+
+        <div class="form-group">
+          <label for="mbNotes">Notes (optional)</label>
+          <input type="text" id="mbNotes" placeholder="e.g. Cash payment" maxlength="500" autocomplete="off">
+        </div>
+      </div>
+
+      <button class="btn-block" id="mbSubmitBtn" style="margin-top:16px">💾 Save Manual Booking</button>
+      <div id="mbStatusMsg"></div>
+    </div>
+
+    <!-- ── Vehicle Tracking & Profit Dashboard ──────────────────────── -->
+    <div class="profit-section">
+      <h2>📊 Vehicle Tracking &amp; Profit</h2>
+      <p class="subtitle">Track revenue, expenses, and profitability for each vehicle. Enter admin password above, then click Load Stats.</p>
+
+      <button class="btn-block" id="loadStatsBtn" style="max-width:180px;margin-bottom:16px">📈 Load Stats</button>
+
+      <!-- Vehicle cards -->
+      <div class="vehicle-cards" id="vehicleCards">
+        <div style="color:#555;font-size:13px;font-style:italic;grid-column:1/-1">Click "Load Stats" to view vehicle performance data.</div>
+      </div>
+
+      <!-- Detail panel (shown when a vehicle card is clicked) -->
+      <div class="vehicle-detail" id="vehicleDetail">
+        <div class="detail-title">
+          <span id="detailTitle">Vehicle Name</span>
+          <span class="detail-close" id="detailClose" title="Close">✕</span>
+        </div>
+
+        <!-- Key metrics -->
+        <div class="metric-grid" id="detailMetrics"></div>
+
+        <!-- Break-even progress -->
+        <div class="break-even-bar" id="detailBreakEvenWrap">
+          <div class="break-even-label">
+            <span>Break-even Progress</span>
+            <span id="detailBreakEvenPct">–</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" id="detailBreakEvenBar" style="width:0%"></div></div>
+        </div>
+
+        <!-- Monthly breakdown table -->
+        <div class="detail-sub">Monthly Breakdown</div>
+        <div id="detailMonthly"></div>
+
+        <!-- Recent bookings -->
+        <div class="detail-sub">Recent Bookings</div>
+        <div id="detailBookings"></div>
+
+        <!-- Edit vehicle info -->
+        <div class="detail-sub">Vehicle Info</div>
+        <div class="edit-vehicle-form" id="editVehicleForm">
+          <div class="form-group">
+            <label>Model Year</label>
+            <input type="number" id="editVehicleYear" placeholder="e.g. 2021" min="1900" max="2099" step="1">
+          </div>
+          <div class="form-group">
+            <label>Purchase Date</label>
+            <input type="text" id="editPurchaseDate" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label>Purchase Price ($)</label>
+            <input type="number" id="editPurchasePrice" placeholder="0" min="0" step="1">
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="editVehicleStatus">
+              <option value="active">Active</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-save-vehicle" id="saveVehicleBtn">💾 Save Vehicle Info</button>
+
+        <!-- Expense list -->
+        <div class="detail-sub">Expenses</div>
+        <div id="detailExpenses"></div>
+
+        <!-- Add expense form -->
+        <div class="detail-sub" style="margin-top:14px">Add Expense</div>
+        <div class="add-expense-form">
+          <div class="form-group">
+            <label>Date</label>
+            <input type="text" id="expDate" placeholder="YYYY-MM-DD">
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="expCategory">
+              <option value="maintenance">Maintenance</option>
+              <option value="insurance">Insurance</option>
+              <option value="repair">Repair</option>
+              <option value="fuel">Fuel</option>
+              <option value="registration">Registration</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Amount ($)</label>
+            <input type="number" id="expAmount" placeholder="0.00" min="0.01" step="0.01">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Notes (optional)</label>
+            <input type="text" id="expNotes" placeholder="e.g. Oil change at Jiffy Lube" maxlength="500">
+          </div>
+          <div style="grid-column:1/-1">
+            <button class="btn-add-exp" id="addExpenseBtn">➕ Add Expense</button>
+          </div>
+        </div>
+      </div><!-- /vehicleDetail -->
+
+      <div id="profitMsg"></div>
+    </div><!-- /profit-section -->
+  </div>
+
+  <footer>
+    &copy; 2026 Sly Transportation Services LLC. All rights reserved. &nbsp;|&nbsp;
+    <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone">Privacy Policy</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Pre-fill dates from URL params (linked from owner confirmation email)
+      var params = new URLSearchParams(window.location.search);
+      if (params.get("vehicle")) {
+        document.getElementById("vehicleSelect").value = params.get("vehicle");
+      }
+      if (params.get("from")) document.getElementById("fromDate").value = params.get("from");
+      if (params.get("to"))   document.getElementById("toDate").value   = params.get("to");
+
+      // Date pickers
+      flatpickr("#fromDate", { dateFormat: "Y-m-d" });
+      flatpickr("#toDate",   { dateFormat: "Y-m-d" });
+
+      function showStatus(msg, type) {
+        var el = document.getElementById("statusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+      }
+
+      function getFormValues() {
+        return {
+          secret:    document.getElementById("adminSecret").value,
+          vehicleId: document.getElementById("vehicleSelect").value,
+          from:      document.getElementById("fromDate").value,
+          to:        document.getElementById("toDate").value,
+        };
+      }
+
+      function validate(vals) {
+        if (!vals.secret) { showStatus("Please enter the admin password.", "error"); return false; }
+        if (!vals.from)   { showStatus("Please select a pickup date.", "error"); return false; }
+        if (!vals.to)     { showStatus("Please select a return date.", "error"); return false; }
+        if (vals.from > vals.to) { showStatus("Pickup date must be on or before the return date.", "error"); return false; }
+        return true;
+      }
+
+      document.getElementById("blockBtn").addEventListener("click", function () {
+        var vals = getFormValues();
+        if (!validate(vals)) return;
+        var btn = this;
+        btn.disabled = true;
+        showStatus("Blocking dates…", "info");
+        fetch(API_BASE + "/api/block-dates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(vals),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showStatus("Error: " + (result.data.error || "Unknown error"), "error");
+            } else if (result.data.added === 0) {
+              showStatus("These dates are already blocked (overlap with an existing booking detected).", "info");
+            } else {
+              showStatus("✅ Dates blocked successfully. The calendar will now show these dates as unavailable.", "success");
+              loadBookings();
+            }
+          })
+          .catch(function (err) { showStatus("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      document.getElementById("unblockBtn").addEventListener("click", function () {
+        var vals = getFormValues();
+        if (!validate(vals)) return;
+        if (!confirm("Are you sure you want to unblock " + vals.from + " to " + vals.to + " for the " + vals.vehicleId + "? This will make those dates available for new bookings.")) return;
+        var btn = this;
+        btn.disabled = true;
+        showStatus("Unblocking dates…", "info");
+        fetch(API_BASE + "/api/open-dates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(vals),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showStatus("Error: " + (result.data.error || "Unknown error"), "error");
+            } else if (result.data.removed === 0) {
+              showStatus("No matching blocked range found for those exact dates.", "info");
+            } else {
+              showStatus("✅ Dates unblocked. Those dates are now available for new bookings.", "success");
+              loadBookings();
+            }
+          })
+          .catch(function (err) { showStatus("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      function loadBookings() {
+        fetch(API_BASE + "/api/booked-dates")
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (data) {
+            var list = document.getElementById("bookingsList");
+            var entries = [];
+            Object.keys(data).forEach(function (vid) {
+              (data[vid] || []).forEach(function (range) {
+                entries.push({ vehicleId: vid, from: range.from, to: range.to });
+              });
+            });
+            if (entries.length === 0) {
+              list.innerHTML = '<span class="no-bookings">No dates are currently blocked.</span>';
+              return;
+            }
+            entries.sort(function (a, b) { return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+            list.innerHTML = entries.map(function (e) {
+              return '<div class="booking-entry">'
+                + '<span>' + e.from + ' &rarr; ' + e.to + '</span>'
+                + '<span class="vehicle-badge">' + e.vehicleId + '</span>'
+                + '</div>';
+            }).join("");
+          })
+          .catch(function () {
+            document.getElementById("bookingsList").innerHTML = '<span class="no-bookings">Could not load bookings.</span>';
+          });
+      }
+
+      loadBookings();
+    })();
+  </script>
+
+  <!-- Fleet Management Script -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+      var VEHICLES = [
+        { id: "slingshot",  name: "Slingshot R" },
+        { id: "slingshot2", name: "Slingshot R (Unit 2)" },
+        { id: "slingshot3", name: "Slingshot R (Unit 3)" },
+        { id: "camry",      name: "Camry 2012" },
+        { id: "camry2013",  name: "Camry 2013 SE" },
+      ];
+
+      function getAdminSecret() {
+        return document.getElementById("adminSecret").value;
+      }
+
+      function showFleetMsg(msg, type) {
+        var el = document.getElementById("fleetStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        setTimeout(function () { el.style.display = "none"; }, 4000);
+      }
+
+      function setToggleDisabled(vehicleId, disabled) {
+        var input = document.getElementById("toggle-" + vehicleId);
+        if (input) input.disabled = disabled;
+      }
+
+      function applyStatus(vehicleId, available) {
+        var input = document.getElementById("toggle-" + vehicleId);
+        var text  = document.getElementById("fleet-status-text-" + vehicleId);
+        if (input) input.checked = available;
+        if (text) {
+          text.textContent = available ? "● Available" : "● Unavailable";
+          text.className = "fleet-vehicle-status " + (available ? "available" : "unavailable");
+        }
+      }
+
+      // Load current fleet status and reflect in toggles
+      function loadFleetStatus() {
+        fetch(API_BASE + "/api/fleet-status")
+          .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+          .then(function (data) {
+            VEHICLES.forEach(function (v) {
+              var status = data[v.id];
+              var available = status ? status.available !== false : true;
+              applyStatus(v.id, available);
+            });
+          })
+          .catch(function () {
+            // Leave toggles as default (all available) on error
+          });
+      }
+
+      // Wire up each toggle
+      VEHICLES.forEach(function (v) {
+        var input = document.getElementById("toggle-" + v.id);
+        if (!input) return;
+
+        function revertToggle() { input.checked = !input.checked; }
+
+        input.addEventListener("change", function () {
+          var secret = getAdminSecret();
+          if (!secret) {
+            showFleetMsg("Please enter the admin password first.", "error");
+            revertToggle();
+            return;
+          }
+          var available = input.checked;
+          setToggleDisabled(v.id, true);
+          showFleetMsg("Updating " + v.name + "…", "info");
+
+          fetch(API_BASE + "/api/update-fleet-status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret: secret, vehicleId: v.id, available: available }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (result) {
+              setToggleDisabled(v.id, false);
+              if (!result.ok) {
+                showFleetMsg("Error: " + (result.data.error || "Unknown error"), "error");
+                revertToggle();
+              } else {
+                applyStatus(v.id, available);
+                showFleetMsg(
+                  "✅ " + v.name + " marked as " + (available ? "Available" : "Unavailable") + ".",
+                  "success"
+                );
+              }
+            })
+            .catch(function (err) {
+              setToggleDisabled(v.id, false);
+              showFleetMsg("Network error: " + err.message, "error");
+              revertToggle();
+            });
+        });
+      });
+
+      loadFleetStatus();
+    })();
+  </script>
+  <!-- Vehicle Tracking & Profit Dashboard Script -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Date picker for expense date
+      flatpickr("#expDate", { dateFormat: "Y-m-d" });
+      // Date picker for vehicle purchase date (allowInput so admin can also type manually)
+      var purchaseDatePicker = flatpickr("#editPurchaseDate", { dateFormat: "Y-m-d", allowInput: true });
+
+      var currentVehicleId = null;
+      var statsCache       = null;
+
+      // ── Helpers ────────────────────────────────────────────────────────────
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showProfitMsg(msg, type) {
+        var el = document.getElementById("profitMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        setTimeout(function () { el.style.display = "none"; }, 5000);
+      }
+
+      function fmt(num) {
+        if (num == null) return "–";
+        return "$" + Number(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function fmtPct(n) {
+        if (n == null) return "–";
+        return n.toFixed(1) + "%";
+      }
+
+      function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // ── Render vehicle cards ───────────────────────────────────────────────
+      function renderCards(stats) {
+        var container = document.getElementById("vehicleCards");
+        var VEHICLE_ORDER = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+        var html = "";
+        VEHICLE_ORDER.forEach(function (vid) {
+          var s = stats[vid];
+          if (!s) return;
+          var v = s.vehicle;
+          var profitClass = s.netProfit >= 0 ? "green" : "red";
+          var breakEvenPct = s.breakEvenPct != null ? Math.min(100, s.breakEvenPct) : 0;
+          var statusClass  = v.status || "active";
+          html += '<div class="vehicle-card" id="vcard-' + vid + '" onclick="window._profitSelectVehicle(\'' + vid + '\')">'
+            + '<div class="vc-header">'
+            + '<div class="vc-name">' + esc(v.vehicle_name) + '</div>'
+            + '<span class="vc-status-badge ' + statusClass + '">' + esc(v.status || "active") + '</span>'
+            + '</div>'
+            + '<div class="vc-stat"><span class="lbl">Bookings</span><span class="val">' + s.totalBookings + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Revenue</span><span class="val">' + fmt(s.totalRevenue) + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Expenses</span><span class="val">' + fmt(s.totalExpenses) + '</span></div>'
+            + '<div class="vc-stat"><span class="lbl">Net Profit</span><span class="val ' + profitClass + '">' + fmt(s.netProfit) + '</span></div>'
+            + (v.purchase_price > 0
+              ? '<div class="break-even-bar"><div class="break-even-label"><span>Break-even</span><span>' + fmtPct(s.breakEvenPct) + '</span></div>'
+                + '<div class="bar-bg"><div class="bar-fill' + (breakEvenPct >= 100 ? " full" : "") + '" style="width:' + Math.min(100, breakEvenPct) + '%"></div></div></div>'
+              : '')
+            + '</div>';
+        });
+        if (!html) html = '<div style="color:#555;font-size:13px;font-style:italic">No vehicle data available.</div>';
+        container.innerHTML = html;
+      }
+
+      // ── Select vehicle → show detail panel ────────────────────────────────
+      window._profitSelectVehicle = function (vehicleId) {
+        if (!statsCache) return;
+        var s = statsCache[vehicleId];
+        if (!s) return;
+
+        currentVehicleId = vehicleId;
+
+        // Highlight selected card
+        document.querySelectorAll(".vehicle-card").forEach(function (c) { c.classList.remove("active"); });
+        var card = document.getElementById("vcard-" + vehicleId);
+        if (card) card.classList.add("active");
+
+        var v = s.vehicle;
+
+        // Title
+        document.getElementById("detailTitle").textContent = "📊 " + (v.vehicle_name || vehicleId);
+
+        // Metric boxes
+        var roiHtml = s.roi != null
+          ? '<div class="metric-box"><div class="m-val ' + (s.roi >= 0 ? "green" : "red") + '">' + fmtPct(s.roi) + '</div><div class="m-lbl">ROI</div></div>'
+          : '<div class="metric-box"><div class="m-val" style="color:#666">–</div><div class="m-lbl">ROI (set price)</div></div>';
+        document.getElementById("detailMetrics").innerHTML =
+          '<div class="metric-box"><div class="m-val">' + s.totalBookings + '</div><div class="m-lbl">Total Bookings</div></div>'
+          + '<div class="metric-box"><div class="m-val green">' + fmt(s.totalRevenue) + '</div><div class="m-lbl">Lifetime Revenue</div></div>'
+          + '<div class="metric-box"><div class="m-val red">' + fmt(s.totalExpenses) + '</div><div class="m-lbl">Total Expenses</div></div>'
+          + '<div class="metric-box"><div class="m-val ' + (s.netProfit >= 0 ? "green" : "red") + '">' + fmt(s.netProfit) + '</div><div class="m-lbl">Net Profit</div></div>'
+          + roiHtml
+          + '<div class="metric-box"><div class="m-val" style="color:#888">' + fmt(v.purchase_price || 0) + '</div><div class="m-lbl">Purchase Price</div></div>';
+
+        // Break-even bar
+        if (v.purchase_price > 0 && s.breakEvenPct != null) {
+          var pct = Math.min(100, s.breakEvenPct);
+          document.getElementById("detailBreakEvenWrap").style.display = "block";
+          document.getElementById("detailBreakEvenPct").textContent = fmtPct(s.breakEvenPct);
+          var bar = document.getElementById("detailBreakEvenBar");
+          bar.style.width = pct + "%";
+          bar.className = "bar-fill" + (pct >= 100 ? " full" : "");
+        } else {
+          document.getElementById("detailBreakEvenWrap").style.display = "none";
+        }
+
+        // Monthly breakdown
+        var months = Object.keys(s.monthlyRevenue).concat(Object.keys(s.monthlyExpenses));
+        months = months.filter(function (v, i, a) { return a.indexOf(v) === i; }).sort().reverse();
+        var mHtml = "";
+        if (months.length) {
+          mHtml = '<table class="monthly-table"><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Profit</th></tr></thead><tbody>';
+          months.slice(0, 12).forEach(function (m) {
+            var rev  = s.monthlyRevenue[m]  || 0;
+            var exp  = s.monthlyExpenses[m] || 0;
+            var prof = rev - exp;
+            mHtml += '<tr>'
+              + '<td>' + esc(m) + '</td>'
+              + '<td class="green">' + fmt(rev) + '</td>'
+              + '<td class="red">'   + fmt(exp) + '</td>'
+              + '<td class="' + (prof >= 0 ? "green" : "red") + '">' + fmt(prof) + '</td>'
+              + '</tr>';
+          });
+          mHtml += '</tbody></table>';
+        } else {
+          mHtml = '<div class="no-expenses">No monthly data yet.</div>';
+        }
+        document.getElementById("detailMonthly").innerHTML = mHtml;
+
+        // Recent bookings
+        var bkHtml = "";
+        if (s.recentBookings && s.recentBookings.length) {
+          s.recentBookings.forEach(function (b) {
+            bkHtml += '<div class="booking-row">'
+              + '<div><div>' + esc(b.name || "Guest") + '</div><div class="bk-dates">' + esc(b.pickupDate || "") + ' → ' + esc(b.returnDate || "") + '</div></div>'
+              + '<span class="bk-amt">' + (b.amountPaid ? fmt(b.amountPaid) : "–") + '</span>'
+              + '</div>';
+          });
+        } else {
+          bkHtml = '<div class="no-expenses">No paid bookings yet.</div>';
+        }
+        document.getElementById("detailBookings").innerHTML = bkHtml;
+
+        // Edit vehicle info
+        document.getElementById("editVehicleYear").value   = v.vehicle_year  !== null && v.vehicle_year !== undefined ? v.vehicle_year : "";
+        if (v.purchase_date) {
+          purchaseDatePicker.setDate(v.purchase_date, false);
+        } else {
+          purchaseDatePicker.clear();
+        }
+        document.getElementById("editPurchasePrice").value = v.purchase_price || 0;
+        document.getElementById("editVehicleStatus").value = v.status         || "active";
+
+        // Render expenses
+        renderExpenses(vehicleId, s);
+
+        document.getElementById("vehicleDetail").classList.add("open");
+        document.getElementById("vehicleDetail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+
+      // ── Render expense list ────────────────────────────────────────────────
+      function renderExpenses(vehicleId, s) {
+        var vehicleExpenses = (statsCache._expenses || []).filter(function (e) { return e.vehicle_id === vehicleId; });
+        vehicleExpenses.sort(function (a, b) { return b.date > a.date ? -1 : 1; });
+        var html = "";
+        if (vehicleExpenses.length) {
+          vehicleExpenses.forEach(function (e) {
+            html += '<div class="expense-item">'
+              + '<div class="exp-info"><div>' + esc(e.notes || capitalize(e.category)) + '</div>'
+              + '<div class="exp-cat">' + esc(capitalize(e.category)) + ' · ' + esc(e.date) + '</div></div>'
+              + '<span class="exp-amt">-' + fmt(e.amount) + '</span>'
+              + '<button class="exp-del" data-expense-id="' + esc(e.expense_id) + '" title="Delete">🗑</button>'
+              + '</div>';
+          });
+        } else {
+          html = '<div class="no-expenses">No expenses recorded yet.</div>';
+        }
+        document.getElementById("detailExpenses").innerHTML = html;
+      }
+
+      // ── Load stats ─────────────────────────────────────────────────────────
+      function loadStats(silent) {
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+        if (!silent) showProfitMsg("Loading stats…", "info");
+
+        Promise.all([
+          fetch(API_BASE + "/api/get-vehicle-stats", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret: secret }),
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }),
+          fetch(API_BASE + "/api/get-expenses", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ secret: secret }),
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); }),
+        ]).then(function (results) {
+          if (!results[0].ok) {
+            showProfitMsg("Error: " + (results[0].data.error || "Could not load stats"), "error");
+            return;
+          }
+          statsCache = results[0].data;
+          if (results[1].ok) {
+            statsCache._expenses = results[1].data.expenses || [];
+          } else {
+            statsCache._expenses = [];
+          }
+          renderCards(statsCache);
+          if (!silent) showProfitMsg("✅ Stats loaded.", "success");
+          // Re-render open detail if one was selected
+          if (currentVehicleId && document.getElementById("vehicleDetail").classList.contains("open")) {
+            window._profitSelectVehicle(currentVehicleId);
+          }
+        }).catch(function (err) {
+          showProfitMsg("Network error: " + err.message, "error");
+        });
+      }
+
+      document.getElementById("loadStatsBtn").addEventListener("click", function () { loadStats(false); });
+
+      // ── Save vehicle info ──────────────────────────────────────────────────
+      document.getElementById("saveVehicleBtn").addEventListener("click", function () {
+        if (!currentVehicleId) return;
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        var vehicleYear   = document.getElementById("editVehicleYear").value.trim();
+        var purchaseDate  = document.getElementById("editPurchaseDate").value.trim();
+        var purchasePrice = parseFloat(document.getElementById("editPurchasePrice").value) || 0;
+        var status        = document.getElementById("editVehicleStatus").value;
+
+        var btn = this;
+        btn.disabled = true;
+        showProfitMsg("Saving…", "info");
+        fetch(API_BASE + "/api/update-vehicle", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secret: secret,
+            vehicle_id: currentVehicleId,
+            vehicle_year: vehicleYear !== "" ? parseInt(vehicleYear, 10) : null,
+            purchase_date: purchaseDate,
+            purchase_price: purchasePrice,
+            status: status,
+          }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              // Update local cache immediately so the re-render shows the saved values
+              if (result.data.vehicle && statsCache && statsCache[currentVehicleId]) {
+                statsCache[currentVehicleId].vehicle = result.data.vehicle;
+              }
+              showProfitMsg("✅ Vehicle info saved.", "success");
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      // ── Add expense ────────────────────────────────────────────────────────
+      document.getElementById("addExpenseBtn").addEventListener("click", function () {
+        if (!currentVehicleId) { showProfitMsg("Select a vehicle first.", "error"); return; }
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        var date     = document.getElementById("expDate").value;
+        var category = document.getElementById("expCategory").value;
+        var amount   = parseFloat(document.getElementById("expAmount").value);
+        var notes    = document.getElementById("expNotes").value.trim();
+
+        if (!date)            { showProfitMsg("Select an expense date.", "error"); return; }
+        if (!amount || isNaN(amount) || amount <= 0) { showProfitMsg("Enter a valid expense amount.", "error"); return; }
+
+        var btn = this;
+        btn.disabled = true;
+        showProfitMsg("Adding expense…", "info");
+        fetch(API_BASE + "/api/add-expense", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, vehicle_id: currentVehicleId, date: date, category: category, amount: amount, notes: notes }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showProfitMsg("✅ Expense added.", "success");
+              document.getElementById("expAmount").value = "";
+              document.getElementById("expNotes").value  = "";
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      // ── Delete expense (event delegation) ─────────────────────────────────
+      document.getElementById("detailExpenses").addEventListener("click", function (evt) {
+        var btn = evt.target.closest(".exp-del");
+        if (!btn) return;
+        var expenseId = btn.getAttribute("data-expense-id");
+        if (!expenseId) return;
+
+        if (!confirm("Delete this expense?")) return;
+        var secret = getSecret();
+        if (!secret) { showProfitMsg("Enter the admin password first.", "error"); return; }
+
+        fetch(API_BASE + "/api/delete-expense", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secret: secret, expense_id: expenseId }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showProfitMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showProfitMsg("✅ Expense deleted.", "success");
+              loadStats(true);
+            }
+          })
+          .catch(function (err) { showProfitMsg("Network error: " + err.message, "error"); });
+      });
+
+      // ── Close detail panel ─────────────────────────────────────────────────
+      document.getElementById("detailClose").addEventListener("click", function () {
+        document.getElementById("vehicleDetail").classList.remove("open");
+        document.querySelectorAll(".vehicle-card").forEach(function (c) { c.classList.remove("active"); });
+        currentVehicleId = null;
+      });
+    })();
+  </script>
+
+  <!-- ── Manual Booking Entry Script ───────────────────────────────────────── -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      // Date pickers with allowInput so the admin can also type dates manually
+      flatpickr("#mbPickupDate", { dateFormat: "Y-m-d", allowInput: true });
+      flatpickr("#mbReturnDate",  { dateFormat: "Y-m-d", allowInput: true });
+
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showMbMsg(msg, type) {
+        var el = document.getElementById("mbStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        if (type !== "info") {
+          setTimeout(function () { el.style.display = "none"; }, 7000);
+        }
+      }
+
+      document.getElementById("mbSubmitBtn").addEventListener("click", function () {
+        var secret = getSecret();
+        if (!secret) { showMbMsg("Please enter the admin password first.", "error"); return; }
+
+        var vehicleId  = document.getElementById("mbVehicle").value;
+        var name       = document.getElementById("mbName").value.trim();
+        var phone      = document.getElementById("mbPhone").value.trim();
+        var email      = document.getElementById("mbEmail").value.trim();
+        var pickupDate = document.getElementById("mbPickupDate").value.trim();
+        var pickupTime = document.getElementById("mbPickupTime").value.trim();
+        var returnDate = document.getElementById("mbReturnDate").value.trim();
+        var returnTime = document.getElementById("mbReturnTime").value.trim();
+        var amountPaid = parseFloat(document.getElementById("mbAmount").value) || 0;
+        var notes      = document.getElementById("mbNotes").value.trim();
+
+        // Client-side validation
+        if (!name)       { showMbMsg("Customer name is required.", "error"); return; }
+        if (!pickupDate) { showMbMsg("Pickup date is required.", "error"); return; }
+        if (!returnDate) { showMbMsg("Return date is required.", "error"); return; }
+        if (pickupDate > returnDate) {
+          showMbMsg("Pickup date must be on or before the return date.", "error");
+          return;
+        }
+
+        var btn = this;
+        btn.disabled = true;
+        showMbMsg("Saving booking…", "info");
+        fetch(API_BASE + "/api/add-manual-booking", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            secret: secret, vehicleId: vehicleId, name: name, phone: phone,
+            email: email, pickupDate: pickupDate, pickupTime: pickupTime,
+            returnDate: returnDate, returnTime: returnTime,
+            amountPaid: amountPaid, notes: notes,
+          }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showMbMsg("Error: " + (result.data.error || "Unknown error"), "error");
+            } else {
+              showMbMsg("✅ Booking saved. Calendar dates are now blocked.", "success");
+              // Reset form fields
+              ["mbName", "mbPhone", "mbEmail", "mbPickupDate", "mbReturnDate",
+               "mbPickupTime", "mbReturnTime", "mbNotes"].forEach(function (id) {
+                document.getElementById(id).value = "";
+              });
+              document.getElementById("mbAmount").value = "";
+            }
+          })
+          .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); })
+          .finally(function () { btn.disabled = false; });
+      });
+    })();
+  </script>
+</body>
+</html>
