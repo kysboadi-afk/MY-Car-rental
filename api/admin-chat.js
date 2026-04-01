@@ -643,6 +643,9 @@ async function runChat(messages, toolCalls, sb) {
     if (!resp.ok) {
       const text = await resp.text().catch(()=>"");
       throw new Error(`OpenAI API error ${resp.status}: ${text.slice(0,300)}`);
+      let detail = text.slice(0, 300);
+      try { const j = JSON.parse(text); detail = j?.error?.message || detail; } catch { /* ignore */ }
+      throw new Error(`OpenAI API error ${resp.status}: ${detail}`);
     }
     const json = await resp.json();
     const choice = json.choices?.[0];
@@ -653,9 +656,13 @@ async function runChat(messages, toolCalls, sb) {
       console.warn("[admin-chat] unexpected OpenAI response shape — no message in choices[0]:", JSON.stringify(choice));
     }
     if (choice?.finish_reason !== "tool_calls" || !message?.tool_calls?.length) return message?.content || "";
+    if (!message) return "";
+    messages.push(message);
+    if (choice?.finish_reason !== "tool_calls" || !message.tool_calls?.length) return message.content || "";
     const results = await Promise.all(message.tool_calls.map(async tc => {
-      const callArgs = JSON.parse(tc.function.arguments || "{}");
-      const result   = await executeTool(tc.function.name, callArgs, sb);
+      let callArgs = {};
+      try { callArgs = JSON.parse(tc.function.arguments || "{}"); } catch { /* use empty args */ }
+      const result = await executeTool(tc.function.name, callArgs, sb);
       toolCalls.push({ name:tc.function.name, args:callArgs, result });
       return { role:"tool", tool_call_id:tc.id, content:JSON.stringify(result) };
     }));
