@@ -20,6 +20,7 @@ Follow these steps **in order**. Each links to the full instructions below.
 | [Step 5](#step-5--verify-your-signnow-setup-diagnostic-endpoint) | Visit `https://sly-rides.vercel.app/api/check-signnow` to verify SignNow is working | ✅ Yes — run this after Step 4 to confirm everything is connected |
 | [Step 6](#step-6--test-the-payment-form) | Do a test booking using Stripe test card `4242 4242 4242 4242` | ✅ Yes — confirms the full flow works end-to-end |
 | [Step 7](#step-7--set-up-the-admin-cms-supabase) | Add Supabase env vars and run SQL migrations for the Admin CMS | ⚠️ Required for admin content editing — see [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) |
+| [Step 8](#step-8--add-openai-api-key-for-the-ai-assistant) | Add `OPENAI_API_KEY` in Vercel → Settings → Environment Variables, then Redeploy | ⚠️ Required for the Admin AI Assistant — without it the AI chat page returns a 503 error |
 
 > 💡 After adding **any** new environment variable in Vercel, you must **Redeploy** for it to take effect: go to **Deployments** → click **⋯** next to the latest deployment → **Redeploy**.
 
@@ -363,9 +364,66 @@ Add these to Vercel → Settings → Environment Variables:
 | `SUPABASE_ANON_KEY` | `eyJhbGciOi…` | Supabase public anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOi…` | 🔒 Supabase service role key (server-only, never expose in frontend) |
 | `ADMIN_SECRET` | A strong password | Used to log into the Admin CMS at `/admin-cms.html` |
-| `OPENAI_API_KEY` | `sk-…` | Optional — enables the AI assistant in the Admin CMS |
+| `OPENAI_API_KEY` | `sk-…` | Required for the **AI Assistant** page in the Admin portal — see [Step 8](#step-8--add-openai-api-key-for-the-ai-assistant) |
 
 Then run the SQL migrations in `SUPABASE_SETUP.md` → Step 3.
 
 After that, visit `https://your-vercel-url.vercel.app/admin-cms.html` to access the Admin CMS.
 
+---
+
+## Step 8 — Add OpenAI API Key (for the AI Assistant)
+
+The **AI Assistant** page in the Admin portal (`/public/admin-v2/`) uses GPT-4o-mini to give you natural-language access to all your data — bookings, revenue, customers, fleet, settings, SMS templates, and more.
+
+### What you need
+
+A paid [OpenAI](https://platform.openai.com) account with API access.
+
+### Steps
+
+1. Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+2. Click **+ Create new secret key** → give it a name like `SLY RIDES Admin` → click **Create secret key**.
+3. Copy the key (starts with `sk-…`). **You can only copy it once.**
+4. In Vercel → your project → **Settings** → **Environment Variables**, click **Add New**:
+   - **Key:** `OPENAI_API_KEY`
+   - **Value:** the `sk-…` key you just copied
+   - **Environment:** Production (and optionally Preview / Development)
+5. Click **Save**, then **Deployments → ⋯ → Redeploy**.
+
+### Verification
+
+After redeploy, log in to the Admin portal and click **AI Assistant** in the sidebar. You should see the chat interface and be able to type a message like _"What bookings need approval?"_ and get a live answer.
+
+If the page shows **"OpenAI API key is not configured"**, the `OPENAI_API_KEY` env var is missing or the redeploy hasn't completed yet.
+
+### Cost
+
+GPT-4o-mini is priced at roughly **$0.15 / 1M input tokens** and **$0.60 / 1M output tokens** — typical admin queries cost well under $0.01 each. Usage is tracked at [platform.openai.com/usage](https://platform.openai.com/usage). Set a monthly spending limit at **Settings → Limits** if you want a hard cap.
+
+### Complete environment variable reference
+
+The table below lists every environment variable used by the SLY RIDES backend, grouped by feature:
+
+| Variable | Feature | Required? | Where to get it |
+|---|---|---|---|
+| `STRIPE_SECRET_KEY` | Payments | ✅ Yes | Stripe Dashboard → Developers → API Keys |
+| `STRIPE_PUBLISHABLE_KEY` | Payments | ✅ Yes | Stripe Dashboard → Developers → API Keys |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhooks | ✅ Yes | Stripe Dashboard → Developers → Webhooks → signing secret |
+| `SMTP_HOST` | Booking emails | ✅ Yes | Your email provider (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | Booking emails | ✅ Yes | Usually `587` (TLS) or `465` (SSL) |
+| `SMTP_USER` | Booking emails | ✅ Yes | Sending email address |
+| `SMTP_PASS` | Booking emails | ✅ Yes | Gmail app password or SMTP password |
+| `OWNER_EMAIL` | Booking emails | ✅ Yes | Where reservation alerts are sent (e.g. `slyservices@supports-info.com`) |
+| `GITHUB_TOKEN` | Calendar blocking | ⚠️ Recommended | GitHub → Settings → Developer settings → Fine-grained PATs |
+| `GITHUB_REPO` | Calendar blocking | ⚠️ Optional | Defaults to `kysboadi-afk/SLY-RIDES` — only set if you fork the repo |
+| `TEXTMAGIC_USERNAME` | SMS / OTP | ✅ Yes | TextMagic account username |
+| `TEXTMAGIC_API_KEY` | SMS / OTP | ✅ Yes | TextMagic → My Account → API → API Keys |
+| `TEXTMAGIC_FROM` | SMS sender ID | ⚠️ Optional | Custom sender name or number (leave blank to use TextMagic default) |
+| `OTP_SECRET` | Phone verification | ✅ Yes | Any long random string (32+ chars) — generate with `openssl rand -hex 32` |
+| `SUPABASE_URL` | Admin portal / DB | ✅ Yes | Supabase project → Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Admin portal / DB | ✅ Yes | Supabase project → Settings → API → `service_role` key (keep secret!) |
+| `ADMIN_SECRET` | Admin portal auth | ✅ Yes | Choose any strong password — this is your admin login |
+| `OPENAI_API_KEY` | AI Assistant | ✅ For AI chat | platform.openai.com/api-keys |
+| `CRON_SECRET` | Scheduled reminders | ⚠️ Recommended | Any random string — protects `/api/scheduled-reminders` from external calls |
+| `VERCEL_URL` | Internal API calls | 🔄 Auto-set | Set automatically by Vercel — do not set this manually |
