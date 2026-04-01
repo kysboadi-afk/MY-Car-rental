@@ -10,6 +10,7 @@
 import crypto from "crypto";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { openAIErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const OPENAI_MODEL     = "gpt-4o-mini";
@@ -631,7 +632,7 @@ async function executeTool(name, args, sb) {
 }
 
 async function runChat(messages, toolCalls, sb) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -641,6 +642,7 @@ async function runChat(messages, toolCalls, sb) {
     });
     if (!resp.ok) {
       const text = await resp.text().catch(()=>"");
+      throw new Error(`OpenAI API error ${resp.status}: ${text.slice(0,300)}`);
       let detail = text.slice(0, 300);
       try { const j = JSON.parse(text); detail = j?.error?.message || detail; } catch { /* ignore */ }
       throw new Error(`OpenAI API error ${resp.status}: ${detail}`);
@@ -648,6 +650,12 @@ async function runChat(messages, toolCalls, sb) {
     const json = await resp.json();
     const choice = json.choices?.[0];
     const message = choice?.message;
+    if (message) {
+      messages.push(message);
+    } else {
+      console.warn("[admin-chat] unexpected OpenAI response shape — no message in choices[0]:", JSON.stringify(choice));
+    }
+    if (choice?.finish_reason !== "tool_calls" || !message?.tool_calls?.length) return message?.content || "";
     if (!message) return "";
     messages.push(message);
     if (choice?.finish_reason !== "tool_calls" || !message.tool_calls?.length) return message.content || "";
@@ -673,7 +681,7 @@ export default async function handler(req, res) {
   if (!isAdminConfigured())    return res.status(500).json({ error:"ADMIN_SECRET is not configured." });
   const body = req.body || {};
   if (!isAdminAuthorized(body.secret)) return res.status(401).json({ error:"Unauthorized" });
-  if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error:"AI assistant unavailable: OPENAI_API_KEY is not configured.", disabled:true });
+  if (!(process.env.OPENAI_API_KEY || "").trim()) return res.status(503).json({ error:"AI assistant unavailable: OPENAI_API_KEY is not configured.", disabled:true });
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(503).json({ error:"Supabase is not configured. The AI assistant requires a live database connection." });
   // Cap incoming message at 4 000 characters and return a helpful error if exceeded
@@ -691,7 +699,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ reply, toolCalls });
   } catch (err) {
     console.error("[admin-chat] error:", err);
-    const msg = err.message?.includes("OPENAI_API_KEY") ? err.message : "The AI assistant encountered an error. Please try again.";
-    return res.status(500).json({ error:msg });
+    return res.status(500).json({ error: openAIErrorMessage(err) });
   }
 }
