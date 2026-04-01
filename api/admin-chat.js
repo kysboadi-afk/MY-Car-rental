@@ -92,55 +92,46 @@ const TOOLS = [
   { type:"function", function:{ name:"get_dashboard", description:"Live dashboard overview: pending approvals, today pickups, today returns, overdue rentals.", parameters:{ type:"object", properties:{}, required:[] } } },
 ];
 
-// Responses API uses a flattened tool format (no nested `function` object).
-const RESPONSE_TOOLS = TOOLS.map(({ function: fn }) => ({
-  type:        "function",
-  name:        fn.name,
-  description: fn.description,
-  parameters:  fn.parameters,
-}));
-
 // ─── Chat loop ────────────────────────────────────────────────────────────────
 
 async function runChat(messages, toolCalls) {
-  // Separate system prompt (→ instructions) from the conversation (→ input).
-  // buildSystemPrompt() always injects exactly one system message at position 0.
-  const instructions = messages.find(m => m.role === "system")?.content || "";
-  const inputMessages = messages
-    .filter(m => m.role !== "system")
-    .map(m => ({ role: m.role, content: m.content }));
-
-  let input = inputMessages;
-  let previousResponseId = null;
+  let currentMessages = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const params = { model: OPENAI_MODEL, instructions, input, tools: RESPONSE_TOOLS };
-    if (previousResponseId) params.previous_response_id = previousResponseId;
+    const response = await client.chat.completions.create({
+      model:       OPENAI_MODEL,
+      messages:    currentMessages,
+      tools:       TOOLS,
+      tool_choice: "auto",
+    });
 
-    const response = await client.responses.create(params);
-    previousResponseId = response.id;
-
-    const fnCalls = response.output.filter(item => item.type === "function_call");
-    if (fnCalls.length === 0) {
-      const msgItem = response.output.find(item => item.type === "message");
-      const text = msgItem?.content?.find(c => c.type === "output_text")?.text;
-      if (text === undefined) console.warn("[admin-chat] unexpected Responses API shape:", JSON.stringify(response.output?.slice(0, 2)));
-      return text || "";
+    const assistantMsg = response.choices[0]?.message;
+    if (!assistantMsg) {
+      console.warn("[admin-chat] unexpected Chat Completions shape:", JSON.stringify(response.choices?.slice(0, 1)));
+      return "";
     }
 
+    // No tool calls → return the text reply.
+    if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+      return assistantMsg.content || "";
+    }
+
+    // Add the assistant message (with tool_calls) to the conversation.
+    currentMessages.push(assistantMsg);
+
     // Dispatch each tool call through the actions layer — no direct DB access here.
-    const results = await Promise.all(fnCalls.map(async tc => {
+    const results = await Promise.all(assistantMsg.tool_calls.map(async tc => {
       let callArgs = {};
-      try { callArgs = JSON.parse(tc.arguments || "{}"); } catch (e) {
-        console.warn(`[admin-chat] failed to parse arguments for tool ${tc.name}:`, e.message);
+      try { callArgs = JSON.parse(tc.function.arguments || "{}"); } catch (e) {
+        console.warn(`[admin-chat] failed to parse arguments for tool ${tc.function.name}:`, e.message);
       }
-      const result = await executeAction(tc.name, callArgs);
-      toolCalls.push({ name: tc.name, args: callArgs, result });
-      return { type: "function_call_output", call_id: tc.call_id, output: JSON.stringify(result) };
+      const result = await executeAction(tc.function.name, callArgs);
+      toolCalls.push({ name: tc.function.name, args: callArgs, result });
+      return { role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) };
     }));
 
-    // Subsequent rounds carry only the tool results; prior context is in previous_response_id.
-    input = results;
+    // Add tool results to the conversation for the next round.
+    currentMessages.push(...results);
   }
 
   return "I reached the action limit for this request. Please break your request into smaller steps.";
