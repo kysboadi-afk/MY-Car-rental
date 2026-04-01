@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { openAIErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-5o-mini";
+const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const MAX_TOOL_ROUNDS  = 12;
 const MAX_HISTORY_MSGS = 24;
 const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
