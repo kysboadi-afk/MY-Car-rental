@@ -1503,7 +1503,7 @@
       </div>
 
       <!-- ── AI Assistant ──────────────────────────────────────────── -->
-      <div id="page-ai-assistant">
+      <div class="page" id="page-ai-assistant">
         <div class="ai-chat-wrap">
           <!-- Header -->
           <div class="ai-chat-header">
@@ -4375,7 +4375,8 @@ function aiAddMessage(role, text, toolCalls) {
       const badge = document.createElement('span');
       const hasErr = tc.result && tc.result.error;
       badge.className = 'ai-tool-badge' + (hasErr ? ' error' : '');
-      badge.title     = hasErr ? tc.result.error : JSON.stringify(tc.args||{});
+      // Show only the tool name in the tooltip — never expose raw args (may contain PII)
+      badge.title     = hasErr ? 'Error: ' + tc.result.error : tc.name.replace(/_/g,' ');
       badge.textContent = (hasErr ? '⚠ ' : '✓ ') + tc.name.replace(/_/g,' ');
       row.appendChild(badge);
     });

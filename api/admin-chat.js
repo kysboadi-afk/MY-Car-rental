@@ -637,7 +637,7 @@ async function runChat(messages, toolCalls, sb) {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type":"application/json", Authorization:`Bearer ${apiKey}` },
-      body: JSON.stringify({ model:OPENAI_MODEL, temperature:0.15, messages, tools:TOOLS, tool_choice:"auto" }),
+      body: JSON.stringify({ model:OPENAI_MODEL, temperature:0.3, messages, tools:TOOLS, tool_choice:"auto" }),
     });
     if (!resp.ok) { const text = await resp.text().catch(()=>""); throw new Error(`OpenAI API error ${resp.status}: ${text.slice(0,300)}`); }
     const json = await resp.json();
