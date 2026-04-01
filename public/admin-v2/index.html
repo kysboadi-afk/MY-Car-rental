@@ -4307,6 +4307,7 @@ function unblockDates() {
 // ── AI Assistant ────────────────────────────────────────────────────────────
 let aiHistory = [];
 let aiTyping  = false;
+const AI_SETUP_HINT = '\n\nTo enable it, add your OPENAI_API_KEY in the Vercel dashboard and redeploy.';
 let aiInitialized = false;
 
 function initAiChat() {
@@ -4408,6 +4409,14 @@ function aiRemoveTyping() {
   if (el) el.remove();
 }
 
+function aiDisable(reason) {
+  const input = document.getElementById('ai-input');
+  const btn   = document.getElementById('ai-send-btn');
+  if (input) { input.disabled = true; input.placeholder = reason || 'AI assistant unavailable'; }
+  if (btn)   { btn.disabled = true; }
+  aiAddMessage('bot', '⚠️ ' + (reason || 'AI assistant is unavailable.') + AI_SETUP_HINT, null);
+}
+
 async function aiSend() {
   if (aiTyping) return;
   const input = document.getElementById('ai-input');
@@ -4433,8 +4442,11 @@ async function aiSend() {
     aiRemoveTyping();
 
     if (!resp.ok) {
-      const errMsg = data.error || 'Unknown error';
-      aiAddMessage('bot', '⚠️ ' + errMsg, null);
+      if (data.disabled) {
+        aiDisable(data.error);
+        return;
+      }
+      aiAddMessage('bot', '⚠️ ' + (data.error || 'Unknown error'), null);
     } else {
       const reply = data.reply || '(No response)';
       aiAddMessage('bot', reply, data.toolCalls || []);
@@ -4450,8 +4462,10 @@ async function aiSend() {
     aiAddMessage('bot', '⚠️ Network error: ' + err.message, null);
   } finally {
     aiTyping = false;
-    btn.disabled = false;
-    input.focus();
+    if (!document.getElementById('ai-input')?.disabled) {
+      btn.disabled = false;
+      input.focus();
+    }
   }
 }
 </script>

@@ -1347,7 +1347,12 @@ function buildChatbot() {
       handleQualifyInput(text);
     } else {
       setTimeout(function() {
-        var reply = getBotReply(text);
+        var reply;
+        try {
+          reply = getBotReply(text);
+        } catch (e) {
+          reply = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.fallback") : "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com";
+        }
         addMessage(reply, "bot");
         // After any free-text reply in non-qualify mode, offer follow-up chips
         if (mode === "free" || mode === "faq") {
