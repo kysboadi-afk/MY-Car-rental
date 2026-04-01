@@ -362,6 +362,111 @@
       padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
       border: 1px solid rgba(217,119,6,0.3);
     }
+
+    /* ── AI Assistant Chat ───────────────────────────────────────── */
+    #page-ai-assistant { display:none; flex-direction:column; }
+    #page-ai-assistant.active { display:flex; }
+    .ai-chat-wrap {
+      display:flex; flex-direction:column;
+      height:calc(100vh - var(--topbar-h) - 32px);
+      min-height:400px; background:var(--surface);
+      border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;
+    }
+    .ai-chat-header {
+      padding:14px 20px; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
+    }
+    .ai-chat-header-left { display:flex; align-items:center; gap:10px; }
+    .ai-chat-avatar {
+      width:36px; height:36px; border-radius:10px;
+      background:linear-gradient(135deg,#2563eb,#7c3aed);
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:17px; flex-shrink:0;
+    }
+    .ai-chat-title { font-size:15px; font-weight:700; }
+    .ai-chat-sub { font-size:11px; color:var(--text-sub); margin-top:1px; }
+    .ai-status-dot {
+      width:8px; height:8px; border-radius:50%; background:#16a34a;
+      display:inline-block; margin-right:5px;
+    }
+    .ai-chat-messages {
+      flex:1; overflow-y:auto; padding:20px; display:flex;
+      flex-direction:column; gap:14px; scroll-behavior:smooth;
+    }
+    .ai-msg { display:flex; flex-direction:column; max-width:82%; gap:4px; }
+    .ai-msg.user { align-self:flex-end; align-items:flex-end; }
+    .ai-msg.bot  { align-self:flex-start; align-items:flex-start; }
+    .ai-msg-bubble {
+      padding:11px 15px; border-radius:14px;
+      font-size:13px; line-height:1.65; white-space:pre-wrap; word-break:break-word;
+    }
+    .ai-msg.user .ai-msg-bubble {
+      background:#2563eb; color:#fff; border-bottom-right-radius:4px;
+    }
+    .ai-msg.bot .ai-msg-bubble {
+      background:var(--bg); color:var(--text);
+      border:1px solid var(--border); border-bottom-left-radius:4px;
+    }
+    .ai-msg-time { font-size:10px; color:var(--text-sub); padding:0 4px; }
+    .ai-tool-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; }
+    .ai-tool-badge {
+      font-size:11px; color:#2563eb; background:#eff6ff;
+      border:1px solid #bfdbfe; border-radius:20px;
+      padding:2px 9px; display:inline-flex; align-items:center; gap:4px;
+    }
+    .ai-tool-badge.error { color:#dc2626; background:#fef2f2; border-color:#fecaca; }
+    .ai-typing {
+      display:flex; gap:5px; align-items:center; padding:11px 15px;
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:14px; border-bottom-left-radius:4px; width:fit-content;
+    }
+    .ai-typing-dot {
+      width:7px; height:7px; background:#9ca3af; border-radius:50%;
+      animation:aiDot 1.2s infinite;
+    }
+    .ai-typing-dot:nth-child(2) { animation-delay:.2s; }
+    .ai-typing-dot:nth-child(3) { animation-delay:.4s; }
+    @keyframes aiDot {
+      0%,60%,100% { transform:translateY(0); opacity:.5; }
+      30% { transform:translateY(-5px); opacity:1; }
+    }
+    .ai-chat-suggestions {
+      display:flex; flex-wrap:wrap; gap:8px; padding:0 20px 20px; justify-content:center;
+    }
+    .ai-suggestion {
+      padding:7px 14px; border-radius:20px; font-size:12px; font-weight:500;
+      background:var(--surface); border:1px solid var(--border); cursor:pointer;
+      transition:all .15s; color:var(--text); font-family:var(--font);
+    }
+    .ai-suggestion:hover { background:#2563eb; color:#fff; border-color:#2563eb; }
+    .ai-chat-input-row {
+      display:flex; gap:10px; padding:14px 20px;
+      border-top:1px solid var(--border); flex-shrink:0; align-items:flex-end;
+    }
+    .ai-chat-input {
+      flex:1; padding:10px 14px; border:1px solid var(--border);
+      border-radius:10px; font-size:13px; font-family:var(--font);
+      background:var(--bg); color:var(--text); resize:none; line-height:1.5;
+    }
+    .ai-chat-input:focus { outline:none; border-color:#2563eb; }
+    .ai-send-btn {
+      padding:10px 18px; background:#2563eb; color:#fff; border:none;
+      border-radius:10px; font-size:13px; font-weight:600;
+      cursor:pointer; font-family:var(--font); transition:background .15s; flex-shrink:0;
+    }
+    .ai-send-btn:hover:not(:disabled) { background:#1d4ed8; }
+    .ai-send-btn:disabled { opacity:.5; cursor:not-allowed; }
+    .ai-welcome {
+      display:flex; flex-direction:column; align-items:center;
+      text-align:center; padding:40px 20px 20px; gap:10px;
+    }
+    .ai-welcome-icon {
+      font-size:40px; width:72px; height:72px; border-radius:20px;
+      background:linear-gradient(135deg,#2563eb,#7c3aed);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .ai-welcome h3 { font-size:18px; font-weight:700; margin:0; }
+    .ai-welcome p { font-size:13px; color:var(--text-sub); max-width:480px; line-height:1.6; margin:0; }
   </style>
 </head>
 <body>
@@ -427,6 +532,14 @@
       <a class="nav-item" data-page="block-dates" href="#" onclick="navigate('block-dates');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Block Dates
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-section-label">Admin AI</div>
+      <a class="nav-item" data-page="ai-assistant" href="#" onclick="navigate('ai-assistant');return false;" style="background:linear-gradient(135deg,#1e40af18,#7c3aed18);color:#818cf8;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a3 3 0 016 0v2"/><circle cx="9" cy="14" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1" fill="currentColor" stroke="none"/><path d="M9 17.5s1.5 1.5 3 0" stroke-linecap="round"/></svg>
+        AI Assistant
       </a>
     </nav>
 
@@ -772,6 +885,57 @@
         </div>
       </div>
 
+      <!-- ── AI Assistant ──────────────────────────────────────────── -->
+      <div class="page" id="page-ai-assistant">
+        <div class="ai-chat-wrap">
+          <!-- Header -->
+          <div class="ai-chat-header">
+            <div class="ai-chat-header-left">
+              <div class="ai-chat-avatar">🤖</div>
+              <div>
+                <div class="ai-chat-title">SLY RIDES AI Assistant</div>
+                <div class="ai-chat-sub"><span class="ai-status-dot"></span>Connected to live Supabase — Slingshot fleet changes go live instantly</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-secondary btn-sm" onclick="aiClearChat()" title="Clear conversation">↺ Clear</button>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div class="ai-chat-messages" id="ai-messages">
+            <div class="ai-welcome" id="ai-welcome">
+              <div class="ai-welcome-icon">🤖</div>
+              <h3>Your Full-Access Admin AI</h3>
+              <p>Ask me anything about your Slingshot fleet — bookings, fleet status, blocked dates, customers, revenue, and more. I have complete live access to your Supabase database.</p>
+            </div>
+            <div class="ai-chat-suggestions" id="ai-suggestions">
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Show my Slingshot bookings this week">📋 Bookings this week</button>
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Which Slingshot units are available right now?">🏍️ Available units?</button>
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Any overdue Slingshot rentals today?">📅 Overdue rentals?</button>
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Show revenue for Slingshot fleet this month">📈 Revenue this month</button>
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="What bookings need approval?">✅ Needs approval?</button>
+              <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="List flagged customers">👥 Flagged customers</button>
+            </div>
+          </div>
+
+          <!-- Input -->
+          <div class="ai-chat-input-row">
+            <textarea
+              class="ai-chat-input"
+              id="ai-input"
+              placeholder="Ask anything about your Slingshot fleet…"
+              rows="1"
+              onkeydown="aiHandleKeydown(event)"
+              oninput="aiAutoResize(this)"
+            ></textarea>
+            <button class="ai-send-btn" id="ai-send-btn" onclick="aiSend()">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -888,6 +1052,7 @@ function navigate(page) {
     'manual-booking':'Manual Booking',
     'fleet-status':  'Fleet Status',
     'block-dates':   'Block / Unblock Dates',
+    'ai-assistant':  'AI Assistant',
   };
 
   const pageEl = document.getElementById(`page-${page}`);
@@ -903,6 +1068,7 @@ function navigate(page) {
   if (page === 'bookings') loadBookings();
   else if (page === 'fleet-status') loadFleetStatusPage();
   else if (page === 'block-dates') loadBlockedDates();
+  else if (page === 'ai-assistant') initAiChat();
   else if (page === 'dashboard' && !dashboardData) refreshDashboard();
 }
 
@@ -1540,6 +1706,149 @@ function statusBadge(status) {
     cancelled_rental: 'Cancelled',
   };
   return `<span class="badge ${map[status] || 'badge-gray'}">${esc(labels[status] || status)}</span>`;
+}
+
+// ── AI Assistant ────────────────────────────────────────────────────────────
+let aiHistory = [];
+let aiTyping  = false;
+let aiInitialized = false;
+
+function initAiChat() {
+  if (!aiInitialized) { aiInitialized = true; }
+}
+
+function aiHandleKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(); }
+}
+
+function aiAutoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+function aiSendSuggestion(btn) {
+  const text = (btn.dataset.query || btn.textContent).trim();
+  document.getElementById('ai-input').value = text;
+  aiSend();
+}
+
+function aiClearChat() {
+  aiHistory = [];
+  const msgs = document.getElementById('ai-messages');
+  msgs.innerHTML = `
+    <div class="ai-welcome" id="ai-welcome">
+      <div class="ai-welcome-icon">🤖</div>
+      <h3>Your Full-Access Admin AI</h3>
+      <p>Ask me anything about your Slingshot fleet — bookings, fleet status, blocked dates, customers, revenue, and more. I have complete live access to your Supabase database.</p>
+    </div>
+    <div class="ai-chat-suggestions" id="ai-suggestions">
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Show my Slingshot bookings this week">📋 Bookings this week</button>
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Which Slingshot units are available right now?">🏍️ Available units?</button>
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Any overdue Slingshot rentals today?">📅 Overdue rentals?</button>
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="Show revenue for Slingshot fleet this month">📈 Revenue this month</button>
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="What bookings need approval?">✅ Needs approval?</button>
+      <button class="ai-suggestion" onclick="aiSendSuggestion(this)" data-query="List flagged customers">👥 Flagged customers</button>
+    </div>`;
+}
+
+function aiHideWelcome() {
+  const w = document.getElementById('ai-welcome');
+  const s = document.getElementById('ai-suggestions');
+  if (w) w.remove();
+  if (s) s.remove();
+}
+
+function aiAddMessage(role, text, toolCalls) {
+  aiHideWelcome();
+  const msgs = document.getElementById('ai-messages');
+  const div  = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-msg-bubble';
+  bubble.textContent = text;
+  div.appendChild(bubble);
+
+  if (toolCalls && toolCalls.length) {
+    const row = document.createElement('div');
+    row.className = 'ai-tool-row';
+    toolCalls.forEach(tc => {
+      const badge = document.createElement('span');
+      const hasErr = tc.result && tc.result.error;
+      badge.className = 'ai-tool-badge' + (hasErr ? ' error' : '');
+      badge.title     = hasErr ? 'Error: ' + tc.result.error : tc.name.replace(/_/g,' ');
+      badge.textContent = (hasErr ? '⚠ ' : '✓ ') + tc.name.replace(/_/g,' ');
+      row.appendChild(badge);
+    });
+    div.appendChild(row);
+  }
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'ai-msg-time';
+  timeEl.textContent = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  div.appendChild(timeEl);
+
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function aiShowTyping() {
+  aiHideWelcome();
+  const msgs = document.getElementById('ai-messages');
+  const div  = document.createElement('div');
+  div.className = 'ai-msg bot';
+  div.id = 'ai-typing-indicator';
+  div.innerHTML = `<div class="ai-typing"><div class="ai-typing-dot"></div><div class="ai-typing-dot"></div><div class="ai-typing-dot"></div></div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function aiRemoveTyping() {
+  const el = document.getElementById('ai-typing-indicator');
+  if (el) el.remove();
+}
+
+async function aiSend() {
+  if (aiTyping) return;
+  const input = document.getElementById('ai-input');
+  const btn   = document.getElementById('ai-send-btn');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  aiAddMessage('user', message);
+
+  aiTyping = true;
+  btn.disabled = true;
+  aiShowTyping();
+
+  try {
+    const resp = await fetch(API_BASE + '/api/admin-chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ secret: adminSecret, message, history: aiHistory }),
+    });
+    const data = await resp.json();
+    aiRemoveTyping();
+
+    if (!resp.ok) {
+      aiAddMessage('bot', '⚠️ ' + (data.error || 'Unknown error'), null);
+    } else {
+      const reply = data.reply || '(No response)';
+      aiAddMessage('bot', reply, data.toolCalls || []);
+      aiHistory.push({ role: 'user',      content: message });
+      aiHistory.push({ role: 'assistant', content: reply  });
+      if (aiHistory.length > 48) aiHistory = aiHistory.slice(-48);
+    }
+  } catch (err) {
+    aiRemoveTyping();
+    aiAddMessage('bot', '⚠️ Network error: ' + err.message, null);
+  } finally {
+    aiTyping = false;
+    btn.disabled = false;
+    input.focus();
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
