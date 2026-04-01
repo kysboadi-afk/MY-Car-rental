@@ -153,9 +153,11 @@ export function openAIErrorMessage(err) {
   // Key not configured — surface as-is (no sensitive data in this message).
   if (raw.includes("OPENAI_API_KEY")) return raw;
 
-  // Extract the HTTP status code from messages shaped as "OpenAI API error NNN: …"
+  // SDK errors (openai package) expose a numeric `status` property directly.
+  // Legacy fetch-based callers throw errors shaped "OpenAI API error NNN: …".
   const statusMatch = raw.match(/OpenAI API error (\d+)/);
-  const status = statusMatch ? Number(statusMatch[1]) : null;
+  const status = (err && typeof err.status === "number") ? err.status
+               : statusMatch ? Number(statusMatch[1]) : null;
 
   if (status === 401) {
     return "AI assistant error: The OpenAI API key is invalid or revoked. Please verify OPENAI_API_KEY in your Vercel environment settings.";
@@ -167,7 +169,7 @@ export function openAIErrorMessage(err) {
     return "AI assistant error: The configured AI model was not found. The model may have been deprecated — please check your Vercel configuration.";
   }
   if (status === 500) {
-    return "AI assistant error: OpenAI returned HTTP 500. This may be caused by a deprecated model name — please verify that the OPENAI_MODEL in your Vercel configuration is still a supported model (e.g. gpt-5.4-mini). Check Vercel function logs for full details.";
+    return "AI assistant error: OpenAI returned HTTP 500. This may be caused by a deprecated model name — please verify that the OPENAI_MODEL in your Vercel configuration is still a supported model (e.g. gpt-4.1-mini). Check Vercel function logs for full details.";
   }
   if (status !== null) {
     return `AI assistant error: OpenAI returned HTTP ${status}. Check Vercel function logs for full details.`;

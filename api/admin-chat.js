@@ -8,9 +8,12 @@
 // Returns: { reply, toolCalls: [{name, args, result}] }
 
 import crypto from "crypto";
+import OpenAI from "openai";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { openAIErrorMessage } from "./_error-helpers.js";
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -152,6 +155,14 @@ const TOOLS = [
   { type:"function", function:{ name:"get_analytics", description:"Comprehensive fleet analytics: bookings, revenue, utilization, and per-vehicle breakdown.", parameters:{ type:"object", properties:{ period:{ type:"string", description:"today | week | month | quarter | year | all (default: month)" } }, required:[] } } },
   { type:"function", function:{ name:"get_dashboard", description:"Live dashboard overview: pending approvals, today pickups, today returns, overdue rentals.", parameters:{ type:"object", properties:{}, required:[] } } },
 ];
+
+// Responses API uses a flattened tool format (no nested `function` object).
+const RESPONSE_TOOLS = TOOLS.map(({ function: fn }) => ({
+  type: "function",
+  name: fn.name,
+  description: fn.description,
+  parameters: fn.parameters,
+}));
 
 const ALLOWED_SETTINGS_KEYS = new Set([
   "business_name","phone","whatsapp","email",
@@ -632,38 +643,50 @@ async function executeTool(name, args, sb) {
 }
 
 async function runChat(messages, toolCalls, sb) {
-  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+  // Separate the system prompt (sent as `instructions`) from the conversation input.
+  // buildSystemPrompt() always injects exactly one system message at position 0.
+  const instructions = messages.find(m => m.role === "system")?.content || "";
+  const inputMessages = messages
+    .filter(m => m.role !== "system")
+    .map(m => ({ role: m.role, content: m.content }));
+
+  let input = inputMessages;
+  let previousResponseId = null;
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type":"application/json", Authorization:`Bearer ${apiKey}` },
-      body: JSON.stringify({ model:OPENAI_MODEL, temperature:0.3, messages, tools:TOOLS, tool_choice:"auto" }),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(()=>"");
-      let detail = text.slice(0, 300);
-      try { const j = JSON.parse(text); detail = j?.error?.message || detail; } catch { /* ignore */ }
-      throw new Error(`OpenAI API error ${resp.status}: ${detail}`);
+    const params = {
+      model: OPENAI_MODEL,
+      instructions,
+      input,
+      tools: RESPONSE_TOOLS,
+    };
+    if (previousResponseId) params.previous_response_id = previousResponseId;
+
+    const response = await client.responses.create(params);
+    previousResponseId = response.id;
+
+    const fnCalls = response.output.filter(item => item.type === "function_call");
+    if (fnCalls.length === 0) {
+      const msgItem = response.output.find(item => item.type === "message");
+      const text = msgItem?.content?.find(c => c.type === "output_text")?.text;
+      if (text === undefined) console.warn("[admin-chat] unexpected Responses API shape — no output_text found:", JSON.stringify(response.output?.slice(0,2)));
+      return text || "";
     }
-    const json = await resp.json();
-    const choice = json.choices?.[0];
-    const message = choice?.message;
-    if (message) {
-      messages.push(message);
-    } else {
-      console.warn("[admin-chat] unexpected OpenAI response shape — no message in choices[0]:", JSON.stringify(choice));
-    }
-    if (choice?.finish_reason !== "tool_calls" || !message?.tool_calls?.length) return message?.content || "";
-    const results = await Promise.all(message.tool_calls.map(async tc => {
+
+    const results = await Promise.all(fnCalls.map(async tc => {
       let callArgs = {};
-      try { callArgs = JSON.parse(tc.function.arguments || "{}"); } catch { /* use empty args */ }
-      const result = await executeTool(tc.function.name, callArgs, sb);
-      toolCalls.push({ name:tc.function.name, args:callArgs, result });
-      return { role:"tool", tool_call_id:tc.id, content:JSON.stringify(result) };
+      try { callArgs = JSON.parse(tc.arguments || "{}"); } catch (e) {
+        console.warn(`[admin-chat] failed to parse arguments for tool ${tc.name}:`, e.message);
+      }
+      const result = await executeTool(tc.name, callArgs, sb);
+      toolCalls.push({ name: tc.name, args: callArgs, result });
+      return { type: "function_call_output", call_id: tc.call_id, output: JSON.stringify(result) };
     }));
-    messages.push(...results);
+
+    // Subsequent rounds only need tool results; prior context is carried via previous_response_id.
+    input = results;
   }
+
   return "I reached the action limit for this request. Please break your request into smaller steps.";
 }
 
