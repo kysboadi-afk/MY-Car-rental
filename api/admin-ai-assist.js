@@ -15,6 +15,7 @@
 import crypto from "crypto";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { openAIErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -134,7 +135,7 @@ function sanitizeProposal(proposal) {
 }
 
 async function callOpenAI(systemPrompt, userMessage) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
 
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -189,7 +190,7 @@ export default async function handler(req, res) {
 
   // ── propose ───────────────────────────────────────────────────────────────
   if (action === "propose") {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!(process.env.OPENAI_API_KEY || "").trim()) {
       return res.status(503).json({
         error:    "AI assistant is not available: OPENAI_API_KEY is not configured.",
         disabled: true,
@@ -215,11 +216,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ proposal });
     } catch (err) {
       console.error("[admin-ai-assist] propose error:", err);
-      // Don't leak raw error message which might contain parts of the API response
-      const msg = err.message?.startsWith("OPENAI_API_KEY")
-        ? err.message
-        : "The AI assistant encountered an error. Please try again.";
-      return res.status(500).json({ error: msg });
+      return res.status(500).json({ error: openAIErrorMessage(err) });
     }
   }
 

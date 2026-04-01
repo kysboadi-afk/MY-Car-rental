@@ -129,3 +129,47 @@ export function adminErrorMessage(err) {
   // ── Fallback ────────────────────────────────────────────────────────────────
   return "An unexpected error occurred — please try again. If the problem persists, check the server logs for details.";
 }
+
+/**
+ * Given an error thrown by an OpenAI API call, return a human-readable
+ * string suitable for displaying to an admin user.
+ *
+ * The fetch wrappers in admin-chat.js and admin-ai-assist.js always throw
+ * errors in the form `"OpenAI API error NNN: {body}"` when the OpenAI HTTP
+ * response is not 2xx.  This function extracts the numeric status code from
+ * that pattern to drive categorisation; text-based heuristics are NOT used
+ * so that the logic remains stable if OpenAI changes error message wording.
+ *
+ * If the error message does not contain the expected pattern (e.g. a network
+ * timeout or a JSON parse error) the function falls through to a generic
+ * message with a hint to check Vercel function logs.
+ *
+ * @param {unknown} err - the value caught by a catch block
+ * @returns {string}
+ */
+export function openAIErrorMessage(err) {
+  const raw = (err && err.message) ? String(err.message) : "";
+
+  // Key not configured — surface as-is (no sensitive data in this message).
+  if (raw.includes("OPENAI_API_KEY")) return raw;
+
+  // Extract the HTTP status code from messages shaped as "OpenAI API error NNN: …"
+  const statusMatch = raw.match(/OpenAI API error (\d+)/);
+  const status = statusMatch ? Number(statusMatch[1]) : null;
+
+  if (status === 401) {
+    return "AI assistant error: The OpenAI API key is invalid or revoked. Please verify OPENAI_API_KEY in your Vercel environment settings.";
+  }
+  if (status === 429) {
+    return "AI assistant error: OpenAI usage quota or rate limit exceeded. Please check your OpenAI account billing settings.";
+  }
+  if (status === 404) {
+    return "AI assistant error: The configured AI model was not found. The model may have been deprecated — please check your Vercel configuration.";
+  }
+  if (status !== null) {
+    return `AI assistant error: OpenAI returned HTTP ${status}. Check Vercel function logs for full details.`;
+  }
+
+  // No status code in the message — return a generic message with a hint.
+  return "The AI assistant encountered an error. Please try again. If the problem persists, check Vercel function logs.";
+}
