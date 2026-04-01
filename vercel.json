@@ -15,6 +15,9 @@
     "api/admin-ai-assist.js": {
       "maxDuration": 30
     },
+    "api/admin-chat.js": {
+      "maxDuration": 60
+    },
     "api/site-content.js": {
       "maxDuration": 15
     },
