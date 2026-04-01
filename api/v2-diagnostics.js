@@ -110,6 +110,7 @@ export default async function handler(req, res) {
     TEXTMAGIC_USERNAME:        process.env.TEXTMAGIC_USERNAME        ? "ok" : "missing",
     // Optional — only needed for the AI assistant feature.
     OPENAI_API_KEY:            process.env.OPENAI_API_KEY            ? "ok" : "optional",
+    OPENAI_MODEL:              process.env.OPENAI_MODEL              || "gpt-5.4-mini (default)",
   };
 
   // ── Supabase connectivity and table checks ───────────────────────────────
