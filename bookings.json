@@ -109,12 +109,15 @@
       "amountPaid": 231.53,
       "totalPrice": 231.53,
       "notes": "3-day rental. Basic DPP ($45). Sales tax $21.53. No personal insurance. VIN 4T1BF1FK9DU678911. Signed rental agreement on file.",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "late_fee_applied": "2026-04-02T17:00:49.182Z"
+      },
       "createdAt": "2026-03-29T20:38:00.000Z",
       "source": "public_booking",
       "activatedAt": "2026-04-02T16:45:34.401Z",
       "updatedAt": "2026-04-02T17:00:44.353Z",
-      "completedAt": "2026-04-02T17:00:44.353Z"
+      "completedAt": "2026-04-02T17:00:44.353Z",
+      "lateFeeApplied": 50
     }
   ]
 }
