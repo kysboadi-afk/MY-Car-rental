@@ -430,6 +430,15 @@
         declinedSub:    "We were unable to approve your application at this time.",
         declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(213) 916-6606</strong>."
       },
+      // chatbot UI
+      chatbot: {
+        headerTitle:  "\uD83D\uDE97 Sly Transportation Services LLC Assistant",
+        placeholder:  "Ask a question\u2026",
+        sendBtn:      "Send",
+        closeBtn:     "\u2715",
+        welcome:      "Hi! \uD83D\uDC4B Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$350/week with unlimited miles</strong>. I can help you get approved quickly.\n\nAsk me anything \u2014 pricing, requirements, earnings \u2014 or click below to apply!\n\n<a href=\"index.html\" id=\"chatApplyLink\">\uD83D\uDC49 Apply and get approved now</a>",
+        fallback:     "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
+      },
       footer: {
         copy: "\u00A9 2026 Sly Transportation Services LLC. All rights reserved.",
         privacyPolicy: "Privacy Policy"
@@ -855,6 +864,14 @@
         declinedSub:    "No pudimos aprobar tu solicitud en este momento.",
         declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(213) 916-6606</strong>."
       },
+      chatbot: {
+        headerTitle:  "\uD83D\uDE97 Asistente de Sly Transportation Services LLC",
+        placeholder:  "Haz una pregunta\u2026",
+        sendBtn:      "Enviar",
+        closeBtn:     "\u2715",
+        welcome:      "\u00A1Hola! \uD83D\uDC4B \u00BFQuieres alquilar un auto para DoorDash, Uber Eats u otras aplicaciones de entrega?\n\nNuestros autos son <strong>$350/semana con millaje ilimitado</strong>. Puedo ayudarte a obtener aprobaci\u00F3n r\u00E1pidamente.\n\nPr\u00E9guntame lo que quieras \u2014 precios, requisitos, ganancias \u2014 o haz clic abajo para solicitar.\n\n<a href=\"index.html\" id=\"chatApplyLink\">\uD83D\uDC49 Solicitar y obtener aprobaci\u00F3n ahora</a>",
+        fallback:     "No estoy seguro de eso \uD83E\uDD14\n\nIntenta preguntar sobre:\n\u2022 Precios\n\u2022 Autos disponibles\n\u2022 C\u00F3mo reservar\n\u2022 Aplicaciones de entrega\n\u2022 Informaci\u00F3n de contacto\n\nO env\u00EDanos un correo a slyservices@supports-info.com"
+      },
       footer: {
         copy: "\u00A9 2026 Sly Transportation Services LLC. Todos los derechos reservados.",
         privacyPolicy: "Pol\u00EDtica de Privacidad"
@@ -934,6 +951,10 @@
         localStorage.setItem("slyLang", btn.getAttribute("data-lang"));
         window.currentLang = btn.getAttribute("data-lang");
         applyTranslations();
+        // Notify chatbot if already built
+        if (typeof window.updateChatbotLang === "function") {
+          window.updateChatbotLang(getLang());
+        }
       });
     });
   }
@@ -951,7 +972,7 @@
     init();
   }
 
-  // ── Public API (used by car.js) ────────────────────────────────────────────
+  // ── Public API (used by chatbot.js and car.js) ────────────────────────────
   window.slyI18n = {
     t:    t,
     getLang: getLang,
