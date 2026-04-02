@@ -134,11 +134,13 @@
       "amountPaid": 220,
       "totalPrice": 220,
       "paymentMethod": "cash",
-      "status": "booked_paid",
+      "status": "active_rental",
       "notes": "",
       "smsSentAt": {},
       "createdAt": "2026-04-02T17:59:36.566Z",
-      "source": "admin_v2"
+      "source": "admin_v2",
+      "updatedAt": "2026-04-02T17:59:53.659Z",
+      "activatedAt": "2026-04-02T17:59:53.659Z"
     }
   ]
 }
