@@ -12,12 +12,6 @@
     "api/admin-revisions.js": {
       "maxDuration": 15
     },
-    "api/admin-ai-assist.js": {
-      "maxDuration": 30
-    },
-    "api/admin-chat.js": {
-      "maxDuration": 60
-    },
     "api/site-content.js": {
       "maxDuration": 15
     },
