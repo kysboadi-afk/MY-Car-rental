@@ -40,7 +40,7 @@
       "paymentIntentId": "manual_bg20260219",
       "paymentMethod": "cash",
       "amountPaid": 785,
-      "notes": "$300 refunded \u2014 car broke down",
+      "notes": "$300 refunded — car broke down",
       "smsSentAt": {},
       "createdAt": "2026-02-18T18:00:00.000Z",
       "source": "admin_v2"
@@ -57,14 +57,16 @@
       "returnDate": "2026-04-03",
       "returnTime": "",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "paymentIntentId": "pm_1TFjQrPo7fICjrtZWisqeEQ8",
       "paymentMethod": "stripe",
       "amountPaid": 350,
       "notes": "7-day weekly rental. Mastercard debit ending 4916. Booking recorded via admin after webhook email fallback missed.",
       "smsSentAt": {},
       "createdAt": "2026-03-27T23:40:00.000Z",
-      "source": "admin_v2"
+      "source": "admin_v2",
+      "activatedAt": "2026-04-02T16:45:34.401Z",
+      "updatedAt": "2026-04-02T16:45:34.401Z"
     }
   ],
   "camry2013": [
