@@ -103,7 +103,7 @@
       "returnDate": "2026-04-01",
       "returnTime": "8:38 PM",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "",
       "paymentMethod": "stripe",
       "amountPaid": 231.53,
@@ -113,7 +113,8 @@
       "createdAt": "2026-03-29T20:38:00.000Z",
       "source": "public_booking",
       "activatedAt": "2026-04-02T16:45:34.401Z",
-      "updatedAt": "2026-04-02T16:45:34.401Z"
+      "updatedAt": "2026-04-02T17:00:44.353Z",
+      "completedAt": "2026-04-02T17:00:44.353Z"
     }
   ]
 }
