@@ -20,7 +20,7 @@ import { executeAction, VEHICLE_NAMES, STATUS_LABELS } from "./_admin-actions.js
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-5-mini";
+const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 const MAX_TOOL_ROUNDS  = 12;
 const MAX_HISTORY_MSGS = 24;
 
@@ -164,11 +164,12 @@ export default async function handler(req, res) {
   ];
   const toolCalls = [];
 
+  console.log(`[admin-chat] using model: ${OPENAI_MODEL}`);
   try {
     const reply = await runChat(messages, toolCalls);
     return res.status(200).json({ reply, toolCalls });
   } catch (err) {
-    console.error("[admin-chat] error:", err);
-    return res.status(500).json({ error: openAIErrorMessage(err) });
+    console.error(`[admin-chat] error (model=${OPENAI_MODEL}):`, err);
+    return res.status(500).json({ error: openAIErrorMessage(err, OPENAI_MODEL) });
   }
 }

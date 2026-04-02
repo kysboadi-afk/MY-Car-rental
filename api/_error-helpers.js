@@ -145,10 +145,12 @@ export function adminErrorMessage(err) {
  * message with a hint to check Vercel function logs.
  *
  * @param {unknown} err - the value caught by a catch block
+ * @param {string} [model] - optional model name to include in error messages
  * @returns {string}
  */
-export function openAIErrorMessage(err) {
+export function openAIErrorMessage(err, model) {
   const raw = (err && err.message) ? String(err.message) : "";
+  const modelHint = model ? ` (model: ${model})` : "";
 
   // Key not configured — surface as-is (no sensitive data in this message).
   if (raw.includes("OPENAI_API_KEY")) return raw;
@@ -166,13 +168,13 @@ export function openAIErrorMessage(err) {
     return "AI assistant error: OpenAI usage quota or rate limit exceeded. Please check your OpenAI account billing settings.";
   }
   if (status === 404) {
-    return "AI assistant error: The configured AI model was not found. The model may have been deprecated — please check your Vercel configuration.";
+    return `AI assistant error: The configured AI model was not found${modelHint}. The model may have been deprecated — set the OPENAI_MODEL environment variable in your Vercel dashboard to a valid model (e.g. gpt-5.4-mini).`;
   }
   if (status === 500) {
-    return "AI assistant error: OpenAI returned HTTP 500 (server-side error). This is usually a transient issue — please try again in a moment. If it persists, check Vercel function logs for the full error detail.";
+    return `AI assistant error: OpenAI returned HTTP 500${modelHint} (server-side error). This is usually a transient issue — please try again in a moment. If it persists, check Vercel function logs for the full error detail.`;
   }
   if (status !== null) {
-    return `AI assistant error: OpenAI returned HTTP ${status}. Check Vercel function logs for full details.`;
+    return `AI assistant error: OpenAI returned HTTP ${status}${modelHint}. Check Vercel function logs for full details.`;
   }
 
   // No status code in the message — return a generic message with a hint.
