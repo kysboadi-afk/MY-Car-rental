@@ -17,8 +17,9 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const FLEET_STATUS_PATH = "fleet-status.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const FLEET_STATUS_PATH  = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 
@@ -42,7 +43,7 @@ function ghHeaders() {
 
 async function loadFleetStatus() {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const resp   = await fetch(apiUrl, { headers: ghHeaders() });
+  const resp   = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
   if (!resp.ok) {
     if (resp.status === 404) return { data: { ...DEFAULT_STATUS }, sha: null };
     const text = await resp.text().catch(() => "");
@@ -61,7 +62,7 @@ async function loadFleetStatus() {
 async function saveFleetStatus(data, sha, message) {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body    = { message, content };
+  const body    = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
   const resp = await fetch(apiUrl, {
     method:  "PUT",

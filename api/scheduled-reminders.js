@@ -76,9 +76,10 @@ const LATE_FEE_AMOUNTS = {
 // the vehicle for new bookings without requiring manual admin intervention.
 const AUTO_COMPLETE_HOURS = 4;
 
-const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
-const FLEET_STATUS_PATH = "fleet-status.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+const FLEET_STATUS_PATH  = "fleet-status.json";
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -92,7 +93,7 @@ function ghHeaders() {
 
 async function loadBookedDates() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  const getResp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
   if (!getResp.ok) {
     if (getResp.status === 404) return { data: {}, sha: null };
     return { data: {}, sha: null };
@@ -109,7 +110,7 @@ async function loadBookedDates() {
 async function saveBookedDates(data, sha, message) {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
   const resp = await fetch(apiUrl, {
     method:  "PUT",
@@ -147,7 +148,7 @@ async function removeFromBookedDates(vehicleId, from, to) {
 
 async function loadFleetStatus() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  const getResp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
   if (!getResp.ok) {
     if (getResp.status === 404) return { data: {}, sha: null };
     return { data: {}, sha: null };
@@ -164,7 +165,7 @@ async function loadFleetStatus() {
 async function saveFleetStatus(data, sha, message) {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
   const resp = await fetch(apiUrl, {
     method:  "PUT",

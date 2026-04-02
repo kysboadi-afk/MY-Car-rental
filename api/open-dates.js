@@ -20,8 +20,9 @@
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 export default async function handler(req, res) {
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
   };
 
   async function loadBookedDates() {
-    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const text = await resp.text().catch(() => "");
@@ -93,7 +94,7 @@ export default async function handler(req, res) {
 
   async function saveBookedDates(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
