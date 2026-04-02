@@ -138,11 +138,14 @@ async function callOpenAI(systemPrompt, userMessage) {
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
 
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  console.log(`[admin-ai-assist] using model: ${model}`);
+
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method:  "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model:       process.env.OPENAI_MODEL || "gpt-5.4-mini",
+      model,
       temperature: 0.3,
       messages: [
         { role: "system",  content: systemPrompt },
@@ -216,7 +219,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ proposal });
     } catch (err) {
       console.error("[admin-ai-assist] propose error:", err);
-      return res.status(500).json({ error: openAIErrorMessage(err) });
+      return res.status(500).json({ error: openAIErrorMessage(err, process.env.OPENAI_MODEL || "gpt-5.4-mini") });
     }
   }
 
