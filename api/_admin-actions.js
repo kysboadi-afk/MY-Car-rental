@@ -3,6 +3,12 @@
 // All tool calls from admin-chat.js are routed through here.
 // This module owns validation, audit logging, and all business-logic calls.
 // admin-chat.js has ZERO direct Supabase or data-layer access.
+//
+// Data-layer strategy:
+//   Supabase (service role) is the PRIMARY source for analytics reads and
+//   ALL writes (ai_logs, fraud flags, vehicle mutations).
+//   loadBookings() / loadVehicles() helpers provide fallback when Supabase
+//   is not configured or a table does not yet exist.
 
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
@@ -14,6 +20,15 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 
+// DB → app status mapping (mirrors v2-bookings.js)
+const DB_TO_APP_STATUS = {
+  pending:   "reserved_unpaid",
+  approved:  "booked_paid",
+  active:    "active_rental",
+  completed: "completed_rental",
+  cancelled: "cancelled_rental",
+};
+
 // ── Revenue helper (mirrors v2-dashboard) ────────────────────────────────────
 function revenueFromBooking(booking) {
   if (typeof booking.amountPaid === "number" && booking.amountPaid > 0) return booking.amountPaid;
@@ -23,49 +38,227 @@ function revenueFromBooking(booking) {
   return 0;
 }
 
-// ── Audit logging ────────────────────────────────────────────────────────────
-async function logAction(actionName, args, result) {
+// ── AI audit logging (ai_logs table) ────────────────────────────────────────
+/**
+ * Log an AI tool execution to the ai_logs table.
+ * Falls back to admin_action_logs when ai_logs doesn't exist yet.
+ *
+ * @param {string} action   - tool name
+ * @param {object} input    - sanitised args (no secrets)
+ * @param {object} output   - tool result
+ * @param {string} adminId  - identifier for the admin session ("admin" by default)
+ */
+export async function logAiAction(action, input, output, adminId = "admin") {
   const sb = getSupabaseAdmin();
-  if (!sb) return; // No Supabase → skip logging (non-fatal)
+  if (!sb) return; // non-fatal: skip when Supabase not configured
+
+  // Try ai_logs first (0019 migration); fall back to admin_action_logs (0018)
+  try {
+    const { error } = await sb.from("ai_logs").insert({
+      action,
+      input:  input  || null,
+      output: output || null,
+      admin_id: adminId,
+    });
+    if (!error) return;
+    // If ai_logs table doesn't exist yet, fall through to legacy table
+    if (!error.message?.includes("relation") && !error.message?.includes("does not exist")) {
+      console.warn("_admin-actions: ai_logs insert error:", error.message);
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Legacy fallback
   try {
     await sb.from("admin_action_logs").insert({
-      action_name: actionName,
-      args:        args   || null,
-      result:      result || null,
+      action_name: action,
+      args:        input  || null,
+      result:      output || null,
     });
   } catch (err) {
-    console.warn("_admin-actions: audit log failed:", err.message);
+    console.warn("_admin-actions: audit log fallback failed:", err.message);
+  }
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+// Columns selected from the Supabase bookings table for AI queries.
+// Keep in sync with DB schema (migration 0019 adds flagged + risk_score).
+const BOOKING_COLUMNS =
+  "id, booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at, flagged, risk_score";
+
+// ── Supabase-first helpers ───────────────────────────────────────────────────
+
+/**
+ * Load all bookings as a flat array.
+ * Tries Supabase bookings table first; falls back to bookings.json.
+ */
+async function loadAllBookings() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from("bookings")
+        .select(BOOKING_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (!error && data) {
+        return data.map((row) => ({
+          bookingId:  row.booking_id || String(row.id),
+          name:       row.customer_name || "",
+          phone:      row.phone || "",
+          email:      row.email || "",
+          vehicleId:  row.vehicle_id || "",
+          pickupDate: row.pickup_date || "",
+          returnDate: row.return_date || "",
+          status:     DB_TO_APP_STATUS[row.status] || row.status,
+          amountPaid: row.amount_paid || row.total_price || 0,
+          createdAt:  row.created_at || "",
+          flagged:    row.flagged || false,
+          risk_score: row.risk_score || 0,
+          _dbId:      row.id,
+        }));
+      }
+    } catch {
+      // fall through
+    }
+  }
+  // Fallback: GitHub JSON
+  const { data: bookingsData } = await loadBookings();
+  return Object.values(bookingsData).flat();
+}
+
+/**
+ * Load vehicles as a { [vehicleId]: vehicleObj } map.
+ * Tries Supabase vehicles table first; falls back to vehicles.json.
+ */
+async function loadAllVehicles() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from("vehicles")
+        .select("vehicle_id, data, rental_status");
+      if (!error && data) {
+        const map = {};
+        for (const row of data) {
+          map[row.vehicle_id] = {
+            vehicle_id: row.vehicle_id,
+            ...(row.data || {}),
+            rental_status: row.rental_status,
+          };
+        }
+        return map;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  const { data: vehicles } = await loadVehicles();
+  return vehicles;
+}
+
+/**
+ * Get revenue for a period using the get_monthly_revenue SQL function when
+ * available, otherwise fall back to summing booking records.
+ */
+async function getRevenueForMonth(month) {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb.rpc("get_monthly_revenue", { month_input: month });
+      if (!error && data !== null) return Number(data);
+    } catch {
+      // fall through
+    }
+  }
+  // Fallback: compute from bookings
+  const allBookings = await loadAllBookings();
+  const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+  return allBookings
+    .filter((b) => paidStatuses.has(b.status) && (b.pickupDate || b.createdAt || "").startsWith(month))
+    .reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+}
+
+/**
+ * Store fraud flags for a booking back to Supabase bookings table.
+ * Non-fatal — failure is logged as a warning.
+ */
+async function storeFraudFlags(bookingId, flagged, riskScore) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  try {
+    await sb
+      .from("bookings")
+      .update({ flagged, risk_score: riskScore })
+      .eq("booking_id", bookingId);
+  } catch (err) {
+    console.warn("_admin-actions: storeFraudFlags failed:", err.message);
+  }
+}
+
+// ── Vehicle writes: Supabase + JSON fallback ─────────────────────────────────
+
+async function upsertVehicleToSupabase(vehicleId, vehicleData) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  try {
+    await sb
+      .from("vehicles")
+      .upsert({ vehicle_id: vehicleId, data: vehicleData }, { onConflict: "vehicle_id" });
+  } catch (err) {
+    console.warn("_admin-actions: upsertVehicleToSupabase failed:", err.message);
   }
 }
 
 // ── Tool implementations ──────────────────────────────────────────────────────
 
 async function toolGetRevenue({ month } = {}) {
-  const { data: bookingsData } = await loadBookings();
-  const allBookings = Object.values(bookingsData).flat();
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+  const allBookings  = await loadAllBookings();
 
   let filtered = allBookings.filter((b) => paidStatuses.has(b.status));
   if (month) {
+    // Try Supabase RPC for total
+    const sbTotal = await getRevenueForMonth(month);
     filtered = filtered.filter((b) => (b.pickupDate || b.createdAt || "").startsWith(month));
+
+    // Per-vehicle breakdown from local data
+    const byVehicle = {};
+    for (const b of filtered) {
+      const vid = b.vehicleId || "unknown";
+      if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
+      byVehicle[vid].count   += 1;
+      byVehicle[vid].revenue += b.amountPaid || revenueFromBooking(b);
+    }
+    for (const v of Object.values(byVehicle)) {
+      v.revenue = Math.round(v.revenue * 100) / 100;
+    }
+
+    return {
+      period:    month,
+      total:     Math.round(sbTotal * 100) / 100,
+      bookings:  filtered.length,
+      byVehicle,
+    };
   }
 
-  const total = filtered.reduce((s, b) => s + revenueFromBooking(b), 0);
-
-  // Per-vehicle breakdown
+  const total = filtered.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
   const byVehicle = {};
   for (const b of filtered) {
     const vid = b.vehicleId || "unknown";
     if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
     byVehicle[vid].count   += 1;
-    byVehicle[vid].revenue += revenueFromBooking(b);
+    byVehicle[vid].revenue += b.amountPaid || revenueFromBooking(b);
   }
   for (const v of Object.values(byVehicle)) {
     v.revenue = Math.round(v.revenue * 100) / 100;
   }
 
   return {
-    period:    month || "all-time",
+    period:    "all-time",
     total:     Math.round(total * 100) / 100,
     bookings:  filtered.length,
     byVehicle,
@@ -74,16 +267,65 @@ async function toolGetRevenue({ month } = {}) {
 
 async function toolGetBookings({ vehicleId, status, limit = 20 } = {}) {
   const safeLimit = Math.min(Number(limit) || 20, 100);
-  const { data: bookingsData } = await loadBookings();
-  let all = Object.values(bookingsData).flat();
+  const sb = getSupabaseAdmin();
 
+  let results = [];
+  let total   = 0;
+
+  if (sb) {
+    try {
+      let query = sb
+        .from("bookings")
+        .select(BOOKING_COLUMNS, { count: "exact" })
+        .order("created_at", { ascending: false })
+        .limit(safeLimit);
+
+      if (vehicleId) query = query.eq("vehicle_id", vehicleId);
+
+      // Map app status to DB status for filtering
+      if (status) {
+        const APP_TO_DB = {
+          reserved_unpaid:  "pending",
+          booked_paid:      "approved",
+          active_rental:    "active",
+          completed_rental: "completed",
+          cancelled_rental: "cancelled",
+        };
+        const dbStatus = APP_TO_DB[status] || status;
+        query = query.eq("status", dbStatus);
+      }
+
+      const { data, error, count } = await query;
+      if (!error && data) {
+        total   = count ?? data.length;
+        results = data.map((row) => ({
+          bookingId:  row.booking_id || String(row.id),
+          name:       row.customer_name || "",
+          phone:      row.phone || "",
+          email:      row.email || "",
+          vehicleId:  row.vehicle_id || "",
+          pickupDate: row.pickup_date || "",
+          returnDate: row.return_date || "",
+          status:     DB_TO_APP_STATUS[row.status] || row.status,
+          amountPaid: row.amount_paid || row.total_price || 0,
+          createdAt:  row.created_at || "",
+          flagged:    row.flagged || false,
+          risk_score: row.risk_score || 0,
+        }));
+        return { total, returned: results.length, bookings: results };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fallback: JSON files
+  let all = await loadAllBookings();
   if (vehicleId) all = all.filter((b) => b.vehicleId === vehicleId);
   if (status)    all = all.filter((b) => b.status === status);
-
-  // Sort newest first
   all.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
-
-  const results = all.slice(0, safeLimit).map((b) => ({
+  total   = all.length;
+  results = all.slice(0, safeLimit).map((b) => ({
     bookingId:  b.bookingId,
     name:       b.name,
     phone:      b.phone,
@@ -92,26 +334,43 @@ async function toolGetBookings({ vehicleId, status, limit = 20 } = {}) {
     pickupDate: b.pickupDate,
     returnDate: b.returnDate,
     status:     b.status,
-    amountPaid: revenueFromBooking(b),
+    amountPaid: b.amountPaid || revenueFromBooking(b),
     createdAt:  b.createdAt,
   }));
 
-  return { total: all.length, returned: results.length, bookings: results };
+  return { total, returned: results.length, bookings: results };
 }
 
 async function toolGetVehicles() {
-  const { data: vehicles } = await loadVehicles();
-  const { data: bookingsData } = await loadBookings();
+  const sb = getSupabaseAdmin();
+  const vehicles = await loadAllVehicles();
+  const allBookings = await loadAllBookings();
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
 
+  // Try to get booking counts from Supabase RPC
+  let sbCounts = null;
+  if (sb) {
+    try {
+      const { data, error } = await sb.rpc("get_vehicle_booking_counts");
+      if (!error && data) {
+        sbCounts = {};
+        for (const row of data) sbCounts[row.vehicle_id] = Number(row.booking_count);
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   const result = Object.entries(vehicles).map(([vehicleId, v]) => {
-    const vBookings = (bookingsData[vehicleId] || []).filter((b) => paidStatuses.has(b.status));
-    const revenue   = vBookings.reduce((s, b) => s + revenueFromBooking(b), 0);
+    const vBookings  = allBookings.filter((b) => b.vehicleId === vehicleId && paidStatuses.has(b.status));
+    const revenue    = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+    const bookCount  = sbCounts ? (sbCounts[vehicleId] ?? vBookings.length) : vBookings.length;
+
     return {
       vehicleId,
       name:          v.vehicle_name || vehicleId,
-      status:        v.status || "active",
-      totalBookings: vBookings.length,
+      status:        v.status || v.rental_status || "active",
+      totalBookings: bookCount,
       totalRevenue:  Math.round(revenue * 100) / 100,
     };
   });
@@ -121,12 +380,14 @@ async function toolGetVehicles() {
 
 async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
   if (!vehicleId || !vehicleName) throw new Error("vehicleId and vehicleName are required");
-  if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) throw new Error("vehicleId must be lowercase letters, digits, hyphens, or underscores (2–50 chars)");
+  if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
+    throw new Error("vehicleId must be lowercase letters, digits, hyphens, or underscores (2–50 chars)");
+  }
 
-  const { data: vehicles } = await loadVehicles();
+  const vehicles = await loadAllVehicles();
   if (vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" already exists`);
 
-  vehicles[vehicleId] = {
+  const vehicleObj = {
     vehicle_id:   vehicleId,
     vehicle_name: String(vehicleName).slice(0, 200),
     type:         type || "other",
@@ -134,14 +395,30 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
     daily_rate:   dailyRate ? Number(dailyRate) : undefined,
   };
 
-  await saveVehicles(vehicles);
+  // Write to Supabase vehicles table
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const { error } = await sb.from("vehicles").insert({
+      vehicle_id: vehicleId,
+      data: vehicleObj,
+    });
+    if (error && !error.message?.includes("relation")) {
+      throw new Error(`Supabase insert failed: ${error.message}`);
+    }
+  }
+
+  // Also update vehicles.json as fallback store
+  const { data: jsonVehicles } = await loadVehicles();
+  jsonVehicles[vehicleId] = vehicleObj;
+  await saveVehicles(jsonVehicles);
+
   return { created: vehicleId, name: vehicleName };
 }
 
 async function toolUpdateVehicle({ vehicleId, updates = {} }) {
   if (!vehicleId) throw new Error("vehicleId is required");
 
-  const { data: vehicles } = await loadVehicles();
+  const vehicles = await loadAllVehicles();
   if (!vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" not found`);
 
   const allowed = ["vehicle_name", "status", "daily_rate"];
@@ -157,8 +434,27 @@ async function toolUpdateVehicle({ vehicleId, updates = {} }) {
     }
   }
 
-  vehicles[vehicleId] = { ...vehicles[vehicleId], ...sanitized };
-  await saveVehicles(vehicles);
+  const updated = { ...vehicles[vehicleId], ...sanitized };
+
+  // Write to Supabase
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const { error } = await sb
+      .from("vehicles")
+      .update({ data: updated })
+      .eq("vehicle_id", vehicleId);
+    if (error && !error.message?.includes("relation")) {
+      throw new Error(`Supabase update failed: ${error.message}`);
+    }
+  }
+
+  // Also update vehicles.json
+  const { data: jsonVehicles } = await loadVehicles();
+  if (jsonVehicles[vehicleId]) {
+    jsonVehicles[vehicleId] = { ...jsonVehicles[vehicleId], ...sanitized };
+    await saveVehicles(jsonVehicles);
+  }
+
   return { updated: vehicleId, applied: sanitized };
 }
 
@@ -174,31 +470,33 @@ async function toolSendSms({ phone, message }) {
 }
 
 async function toolGetInsights() {
-  const [{ data: bookingsData }, { data: vehicles }] = await Promise.all([
-    loadBookings(),
-    loadVehicles(),
+  const [allBookings, vehicles] = await Promise.all([
+    loadAllBookings(),
+    loadAllVehicles(),
   ]);
-  const allBookings = Object.values(bookingsData).flat();
 
-  const insights  = computeInsights({ allBookings, vehicles, revenueFromBooking });
-  const problems  = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
+  const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
+  const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
 
   return { insights, problems };
 }
 
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {
-  const { data: bookingsData } = await loadBookings();
-  const allBookings = Object.values(bookingsData).flat();
-
+  const allBookings = await loadAllBookings();
   let scored = scoreAllBookings(allBookings);
-  if (flaggedOnly) scored = scored.filter((b) => b.flagged);
 
-  // Sort by risk_score descending
+  // Persist risk scores to Supabase in the background (non-blocking)
+  const flaggedItems = scored.filter((b) => b.flagged);
+  Promise.all(
+    flaggedItems.map((b) => storeFraudFlags(b.bookingId, b.flagged, b.risk_score))
+  ).catch((err) => console.warn("_admin-actions: batch fraud persist failed:", err.message));
+
+  if (flaggedOnly) scored = scored.filter((b) => b.flagged);
   scored.sort((a, b) => b.risk_score - a.risk_score);
 
   return {
     total:    allBookings.length,
-    flagged:  scored.filter((b) => b.flagged).length,
+    flagged:  flaggedItems.length,
     results:  scored.slice(0, 50),
   };
 }
@@ -211,22 +509,23 @@ const DESTRUCTIVE_TOOLS = new Set(["add_vehicle", "update_vehicle", "send_sms"])
 
 /**
  * Execute a named tool with the given args.
- * Logs the action to admin_action_logs.
+ * Logs the action to ai_logs (falls back to admin_action_logs).
  *
  * @param {string} toolName
  * @param {object} args
  * @param {object} [options]
  * @param {boolean} [options.requireConfirmation] - if true, reject destructive calls without args.confirmed
+ * @param {string}  [options.adminId]             - identifier for the admin session
  * @returns {Promise<object>} Tool result
  */
-export async function executeAction(toolName, args = {}, { requireConfirmation = true } = {}) {
+export async function executeAction(toolName, args = {}, { requireConfirmation = true, adminId = "admin" } = {}) {
   // Guard: destructive ops need confirmation flag when requireConfirmation is enabled
   if (requireConfirmation && DESTRUCTIVE_TOOLS.has(toolName) && !args.confirmed) {
     const result = {
       requires_confirmation: true,
       message: `Action "${toolName}" requires confirmation. Ask the admin to confirm, then retry with confirmed:true.`,
     };
-    await logAction(toolName, args, result);
+    await logAiAction(toolName, args, result, adminId);
     return result;
   }
 
@@ -246,10 +545,10 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
     }
   } catch (err) {
     const errorResult = { error: adminErrorMessage(err) };
-    await logAction(toolName, args, errorResult);
+    await logAiAction(toolName, args, errorResult, adminId);
     throw err;
   }
 
-  await logAction(toolName, args, result);
+  await logAiAction(toolName, args, result, adminId);
   return result;
 }

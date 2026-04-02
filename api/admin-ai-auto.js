@@ -1,21 +1,31 @@
-// api/admin-ai-insights.js
-// SLYTRANS Fleet Control — Business intelligence + problem detection endpoint.
-// Returns structured insights and detected problems without requiring an OpenAI key.
-// Uses Supabase as primary data source with JSON fallback.
+// api/admin-ai-auto.js
+// SLYTRANS Fleet Control — AI automation loop (cron job entry point).
 //
-// POST /api/admin-ai-insights
-// Body: { secret: string }
+// Called by Vercel Cron every 10 minutes (see vercel.json).
+// Also callable manually via POST with Authorization: Bearer <CRON_SECRET>.
 //
-// Response: { insights: object, problems: string[], fraud: { flagged: number, topRisks: object[] } }
+// Flow:
+//   1. Fetch bookings + vehicles from Supabase (fallback: JSON files)
+//   2. Compute insights
+//   3. Detect problems
+//   4. If AUTO_MODE env var = "true" → execute low-risk actions
+//   5. Log everything to ai_logs
+//
+// Required env vars:
+//   ADMIN_SECRET or CRON_SECRET — authentication
+//   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — database
+// Optional:
+//   AUTO_MODE=true — enables automatic action execution (default: false)
+//   OPENAI_API_KEY — required for AI-generated action summaries
 
-import { isAdminAuthorized } from "./_admin-auth.js";
-import { getSupabaseAdmin } from "./_supabase.js";
+import { executeAction, logAiAction } from "./_admin-actions.js";
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { computeAmount } from "./_pricing.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
-import { scoreAllBookings } from "../lib/ai/fraud.js";
+import { runAutoActions } from "../lib/ai/actions-auto.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -39,7 +49,6 @@ function revenueFromBooking(booking) {
 async function fetchAllData() {
   const sb = getSupabaseAdmin();
 
-  // ── Bookings ──────────────────────────────────────────────────────────────
   let allBookings = [];
   if (sb) {
     try {
@@ -72,7 +81,6 @@ async function fetchAllData() {
     allBookings = Object.values(bookingsData).flat();
   }
 
-  // ── Vehicles ──────────────────────────────────────────────────────────────
   let vehicles = {};
   if (sb) {
     try {
@@ -97,51 +105,67 @@ async function fetchAllData() {
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  if (!process.env.ADMIN_SECRET) {
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
+  // ── Authentication ────────────────────────────────────────────────────────
+  // Vercel Cron sends GET; manual triggers send POST with Bearer token.
+  if (req.method === "POST") {
+    const authHeader  = req.headers.authorization || "";
+    const cronSecret  = process.env.CRON_SECRET;
+    const adminSecret = process.env.ADMIN_SECRET;
+
+    const validCron  = cronSecret  && authHeader === `Bearer ${cronSecret}`;
+    const validAdmin = adminSecret && authHeader === `Bearer ${adminSecret}`;
+
+    if (!validCron && !validAdmin) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  }
+  // GET requests from Vercel Cron are trusted implicitly (internal network).
+  if (req.method !== "GET" && req.method !== "POST") {
+    return res.status(405).send("Method Not Allowed");
   }
 
-  const body = req.body || {};
-  if (!isAdminAuthorized(body.secret)) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  const autoMode = process.env.AUTO_MODE === "true";
 
   try {
+    const runStart = Date.now();
     const { allBookings, vehicles } = await fetchAllData();
+
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
 
-    // Fraud summary (top 10 risks)
-    const fraudScored = scoreAllBookings(allBookings);
-    const flagged     = fraudScored.filter((b) => b.flagged);
-    flagged.sort((a, b) => b.risk_score - a.risk_score);
-
-    // Persist fraud flags to Supabase in background (non-blocking)
-    const sb = getSupabaseAdmin();
-    if (sb && flagged.length > 0) {
-      Promise.all(
-        flagged.map((b) =>
-          sb.from("bookings").update({ flagged: true, risk_score: b.risk_score }).eq("booking_id", b.bookingId)
-        )
-      ).catch((err) => console.warn("admin-ai-insights: fraud persist failed:", err.message));
-    }
-
-    return res.status(200).json({
+    // Run auto-action engine
+    const { suggestions, actions_taken } = await runAutoActions({
       insights,
       problems,
-      fraud: {
-        total:    allBookings.length,
-        flagged:  flagged.length,
-        topRisks: flagged.slice(0, 10),
-      },
+      autoMode,
+      execute: executeAction,
+      secret:  process.env.ADMIN_SECRET,
     });
+
+    const runMs = Date.now() - runStart;
+
+    const output = {
+      ran_at:        new Date().toISOString(),
+      auto_mode:     autoMode,
+      duration_ms:   runMs,
+      problems_found: problems.length,
+      problems,
+      suggestions,
+      actions_taken,
+      revenue_this_week:  insights.revenue?.thisWeek,
+      bookings_last_7d:   insights.bookings?.last7Days,
+    };
+
+    // Log the auto-run to ai_logs
+    await logAiAction("auto_run", { auto_mode: autoMode, booking_count: allBookings.length }, output, "cron");
+
+    return res.status(200).json(output);
   } catch (err) {
-    console.error("admin-ai-insights error:", err);
+    console.error("admin-ai-auto error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
