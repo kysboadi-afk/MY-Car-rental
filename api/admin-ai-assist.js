@@ -138,7 +138,7 @@ async function callOpenAI(systemPrompt, userMessage) {
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
 
-  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const model = process.env.OPENAI_MODEL || "gpt-5-mini";
   console.log(`[admin-ai-assist] using model: ${model}`);
 
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
