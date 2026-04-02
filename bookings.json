@@ -103,7 +103,7 @@
       "returnDate": "2026-04-01",
       "returnTime": "8:38 PM",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "paymentIntentId": "",
       "paymentMethod": "stripe",
       "amountPaid": 231.53,
@@ -111,7 +111,9 @@
       "notes": "3-day rental. Basic DPP ($45). Sales tax $21.53. No personal insurance. VIN 4T1BF1FK9DU678911. Signed rental agreement on file.",
       "smsSentAt": {},
       "createdAt": "2026-03-29T20:38:00.000Z",
-      "source": "public_booking"
+      "source": "public_booking",
+      "activatedAt": "2026-04-02T16:45:34.401Z",
+      "updatedAt": "2026-04-02T16:45:34.401Z"
     }
   ]
 }
