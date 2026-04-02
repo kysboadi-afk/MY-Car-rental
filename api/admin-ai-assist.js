@@ -219,7 +219,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ proposal });
     } catch (err) {
       console.error("[admin-ai-assist] propose error:", err);
-      return res.status(500).json({ error: openAIErrorMessage(err, process.env.OPENAI_MODEL || "gpt-5.4-mini") });
+      return res.status(500).json({ error: openAIErrorMessage(err, process.env.OPENAI_MODEL || "gpt-5-mini") });
     }
   }
 
