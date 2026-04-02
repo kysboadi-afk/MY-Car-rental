@@ -17,8 +17,9 @@
 //   }
 // }
 
-const GITHUB_REPO    = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const VEHICLES_PATH  = "vehicles.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const VEHICLES_PATH      = "vehicles.json";
 
 const EMPTY_VEHICLES = {
   slingshot:  { vehicle_id: "slingshot",  vehicle_name: "Slingshot R",   type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
@@ -42,7 +43,7 @@ function ghHeaders() {
  */
 export async function loadVehicles() {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${VEHICLES_PATH}`;
-  const resp = await fetch(apiUrl, { headers: ghHeaders() });
+  const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
 
   if (!resp.ok) {
     if (resp.status === 404) {
@@ -83,7 +84,7 @@ export async function saveVehicles(data, sha, message) {
   }
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${VEHICLES_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
 
   const resp = await fetch(apiUrl, {

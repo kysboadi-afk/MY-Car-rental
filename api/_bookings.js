@@ -31,9 +31,10 @@
 //   ]
 // }
 
-const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKINGS_PATH   = "bookings.json";
-const EMPTY_BOOKINGS  = { slingshot: [], slingshot2: [], slingshot3: [], camry: [], camry2013: [] };
+const GITHUB_REPO         = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH  = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKINGS_PATH       = "bookings.json";
+const EMPTY_BOOKINGS      = { slingshot: [], slingshot2: [], slingshot3: [], camry: [], camry2013: [] };
 
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 
@@ -58,7 +59,7 @@ function ghHeaders() {
  */
 export async function loadBookings() {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKINGS_PATH}`;
-  const resp = await fetch(apiUrl, { headers: ghHeaders() });
+  const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
 
   if (!resp.ok) {
     if (resp.status === 404) {
@@ -99,7 +100,7 @@ export async function saveBookings(data, sha, message) {
   }
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKINGS_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
 
   const resp = await fetch(apiUrl, {

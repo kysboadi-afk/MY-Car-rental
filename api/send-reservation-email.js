@@ -34,9 +34,10 @@ export const config = {
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
-const FLEET_STATUS_PATH = "fleet-status.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+const FLEET_STATUS_PATH  = "fleet-status.json";
 
 /**
  * Update booked-dates.json in the GitHub repo to block the reserved dates.
@@ -59,7 +60,7 @@ async function blockBookedDates(vehicleId, from, to) {
   };
 
   async function loadBookedDates() {
-    const resp = await fetch(apiUrl, { headers });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const errText = await resp.text().catch(() => "");
@@ -77,7 +78,7 @@ async function blockBookedDates(vehicleId, from, to) {
 
   async function saveBookedDates(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
@@ -126,7 +127,7 @@ async function markVehicleUnavailable(vehicleId) {
   };
 
   async function loadFleetStatus() {
-    const resp = await fetch(apiUrl, { headers });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const errText = await resp.text().catch(() => "");
@@ -145,7 +146,7 @@ async function markVehicleUnavailable(vehicleId) {
 
   async function saveFleetStatus(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
