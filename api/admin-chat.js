@@ -20,7 +20,7 @@ import { executeAction, VEHICLE_NAMES, STATUS_LABELS } from "./_admin-actions.js
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-5-mini";
+const OPENAI_MODEL     = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const MAX_TOOL_ROUNDS  = 12;
 const MAX_HISTORY_MSGS = 24;
 
