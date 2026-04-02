@@ -173,7 +173,7 @@
         unitHrs: "hrs",
         priceFrom: "from",
         hours: "Hours",
-        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 deposit"
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 deposit equal to rental fee"
       },
       // car.html (booking page)
       booking: {
@@ -412,21 +412,23 @@
       },
       // thank-you.html
       thankyou: {
-        title:   "\uD83C\uDF89 Thank You!",
-        sub:     "Your submission has been received!",
-        detail:  "Our team at Sly Transportation Services LLC will review your information and reach out to you shortly to complete your approval.",
-        download:"📄 Download PDF",
-        fillAgain:"🔄 Fill Again",
-        questions:"Questions? Call us:"
-      },
-      // chatbot UI
-      chatbot: {
-        headerTitle:  "\uD83D\uDE97 Sly Transportation Services LLC Assistant",
-        placeholder:  "Ask a question\u2026",
-        sendBtn:      "Send",
-        closeBtn:     "\u2715",
-        welcome:      "Hi! \uD83D\uDC4B Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$350/week with unlimited miles</strong>. I can help you get approved quickly.\n\nAsk me anything \u2014 pricing, requirements, earnings \u2014 or click below to apply!\n\n<a href=\"index.html\" id=\"chatApplyLink\">\uD83D\uDC49 Apply and get approved now</a>",
-        fallback:     "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
+        title:          "\uD83C\uDF89 Thank You!",
+        sub:            "Your submission has been received!",
+        detail:         "Our team at Sly Transportation Services LLC will review your information and reach out to you shortly to complete your approval.",
+        download:       "📄 Download PDF",
+        fillAgain:      "🔄 Fill Again",
+        questions:      "Questions? Call us:",
+        browseCars:     "\uD83D\uDE97 Browse & Book a Car",
+        backHome:       "\uD83C\uDFE0 Back to Home",
+        approvedTitle:  "\uD83C\uDF89 You\u2019re Approved!",
+        approvedSub:    "Congratulations \u2014 your application has been accepted!",
+        approvedDetail: "You are now cleared to browse and book a vehicle with <strong>Sly Transportation Services LLC</strong>. Check your email for your official approval confirmation and next steps.",
+        reviewTitle:    "\u23F3 Application Received!",
+        reviewSub:      "We\u2019re reviewing your information now.",
+        reviewDetail:   "Our team at <strong>Sly Transportation Services LLC</strong> will review your application and contact you within <strong>24 hours</strong>. Check your email and phone for updates.",
+        declinedTitle:  "Application Update",
+        declinedSub:    "We were unable to approve your application at this time.",
+        declinedDetail: "Your application does not currently meet our rental requirements. A confirmation has been sent to your email. If you believe this is an error or have questions, please call us at <strong>(213) 916-6606</strong>."
       },
       footer: {
         copy: "\u00A9 2026 Sly Transportation Services LLC. All rights reserved.",
@@ -601,7 +603,7 @@
         unitHrs: "hrs",
         priceFrom: "desde",
         hours: "Horas",
-        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 $150 dep\u00F3sito"
+        slingshotPrice: "$200 / 3hrs \u2022 $250 / 6hrs \u2022 $350 / 24hrs \u2022 dep\u00F3sito igual al costo de renta"
       },
       booking: {
         backToHome:    "\u2B05 Volver al Inicio",
@@ -835,20 +837,23 @@
         tryAgain: "Intentar Reservar de Nuevo"
       },
       thankyou: {
-        title:    "\uD83C\uDF89 \u00A1Gracias!",
-        sub:      "\u00A1Tu solicitud ha sido recibida!",
-        detail:   "Nuestro equipo en Sly Transportation Services LLC revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
-        download: "📄 Descargar PDF",
-        fillAgain:"🔄 Completar de Nuevo",
-        questions:"¿Preguntas? Ll\u00E1manos:"
-      },
-      chatbot: {
-        headerTitle:  "\uD83D\uDE97 Asistente de Sly Transportation Services LLC",
-        placeholder:  "Haz una pregunta\u2026",
-        sendBtn:      "Enviar",
-        closeBtn:     "\u2715",
-        welcome:      "\u00A1Hola! \uD83D\uDC4B \u00BFQuieres alquilar un auto para DoorDash, Uber Eats u otras aplicaciones de entrega?\n\nNuestros autos son <strong>$350/semana con millaje ilimitado</strong>. Puedo ayudarte a obtener aprobaci\u00F3n r\u00E1pidamente.\n\nPr\u00E9guntame lo que quieras \u2014 precios, requisitos, ganancias \u2014 o haz clic abajo para solicitar.\n\n<a href=\"index.html\" id=\"chatApplyLink\">\uD83D\uDC49 Solicitar y obtener aprobaci\u00F3n ahora</a>",
-        fallback:     "No estoy seguro de eso \uD83E\uDD14\n\nIntenta preguntar sobre:\n\u2022 Precios\n\u2022 Autos disponibles\n\u2022 C\u00F3mo reservar\n\u2022 Aplicaciones de entrega\n\u2022 Informaci\u00F3n de contacto\n\nO env\u00EDanos un correo a slyservices@supports-info.com"
+        title:          "\uD83C\uDF89 \u00A1Gracias!",
+        sub:            "\u00A1Tu solicitud ha sido recibida!",
+        detail:         "Nuestro equipo en Sly Transportation Services LLC revisar\u00E1 tu informaci\u00F3n y se comunicar\u00E1 contigo pronto para completar tu aprobaci\u00F3n.",
+        download:       "📄 Descargar PDF",
+        fillAgain:      "🔄 Completar de Nuevo",
+        questions:      "\u00BFPreguntas? Ll\u00E1manos:",
+        browseCars:     "\uD83D\uDE97 Ver y Reservar un Auto",
+        backHome:       "\uD83C\uDFE0 Volver al Inicio",
+        approvedTitle:  "\uD83C\uDF89 \u00A1Est\u00E1s Aprobado!",
+        approvedSub:    "Felicitaciones \u2014 \u00A1tu solicitud ha sido aceptada!",
+        approvedDetail: "Ya puedes ver y reservar un veh\u00EDculo con <strong>Sly Transportation Services LLC</strong>. Revisa tu correo para la confirmaci\u00F3n oficial de aprobaci\u00F3n y los pr\u00F3ximos pasos.",
+        reviewTitle:    "\u23F3 \u00A1Solicitud Recibida!",
+        reviewSub:      "Estamos revisando tu informaci\u00F3n ahora.",
+        reviewDetail:   "Nuestro equipo en <strong>Sly Transportation Services LLC</strong> revisar\u00E1 tu solicitud y se comunicar\u00E1 contigo en <strong>24 horas</strong>. Revisa tu correo y tel\u00E9fono para actualizaciones.",
+        declinedTitle:  "Actualizaci\u00F3n de Solicitud",
+        declinedSub:    "No pudimos aprobar tu solicitud en este momento.",
+        declinedDetail: "Tu solicitud no cumple actualmente con nuestros requisitos de alquiler. Se ha enviado una confirmaci\u00F3n a tu correo. Si crees que esto es un error o tienes preguntas, ll\u00E1manos al <strong>(213) 916-6606</strong>."
       },
       footer: {
         copy: "\u00A9 2026 Sly Transportation Services LLC. Todos los derechos reservados.",
@@ -929,10 +934,6 @@
         localStorage.setItem("slyLang", btn.getAttribute("data-lang"));
         window.currentLang = btn.getAttribute("data-lang");
         applyTranslations();
-        // Notify chatbot if already built
-        if (typeof window.updateChatbotLang === "function") {
-          window.updateChatbotLang(getLang());
-        }
       });
     });
   }
@@ -950,7 +951,7 @@
     init();
   }
 
-  // ── Public API (used by chatbot.js and car.js) ────────────────────────────
+  // ── Public API (used by car.js) ────────────────────────────────────────────
   window.slyI18n = {
     t:    t,
     getLang: getLang,

@@ -9,7 +9,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0",
     "nodemailer": "^8.0.1",
-    "openai": "^6.33.0",
     "pdfkit": "^0.18.0",
     "stripe": "^20.3.1"
   }
