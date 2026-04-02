@@ -142,7 +142,7 @@ async function callOpenAI(systemPrompt, userMessage) {
     method:  "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model:       process.env.OPENAI_MODEL || "gpt-4o-mini",
+      model:       process.env.OPENAI_MODEL || "gpt-5-mini",
       temperature: 0.3,
       messages: [
         { role: "system",  content: systemPrompt },
