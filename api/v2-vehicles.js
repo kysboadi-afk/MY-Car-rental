@@ -21,7 +21,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_TYPES         = ["slingshot", "car", "economy", "luxury", "suv", "truck", "van", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
@@ -55,6 +55,9 @@ export default async function handler(req, res) {
 
   // ── GET — public listing (no secret required) ──────────────────────────────
   if (req.method === "GET") {
+    // Prevent CDN/browser caches from serving stale vehicle lists after creation.
+    res.setHeader("Cache-Control", "no-store");
+
     // Optional scope filter: ?scope=car → exclude slingshots; ?scope=slingshot → only slingshots
     const scope = (req.query?.scope || "").toLowerCase();
     const supabase = getSupabaseAdmin();
@@ -66,6 +69,10 @@ export default async function handler(req, res) {
         if (!error) {
           const vehicles = (rows || [])
             .filter((row) => {
+              // Only expose active vehicles publicly; treat missing status as active
+              // for backward compatibility with records created before this field existed.
+              const status = row.data?.status;
+              if (status && status !== "active") return false;
               const type = row.data?.type || row.data?.vehicle_type || "";
               if (scope === "cars" || scope === "car") return type !== "slingshot";
               if (scope === "slingshot") return type === "slingshot";
@@ -100,6 +107,8 @@ export default async function handler(req, res) {
       const { data: vehicles } = await loadVehicles();
       const result = Object.values(vehicles)
         .filter((v) => {
+          // Only expose active vehicles publicly; treat missing status as active.
+          if (v.status && v.status !== "active") return false;
           const type = v.type || "";
           if (scope === "cars" || scope === "car") return type !== "slingshot";
           if (scope === "slingshot") return type === "slingshot";

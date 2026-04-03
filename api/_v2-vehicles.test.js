@@ -589,6 +589,70 @@ test("GET: 500 when Supabase error AND GitHub fallback also fails", async () => 
   vehiclesMockState.throwErr = null;
 });
 
+test("GET: sets Cache-Control: no-store to prevent stale vehicle lists", async () => {
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._headers["Cache-Control"], "no-store");
+});
+
+test("GET: filters out inactive and maintenance vehicles from public listing (Supabase)", async () => {
+  const rows = [
+    { vehicle_id: "active-car",      data: { vehicle_id: "active-car",      status: "active" } },
+    { vehicle_id: "inactive-car",    data: { vehicle_id: "inactive-car",    status: "inactive" } },
+    { vehicle_id: "maintenance-car", data: { vehicle_id: "maintenance-car", status: "maintenance" } },
+    { vehicle_id: "no-status-car",   data: { vehicle_id: "no-status-car" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ids = res._body.map(v => v.vehicle_id);
+  assert.ok(ids.includes("active-car"),    "active vehicle should appear");
+  assert.ok(ids.includes("no-status-car"), "vehicle with no status should appear (treated as active)");
+  assert.ok(!ids.includes("inactive-car"),    "inactive vehicle must not appear publicly");
+  assert.ok(!ids.includes("maintenance-car"), "maintenance vehicle must not appear publicly");
+});
+
+test("GET: filters out inactive and maintenance vehicles from public listing (GitHub fallback)", async () => {
+  supabaseMockState.client = null;
+  vehiclesMockState.throwErr = null;
+  vehiclesMockState.result = {
+    data: {
+      "active-car":      { vehicle_id: "active-car",      status: "active" },
+      "inactive-car":    { vehicle_id: "inactive-car",    status: "inactive" },
+      "maintenance-car": { vehicle_id: "maintenance-car", status: "maintenance" },
+      "no-status-car":   { vehicle_id: "no-status-car" },
+    },
+    sha: null,
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ids = res._body.map(v => v.vehicle_id);
+  assert.ok(ids.includes("active-car"),    "active vehicle should appear");
+  assert.ok(ids.includes("no-status-car"), "vehicle with no status should appear (treated as active)");
+  assert.ok(!ids.includes("inactive-car"),    "inactive vehicle must not appear publicly");
+  assert.ok(!ids.includes("maintenance-car"), "maintenance vehicle must not appear publicly");
+});
+
 // ─── create ───────────────────────────────────────────────────────────────────
 
 test("create: 400 on missing vehicleId", async () => {

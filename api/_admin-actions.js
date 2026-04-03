@@ -12,7 +12,14 @@
 
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
-import { computeAmount } from "./_pricing.js";
+import { loadExpenses } from "./_expenses.js";
+import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
+import {
+  loadPricingSettings,
+  computeBreakdownLinesFromSettings,
+  computeSlingshotAmountFromSettings,
+  applyTax,
+} from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -21,6 +28,8 @@ import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
+import { TEMPLATES } from "./_sms-templates.js";
+import { fetchBookedDates } from "./_availability.js";
 import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
@@ -468,7 +477,7 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
   const vehicleObj = {
     vehicle_id:   vehicleId,
     vehicle_name: String(vehicleName).slice(0, 200),
-    type:         type || "other",
+    type:         type || "car",
     status:       "active",
     daily_rate:   dailyRate ? Number(dailyRate) : undefined,
   };
@@ -782,7 +791,8 @@ async function toolGetMileage() {
     };
   }
 
-  const mileageData = (vehicleRows || [])
+  const rawBouncieRows = vehicleRows || [];
+  const mileageData = rawBouncieRows
     .filter((r) => {
       // Use canonical type from vehicles.json first, then fall back to JSONB field.
       const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
@@ -821,10 +831,441 @@ async function toolGetMileage() {
 
   return {
     tracked_vehicles:   mileageData.length,
+    raw_bouncie_rows:   rawBouncieRows.length,
     stats:              statsWithStatus,
     alerts,
     bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
   };
+}
+
+async function toolGetExpenses({ vehicleId, category } = {}) {
+  const sb = getSupabaseAdmin();
+  let expenses = null;
+
+  if (sb) {
+    try {
+      let q = sb.from("expenses").select("*").order("date", { ascending: false }).limit(200);
+      if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+      if (category)  q = q.eq("category", category);
+      const { data, error } = await q;
+      if (!error) expenses = data || [];
+    } catch {
+      // fall through
+    }
+  }
+
+  if (!expenses) {
+    const { data } = await loadExpenses();
+    expenses = data;
+    if (vehicleId) expenses = expenses.filter((e) => e.vehicle_id === vehicleId);
+    if (category)  expenses = expenses.filter((e) => e.category === category);
+  }
+
+  const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const byCategory = {};
+  const byVehicle  = {};
+  for (const e of expenses) {
+    const cat = e.category || "other";
+    byCategory[cat] = (byCategory[cat] || 0) + (Number(e.amount) || 0);
+    const vid = e.vehicle_id || "unknown";
+    byVehicle[vid] = (byVehicle[vid] || 0) + (Number(e.amount) || 0);
+  }
+
+  return {
+    total:      Math.round(total * 100) / 100,
+    count:      expenses.length,
+    byCategory: Object.fromEntries(Object.entries(byCategory).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+    byVehicle:  Object.fromEntries(Object.entries(byVehicle).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+    expenses:   expenses.slice(0, 50),
+  };
+}
+
+async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}) {
+  const allBookings = await loadAllBookings();
+  const { data: vehicles } = await loadVehicles();
+  const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+
+  if (action === "revenue_trend") {
+    const safeMonths = Math.min(Number(months) || 6, 24);
+    const trend = [];
+    const now = new Date();
+    for (let i = safeMonths - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const monthBookings = allBookings.filter(
+        (b) => paidStatuses.has(b.status) && (b.pickupDate || b.createdAt || "").startsWith(month)
+      );
+      const revenue = monthBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+      trend.push({ month, revenue: Math.round(revenue * 100) / 100, bookings: monthBookings.length });
+    }
+    return { action: "revenue_trend", months: safeMonths, trend };
+  }
+
+  if (action === "vehicle" && vehicleId) {
+    const v = vehicles[vehicleId];
+    if (!v) return { error: `Vehicle "${vehicleId}" not found` };
+    const vBookings = allBookings.filter((b) => b.vehicleId === vehicleId && paidStatuses.has(b.status));
+    const revenue = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+    const avgDays = vBookings.length
+      ? vBookings.reduce((s, b) => {
+          if (!b.pickupDate || !b.returnDate) return s;
+          return s + Math.max(1, Math.round((new Date(b.returnDate) - new Date(b.pickupDate)) / 86400000));
+        }, 0) / vBookings.length
+      : 0;
+    const dayCounts = {};
+    for (const b of vBookings) {
+      if (!b.pickupDate) continue;
+      const day = new Date(b.pickupDate).toLocaleDateString("en-US", { weekday: "long" });
+      dayCounts[day] = (dayCounts[day] || 0) + 1;
+    }
+    return {
+      action: "vehicle",
+      vehicleId,
+      name:          v.vehicle_name || vehicleId,
+      total_bookings: vBookings.length,
+      total_revenue:  Math.round(revenue * 100) / 100,
+      avg_rental_days: Math.round(avgDays * 10) / 10,
+      popular_days:   Object.entries(dayCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([day, count]) => ({ day, count })),
+    };
+  }
+
+  // Default: fleet overview
+  const summary = Object.entries(vehicles).map(([vid, v]) => {
+    const vBookings = allBookings.filter((b) => b.vehicleId === vid && paidStatuses.has(b.status));
+    const revenue   = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+    const firstBooking = vBookings.reduce((earliest, b) => {
+      const d = b.pickupDate || b.createdAt || "";
+      return !earliest || d < earliest ? d : earliest;
+    }, null);
+    const daysSinceFirst = firstBooking
+      ? Math.max(90, Math.round((Date.now() - new Date(firstBooking).getTime()) / 86400000))
+      : 90;
+    // Estimate utilization: assume average 3 rental days per booking as a rough proxy.
+    const AVG_RENTAL_DAYS = 3;
+    const utilization = Math.min(100, Math.round((vBookings.length * AVG_RENTAL_DAYS / daysSinceFirst) * 100));
+    return {
+      vehicleId:        vid,
+      name:             v.vehicle_name || vid,
+      type:             v.type || "car",
+      total_bookings:   vBookings.length,
+      total_revenue:    Math.round(revenue * 100) / 100,
+      utilization_pct:  utilization,
+    };
+  });
+
+  return {
+    action: "fleet",
+    vehicles: summary.sort((a, b) => b.total_revenue - a.total_revenue),
+    total_revenue: Math.round(summary.reduce((s, v) => s + v.total_revenue, 0) * 100) / 100,
+    total_bookings: summary.reduce((s, v) => s + v.total_bookings, 0),
+  };
+}
+
+async function toolGetCustomers({ search, flagged, banned, limit = 50 } = {}) {
+  const sb = getSupabaseAdmin();
+  const safeLimit = Math.min(Number(limit) || 50, 200);
+  let customers = null;
+
+  if (sb) {
+    try {
+      let q = sb.from("customers").select("*").order("total_bookings", { ascending: false }).limit(safeLimit);
+      if (flagged !== undefined) q = q.eq("flagged", !!flagged);
+      if (banned  !== undefined) q = q.eq("banned",  !!banned);
+      if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+      const { data, error } = await q;
+      if (!error) customers = data || [];
+    } catch {
+      // fall through
+    }
+  }
+
+  if (!customers) {
+    // Derive customers from bookings as fallback
+    const allBookings = await loadAllBookings();
+    const byPhone = {};
+    for (const b of allBookings) {
+      const phone = b.phone || "unknown";
+      if (!byPhone[phone]) {
+        byPhone[phone] = { phone, name: b.name || "", email: b.email || "", total_bookings: 0, total_spent: 0 };
+      }
+      byPhone[phone].total_bookings += 1;
+      byPhone[phone].total_spent += b.amountPaid || revenueFromBooking(b);
+    }
+    customers = Object.values(byPhone);
+    if (search) {
+      const q = search.toLowerCase();
+      customers = customers.filter((c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.phone || "").includes(q) ||
+        (c.email || "").toLowerCase().includes(q)
+      );
+    }
+    customers = customers.sort((a, b) => b.total_bookings - a.total_bookings).slice(0, safeLimit);
+  }
+
+  return {
+    total:     customers.length,
+    customers: customers.map((c) => ({
+      id:             c.id || undefined,
+      name:           c.name || c.customer_name || "",
+      phone:          c.phone || "",
+      email:          c.email || "",
+      total_bookings: c.total_bookings || 0,
+      total_spent:    typeof c.total_spent === "number" ? Math.round(c.total_spent * 100) / 100 : undefined,
+      flagged:        c.flagged || false,
+      banned:         c.banned  || false,
+      flag_reason:    c.flag_reason || undefined,
+      ban_reason:     c.ban_reason  || undefined,
+      notes:          c.notes       || undefined,
+    })),
+  };
+}
+
+async function toolGetProtectionPlans() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from("protection_plans")
+        .select("id, name, description, daily_rate, liability_cap, is_active, sort_order")
+        .order("sort_order").order("name");
+      if (!error && data && data.length > 0) {
+        return { plans: data };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Hardcoded defaults (mirrors v2-protection-plans.js)
+  return {
+    plans: [
+      { name: "None",     description: "No protection plan",                    daily_rate: 0,  liability_cap: 0,    is_active: true },
+      { name: "Basic",    description: "Basic damage protection, $1,000 cap",   daily_rate: 15, liability_cap: 1000, is_active: true },
+      { name: "Standard", description: "Standard coverage, $500 cap",           daily_rate: 25, liability_cap: 500,  is_active: true },
+      { name: "Premium",  description: "Full coverage, $0 liability",           daily_rate: 40, liability_cap: 0,    is_active: true },
+    ],
+    source: "defaults",
+  };
+}
+
+async function toolGetSystemSettings({ category } = {}) {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      let q = sb.from("system_settings").select("key, value, description, category");
+      if (category) q = q.eq("category", category);
+      const { data, error } = await q;
+      if (!error && data && data.length > 0) {
+        return {
+          settings: data.map((r) => ({ key: r.key, value: r.value, description: r.description, category: r.category })),
+          count: data.length,
+        };
+      }
+    } catch {
+      // fall through to defaults
+    }
+  }
+
+  // Hardcoded defaults (mirrors v2-system-settings.js)
+  const defaults = [
+    { key: "la_tax_rate",                value: 0.1025, description: "LA combined sales tax rate",             category: "tax" },
+    { key: "slingshot_daily_rate",       value: 350,    description: "Slingshot R daily rate (USD)",           category: "pricing" },
+    { key: "slingshot_3hr_rate",         value: 200,    description: "Slingshot R 3-hour rate (USD)",          category: "pricing" },
+    { key: "slingshot_6hr_rate",         value: 250,    description: "Slingshot R 6-hour rate (USD)",          category: "pricing" },
+    { key: "camry_daily_rate",           value: 55,     description: "Camry daily rate (USD)",                 category: "pricing" },
+    { key: "camry_weekly_rate",          value: 350,    description: "Camry weekly rate (USD)",                category: "pricing" },
+    { key: "slingshot_security_deposit", value: 150,    description: "Slingshot security deposit (USD)",       category: "pricing" },
+    { key: "auto_block_dates_on_approve",value: true,   description: "Auto-block dates when booking approved", category: "automation" },
+    { key: "notify_sms_on_approve",      value: true,   description: "Send SMS on booking approval",           category: "notification" },
+    { key: "notify_email_on_approve",    value: true,   description: "Send email on booking approval",         category: "notification" },
+  ];
+
+  const filtered = category ? defaults.filter((s) => s.category === category) : defaults;
+  return { settings: filtered, count: filtered.length, source: "defaults" };
+}
+
+/**
+ * Compute a rental price quote using the live pricing system.
+ * Routes to the appropriate settings-based helper depending on vehicle type:
+ *   - Slingshot vehicles → computeSlingshotAmountFromSettings
+ *   - Known economy cars (camry/camry2013) → computeBreakdownLinesFromSettings
+ *   - Newly created "car" type vehicles → daily_rate × days + live tax
+ */
+async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+
+  const settings = await loadPricingSettings();
+  const vehicles = await loadAllVehicles();
+  const vehicle  = vehicles[vehicleId];
+
+  if (!vehicle) throw new Error(`Vehicle "${vehicleId}" not found`);
+
+  const vType = (vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const isSlingshot = vType === "slingshot";
+
+  // ── Slingshot (hourly-tier pricing) ───────────────────────────────────────
+  if (isSlingshot) {
+    const hours = Number(durationHours);
+    if (!hours || ![3, 6, 24, 48, 72].includes(hours)) {
+      throw new Error("durationHours is required for Slingshot vehicles and must be 3, 6, 24, 48, or 72");
+    }
+    // computeSlingshotAmountFromSettings returns (tier price × 2): rental + refundable deposit.
+    // The rental fee equals the tier price; the security deposit equals the same tier price.
+    const totalCharged = computeSlingshotAmountFromSettings(hours, settings);
+    const tierPrice    = totalCharged / 2; // rental = deposit = tier price
+    const tierLabel    = hours >= 24 ? `${hours / 24}-day` : `${hours}-hour`;
+    return {
+      vehicleId,
+      vehicle_name: vehicle.vehicle_name || vehicleId,
+      type:         "slingshot",
+      duration:     `${hours} hours`,
+      breakdown: [
+        `${tierLabel} rental: $${tierPrice}`,
+        `Refundable security deposit: $${tierPrice}`,
+        `Total charged at booking: $${totalCharged}`,
+      ],
+      rental_amount:    tierPrice,
+      security_deposit: tierPrice,
+      total:            totalCharged,
+      note: "Security deposit is refundable. Tax is not applied to Slingshot rentals.",
+    };
+  }
+
+  // ── Economy / Car vehicles (daily/weekly pricing) ─────────────────────────
+  if (!pickup || !returnDate) {
+    throw new Error("pickup and returnDate (YYYY-MM-DD) are required for car price quotes");
+  }
+
+  const days = computeRentalDays(pickup, returnDate);
+
+  // Known vehicles with configured tier rates in _settings.js
+  if (vehicleId === "camry" || vehicleId === "camry2013") {
+    const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null);
+    if (!lines) throw new Error(`Could not compute price for "${vehicleId}"`);
+    const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
+    const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
+    return {
+      vehicleId,
+      vehicle_name: vehicle.vehicle_name || vehicleId,
+      type:         "car",
+      pickup,
+      return_date:  returnDate,
+      days,
+      breakdown:    lines,
+      total,
+      note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
+    };
+  }
+
+  // Newly created vehicles — use their stored daily_rate with live tax
+  const dailyRate = Number(vehicle.daily_rate || vehicle.pricePerDay || 0);
+  if (!dailyRate || dailyRate <= 0) {
+    throw new Error(`Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.`);
+  }
+
+  const preTax    = days * dailyRate;
+  const taxRate   = settings.la_tax_rate;
+  const taxAmount = Math.round(preTax * taxRate * 100) / 100;
+  const total     = Math.round((preTax + taxAmount) * 100) / 100;
+
+  return {
+    vehicleId,
+    vehicle_name: vehicle.vehicle_name || vehicleId,
+    type:         vType || "car",
+    pickup,
+    return_date:  returnDate,
+    days,
+    breakdown: [
+      `${days} × Daily ($${dailyRate}/day): $${preTax}`,
+      `Sales Tax (${(taxRate * 100).toFixed(2)}%): $${taxAmount.toFixed(2)}`,
+      `Total: $${total.toFixed(2)}`,
+    ],
+    total,
+    note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
+  };
+}
+
+async function toolGetSmsTemplates() {
+  const sb = getSupabaseAdmin();
+  let overrides = {};
+
+  if (sb) {
+    try {
+      const { data, error } = await sb.from("sms_template_overrides").select("template_key, message, enabled");
+      if (!error && data) {
+        for (const row of data) {
+          overrides[row.template_key] = { message: row.message, enabled: row.enabled };
+        }
+      }
+    } catch {
+      // use defaults only
+    }
+  }
+
+  const templates = Object.entries(TEMPLATES).map(([key, defaultMessage]) => {
+    const override = overrides[key];
+    return {
+      key,
+      message:    override?.message  ?? defaultMessage,
+      enabled:    override?.enabled  ?? true,
+      customized: !!override,
+    };
+  });
+
+  return { total: templates.length, templates };
+}
+
+async function toolGetBlockedDates({ vehicleId } = {}) {
+  const sb = getSupabaseAdmin();
+  let blockedDates = null;
+
+  // Try Supabase booked_dates table first
+  if (sb) {
+    try {
+      let q = sb.from("booked_dates").select("vehicle_id, from_date, to_date, reason").order("from_date");
+      if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+      const { data, error } = await q;
+      if (!error && data) {
+        const byVehicle = {};
+        for (const row of (data || [])) {
+          const vid = row.vehicle_id;
+          if (!byVehicle[vid]) byVehicle[vid] = [];
+          byVehicle[vid].push({ from: row.from_date, to: row.to_date, reason: row.reason || undefined });
+        }
+        blockedDates = byVehicle;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fall back to booked-dates.json from GitHub
+  if (!blockedDates) {
+    try {
+      const data = await fetchBookedDates();
+      if (data) {
+        blockedDates = vehicleId
+          ? { [vehicleId]: data[vehicleId] || [] }
+          : data;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!blockedDates) {
+    return { blocked_dates: {}, note: "Could not retrieve blocked dates — GitHub or Supabase unavailable." };
+  }
+
+  const summary = {};
+  let total = 0;
+  for (const [vid, ranges] of Object.entries(blockedDates)) {
+    const arr = Array.isArray(ranges) ? ranges : [];
+    summary[vid] = arr;
+    total += arr.length;
+  }
+
+  return { total_ranges: total, blocked_dates: summary };
 }
 
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {
@@ -1128,6 +1569,104 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
 
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
+
+const IMEI_RE = /^\d{15}$/;
+const BOUNCIE_SYNC_STALE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+async function toolRegisterBouncieDevice({ vehicleId, imei }) {
+  // ── Input validation ────────────────────────────────────────────────────
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!imei)      throw new Error("imei is required — provide the 15-digit Bouncie device IMEI");
+
+  const cleanImei = String(imei).replace(/[\s-]/g, "");
+  if (!IMEI_RE.test(cleanImei)) {
+    throw new Error(`Invalid IMEI "${imei}" — must be exactly 15 digits (e.g. 123456789012345)`);
+  }
+
+  // ── Vehicle existence check ─────────────────────────────────────────────
+  const vehicles = await loadAllVehicles();
+  if (!vehicles[vehicleId]) {
+    throw new Error(`Vehicle "${vehicleId}" not found. Valid IDs: ${Object.keys(vehicles).join(", ")}`);
+  }
+
+  // ── Duplicate IMEI check (across all vehicles) ──────────────────────────
+  for (const [vid, v] of Object.entries(vehicles)) {
+    if (vid !== vehicleId && v.bouncie_device_id === cleanImei) {
+      throw new Error(
+        `IMEI ${cleanImei} is already assigned to vehicle "${v.vehicle_name || vid}". ` +
+        `Each device can only be linked to one vehicle.`
+      );
+    }
+  }
+
+  // ── Write: Supabase + vehicles.json ─────────────────────────────────────
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const updatedData = { ...vehicles[vehicleId], bouncie_device_id: cleanImei };
+    const { error } = await sb
+      .from("vehicles")
+      .update({ bouncie_device_id: cleanImei, data: updatedData })
+      .eq("vehicle_id", vehicleId);
+    if (error && !error.message?.includes("relation")) {
+      throw new Error(`Supabase update failed: ${error.message}`);
+    }
+  }
+
+  const { data: jsonVehicles } = await loadVehicles();
+  if (jsonVehicles[vehicleId]) {
+    jsonVehicles[vehicleId] = { ...jsonVehicles[vehicleId], bouncie_device_id: cleanImei };
+    await saveVehicles(jsonVehicles);
+  }
+
+  // ── Post-assignment verification ─────────────────────────────────────────
+  // Read back the row so we can confirm bouncie_device_id was persisted
+  // and report the current sync state.
+  let confirmedImei = null;
+  let lastSyncedAt  = null;
+
+  if (sb) {
+    try {
+      const { data: row } = await sb
+        .from("vehicles")
+        .select("bouncie_device_id, last_synced_at")
+        .eq("vehicle_id", vehicleId)
+        .maybeSingle();
+      if (row) {
+        confirmedImei = row.bouncie_device_id || null;
+        lastSyncedAt  = row.last_synced_at    || null;
+      }
+    } catch {
+      // non-fatal — we still report success from the write
+    }
+  }
+
+  const vehicleName   = vehicles[vehicleId]?.vehicle_name || vehicleId;
+  const syncPending   = !lastSyncedAt;
+  const syncAgeMs     = lastSyncedAt ? Date.now() - new Date(lastSyncedAt).getTime() : null;
+  const syncRecent    = syncAgeMs !== null && syncAgeMs <= BOUNCIE_SYNC_STALE_MS;
+
+  return {
+    success:           true,
+    vehicleId,
+    vehicle_name:      vehicleName,
+    bouncie_device_id: confirmedImei || cleanImei,
+    tracking_active:   !!confirmedImei,
+    last_synced_at:    lastSyncedAt,
+    sync_status:       syncPending
+      ? "awaiting_first_sync"
+      : syncRecent
+        ? "active"
+        : "stale",
+    message:
+      `Bouncie device ${cleanImei} assigned to ${vehicleName}. ` +
+      (syncPending
+        ? "Waiting for first GPS sync — this usually takes a few minutes once the device is powered on."
+        : syncRecent
+          ? `Tracking is active (last sync: ${lastSyncedAt}).`
+          : `Device was last seen at ${lastSyncedAt} — check that the device is powered on.`),
+  };
+}
+
 const DESTRUCTIVE_TOOLS = new Set([
   "create_vehicle",
   "add_vehicle",
@@ -1139,6 +1678,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "confirm_vehicle_action",
   "update_action_status",
   "send_message_to_driver",
+  "register_bouncie_device",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -1184,6 +1724,15 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "confirm_vehicle_action":   result = await toolConfirmVehicleAction(args);    break;
       case "update_action_status":     result = await toolUpdateActionStatus(args);      break;
       case "send_message_to_driver":   result = await toolSendMessageToDriver(args);     break;
+      case "get_expenses":             result = await toolGetExpenses(args);             break;
+      case "get_analytics":            result = await toolGetAnalytics(args);            break;
+      case "get_customers":            result = await toolGetCustomers(args);            break;
+      case "get_protection_plans":     result = await toolGetProtectionPlans();          break;
+      case "get_system_settings":      result = await toolGetSystemSettings(args);       break;
+      case "get_price_quote":          result = await toolGetPriceQuote(args);           break;
+      case "get_sms_templates":        result = await toolGetSmsTemplates();             break;
+      case "get_blocked_dates":        result = await toolGetBlockedDates(args);         break;
+      case "register_bouncie_device":  result = await toolRegisterBouncieDevice(args);  break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
