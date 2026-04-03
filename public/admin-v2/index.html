@@ -925,9 +925,6 @@
         <div class="filters-row">
           <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
             <option value="">All Vehicles</option>
-            <option value="slingshot">Slingshot R</option>
-            <option value="slingshot2">Slingshot R (Unit 2)</option>
-            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -1029,9 +1026,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
                   <option value="">Select vehicle…</option>
-                  <option value="slingshot">Slingshot R ($350/day)</option>
-                  <option value="slingshot2">Slingshot R Unit 2 ($350/day)</option>
-                  <option value="slingshot3">Slingshot R Unit 3 ($350/day)</option>
                   <option value="camry">Camry 2012 ($55/day)</option>
                   <option value="camry2013">Camry 2013 SE ($55/day)</option>
                 </select>
@@ -1125,9 +1119,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="bd-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="slingshot">Slingshot R</option>
-                  <option value="slingshot2">Slingshot R (Unit 2)</option>
-                  <option value="slingshot3">Slingshot R (Unit 3)</option>
                   <option value="camry">Camry 2012</option>
                   <option value="camry2013">Camry 2013 SE</option>
                 </select>
@@ -1153,9 +1144,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="ub-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="slingshot">Slingshot R</option>
-                  <option value="slingshot2">Slingshot R (Unit 2)</option>
-                  <option value="slingshot3">Slingshot R (Unit 3)</option>
                   <option value="camry">Camry 2012</option>
                   <option value="camry2013">Camry 2013 SE</option>
                 </select>
@@ -1200,9 +1188,6 @@
         <div class="filters-row">
           <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
             <option value="">All Vehicles</option>
-            <option value="slingshot">Slingshot R</option>
-            <option value="slingshot2">Slingshot R (Unit 2)</option>
-            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -1431,9 +1416,6 @@
         <div class="filters-row">
           <select class="filter-select" id="rev-filter-vehicle" onchange="applyRevenueFilters()">
             <option value="">All Vehicles</option>
-            <option value="slingshot">Slingshot R</option>
-            <option value="slingshot2">Slingshot R (Unit 2)</option>
-            <option value="slingshot3">Slingshot R (Unit 3)</option>
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
           </select>
@@ -1673,9 +1655,6 @@
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="exp-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="slingshot">Slingshot R</option>
-          <option value="slingshot2">Slingshot R (Unit 2)</option>
-          <option value="slingshot3">Slingshot R (Unit 3)</option>
           <option value="camry">Camry 2012</option>
           <option value="camry2013">Camry 2013 SE</option>
         </select>
@@ -1754,7 +1733,6 @@
         <label class="form-label">Type</label>
         <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
           <option value="economy">Economy</option>
-          <option value="slingshot">Slingshot</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
           <option value="truck">Truck</option>
@@ -1799,7 +1777,7 @@
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('ev')">
         <div id="ev-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
-        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Once set, mileage syncs automatically every 5 minutes.</div>
+        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Once set, mileage syncs automatically every 5 minutes.</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1830,7 +1808,6 @@
         <label class="form-label">Type</label>
         <select class="form-select" id="av-type" onchange="updateBouncieWarning('av')">
           <option value="economy">Economy</option>
-          <option value="slingshot">Slingshot</option>
           <option value="luxury">Luxury</option>
           <option value="suv">SUV</option>
           <option value="truck">Truck</option>
@@ -1874,7 +1851,7 @@
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('av')">
         <div id="av-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
-        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Enables automatic mileage tracking.</div>
+        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Enables automatic mileage tracking.</div>
       </div>
     </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
@@ -1907,9 +1884,6 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   : 'https://sly-rides.vercel.app'; // Adjust if deployed to different Vercel URL
 
 const VEHICLE_NAMES = {
-  slingshot:  'Slingshot R',
-  slingshot2: 'Slingshot R (Unit 2)',
-  slingshot3: 'Slingshot R (Unit 3)',
   camry:      'Camry 2012',
   camry2013:  'Camry 2013 SE',
 };
@@ -1917,9 +1891,6 @@ const VEHICLE_NAMES = {
 // Hard-coded local fallback images — used when the API/DB doesn't provide a cover URL
 // or when the stored URL fails to load. Root-relative so they work from any page depth.
 const VEHICLE_IMAGES_LOCAL = {
-  slingshot:  '/images/slingshot.jpg',
-  slingshot2: '/images/slingshot.jpg',
-  slingshot3: '/images/slingshot.jpg',
   camry:      '/images/IMG_0046.png',
   camry2013:  '/images/IMG_5144.png',
 };
@@ -1953,12 +1924,12 @@ let VEHICLE_IMAGES_DYNAMIC = {};
 // cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
 async function loadVehiclesFromApi() {
   try {
-    const res  = await fetch(API_BASE + '/api/v2-vehicles');
+    const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=cars');
     if (!res.ok) return;
     const vehicles = await res.json();
     if (!Array.isArray(vehicles)) return;
     vehicles.forEach((v) => {
-      if (v.vehicle_id) {
+      if (v.vehicle_id && (v.type || '') !== 'slingshot') {
         if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
         if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
       }
@@ -1972,9 +1943,6 @@ async function loadVehiclesFromApi() {
 loadVehiclesFromApi();
 
 const VEHICLE_RATES = {
-  slingshot:  { perDay: 350, perWeek: null },
-  slingshot2: { perDay: 350, perWeek: null },
-  slingshot3: { perDay: 350, perWeek: null },
   camry:      { perDay: 55,  perWeek: 350  },
   camry2013:  { perDay: 55,  perWeek: 350  },
 };
@@ -2011,7 +1979,7 @@ function signIn() {
   document.getElementById('auth-btn').textContent = 'Signing in…';
   document.getElementById('auth-btn').disabled = true;
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => {
       dashboardData = data;
       document.getElementById('auth-screen').style.display = 'none';
@@ -2165,7 +2133,7 @@ function closeSidebar() {
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((data) => { dashboardData = data; renderDashboard(data); })
     .catch((err) => { showToast('Failed to load dashboard: ' + err.message, 'error'); document.getElementById('dashboard-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`; });
 }
@@ -2294,8 +2262,8 @@ function loadVehicles() {
   document.getElementById('vehicles-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' }),
-    apiPost('/api/v2-dashboard', { secret: adminSecret }),
+    apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list', scope: 'car' }),
+    apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' }),
   ]).then(([vData, dash]) => {
     const freshVehicles = vData.vehicles || {};
     // Preserve bouncie_device_id from the in-memory cache when the fresh API
@@ -2331,7 +2299,7 @@ function renderVehicles(vehicles, stats) {
       </button>
     </div>
     <div class="vehicles-grid">
-      ${Object.entries(vehicles).map(([id, v]) => {
+      ${Object.entries(vehicles).filter(([, v]) => (v.type || '') !== 'slingshot').map(([id, v]) => {
         const s = stats[id] || {};
         const isActive = v.status === 'active';
         const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
@@ -2393,7 +2361,7 @@ function showVehicleProfile(vehicleId) {
   document.getElementById('page-title').textContent = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[vehicleId] || VEHICLE_NAMES[vehicleId] || vehicleId;
 
   // Load fresh stats
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((dash) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
       renderVehicleProfile(vehicleId, v, s);
@@ -2769,7 +2737,12 @@ function loadBookings() {
 
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
     .then((data) => {
-      allBookings = data.bookings || [];
+      const rawBookings = data.bookings || [];
+      // Filter to car vehicles only (exclude slingshot bookings — managed in slingshot admin)
+      const carVehicleIds = new Set(Object.keys(allVehicles));
+      allBookings = carVehicleIds.size > 0
+        ? rawBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId))
+        : rawBookings;
       renderBookings();
     })
     .catch((err) => {
@@ -4475,9 +4448,6 @@ document.getElementById('mb-pickup-date').min = new Date().toISOString().split('
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
 const FLEET_VEHICLES = [
-  { id: 'slingshot',  name: 'Slingshot R' },
-  { id: 'slingshot2', name: 'Slingshot R (Unit 2)' },
-  { id: 'slingshot3', name: 'Slingshot R (Unit 3)' },
   { id: 'camry',      name: 'Camry 2012' },
   { id: 'camry2013',  name: 'Camry 2013 SE' },
 ];
@@ -4877,9 +4847,6 @@ async function loadAiInsights() {
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="rev-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="slingshot">Slingshot R</option>
-          <option value="slingshot2">Slingshot R (Unit 2)</option>
-          <option value="slingshot3">Slingshot R (Unit 3)</option>
           <option value="camry">Camry 2012</option>
           <option value="camry2013">Camry 2013 SE</option>
         </select>
