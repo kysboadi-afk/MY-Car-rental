@@ -313,6 +313,13 @@
     .toggle-switch input:checked + .toggle-track { background: var(--primary); }
     .toggle-switch input:checked + .toggle-track::before { transform: translateX(20px); }
 
+    /* ── Fleet Thumbnail ─────────────────────────────────────────── */
+    .fleet-thumb {
+      width: 56px; height: 44px; object-fit: cover;
+      border-radius: 6px; flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+
     /* ── Modal ──────────────────────────────────────────────────── */
     .modal-overlay {
       display: none; position: fixed; inset: 0;
@@ -1341,9 +1348,10 @@ function renderFleetStatus() {
   list.innerHTML = SLINGSHOT_VEHICLES.map((v) => {
     const available = fleetStatusData[v.id]?.available ?? true;
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);"
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);"
            data-vehicle-id="${esc(v.id)}">
-        <div>
+        <img src="../images/slingshot.jpg" alt="${esc(v.name)}" class="fleet-thumb">
+        <div style="flex:1;">
           <div style="font-weight:600;font-size:14px;">${esc(v.name)}</div>
           <div id="fleet-status-label-${esc(v.id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
             ${available ? '● Available for booking' : '● Unavailable (hidden from renters)'}
