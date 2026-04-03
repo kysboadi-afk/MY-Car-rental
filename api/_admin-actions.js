@@ -668,6 +668,9 @@ const MAINTENANCE_SERVICE_COLUMNS = {
   tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
 };
 
+// Risk score assigned when an admin manually flags a booking
+const ADMIN_FLAGGED_RISK_SCORE = 100;
+
 async function toolFlagBooking({ bookingId, reason }) {
   if (!bookingId) throw new Error("bookingId is required");
   if (!reason)    throw new Error("reason is required");
@@ -677,7 +680,7 @@ async function toolFlagBooking({ bookingId, reason }) {
 
   const { error } = await sb
     .from("bookings")
-    .update({ flagged: true, risk_score: 100 })
+    .update({ flagged: true, risk_score: ADMIN_FLAGGED_RISK_SCORE })
     .eq("booking_id", bookingId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);

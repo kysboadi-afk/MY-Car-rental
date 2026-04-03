@@ -11,17 +11,27 @@
 -- as badges in the admin dashboard.  Slingshots and cars both carry these
 -- columns; the vehicle-type rules only restrict mileage/maintenance logic.
 --
--- Safe to re-run: uses ADD COLUMN IF NOT EXISTS.
+-- Safe to re-run: uses ADD COLUMN IF NOT EXISTS; constraint blocks use
+-- idempotent DO…EXCEPTION guards (PostgreSQL does not support
+-- ADD CONSTRAINT IF NOT EXISTS).
 
 alter table vehicles
   add column if not exists decision_status text,
   add column if not exists action_status   text;
 
 -- Constraint: only allow known values (NULL is always permitted).
-alter table vehicles
-  add constraint if not exists vehicles_decision_status_check
-    check (decision_status is null or decision_status in ('review_for_sale', 'needs_attention'));
+do $$
+begin
+  alter table vehicles
+    add constraint vehicles_decision_status_check
+      check (decision_status is null or decision_status in ('review_for_sale', 'needs_attention'));
+exception when duplicate_object then null;
+end $$;
 
-alter table vehicles
-  add constraint if not exists vehicles_action_status_check
-    check (action_status is null or action_status in ('pending', 'in_progress', 'resolved'));
+do $$
+begin
+  alter table vehicles
+    add constraint vehicles_action_status_check
+      check (action_status is null or action_status in ('pending', 'in_progress', 'resolved'));
+exception when duplicate_object then null;
+end $$;
