@@ -2627,6 +2627,7 @@ async function saveVehicle() {
       ...(result.vehicle || updates),
     };
     if (currentPage === 'vehicles') loadVehicles();
+    else if (currentPage === 'vehicle-profile') showVehicleProfile(editingVehicleId);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   } finally {
