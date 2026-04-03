@@ -1092,13 +1092,13 @@ async function toolGetSystemSettings({ category } = {}) {
  *   - Newly created "car" type vehicles → daily_rate × days + live tax
  */
 async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours }) {
-  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!vehicleId) return { error: "vehicleId is required" };
 
   const settings = await loadPricingSettings();
   const vehicles = await loadAllVehicles();
   const vehicle  = vehicles[vehicleId];
 
-  if (!vehicle) throw new Error(`Vehicle "${vehicleId}" not found`);
+  if (!vehicle) return { error: `Vehicle "${vehicleId}" not found` };
 
   const vType = (vehicle.type || vehicle.vehicle_type || "").toLowerCase();
   const isSlingshot = vType === "slingshot";
@@ -1107,7 +1107,7 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours 
   if (isSlingshot) {
     const hours = Number(durationHours);
     if (!hours || ![3, 6, 24, 48, 72].includes(hours)) {
-      throw new Error("durationHours is required for Slingshot vehicles and must be 3, 6, 24, 48, or 72");
+      return { error: "durationHours is required for Slingshot vehicles and must be 3, 6, 24, 48, or 72" };
     }
     // computeSlingshotAmountFromSettings returns (tier price × 2): rental + refundable deposit.
     // The rental fee equals the tier price; the security deposit equals the same tier price.
@@ -1133,7 +1133,7 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours 
 
   // ── Economy / Car vehicles (daily/weekly pricing) ─────────────────────────
   if (!pickup || !returnDate) {
-    throw new Error("pickup and returnDate (YYYY-MM-DD) are required for car price quotes");
+    return { error: "pickup and returnDate (YYYY-MM-DD) are required for car price quotes" };
   }
 
   const days = computeRentalDays(pickup, returnDate);
@@ -1141,7 +1141,7 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours 
   // Known vehicles with configured tier rates in _settings.js
   if (vehicleId === "camry" || vehicleId === "camry2013") {
     const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null);
-    if (!lines) throw new Error(`Could not compute price for "${vehicleId}"`);
+    if (!lines) return { error: `Could not compute price for "${vehicleId}"` };
     const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
     const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
     return {
@@ -1160,7 +1160,7 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours 
   // Newly created vehicles — use their stored daily_rate with live tax
   const dailyRate = Number(vehicle.daily_rate || vehicle.pricePerDay || 0);
   if (!dailyRate || dailyRate <= 0) {
-    throw new Error(`Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.`);
+    return { error: `Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.` };
   }
 
   const preTax    = days * dailyRate;
@@ -1737,9 +1737,10 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
         throw new Error(`Unknown tool: ${toolName}`);
     }
   } catch (err) {
-    const errorResult = { error: adminErrorMessage(err) };
-    await logAiAction(toolName, args, errorResult, adminId);
-    throw err;
+    console.error("TOOL ERROR:", err);
+    const errorResult = { error: adminErrorMessage(err), details: err.message };
+    try { await logAiAction(toolName, args, errorResult, adminId); } catch (logErr) { console.error("TOOL ERROR: failed to log action:", logErr); }
+    return errorResult;
   }
 
   await logAiAction(toolName, args, result, adminId);
