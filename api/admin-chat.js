@@ -40,6 +40,7 @@ Capabilities:
 - Retrieve revenue, bookings, vehicle data
 - Detect business problems (slow periods, underperforming vehicles)
 - Score bookings for fraud risk
+- Create new cars via create_vehicle (guided flow — see below)
 - Add or update vehicles (name, status, price, Bouncie IMEI) — requires confirmation
 - Send SMS messages to any phone number — requires confirmation
 - Send SMS messages directly to a booking's driver via send_message_to_driver — requires confirmation
@@ -49,7 +50,45 @@ Capabilities:
 - Update booking status via update_booking_status — requires confirmation
 - Record strategic vehicle decisions (review for sale, needs attention) via confirm_vehicle_action — requires confirmation
 
-Mileage & maintenance context:
+## Creating a new vehicle (guided flow)
+
+When the admin asks to add or create a vehicle, collect ALL required fields one step at a time before calling create_vehicle:
+
+1. Vehicle name (e.g. "Honda Civic 2015")
+2. Daily rental price (must be > $0)
+3. Purchase price — what was paid to acquire the vehicle (must be > $0)
+4. Purchase date — when was it purchased? (format: YYYY-MM-DD)
+5. Bouncie device IMEI — optional. Ask: "Do you want to assign a Bouncie GPS tracker? If so, what is the IMEI?"
+
+Validation rules (reject and re-ask if violated):
+- price_per_day must be a positive number
+- purchase_price must be a positive number
+- purchase_date must be a valid calendar date in YYYY-MM-DD format
+- type must always be "car" — never "slingshot" (those are managed separately)
+
+Do NOT call create_vehicle until all required fields are collected and valid.
+
+Before calling create_vehicle, ALWAYS show a confirmation summary in this exact format and ask for approval:
+
+---
+**New Vehicle Summary**
+- Name: [vehicle name]
+- Daily Price: $[price]/day
+- Purchase Price: $[purchase_price]
+- Purchase Date: [purchase_date]
+- Bouncie Device: [IMEI or "None — mileage tracking will not be active"]
+
+Shall I create this vehicle?
+---
+
+Only call create_vehicle with confirmed: true after the admin says yes.
+
+After creation:
+- Call get_vehicles to verify the vehicle appears in the fleet
+- If bouncie_device_id was provided, confirm tracking_active: true in the result
+- If any warnings are returned, relay them to the admin
+
+## Mileage & maintenance context
 - Mileage tracking requires Bouncie GPS devices assigned to each car and the Bouncie integration configured in Vercel.
 - If get_mileage returns bouncie_configured: false, explain that the Bouncie GPS integration is not yet set up and that the admin should configure BOUNCIE_ACCESS_TOKEN in Vercel.
 - If get_mileage returns tracked_vehicles: 0, explain that no cars currently have a Bouncie device assigned (editable in the Fleet page).
@@ -127,6 +166,12 @@ function formatConfirmedReply(toolName, args, result) {
   // Strip backticks/asterisks from dynamic values so they can't break markdown formatting
   const safe = (v) => String(v ?? "").replace(/[`*_[\]]/g, "");
   switch (toolName) {
+    case "create_vehicle": {
+      const warnings = result.warnings?.length
+        ? `\n⚠️ ${result.warnings.join("\n⚠️ ")}`
+        : "";
+      return `✅ Vehicle **${safe(result.name)}** created successfully (ID: \`${safe(result.created)}\`).\n- Price: $${safe(result.price_per_day)}/day\n- Purchase: $${safe(result.purchase_price)} on ${safe(result.purchase_date)}\n- Tracking: ${result.tracking_active ? `✅ Bouncie assigned (${safe(result.bouncie_device_id)})` : "⚠️ No Bouncie device — assign one via update_vehicle to enable mileage tracking"}${warnings}`;
+    }
     case "add_vehicle":
       return `✅ Vehicle **${safe(result.name)}** added successfully (ID: \`${safe(result.created)}\`).`;
     case "update_vehicle":
