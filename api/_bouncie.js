@@ -5,34 +5,179 @@
 // Auth     : Authorization: <access_token>
 //            NOTE: Bouncie does NOT use a "Bearer" prefix — just the raw token.
 //
+// Token lifecycle:
+//   Access tokens are obtained once via /api/bouncie-auth (one-time OAuth exchange).
+//   They are stored in the Supabase app_config table and auto-refreshed here
+//   before every API call.  The env var BOUNCIE_ACCESS_TOKEN is the fallback for
+//   cases where Supabase is not available (e.g. cold start without DB access).
+//
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
 
-const BOUNCIE_API = "https://api.bouncie.dev/v1";
+const BOUNCIE_API  = "https://api.bouncie.dev/v1";
+const BOUNCIE_AUTH = "https://auth.bouncie.com/oauth/token";
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
+// ── Token management ──────────────────────────────────────────────────────────
 
-function bouncieHeaders() {
+/**
+ * Read Bouncie tokens from Supabase app_config.
+ * Falls back to BOUNCIE_ACCESS_TOKEN env var if Supabase is unavailable.
+ *
+ * @param {object|null} sb - Supabase admin client (may be null)
+ * @returns {Promise<{access_token:string, refresh_token:string|null}>}
+ */
+export async function getBouncieTokens(sb) {
+  if (sb) {
+    const { data } = await sb
+      .from("app_config")
+      .select("value")
+      .eq("key", "bouncie_tokens")
+      .maybeSingle();
+    if (data?.value?.access_token) {
+      return data.value;
+    }
+  }
+  // Env var fallback
   const token = process.env.BOUNCIE_ACCESS_TOKEN;
-  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN env var is not set");
+  if (!token) throw new Error("Bouncie access token not configured — run /api/bouncie-auth first");
+  return { access_token: token, refresh_token: process.env.BOUNCIE_REFRESH_TOKEN || null };
+}
+
+/**
+ * Persist updated Bouncie tokens to Supabase app_config.
+ * No-op if Supabase is unavailable.
+ *
+ * @param {object|null} sb
+ * @param {string} accessToken
+ * @param {string|null} refreshToken
+ */
+async function saveBouncieTokens(sb, accessToken, refreshToken) {
+  if (!sb) return;
+  await sb.from("app_config").upsert(
+    {
+      key:        "bouncie_tokens",
+      value:      { access_token: accessToken, refresh_token: refreshToken, updated_at: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "key" }
+  );
+}
+
+/**
+ * Exchange an OAuth authorization code for access + refresh tokens.
+ * Stores the result in Supabase app_config.
+ *
+ * @param {object|null} sb
+ * @param {string} authCode  - one-time code from the Bouncie OAuth redirect
+ * @param {string} redirectUri
+ * @returns {Promise<{access_token, refresh_token, expires_in}>}
+ */
+export async function exchangeAuthCode(sb, authCode, redirectUri) {
+  const clientId     = process.env.BOUNCIE_CLIENT_ID;
+  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET must be set in Vercel env vars");
+  }
+
+  const resp = await fetch(BOUNCIE_AUTH, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      client_id:     clientId,
+      client_secret: clientSecret,
+      grant_type:    "authorization_code",
+      code:          authCode,
+      redirect_uri:  redirectUri,
+    }),
+  });
+
+  const body = await resp.json();
+  if (!resp.ok || !body.access_token) {
+    throw new Error(`Bouncie token exchange failed (${resp.status}): ${JSON.stringify(body)}`);
+  }
+
+  await saveBouncieTokens(sb, body.access_token, body.refresh_token || null);
+  return body;
+}
+
+/**
+ * Refresh an expired access token using the stored refresh_token.
+ * Updates both Supabase and the in-process token cache.
+ *
+ * @param {object|null} sb
+ * @param {string} refreshToken
+ * @returns {Promise<string>} new access token
+ */
+export async function refreshBouncieToken(sb, refreshToken) {
+  const clientId     = process.env.BOUNCIE_CLIENT_ID;
+  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET must be set to refresh tokens");
+  }
+
+  const resp = await fetch(BOUNCIE_AUTH, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      client_id:     clientId,
+      client_secret: clientSecret,
+      grant_type:    "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+
+  const body = await resp.json();
+  if (!resp.ok || !body.access_token) {
+    throw new Error(`Bouncie token refresh failed (${resp.status}): ${JSON.stringify(body)}`);
+  }
+
+  await saveBouncieTokens(sb, body.access_token, body.refresh_token || refreshToken);
+  return body.access_token;
+}
+
+/**
+ * Get a valid access token, auto-refreshing if a 401 is detected.
+ * This is the main entry point used by all API call helpers below.
+ *
+ * @param {object|null} sb
+ * @returns {Promise<string>}
+ */
+async function getValidToken(sb) {
+  const tokens = await getBouncieTokens(sb);
+  return tokens.access_token;
+}
+
+function makeHeaders(token) {
   return {
-    Authorization:  token,    // raw token, no "Bearer" prefix per Bouncie docs
+    Authorization:  token,   // raw token — Bouncie does NOT use "Bearer" prefix
     "Content-Type": "application/json",
   };
 }
 
+// ── Bouncie REST helpers ──────────────────────────────────────────────────────
+
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
- * Returns an array of Bouncie vehicle objects; each has:
- *   imei, nickName, vin, model, stats.odometer, stats.lastUpdated,
- *   stats.mil, stats.battery, stats.location, stats.isRunning
+ * Automatically retries once with a refreshed token on 401.
  *
+ * @param {object|null} sb - Supabase client (needed for token refresh)
  * @returns {Promise<Array>}
  */
-export async function getBouncieVehicles() {
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: bouncieHeaders() });
+export async function getBouncieVehicles(sb = null) {
+  const token = await getValidToken(sb);
+  let resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(token) });
+
+  // Auto-refresh on 401
+  if (resp.status === 401 && sb) {
+    const tokens = await getBouncieTokens(sb);
+    if (tokens.refresh_token) {
+      const newToken = await refreshBouncieToken(sb, tokens.refresh_token);
+      resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(newToken) });
+    }
+  }
+
   if (resp.status === 401) {
-    throw new Error("Bouncie API: 401 Unauthorized — check BOUNCIE_ACCESS_TOKEN");
+    throw new Error("Bouncie API: 401 Unauthorized — token expired and no refresh_token available. Re-run /api/bouncie-auth.");
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
@@ -45,11 +190,11 @@ export async function getBouncieVehicles() {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Load all vehicles that have a Bouncie IMEI assigned (i.e. are actively tracked).
+ * Load all vehicles that have a Bouncie IMEI assigned (actively tracked).
  * Slingshots are excluded regardless of whether they have an IMEI.
  *
  * @param {object} sb - Supabase admin client
- * @returns {Promise<Array<{vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type, data}>>}
+ * @returns {Promise<Array>}
  */
 export async function loadTrackedVehicles(sb) {
   const { data, error } = await sb
@@ -58,7 +203,6 @@ export async function loadTrackedVehicles(sb) {
     .not("bouncie_device_id", "is", null);
   if (error) throw new Error(`loadTrackedVehicles failed: ${error.message}`);
 
-  // Exclude slingshots — they are never Bouncie-tracked
   return (data || []).filter((row) => {
     const type = row.vehicle_type || row.data?.type || "";
     return type !== "slingshot";
@@ -68,19 +212,18 @@ export async function loadTrackedVehicles(sb) {
 /**
  * Advance a vehicle's odometer reading and last_synced_at timestamp.
  * Only updates if the new reading is strictly greater (odometers are monotonic).
- * Also mirrors the mileage into the data JSONB for the GitHub fallback path.
+ * Mirrors the mileage into the data JSONB for the GitHub fallback path.
  *
  * @param {object} sb
  * @param {string} vehicleId
- * @param {number} odometer       - new odometer reading in miles
- * @param {string|null} lastUpdatedAt - ISO timestamp from Bouncie stats.lastUpdated
- * @param {number} [currentMileage]   - stored value; avoids extra round-trip when already known
- * @returns {Promise<boolean>} true if updated, false if reading was not newer
+ * @param {number} odometer
+ * @param {string|null} lastUpdatedAt
+ * @param {number} [currentMileage]
+ * @returns {Promise<boolean>}
  */
 export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt, currentMileage = 0) {
-  if (odometer <= currentMileage) return false; // never decrease odometer
+  if (odometer <= currentMileage) return false;
 
-  // Fetch current data JSONB so we can mirror the mileage into it
   const { data: row } = await sb
     .from("vehicles")
     .select("data")
@@ -108,16 +251,6 @@ export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedA
  *
  * @param {object} sb
  * @param {object} trip
- * @param {string} trip.vehicleId
- * @param {string} trip.imei
- * @param {string} trip.transactionId
- * @param {number} [trip.tripDistance]    - miles
- * @param {number} [trip.endOdometer]     - miles
- * @param {number} [trip.tripTimeSecs]
- * @param {number} [trip.maxSpeedMph]
- * @param {number} [trip.hardBraking]
- * @param {number} [trip.hardAccel]
- * @param {string} trip.tripAt            - ISO timestamp
  */
 export async function insertTripLog(sb, trip) {
   const { error } = await sb.from("trip_log").insert({
@@ -134,332 +267,6 @@ export async function insertTripLog(sb, trip) {
   });
 
   // 23505 = unique_violation on transaction_id — safe to ignore (duplicate event)
-  if (error && !error.code?.includes("23505") && !error.message?.includes("unique")) {
-    throw new Error(`insertTripLog failed: ${error.message}`);
-  }
-}
-
-
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-function bouncieHeaders() {
-  const token = process.env.BOUNCIE_ACCESS_TOKEN;
-  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN env var is not set");
-  return {
-    Authorization:  token,    // raw token, no "Bearer" prefix per Bouncie docs
-    "Content-Type": "application/json",
-  };
-}
-
-/**
- * Fetch all vehicles from the Bouncie API with their current stats.
- * Returns an array of Bouncie vehicle objects; each has:
- *   imei, nickName, vin, model, stats.odometer, stats.lastUpdated,
- *   stats.mil, stats.battery, stats.location, stats.isRunning
- *
- * @returns {Promise<Array>}
- */
-export async function getBouncieVehicles() {
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: bouncieHeaders() });
-  if (resp.status === 401) {
-    throw new Error("Bouncie API: 401 Unauthorized — check BOUNCIE_ACCESS_TOKEN");
-  }
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Bouncie API GET /vehicles failed: ${resp.status} ${text}`);
-  }
-  const data = await resp.json();
-  return Array.isArray(data) ? data : [];
-}
-
-// ── DB helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Load all vehicles that have a Bouncie IMEI assigned (i.e. are actively tracked).
- * Slingshots are excluded regardless of whether they have an IMEI.
- *
- * @param {object} sb - Supabase admin client
- * @returns {Promise<Array<{vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type}>>}
- */
-export async function loadTrackedVehicles(sb) {
-  const { data, error } = await sb
-    .from("vehicles")
-    .select("vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type, data")
-    .not("bouncie_device_id", "is", null);
-  if (error) throw new Error(`loadTrackedVehicles failed: ${error.message}`);
-
-  // Exclude slingshots — they are never Bouncie-tracked
-  return (data || []).filter((row) => {
-    const type = row.vehicle_type || row.data?.type || "";
-    return type !== "slingshot";
-  });
-}
-
-/**
- * Advance a vehicle's odometer reading and last_synced_at timestamp.
- * Only updates if the new reading is strictly greater (odometers are monotonic).
- *
- * @param {object} sb
- * @param {string} vehicleId
- * @param {number} odometer      - miles
- * @param {string} lastUpdatedAt - ISO timestamp from Bouncie
- * @param {number} [currentMileage] - current stored value (avoids extra round-trip)
- * @returns {Promise<boolean>} true if updated, false if reading was not newer
- */
-export async function advanceMileage(sb, vehicleId, odometer, lastUpdatedAt, currentMileage = 0) {
-  if (odometer <= currentMileage) return false; // never decrease odometer
-
-  const { error } = await sb
-    .from("vehicles")
-    .update({
-      mileage:        odometer,
-      last_synced_at: lastUpdatedAt || new Date().toISOString(),
-      // Mirror into data JSONB for the GitHub JSON fallback path
-      data: sb.rpc ? undefined : undefined, // can't easily use rpc here; handled below
-    })
-    .eq("vehicle_id", vehicleId);
-
-  if (error) throw new Error(`advanceMileage failed for ${vehicleId}: ${error.message}`);
-
-  // Also mirror into data JSONB so vehicles.json fallback stays in sync
-  await sb.rpc("jsonb_set_vehicle_mileage", {
-    p_vehicle_id: vehicleId,
-    p_mileage:    odometer,
-  }).catch(() => {
-    // RPC may not exist yet — fall back to a direct update of the data column
-    return sb
-      .from("vehicles")
-      .update({
-        data: sb
-          .from("vehicles")
-          .select("data")
-          .eq("vehicle_id", vehicleId)
-          .then(({ data: rows }) => {
-            const existing = rows?.[0]?.data || {};
-            return { ...existing, mileage: odometer };
-          }),
-      })
-      .eq("vehicle_id", vehicleId);
-  });
-
-  return true;
-}
-
-/**
- * Simpler mileage update that avoids the complex RPC fallback.
- * Updates the dedicated `mileage` column and mirrors into data JSONB in one statement.
- *
- * @param {object} sb
- * @param {string} vehicleId
- * @param {number} odometer
- * @param {string} lastUpdatedAt
- * @param {number} currentMileage
- * @returns {Promise<boolean>}
- */
-export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt, currentMileage = 0) {
-  if (odometer <= currentMileage) return false;
-
-  // Fetch current data blob first, then update both the column and the JSONB
-  const { data: rows } = await sb
-    .from("vehicles")
-    .select("data")
-    .eq("vehicle_id", vehicleId)
-    .maybeSingle();
-
-  const existingData = rows?.data || {};
-  const updatedData  = { ...existingData, mileage: odometer };
-
-  const { error } = await sb
-    .from("vehicles")
-    .update({
-      mileage:        odometer,
-      last_synced_at: lastUpdatedAt || new Date().toISOString(),
-      data:           updatedData,
-      updated_at:     new Date().toISOString(),
-    })
-    .eq("vehicle_id", vehicleId);
-
-  if (error) throw new Error(`updateVehicleMileage failed for ${vehicleId}: ${error.message}`);
-  return true;
-}
-
-/**
- * Insert a trip record into trip_log, silently ignoring duplicate transaction_ids.
- *
- * @param {object} sb
- * @param {object} trip
- * @param {string} trip.vehicleId
- * @param {string} trip.imei
- * @param {string} trip.transactionId
- * @param {number} [trip.tripDistance]
- * @param {number} [trip.endOdometer]
- * @param {number} [trip.tripTimeSecs]
- * @param {number} [trip.maxSpeedMph]
- * @param {number} [trip.hardBraking]
- * @param {number} [trip.hardAccel]
- * @param {string} trip.tripAt
- */
-export async function insertTripLog(sb, trip) {
-  const { error } = await sb.from("trip_log").insert({
-    vehicle_id:     trip.vehicleId,
-    bouncie_imei:   trip.imei,
-    transaction_id: trip.transactionId,
-    trip_distance:  trip.tripDistance  ?? null,
-    end_odometer:   trip.endOdometer   ?? null,
-    trip_time_secs: trip.tripTimeSecs  ?? null,
-    max_speed_mph:  trip.maxSpeedMph   ?? null,
-    hard_braking:   trip.hardBraking   ?? 0,
-    hard_accel:     trip.hardAccel     ?? 0,
-    trip_at:        trip.tripAt,
-  });
-
-  // 23505 = unique_violation on transaction_id — safe to ignore (duplicate event)
-  if (error && !error.code?.includes("23505") && !error.message?.includes("unique")) {
-    throw new Error(`insertTripLog failed: ${error.message}`);
-  }
-}
-
-
-function bouncieHeaders() {
-  const token = process.env.BOUNCIE_ACCESS_TOKEN;
-  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN env var is not set");
-  return {
-    Authorization:  token,
-    "Content-Type": "application/json",
-  };
-}
-
-/**
- * Fetch all vehicles from the Bouncie API with their current stats.
- * Each vehicle includes: imei, nickName, vin, model, stats.odometer, stats.lastUpdated,
- * stats.mil, stats.battery, stats.location.
- *
- * @returns {Promise<Array>}
- */
-export async function getBouncieVehicles() {
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: bouncieHeaders() });
-  if (resp.status === 401) {
-    throw new Error("Bouncie API: 401 Unauthorized — check BOUNCIE_ACCESS_TOKEN");
-  }
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`Bouncie API GET /vehicles failed: ${resp.status} ${text}`);
-  }
-  const data = await resp.json();
-  return Array.isArray(data) ? data : [];
-}
-
-/**
- * Parse the BOUNCIE_DEVICE_MAP env var into an IMEI→vehicle_id map.
- * Returns {} when the env var is absent or unparseable.
- *
- * @returns {{ [imei: string]: string }}
- */
-export function parseDeviceMap() {
-  const raw = process.env.BOUNCIE_DEVICE_MAP;
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) return {};
-    return parsed;
-  } catch {
-    console.warn("_bouncie: BOUNCIE_DEVICE_MAP is not valid JSON — ignoring");
-    return {};
-  }
-}
-
-/**
- * Resolve a Bouncie device IMEI to our internal vehicle_id.
- * Order of preference:
- *   1. Explicit BOUNCIE_DEVICE_MAP entry
- *   2. Slugified device nickname  (e.g. "Slingshot R" → "slingshot-r")
- *
- * @param {string} imei
- * @param {string} [nickName]
- * @param {{ [imei: string]: string }} [deviceMap]   - pre-parsed device map
- * @returns {string | null}
- */
-export function resolveVehicleId(imei, nickName, deviceMap = parseDeviceMap()) {
-  if (deviceMap[imei]) return deviceMap[imei];
-  if (nickName) {
-    return nickName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 50) || null;
-  }
-  return null;
-}
-
-/**
- * Upsert the current mileage for a vehicle.
- * Only advances total_mileage forward — never decreases it.
- *
- * @param {object} sb            - Supabase admin client
- * @param {string} vehicleId
- * @param {string} imei
- * @param {number} odometer      - miles
- * @param {string|null} lastTripAt - ISO timestamp
- */
-export async function upsertMileage(sb, vehicleId, imei, odometer, lastTripAt) {
-  // Fetch current value first so we never decrease the odometer
-  const { data: existing } = await sb
-    .from("vehicle_mileage")
-    .select("total_mileage")
-    .eq("vehicle_id", vehicleId)
-    .maybeSingle();
-
-  const currentMileage = existing?.total_mileage ?? 0;
-  if (odometer < currentMileage) return; // odometers only go forward
-
-  const { error } = await sb.from("vehicle_mileage").upsert(
-    {
-      vehicle_id:     vehicleId,
-      bouncie_imei:   imei,
-      total_mileage:  odometer,
-      last_trip_at:   lastTripAt || null,
-      last_synced_at: new Date().toISOString(),
-    },
-    { onConflict: "vehicle_id" }
-  );
-  if (error) throw new Error(`upsertMileage failed for ${vehicleId}: ${error.message}`);
-}
-
-/**
- * Insert a trip record into trip_log, silently ignoring duplicate transaction_ids.
- *
- * @param {object} sb
- * @param {object} trip
- * @param {string} trip.vehicleId
- * @param {string} trip.imei
- * @param {string} trip.transactionId
- * @param {number} [trip.tripDistance]    - miles
- * @param {number} [trip.startOdometer]   - miles
- * @param {number} [trip.endOdometer]     - miles
- * @param {number} [trip.tripTimeSecs]
- * @param {number} [trip.maxSpeedMph]
- * @param {number} [trip.hardBraking]
- * @param {number} [trip.hardAccel]
- * @param {string} trip.tripAt            - ISO timestamp
- * @param {string} [trip.source]          - 'webhook' | 'sync'
- */
-export async function insertTripLog(sb, trip) {
-  const { error } = await sb.from("trip_log").insert({
-    vehicle_id:     trip.vehicleId,
-    bouncie_imei:   trip.imei,
-    transaction_id: trip.transactionId,
-    trip_distance:  trip.tripDistance   ?? null,
-    start_odometer: trip.startOdometer  ?? null,
-    end_odometer:   trip.endOdometer    ?? null,
-    trip_time_secs: trip.tripTimeSecs   ?? null,
-    max_speed_mph:  trip.maxSpeedMph    ?? null,
-    hard_braking:   trip.hardBraking    ?? 0,
-    hard_accel:     trip.hardAccel      ?? 0,
-    trip_at:        trip.tripAt,
-    source:         trip.source         ?? "webhook",
-  });
-
-  // 23505 = unique_violation — duplicate transactionId, safe to ignore
   if (error && !error.code?.includes("23505") && !error.message?.includes("unique")) {
     throw new Error(`insertTripLog failed: ${error.message}`);
   }

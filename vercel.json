@@ -93,6 +93,9 @@
     "api/bouncie-webhook.js": {
       "maxDuration": 15
     },
+    "api/bouncie-auth.js": {
+      "maxDuration": 20
+    },
     "api/v2-mileage.js": {
       "maxDuration": 30
     }
