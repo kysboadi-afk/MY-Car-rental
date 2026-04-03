@@ -7,8 +7,10 @@
 // Actions:
 //   get            — fetch mileage + AI stats for all Bouncie-tracked vehicles
 //   sync           — trigger an on-demand Bouncie pull (same as bouncie-sync cron)
-//   update_service — record that a vehicle was serviced; resets miles-since-service counter
-//                    Body: { vehicleId, mileage? }  (defaults to current odometer)
+//   update_service — record that a specific service was performed at current mileage
+//                    Body: { vehicleId, serviceType: "oil"|"brakes"|"tires", mileage? }
+//                    When serviceType is omitted, all three service records are updated
+//                    (backward-compatible behaviour).
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -17,6 +19,13 @@ import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+// Maps serviceType param → DB column and JSONB key
+const SERVICE_COLUMNS = {
+  oil:    { col: "last_oil_change_mileage",   jsonKey: "last_oil_change_mileage" },
+  brakes: { col: "last_brake_check_mileage",  jsonKey: "last_brake_check_mileage" },
+  tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
+};
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -47,7 +56,7 @@ export default async function handler(req, res) {
     if (action === "get") {
       const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
         sb.from("vehicles")
-          .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, data")
+          .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
           .not("bouncie_device_id", "is", null)
           .order("vehicle_id"),
         sb.from("trip_log")
@@ -61,12 +70,15 @@ export default async function handler(req, res) {
           return type !== "slingshot";
         })
         .map((r) => ({
-          vehicle_id:           r.vehicle_id,
-          vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
-          total_mileage:        Number(r.mileage) || 0,
-          last_service_mileage: Number(r.data?.last_service_mileage) || 0,
-          bouncie_device_id:    r.bouncie_device_id,
-          last_synced_at:       r.last_synced_at,
+          vehicle_id:               r.vehicle_id,
+          vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+          total_mileage:            Number(r.mileage) || 0,
+          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+          bouncie_device_id:        r.bouncie_device_id,
+          last_synced_at:           r.last_synced_at,
         }));
 
       const { alerts, stats } = analyzeMileage(mileageData, tripRows || []);
@@ -125,10 +137,15 @@ export default async function handler(req, res) {
 
     // ── UPDATE SERVICE ────────────────────────────────────────────────────────
     if (action === "update_service") {
-      const { vehicleId, mileage: serviceMileageParam } = body;
+      const { vehicleId, serviceType, mileage: serviceMileageParam } = body;
       if (!vehicleId) return res.status(400).json({ error: "vehicleId is required" });
 
-      // Default to current odometer if no override provided
+      // Validate serviceType when provided
+      if (serviceType && !SERVICE_COLUMNS[serviceType]) {
+        return res.status(400).json({ error: `serviceType must be one of: ${Object.keys(SERVICE_COLUMNS).join(", ")}` });
+      }
+
+      // Resolve the mileage to record (default to current odometer)
       let serviceMileage;
       if (serviceMileageParam !== undefined && serviceMileageParam !== null) {
         serviceMileage = Number(serviceMileageParam);
@@ -144,7 +161,7 @@ export default async function handler(req, res) {
         serviceMileage = Number(row?.mileage) || 0;
       }
 
-      // Store last_service_mileage inside the data JSONB (no separate column needed)
+      // Fetch existing vehicle data for JSONB merge
       const { data: existing } = await sb
         .from("vehicles")
         .select("data")
@@ -153,18 +170,53 @@ export default async function handler(req, res) {
 
       if (!existing) return res.status(404).json({ error: `Vehicle "${vehicleId}" not found` });
 
-      const updatedData = { ...(existing.data || {}), last_service_mileage: serviceMileage };
+      // Determine which columns to update
+      const colUpdates = {};
+      const jsonUpdates = {};
+
+      if (serviceType) {
+        // Update only the requested service type
+        const { col, jsonKey } = SERVICE_COLUMNS[serviceType];
+        colUpdates[col]    = serviceMileage;
+        jsonUpdates[jsonKey] = serviceMileage;
+      } else {
+        // Legacy: no serviceType specified — update all three (and old combined field)
+        for (const { col, jsonKey } of Object.values(SERVICE_COLUMNS)) {
+          colUpdates[col]    = serviceMileage;
+          jsonUpdates[jsonKey] = serviceMileage;
+        }
+        jsonUpdates.last_service_mileage = serviceMileage;  // keep legacy key in sync
+      }
+
+      const updatedData = { ...(existing.data || {}), ...jsonUpdates };
+
       const { error } = await sb
         .from("vehicles")
-        .update({ data: updatedData, updated_at: new Date().toISOString() })
+        .update({
+          ...colUpdates,
+          data:       updatedData,
+          updated_at: new Date().toISOString(),
+        })
         .eq("vehicle_id", vehicleId);
 
       if (error) throw new Error(`Supabase update failed: ${error.message}`);
 
+      // Log to maintenance_history (non-fatal — don't fail the whole request)
+      const historyTypes = serviceType
+        ? [serviceType]
+        : Object.keys(SERVICE_COLUMNS);
+      for (const svcType of historyTypes) {
+        sb.from("maintenance_history")
+          .insert({ vehicle_id: vehicleId, service_type: svcType, mileage: serviceMileage })
+          .then(() => {})
+          .catch((err) => console.warn(`v2-mileage: maintenance_history insert failed (${svcType}):`, err.message));
+      }
+
       return res.status(200).json({
-        success:              true,
+        success:      true,
         vehicleId,
-        last_service_mileage: serviceMileage,
+        serviceType:  serviceType || "all",
+        service_mileage: serviceMileage,
       });
     }
 
@@ -174,12 +226,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
-
-//
-// POST /api/v2-mileage
-// Body: { secret, action, ...params }
-//
-// Actions:
-//   get            — fetch mileage + trip stats for all vehicles
-//   sync           — trigger an on-demand Bouncie pull (same logic as bouncie-sync cron)
-//   update_service — record that a vehicle was serviced at its current mileage

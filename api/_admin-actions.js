@@ -142,14 +142,16 @@ async function loadAllVehicles() {
     try {
       const { data, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, data, rental_status");
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
       if (!error && data) {
         const map = {};
         for (const row of data) {
           map[row.vehicle_id] = {
-            vehicle_id: row.vehicle_id,
+            vehicle_id:        row.vehicle_id,
             ...(row.data || {}),
-            rental_status: row.rental_status,
+            rental_status:     row.rental_status     || null,
+            bouncie_device_id: row.bouncie_device_id || null,
+            last_synced_at:    row.last_synced_at    || null,
           };
         }
         return map;
@@ -371,7 +373,7 @@ async function toolGetVehicles() {
     return {
       vehicleId,
       name:          v.vehicle_name || vehicleId,
-      status:        v.status || v.rental_status || "active",
+      status:        v.status || "active",
       totalBookings: bookCount,
       totalRevenue:  Math.round(revenue * 100) / 100,
     };
@@ -495,13 +497,54 @@ async function toolSendSms({ phone, message }) {
 }
 
 async function toolGetInsights() {
+  const sb = getSupabaseAdmin();
   const [allBookings, vehicles] = await Promise.all([
     loadAllBookings(),
     loadAllVehicles(),
   ]);
 
+  // Fetch Bouncie mileage and recent trips so detectProblems can include
+  // maintenance/idle alerts.  These use bouncie_device_id as source of truth —
+  // rental_status is intentionally ignored when deciding what to track.
+  let mileageData = [];
+  let recentTrips = [];
+  if (sb) {
+    try {
+      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+        sb.from("vehicles")
+          .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+          .not("bouncie_device_id", "is", null),
+        sb.from("trip_log")
+          .select("vehicle_id, trip_distance, trip_at")
+          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
+      ]);
+      mileageData = (vehicleRows || [])
+        .filter((r) => {
+          const type = r.data?.type || r.data?.vehicle_type || "";
+          return type !== "slingshot";
+        })
+        .map((r) => ({
+          vehicle_id:               r.vehicle_id,
+          vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+          total_mileage:            Number(r.mileage) || 0,
+          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+          last_synced_at:           r.last_synced_at,
+        }));
+      recentTrips = (tripRows || []).map((r) => ({
+        vehicle_id:    r.vehicle_id,
+        trip_distance: r.trip_distance,
+        trip_at:       r.trip_at,
+      }));
+    } catch {
+      // mileage data unavailable — detectProblems will skip mileage section
+    }
+  }
+
   const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
-  const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
+  const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
   return { insights, problems };
 }
@@ -514,7 +557,7 @@ async function toolGetMileage() {
 
   const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
     sb.from("vehicles")
-      .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, data")
+      .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
       .not("bouncie_device_id", "is", null),
     sb.from("trip_log")
       .select("vehicle_id, trip_distance, trip_at")
@@ -528,12 +571,15 @@ async function toolGetMileage() {
       return type !== "slingshot";
     })
     .map((r) => ({
-      vehicle_id:           r.vehicle_id,
-      vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
-      total_mileage:        Number(r.mileage) || 0,
-      last_service_mileage: Number(r.data?.last_service_mileage) || 0,
-      bouncie_device_id:    r.bouncie_device_id,
-      last_synced_at:       r.last_synced_at,
+      vehicle_id:               r.vehicle_id,
+      vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+      total_mileage:            Number(r.mileage) || 0,
+      last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+      last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+      last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+      last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+      bouncie_device_id:        r.bouncie_device_id,
+      last_synced_at:           r.last_synced_at,
     }));
 
   const { alerts, stats } = analyzeMileage(mileageData, (tripRows || []).map((r) => ({
@@ -570,9 +616,66 @@ async function toolGetFraudReport({ flaggedOnly = true } = {}) {
   };
 }
 
+// Maps serviceType → DB column name and JSONB key (matches v2-mileage.js and migration 0022)
+const MAINTENANCE_SERVICE_COLUMNS = {
+  oil:    { col: "last_oil_change_mileage",   jsonKey: "last_oil_change_mileage" },
+  brakes: { col: "last_brake_check_mileage",  jsonKey: "last_brake_check_mileage" },
+  tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
+};
+
+async function toolMarkMaintenance({ vehicleId, serviceType }) {
+  if (!vehicleId)   throw new Error("vehicleId is required");
+  if (!serviceType) throw new Error("serviceType is required (oil | brakes | tires)");
+  const mapping = MAINTENANCE_SERVICE_COLUMNS[serviceType];
+  if (!mapping) throw new Error(`Invalid serviceType "${serviceType}". Must be one of: ${Object.keys(MAINTENANCE_SERVICE_COLUMNS).join(", ")}`);
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot record maintenance");
+
+  // Look up the vehicle's current odometer and JSONB data
+  const { data: row, error: fetchErr } = await sb
+    .from("vehicles")
+    .select("mileage, data")
+    .eq("vehicle_id", vehicleId)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+  if (!row)     throw new Error(`Vehicle "${vehicleId}" not found`);
+
+  const serviceMileage = Number(row.mileage) || 0;
+  const updatedData    = { ...(row.data || {}), [mapping.jsonKey]: serviceMileage };
+
+  const { error } = await sb
+    .from("vehicles")
+    .update({
+      [mapping.col]: serviceMileage,
+      data:          updatedData,
+      updated_at:    new Date().toISOString(),
+    })
+    .eq("vehicle_id", vehicleId);
+
+  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+
+  // Log to maintenance_history (non-fatal)
+  sb.from("maintenance_history")
+    .insert({ vehicle_id: vehicleId, service_type: serviceType, mileage: serviceMileage })
+    .then(() => {})
+    .catch((err) => console.warn(`_admin-actions: maintenance_history insert failed:`, err.message));
+
+  const labels = { oil: "Oil change", brakes: "Brake inspection", tires: "Tire change" };
+  return {
+    success:         true,
+    vehicleId,
+    serviceType,
+    service_label:   labels[serviceType],
+    service_mileage: serviceMileage,
+    message:         `${labels[serviceType]} recorded at ${serviceMileage.toLocaleString()} mi for ${vehicleId}.`,
+  };
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
-const DESTRUCTIVE_TOOLS = new Set(["add_vehicle", "update_vehicle", "send_sms"]);
+const DESTRUCTIVE_TOOLS = new Set(["add_vehicle", "update_vehicle", "send_sms", "mark_maintenance"]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
 
@@ -610,6 +713,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_insights":      result = await toolGetInsights();           break;
       case "get_fraud_report":  result = await toolGetFraudReport(args);  break;
       case "get_mileage":       result = await toolGetMileage();            break;
+      case "mark_maintenance":  result = await toolMarkMaintenance(args);  break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

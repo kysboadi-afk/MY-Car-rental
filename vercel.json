@@ -98,6 +98,9 @@
     },
     "api/v2-mileage.js": {
       "maxDuration": 30
+    },
+    "api/maintenance-alerts.js": {
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -112,6 +115,10 @@
     {
       "path": "/api/bouncie-sync",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/maintenance-alerts",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

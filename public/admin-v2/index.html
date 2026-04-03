@@ -1751,7 +1751,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="ev-type">
+        <select class="form-select" id="ev-type" onchange="updateBouncieWarning('ev')">
           <option value="economy">Economy</option>
           <option value="slingshot">Slingshot</option>
           <option value="luxury">Luxury</option>
@@ -1796,7 +1796,8 @@
       </div>
       <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
-        <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric">
+        <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('ev')">
+        <div id="ev-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Once set, mileage syncs automatically every 5 minutes.</div>
       </div>
     </div>
@@ -1826,7 +1827,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select class="form-select" id="av-type">
+        <select class="form-select" id="av-type" onchange="updateBouncieWarning('av')">
           <option value="economy">Economy</option>
           <option value="slingshot">Slingshot</option>
           <option value="luxury">Luxury</option>
@@ -1870,7 +1871,8 @@
       </div>
       <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
-        <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric">
+        <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('av')">
+        <div id="av-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Enables automatic mileage tracking.</div>
       </div>
     </div>
@@ -2478,12 +2480,45 @@ function renderVehicleProfile(id, v, s) {
             <input class="form-input" value="${v.last_synced_at ? new Date(v.last_synced_at).toLocaleString() : 'Never'}" readonly>
           </div>
         </div>
-        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="margin-top:12px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;color:var(--text-sub);margin-bottom:8px;">🔧 Maintenance Records</div>
+          <table style="width:100%;font-size:13px;border-collapse:collapse;">
+            <thead>
+              <tr style="color:var(--text-sub);">
+                <th style="text-align:left;padding:4px 8px 4px 0;">Service</th>
+                <th style="text-align:right;padding:4px 0;">Last Recorded</th>
+                <th style="text-align:right;padding:4px 0 4px 8px;">Miles Since</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[
+                { label: 'Oil Change',       key: 'last_oil_change_mileage',   interval: 3000 },
+                { label: 'Brake Inspection', key: 'last_brake_check_mileage',  interval: 10000 },
+                { label: 'Tire Replacement', key: 'last_tire_change_mileage',  interval: 20000 },
+              ].map(({ label, key, interval }) => {
+                const last   = v[key] != null ? Number(v[key]) : null;
+                const cur    = Number(v.total_mileage) || 0;
+                const since  = last != null ? Math.max(0, cur - last) : null;
+                const pct    = since != null ? since / interval : null;
+                const color  = pct == null ? 'var(--text-sub)' : pct >= 1 ? 'var(--danger)' : pct >= 0.8 ? 'var(--warning,#f59e0b)' : 'var(--success,#10b981)';
+                const badge  = pct == null ? '' : pct >= 1 ? ' 🚨' : pct >= 0.8 ? ' ⚠️' : '';
+                return `<tr>
+                  <td style="padding:4px 8px 4px 0;">${label}${badge}</td>
+                  <td style="text-align:right;padding:4px 0;">${last != null ? last.toLocaleString() + ' mi' : '—'}</td>
+                  <td style="text-align:right;padding:4px 0 4px 8px;color:${color};font-weight:${pct != null && pct >= 0.8 ? '600' : 'normal'};">${since != null ? since.toLocaleString() + ' mi' : '—'}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="triggerBouncieSync('${id}')">🔄 Sync Now</button>
-          <button class="btn btn-secondary btn-sm" onclick="markVehicleServiced('${id}')">🔧 Mark as Serviced</button>
+          <button class="btn btn-secondary btn-sm" onclick="markVehicleServiced('${id}','oil')">🛢️ Oil Done</button>
+          <button class="btn btn-secondary btn-sm" onclick="markVehicleServiced('${id}','brakes')">🛑 Brakes Done</button>
+          <button class="btn btn-secondary btn-sm" onclick="markVehicleServiced('${id}','tires')">🔄 Tires Done</button>
         </div>
       ` : `
-        <p style="color:var(--text-sub);font-size:13px;padding:4px 0;">This vehicle has no Bouncie device assigned. Edit the vehicle and enter the 15-digit IMEI to enable automatic mileage tracking.</p>
+        <p style="color:var(--warning,#f59e0b);font-size:13px;padding:4px 0;">⚠️ This vehicle has no Bouncie device assigned — mileage and maintenance alerts are disabled. Edit the vehicle and enter the 15-digit IMEI to enable tracking.</p>
       `}
     </div>
   `;
@@ -2515,6 +2550,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-bouncie-id').value = v.bouncie_device_id || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
+  updateBouncieWarning('ev');
   openModal('edit-vehicle-modal');
 }
 
@@ -2570,6 +2606,20 @@ async function saveVehicle() {
 }
 
 // ── Bouncie / mileage helpers ──────────────────────────────────────────────
+
+/**
+ * Show/hide the "not tracked" warning in the Edit or Add Vehicle modal.
+ * @param {'ev'|'av'} prefix - modal field ID prefix
+ */
+function updateBouncieWarning(prefix) {
+  const typeEl    = document.getElementById(prefix + '-type');
+  const imeiEl    = document.getElementById(prefix + '-bouncie-id');
+  const warnEl    = document.getElementById(prefix + '-bouncie-warn');
+  if (!typeEl || !imeiEl || !warnEl) return;
+  const isCar     = typeEl.value !== 'slingshot';
+  const hasImei   = imeiEl.value.trim().length > 0;
+  warnEl.style.display = (isCar && !hasImei) ? '' : 'none';
+}
 async function triggerBouncieSync(vehicleId) {
   try {
     showToast('Syncing with Bouncie…', 'info');
@@ -2591,11 +2641,24 @@ async function triggerBouncieSync(vehicleId) {
   }
 }
 
-async function markVehicleServiced(vehicleId) {
-  if (!confirm('Mark this vehicle as serviced at its current mileage? This resets the miles-since-service counter.')) return;
+async function markVehicleServiced(vehicleId, serviceType) {
+  const labels    = { oil: 'oil change', brakes: 'brake inspection', tires: 'tire replacement' };
+  const colKeys   = { oil: 'last_oil_change_mileage', brakes: 'last_brake_check_mileage', tires: 'last_tire_change_mileage' };
+  const label     = serviceType ? labels[serviceType] : 'service';
+  if (!confirm(`Record ${label} at current mileage for this vehicle? This updates the maintenance counter.`)) return;
   try {
-    await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId });
-    showToast('Service milestone recorded.', 'success');
+    const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId, serviceType });
+    showToast(`${label.charAt(0).toUpperCase() + label.slice(1)} recorded.`, 'success');
+    // Update local cache from the API response without re-fetching all vehicles
+    if (result.service_mileage != null && allVehicles[vehicleId]) {
+      if (serviceType && colKeys[serviceType]) {
+        allVehicles[vehicleId][colKeys[serviceType]] = result.service_mileage;
+      } else {
+        // Legacy all-service update — patch all three keys
+        for (const key of Object.values(colKeys)) allVehicles[vehicleId][key] = result.service_mileage;
+      }
+    }
+    if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   }
@@ -2616,6 +2679,7 @@ function openAddVehicle() {
   document.getElementById('av-msg').textContent = '';
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
+  updateBouncieWarning('av');
   openModal('add-vehicle-modal');
 }
 

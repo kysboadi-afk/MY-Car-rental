@@ -81,13 +81,23 @@ async function fetchAllData() {
     allBookings = Object.values(bookingsData).flat();
   }
 
+  // Include Bouncie fields so detectProblems can use tracking status as
+  // source of truth, independent of booking/fleet status.
   let vehicles = {};
   if (sb) {
     try {
-      const { data, error } = await sb.from("vehicles").select("vehicle_id, data, rental_status");
+      const { data, error } = await sb
+        .from("vehicles")
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
       if (!error && data) {
         for (const row of data) {
-          vehicles[row.vehicle_id] = { vehicle_id: row.vehicle_id, ...(row.data || {}), rental_status: row.rental_status };
+          vehicles[row.vehicle_id] = {
+            vehicle_id:        row.vehicle_id,
+            ...(row.data || {}),
+            rental_status:     row.rental_status     || null,
+            bouncie_device_id: row.bouncie_device_id || null,
+            last_synced_at:    row.last_synced_at    || null,
+          };
         }
       }
     } catch {
@@ -99,7 +109,46 @@ async function fetchAllData() {
     vehicles = data;
   }
 
-  return { allBookings, vehicles };
+  // Mileage data for Bouncie-tracked vehicles — rental_status is ignored when
+  // deciding what to track; last_synced_at is the source of truth for activity.
+  let mileageData = [];
+  let recentTrips = [];
+  if (sb) {
+    try {
+      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+        sb.from("vehicles")
+          .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+          .not("bouncie_device_id", "is", null),
+        sb.from("trip_log")
+          .select("vehicle_id, trip_distance, trip_at")
+          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
+      ]);
+      mileageData = (vehicleRows || [])
+        .filter((r) => {
+          const type = r.data?.type || r.data?.vehicle_type || "";
+          return type !== "slingshot";
+        })
+        .map((r) => ({
+          vehicle_id:           r.vehicle_id,
+          vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
+          total_mileage:        Number(r.mileage) || 0,
+          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+          last_synced_at:       r.last_synced_at,
+        }));
+      recentTrips = (tripRows || []).map((r) => ({
+        vehicle_id:    r.vehicle_id,
+        trip_distance: r.trip_distance,
+        trip_at:       r.trip_at,
+      }));
+    } catch {
+      // mileage data unavailable — detectProblems will skip mileage section
+    }
+  }
+
+  return { allBookings, vehicles, mileageData, recentTrips };
 }
 
 export default async function handler(req, res) {
@@ -132,10 +181,10 @@ export default async function handler(req, res) {
 
   try {
     const runStart = Date.now();
-    const { allBookings, vehicles } = await fetchAllData();
+    const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
 
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
-    const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
+    const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
     // Run auto-action engine
     const { suggestions, actions_taken } = await runAutoActions({
