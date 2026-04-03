@@ -1572,6 +1572,7 @@
       <div class="page" id="page-system-settings">
         <div id="sys-settings-loading" class="loading"><div class="loading-spinner"></div><div>Loading settings…</div></div>
         <div id="sys-settings-content" style="display:none"></div>
+        <div id="bouncie-auth-content" style="display:none"></div>
       </div>
 
       <!-- AI ASSISTANT PAGE -->
@@ -4054,13 +4055,20 @@ let allSystemSettings = [];
 function loadSystemSettings() {
   document.getElementById('sys-settings-loading').style.display = '';
   document.getElementById('sys-settings-content').style.display = 'none';
+  document.getElementById('bouncie-auth-content').style.display = 'none';
 
-  apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' })
-    .then((data) => {
+  Promise.all([
+    apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' }),
+    fetch(`${API_BASE}/api/bouncie-auth?secret=${encodeURIComponent(adminSecret)}`)
+      .then((r) => r.json()).catch(() => null),
+  ])
+    .then(([data, bouncieStatus]) => {
       allSystemSettings = data.settings || [];
       renderSystemSettings();
+      renderBouncieAuthSection(bouncieStatus);
       document.getElementById('sys-settings-loading').style.display = 'none';
       document.getElementById('sys-settings-content').style.display = '';
+      document.getElementById('bouncie-auth-content').style.display = '';
     })
     .catch((err) => {
       showToast('Settings error: ' + err.message, 'error');
@@ -4133,6 +4141,79 @@ function saveSetting(key) {
     .then(() => showToast(`✓ "${key}" saved.`, 'success'))
     .catch((err) => showToast('Error: ' + err.message, 'error'))
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
+}
+
+// ── Bouncie Authentication ────────────────────────────────────────────────────
+
+function renderBouncieAuthSection(status) {
+  const container = document.getElementById('bouncie-auth-content');
+  if (!container) return;
+
+  const configured = status?.configured;
+  const updatedAt  = status?.updated_at ? new Date(status.updated_at).toLocaleString() : null;
+  const authUrl    = status?.auth_url;
+
+  container.innerHTML = `
+    <div class="form-section" style="max-width:680px;">
+      <div class="form-section-title">📡 GPS Tracking (Bouncie)</div>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="form-label">Connection Status</label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:13px;padding:4px 10px;border-radius:6px;font-weight:600;background:${configured ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'};color:${configured ? 'var(--success,#10b981)' : 'var(--danger)'};">
+              ${configured ? '✅ Connected' : '❌ Not Connected'}
+            </span>
+            ${updatedAt ? `<span style="font-size:12px;color:var(--text-sub);">Last updated: ${esc(updatedAt)}</span>` : ''}
+          </div>
+        </div>
+        ${!authUrl ? `
+        <div class="form-group" style="grid-column:1/-1;">
+          <p style="font-size:13px;color:var(--warning,#f59e0b);margin:0;">⚠️ <code>BOUNCIE_CLIENT_ID</code> is not configured in Vercel. Add it to enable GPS tracking.</p>
+        </div>
+        ` : `
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="form-label">${configured ? 'Re-authorize Bouncie' : 'Connect Bouncie'}</label>
+          <div style="font-size:13px;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
+            <strong>Step 1:</strong> Click the link below to authorize in your Bouncie account.
+            After granting access you will be redirected to <code>slytrans.com</code> —
+            copy the <code>code=…</code> value from the address bar.<br>
+            <a href="${esc(authUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#6366f1);text-decoration:underline;">
+              🔗 Authorize with Bouncie →
+            </a>
+          </div>
+          <label class="form-label">Step 2: Paste authorization code</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" class="form-input" id="bouncie-auth-code"
+              placeholder="Paste the code= value from the redirect URL…"
+              style="flex:1;font-family:monospace;font-size:13px;">
+            <button class="btn btn-primary btn-sm" onclick="submitBouncieAuthCode()">Connect</button>
+          </div>
+        </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+async function submitBouncieAuthCode() {
+  const codeEl = document.getElementById('bouncie-auth-code');
+  const code   = codeEl ? codeEl.value.trim() : '';
+  if (!code) {
+    showToast('Please paste the authorization code first.', 'error');
+    return;
+  }
+  try {
+    showToast('Connecting to Bouncie…', 'info');
+    await apiPost('/api/bouncie-auth', {
+      secret:       adminSecret,
+      code,
+      redirect_uri: 'https://www.slytrans.com',
+    });
+    showToast('Bouncie connected! Sync will start within 5 minutes.', 'success');
+    loadSystemSettings();
+  } catch (err) {
+    showToast('Bouncie auth failed: ' + err.message, 'error');
+  }
 }
 
 // ── Site Content (Settings page) ─────────────────────────────────────────────
