@@ -107,8 +107,14 @@
     },
     "api/missed-maintenance.js": {
       "maxDuration": 20
+    },
+    "api/bouncie-oauth.js": {
+      "maxDuration": 15
     }
   },
+  "rewrites": [
+    { "source": "/api/_bouncie", "destination": "/api/bouncie-oauth" }
+  ],
   "crons": [
     {
       "path": "/api/scheduled-reminders",
