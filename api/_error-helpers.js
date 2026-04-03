@@ -6,16 +6,17 @@
 // raw API responses) are ever exposed.
 //
 // Error categories (in match priority order):
-//   1. GitHub auth failure (401/403)
-//   2. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
-//   3. GitHub rate-limit (429)
-//   4. Network / DNS errors
-//   5. Supabase: missing table / column (migration not applied — PostgreSQL 42P01/42703)
-//   6. Supabase: unique-constraint violation (PostgreSQL 23505)
-//   7. Supabase/PostgREST: single() returned 0 or >1 rows (PGRST116)
-//   8. Generic Supabase/PostgREST error (PGRST error code prefix)
-//   9. GitHub generic failure
-//  10. Fallback
+//   1. Bouncie API auth / token exchange failure
+//   2. GitHub auth failure (401/403) — requires "github" in the error message
+//   3. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
+//   4. GitHub rate-limit (429)
+//   5. Network / DNS errors
+//   6. Supabase: missing table / column (migration not applied — PostgreSQL 42P01/42703)
+//   7. Supabase: unique-constraint violation (PostgreSQL 23505)
+//   8. Supabase/PostgREST: single() returned 0 or >1 rows (PGRST116)
+//   9. Generic Supabase/PostgREST error (PGRST error code prefix)
+//  10. GitHub generic failure
+//  11. Fallback
 
 /**
  * Returns true when the error is a Supabase/PostgreSQL "table or column not
@@ -54,8 +55,19 @@ export function adminErrorMessage(err) {
   // Supabase JS client exposes the PostgreSQL / PostgREST error code on err.code
   const code = (err && err.code)    ? String(err.code)    : "";
 
+  // ── Bouncie API authentication / token exchange failure ───────────────────
+  // Must be checked before the generic 401/403 GitHub block because Bouncie
+  // errors also contain status codes like "(401)" but are unrelated to GitHub.
+  if (/bouncie/i.test(raw)) {
+    return "Bouncie authentication failed — please verify BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET, and that the authorization code and redirect_uri are correct.";
+  }
+
   // ── GitHub authentication / authorisation failure ──────────────────────────
-  if (/\b(401|403)\b/.test(raw) || /bad credentials|authentication|forbidden/i.test(raw)) {
+  // Require "github" context to avoid false-positives from other 401/403 sources.
+  if (
+    (/\b(401|403)\b/.test(raw) || /bad credentials|forbidden/i.test(raw)) &&
+    /github/i.test(raw)
+  ) {
     return "Authentication failed — please verify that GITHUB_TOKEN is configured correctly and has write access to the repository.";
   }
 
