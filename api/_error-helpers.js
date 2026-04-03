@@ -59,7 +59,7 @@ export function adminErrorMessage(err) {
   // Must be checked before the generic 401/403 GitHub block because Bouncie
   // errors also contain status codes like "(401)" but are unrelated to GitHub.
   if (/bouncie/i.test(raw)) {
-    return "Bouncie authentication failed — please verify BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET, and that the authorization code and redirect_uri are correct.";
+    return "Bouncie authentication failed — please verify BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET are configured correctly in Vercel, and that the authorization code and redirect_uri match your Bouncie OAuth application settings.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────
