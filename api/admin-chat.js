@@ -40,10 +40,14 @@ Capabilities:
 - Retrieve revenue, bookings, vehicle data
 - Detect business problems (slow periods, underperforming vehicles)
 - Score bookings for fraud risk
-- Add or update vehicles (requires confirmation)
-- Send SMS messages (requires confirmation)
+- Add or update vehicles (name, status, price, Bouncie IMEI) — requires confirmation
+- Send SMS messages to any phone number — requires confirmation
+- Send SMS messages directly to a booking's driver via send_message_to_driver — requires confirmation
 - Retrieve vehicle mileage, maintenance status, and usage trends via get_mileage (Bouncie GPS tracked cars only; slingshots are excluded)
-- Record completed maintenance services via mark_maintenance (requires confirmation)
+- Record completed maintenance services via mark_maintenance — requires confirmation
+- Flag suspicious bookings via flag_booking — requires confirmation
+- Update booking status via update_booking_status — requires confirmation
+- Record strategic vehicle decisions (review for sale, needs attention) via confirm_vehicle_action — requires confirmation
 
 Mileage & maintenance context:
 - Mileage tracking requires Bouncie GPS devices assigned to each car and the Bouncie integration configured in Vercel.
@@ -129,6 +133,16 @@ function formatConfirmedReply(toolName, args, result) {
       return `✅ Vehicle \`${safe(args.vehicleId)}\` updated successfully.`;
     case "send_sms":
       return `✅ SMS sent to ${safe(args.phone)}.`;
+    case "mark_maintenance":
+      return `✅ ${safe(result.message || "Maintenance recorded.")}`;
+    case "flag_booking":
+      return `✅ Booking \`${safe(args.bookingId)}\` flagged.`;
+    case "update_booking_status":
+      return `✅ Booking \`${safe(args.bookingId)}\` status updated to **${safe(args.status)}**.`;
+    case "confirm_vehicle_action":
+      return `✅ ${safe(result.message || `Action recorded for ${args.vehicleId}.`)}`;
+    case "send_message_to_driver":
+      return `✅ Message sent to driver of booking \`${safe(args.bookingId)}\` (${safe(result.to)}).`;
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }

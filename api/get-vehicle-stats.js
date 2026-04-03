@@ -87,6 +87,31 @@ export default async function handler(req, res) {
   }
 
   try {
+    const sb = getSupabaseAdmin();
+
+    // Fetch Supabase vehicle columns (bouncie_device_id, decision_status, action_status)
+    // needed for UI badges and tracking warning.  Non-fatal — falls back to empty map.
+    let sbVehicleCols = {};
+    if (sb) {
+      try {
+        const { data: sbRows, error: sbErr } = await sb
+          .from("vehicles")
+          .select("vehicle_id, bouncie_device_id, decision_status, action_status, data");
+        if (!sbErr && sbRows) {
+          for (const row of sbRows) {
+            sbVehicleCols[row.vehicle_id] = {
+              bouncie_device_id: row.bouncie_device_id || null,
+              decision_status:   row.decision_status   || null,
+              action_status:     row.action_status     || null,
+              type:              row.data?.type || row.data?.vehicle_type || null,
+            };
+          }
+        }
+      } catch {
+        // ignore — UI will render without badges if Supabase is unavailable
+      }
+    }
+
     const [{ data: vehicles }, expenses, { data: bookingsData }] = await Promise.all([
       loadVehicles(),
       loadExpensesAny(),
@@ -97,6 +122,21 @@ export default async function handler(req, res) {
 
     for (const vehicleId of Object.keys(vehicles)) {
       const vehicle = vehicles[vehicleId];
+
+      // Merge Supabase-only columns into the vehicle object for UI consumption
+      const sbCols = sbVehicleCols[vehicleId] || {};
+      if (sbCols.bouncie_device_id !== undefined) vehicle.bouncie_device_id = sbCols.bouncie_device_id;
+      if (sbCols.decision_status   !== undefined) vehicle.decision_status   = sbCols.decision_status;
+      if (sbCols.action_status     !== undefined) vehicle.action_status     = sbCols.action_status;
+      if (sbCols.type && !vehicle.type)           vehicle.type              = sbCols.type;
+
+      // Tracking warning for cars without a Bouncie device
+      const isCar = (vehicle.type || "") !== "slingshot";
+      if (isCar && !vehicle.bouncie_device_id) {
+        vehicle.tracking_warning = "⚠️ This vehicle is not tracked — no mileage or maintenance alerts";
+      } else {
+        delete vehicle.tracking_warning;
+      }
 
       // ── Bookings ───────────────────────────────────────────────────────────
       const vehicleBookings = (bookingsData[vehicleId] || []).filter(

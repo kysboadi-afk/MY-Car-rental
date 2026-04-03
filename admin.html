@@ -214,6 +214,25 @@
     .vc-status-badge.maintenance { background: #3a2e0a; color: #ffb400; }
     .vc-status-badge.inactive    { background: #2a1b1b; color: #ef4444; }
 
+    .vc-decision-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-left: 4px;
+    }
+    .vc-decision-badge.review_for_sale { background: #1a2a3a; color: #64b5f6; }
+    .vc-decision-badge.needs_attention { background: #3a2500; color: #ffb400; }
+
+    .vc-action-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-left: 4px;
+    }
+    .vc-action-badge.pending     { background: #2a2a0a; color: #e0e040; }
+    .vc-action-badge.in_progress { background: #0a2a3a; color: #40c0e0; }
+    .vc-action-badge.resolved    { background: #1b3a1b; color: #4caf50; }
+
+    .vc-tracking-warn {
+      font-size: 11px; color: #ffb400; margin-top: 6px;
+    }
+
     .vc-stat { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
     .vc-stat .lbl { color: #888; }
     .vc-stat .val { color: #fff; font-weight: 600; }
@@ -914,7 +933,10 @@
             + '<div class="vc-header">'
             + '<div class="vc-name">' + esc(v.vehicle_name) + '</div>'
             + '<span class="vc-status-badge ' + statusClass + '">' + esc(v.status || "active") + '</span>'
+            + (v.decision_status ? '<span class="vc-decision-badge ' + esc(v.decision_status) + '">' + esc(v.decision_status.replace(/_/g, ' ')) + '</span>' : '')
+            + (v.action_status   ? '<span class="vc-action-badge '   + esc(v.action_status)   + '">' + esc(v.action_status.replace(/_/g, ' '))   + '</span>' : '')
             + '</div>'
+            + (v.tracking_warning ? '<div class="vc-tracking-warn">' + esc(v.tracking_warning) + '</div>' : '')
             + '<div class="vc-stat"><span class="lbl">Bookings</span><span class="val">' + s.totalBookings + '</span></div>'
             + '<div class="vc-stat"><span class="lbl">Revenue</span><span class="val">' + fmt(s.totalRevenue) + '</span></div>'
             + '<div class="vc-stat"><span class="lbl">Expenses</span><span class="val">' + fmt(s.totalExpenses) + '</span></div>'
