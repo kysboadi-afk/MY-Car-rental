@@ -552,18 +552,39 @@ async function toolGetInsights() {
 async function toolGetMileage() {
   const sb = getSupabaseAdmin();
   if (!sb) {
-    return { error: "Supabase not configured — mileage data unavailable" };
+    return {
+      tracked_vehicles:   0,
+      stats:              [],
+      alerts:             [],
+      bouncie_configured: false,
+      note:               "Database not configured — mileage tracking requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to be set in Vercel.",
+    };
   }
 
-  const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
-    sb.from("vehicles")
-      .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
-      .not("bouncie_device_id", "is", null),
-    sb.from("trip_log")
-      .select("vehicle_id, trip_distance, trip_at")
-      .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
-      .catch(() => ({ data: [] })),
-  ]);
+  let vehicleRows = null;
+  let tripRows    = [];
+  try {
+    const [vehicleResult, tripResult] = await Promise.all([
+      sb.from("vehicles")
+        .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+        .not("bouncie_device_id", "is", null),
+      sb.from("trip_log")
+        .select("vehicle_id, trip_distance, trip_at")
+        .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+        .catch(() => ({ data: [] })),
+    ]);
+    vehicleRows = vehicleResult.data;
+    tripRows    = tripResult.data || [];
+  } catch (err) {
+    console.error("toolGetMileage: DB error:", err.message);
+    return {
+      tracked_vehicles:   0,
+      stats:              [],
+      alerts:             [],
+      bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
+      error:              adminErrorMessage(err),
+    };
+  }
 
   const mileageData = (vehicleRows || [])
     .filter((r) => {
@@ -582,14 +603,14 @@ async function toolGetMileage() {
       last_synced_at:           r.last_synced_at,
     }));
 
-  const { alerts, stats } = analyzeMileage(mileageData, (tripRows || []).map((r) => ({
+  const { alerts, stats } = analyzeMileage(mileageData, tripRows.map((r) => ({
     vehicle_id:    r.vehicle_id,
     trip_distance: r.trip_distance,
     trip_at:       r.trip_at,
   })));
 
   return {
-    tracked_vehicles: mileageData.length,
+    tracked_vehicles:   mileageData.length,
     stats,
     alerts,
     bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
