@@ -58,15 +58,14 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  // Silently skip when Supabase is not configured AND there is no fallback token.
-  // When Supabase IS available, tokens are loaded from app_config (auto-refreshed).
-  // When Supabase is unavailable but BOUNCIE_ACCESS_TOKEN is set, use that as fallback.
+  // Silently skip when Supabase is not configured — we need the DB to map IMEIs to vehicles.
+  // BOUNCIE_ACCESS_TOKEN must also be set for the Bouncie API call to succeed.
   const sb = getSupabaseAdmin();
-  if (!sb && !process.env.BOUNCIE_ACCESS_TOKEN) {
-    return res.status(200).json({ skipped: true, reason: "Bouncie not configured (no Supabase and no BOUNCIE_ACCESS_TOKEN)" });
-  }
   if (!sb) {
     return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
+  }
+  if (!process.env.BOUNCIE_ACCESS_TOKEN) {
+    return res.status(200).json({ skipped: true, reason: "BOUNCIE_ACCESS_TOKEN is not set" });
   }
 
   const startedAt = Date.now();
@@ -77,7 +76,7 @@ export default async function handler(req, res) {
     // ── 1. Load our tracked vehicles and Bouncie vehicles in parallel ────────
     const [trackedVehicles, bouncieVehicles] = await Promise.all([
       loadTrackedVehicles(sb),
-      fetchWithRetry(() => getBouncieVehicles(sb)),
+      fetchWithRetry(() => getBouncieVehicles()),
     ]);
 
     // Build a map: IMEI → tracked vehicle row
