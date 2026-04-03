@@ -25,7 +25,7 @@ import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
 
-const SYSTEM_PROMPT = `You are the SLY Rides AI Business Assistant — an intelligent operations manager for a Los Angeles car rental company.
+const SYSTEM_PROMPT_BASE = `You are the SLY Rides AI Business Assistant — an intelligent operations manager for a Los Angeles car rental company.
 
 You have access to real-time business data through tools. Use them to answer admin questions accurately. Never fabricate data — always use tools to fetch real information.
 
@@ -177,6 +177,11 @@ When asked to take a destructive action (add vehicle, change pricing, send SMS),
 When the admin confirms an action, immediately retry the SAME tool call with confirmed: true added to the arguments. Do NOT ask for confirmation again.
 Never fabricate data — always use tools to fetch real information.`;
 
+function buildSystemPrompt() {
+  const now = new Date().toISOString();
+  return `Current date/time: ${now}\n\n${SYSTEM_PROMPT_BASE}`;
+}
+
 // ── Confirmation-replay helpers ───────────────────────────────────────────────
 
 /**
@@ -324,8 +329,9 @@ export default async function handler(req, res) {
   const model  = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
   // Build message list (system + history)
+  // System prompt is built dynamically to include the real-time current date/time.
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: buildSystemPrompt() },
     ...clientMessages,
   ];
 
