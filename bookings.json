@@ -137,7 +137,11 @@
       "paymentMethod": "cash",
       "status": "active_rental",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "maint_oil_urgent": "2026-04-03T16:30:47.451Z",
+        "maint_brakes_urgent": "2026-04-03T16:30:47.451Z",
+        "maint_tires_urgent": "2026-04-03T16:30:47.451Z"
+      },
       "createdAt": "2026-04-02T17:59:36.566Z",
       "source": "admin_v2",
       "updatedAt": "2026-04-02T17:59:53.659Z",
