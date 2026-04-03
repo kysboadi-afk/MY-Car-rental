@@ -1,6 +1,12 @@
 {
   "functions": {
-    "api/upload-vehicle-image.js": {
+    "api/admin-ai-insights.js": {
+      "maxDuration": 20
+    },
+    "api/admin-chat.js": {
+      "maxDuration": 30
+    },
+    "api/admin-ai-auto.js": {
       "maxDuration": 30
     },
     "api/admin-site-settings.js": {
@@ -86,6 +92,10 @@
     {
       "path": "/api/scheduled-reminders",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/admin-ai-auto",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
