@@ -2296,8 +2296,19 @@ function loadVehicles() {
     apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' }),
     apiPost('/api/v2-dashboard', { secret: adminSecret }),
   ]).then(([vData, dash]) => {
-    allVehicles = vData.vehicles;
-    renderVehicles(vData.vehicles, dash.vehicleStats || {});
+    const freshVehicles = vData.vehicles || {};
+    // Preserve bouncie_device_id from the in-memory cache when the fresh API
+    // response lost it.  This happens when the list action falls back to
+    // vehicles.json (GitHub fallback) which may not yet carry a just-saved IMEI
+    // (e.g. the Supabase schema is missing the bouncie_device_id column, or the
+    // GitHub commit hasn't propagated yet).
+    for (const [id, cached] of Object.entries(allVehicles)) {
+      if (cached.bouncie_device_id && freshVehicles[id] && !freshVehicles[id].bouncie_device_id) {
+        freshVehicles[id] = { ...freshVehicles[id], bouncie_device_id: cached.bouncie_device_id, tracked: true };
+      }
+    }
+    allVehicles = freshVehicles;
+    renderVehicles(allVehicles, dash.vehicleStats || {});
   }).catch((err) => {
     document.getElementById('vehicles-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
   });
