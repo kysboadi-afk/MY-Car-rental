@@ -117,7 +117,7 @@ async function fetchAllData() {
     try {
       const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
         sb.from("vehicles")
-          .select("vehicle_id, mileage, last_synced_at, data")
+          .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
           .not("bouncie_device_id", "is", null),
         sb.from("trip_log")
           .select("vehicle_id, trip_distance, trip_at")
@@ -132,7 +132,10 @@ async function fetchAllData() {
           vehicle_id:           r.vehicle_id,
           vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
           total_mileage:        Number(r.mileage) || 0,
-          last_service_mileage: Number(r.data?.last_service_mileage) || 0,
+          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
           last_synced_at:       r.last_synced_at,
         }));
       recentTrips = (tripRows || []).map((r) => ({
