@@ -1462,6 +1462,104 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
 
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
+
+const IMEI_RE = /^\d{15}$/;
+const BOUNCIE_SYNC_STALE_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+async function toolRegisterBouncieDevice({ vehicleId, imei }) {
+  // ── Input validation ────────────────────────────────────────────────────
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!imei)      throw new Error("imei is required — provide the 15-digit Bouncie device IMEI");
+
+  const cleanImei = String(imei).replace(/[\s-]/g, "");
+  if (!IMEI_RE.test(cleanImei)) {
+    throw new Error(`Invalid IMEI "${imei}" — must be exactly 15 digits (e.g. 123456789012345)`);
+  }
+
+  // ── Vehicle existence check ─────────────────────────────────────────────
+  const vehicles = await loadAllVehicles();
+  if (!vehicles[vehicleId]) {
+    throw new Error(`Vehicle "${vehicleId}" not found. Valid IDs: ${Object.keys(vehicles).join(", ")}`);
+  }
+
+  // ── Duplicate IMEI check (across all vehicles) ──────────────────────────
+  for (const [vid, v] of Object.entries(vehicles)) {
+    if (vid !== vehicleId && v.bouncie_device_id === cleanImei) {
+      throw new Error(
+        `IMEI ${cleanImei} is already assigned to vehicle "${v.vehicle_name || vid}". ` +
+        `Each device can only be linked to one vehicle.`
+      );
+    }
+  }
+
+  // ── Write: Supabase + vehicles.json ─────────────────────────────────────
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const updatedData = { ...vehicles[vehicleId], bouncie_device_id: cleanImei };
+    const { error } = await sb
+      .from("vehicles")
+      .update({ bouncie_device_id: cleanImei, data: updatedData })
+      .eq("vehicle_id", vehicleId);
+    if (error && !error.message?.includes("relation")) {
+      throw new Error(`Supabase update failed: ${error.message}`);
+    }
+  }
+
+  const { data: jsonVehicles } = await loadVehicles();
+  if (jsonVehicles[vehicleId]) {
+    jsonVehicles[vehicleId] = { ...jsonVehicles[vehicleId], bouncie_device_id: cleanImei };
+    await saveVehicles(jsonVehicles);
+  }
+
+  // ── Post-assignment verification ─────────────────────────────────────────
+  // Read back the row so we can confirm bouncie_device_id was persisted
+  // and report the current sync state.
+  let confirmedImei = null;
+  let lastSyncedAt  = null;
+
+  if (sb) {
+    try {
+      const { data: row } = await sb
+        .from("vehicles")
+        .select("bouncie_device_id, last_synced_at")
+        .eq("vehicle_id", vehicleId)
+        .maybeSingle();
+      if (row) {
+        confirmedImei = row.bouncie_device_id || null;
+        lastSyncedAt  = row.last_synced_at    || null;
+      }
+    } catch {
+      // non-fatal — we still report success from the write
+    }
+  }
+
+  const vehicleName   = vehicles[vehicleId]?.vehicle_name || vehicleId;
+  const syncPending   = !lastSyncedAt;
+  const syncAgeMs     = lastSyncedAt ? Date.now() - new Date(lastSyncedAt).getTime() : null;
+  const syncRecent    = syncAgeMs !== null && syncAgeMs <= BOUNCIE_SYNC_STALE_MS;
+
+  return {
+    success:           true,
+    vehicleId,
+    vehicle_name:      vehicleName,
+    bouncie_device_id: confirmedImei || cleanImei,
+    tracking_active:   !!confirmedImei,
+    last_synced_at:    lastSyncedAt,
+    sync_status:       syncPending
+      ? "awaiting_first_sync"
+      : syncRecent
+        ? "active"
+        : "stale",
+    message:
+      `Bouncie device ${cleanImei} assigned to ${vehicleName}. ` +
+      (syncPending
+        ? "Waiting for first GPS sync — this usually takes a few minutes once the device is powered on."
+        : syncRecent
+          ? `Tracking is active (last sync: ${lastSyncedAt}).`
+          : `Device was last seen at ${lastSyncedAt} — check that the device is powered on.`),
+  };
+}
+
 const DESTRUCTIVE_TOOLS = new Set([
   "create_vehicle",
   "add_vehicle",
@@ -1473,6 +1571,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "confirm_vehicle_action",
   "update_action_status",
   "send_message_to_driver",
+  "register_bouncie_device",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -1525,6 +1624,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_system_settings":      result = await toolGetSystemSettings(args);       break;
       case "get_sms_templates":        result = await toolGetSmsTemplates();             break;
       case "get_blocked_dates":        result = await toolGetBlockedDates(args);         break;
+      case "register_bouncie_device":  result = await toolRegisterBouncieDevice(args);  break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

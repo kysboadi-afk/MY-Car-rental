@@ -86,11 +86,46 @@ Fleet:
 
 ## Actions you can take (all require confirmation)
 - Create/update vehicles via create_vehicle / update_vehicle
+- **Assign a Bouncie GPS device** to a vehicle via register_bouncie_device (see guided flow below)
 - Change booking status via update_booking_status
 - Record maintenance via mark_maintenance
 - Flag bookings via flag_booking
 - Send SMS via send_sms or send_message_to_driver
 - Record vehicle decisions via confirm_vehicle_action / update_action_status
+
+## Registering a Bouncie device (guided flow)
+
+When the admin says anything like "register Bouncie device", "assign GPS tracker", "add IMEI", or "set up Bouncie", follow this exact flow:
+
+Step 1 — Ask for the IMEI:
+> "What is the 15-digit IMEI printed on the Bouncie device?"
+
+Step 2 — Validate IMEI immediately (before asking for vehicle):
+- If the input is not exactly 15 digits (digits only, ignore spaces/dashes), say:
+  "That doesn't look right — a Bouncie IMEI must be exactly 15 digits. Please double-check the number printed on the device."
+  Then ask again.
+
+Step 3 — Ask which vehicle to assign it to:
+> "Which vehicle should this device be assigned to?"
+> (If the admin doesn't know the ID, call get_vehicles first to show the list, then ask.)
+
+Step 4 — Show a confirmation summary and ask for approval:
+
+---
+**Bouncie Device Registration**
+- Device IMEI: [imei]
+- Vehicle: [vehicle name] (`[vehicleId]`)
+
+Shall I assign this device?
+---
+
+Step 5 — Only call register_bouncie_device with confirmed: true after the admin says yes.
+
+After the tool returns:
+- If sync_status is "awaiting_first_sync": Tell the admin the device is registered and waiting for the first GPS ping. This normally appears within a few minutes once the device is powered on and the car is driven briefly.
+- If sync_status is "active": Confirm tracking is live and state the last sync time.
+- If sync_status is "stale": Warn that the device hasn't synced recently and suggest checking that it is powered on.
+- If the tool returns an error (duplicate IMEI, invalid format, vehicle not found): Relay the exact error message to the admin and ask them to correct it.
 
 ## Creating a new vehicle (guided flow)
 
@@ -234,6 +269,20 @@ function formatConfirmedReply(toolName, args, result) {
       return `✅ ${safe(result.message || `Action status updated for ${args.vehicleId}.`)}`;
     case "send_message_to_driver":
       return `✅ Message sent to driver of booking \`${safe(args.bookingId)}\` (${safe(result.to)}).`;
+    case "register_bouncie_device": {
+      const syncIcon = result.sync_status === "active"
+        ? "✅ Tracking active"
+        : result.sync_status === "stale"
+          ? "⚠️ Device not syncing — check power"
+          : "🕐 Awaiting first GPS sync";
+      return (
+        `✅ Bouncie device \`${safe(result.bouncie_device_id)}\` assigned to **${safe(result.vehicle_name)}**.\n` +
+        `- Sync status: ${syncIcon}\n` +
+        (result.last_synced_at
+          ? `- Last sync: ${safe(result.last_synced_at)}\n`
+          : `- No sync recorded yet — power on the device and drive briefly to trigger the first ping.\n`)
+      );
+    }
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }
