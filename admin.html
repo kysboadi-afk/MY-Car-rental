@@ -339,6 +339,27 @@
     .booking-row:last-child { border-bottom: none; }
     .booking-row .bk-dates { color: #888; font-size: 11px; }
     .booking-row .bk-amt   { color: #4caf50; font-weight: 600; }
+
+    /* ── Complete Booking (Mileage Tracking) ─────────────────────────── */
+    .mileage-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .mileage-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .mileage-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .mileage-booking-row { background: #111; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+    .mbr-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .mbr-dates { color: #888; font-size: 13px; }
+    .mbr-name  { color: #ccc; font-size: 13px; }
+    .mbr-status { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #1b2a3a; color: #64b5f6; }
+    .mbr-mileage { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .mbr-mileage input[type="number"] { background: #1a1a1a; border: 1px solid #333; color: #eee; border-radius: 6px; padding: 7px 10px; font-size: 13px; width: 140px; }
+    .mbr-mileage input[type="number"]:focus { outline: none; border-color: #ffb400; }
+    .mbr-mileage .btn-complete { padding: 8px 14px; font-size: 13px; }
+    .mbr-msg { font-size: 13px; margin-top: 8px; min-height: 18px; }
+    .mbr-msg.success { color: #4caf50; }
+    .mbr-msg.error   { color: #f44336; }
+    #mileageStatusMsg { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+    #mileageStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #mileageStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #mileageStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -539,6 +560,16 @@
 
       <button class="btn-block" id="mbSubmitBtn" style="margin-top:16px">💾 Save Manual Booking</button>
       <div id="mbStatusMsg"></div>
+    </div>
+
+    <!-- ── Complete Booking (Mileage Tracking) ──────────────────────── -->
+    <div class="mileage-section">
+      <h2>🏁 Complete Booking (Mileage Tracking)</h2>
+      <p class="subtitle">Load active bookings, enter start and end odometer readings, then click Complete Booking to record miles driven and update the vehicle odometer.</p>
+
+      <button class="btn-block" id="loadMileageBookingsBtn" style="max-width:220px;margin-bottom:16px">📋 Load Active Bookings</button>
+      <div id="mileageBookingsList"><span class="no-bookings">Click "Load Active Bookings" to begin.</span></div>
+      <div id="mileageStatusMsg"></div>
     </div>
 
     <!-- ── Vehicle Tracking & Profit Dashboard ──────────────────────── -->
@@ -1313,6 +1344,143 @@
           })
           .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); })
           .finally(function () { btn.disabled = false; });
+      });
+    })();
+  </script>
+
+  <!-- ── Complete Booking (Mileage Tracking) Script ────────────────────────── -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showMileageStatusMsg(msg, type) {
+        var el = document.getElementById("mileageStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        setTimeout(function () { el.style.display = "none"; }, 6000);
+      }
+
+      function esc(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      var ACTIVE_STATUSES = ["booked_paid", "active_rental", "reserved_unpaid"];
+
+      // ── Load bookings ────────────────────────────────────────────────────────
+      document.getElementById("loadMileageBookingsBtn").addEventListener("click", function () {
+        var secret = getSecret();
+        if (!secret) { showMileageStatusMsg("Please enter the admin password first.", "error"); return; }
+
+        var btn  = this;
+        var list = document.getElementById("mileageBookingsList");
+        btn.disabled = true;
+        list.innerHTML = '<span class="no-bookings">Loading bookings\u2026</span>';
+
+        fetch(API_BASE + "/api/v2-bookings", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ secret: secret, action: "list" }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              list.innerHTML = '<span class="no-bookings">Error: ' + esc(result.data.error || "Unknown error") + '</span>';
+              return;
+            }
+            var bookings = (result.data.bookings || []).filter(function (b) {
+              return ACTIVE_STATUSES.indexOf(b.status) !== -1;
+            });
+            if (!bookings.length) {
+              list.innerHTML = '<span class="no-bookings">No active bookings found.</span>';
+              return;
+            }
+            list.innerHTML = bookings.map(function (b) {
+              return '<div class="mileage-booking-row">'
+                + '<div class="mbr-info">'
+                + '<span class="vehicle-badge">' + esc(b.vehicleName || b.vehicleId) + '</span>'
+                + '<span class="mbr-dates">' + esc(b.pickupDate || "") + ' \u2192 ' + esc(b.returnDate || "") + '</span>'
+                + (b.name ? '<span class="mbr-name">' + esc(b.name) + '</span>' : '')
+                + '<span class="mbr-status">' + esc(b.status || "") + '</span>'
+                + '</div>'
+                + '<div class="mbr-mileage">'
+                + '<input type="number" class="mbr-start" placeholder="Start mileage" min="0" step="1"'
+                + ' data-booking-id="' + esc(b.bookingId || "") + '" data-vehicle-id="' + esc(b.vehicleId || "") + '">'
+                + '<input type="number" class="mbr-end" placeholder="End mileage" min="0" step="1">'
+                + '<button class="btn-block btn-complete" style="padding:8px 14px;font-size:13px"'
+                + ' data-booking-id="' + esc(b.bookingId || "") + '" data-vehicle-id="' + esc(b.vehicleId || "") + '">'
+                + '\uD83C\uDFC1 Complete Booking</button>'
+                + '</div>'
+                + '<div class="mbr-msg"></div>'
+                + '</div>';
+            }).join("");
+          })
+          .catch(function (err) {
+            list.innerHTML = '<span class="no-bookings">Network error: ' + esc(err.message) + '</span>';
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      // ── Handle Complete Booking button clicks (event delegation) ──────────────
+      document.getElementById("mileageBookingsList").addEventListener("click", function (e) {
+        var btn = e.target.closest("button.btn-complete");
+        if (!btn) return;
+
+        var secret = getSecret();
+        if (!secret) { showMileageStatusMsg("Please enter the admin password first.", "error"); return; }
+
+        var bookingId = btn.dataset.bookingId;
+        var vehicleId = btn.dataset.vehicleId;
+        var row       = btn.closest(".mileage-booking-row");
+        var startInput = row.querySelector(".mbr-start");
+        var endInput   = row.querySelector(".mbr-end");
+        var msgEl      = row.querySelector(".mbr-msg");
+
+        function showRowMsg(msg, type) {
+          msgEl.textContent = msg;
+          msgEl.className = "mbr-msg " + type;
+        }
+
+        var startMileage = parseInt(startInput.value, 10);
+        var endMileage   = parseInt(endInput.value, 10);
+
+        if (isNaN(startMileage)) { showRowMsg("Please enter the start mileage.", "error"); return; }
+        if (isNaN(endMileage))   { showRowMsg("Please enter the end mileage.", "error"); return; }
+        if (endMileage < startMileage) { showRowMsg("End mileage must be \u2265 start mileage.", "error"); return; }
+
+        btn.disabled = true;
+        showRowMsg("Saving\u2026", "");
+
+        fetch(API_BASE + "/api/complete-booking-mileage", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            secret:       secret,
+            bookingId:    bookingId,
+            vehicleId:    vehicleId,
+            startMileage: startMileage,
+            endMileage:   endMileage,
+          }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showRowMsg("Error: " + (result.data.error || "Unknown error"), "error");
+              btn.disabled = false;
+            } else {
+              var dist = result.data.distance;
+              showRowMsg("\u2705 Saved. Miles driven: " + dist, "success");
+              // Keep button disabled to prevent duplicate submissions
+            }
+          })
+          .catch(function (err) {
+            showRowMsg("Network error: " + err.message, "error");
+            btn.disabled = false;
+          });
       });
     })();
   </script>
