@@ -210,8 +210,28 @@ test("list: returns object keyed by vehicle_id", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body.vehicles, {
-    slingshot: { vehicle_id: "slingshot",  status: "active" },
-    camry:     { vehicle_id: "camry",      status: "maintenance" },
+    slingshot: {
+      vehicle_id:               "slingshot",
+      status:                   "active",
+      bouncie_device_id:        null,
+      total_mileage:            0,
+      last_synced_at:           null,
+      last_oil_change_mileage:  null,
+      last_brake_check_mileage: null,
+      last_tire_change_mileage: null,
+      tracked:                  false,
+    },
+    camry: {
+      vehicle_id:               "camry",
+      status:                   "maintenance",
+      bouncie_device_id:        null,
+      total_mileage:            0,
+      last_synced_at:           null,
+      last_oil_change_mileage:  null,
+      last_brake_check_mileage: null,
+      last_tire_change_mileage: null,
+      tracked:                  false,
+    },
   });
   setSecret(REAL_ADMIN_SECRET);
 });

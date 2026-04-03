@@ -656,6 +656,12 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 
+  // Log to maintenance_history (non-fatal)
+  sb.from("maintenance_history")
+    .insert({ vehicle_id: vehicleId, service_type: serviceType, mileage: serviceMileage })
+    .then(() => {})
+    .catch((err) => console.warn(`_admin-actions: maintenance_history insert failed:`, err.message));
+
   const labels = { oil: "Oil change", brakes: "Brake inspection", tires: "Tire change" };
   return {
     success:         true,
