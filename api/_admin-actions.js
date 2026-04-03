@@ -379,12 +379,33 @@ async function toolGetVehicles() {
 }
 
 async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
-  if (!vehicleId || !vehicleName) throw new Error("vehicleId and vehicleName are required");
-  if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
+  if (!vehicleName) throw new Error("vehicleName is required");
+
+  const vehicles = await loadAllVehicles();
+
+  if (!vehicleId) {
+    // Auto-generate a slug from the vehicle name (max 45 chars to leave room for suffix)
+    const base = vehicleName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 45) || "vehicle";
+    if (!vehicles[base]) {
+      vehicleId = base;
+    } else {
+      // Append a guaranteed 4-char alphanumeric suffix to avoid collision
+      const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+      let candidate;
+      do {
+        const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+        candidate = `${base}-${suffix}`;
+      } while (vehicles[candidate]);
+      vehicleId = candidate;
+    }
+  } else if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
     throw new Error("vehicleId must be lowercase letters, digits, hyphens, or underscores (2–50 chars)");
   }
 
-  const vehicles = await loadAllVehicles();
   if (vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" already exists`);
 
   const vehicleObj = {
