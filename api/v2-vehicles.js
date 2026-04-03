@@ -23,11 +23,13 @@ const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
 const ALLOWED_TYPES         = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
-// ISO 8601 date strings are at most 10 chars (YYYY-MM-DD); allow 20 to be safe.
 const MAX_PURCHASE_DATE_LEN = 20;
 
 // vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores.
 const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
+
+// Bouncie IMEI: 15-digit numeric string, or empty string (to clear the mapping)
+const BOUNCIE_IMEI_RE = /^\d{15}$/;
 
 // Normalize cover_image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
@@ -58,22 +60,28 @@ export default async function handler(req, res) {
       try {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data, rental_status");
+          .select("vehicle_id, data, rental_status, bouncie_device_id, mileage, last_synced_at");
         if (!error) {
           const vehicles = (rows || []).map((row) => {
-            const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}), rental_status: row.rental_status || null };
+            const obj = {
+              vehicle_id: row.vehicle_id,
+              ...(row.data || {}),
+              rental_status:     row.rental_status     || null,
+              bouncie_device_id: row.bouncie_device_id || null,
+              total_mileage:     Number(row.mileage)   || 0,
+              last_synced_at:    row.last_synced_at     || null,
+            };
             if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
             return obj;
           });
           return res.status(200).json(vehicles);
         }
-        // Schema error → fall through to GitHub fallback; any other Supabase error → log + fall through
         console.warn("v2-vehicles GET: Supabase error, falling back to GitHub:", error.message);
       } catch (err) {
         console.warn("v2-vehicles GET: Supabase threw, falling back to GitHub:", err.message);
       }
     }
-    // GitHub fallback — works even when Supabase is not configured
+    // GitHub fallback
     try {
       const { data: vehicles } = await loadVehicles();
       const result = Object.values(vehicles).map((v) => {
@@ -112,12 +120,17 @@ export default async function handler(req, res) {
       if (supabase) {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data");
+          .select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at");
 
         if (!error) {
           const vehicles = {};
           for (const row of rows || []) {
-            vehicles[row.vehicle_id] = row.data;
+            vehicles[row.vehicle_id] = {
+              ...(row.data || {}),
+              bouncie_device_id: row.bouncie_device_id || null,
+              total_mileage:     Number(row.mileage)   || 0,
+              last_synced_at:    row.last_synced_at     || null,
+            };
           }
           return res.status(200).json({ vehicles });
         }
@@ -145,6 +158,7 @@ export default async function handler(req, res) {
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
         "vehicle_name", "vehicle_year", "type", "cover_image",
+        "bouncie_device_id",
       ];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
@@ -162,8 +176,14 @@ export default async function handler(req, res) {
             }
             safeUpdates[f] = Math.round(n * 100) / 100;
           } else if (f === "cover_image") {
-            // Allow URLs, root-relative paths, or empty string
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : "";
+          } else if (f === "bouncie_device_id") {
+            // Accept 15-digit IMEI or empty string (to remove mapping)
+            const trimmed = typeof val === "string" ? val.trim() : "";
+            if (trimmed !== "" && !BOUNCIE_IMEI_RE.test(trimmed)) {
+              return res.status(400).json({ error: "bouncie_device_id must be a 15-digit IMEI or empty" });
+            }
+            safeUpdates[f] = trimmed || null;
           } else {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 200) : val;
           }
@@ -179,14 +199,25 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (!fetchErr && existing) {
-          // Merge safe updates into existing data and upsert atomically
-          const updatedData = { ...existing.data, ...safeUpdates };
+          // Separate column-level fields from JSONB fields
+          const { bouncie_device_id: newImei, ...jsonbUpdates } = safeUpdates;
+          const updatedData = { ...existing.data, ...jsonbUpdates };
+
+          // Build the upsert payload — include bouncie_device_id column if provided
+          const upsertPayload = {
+            vehicle_id:  vehicleId,
+            data:        updatedData,
+            updated_at:  new Date().toISOString(),
+          };
+          if (Object.prototype.hasOwnProperty.call(safeUpdates, "bouncie_device_id")) {
+            upsertPayload.bouncie_device_id = newImei;
+            // Mirror into JSONB too for the fallback path
+            updatedData.bouncie_device_id = newImei;
+          }
+
           const { data: upserted, error: upsertErr } = await supabase
             .from("vehicles")
-            .upsert(
-              { vehicle_id: vehicleId, data: updatedData, updated_at: new Date().toISOString() },
-              { onConflict: "vehicle_id" }
-            )
+            .upsert(upsertPayload, { onConflict: "vehicle_id" })
             .select("data")
             .single();
 
@@ -226,7 +257,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, bouncieDeviceId } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -261,6 +292,16 @@ export default async function handler(req, res) {
         }
       }
 
+      // Validate bouncieDeviceId if provided (slingshots should not have one)
+      let safeBouncieId = null;
+      if (bouncieDeviceId !== undefined && bouncieDeviceId !== null && bouncieDeviceId !== "") {
+        const trimmed = String(bouncieDeviceId).trim();
+        if (!BOUNCIE_IMEI_RE.test(trimmed)) {
+          return res.status(400).json({ error: "bouncieDeviceId must be a 15-digit IMEI" });
+        }
+        safeBouncieId = trimmed;
+      }
+
       // Build the new vehicle data object
       const newData = {
         vehicle_id:     vehicleId,
@@ -271,6 +312,7 @@ export default async function handler(req, res) {
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
         cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
+        ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
       };
 
       if (supabase) {
@@ -288,7 +330,12 @@ export default async function handler(req, res) {
 
           const { data: inserted, error: insertErr } = await supabase
             .from("vehicles")
-            .insert({ vehicle_id: vehicleId, data: newData, updated_at: new Date().toISOString() })
+            .insert({
+              vehicle_id:        vehicleId,
+              data:              newData,
+              updated_at:        new Date().toISOString(),
+              ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
+            })
             .select("data")
             .single();
 

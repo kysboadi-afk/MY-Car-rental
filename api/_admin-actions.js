@@ -19,6 +19,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
+import { analyzeMileage } from "../lib/ai/mileage.js";
 import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
@@ -505,6 +506,50 @@ async function toolGetInsights() {
   return { insights, problems };
 }
 
+async function toolGetMileage() {
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return { error: "Supabase not configured — mileage data unavailable" };
+  }
+
+  const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+    sb.from("vehicles")
+      .select("vehicle_id, vehicle_name, vehicle_type, mileage, last_synced_at, bouncie_device_id, data")
+      .not("bouncie_device_id", "is", null),
+    sb.from("trip_log")
+      .select("vehicle_id, trip_distance, trip_at")
+      .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+      .catch(() => ({ data: [] })),
+  ]);
+
+  const mileageData = (vehicleRows || [])
+    .filter((r) => {
+      const type = r.vehicle_type || r.data?.type || "";
+      return type !== "slingshot";
+    })
+    .map((r) => ({
+      vehicle_id:           r.vehicle_id,
+      vehicle_name:         r.vehicle_name || r.data?.vehicle_name || r.vehicle_id,
+      total_mileage:        Number(r.mileage) || 0,
+      last_service_mileage: Number(r.data?.last_service_mileage) || 0,
+      bouncie_device_id:    r.bouncie_device_id,
+      last_synced_at:       r.last_synced_at,
+    }));
+
+  const { alerts, stats } = analyzeMileage(mileageData, (tripRows || []).map((r) => ({
+    vehicle_id:    r.vehicle_id,
+    trip_distance: r.trip_distance,
+    trip_at:       r.trip_at,
+  })));
+
+  return {
+    tracked_vehicles: mileageData.length,
+    stats,
+    alerts,
+    bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
+  };
+}
+
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {
   const allBookings = await loadAllBookings();
   let scored = scoreAllBookings(allBookings);
@@ -564,6 +609,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "send_sms":          result = await toolSendSms(args);          break;
       case "get_insights":      result = await toolGetInsights();           break;
       case "get_fraud_report":  result = await toolGetFraudReport(args);  break;
+      case "get_mileage":       result = await toolGetMileage();            break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
