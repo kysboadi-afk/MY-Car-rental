@@ -292,6 +292,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
+  try {
+
   if (!process.env.ADMIN_SECRET) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
@@ -423,4 +425,12 @@ export default async function handler(req, res) {
     tool_calls: toolCallsMade,
     messages:   messages.slice(1),
   });
+
+  } catch (err) {
+    console.error("ADMIN CHAT CRASH:", err);
+    return res.status(200).json({
+      message: "⚠ Something went wrong, but the system is still running.",
+      error: err.message,
+    });
+  }
 }
