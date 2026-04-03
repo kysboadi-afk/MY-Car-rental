@@ -72,7 +72,9 @@ function successPage(serviceLabel, vehicleId, serviceMileage, autoResolved) {
     "✅ Service recorded successfully",
     `<p><strong>${esc(serviceLabel)}</strong> has been logged for vehicle <strong>${esc(vehicleId)}</strong>
        at <strong>${Number(serviceMileage).toLocaleString()} mi</strong>.</p>
-     ${autoResolved ? `<p>✅ All maintenance is now up to date — action status has been resolved.</p>` : ""}
+     ${autoResolved
+       ? `<p>✅ All maintenance is now up to date — action status has been resolved.</p>`
+       : ""}
      <p>No further action is needed.</p>`
   );
 }
