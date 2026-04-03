@@ -19,6 +19,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
+import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
 const DB_TO_APP_STATUS = {
@@ -393,13 +394,13 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
     if (!vehicles[base]) {
       vehicleId = base;
     } else {
-      // Append a guaranteed 4-char alphanumeric suffix to avoid collision
+      // Append a guaranteed 4-char hex suffix using a cryptographically secure source
       const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
       let candidate;
       let attempts = 0;
       do {
         if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${vehicleName}"`);
-        const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+        const suffix = randomBytes(3).toString("hex").slice(0, 4); // always 4 lowercase hex chars
         candidate = `${base}-${suffix}`;
       } while (vehicles[candidate]);
       vehicleId = candidate;

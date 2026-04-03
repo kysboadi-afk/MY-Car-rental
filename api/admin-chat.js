@@ -48,6 +48,82 @@ When asked to take a destructive action (add vehicle, change pricing, send SMS),
 When the admin confirms an action, immediately retry the SAME tool call with confirmed: true added to the arguments. Do NOT ask for confirmation again.
 Never fabricate data — always use tools to fetch real information.`;
 
+// ── Confirmation-replay helpers ───────────────────────────────────────────────
+
+/**
+ * Scan a message list for the most recent unresolved requires_confirmation
+ * tool result, then find the corresponding tool call's name and arguments.
+ *
+ * "Unresolved" means no successful tool result appeared after it.
+ *
+ * @param {object[]} messages
+ * @returns {{ toolName: string, args: object } | null}
+ */
+function findPendingConfirmation(messages) {
+  let pendingCallId = null;
+
+  for (const m of messages) {
+    if (m.role !== "tool") continue;
+    let parsed;
+    try { parsed = JSON.parse(m.content || "{}"); } catch { continue; }
+
+    if (parsed.requires_confirmation) {
+      // New unresolved confirmation found
+      pendingCallId = m.tool_call_id;
+    } else {
+      // A successful tool result clears any earlier pending confirmation
+      pendingCallId = null;
+    }
+  }
+
+  if (!pendingCallId) return null;
+
+  // Locate the assistant message that issued that tool call
+  for (const m of messages) {
+    if (m.role !== "assistant" || !Array.isArray(m.tool_calls)) continue;
+    for (const tc of m.tool_calls) {
+      if (tc.id !== pendingCallId) continue;
+      let args = {};
+      try { args = JSON.parse(tc.function.arguments || "{}"); } catch {}
+      return { toolName: tc.function.name, args };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Returns true when the admin text looks like a confirmation ("yes", "ok", etc.).
+ * Deliberately narrow — we don't want false positives on normal queries.
+ * Short-message guard (≤ 80 chars) avoids matching "okay, but what about...".
+ */
+function isConfirmation(text) {
+  if (typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length > 80) return false;
+  return /\b(yes|yeah|yep|confirm|confirmed|proceed|do\s+it|go\s+ahead|approve|ok|okay|sure|absolutely)\b/i
+    .test(trimmed);
+}
+
+/**
+ * Build a human-readable success/failure reply for a confirmed tool execution.
+ */
+function formatConfirmedReply(toolName, args, result) {
+  if (result.error) return `❌ Action failed: ${result.error}`;
+  // Strip backticks/asterisks from dynamic values so they can't break markdown formatting
+  const safe = (v) => String(v ?? "").replace(/[`*_[\]]/g, "");
+  switch (toolName) {
+    case "add_vehicle":
+      return `✅ Vehicle **${safe(result.name)}** added successfully (ID: \`${safe(result.created)}\`).`;
+    case "update_vehicle":
+      return `✅ Vehicle \`${safe(args.vehicleId)}\` updated successfully.`;
+    case "send_sms":
+      return `✅ SMS sent to ${safe(args.phone)}.`;
+    default:
+      return `✅ Action completed: ${JSON.stringify(result)}`;
+  }
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
@@ -92,6 +168,34 @@ export default async function handler(req, res) {
   ];
 
   const toolCallsMade = [];
+
+  // ── Deterministic confirmation replay ────────────────────────────────────
+  // If the history contains an unresolved requires_confirmation tool result
+  // AND the latest user message is a simple confirmation, execute the pending
+  // action directly without going through OpenAI. This guarantees the action
+  // completes after exactly one confirmation regardless of AI behaviour.
+  const lastUserMsg = [...clientMessages].reverse().find(m => m.role === "user");
+  const pending = findPendingConfirmation(clientMessages);
+
+  if (pending && lastUserMsg && isConfirmation(lastUserMsg.content)) {
+    let toolResult;
+    try {
+      toolResult = await executeAction(
+        pending.toolName,
+        { ...pending.args, confirmed: true },
+        { requireConfirmation: !autoMode },
+      );
+    } catch (err) {
+      toolResult = { error: err.message };
+    }
+
+    const reply = formatConfirmedReply(pending.toolName, pending.args, toolResult);
+    return res.status(200).json({
+      reply,
+      tool_calls:  [pending.toolName],
+      messages:    [...clientMessages, { role: "assistant", content: reply }],
+    });
+  }
 
   // ── Agentic loop ─────────────────────────────────────────────────────────
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -150,15 +254,6 @@ export default async function handler(req, res) {
         tool_call_id:  tc.id,
         content:       JSON.stringify(toolResult),
       });
-
-      // When the action is waiting for confirmation, add an explicit system-level
-      // reminder so the AI knows exactly what to do once the admin confirms.
-      if (toolResult.requires_confirmation) {
-        messages.push({
-          role:    "system",
-          content: "The admin needs to confirm the above action. Once they confirm, call the SAME tool again with confirmed: true in the arguments. Do not re-explain or ask again — just execute.",
-        });
-      }
     }
   }
 
