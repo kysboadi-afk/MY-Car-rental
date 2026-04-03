@@ -396,7 +396,9 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
       // Append a guaranteed 4-char alphanumeric suffix to avoid collision
       const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
       let candidate;
+      let attempts = 0;
       do {
+        if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${vehicleName}"`);
         const suffix = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
         candidate = `${base}-${suffix}`;
       } while (vehicles[candidate]);

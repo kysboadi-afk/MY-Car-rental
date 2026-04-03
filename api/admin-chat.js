@@ -45,6 +45,7 @@ Capabilities:
 
 Tone: Professional, direct, data-driven. Always cite numbers when available.
 When asked to take a destructive action (add vehicle, change pricing, send SMS), explain what you'll do and ask for confirmation before proceeding.
+When the admin confirms an action, immediately retry the SAME tool call with confirmed: true added to the arguments. Do NOT ask for confirmation again.
 Never fabricate data — always use tools to fetch real information.`;
 
 export default async function handler(req, res) {
@@ -149,6 +150,15 @@ export default async function handler(req, res) {
         tool_call_id:  tc.id,
         content:       JSON.stringify(toolResult),
       });
+
+      // When the action is waiting for confirmation, add an explicit system-level
+      // reminder so the AI knows exactly what to do once the admin confirms.
+      if (toolResult.requires_confirmation) {
+        messages.push({
+          role:    "system",
+          content: "The admin needs to confirm the above action. Once they confirm, call the SAME tool again with confirmed: true in the arguments. Do not re-explain or ask again — just execute.",
+        });
+      }
     }
   }
 
