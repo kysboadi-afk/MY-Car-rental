@@ -233,6 +233,14 @@
       font-size: 11px; color: #ffb400; margin-top: 6px;
     }
 
+    .vc-priority-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-left: 4px;
+    }
+    .vc-priority-badge.high   { background: #3a0a0a; color: #ef4444; }
+    .vc-priority-badge.medium { background: #3a2500; color: #ffb400; }
+    .vc-priority-badge.low    { display: none; }
+
     .vc-stat { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
     .vc-stat .lbl { color: #888; }
     .vc-stat .val { color: #fff; font-weight: 600; }
@@ -921,18 +929,31 @@
       function renderCards(stats) {
         var container = document.getElementById("vehicleCards");
         var VEHICLE_ORDER = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+        var PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+
+        // Build list of vehicle IDs present in stats, sorted by priority then default order
+        var ids = VEHICLE_ORDER.filter(function (vid) { return !!stats[vid]; });
+        ids.sort(function (a, b) {
+          var pa = PRIORITY_ORDER[stats[a].vehicle.priority] ?? 3;
+          var pb = PRIORITY_ORDER[stats[b].vehicle.priority] ?? 3;
+          if (pa !== pb) return pa - pb;
+          return VEHICLE_ORDER.indexOf(a) - VEHICLE_ORDER.indexOf(b);
+        });
+
         var html = "";
-        VEHICLE_ORDER.forEach(function (vid) {
+        ids.forEach(function (vid) {
           var s = stats[vid];
           if (!s) return;
           var v = s.vehicle;
           var profitClass = s.netProfit >= 0 ? "green" : "red";
           var breakEvenPct = s.breakEvenPct != null ? Math.min(100, s.breakEvenPct) : 0;
           var statusClass  = v.status || "active";
+          var priorityCls  = v.priority || "low";
           html += '<div class="vehicle-card" id="vcard-' + vid + '" onclick="window._profitSelectVehicle(\'' + vid + '\')">'
             + '<div class="vc-header">'
             + '<div class="vc-name">' + esc(v.vehicle_name) + '</div>'
             + '<span class="vc-status-badge ' + statusClass + '">' + esc(v.status || "active") + '</span>'
+            + '<span class="vc-priority-badge ' + esc(priorityCls) + '">' + esc(priorityCls) + '</span>'
             + (v.decision_status ? '<span class="vc-decision-badge ' + esc(v.decision_status) + '">' + esc(v.decision_status.replace(/_/g, ' ')) + '</span>' : '')
             + (v.action_status   ? '<span class="vc-action-badge '   + esc(v.action_status)   + '">' + esc(v.action_status.replace(/_/g, ' '))   + '</span>' : '')
             + '</div>'

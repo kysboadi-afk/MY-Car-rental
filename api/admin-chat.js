@@ -141,6 +141,8 @@ function formatConfirmedReply(toolName, args, result) {
       return `✅ Booking \`${safe(args.bookingId)}\` status updated to **${safe(args.status)}**.`;
     case "confirm_vehicle_action":
       return `✅ ${safe(result.message || `Action recorded for ${args.vehicleId}.`)}`;
+    case "update_action_status":
+      return `✅ ${safe(result.message || `Action status updated for ${args.vehicleId}.`)}`;
     case "send_message_to_driver":
       return `✅ Message sent to driver of booking \`${safe(args.bookingId)}\` (${safe(result.to)}).`;
     default:
