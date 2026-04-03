@@ -73,13 +73,23 @@ async function fetchAllData() {
   }
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
+  // Include Bouncie fields so detectProblems can use tracking status as
+  // source of truth, independent of booking/fleet status.
   let vehicles = {};
   if (sb) {
     try {
-      const { data, error } = await sb.from("vehicles").select("vehicle_id, data, rental_status");
+      const { data, error } = await sb
+        .from("vehicles")
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
       if (!error && data) {
         for (const row of data) {
-          vehicles[row.vehicle_id] = { vehicle_id: row.vehicle_id, ...(row.data || {}), rental_status: row.rental_status };
+          vehicles[row.vehicle_id] = {
+            vehicle_id:        row.vehicle_id,
+            ...(row.data || {}),
+            rental_status:     row.rental_status     || null,
+            bouncie_device_id: row.bouncie_device_id || null,
+            last_synced_at:    row.last_synced_at    || null,
+          };
         }
       }
     } catch {
@@ -91,7 +101,45 @@ async function fetchAllData() {
     vehicles = data;
   }
 
-  return { allBookings, vehicles };
+  // ── Mileage data (Bouncie-tracked vehicles only) ──────────────────────────
+  // Tracking activity is determined by bouncie_device_id + last_synced_at,
+  // NOT by rental_status.  A rented vehicle with an active Bouncie device is
+  // still tracked and must be included in maintenance/mileage analysis.
+  let mileageData = [];
+  let recentTrips = [];
+  if (sb) {
+    try {
+      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+        sb.from("vehicles")
+          .select("vehicle_id, mileage, last_synced_at, data")
+          .not("bouncie_device_id", "is", null),
+        sb.from("trip_log")
+          .select("vehicle_id, trip_distance, trip_at")
+          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
+      ]);
+      mileageData = (vehicleRows || [])
+        .filter((r) => {
+          const type = r.data?.type || r.data?.vehicle_type || "";
+          return type !== "slingshot";
+        })
+        .map((r) => ({
+          vehicle_id:           r.vehicle_id,
+          vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
+          total_mileage:        Number(r.mileage) || 0,
+          last_service_mileage: Number(r.data?.last_service_mileage) || 0,
+          last_synced_at:       r.last_synced_at,
+        }));
+      recentTrips = (tripRows || []).map((r) => ({
+        vehicle_id:    r.vehicle_id,
+        trip_distance: r.trip_distance,
+        trip_at:       r.trip_at,
+      }));
+    } catch {
+      // mileage data unavailable — detectProblems will skip mileage section
+    }
+  }
+
+  return { allBookings, vehicles, mileageData, recentTrips };
 }
 
 export default async function handler(req, res) {
@@ -112,9 +160,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { allBookings, vehicles } = await fetchAllData();
+    const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
-    const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights });
+    const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
     // Fraud summary (top 10 risks)
     const fraudScored = scoreAllBookings(allBookings);
