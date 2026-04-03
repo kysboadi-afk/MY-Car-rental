@@ -9,8 +9,6 @@
     "api/admin-ai-auto.js": {
       "maxDuration": 30
     },
-      "maxDuration": 30
-    },
     "api/admin-site-settings.js": {
       "maxDuration": 15
     },
