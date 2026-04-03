@@ -2304,7 +2304,7 @@ function loadVehicles() {
     // GitHub commit hasn't propagated yet).
     for (const [id, cached] of Object.entries(allVehicles)) {
       if (cached.bouncie_device_id && freshVehicles[id] && !freshVehicles[id].bouncie_device_id) {
-        freshVehicles[id] = { ...freshVehicles[id], bouncie_device_id: cached.bouncie_device_id, tracked: true };
+        freshVehicles[id] = { ...freshVehicles[id], bouncie_device_id: cached.bouncie_device_id, tracked: !!cached.bouncie_device_id };
       }
     }
     allVehicles = freshVehicles;
@@ -2544,7 +2544,16 @@ async function openEditVehicle(vehicleId) {
   try {
     const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
-      allVehicles[vehicleId] = latest.vehicles[vehicleId];
+      const fresh    = latest.vehicles[vehicleId];
+      const existing = allVehicles[vehicleId] || {};
+      // Preserve bouncie_device_id from the in-memory cache when the fresh
+      // response doesn't include it (stale GitHub-fallback read that hasn't
+      // yet received a just-saved IMEI).
+      allVehicles[vehicleId] = {
+        ...fresh,
+        bouncie_device_id: fresh.bouncie_device_id || existing.bouncie_device_id || null,
+        tracked:           !!(fresh.bouncie_device_id || existing.bouncie_device_id),
+      };
     }
   } catch (_err) {
     // Fall back to the in-memory cache if the pre-fetch fails; the save step
@@ -2591,7 +2600,15 @@ async function saveVehicle() {
     // single-vehicle fetch endpoint is exposed; the payload is small (4 rows).
     const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
     if (latest.vehicles && latest.vehicles[editingVehicleId]) {
-      allVehicles[editingVehicleId] = latest.vehicles[editingVehicleId];
+      const fresh    = latest.vehicles[editingVehicleId];
+      const existing = allVehicles[editingVehicleId] || {};
+      // Preserve bouncie_device_id from the in-memory cache when the fresh
+      // response doesn't include it (stale GitHub-fallback read).
+      allVehicles[editingVehicleId] = {
+        ...fresh,
+        bouncie_device_id: fresh.bouncie_device_id || existing.bouncie_device_id || null,
+        tracked:           !!(fresh.bouncie_device_id || existing.bouncie_device_id),
+      };
     }
 
     // Submit the admin's edits; the API merges them onto the latest DB row.
