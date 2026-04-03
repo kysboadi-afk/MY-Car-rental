@@ -99,7 +99,7 @@ export default async function handler(req, res) {
       const startedAt = Date.now();
       const [trackedVehicles, bouncieVehicles] = await Promise.all([
         loadTrackedVehicles(sb),
-        getBouncieVehicles(sb),
+        getBouncieVehicles(),
       ]);
 
       const imeiMap = {};
