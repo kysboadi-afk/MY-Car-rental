@@ -13,7 +13,13 @@
 import { loadBookings } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
-import { computeAmount } from "./_pricing.js";
+import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
+import {
+  loadPricingSettings,
+  computeBreakdownLinesFromSettings,
+  computeSlingshotAmountFromSettings,
+  applyTax,
+} from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -1078,6 +1084,107 @@ async function toolGetSystemSettings({ category } = {}) {
   return { settings: filtered, count: filtered.length, source: "defaults" };
 }
 
+/**
+ * Compute a rental price quote using the live pricing system.
+ * Routes to the appropriate settings-based helper depending on vehicle type:
+ *   - Slingshot vehicles → computeSlingshotAmountFromSettings
+ *   - Known economy cars (camry/camry2013) → computeBreakdownLinesFromSettings
+ *   - Newly created "car" type vehicles → daily_rate × days + live tax
+ */
+async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+
+  const settings = await loadPricingSettings();
+  const vehicles = await loadAllVehicles();
+  const vehicle  = vehicles[vehicleId];
+
+  if (!vehicle) throw new Error(`Vehicle "${vehicleId}" not found`);
+
+  const vType = (vehicle.type || vehicle.vehicle_type || "").toLowerCase();
+  const isSlingshot = vType === "slingshot";
+
+  // ── Slingshot (hourly-tier pricing) ───────────────────────────────────────
+  if (isSlingshot) {
+    const hours = Number(durationHours);
+    if (!hours || ![3, 6, 24, 48, 72].includes(hours)) {
+      throw new Error("durationHours is required for Slingshot vehicles and must be 3, 6, 24, 48, or 72");
+    }
+    // computeSlingshotAmountFromSettings returns (tier price × 2): rental + refundable deposit.
+    // The rental fee equals the tier price; the security deposit equals the same tier price.
+    const totalCharged = computeSlingshotAmountFromSettings(hours, settings);
+    const tierPrice    = totalCharged / 2; // rental = deposit = tier price
+    const tierLabel    = hours >= 24 ? `${hours / 24}-day` : `${hours}-hour`;
+    return {
+      vehicleId,
+      vehicle_name: vehicle.vehicle_name || vehicleId,
+      type:         "slingshot",
+      duration:     `${hours} hours`,
+      breakdown: [
+        `${tierLabel} rental: $${tierPrice}`,
+        `Refundable security deposit: $${tierPrice}`,
+        `Total charged at booking: $${totalCharged}`,
+      ],
+      rental_amount:    tierPrice,
+      security_deposit: tierPrice,
+      total:            totalCharged,
+      note: "Security deposit is refundable. Tax is not applied to Slingshot rentals.",
+    };
+  }
+
+  // ── Economy / Car vehicles (daily/weekly pricing) ─────────────────────────
+  if (!pickup || !returnDate) {
+    throw new Error("pickup and returnDate (YYYY-MM-DD) are required for car price quotes");
+  }
+
+  const days = computeRentalDays(pickup, returnDate);
+
+  // Known vehicles with configured tier rates in _settings.js
+  if (vehicleId === "camry" || vehicleId === "camry2013") {
+    const lines = computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, settings, false, null);
+    if (!lines) throw new Error(`Could not compute price for "${vehicleId}"`);
+    const totalLine = lines.find((l) => l.startsWith("Total:")) || "";
+    const total = parseFloat(totalLine.replace("Total: $", "")) || 0;
+    return {
+      vehicleId,
+      vehicle_name: vehicle.vehicle_name || vehicleId,
+      type:         "car",
+      pickup,
+      return_date:  returnDate,
+      days,
+      breakdown:    lines,
+      total,
+      note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
+    };
+  }
+
+  // Newly created vehicles — use their stored daily_rate with live tax
+  const dailyRate = Number(vehicle.daily_rate || vehicle.pricePerDay || 0);
+  if (!dailyRate || dailyRate <= 0) {
+    throw new Error(`Vehicle "${vehicleId}" has no daily rate configured. Update it with update_vehicle first.`);
+  }
+
+  const preTax    = days * dailyRate;
+  const taxRate   = settings.la_tax_rate;
+  const taxAmount = Math.round(preTax * taxRate * 100) / 100;
+  const total     = Math.round((preTax + taxAmount) * 100) / 100;
+
+  return {
+    vehicleId,
+    vehicle_name: vehicle.vehicle_name || vehicleId,
+    type:         vType || "car",
+    pickup,
+    return_date:  returnDate,
+    days,
+    breakdown: [
+      `${days} × Daily ($${dailyRate}/day): $${preTax}`,
+      `Sales Tax (${(taxRate * 100).toFixed(2)}%): $${taxAmount.toFixed(2)}`,
+      `Total: $${total.toFixed(2)}`,
+    ],
+    total,
+    note: `Add Damage Protection Plan (basic $${PROTECTION_PLAN_BASIC}/day, standard $${PROTECTION_PLAN_STANDARD}/day, premium $${PROTECTION_PLAN_PREMIUM}/day) for additional coverage.`,
+  };
+}
+
 async function toolGetSmsTemplates() {
   const sb = getSupabaseAdmin();
   let overrides = {};
@@ -1622,6 +1729,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_customers":            result = await toolGetCustomers(args);            break;
       case "get_protection_plans":     result = await toolGetProtectionPlans();          break;
       case "get_system_settings":      result = await toolGetSystemSettings(args);       break;
+      case "get_price_quote":          result = await toolGetPriceQuote(args);           break;
       case "get_sms_templates":        result = await toolGetSmsTemplates();             break;
       case "get_blocked_dates":        result = await toolGetBlockedDates(args);         break;
       case "register_bouncie_device":  result = await toolRegisterBouncieDevice(args);  break;
