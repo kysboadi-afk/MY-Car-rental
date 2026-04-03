@@ -801,7 +801,7 @@ async function toolUpdateActionStatus({ vehicleId, action_status }) {
   // Fetch current action_status to enforce forward-only progression
   const { data: row, error: fetchErr } = await sb
     .from("vehicles")
-    .select("action_status, decision_status")
+    .select("action_status, decision_status, last_auto_action_at, last_auto_action_reason")
     .eq("vehicle_id", vehicleId)
     .maybeSingle();
 
@@ -819,19 +819,41 @@ async function toolUpdateActionStatus({ vehicleId, action_status }) {
     );
   }
 
+  const resolvedAt  = action_status === "resolved" ? new Date().toISOString() : null;
+  const resolutionPatch = resolvedAt
+    ? {
+        last_resolved_at:        resolvedAt,
+        last_resolved_reason:    row.last_auto_action_reason || null,
+        // Reset dedup state so the same issue can re-alert if it reoccurs
+        last_auto_action_at:     null,
+        last_auto_action_reason: null,
+      }
+    : {};
+
   const { error } = await sb
     .from("vehicles")
-    .update({ action_status, updated_at: new Date().toISOString() })
+    .update({ action_status, updated_at: new Date().toISOString(), ...resolutionPatch })
     .eq("vehicle_id", vehicleId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 
+  // Compute time-to-resolution when closing an issue
+  let time_to_resolution_ms = null;
+  if (resolvedAt && row.last_auto_action_at) {
+    time_to_resolution_ms = new Date(resolvedAt).getTime() - new Date(row.last_auto_action_at).getTime();
+  }
+
   return {
-    success:       true,
+    success:               true,
     vehicleId,
     action_status,
-    previous:      row.action_status,
-    message:       `Action status for ${vehicleId} updated: ${row.action_status || "none"} → ${action_status}.`,
+    previous:              row.action_status,
+    ...(resolvedAt && {
+      last_resolved_at:     resolvedAt,
+      last_resolved_reason: row.last_auto_action_reason || null,
+      time_to_resolution_ms,
+    }),
+    message: `Action status for ${vehicleId} updated: ${row.action_status || "none"} → ${action_status}.`,
   };
 }
 
@@ -902,7 +924,7 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
   try {
     const { data: freshRow } = await sb
       .from("vehicles")
-      .select("mileage, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, action_status, data")
+      .select("mileage, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, action_status, data, last_auto_action_at, last_auto_action_reason")
       .eq("vehicle_id", vehicleId)
       .maybeSingle();
 
@@ -922,9 +944,18 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
         hasNoOverdueMaintenance(freshStats[0]) &&
         (activeActionStatus === "pending" || activeActionStatus === "in_progress")
       ) {
+        const autoResolvedAt = new Date().toISOString();
         await sb
           .from("vehicles")
-          .update({ action_status: "resolved", updated_at: new Date().toISOString() })
+          .update({
+            action_status:           "resolved",
+            last_resolved_at:        autoResolvedAt,
+            last_resolved_reason:    freshRow.last_auto_action_reason || null,
+            // Reset dedup state so a reoccurrence triggers a fresh alert
+            last_auto_action_at:     null,
+            last_auto_action_reason: null,
+            updated_at:              autoResolvedAt,
+          })
           .eq("vehicle_id", vehicleId);
         autoResolved = true;
       }
