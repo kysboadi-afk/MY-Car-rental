@@ -231,11 +231,19 @@ export default async function handler(req, res) {
           const { data: upserted, error: upsertErr } = await supabase
             .from("vehicles")
             .upsert(upsertPayload, { onConflict: "vehicle_id" })
-            .select("data")
+            .select("data, bouncie_device_id")
             .single();
 
           if (!upsertErr) {
-            return res.status(200).json({ success: true, vehicle: upserted.data });
+            // Return the same shape as the list action so the frontend cache
+            // always gets bouncie_device_id from the authoritative DB column.
+            return res.status(200).json({
+              success: true,
+              vehicle: {
+                ...(upserted.data || {}),
+                bouncie_device_id: upserted.bouncie_device_id || null,
+              },
+            });
           }
           if (!isSchemaError(upsertErr)) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
           console.warn("v2-vehicles update: Supabase schema error, falling back to GitHub:", upsertErr.message);
@@ -349,11 +357,17 @@ export default async function handler(req, res) {
               updated_at:        new Date().toISOString(),
               ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
             })
-            .select("data")
+            .select("data, bouncie_device_id")
             .single();
 
           if (!insertErr) {
-            return res.status(201).json({ success: true, vehicle: inserted.data });
+            return res.status(201).json({
+              success: true,
+              vehicle: {
+                ...(inserted.data || {}),
+                bouncie_device_id: inserted.bouncie_device_id || null,
+              },
+            });
           }
           if (!isSchemaError(insertErr)) throw new Error(`Supabase insert failed: ${insertErr.message}`);
           console.warn("v2-vehicles create: Supabase schema error, falling back to GitHub:", insertErr.message);
