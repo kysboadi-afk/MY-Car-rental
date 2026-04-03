@@ -203,7 +203,7 @@ export default async function handler(req, res) {
         if (pct >= 1.0) {
           // ── Overdue (100%+) ──────────────────────────────────────────────
           if (!alreadySent(booking, kUrgent)) {
-            // First urgent notification
+            // Send urgent notification (or retry if previous attempt failed to send)
             const sent = await safeSendSms(phone,
               `⚠️ Your rental vehicle is now due for ${svc.label}. Please contact us immediately to schedule service. Continued use without maintenance may affect your rental.`
             );
