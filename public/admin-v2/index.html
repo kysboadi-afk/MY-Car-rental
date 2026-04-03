@@ -1924,7 +1924,7 @@ let VEHICLE_IMAGES_DYNAMIC = {};
 // cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
 async function loadVehiclesFromApi() {
   try {
-    const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=cars');
+    const res  = await fetch(API_BASE + '/api/v2-vehicles?scope=car');
     if (!res.ok) return;
     const vehicles = await res.json();
     if (!Array.isArray(vehicles)) return;

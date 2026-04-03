@@ -55,8 +55,8 @@ export default async function handler(req, res) {
 
   // ── GET — public listing (no secret required) ──────────────────────────────
   if (req.method === "GET") {
-    // Optional scope filter: ?scope=cars → exclude slingshots; ?scope=slingshot → only slingshots
-    const scopeParam = (req.query?.scope || "").toLowerCase();
+    // Optional scope filter: ?scope=car → exclude slingshots; ?scope=slingshot → only slingshots
+    const scope = (req.query?.scope || "").toLowerCase();
     const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
@@ -67,8 +67,8 @@ export default async function handler(req, res) {
           const vehicles = (rows || [])
             .filter((row) => {
               const type = row.data?.type || row.data?.vehicle_type || "";
-              if (scopeParam === "cars" || scopeParam === "car") return type !== "slingshot";
-              if (scopeParam === "slingshot") return type === "slingshot";
+              if (scope === "cars" || scope === "car") return type !== "slingshot";
+              if (scope === "slingshot") return type === "slingshot";
               return true;
             })
             .map((row) => {
@@ -101,8 +101,8 @@ export default async function handler(req, res) {
       const result = Object.values(vehicles)
         .filter((v) => {
           const type = v.type || "";
-          if (scopeParam === "cars" || scopeParam === "car") return type !== "slingshot";
-          if (scopeParam === "slingshot") return type === "slingshot";
+          if (scope === "cars" || scope === "car") return type !== "slingshot";
+          if (scope === "slingshot") return type === "slingshot";
           return true;
         })
         .map((v) => {
