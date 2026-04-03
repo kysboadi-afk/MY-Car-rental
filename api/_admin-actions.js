@@ -621,6 +621,20 @@ async function toolGetMileage() {
     };
   }
 
+  // Load canonical vehicle names from the same source as the dashboard.
+  // Non-fatal — falls back to the JSONB data field if unavailable.
+  let vehicleNameMap = {};
+  let vehicleTypeMap = {};
+  try {
+    const { data: vehicles } = await loadVehicles();
+    for (const [vid, v] of Object.entries(vehicles)) {
+      if (v.vehicle_name) vehicleNameMap[vid] = v.vehicle_name;
+      if (v.type)         vehicleTypeMap[vid] = v.type;
+    }
+  } catch {
+    // non-fatal
+  }
+
   let vehicleRows = null;
   let tripRows    = [];
   try {
@@ -633,6 +647,19 @@ async function toolGetMileage() {
         .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
         .catch(() => ({ data: [] })),
     ]);
+
+    // Surface DB errors rather than silently returning empty results.
+    if (vehicleResult.error) {
+      console.error("toolGetMileage: vehicles query error:", vehicleResult.error.message);
+      return {
+        tracked_vehicles:   0,
+        stats:              [],
+        alerts:             [],
+        bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
+        error:              vehicleResult.error.message,
+      };
+    }
+
     vehicleRows = vehicleResult.data;
     tripRows    = tripResult.data || [];
   } catch (err) {
@@ -648,12 +675,14 @@ async function toolGetMileage() {
 
   const mileageData = (vehicleRows || [])
     .filter((r) => {
-      const type = r.data?.type || r.data?.vehicle_type || "";
+      // Use canonical type from vehicles.json first, then fall back to JSONB field.
+      const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
       return type !== "slingshot";
     })
     .map((r) => ({
       vehicle_id:               r.vehicle_id,
-      vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+      // Use canonical vehicle name from vehicles.json (same source as dashboard).
+      vehicle_name:             vehicleNameMap[r.vehicle_id] || r.data?.vehicle_name || r.vehicle_id,
       total_mileage:            Number(r.mileage) || 0,
       last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
       last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
@@ -669,9 +698,21 @@ async function toolGetMileage() {
     trip_at:       r.trip_at,
   })));
 
+  // Derive a per-vehicle maintenance_status from the alerts produced above.
+  const statsWithStatus = stats.map((s) => {
+    const prefix = `${s.name}:`;
+    const vehicleAlerts = alerts.filter((a) => a.includes(prefix));
+    const hasOverdue  = vehicleAlerts.some((a) => a.startsWith("🚨"));
+    const hasDueSoon  = vehicleAlerts.some((a) => a.startsWith("⚠️"));
+    return {
+      ...s,
+      maintenance_status: hasOverdue ? "overdue" : hasDueSoon ? "due_soon" : "ok",
+    };
+  });
+
   return {
     tracked_vehicles:   mileageData.length,
-    stats,
+    stats:              statsWithStatus,
     alerts,
     bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
   };
