@@ -35,6 +35,20 @@ const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const ESCALATION_DELAY_MS = 48 * 60 * 60 * 1000; // 48 hours
 
+// Hours after warn SMS before a "please schedule" follow-up is sent.
+// Configurable via MAINT_SCHEDULE_HOURS env var (default: 24 h).
+const SCHEDULE_REMINDER_HOURS = Math.max(1, Number(process.env.MAINT_SCHEDULE_HOURS) || 24);
+const SCHEDULE_REMINDER_MS    = SCHEDULE_REMINDER_HOURS * 60 * 60 * 1000;
+
+// Base URL for scheduling links (e.g. https://www.slytrans.com or VERCEL_URL)
+const SITE_BASE = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "https://www.slytrans.com";
+
+function scheduleUrl(vehicleId, serviceType) {
+  return `${SITE_BASE}/maintenance-schedule.html?vehicleId=${encodeURIComponent(vehicleId)}&serviceType=${encodeURIComponent(serviceType)}`;
+}
+
 // Service definitions — intervals match lib/ai/mileage.js
 const SERVICES = [
   {
@@ -61,9 +75,10 @@ const SERVICES = [
 ];
 
 // Deduplication key helpers (stored in booking.smsSentAt)
-const keyWarn     = (type) => `maint_${type}_warn`;
-const keyUrgent   = (type) => `maint_${type}_urgent`;
-const keyEscalate = (type) => `maint_${type}_escalate`;
+const keyWarn        = (type) => `maint_${type}_warn`;
+const keyUrgent      = (type) => `maint_${type}_urgent`;
+const keyEscalate    = (type) => `maint_${type}_escalate`;
+const keySchedRemind = (type) => `maint_${type}_sched_remind`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -205,8 +220,9 @@ export default async function handler(req, res) {
           // ── Overdue (100%+) ──────────────────────────────────────────────
           if (!alreadySent(booking, kUrgent)) {
             // Send urgent notification (or retry if previous attempt failed to send)
+            const sched = scheduleUrl(vid, svc.type);
             const sent = await safeSendSms(phone,
-              `⚠️ Your rental vehicle is now due for ${svc.label}. Please contact us immediately to schedule service. Continued use without maintenance may affect your rental.`
+              `⚠️ Your rental vehicle is now due for ${svc.label}. Schedule your appointment: ${sched} — or contact us immediately. Continued use without maintenance may affect your rental.`
             );
             if (sent) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kUrgent });
@@ -268,13 +284,45 @@ export default async function handler(req, res) {
           }
         } else {
           // ── Due Soon (80%–100%) ──────────────────────────────────────────
+          const kSchedRemind = keySchedRemind(svc.type);
           if (!alreadySent(booking, kWarn)) {
+            const sched = scheduleUrl(vid, svc.type);
             const sent = await safeSendSms(phone,
-              `Hi — your rental vehicle is approaching its scheduled ${svc.label}. Please call us today to schedule a quick maintenance appointment. Maintenance is included.`
+              `Hi — your rental vehicle is approaching its scheduled ${svc.label}. Schedule your maintenance appointment here (included): ${sched}`
             );
             if (sent) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kWarn });
               alertsSent++;
+            }
+          } else if (!alreadySent(booking, kSchedRemind)) {
+            // ── Schedule follow-up — if no appointment was booked within X hours ──
+            const warnAt = new Date(booking.smsSentAt[kWarn]).getTime();
+            if (Date.now() - warnAt >= SCHEDULE_REMINDER_MS) {
+              // Check whether an appointment already exists for this vehicle+service
+              let hasAppointment = false;
+              try {
+                const { data: appts } = await sb
+                  .from("maintenance_appointments")
+                  .select("id")
+                  .eq("vehicle_id", vid)
+                  .eq("service_type", svc.type)
+                  .in("status", ["pending_approval", "scheduled"])
+                  .limit(1);
+                hasAppointment = Array.isArray(appts) && appts.length > 0;
+              } catch (err) {
+                console.warn(`maintenance-alerts: appointment check failed for ${vid}:`, err.message);
+              }
+
+              if (!hasAppointment) {
+                const sched = scheduleUrl(vid, svc.type);
+                const sent = await safeSendSms(phone,
+                  `Reminder: your rental vehicle is still due for ${svc.label}. Please schedule your appointment now: ${sched}`
+                );
+                if (sent) {
+                  sentMarks.push({ vehicleId: vid, id: bookingId, key: kSchedRemind });
+                  alertsSent++;
+                }
+              }
             }
           }
         }

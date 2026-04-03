@@ -101,6 +101,9 @@
     },
     "api/maintenance-alerts.js": {
       "maxDuration": 30
+    },
+    "api/schedule-maintenance.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
