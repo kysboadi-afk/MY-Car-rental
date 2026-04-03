@@ -54,7 +54,7 @@
       "vehicleName": "Camry 2012",
       "pickupDate": "2026-03-27",
       "pickupTime": "",
-      "returnDate": "2026-04-03",
+      "returnDate": "2026-04-04",
       "returnTime": "",
       "location": "",
       "status": "completed_rental",
@@ -66,7 +66,7 @@
       "createdAt": "2026-03-27T23:40:00.000Z",
       "source": "admin_v2",
       "activatedAt": "2026-04-02T16:45:34.401Z",
-      "updatedAt": "2026-04-03T04:00:16.257Z",
+      "updatedAt": "2026-04-03T09:14:48.116Z",
       "completedAt": "2026-04-03T04:00:16.257Z"
     }
   ],
