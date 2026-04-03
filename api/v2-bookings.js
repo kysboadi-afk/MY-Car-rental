@@ -38,6 +38,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
+import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -479,6 +480,55 @@ export default async function handler(req, res) {
       } else if (updatedBooking && newStatus === "completed_rental") {
         await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
         await autoUpsertBooking(updatedBooking);
+
+        // ── Record trip + update vehicle mileage (non-fatal) ───────────────
+        // Sum GPS trip_log distances for this vehicle during the booking window,
+        // then insert a booking-linked trip record in the trips table and
+        // recompute maintenance status.
+        try {
+          const sb = getSupabaseAdmin();
+          if (sb && updatedBooking.vehicleId && updatedBooking.pickupDate && updatedBooking.returnDate) {
+            // Aggregate distance from GPS trip_log entries during the rental window
+            const { data: tripLogRows } = await sb
+              .from("trip_log")
+              .select("trip_distance, end_odometer")
+              .eq("vehicle_id", updatedBooking.vehicleId)
+              .gte("trip_at", new Date(updatedBooking.pickupDate).toISOString())
+              .lte("trip_at", new Date(updatedBooking.returnDate + "T23:59:59Z").toISOString());
+
+            const gpsRows    = tripLogRows || [];
+            const distance   = gpsRows.reduce((s, r) => s + (Number(r.trip_distance) || 0), 0);
+            const endOdoRows = gpsRows.filter((r) => r.end_odometer != null);
+            const endOdo     = endOdoRows.length > 0
+              ? Math.max(...endOdoRows.map((r) => Number(r.end_odometer)))
+              : null;
+
+            // Insert booking-linked trip record (trips table — migration 0030)
+            const { error: tripErr } = await sb.from("trips").insert({
+              vehicle_id:   updatedBooking.vehicleId,
+              booking_id:   updatedBooking.bookingId,
+              start_mileage: null,          // start odometer not directly stored on booking
+              end_mileage:  endOdo,
+              distance:     distance > 0 ? distance : null,
+            });
+            if (tripErr) console.warn("v2-bookings: trips insert failed (non-fatal):", tripErr.message);
+
+            // Update vehicle current_mileage (mileage column) when GPS data available
+            if (endOdo) {
+              const { error: mileageErr } = await sb
+                .from("vehicles")
+                .update({ mileage: endOdo, updated_at: new Date().toISOString() })
+                .eq("vehicle_id", updatedBooking.vehicleId)
+                .lt("mileage", endOdo); // only update if higher than stored (prevent rollback)
+              if (mileageErr) console.warn("v2-bookings: vehicle mileage update failed (non-fatal):", mileageErr.message);
+            }
+
+            // Recompute maintenance status for this vehicle
+            await triggerMaintenanceUpdate(updatedBooking.vehicleId);
+          }
+        } catch (tripErr) {
+          console.error("v2-bookings: trip recording failed (non-fatal):", tripErr.message);
+        }
       } else if (updatedBooking) {
         // Sync any other status change (cancelled, reserved_unpaid, etc.)
         // Also re-sync when returnDate/returnTime were edited so Supabase and

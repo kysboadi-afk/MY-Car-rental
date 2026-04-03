@@ -27,6 +27,7 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
+import { computeFleetAlerts } from "../lib/ai/maintenance.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates } from "./_availability.js";
@@ -152,18 +153,24 @@ async function loadAllVehicles() {
     try {
       const { data, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status");
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status, mileage, maintenance_interval, is_tracked, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage");
       if (!error && data) {
         const map = {};
         for (const row of data) {
           map[row.vehicle_id] = {
-            vehicle_id:        row.vehicle_id,
+            vehicle_id:                row.vehicle_id,
             ...(row.data || {}),
-            rental_status:     row.rental_status     || null,
-            bouncie_device_id: row.bouncie_device_id || null,
-            last_synced_at:    row.last_synced_at    || null,
-            decision_status:   row.decision_status   || null,
-            action_status:     row.action_status     || null,
+            rental_status:             row.rental_status              || null,
+            bouncie_device_id:         row.bouncie_device_id          || null,
+            last_synced_at:            row.last_synced_at             || null,
+            decision_status:           row.decision_status            || null,
+            action_status:             row.action_status              || null,
+            mileage:                   row.mileage                    ?? null,
+            maintenance_interval:      row.maintenance_interval       ?? 5000,
+            is_tracked:                row.is_tracked                 ?? false,
+            last_oil_change_mileage:   row.last_oil_change_mileage    ?? null,
+            last_brake_check_mileage:  row.last_brake_check_mileage   ?? null,
+            last_tire_change_mileage:  row.last_tire_change_mileage   ?? null,
           };
         }
         return map;
@@ -1296,6 +1303,97 @@ const MAINTENANCE_SERVICE_COLUMNS = {
 };
 
 /**
+ * Run the fleet-wide maintenance status check.
+ * Computes OK / DUE_SOON / OVERDUE for each tracked vehicle using
+ * lib/ai/maintenance.js, upserts maintenance table rows, and escalates
+ * OVERDUE vehicles to action_status = "pending".
+ */
+async function toolUpdateMaintenanceStatus() {
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return { error: "Database not configured — SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set." };
+  }
+
+  let vehicleRows;
+  try {
+    const { data, error } = await sb
+      .from("vehicles")
+      .select("vehicle_id, data, mileage, maintenance_interval, is_tracked, bouncie_device_id, action_status");
+    if (error) throw new Error(`vehicles query failed: ${error.message}`);
+    vehicleRows = data || [];
+  } catch (err) {
+    console.error("toolUpdateMaintenanceStatus: vehicles query error:", err.message);
+    return { error: err.message };
+  }
+
+  const enriched = vehicleRows
+    .filter((v) => v.is_tracked || v.bouncie_device_id != null)
+    .map((v) => ({
+      ...v,
+      vehicle_name:         v.data?.vehicle_name || v.data?.name || v.vehicle_id,
+      last_service_mileage: v.data?.last_service_mileage ?? null,
+    }));
+
+  if (enriched.length === 0) {
+    return {
+      processed: 0,
+      alerts:    [],
+      overdue:   0,
+      due_soon:  0,
+      ok:        0,
+      note:      "No tracked vehicles found. Set is_tracked = true on vehicles to enable monitoring.",
+    };
+  }
+
+  const { results, alerts, overdue, due_soon, ok } = computeFleetAlerts(enriched);
+  const now = new Date().toISOString();
+
+  for (const result of results) {
+    const { vehicle_id, status, miles_since_service, interval, miles_until_service } = result;
+    const dbStatus = status === "OVERDUE"  ? "overdue"
+                   : status === "DUE_SOON" ? "pending"
+                   :                         "completed";
+
+    try {
+      const { error: upsertErr } = await sb
+        .from("maintenance")
+        .upsert(
+          {
+            vehicle_id,
+            service_type: "general",
+            status:       dbStatus,
+            notes:        `Auto-computed: ${miles_since_service} mi since last service. Interval: ${interval} mi. Miles until next service: ${miles_until_service}.`,
+            updated_at:   now,
+          },
+          { onConflict: "vehicle_id,service_type" }
+        );
+      if (upsertErr) console.error(`toolUpdateMaintenanceStatus: upsert failed for ${vehicle_id}:`, upsertErr.message);
+    } catch (err) {
+      console.error(`toolUpdateMaintenanceStatus: upsert threw for ${vehicle_id}:`, err.message);
+    }
+
+    if (status === "OVERDUE") {
+      const v = enriched.find((row) => row.vehicle_id === vehicle_id);
+      if (!v?.action_status || v.action_status === "resolved") {
+        try {
+          const { error: updateErr } = await sb
+            .from("vehicles")
+            .update({ action_status: "pending", updated_at: now })
+            .eq("vehicle_id", vehicle_id);
+          if (updateErr) console.error(`toolUpdateMaintenanceStatus: action_status update failed for ${vehicle_id}:`, updateErr.message);
+        } catch (err) {
+          console.error(`toolUpdateMaintenanceStatus: action_status update threw for ${vehicle_id}:`, err.message);
+        }
+      }
+    }
+  }
+
+  return { processed: results.length, alerts, overdue, due_soon, ok };
+}
+
+
+
+/**
  * Get maintenance status for a vehicle looked up by name.
  * Queries maintenance_history (completed services), maintenance_appointments
  * (driver-scheduled appointments), the maintenance table (migration 0029),
@@ -1867,6 +1965,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_fraud_report":         result = await toolGetFraudReport(args);          break;
       case "get_mileage":              result = await toolGetMileage();                  break;
       case "get_maintenance_status":   result = await toolGetMaintenanceStatus(args);    break;
+      case "update_maintenance_status": result = await toolUpdateMaintenanceStatus();    break;
       case "mark_maintenance":         result = await toolMarkMaintenance(args);         break;
       case "flag_booking":             result = await toolFlagBooking(args);             break;
       case "update_booking_status":    result = await toolUpdateBookingStatus(args);     break;
@@ -1903,24 +2002,103 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
  * Returns a single context object used by all admin and AI systems.
  *
  * @returns {Promise<{
- *   bookings:     object[],
- *   vehicles:     object,
- *   expenses:     object[],
- *   settings:     object,
+ *   bookings:      object[],
+ *   vehicles:      object,
+ *   expenses:      object[],
+ *   settings:      object,
+ *   maintenance:   object[],
+ *   blocked_dates: object[],
+ *   customers:     object[],
  * }>}
  */
 export async function loadAdminContext() {
-  const [bookingsResult, vehiclesResult, expensesResult, settingsResult] = await Promise.allSettled([
+  const sb = getSupabaseAdmin();
+
+  // Supabase-specific loaders — non-fatal when table missing or Supabase not configured
+  async function loadMaintenance() {
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("maintenance")
+        .select("id, vehicle_id, service_type, due_date, status, notes, updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(200);
+      if (error) {
+        const msg = error.message || "";
+        if (!msg.includes("relation") && !msg.includes("does not exist")) {
+          console.error("loadAdminContext: maintenance query error:", msg);
+        }
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error("loadAdminContext: maintenance query threw:", err.message);
+      return [];
+    }
+  }
+
+  async function loadBlockedDates() {
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("blocked_dates")
+        .select("*")
+        .order("start_date", { ascending: true })
+        .limit(500);
+      if (error) {
+        const msg = error.message || "";
+        if (!msg.includes("relation") && !msg.includes("does not exist")) {
+          console.error("loadAdminContext: blocked_dates query error:", msg);
+        }
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error("loadAdminContext: blocked_dates query threw:", err.message);
+      return [];
+    }
+  }
+
+  async function loadCustomers() {
+    if (!sb) return [];
+    try {
+      const { data, error } = await sb
+        .from("customers")
+        .select("id, name, phone, email, total_bookings, total_spent, is_banned, no_show_count, created_at")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) {
+        const msg = error.message || "";
+        if (!msg.includes("relation") && !msg.includes("does not exist")) {
+          console.error("loadAdminContext: customers query error:", msg);
+        }
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error("loadAdminContext: customers query threw:", err.message);
+      return [];
+    }
+  }
+
+  const [bookingsResult, vehiclesResult, expensesResult, settingsResult,
+         maintenanceResult, blockedDatesResult, customersResult] = await Promise.allSettled([
     loadAllBookings(),
     loadAllVehicles(),
     loadExpenses().then((r) => r.data || []).catch(() => []),
     loadPricingSettings().catch(() => ({})),
+    loadMaintenance(),
+    loadBlockedDates(),
+    loadCustomers(),
   ]);
 
   return {
-    bookings: bookingsResult.status  === "fulfilled" ? bookingsResult.value  : [],
-    vehicles: vehiclesResult.status  === "fulfilled" ? vehiclesResult.value  : {},
-    expenses: expensesResult.status  === "fulfilled" ? expensesResult.value  : [],
-    settings: settingsResult.status  === "fulfilled" ? settingsResult.value  : {},
+    bookings:      bookingsResult.status      === "fulfilled" ? bookingsResult.value      : [],
+    vehicles:      vehiclesResult.status      === "fulfilled" ? vehiclesResult.value      : {},
+    expenses:      expensesResult.status      === "fulfilled" ? expensesResult.value      : [],
+    settings:      settingsResult.status      === "fulfilled" ? settingsResult.value      : {},
+    maintenance:   maintenanceResult.status   === "fulfilled" ? maintenanceResult.value   : [],
+    blocked_dates: blockedDatesResult.status  === "fulfilled" ? blockedDatesResult.value  : [],
+    customers:     customersResult.status     === "fulfilled" ? customersResult.value     : [],
   };
 }
