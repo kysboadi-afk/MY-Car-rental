@@ -59,10 +59,18 @@ export default async function handler(req, res) {
       const tokens = await getBouncieTokens(sb).catch(() => null);
       const hasAccess  = !!(tokens?.access_token);
       const hasRefresh = !!(tokens?.refresh_token);
+
+      const clientId    = process.env.BOUNCIE_CLIENT_ID;
+      const redirectUri = "https://www.slytrans.com";
+      const authUrl = clientId
+        ? `https://auth.bouncie.com/dialog/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`
+        : null;
+
       return res.status(200).json({
         configured:        hasAccess,
         has_refresh_token: hasRefresh,
         updated_at:        tokens?.updated_at || null,
+        auth_url:          authUrl,
         message:           hasAccess
           ? "Bouncie tokens are configured. Sync should be running."
           : "No Bouncie tokens found. POST to this endpoint with your authorization code.",

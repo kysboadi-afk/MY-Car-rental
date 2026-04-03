@@ -246,7 +246,24 @@ export default async function handler(req, res) {
             });
           }
           if (!isSchemaError(upsertErr)) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
-          console.warn("v2-vehicles update: Supabase schema error, falling back to GitHub:", upsertErr.message);
+          // Schema error on full upsert (e.g. bouncie_device_id column missing).
+          // Retry with only data + updated_at so at least the JSONB fields are saved.
+          const { data: upserted2, error: upsertErr2 } = await supabase
+            .from("vehicles")
+            .upsert(
+              { vehicle_id: vehicleId, data: updatedData, updated_at: upsertPayload.updated_at },
+              { onConflict: "vehicle_id" }
+            )
+            .select("data")
+            .single();
+          if (!upsertErr2) {
+            return res.status(200).json({
+              success: true,
+              vehicle: { ...(upserted2.data || {}) },
+            });
+          }
+          if (!isSchemaError(upsertErr2)) throw new Error(`Supabase upsert (retry) failed: ${upsertErr2.message}`);
+          console.warn("v2-vehicles update: Supabase schema error on retry, falling back to GitHub:", upsertErr2.message);
         } else if (fetchErr && !isSchemaError(fetchErr)) {
           throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
         } else if (!fetchErr && !existing) {
