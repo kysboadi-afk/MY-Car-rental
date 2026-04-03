@@ -291,9 +291,21 @@ export function computeCarAmountFromVehicleData(vehicleData, pickup, returnDate,
   let remaining = computeRentalDays(pickup, returnDate);
   let cost = 0;
 
-  if (monthly  && remaining >= 30) { const m = Math.floor(remaining / 30); cost += m * monthly;  remaining %= 30; }
-  if (biweekly && remaining >= 14) { const b = Math.floor(remaining / 14); cost += b * biweekly; remaining %= 14; }
-  if (weekly   && remaining >= 7)  { const w = Math.floor(remaining / 7);  cost += w * weekly;   remaining %= 7;  }
+  if (monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost      += months * monthly;
+    remaining  = remaining % 30;
+  }
+  if (biweekly && remaining >= 14) {
+    const periods = Math.floor(remaining / 14);
+    cost      += periods * biweekly;
+    remaining  = remaining % 14;
+  }
+  if (weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost      += weeks * weekly;
+    remaining  = remaining % 7;
+  }
   cost += remaining * daily;
 
   return cost; // pre-tax, no deposit

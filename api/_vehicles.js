@@ -116,17 +116,18 @@ function normalizeVehicleData(vehicleId, vdata) {
   const isSlingshot = type === "slingshot";
   // For known slingshot vehicles in CARS, carry the hourly tier table through.
   const hourlyTiers = isSlingshot ? (CARS[vehicleId]?.hourlyTiers || vdata.hourlyTiers || null) : null;
+  const toNum = (v) => { const n = Number(v); return isNaN(n) ? null : n; };
   return {
     vehicleId,
     name:        vdata.vehicle_name || vdata.name || vehicleId,
     type,
     isSlingshot,
     hourlyTiers,
-    pricePerDay: Number(vdata.daily_rate  || vdata.pricePerDay  || 0) || null,
-    weekly:      Number(vdata.weekly      || vdata.weekly_rate  || 0) || null,
-    biweekly:    Number(vdata.biweekly    || vdata.biweekly_rate || 0) || null,
-    monthly:     Number(vdata.monthly     || vdata.monthly_rate || 0) || null,
-    deposit:     Number(vdata.deposit     || 0)                       || null,
+    pricePerDay: toNum(vdata.daily_rate  ?? vdata.pricePerDay),
+    weekly:      toNum(vdata.weekly      ?? vdata.weekly_rate),
+    biweekly:    toNum(vdata.biweekly    ?? vdata.biweekly_rate),
+    monthly:     toNum(vdata.monthly     ?? vdata.monthly_rate),
+    deposit:     toNum(vdata.deposit),
   };
 }
 
