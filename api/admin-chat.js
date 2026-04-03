@@ -112,7 +112,7 @@ Step 4 — Show a confirmation summary and ask for approval:
 ---
 **Bouncie Device Registration**
 - Device IMEI: [imei]
-- Vehicle: [vehicle name] (`[vehicleId]`)
+- Vehicle: [vehicle name] (\`[vehicleId]\`)
 
 Shall I assign this device?
 ---
