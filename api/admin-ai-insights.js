@@ -83,6 +83,9 @@ async function fetchAllData() {
         .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
       if (!error && data) {
         for (const row of data) {
+          // Skip slingshots — they are managed by the dedicated slingshot admin
+          const type = row.data?.type || row.data?.vehicle_type || "";
+          if (type === "slingshot") continue;
           vehicles[row.vehicle_id] = {
             vehicle_id:        row.vehicle_id,
             ...(row.data || {}),
@@ -98,7 +101,10 @@ async function fetchAllData() {
   }
   if (Object.keys(vehicles).length === 0) {
     const { data } = await loadVehicles();
-    vehicles = data;
+    for (const [id, v] of Object.entries(data)) {
+      if ((v.type || "") === "slingshot") continue;
+      vehicles[id] = v;
+    }
   }
 
   // ── Mileage data (Bouncie-tracked vehicles only) ──────────────────────────
@@ -142,7 +148,11 @@ async function fetchAllData() {
     }
   }
 
-  return { allBookings, vehicles, mileageData, recentTrips };
+  // Filter bookings to car vehicles only (exclude slingshots)
+  const carVehicleIds = new Set(Object.keys(vehicles));
+  const filteredBookings = allBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
+
+  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };
 }
 
 export default async function handler(req, res) {

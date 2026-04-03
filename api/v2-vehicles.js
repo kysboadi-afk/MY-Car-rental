@@ -55,6 +55,8 @@ export default async function handler(req, res) {
 
   // ── GET — public listing (no secret required) ──────────────────────────────
   if (req.method === "GET") {
+    // Optional scope filter: ?scope=car → exclude slingshots; ?scope=slingshot → only slingshots
+    const scope = (req.query?.scope || "").toLowerCase();
     const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
@@ -62,7 +64,14 @@ export default async function handler(req, res) {
           .from("vehicles")
           .select("vehicle_id, data, rental_status, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage");
         if (!error) {
-          const vehicles = (rows || []).map((row) => {
+          const vehicles = (rows || [])
+            .filter((row) => {
+              const type = row.data?.type || row.data?.vehicle_type || "";
+              if (scope === "cars" || scope === "car") return type !== "slingshot";
+              if (scope === "slingshot") return type === "slingshot";
+              return true;
+            })
+            .map((row) => {
             const obj = {
               vehicle_id: row.vehicle_id,
               ...(row.data || {}),
@@ -89,10 +98,17 @@ export default async function handler(req, res) {
     // GitHub fallback
     try {
       const { data: vehicles } = await loadVehicles();
-      const result = Object.values(vehicles).map((v) => {
-        if (v.cover_image) v = { ...v, cover_image: normalizeCoverImage(v.cover_image) };
-        return { ...v, tracked: !!v.bouncie_device_id };
-      });
+      const result = Object.values(vehicles)
+        .filter((v) => {
+          const type = v.type || "";
+          if (scope === "cars" || scope === "car") return type !== "slingshot";
+          if (scope === "slingshot") return type === "slingshot";
+          return true;
+        })
+        .map((v) => {
+          if (v.cover_image) v = { ...v, cover_image: normalizeCoverImage(v.cover_image) };
+          return { ...v, tracked: !!v.bouncie_device_id };
+        });
       return res.status(200).json(result);
     } catch (err) {
       console.error("v2-vehicles GET GitHub fallback error:", err);
@@ -122,6 +138,14 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
+      // scope: "car" → exclude slingshots; "slingshot" → slingshot only; omit → all
+      const scope = (body.scope || "").toLowerCase();
+      const scopeFilter = (type) => {
+        if (scope === "car" || scope === "cars") return type !== "slingshot";
+        if (scope === "slingshot") return type === "slingshot";
+        return true;
+      };
+
       if (supabase) {
         const { data: rows, error } = await supabase
           .from("vehicles")
@@ -130,6 +154,8 @@ export default async function handler(req, res) {
         if (!error) {
           const vehicles = {};
           for (const row of rows || []) {
+            const type = row.data?.type || row.data?.vehicle_type || "";
+            if (!scopeFilter(type)) continue;
             vehicles[row.vehicle_id] = {
               ...(row.data || {}),
               bouncie_device_id:        row.bouncie_device_id        || null,
@@ -150,6 +176,7 @@ export default async function handler(req, res) {
       const { data: rawVehicles } = await loadVehicles();
       const vehicles = {};
       for (const [id, v] of Object.entries(rawVehicles)) {
+        if (!scopeFilter(v.type || "")) continue;
         vehicles[id] = { ...v, tracked: !!v.bouncie_device_id };
       }
       return res.status(200).json({ vehicles });

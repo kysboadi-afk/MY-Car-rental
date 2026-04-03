@@ -244,6 +244,9 @@ async function fetchAllData() {
         .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status, last_auto_action_at, last_auto_action_reason");
       if (!error && data) {
         for (const row of data) {
+          // Skip slingshots — they are managed by the dedicated slingshot admin
+          const type = row.data?.type || row.data?.vehicle_type || "";
+          if (type === "slingshot") continue;
           vehicles[row.vehicle_id] = {
             vehicle_id:              row.vehicle_id,
             ...(row.data || {}),
@@ -263,7 +266,10 @@ async function fetchAllData() {
   }
   if (Object.keys(vehicles).length === 0) {
     const { data } = await loadVehicles();
-    vehicles = data;
+    for (const [id, v] of Object.entries(data)) {
+      if ((v.type || "") === "slingshot") continue;
+      vehicles[id] = v;
+    }
   }
 
   // Mileage data for Bouncie-tracked vehicles — rental_status is ignored when
@@ -319,8 +325,12 @@ async function fetchAllData() {
   }
 
   // Build active booking map (vehicle → booking with active_rental status)
+  // Only include car vehicles (slingshots already excluded from vehicles map)
+  const carVehicleIds = new Set(Object.keys(vehicles));
+  const filteredBookings = allBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
+
   const activeBookingByVehicle = {};
-  for (const booking of allBookings) {
+  for (const booking of filteredBookings) {
     if (booking.status === "active_rental" && booking.vehicleId) {
       // Keep the most recent active booking per vehicle
       if (!activeBookingByVehicle[booking.vehicleId]) {
@@ -329,7 +339,7 @@ async function fetchAllData() {
     }
   }
 
-  return { allBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle };
+  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle };
 }
 
 export default async function handler(req, res) {

@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret } = req.body || {};
+  const { secret, scope } = req.body || {};
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -50,8 +50,19 @@ export default async function handler(req, res) {
       loadBookings(),
     ]);
 
-    // Flatten all bookings
-    const allBookings = Object.values(bookingsData).flat();
+    // Filter vehicles by scope: "car" → exclude slingshots; "slingshot" → only slingshots
+    const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
+      const type = v.type || "";
+      if (scope === "car" || scope === "cars") return type !== "slingshot";
+      if (scope === "slingshot") return type === "slingshot";
+      return true;
+    });
+    const filteredVehicles = Object.fromEntries(filteredVehicleEntries);
+    const filteredVehicleIds = new Set(Object.keys(filteredVehicles));
+
+    // Flatten all bookings, limited to scoped vehicles
+    const allBookings = Object.values(bookingsData).flat()
+      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
     // KPIs
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
@@ -84,12 +95,12 @@ export default async function handler(req, res) {
     }
 
     // Vehicles available
-    const vehicleList = Object.values(vehicles);
+    const vehicleList = Object.values(filteredVehicles);
     const availableVehicles = vehicleList.filter((v) => v.status === "active").length;
 
     // Per-vehicle stats for alerts
     const vehicleStats = {};
-    for (const [vehicleId, vehicle] of Object.entries(vehicles)) {
+    for (const [vehicleId, vehicle] of Object.entries(filteredVehicles)) {
       const vBookings = (bookingsData[vehicleId] || []).filter((b) => paidStatuses.has(b.status));
       const vRevenue  = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
       const vExpenses = expenses.filter((e) => e.vehicle_id === vehicleId).reduce((s, e) => s + (e.amount || 0), 0);

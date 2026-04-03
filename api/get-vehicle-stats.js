@@ -164,9 +164,11 @@ export default async function handler(req, res) {
       if (sbCols.action_status     !== undefined) vehicle.action_status     = sbCols.action_status;
       if (sbCols.type && !vehicle.type)           vehicle.type              = sbCols.type;
 
+      // Skip slingshots — they are managed by the dedicated slingshot admin
+      if ((vehicle.type || "") === "slingshot") continue;
+
       // Tracking warning for cars without a Bouncie device
-      const isCar = (vehicle.type || "") !== "slingshot";
-      if (isCar && !vehicle.bouncie_device_id) {
+      if (!vehicle.bouncie_device_id) {
         vehicle.tracking_warning = "⚠️ This vehicle is not tracked — no mileage or maintenance alerts";
       } else {
         delete vehicle.tracking_warning;

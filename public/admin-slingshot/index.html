@@ -839,7 +839,7 @@ function signIn() {
   btn.textContent = 'Signing in…';
   btn.disabled = true;
 
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' })
     .then((data) => {
       dashboardData = data;
       document.getElementById('auth-screen').style.display = 'none';
@@ -934,7 +934,7 @@ function closeSidebar() {
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
-  apiPost('/api/v2-dashboard', { secret: adminSecret })
+  apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'slingshot' })
     .then((data) => { dashboardData = data; renderDashboard(data); })
     .catch((err) => {
       document.getElementById('dashboard-loading').innerHTML =
