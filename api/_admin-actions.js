@@ -493,6 +493,115 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
   return { created: vehicleId, name: vehicleName };
 }
 
+// ISO date pattern YYYY-MM-DD
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+async function toolCreateVehicle({ name, type, price_per_day, purchase_price, purchase_date, bouncie_device_id }) {
+  // ── Validation ─────────────────────────────────────────────────────────────
+  if (!name || !String(name).trim()) throw new Error("name is required");
+
+  const resolvedType = (type || "car").toLowerCase();
+  if (resolvedType === "slingshot") {
+    throw new Error("Slingshots are managed separately and cannot be created via this tool.");
+  }
+
+  const dailyRate = Number(price_per_day);
+  if (!price_per_day || isNaN(dailyRate) || dailyRate <= 0) {
+    throw new Error("price_per_day must be a number greater than 0");
+  }
+
+  const purchaseCost = Number(purchase_price);
+  if (!purchase_price || isNaN(purchaseCost) || purchaseCost <= 0) {
+    throw new Error("purchase_price must be a number greater than 0");
+  }
+
+  if (!purchase_date || !ISO_DATE_RE.test(String(purchase_date))) {
+    throw new Error("purchase_date must be a valid date in YYYY-MM-DD format (e.g. \"2024-01-10\")");
+  }
+  // Reject dates that parse as invalid (e.g. 2024-13-99)
+  if (isNaN(Date.parse(purchase_date))) {
+    throw new Error(`purchase_date "${purchase_date}" is not a valid calendar date`);
+  }
+
+  // ── ID generation (reuse same logic as toolAddVehicle) ────────────────────
+  const vehicles = await loadAllVehicles();
+
+  const base = String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 45) || "vehicle";
+
+  let vehicleId;
+  if (!vehicles[base]) {
+    vehicleId = base;
+  } else {
+    let attempts = 0;
+    do {
+      if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${name}"`);
+      const suffix = randomBytes(3).toString("hex").slice(0, 4);
+      vehicleId = `${base}-${suffix}`;
+    } while (vehicles[vehicleId]);
+  }
+
+  // ── Build vehicle record ───────────────────────────────────────────────────
+  const vehicleObj = {
+    vehicle_id:     vehicleId,
+    vehicle_name:   String(name).slice(0, 200),
+    type:           resolvedType,
+    status:         "active",
+    daily_rate:     dailyRate,
+    purchase_price: purchaseCost,
+    purchase_date:  purchase_date,
+  };
+
+  // ── Write to Supabase ──────────────────────────────────────────────────────
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const insertPayload = {
+      vehicle_id: vehicleId,
+      data: vehicleObj,
+    };
+    if (bouncie_device_id) {
+      insertPayload.bouncie_device_id = String(bouncie_device_id).trim();
+    }
+    const { error } = await sb.from("vehicles").insert(insertPayload);
+    if (error && !error.message?.includes("relation")) {
+      throw new Error(`Supabase insert failed: ${error.message}`);
+    }
+    // Mirror bouncie_device_id into the data blob for consistency
+    if (bouncie_device_id) {
+      vehicleObj.bouncie_device_id = String(bouncie_device_id).trim();
+    }
+  }
+
+  // ── Write to vehicles.json fallback ───────────────────────────────────────
+  const { data: jsonVehicles } = await loadVehicles();
+  jsonVehicles[vehicleId] = vehicleObj;
+  await saveVehicles(jsonVehicles);
+
+  console.log(`toolCreateVehicle: created "${vehicleId}" (${name}), price=$${dailyRate}/day, purchase=$${purchaseCost}`);
+
+  // ── Post-creation verification ────────────────────────────────────────────
+  const hasTracking = !!bouncie_device_id;
+  const warnings = [];
+  if (!hasTracking) {
+    warnings.push("No Bouncie device assigned — mileage and maintenance tracking is not active for this vehicle.");
+  }
+
+  return {
+    created:        vehicleId,
+    name:           vehicleObj.vehicle_name,
+    type:           resolvedType,
+    price_per_day:  dailyRate,
+    purchase_price: purchaseCost,
+    purchase_date,
+    bouncie_device_id: bouncie_device_id || null,
+    tracking_active: hasTracking,
+    warnings,
+  };
+}
+
 async function toolUpdateVehicle({ vehicleId, updates = {} }) {
   if (!vehicleId) throw new Error("vehicleId is required");
 
@@ -1020,6 +1129,7 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 const DESTRUCTIVE_TOOLS = new Set([
+  "create_vehicle",
   "add_vehicle",
   "update_vehicle",
   "send_sms",
@@ -1061,6 +1171,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_revenue":              result = await toolGetRevenue(args);              break;
       case "get_bookings":             result = await toolGetBookings(args);             break;
       case "get_vehicles":             result = await toolGetVehicles();                 break;
+      case "create_vehicle":           result = await toolCreateVehicle(args);           break;
       case "add_vehicle":              result = await toolAddVehicle(args);              break;
       case "update_vehicle":           result = await toolUpdateVehicle(args);           break;
       case "send_sms":                 result = await toolSendSms(args);                 break;
