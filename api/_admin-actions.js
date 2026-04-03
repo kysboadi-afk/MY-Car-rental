@@ -20,6 +20,7 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
+import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
@@ -142,7 +143,7 @@ async function loadAllVehicles() {
     try {
       const { data, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status");
       if (!error && data) {
         const map = {};
         for (const row of data) {
@@ -152,6 +153,8 @@ async function loadAllVehicles() {
             rental_status:     row.rental_status     || null,
             bouncie_device_id: row.bouncie_device_id || null,
             last_synced_at:    row.last_synced_at    || null,
+            decision_status:   row.decision_status   || null,
+            action_status:     row.action_status     || null,
           };
         }
         return map;
@@ -365,21 +368,69 @@ async function toolGetVehicles() {
     }
   }
 
-  const result = Object.entries(vehicles).map(([vehicleId, v]) => {
+  // Fetch mileage stats for priority computation (cars with Bouncie only)
+  let mileageStatMap = {};
+  if (sb) {
+    try {
+      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+        sb.from("vehicles")
+          .select("vehicle_id, mileage, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+          .not("bouncie_device_id", "is", null),
+        sb.from("trip_log")
+          .select("vehicle_id, trip_distance, trip_at")
+          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
+      ]);
+      const mileageInput = (vehicleRows || [])
+        .filter((r) => (r.data?.type || r.data?.vehicle_type || "") !== "slingshot")
+        .map((r) => ({
+          vehicle_id:               r.vehicle_id,
+          total_mileage:            Number(r.mileage) || 0,
+          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+        }));
+      const { stats } = analyzeMileage(mileageInput, (tripRows || []).map((r) => ({
+        vehicle_id: r.vehicle_id, trip_distance: r.trip_distance, trip_at: r.trip_at,
+      })));
+      for (const s of stats) mileageStatMap[s.vehicle_id] = s;
+    } catch {
+      // priority falls back to decision_status only
+    }
+  }
+
+  const entries = Object.entries(vehicles).map(([vehicleId, v]) => {
     const vBookings  = allBookings.filter((b) => b.vehicleId === vehicleId && paidStatuses.has(b.status));
     const revenue    = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
     const bookCount  = sbCounts ? (sbCounts[vehicleId] ?? vBookings.length) : vBookings.length;
+    const vType      = v.type || v.vehicle_type || "";
+    const isCar      = vType !== "slingshot";
 
-    return {
+    const { priority, reason: priorityReason } = computeVehiclePriority(v, mileageStatMap[vehicleId] || null);
+
+    const entry = {
       vehicleId,
-      name:          v.vehicle_name || vehicleId,
-      status:        v.status || "active",
-      totalBookings: bookCount,
-      totalRevenue:  Math.round(revenue * 100) / 100,
+      name:              v.vehicle_name || vehicleId,
+      type:              vType || "car",
+      status:            v.status || "active",
+      bouncie_device_id: v.bouncie_device_id || null,
+      decision_status:   v.decision_status || null,
+      action_status:     v.action_status    || null,
+      priority,
+      priority_reason:   priorityReason,
+      totalBookings:     bookCount,
+      totalRevenue:      Math.round(revenue * 100) / 100,
     };
+
+    // Tracking warning: cars without a Bouncie device are not monitored
+    if (isCar && !v.bouncie_device_id) {
+      entry.tracking_warning = "⚠️ This vehicle is not tracked — no mileage or maintenance alerts";
+    }
+
+    return entry;
   });
 
-  return { vehicles: result };
+  // Sort by priority: high → medium → low
+  return { vehicles: sortByPriority(entries) };
 }
 
 async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
@@ -448,11 +499,16 @@ async function toolUpdateVehicle({ vehicleId, updates = {} }) {
   const vehicles = await loadAllVehicles();
   if (!vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" not found`);
 
-  const allowed = ["vehicle_name", "status", "daily_rate"];
+  const allowed = ["vehicle_name", "status", "daily_rate", "price_per_day", "bouncie_device_id"];
   const sanitized = {};
   for (const key of allowed) {
     if (updates[key] !== undefined) sanitized[key] = updates[key];
   }
+  // price_per_day is an alias for daily_rate
+  if (sanitized.price_per_day !== undefined && sanitized.daily_rate === undefined) {
+    sanitized.daily_rate = sanitized.price_per_day;
+  }
+  delete sanitized.price_per_day;
 
   if (sanitized.status) {
     const validStatuses = ["active", "maintenance", "inactive"];
@@ -463,12 +519,16 @@ async function toolUpdateVehicle({ vehicleId, updates = {} }) {
 
   const updated = { ...vehicles[vehicleId], ...sanitized };
 
-  // Write to Supabase
+  // Write to Supabase — bouncie_device_id lives as a real column as well as in data JSONB
   const sb = getSupabaseAdmin();
   if (sb) {
+    const colUpdates = { data: updated };
+    if (sanitized.bouncie_device_id !== undefined) {
+      colUpdates.bouncie_device_id = sanitized.bouncie_device_id || null;
+    }
     const { error } = await sb
       .from("vehicles")
-      .update({ data: updated })
+      .update(colUpdates)
       .eq("vehicle_id", vehicleId);
     if (error && !error.message?.includes("relation")) {
       throw new Error(`Supabase update failed: ${error.message}`);
@@ -644,6 +704,177 @@ const MAINTENANCE_SERVICE_COLUMNS = {
   tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
 };
 
+// Risk score assigned when an admin manually flags a booking
+const ADMIN_FLAGGED_RISK_SCORE = 100;
+
+async function toolFlagBooking({ bookingId, reason }) {
+  if (!bookingId) throw new Error("bookingId is required");
+  if (!reason)    throw new Error("reason is required");
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot flag booking");
+
+  const { error } = await sb
+    .from("bookings")
+    .update({ flagged: true, risk_score: ADMIN_FLAGGED_RISK_SCORE })
+    .eq("booking_id", bookingId);
+
+  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+
+  return { success: true, bookingId, flagged: true, reason };
+}
+
+async function toolUpdateBookingStatus({ bookingId, status }) {
+  if (!bookingId) throw new Error("bookingId is required");
+  if (!status)    throw new Error("status is required");
+
+  const APP_TO_DB_STATUS = {
+    reserved_unpaid:  "pending",
+    booked_paid:      "approved",
+    active_rental:    "active",
+    completed_rental: "completed",
+    cancelled_rental: "cancelled",
+  };
+  const validStatuses = Object.keys(APP_TO_DB_STATUS);
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status "${status}". Must be one of: ${validStatuses.join(", ")}`);
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot update booking status");
+
+  const { error } = await sb
+    .from("bookings")
+    .update({ status: APP_TO_DB_STATUS[status] })
+    .eq("booking_id", bookingId);
+
+  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+
+  return { success: true, bookingId, status };
+}
+
+async function toolConfirmVehicleAction({ vehicleId, action }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!action)    throw new Error("action is required");
+
+  const validActions = ["review_for_sale", "needs_attention"];
+  if (!validActions.includes(action)) {
+    throw new Error(`Invalid action "${action}". Must be one of: ${validActions.join(", ")}`);
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot update vehicle action");
+
+  const { error } = await sb
+    .from("vehicles")
+    .update({
+      decision_status: action,
+      action_status:   "pending",
+      updated_at:      new Date().toISOString(),
+    })
+    .eq("vehicle_id", vehicleId);
+
+  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+
+  const labels = { review_for_sale: "Review for sale", needs_attention: "Needs attention" };
+  return {
+    success:         true,
+    vehicleId,
+    decision_status: action,
+    action_status:   "pending",
+    message:         `${labels[action]} decision recorded for ${vehicleId}. Action status set to pending.`,
+  };
+}
+
+async function toolUpdateActionStatus({ vehicleId, action_status }) {
+  if (!vehicleId)     throw new Error("vehicleId is required");
+  if (!action_status) throw new Error("action_status is required");
+
+  const validStatuses = ["pending", "in_progress", "resolved"];
+  if (!validStatuses.includes(action_status)) {
+    throw new Error(`Invalid action_status "${action_status}". Must be one of: ${validStatuses.join(", ")}`);
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot update action status");
+
+  // Fetch current action_status to enforce forward-only progression
+  const { data: row, error: fetchErr } = await sb
+    .from("vehicles")
+    .select("action_status, decision_status, last_auto_action_at, last_auto_action_reason")
+    .eq("vehicle_id", vehicleId)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
+  if (!row)     throw new Error(`Vehicle "${vehicleId}" not found`);
+  if (!row.decision_status) {
+    throw new Error(`Vehicle "${vehicleId}" has no active decision — use confirm_vehicle_action first`);
+  }
+
+  const currentOrder = ACTION_STATUS_ORDER[row.action_status] ?? -1;
+  const newOrder     = ACTION_STATUS_ORDER[action_status];
+  if (newOrder < currentOrder) {
+    throw new Error(
+      `Cannot move action_status backwards from "${row.action_status}" to "${action_status}". Allowed progression: pending → in_progress → resolved.`
+    );
+  }
+
+  const resolvedAt  = action_status === "resolved" ? new Date().toISOString() : null;
+  const resolutionPatch = resolvedAt
+    ? {
+        last_resolved_at:        resolvedAt,
+        last_resolved_reason:    row.last_auto_action_reason || null,
+        // Reset dedup state so the same issue can re-alert if it reoccurs
+        last_auto_action_at:     null,
+        last_auto_action_reason: null,
+      }
+    : {};
+
+  const { error } = await sb
+    .from("vehicles")
+    .update({ action_status, updated_at: new Date().toISOString(), ...resolutionPatch })
+    .eq("vehicle_id", vehicleId);
+
+  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+
+  // Compute time-to-resolution when closing an issue
+  let time_to_resolution_ms = null;
+  if (resolvedAt && row.last_auto_action_at) {
+    time_to_resolution_ms = new Date(resolvedAt).getTime() - new Date(row.last_auto_action_at).getTime();
+  }
+
+  return {
+    success:               true,
+    vehicleId,
+    action_status,
+    previous:              row.action_status,
+    ...(resolvedAt && {
+      last_resolved_at:     resolvedAt,
+      last_resolved_reason: row.last_auto_action_reason || null,
+      time_to_resolution_ms,
+    }),
+    message: `Action status for ${vehicleId} updated: ${row.action_status || "none"} → ${action_status}.`,
+  };
+}
+
+
+async function toolSendMessageToDriver({ bookingId, message }) {
+  if (!bookingId) throw new Error("bookingId is required");
+  if (!message)   throw new Error("message is required");
+  if (typeof message !== "string" || message.length > 1000) {
+    throw new Error("message must be a string of 1–1000 characters");
+  }
+
+  const allBookings = await loadAllBookings();
+  const booking = allBookings.find((b) => b.bookingId === bookingId);
+  if (!booking)   throw new Error(`Booking "${bookingId}" not found`);
+  if (!booking.phone) throw new Error(`Booking "${bookingId}" has no phone number on record`);
+
+  const result = await sendSms(booking.phone, message);
+  return { sent: true, bookingId, to: booking.phone, name: booking.name, id: result?.id };
+}
+
+
 async function toolMarkMaintenance({ vehicleId, serviceType }) {
   if (!vehicleId)   throw new Error("vehicleId is required");
   if (!serviceType) throw new Error("serviceType is required (oil | brakes | tires)");
@@ -684,19 +915,80 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
     .catch((err) => console.warn(`_admin-actions: maintenance_history insert failed:`, err.message));
 
   const labels = { oil: "Oil change", brakes: "Brake inspection", tires: "Tire change" };
+
+  // ── Optional: auto-resolve action_status when no maintenance remains overdue ──
+  // After recording the service, recompute mileage for this vehicle and check
+  // whether ALL services are now within interval. If so and action_status is
+  // pending/in_progress, set it to "resolved".
+  let autoResolved = false;
+  try {
+    const { data: freshRow } = await sb
+      .from("vehicles")
+      .select("mileage, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, action_status, data, last_auto_action_at, last_auto_action_reason")
+      .eq("vehicle_id", vehicleId)
+      .maybeSingle();
+
+    if (freshRow) {
+      const freshMiles = Number(freshRow.mileage) || 0;
+      const { stats: freshStats } = analyzeMileage([{
+        vehicle_id:               vehicleId,
+        total_mileage:            freshMiles,
+        last_oil_change_mileage:  freshRow.last_oil_change_mileage  != null ? Number(freshRow.last_oil_change_mileage)  : null,
+        last_brake_check_mileage: freshRow.last_brake_check_mileage != null ? Number(freshRow.last_brake_check_mileage) : null,
+        last_tire_change_mileage: freshRow.last_tire_change_mileage != null ? Number(freshRow.last_tire_change_mileage) : null,
+      }], []);
+
+      const activeActionStatus = freshRow.action_status;
+      if (
+        freshStats.length > 0 &&
+        hasNoOverdueMaintenance(freshStats[0]) &&
+        (activeActionStatus === "pending" || activeActionStatus === "in_progress")
+      ) {
+        const autoResolvedAt = new Date().toISOString();
+        await sb
+          .from("vehicles")
+          .update({
+            action_status:           "resolved",
+            last_resolved_at:        autoResolvedAt,
+            last_resolved_reason:    freshRow.last_auto_action_reason || null,
+            // Reset dedup state so a reoccurrence triggers a fresh alert
+            last_auto_action_at:     null,
+            last_auto_action_reason: null,
+            updated_at:              autoResolvedAt,
+          })
+          .eq("vehicle_id", vehicleId);
+        autoResolved = true;
+      }
+    }
+  } catch {
+    // auto-resolve is best-effort — do not fail the maintenance record
+  }
+
   return {
     success:         true,
     vehicleId,
     serviceType,
     service_label:   labels[serviceType],
     service_mileage: serviceMileage,
-    message:         `${labels[serviceType]} recorded at ${serviceMileage.toLocaleString()} mi for ${vehicleId}.`,
+    auto_resolved:   autoResolved,
+    message:         `${labels[serviceType]} recorded at ${serviceMileage.toLocaleString()} mi for ${vehicleId}.`
+      + (autoResolved ? " Action status auto-resolved (no remaining overdue services)." : ""),
   };
 }
 
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
-const DESTRUCTIVE_TOOLS = new Set(["add_vehicle", "update_vehicle", "send_sms", "mark_maintenance"]);
+const DESTRUCTIVE_TOOLS = new Set([
+  "add_vehicle",
+  "update_vehicle",
+  "send_sms",
+  "mark_maintenance",
+  "flag_booking",
+  "update_booking_status",
+  "confirm_vehicle_action",
+  "update_action_status",
+  "send_message_to_driver",
+]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
 
@@ -725,16 +1017,21 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
   let result;
   try {
     switch (toolName) {
-      case "get_revenue":       result = await toolGetRevenue(args);       break;
-      case "get_bookings":      result = await toolGetBookings(args);      break;
-      case "get_vehicles":      result = await toolGetVehicles();           break;
-      case "add_vehicle":       result = await toolAddVehicle(args);       break;
-      case "update_vehicle":    result = await toolUpdateVehicle(args);    break;
-      case "send_sms":          result = await toolSendSms(args);          break;
-      case "get_insights":      result = await toolGetInsights();           break;
-      case "get_fraud_report":  result = await toolGetFraudReport(args);  break;
-      case "get_mileage":       result = await toolGetMileage();            break;
-      case "mark_maintenance":  result = await toolMarkMaintenance(args);  break;
+      case "get_revenue":              result = await toolGetRevenue(args);              break;
+      case "get_bookings":             result = await toolGetBookings(args);             break;
+      case "get_vehicles":             result = await toolGetVehicles();                 break;
+      case "add_vehicle":              result = await toolAddVehicle(args);              break;
+      case "update_vehicle":           result = await toolUpdateVehicle(args);           break;
+      case "send_sms":                 result = await toolSendSms(args);                 break;
+      case "get_insights":             result = await toolGetInsights();                 break;
+      case "get_fraud_report":         result = await toolGetFraudReport(args);          break;
+      case "get_mileage":              result = await toolGetMileage();                  break;
+      case "mark_maintenance":         result = await toolMarkMaintenance(args);         break;
+      case "flag_booking":             result = await toolFlagBooking(args);             break;
+      case "update_booking_status":    result = await toolUpdateBookingStatus(args);     break;
+      case "confirm_vehicle_action":   result = await toolConfirmVehicleAction(args);    break;
+      case "update_action_status":     result = await toolUpdateActionStatus(args);      break;
+      case "send_message_to_driver":   result = await toolSendMessageToDriver(args);     break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
