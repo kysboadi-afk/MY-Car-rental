@@ -471,7 +471,7 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
   const vehicleObj = {
     vehicle_id:   vehicleId,
     vehicle_name: String(vehicleName).slice(0, 200),
-    type:         type || "other",
+    type:         type || "car",
     status:       "active",
     daily_rate:   dailyRate ? Number(dailyRate) : undefined,
   };
