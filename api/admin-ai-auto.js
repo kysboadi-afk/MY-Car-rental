@@ -26,9 +26,126 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { runAutoActions } from "../lib/ai/actions-auto.js";
+import { computePriorityAlerts } from "../lib/ai/priority-alerts.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { sendSms } from "./_textmagic.js";
+import nodemailer from "nodemailer";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+
+// ── Priority alert helpers ────────────────────────────────────────────────────
+
+async function safeSendSms(phone, text) {
+  try {
+    if (!phone) return false;
+    await sendSms(phone, text);
+    return true;
+  } catch (err) {
+    console.warn(`admin-ai-auto: SMS failed to ${phone}:`, err.message);
+    return false;
+  }
+}
+
+async function sendOwnerEmail(subject, html) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return false;
+  try {
+    const transporter = nodemailer.createTransport({
+      host:   process.env.SMTP_HOST,
+      port:   parseInt(process.env.SMTP_PORT || "587"),
+      secure: process.env.SMTP_PORT === "465",
+      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    await transporter.sendMail({ from: process.env.SMTP_USER, to: OWNER_EMAIL, subject, html });
+    return true;
+  } catch (err) {
+    console.warn("admin-ai-auto: owner email failed:", err.message);
+    return false;
+  }
+}
+
+/**
+ * Execute priority auto-alerts for all high-priority vehicles that need action.
+ * Returns a summary array for logging.
+ *
+ * Safety: ONLY sends messages and advances action_status pending → in_progress.
+ *         NEVER changes vehicle status, rental availability, or any destructive field.
+ */
+async function runPriorityAlerts({ vehicles, mileageStatMap, activeBookingByVehicle, sb }) {
+  const alerts = computePriorityAlerts({ vehicles, mileageStatMap, activeBookingByVehicle });
+  const summary = [];
+
+  if (alerts.length === 0) return summary;
+
+  for (const alert of alerts) {
+    const { vehicleId, name, reason, isMaintenance, setInProgress, alertDriver, driverPhone, driverName, bookingId } = alert;
+    const fired = [];
+
+    // ── Owner SMS ────────────────────────────────────────────────────────────
+    if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+      const ownerMsg = `🚨 HIGH PRIORITY — ${name}: ${reason}. Please review in the admin dashboard.`;
+      const sent = await safeSendSms(OWNER_PHONE, ownerMsg);
+      if (sent) fired.push("owner_sms");
+    }
+
+    // ── Owner email ──────────────────────────────────────────────────────────
+    const emailSent = await sendOwnerEmail(
+      `🚨 Fleet Alert — ${name} (High Priority)`,
+      `<p>🚨 <strong>High-priority issue detected for ${name}</strong></p>
+<p><strong>Issue:</strong> ${reason}</p>
+${isMaintenance ? `<p><strong>Type:</strong> Maintenance overdue</p>` : ""}
+${bookingId ? `<p><strong>Active booking:</strong> ${bookingId}</p>` : ""}
+${driverName  ? `<p><strong>Driver:</strong> ${driverName}</p>` : ""}
+${driverPhone ? `<p><strong>Driver phone:</strong> ${driverPhone}</p>` : ""}
+<p>Please log in to the admin dashboard to review and take action.</p>`
+    );
+    if (emailSent) fired.push("owner_email");
+
+    // ── Driver SMS (maintenance only, requires active booking) ───────────────
+    if (alertDriver && driverPhone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+      const driverMsg = `Hi${driverName ? ` ${driverName}` : ""} — your rental vehicle (${name}) requires immediate maintenance. Please contact us as soon as possible to schedule service. Maintenance is included.`;
+      const sent = await safeSendSms(driverPhone, driverMsg);
+      if (sent) fired.push("driver_sms");
+    }
+
+    // ── Advance action_status: pending → in_progress ─────────────────────────
+    if (setInProgress && sb) {
+      try {
+        await sb
+          .from("vehicles")
+          .update({ action_status: "in_progress", updated_at: new Date().toISOString() })
+          .eq("vehicle_id", vehicleId);
+        fired.push("action_status_in_progress");
+      } catch (err) {
+        console.warn(`admin-ai-auto: action_status update failed for ${vehicleId}:`, err.message);
+      }
+    }
+
+    // ── Record dedup stamp ────────────────────────────────────────────────────
+    if (fired.length > 0 && sb) {
+      try {
+        await sb
+          .from("vehicles")
+          .update({
+            last_auto_action_at:     new Date().toISOString(),
+            last_auto_action_reason: reason,
+            updated_at:              new Date().toISOString(),
+          })
+          .eq("vehicle_id", vehicleId);
+      } catch (err) {
+        console.warn(`admin-ai-auto: dedup stamp failed for ${vehicleId}:`, err.message);
+      }
+    }
+
+    summary.push({ vehicleId, name, reason, actions: fired });
+  }
+
+  return summary;
+}
+
+
 
 const DB_TO_APP_STATUS = {
   pending:   "reserved_unpaid",
@@ -83,20 +200,25 @@ async function fetchAllData() {
 
   // Include Bouncie fields so detectProblems can use tracking status as
   // source of truth, independent of booking/fleet status.
+  // Also include decision/action status and dedup columns for priority alerts.
   let vehicles = {};
   if (sb) {
     try {
       const { data, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at");
+        .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status, last_auto_action_at, last_auto_action_reason");
       if (!error && data) {
         for (const row of data) {
           vehicles[row.vehicle_id] = {
-            vehicle_id:        row.vehicle_id,
+            vehicle_id:              row.vehicle_id,
             ...(row.data || {}),
-            rental_status:     row.rental_status     || null,
-            bouncie_device_id: row.bouncie_device_id || null,
-            last_synced_at:    row.last_synced_at    || null,
+            rental_status:           row.rental_status           || null,
+            bouncie_device_id:       row.bouncie_device_id       || null,
+            last_synced_at:          row.last_synced_at          || null,
+            decision_status:         row.decision_status         || null,
+            action_status:           row.action_status           || null,
+            last_auto_action_at:     row.last_auto_action_at     || null,
+            last_auto_action_reason: row.last_auto_action_reason || null,
           };
         }
       }
@@ -113,6 +235,7 @@ async function fetchAllData() {
   // deciding what to track; last_synced_at is the source of truth for activity.
   let mileageData = [];
   let recentTrips = [];
+  let mileageStatMap = {};
   if (sb) {
     try {
       const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
@@ -148,7 +271,30 @@ async function fetchAllData() {
     }
   }
 
-  return { allBookings, vehicles, mileageData, recentTrips };
+  // Build mileageStatMap for priority computation (if analyzeMileage is available)
+  // We import analyzeMileage lazily to avoid pulling it in for the non-Supabase fallback path.
+  if (mileageData.length > 0) {
+    try {
+      const { analyzeMileage } = await import("../lib/ai/mileage.js");
+      const { stats } = analyzeMileage(mileageData, recentTrips);
+      for (const s of stats) mileageStatMap[s.vehicle_id] = s;
+    } catch {
+      // mileageStatMap stays empty — priority falls back to decision_status only
+    }
+  }
+
+  // Build active booking map (vehicle → booking with active_rental status)
+  const activeBookingByVehicle = {};
+  for (const booking of allBookings) {
+    if (booking.status === "active_rental" && booking.vehicleId) {
+      // Keep the most recent active booking per vehicle
+      if (!activeBookingByVehicle[booking.vehicleId]) {
+        activeBookingByVehicle[booking.vehicleId] = booking;
+      }
+    }
+  }
+
+  return { allBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle };
 }
 
 export default async function handler(req, res) {
@@ -181,12 +327,12 @@ export default async function handler(req, res) {
 
   try {
     const runStart = Date.now();
-    const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
+    const { allBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle } = await fetchAllData();
 
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
-    // Run auto-action engine
+    // Run auto-action engine (revenue / maintenance suggestions)
     const { suggestions, actions_taken } = await runAutoActions({
       insights,
       problems,
@@ -195,18 +341,28 @@ export default async function handler(req, res) {
       secret:  process.env.ADMIN_SECRET,
     });
 
+    // Run priority-based auto-alerts (owner SMS/email + driver SMS for HIGH priority)
+    const sb = getSupabaseAdmin();
+    const priorityAlerts = await runPriorityAlerts({
+      vehicles,
+      mileageStatMap,
+      activeBookingByVehicle,
+      sb,
+    });
+
     const runMs = Date.now() - runStart;
 
     const output = {
-      ran_at:        new Date().toISOString(),
-      auto_mode:     autoMode,
-      duration_ms:   runMs,
-      problems_found: problems.length,
+      ran_at:            new Date().toISOString(),
+      auto_mode:         autoMode,
+      duration_ms:       runMs,
+      problems_found:    problems.length,
       problems,
       suggestions,
       actions_taken,
-      revenue_this_week:  insights.revenue?.thisWeek,
-      bookings_last_7d:   insights.bookings?.last7Days,
+      priority_alerts:   priorityAlerts,
+      revenue_this_week: insights.revenue?.thisWeek,
+      bookings_last_7d:  insights.bookings?.last7Days,
     };
 
     // Log the auto-run to ai_logs
