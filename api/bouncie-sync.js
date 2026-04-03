@@ -58,10 +58,15 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  // Silently skip when Supabase is not configured (tokens can't be loaded)
+  // Silently skip when Supabase is not configured AND there is no fallback token.
+  // When Supabase IS available, tokens are loaded from app_config (auto-refreshed).
+  // When Supabase is unavailable but BOUNCIE_ACCESS_TOKEN is set, use that as fallback.
   const sb = getSupabaseAdmin();
   if (!sb && !process.env.BOUNCIE_ACCESS_TOKEN) {
-    return res.status(200).json({ skipped: true, reason: "Neither Supabase nor BOUNCIE_ACCESS_TOKEN is configured" });
+    return res.status(200).json({ skipped: true, reason: "Bouncie not configured (no Supabase and no BOUNCIE_ACCESS_TOKEN)" });
+  }
+  if (!sb) {
+    return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
   }
 
   const startedAt = Date.now();
@@ -115,7 +120,7 @@ export default async function handler(req, res) {
       try {
         const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
           sb.from("vehicles")
-            .select("vehicle_id, vehicle_name, vehicle_type, mileage, last_synced_at, data")
+            .select("vehicle_id, mileage, last_synced_at, data")
             .not("bouncie_device_id", "is", null),
           sb.from("trip_log")
             .select("vehicle_id, trip_distance, trip_at")
@@ -124,12 +129,12 @@ export default async function handler(req, res) {
 
         const mileageData = (vehicleRows || [])
           .filter((r) => {
-            const type = r.vehicle_type || r.data?.type || "";
+            const type = r.data?.type || r.data?.vehicle_type || "";
             return type !== "slingshot";
           })
           .map((r) => ({
             vehicle_id:           r.vehicle_id,
-            vehicle_name:         r.vehicle_name || r.data?.vehicle_name || r.vehicle_id,
+            vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
             total_mileage:        Number(r.mileage) || 0,
             last_service_mileage: Number(r.data?.last_service_mileage) || 0,
             last_synced_at:       r.last_synced_at,

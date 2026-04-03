@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     if (action === "get") {
       const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
         sb.from("vehicles")
-          .select("vehicle_id, vehicle_name, vehicle_type, mileage, last_synced_at, bouncie_device_id, data")
+          .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, data")
           .not("bouncie_device_id", "is", null)
           .order("vehicle_id"),
         sb.from("trip_log")
@@ -57,12 +57,12 @@ export default async function handler(req, res) {
 
       const mileageData = (vehicleRows || [])
         .filter((r) => {
-          const type = r.vehicle_type || r.data?.type || "";
+          const type = r.data?.type || r.data?.vehicle_type || "";
           return type !== "slingshot";
         })
         .map((r) => ({
           vehicle_id:           r.vehicle_id,
-          vehicle_name:         r.vehicle_name || r.data?.vehicle_name || r.vehicle_id,
+          vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
           total_mileage:        Number(r.mileage) || 0,
           last_service_mileage: Number(r.data?.last_service_mileage) || 0,
           bouncie_device_id:    r.bouncie_device_id,
