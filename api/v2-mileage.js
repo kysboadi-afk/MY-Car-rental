@@ -216,16 +216,6 @@ export default async function handler(req, res) {
   }
 }
 
-//
-// POST /api/v2-mileage
-// Body: { secret, action, ...params }
-//
-// Actions:
-//   get            — fetch mileage + trip stats for all vehicles
-//   sync           — trigger an on-demand Bouncie pull (same logic as bouncie-sync cron)
-//   update_service — record that a specific service was performed at current mileage
-//                    serviceType: "oil" | "brakes" | "tires" (omit to update all three)
-
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";

@@ -2642,18 +2642,23 @@ async function triggerBouncieSync(vehicleId) {
 }
 
 async function markVehicleServiced(vehicleId, serviceType) {
-  const labels = { oil: 'oil change', brakes: 'brake inspection', tires: 'tire replacement' };
-  const label  = serviceType ? labels[serviceType] : 'service';
+  const labels    = { oil: 'oil change', brakes: 'brake inspection', tires: 'tire replacement' };
+  const colKeys   = { oil: 'last_oil_change_mileage', brakes: 'last_brake_check_mileage', tires: 'last_tire_change_mileage' };
+  const label     = serviceType ? labels[serviceType] : 'service';
   if (!confirm(`Record ${label} at current mileage for this vehicle? This updates the maintenance counter.`)) return;
   try {
-    await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId, serviceType });
+    const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId, serviceType });
     showToast(`${label.charAt(0).toUpperCase() + label.slice(1)} recorded.`, 'success');
-    // Reload vehicle profile to reflect updated maintenance status
-    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
-    if (latest.vehicles && latest.vehicles[vehicleId]) {
-      allVehicles[vehicleId] = latest.vehicles[vehicleId];
-      if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
+    // Update local cache from the API response without re-fetching all vehicles
+    if (result.service_mileage != null && allVehicles[vehicleId]) {
+      if (serviceType && colKeys[serviceType]) {
+        allVehicles[vehicleId][colKeys[serviceType]] = result.service_mileage;
+      } else {
+        // Legacy all-service update — patch all three keys
+        for (const key of Object.values(colKeys)) allVehicles[vehicleId][key] = result.service_mileage;
+      }
     }
+    if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   }

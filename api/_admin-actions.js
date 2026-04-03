@@ -616,18 +616,18 @@ async function toolGetFraudReport({ flaggedOnly = true } = {}) {
   };
 }
 
-// Maps serviceType → DB column name (matches v2-mileage.js and migration 0022)
+// Maps serviceType → DB column name and JSONB key (matches v2-mileage.js and migration 0022)
 const MAINTENANCE_SERVICE_COLUMNS = {
-  oil:    "last_oil_change_mileage",
-  brakes: "last_brake_check_mileage",
-  tires:  "last_tire_change_mileage",
+  oil:    { col: "last_oil_change_mileage",   jsonKey: "last_oil_change_mileage" },
+  brakes: { col: "last_brake_check_mileage",  jsonKey: "last_brake_check_mileage" },
+  tires:  { col: "last_tire_change_mileage",  jsonKey: "last_tire_change_mileage" },
 };
 
 async function toolMarkMaintenance({ vehicleId, serviceType }) {
   if (!vehicleId)   throw new Error("vehicleId is required");
   if (!serviceType) throw new Error("serviceType is required (oil | brakes | tires)");
-  const col = MAINTENANCE_SERVICE_COLUMNS[serviceType];
-  if (!col) throw new Error(`Invalid serviceType "${serviceType}". Must be one of: ${Object.keys(MAINTENANCE_SERVICE_COLUMNS).join(", ")}`);
+  const mapping = MAINTENANCE_SERVICE_COLUMNS[serviceType];
+  if (!mapping) throw new Error(`Invalid serviceType "${serviceType}". Must be one of: ${Object.keys(MAINTENANCE_SERVICE_COLUMNS).join(", ")}`);
 
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error("Supabase not configured — cannot record maintenance");
@@ -643,14 +643,14 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
   if (!row)     throw new Error(`Vehicle "${vehicleId}" not found`);
 
   const serviceMileage = Number(row.mileage) || 0;
-  const updatedData    = { ...(row.data || {}), [col]: serviceMileage };
+  const updatedData    = { ...(row.data || {}), [mapping.jsonKey]: serviceMileage };
 
   const { error } = await sb
     .from("vehicles")
     .update({
-      [col]:      serviceMileage,
-      data:       updatedData,
-      updated_at: new Date().toISOString(),
+      [mapping.col]: serviceMileage,
+      data:          updatedData,
+      updated_at:    new Date().toISOString(),
     })
     .eq("vehicle_id", vehicleId);
 
