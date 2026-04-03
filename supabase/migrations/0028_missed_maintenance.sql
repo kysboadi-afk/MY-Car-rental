@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS maint_appts_overdue_idx
   ON maintenance_appointments (status, scheduled_at)
   WHERE status = 'scheduled';
 
--- Efficient missed-count per booking
+-- Efficient missed-count per booking (supports the (booking_id, status) filter in
+-- missed-maintenance.js without relying on a partial index)
 CREATE INDEX IF NOT EXISTS maint_appts_missed_booking_idx
-  ON maintenance_appointments (booking_id, status)
-  WHERE status = 'missed';
+  ON maintenance_appointments (booking_id, status);

@@ -220,26 +220,21 @@ export default async function handler(req, res) {
       const scheduledDt  = formatDateTime(scheduledAt);
       const reschedUrl   = scheduleUrl(vid, serviceType);
 
-      // Count previously missed appointments for this booking to determine escalation
-      let missedCount = 0;
+      // Count previously missed appointments for this booking to determine escalation.
+      // +1 accounts for the current appointment which has not been marked yet.
+      // We only count by bookingId (driver-scoped); without one we cannot reliably
+      // attribute previous misses to the same driver and skip escalation.
+      let previousMissedCount = 0;
       if (bookingId) {
         const { count, error: countErr } = await sb
           .from("maintenance_appointments")
           .select("id", { count: "exact", head: true })
           .eq("booking_id", bookingId)
           .eq("status", "missed");
-        if (!countErr) missedCount = count || 0;
-      } else {
-        const { count, error: countErr } = await sb
-          .from("maintenance_appointments")
-          .select("id", { count: "exact", head: true })
-          .eq("vehicle_id", vid)
-          .eq("status", "missed");
-        if (!countErr) missedCount = count || 0;
+        if (!countErr) previousMissedCount = count || 0;
       }
 
-      // +1 for the appointment we are about to mark missed
-      const totalMissed = missedCount + 1;
+      const totalMissed = previousMissedCount + 1;
 
       const alreadyNotified = !!(booking?.smsSentAt && booking.smsSentAt[missedKey]);
 
@@ -301,7 +296,7 @@ ${totalMissed > 1 ? `<p>⚠️ <strong>This driver has now missed ${totalMissed}
           });
         }
       } else if (totalMissed === 1) {
-        // First miss — escalate risk to "medium" if currently "low"
+        // First miss — escalate risk to "medium" if currently "low" or unset
         if (phone) {
           const normalized = normalizePhone(phone);
           if (normalized) {
@@ -309,7 +304,7 @@ ${totalMissed > 1 ? `<p>⚠️ <strong>This driver has now missed ${totalMissed}
               .from("customers")
               .update({ risk_flag: "medium" })
               .eq("phone", normalized)
-              .eq("risk_flag", "low");
+              .or("risk_flag.eq.low,risk_flag.is.null");
           }
         }
       }
