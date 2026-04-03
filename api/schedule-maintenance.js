@@ -158,7 +158,7 @@ async function sendEmail(to, subject, html) {
 function apiBase() {
   return process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
-    : "https://sly-rides.vercel.app";
+    : "https://www.slytrans.com";
 }
 
 function formatDateTime(iso) {

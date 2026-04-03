@@ -146,7 +146,7 @@
       }
 
       const selectedDate = new Date(rawDt);
-      if (isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now()) {
+      if (isNaN(selectedDate.getTime()) || selectedDate.getTime() <= Date.now() + 5000) {
         errEl.style.display = "block";
         errEl.textContent   = "Please select a future date and time.";
         return;

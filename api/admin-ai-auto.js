@@ -134,7 +134,13 @@ ${isMaintenance ? `<p style="font-size:12px;color:#888">Quick-service links expi
 
     // ── Driver SMS (maintenance only, requires active booking) ───────────────
     if (alertDriver && driverPhone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-      const driverMsg = `Hi${driverName ? ` ${driverName}` : ""} — your rental vehicle (${name}) requires immediate maintenance. Please contact us as soon as possible to schedule service. Maintenance is included.`;
+      // Find the first overdue service type from the reason string to build a scheduling link
+      const firstSvcType = Object.entries(REASON_TO_SERVICE_TYPE)
+        .find(([label]) => reason.includes(label))?.[1];
+      const schedLink = firstSvcType
+        ? ` Schedule here: ${(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.slytrans.com")}/maintenance-schedule.html?vehicleId=${encodeURIComponent(vehicleId)}&serviceType=${encodeURIComponent(firstSvcType)}`
+        : "";
+      const driverMsg = `Hi${driverName ? ` ${driverName}` : ""} — your rental vehicle (${name}) requires immediate maintenance. Maintenance is included.${schedLink}`;
       const sent = await safeSendSms(driverPhone, driverMsg);
       if (sent) fired.push("driver_sms");
     }
