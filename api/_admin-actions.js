@@ -20,7 +20,7 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
-import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance } from "../lib/ai/priority.js";
+import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
@@ -811,9 +811,8 @@ async function toolUpdateActionStatus({ vehicleId, action_status }) {
     throw new Error(`Vehicle "${vehicleId}" has no active decision — use confirm_vehicle_action first`);
   }
 
-  const ORDER = { pending: 0, in_progress: 1, resolved: 2 };
-  const currentOrder = ORDER[row.action_status] ?? -1;
-  const newOrder     = ORDER[action_status];
+  const currentOrder = ACTION_STATUS_ORDER[row.action_status] ?? -1;
+  const newOrder     = ACTION_STATUS_ORDER[action_status];
   if (newOrder < currentOrder) {
     throw new Error(
       `Cannot move action_status backwards from "${row.action_status}" to "${action_status}". Allowed progression: pending → in_progress → resolved.`
