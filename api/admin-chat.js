@@ -430,7 +430,7 @@ export default async function handler(req, res) {
     console.error("ADMIN CHAT CRASH:", err);
     return res.status(200).json({
       message: "⚠ Something went wrong, but the system is still running.",
-      error: err.message,
+      error: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
     });
   }
 }

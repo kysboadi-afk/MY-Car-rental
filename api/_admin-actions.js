@@ -1739,7 +1739,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
   } catch (err) {
     console.error("TOOL ERROR:", err);
     const errorResult = { error: adminErrorMessage(err), details: err.message };
-    try { await logAiAction(toolName, args, errorResult, adminId); } catch {}
+    try { await logAiAction(toolName, args, errorResult, adminId); } catch (logErr) { console.error("TOOL ERROR: failed to log action:", logErr); }
     return errorResult;
   }
 
