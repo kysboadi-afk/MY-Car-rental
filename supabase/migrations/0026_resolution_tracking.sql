@@ -16,7 +16,7 @@
 -- preventing redundant alerts within an unresolved cycle.
 --
 -- Analytics: time_to_resolution can be derived as:
---   last_resolved_at - last_auto_action_at_at_alert_time
+--   last_resolved_at - last_auto_action_at
 -- (last_auto_action_at is cleared on resolution, so callers should capture it
 --  before the reset if they need the exact delta — the return value of the
 --  update_action_status tool includes time_to_resolution_ms for this purpose.)
