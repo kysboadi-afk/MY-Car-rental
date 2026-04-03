@@ -273,7 +273,45 @@ export const LATE_FEE_APPLIED =
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. POST-RENTAL
+// 8. MAINTENANCE (customer-facing only — no technical details, no links)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sent when maintenance is first detected (80% threshold).
+ * Asks for the customer's availability — admin coordinates the appointment.
+ */
+export const MAINTENANCE_AVAILABILITY_REQUEST =
+  "Hey {customer_name}, we need to do a quick routine service on the vehicle. " +
+  "It\u2019s fully covered and only takes a short time. " +
+  "What time works best for you today or tomorrow?";
+
+/**
+ * Sent when maintenance is overdue (100% threshold) and the first message went unanswered.
+ */
+export const MAINTENANCE_AVAILABILITY_FOLLOWUP =
+  "Hey {customer_name}, just following up on the quick service we mentioned. " +
+  "It\u2019s fully covered and won\u2019t take long. " +
+  "What time works best for you today or tomorrow?";
+
+/**
+ * Sent at the escalation stage — vehicle still in service without scheduling.
+ * Keeps a calm, professional tone. Admin handles all scheduling.
+ */
+export const MAINTENANCE_AVAILABILITY_URGENT =
+  "Hey {customer_name}, we need to schedule a quick service on the vehicle as soon as possible. " +
+  "It\u2019s fully covered. Please let us know your availability right away.";
+
+/**
+ * Sent as a final follow-up when prior messages went unanswered.
+ * Slightly more pressing but still professional — admin handles all coordination.
+ */
+export const MAINTENANCE_AVAILABILITY_ESCALATION =
+  "Hey {customer_name}, we really need to schedule this quick service on the vehicle. " +
+  "It\u2019s fully covered and won\u2019t take long at all. " +
+  "Please reach out to us right away so we can get this taken care of.";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. POST-RENTAL
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Sent immediately after the vehicle is returned / rental is marked complete. */
@@ -345,6 +383,10 @@ export const TEMPLATES = {
   late_at_return_time:       LATE_AT_RETURN_TIME,
   late_grace_expired:        LATE_GRACE_EXPIRED,
   late_fee_applied:          LATE_FEE_APPLIED,
+  maintenance_availability_request:   MAINTENANCE_AVAILABILITY_REQUEST,
+  maintenance_availability_followup:  MAINTENANCE_AVAILABILITY_FOLLOWUP,
+  maintenance_availability_urgent:    MAINTENANCE_AVAILABILITY_URGENT,
+  maintenance_availability_escalation: MAINTENANCE_AVAILABILITY_ESCALATION,
   post_rental_thank_you:     POST_RENTAL_THANK_YOU,
   retention_day_1:           RETENTION_DAY_1,
   retention_day_3:           RETENTION_DAY_3,

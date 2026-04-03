@@ -211,6 +211,8 @@
       text-transform: uppercase; letter-spacing: 0.5px;
     }
     .vc-status-badge.active      { background: #1b3a1b; color: #4caf50; }
+    .vc-status-badge.available   { background: #1b3a1b; color: #4caf50; }
+    .vc-status-badge.on_rental   { background: #0d2a3a; color: #38bdf8; }
     .vc-status-badge.maintenance { background: #3a2e0a; color: #ffb400; }
     .vc-status-badge.inactive    { background: #2a1b1b; color: #ef4444; }
 
@@ -977,11 +979,14 @@
           var profitClass = s.netProfit >= 0 ? "green" : "red";
           var breakEvenPct = s.breakEvenPct != null ? Math.min(100, s.breakEvenPct) : 0;
           var statusClass  = v.status || "active";
+          var computedStatus = v.computed_status || null;
+          var statusCls  = computedStatus ? computedStatus.toLowerCase() : statusClass;
+          var statusLabel = computedStatus ? computedStatus.replace(/_/g, " ") : (v.status || "active");
           var priorityCls  = v.priority || "low";
           html += '<div class="vehicle-card" id="vcard-' + vid + '" onclick="window._profitSelectVehicle(\'' + vid + '\')">'
             + '<div class="vc-header">'
             + '<div class="vc-name">' + esc(v.vehicle_name) + '</div>'
-            + '<span class="vc-status-badge ' + statusClass + '">' + esc(v.status || "active") + '</span>'
+            + '<span class="vc-status-badge ' + esc(statusCls) + '">' + esc(statusLabel) + '</span>'
             + '<span class="vc-priority-badge ' + esc(priorityCls) + '">' + esc(priorityCls) + '</span>'
             + (v.decision_status ? '<span class="vc-decision-badge ' + esc(v.decision_status) + '">' + esc(v.decision_status.replace(/_/g, ' ')) + '</span>' : '')
             + (v.action_status   ? '<span class="vc-action-badge '   + esc(v.action_status)   + '">' + esc(v.action_status.replace(/_/g, ' '))   + '</span>' : '')

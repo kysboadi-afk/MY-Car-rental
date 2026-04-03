@@ -31,6 +31,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { sendSms } from "./_textmagic.js";
 import nodemailer from "nodemailer";
 import { buildServiceUrl } from "./_quick-service-token.js";
+import { render, MAINTENANCE_AVAILABILITY_REQUEST } from "./_sms-templates.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -134,13 +135,8 @@ ${isMaintenance ? `<p style="font-size:12px;color:#888">Quick-service links expi
 
     // ── Driver SMS (maintenance only, requires active booking) ───────────────
     if (alertDriver && driverPhone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-      // Find the first overdue service type from the reason string to build a scheduling link
-      const firstSvcType = Object.entries(REASON_TO_SERVICE_TYPE)
-        .find(([label]) => reason.includes(label))?.[1];
-      const schedLink = firstSvcType
-        ? ` Schedule here: ${(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://www.slytrans.com")}/maintenance-schedule.html?vehicleId=${encodeURIComponent(vehicleId)}&serviceType=${encodeURIComponent(firstSvcType)}`
-        : "";
-      const driverMsg = `Hi${driverName ? ` ${driverName}` : ""} — your rental vehicle (${name}) requires immediate maintenance. Maintenance is included.${schedLink}`;
+      const customerName = driverName || "there";
+      const driverMsg = render(MAINTENANCE_AVAILABILITY_REQUEST, { customer_name: customerName });
       const sent = await safeSendSms(driverPhone, driverMsg);
       if (sent) fired.push("driver_sms");
     }

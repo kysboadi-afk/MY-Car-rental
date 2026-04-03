@@ -179,6 +179,26 @@ export default async function handler(req, res) {
       vehicle.priority        = priority;
       vehicle.priority_reason = priorityReason;
 
+      // ── Computed status (ON_RENTAL / MAINTENANCE / AVAILABLE) ─────────────
+      // Bookings are the source of truth for availability.
+      // A vehicle is ON_RENTAL when today falls within a confirmed booking's date range.
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const allVehicleBookings = bookingsData[vehicleId] || [];
+      const currentBooking = allVehicleBookings.find((b) => {
+        if (b.status !== "booked_paid" && b.status !== "active_rental") return false;
+        const pickup = b.pickupDate || "";
+        const ret    = b.returnDate || "";
+        return pickup <= todayStr && ret >= todayStr;
+      }) || null;
+
+      if (vehicle.status === "maintenance") {
+        vehicle.computed_status = "MAINTENANCE";
+      } else if (currentBooking) {
+        vehicle.computed_status = "ON_RENTAL";
+      } else {
+        vehicle.computed_status = "AVAILABLE";
+      }
+
       // ── Bookings ───────────────────────────────────────────────────────────
       const vehicleBookings = (bookingsData[vehicleId] || []).filter(
         (b) => b.status === "booked_paid" || b.status === "active_rental" || b.status === "completed_rental"
