@@ -1,5 +1,12 @@
 // api/_bouncie.js
-// Bouncie GPS API client helpers.
+// Bouncie GPS API client helpers + OAuth callback handler.
+//
+// This file doubles as the Vercel serverless function at /api/_bouncie.
+// Bouncie's OAuth redirect URI must be set to:
+//   https://www.slytrans.com/api/_bouncie
+//
+// When Bouncie redirects back here with ?code=<auth_code>, this handler
+// exchanges the code for access + refresh tokens and stores them in Supabase.
 //
 // Base URL : https://api.bouncie.dev/v1
 // Auth     : Authorization: <access_token>
@@ -13,6 +20,8 @@
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
+
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const BOUNCIE_API  = "https://api.bouncie.dev/v1";
 const BOUNCIE_AUTH = "https://auth.bouncie.com/oauth/token";
@@ -269,5 +278,52 @@ export async function insertTripLog(sb, trip) {
   // 23505 = unique_violation on transaction_id — safe to ignore (duplicate event)
   if (error && !error.code?.includes("23505") && !error.message?.includes("unique")) {
     throw new Error(`insertTripLog failed: ${error.message}`);
+  }
+}
+
+// ── Vercel serverless handler (OAuth callback) ────────────────────────────────
+//
+// Bouncie redirects here after the user authorizes the app:
+//   GET /api/_bouncie?code=<authorization_code>
+//
+// The handler exchanges the code for tokens and stores them in Supabase,
+// then returns a human-readable HTML response.
+
+const REDIRECT_URI = "https://www.slytrans.com/api/_bouncie";
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).send("Method Not Allowed");
+  }
+
+  const { code } = req.query || {};
+
+  // No code — simple health-check response
+  if (!code) {
+    return res.status(200).send("Bouncie callback working");
+  }
+
+  // Exchange the authorization code for tokens
+  const sb = getSupabaseAdmin();
+  try {
+    await exchangeAuthCode(sb, String(code).trim(), REDIRECT_URI);
+    return res.status(200).send(
+      "<!DOCTYPE html><html><head><title>Bouncie Connected</title></head>" +
+      "<body style='font-family:sans-serif;padding:2rem'>" +
+      "<h2>✅ Bouncie connected successfully!</h2>" +
+      "<p>Tokens have been stored. Mileage sync will begin within 5 minutes.</p>" +
+      "<p>You can close this tab.</p>" +
+      "</body></html>"
+    );
+  } catch (err) {
+    console.error("Bouncie OAuth callback error:", err);
+    return res.status(500).send(
+      "<!DOCTYPE html><html><head><title>Bouncie Error</title></head>" +
+      "<body style='font-family:sans-serif;padding:2rem'>" +
+      "<h2>❌ Bouncie token exchange failed</h2>" +
+      `<p>${String(err.message).replace(/</g, "&lt;")}</p>` +
+      "<p>Check Vercel logs for details.</p>" +
+      "</body></html>"
+    );
   }
 }
