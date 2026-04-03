@@ -38,6 +38,17 @@ const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 // ── Priority alert helpers ────────────────────────────────────────────────────
 
+// HTML-escape user-supplied strings before embedding in email HTML (XSS prevention)
+function esc(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function safeSendSms(phone, text) {
   try {
     if (!phone) return false;
@@ -92,13 +103,13 @@ async function runPriorityAlerts({ vehicles, mileageStatMap, activeBookingByVehi
 
     // ── Owner email ──────────────────────────────────────────────────────────
     const emailSent = await sendOwnerEmail(
-      `🚨 Fleet Alert — ${name} (High Priority)`,
-      `<p>🚨 <strong>High-priority issue detected for ${name}</strong></p>
-<p><strong>Issue:</strong> ${reason}</p>
+      `🚨 Fleet Alert — ${esc(name)} (High Priority)`,
+      `<p>🚨 <strong>High-priority issue detected for ${esc(name)}</strong></p>
+<p><strong>Issue:</strong> ${esc(reason)}</p>
 ${isMaintenance ? `<p><strong>Type:</strong> Maintenance overdue</p>` : ""}
-${bookingId ? `<p><strong>Active booking:</strong> ${bookingId}</p>` : ""}
-${driverName  ? `<p><strong>Driver:</strong> ${driverName}</p>` : ""}
-${driverPhone ? `<p><strong>Driver phone:</strong> ${driverPhone}</p>` : ""}
+${bookingId  ? `<p><strong>Active booking:</strong> ${esc(bookingId)}</p>` : ""}
+${driverName  ? `<p><strong>Driver:</strong> ${esc(driverName)}</p>` : ""}
+${driverPhone ? `<p><strong>Driver phone:</strong> ${esc(driverPhone)}</p>` : ""}
 <p>Please log in to the admin dashboard to review and take action.</p>`
     );
     if (emailSent) fired.push("owner_email");
