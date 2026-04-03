@@ -4060,7 +4060,8 @@ function loadSystemSettings() {
   Promise.all([
     apiPost('/api/v2-system-settings', { secret: adminSecret, action: 'list' }),
     fetch(`${API_BASE}/api/bouncie-auth?secret=${encodeURIComponent(adminSecret)}`)
-      .then((r) => r.json()).catch(() => null),
+      .then((r) => r.json())
+      .catch((err) => { showToast('Could not load Bouncie status: ' + err.message, 'error'); return null; }),
   ])
     .then(([data, bouncieStatus]) => {
       allSystemSettings = data.settings || [];
@@ -4175,7 +4176,7 @@ function renderBouncieAuthSection(status) {
           <label class="form-label">${configured ? 'Re-authorize Bouncie' : 'Connect Bouncie'}</label>
           <div style="font-size:13px;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
             <strong>Step 1:</strong> Click the link below to authorize in your Bouncie account.
-            After granting access you will be redirected to <code>slytrans.com</code> —
+            After granting access you will be redirected to <code>www.slytrans.com</code> —
             copy the <code>code=…</code> value from the address bar.<br>
             <a href="${esc(authUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#6366f1);text-decoration:underline;">
               🔗 Authorize with Bouncie →
