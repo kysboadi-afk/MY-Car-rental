@@ -1466,11 +1466,17 @@ async function toolSendMessageToDriver({ bookingId, message }) {
 }
 
 
-async function toolMarkMaintenance({ vehicleId, serviceType }) {
+async function toolMarkMaintenance({ vehicleId, serviceType, mileage }) {
   if (!vehicleId)   throw new Error("vehicleId is required");
   if (!serviceType) throw new Error("serviceType is required (oil | brakes | tires)");
   const mapping = MAINTENANCE_SERVICE_COLUMNS[serviceType];
   if (!mapping) throw new Error(`Invalid serviceType "${serviceType}". Must be one of: ${Object.keys(MAINTENANCE_SERVICE_COLUMNS).join(", ")}`);
+
+  if (mileage !== undefined && mileage !== null) {
+    const parsed = Number(mileage);
+    if (isNaN(parsed) || parsed < 0) throw new Error("mileage must be a non-negative number");
+    mileage = parsed;
+  }
 
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error("Supabase not configured — cannot record maintenance");
@@ -1485,7 +1491,8 @@ async function toolMarkMaintenance({ vehicleId, serviceType }) {
   if (fetchErr) throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
   if (!row)     throw new Error(`Vehicle "${vehicleId}" not found`);
 
-  const serviceMileage = Number(row.mileage) || 0;
+  // Use provided mileage if given, otherwise fall back to current odometer
+  const serviceMileage = (mileage !== undefined && mileage !== null) ? mileage : (Number(row.mileage) || 0);
   const updatedData    = { ...(row.data || {}), [mapping.jsonKey]: serviceMileage };
 
   const { error } = await sb
