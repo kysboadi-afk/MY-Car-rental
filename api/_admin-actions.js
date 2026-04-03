@@ -19,6 +19,8 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
+import { analyzeMileage } from "../lib/ai/mileage.js";
+import { randomBytes } from "crypto";
 
 // DB → app status mapping (mirrors v2-bookings.js)
 const DB_TO_APP_STATUS = {
@@ -379,12 +381,35 @@ async function toolGetVehicles() {
 }
 
 async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
-  if (!vehicleId || !vehicleName) throw new Error("vehicleId and vehicleName are required");
-  if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
+  if (!vehicleName) throw new Error("vehicleName is required");
+
+  const vehicles = await loadAllVehicles();
+
+  if (!vehicleId) {
+    // Auto-generate a slug from the vehicle name (max 45 chars to leave room for suffix)
+    const base = vehicleName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 45) || "vehicle";
+    if (!vehicles[base]) {
+      vehicleId = base;
+    } else {
+      // Append a guaranteed 4-char hex suffix using a cryptographically secure source
+      const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+      let candidate;
+      let attempts = 0;
+      do {
+        if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${vehicleName}"`);
+        const suffix = randomBytes(3).toString("hex").slice(0, 4); // always 4 lowercase hex chars
+        candidate = `${base}-${suffix}`;
+      } while (vehicles[candidate]);
+      vehicleId = candidate;
+    }
+  } else if (!/^[a-z0-9_-]{2,50}$/.test(vehicleId)) {
     throw new Error("vehicleId must be lowercase letters, digits, hyphens, or underscores (2–50 chars)");
   }
 
-  const vehicles = await loadAllVehicles();
   if (vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" already exists`);
 
   const vehicleObj = {
@@ -481,6 +506,50 @@ async function toolGetInsights() {
   return { insights, problems };
 }
 
+async function toolGetMileage() {
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return { error: "Supabase not configured — mileage data unavailable" };
+  }
+
+  const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
+    sb.from("vehicles")
+      .select("vehicle_id, mileage, last_synced_at, bouncie_device_id, data")
+      .not("bouncie_device_id", "is", null),
+    sb.from("trip_log")
+      .select("vehicle_id, trip_distance, trip_at")
+      .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+      .catch(() => ({ data: [] })),
+  ]);
+
+  const mileageData = (vehicleRows || [])
+    .filter((r) => {
+      const type = r.data?.type || r.data?.vehicle_type || "";
+      return type !== "slingshot";
+    })
+    .map((r) => ({
+      vehicle_id:           r.vehicle_id,
+      vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
+      total_mileage:        Number(r.mileage) || 0,
+      last_service_mileage: Number(r.data?.last_service_mileage) || 0,
+      bouncie_device_id:    r.bouncie_device_id,
+      last_synced_at:       r.last_synced_at,
+    }));
+
+  const { alerts, stats } = analyzeMileage(mileageData, (tripRows || []).map((r) => ({
+    vehicle_id:    r.vehicle_id,
+    trip_distance: r.trip_distance,
+    trip_at:       r.trip_at,
+  })));
+
+  return {
+    tracked_vehicles: mileageData.length,
+    stats,
+    alerts,
+    bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
+  };
+}
+
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {
   const allBookings = await loadAllBookings();
   let scored = scoreAllBookings(allBookings);
@@ -540,6 +609,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "send_sms":          result = await toolSendSms(args);          break;
       case "get_insights":      result = await toolGetInsights();           break;
       case "get_fraud_report":  result = await toolGetFraudReport(args);  break;
+      case "get_mileage":       result = await toolGetMileage();            break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

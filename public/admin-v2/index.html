@@ -1611,6 +1611,7 @@
               <button class="ai-chip" onclick="aiChip('Why am I not getting bookings?')">📉 Booking analysis</button>
               <button class="ai-chip" onclick="aiChip('Show me all active rentals')">🚗 Active rentals</button>
               <button class="ai-chip" onclick="aiChip('Run a fraud check on recent bookings')">🔍 Fraud check</button>
+              <button class="ai-chip" onclick="aiChip('What is the current mileage and maintenance status of my fleet?')">🛣️ Fleet mileage</button>
             </div>
 
             <!-- Input row -->
@@ -1793,6 +1794,11 @@
         <div id="ev-msg" style="margin-top:4px;font-size:13px;"></div>
         <div id="ev-img-preview" style="margin-top:8px;display:none;"><img id="ev-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
+      <div class="form-group full">
+        <label class="form-label">Bouncie Device ID (IMEI)</label>
+        <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric">
+        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Once set, mileage syncs automatically every 5 minutes.</div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('edit-vehicle-modal')">Cancel</button>
@@ -1861,6 +1867,11 @@
         </div>
         <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
         <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Bouncie Device ID (IMEI)</label>
+        <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric">
+        <div class="form-hint">15-digit IMEI from the Bouncie tracker. Cars only — leave blank for slingshots. Enables automatic mileage tracking.</div>
       </div>
     </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
@@ -2344,8 +2355,10 @@ function renderVehicles(vehicles, stats) {
                   <div class="vehicle-stat-lbl">Net Profit</div>
                 </div>
                 <div class="vehicle-stat">
-                  <div class="vehicle-stat-val">${s.roi != null ? s.roi.toFixed(1) + '%' : '–'}</div>
-                  <div class="vehicle-stat-lbl">ROI</div>
+                  ${v.bouncie_device_id
+                    ? `<div class="vehicle-stat-val" style="color:var(--primary)">${v.total_mileage != null ? Number(v.total_mileage).toLocaleString() : '–'} mi</div><div class="vehicle-stat-lbl">Odometer</div>`
+                    : `<div class="vehicle-stat-val" style="color:var(--text-sub)">–</div><div class="vehicle-stat-lbl">Not tracked</div>`
+                  }
                 </div>
               </div>
               <div style="margin-top:12px;display:flex;gap:8px;">
@@ -2445,6 +2458,34 @@ function renderVehicleProfile(id, v, s) {
         <div class="form-group"><label class="form-label">Purchase Date</label><input class="form-input" value="${esc(v.purchase_date || '–')}" readonly></div>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div class="card-title">📡 GPS Tracking (Bouncie)</div>
+      </div>
+      ${v.bouncie_device_id ? `
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Bouncie Device ID</label>
+            <input class="form-input" value="${esc(v.bouncie_device_id)}" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Odometer</label>
+            <input class="form-input" value="${v.total_mileage != null ? Number(v.total_mileage).toLocaleString() + ' miles' : 'Not yet synced'}" readonly>
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Last Synced</label>
+            <input class="form-input" value="${v.last_synced_at ? new Date(v.last_synced_at).toLocaleString() : 'Never'}" readonly>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="triggerBouncieSync('${id}')">🔄 Sync Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="markVehicleServiced('${id}')">🔧 Mark as Serviced</button>
+        </div>
+      ` : `
+        <p style="color:var(--text-sub);font-size:13px;padding:4px 0;">This vehicle has no Bouncie device assigned. Edit the vehicle and enter the 15-digit IMEI to enable automatic mileage tracking.</p>
+      `}
+    </div>
   `;
 }
 
@@ -2471,6 +2512,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-purchase-price').value = v.purchase_price || '';
   document.getElementById('ev-purchase-date').value = v.purchase_date || '';
   document.getElementById('ev-cover-image').value = v.cover_image || '';
+  document.getElementById('ev-bouncie-id').value = v.bouncie_device_id || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
   openModal('edit-vehicle-modal');
@@ -2479,13 +2521,14 @@ async function openEditVehicle(vehicleId) {
 async function saveVehicle() {
   if (!editingVehicleId) return;
   const updates = {
-    vehicle_name:   document.getElementById('ev-name').value.trim(),
-    type:           document.getElementById('ev-type').value,
-    status:         document.getElementById('ev-status').value,
-    vehicle_year:   Number(document.getElementById('ev-year').value) || null,
-    purchase_price: parseFloat(document.getElementById('ev-purchase-price').value) || 0,
-    purchase_date:  document.getElementById('ev-purchase-date').value,
-    cover_image:    document.getElementById('ev-cover-image').value.trim(),
+    vehicle_name:      document.getElementById('ev-name').value.trim(),
+    type:              document.getElementById('ev-type').value,
+    status:            document.getElementById('ev-status').value,
+    vehicle_year:      Number(document.getElementById('ev-year').value) || null,
+    purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
+    purchase_date:     document.getElementById('ev-purchase-date').value,
+    cover_image:       document.getElementById('ev-cover-image').value.trim(),
+    bouncie_device_id: document.getElementById('ev-bouncie-id').value.trim() || null,
   };
 
   const btn = document.querySelector('#edit-vehicle-modal .modal-footer .btn-primary');
@@ -2526,6 +2569,38 @@ async function saveVehicle() {
   }
 }
 
+// ── Bouncie / mileage helpers ──────────────────────────────────────────────
+async function triggerBouncieSync(vehicleId) {
+  try {
+    showToast('Syncing with Bouncie…', 'info');
+    const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
+    const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
+    if (synced) {
+      showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
+    } else {
+      showToast(result.skipped ? 'Bouncie not configured' : 'Sync complete (no new data)', 'info');
+    }
+    // Reload vehicle to reflect updated mileage
+    const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
+    if (latest.vehicles && latest.vehicles[vehicleId]) {
+      allVehicles[vehicleId] = latest.vehicles[vehicleId];
+      if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
+    }
+  } catch (err) {
+    showToast('Sync failed: ' + err.message, 'error');
+  }
+}
+
+async function markVehicleServiced(vehicleId) {
+  if (!confirm('Mark this vehicle as serviced at its current mileage? This resets the miles-since-service counter.')) return;
+  try {
+    await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'update_service', vehicleId });
+    showToast('Service milestone recorded.', 'success');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  }
+}
+
 // ── Add Vehicle ────────────────────────────────────────────────────────────
 function openAddVehicle() {
   document.getElementById('av-id').value = '';
@@ -2536,6 +2611,7 @@ function openAddVehicle() {
   document.getElementById('av-purchase-price').value = '';
   document.getElementById('av-purchase-date').value = '';
   document.getElementById('av-cover-image').value = '';
+  document.getElementById('av-bouncie-id').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   document.getElementById('av-save-btn').disabled = false;
@@ -2544,14 +2620,15 @@ function openAddVehicle() {
 }
 
 async function saveNewVehicle() {
-  const vehicleId     = (document.getElementById('av-id').value || '').trim().toLowerCase();
-  const vehicleName   = document.getElementById('av-name').value.trim();
-  const type          = document.getElementById('av-type').value;
-  const status        = document.getElementById('av-status').value;
-  const vehicleYear   = parseInt(document.getElementById('av-year').value, 10) || null;
-  const purchasePrice = parseFloat(document.getElementById('av-purchase-price').value) || 0;
-  const purchaseDate  = document.getElementById('av-purchase-date').value;
-  const coverImage    = document.getElementById('av-cover-image').value.trim();
+  const vehicleId       = (document.getElementById('av-id').value || '').trim().toLowerCase();
+  const vehicleName     = document.getElementById('av-name').value.trim();
+  const type            = document.getElementById('av-type').value;
+  const status          = document.getElementById('av-status').value;
+  const vehicleYear     = parseInt(document.getElementById('av-year').value, 10) || null;
+  const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
+  const purchaseDate    = document.getElementById('av-purchase-date').value;
+  const coverImage      = document.getElementById('av-cover-image').value.trim();
+  const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
 
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
@@ -2576,6 +2653,7 @@ async function saveNewVehicle() {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
       vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');
