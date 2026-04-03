@@ -23,7 +23,6 @@ import { isAdminAuthorized } from "./_admin-auth.js";
 import { executeAction } from "./_admin-actions.js";
 import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
 
 const SYSTEM_PROMPT = `You are the SLY Rides AI Business Assistant — an intelligent operations manager for a Los Angeles car rental company.
@@ -287,10 +286,9 @@ function formatConfirmedReply(toolName, args, result) {
 }
 
 export default async function handler(req, res) {
-  const origin = req.headers.origin;
-  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
