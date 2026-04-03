@@ -16,7 +16,7 @@
 //   GITHUB_REPO    (defaults to kysboadi-afk/SLY-RIDES)
 
 import Stripe from "stripe";
-import { CARS } from "./_pricing.js";
+import { getVehicleById } from "./_vehicles.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 
@@ -70,7 +70,8 @@ export default async function handler(req, res) {
   const { vehicleId, email, phone, newReturnDate, newReturnTime } = req.body || {};
 
   // ── Input validation ────────────────────────────────────────────────────────
-  if (!vehicleId || !CARS[vehicleId]) {
+  const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+  if (!vehicleData) {
     return res.status(400).json({ error: "Invalid vehicle." });
   }
 
@@ -156,7 +157,7 @@ export default async function handler(req, res) {
 
     // ── Compute extension price ────────────────────────────────────────────
     const settings = await loadPricingSettings();
-    const isSlingshot = vehicleId.startsWith("slingshot");
+    const isSlingshot = vehicleData.isSlingshot;
 
     let extensionAmountPreTax;
     let extensionLabel;
@@ -170,31 +171,33 @@ export default async function handler(req, res) {
       extensionAmountPreTax = Math.ceil(extraHours * hourlyRate);
       extensionLabel = `+${extraHours} hour${extraHours !== 1 ? "s" : ""}`;
     } else {
-      // Economy cars: bill by extra days using the same tiered pricing as the
-      // main booking flow (monthly → bi-weekly → weekly → daily).
+      // Economy/car vehicles: bill by extra days using the same tiered pricing as
+      // the main booking flow (monthly → bi-weekly → weekly → daily).
+      // Use the vehicle's own stored rates so newly added vehicles are priced
+      // correctly (not at the hardcoded Camry rates).
       const extraMs   = newReturnMs - currentReturnMs;
       const extraDays = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
       extensionLabel  = `+${extraDays} day${extraDays !== 1 ? "s" : ""}`;
 
-      const dailyRate   = settings.camry_daily_rate    || 55;
-      const weeklyRate  = settings.camry_weekly_rate   || 350;
-      const biweekRate  = settings.camry_biweekly_rate || 650;
-      const monthlyRate = settings.camry_monthly_rate  || 1300;
+      const dailyRate   = vehicleData.pricePerDay    || settings.camry_daily_rate    || 55;
+      const weeklyRate  = vehicleData.weekly         || settings.camry_weekly_rate   || null;
+      const biweekRate  = vehicleData.biweekly       || settings.camry_biweekly_rate || null;
+      const monthlyRate = vehicleData.monthly        || settings.camry_monthly_rate  || null;
 
       let cost      = 0;
       let remaining = extraDays;
 
-      if (remaining >= 30) {
+      if (monthlyRate && remaining >= 30) {
         const months = Math.floor(remaining / 30);
         cost      += months * monthlyRate;
         remaining  = remaining % 30;
       }
-      if (remaining >= 14) {
+      if (biweekRate && remaining >= 14) {
         const periods = Math.floor(remaining / 14);
         cost      += periods * biweekRate;
         remaining  = remaining % 14;
       }
-      if (remaining >= 7) {
+      if (weeklyRate && remaining >= 7) {
         const weeks = Math.floor(remaining / 7);
         cost      += weeks * weeklyRate;
         remaining  = remaining % 7;
@@ -208,12 +211,11 @@ export default async function handler(req, res) {
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
-    const carData = CARS[vehicleId];
 
     const pi = await stripe.paymentIntents.create({
       amount:   Math.round(extensionAmount * 100),
       currency: "usd",
-      description: `Rental extension — ${carData.name} — ${extensionLabel} — ${activeBooking.name || ""}`,
+      description: `Rental extension — ${vehicleData.name} — ${extensionLabel} — ${activeBooking.name || ""}`,
       automatic_payment_methods: { enabled: true },
       payment_method_options: {
         card: { request_three_d_secure: "automatic" },
@@ -223,7 +225,7 @@ export default async function handler(req, res) {
         payment_type:        "rental_extension",
         original_booking_id: activeBooking.bookingId || activeBooking.paymentIntentId || "",
         vehicle_id:          vehicleId,
-        vehicle_name:        carData.name,
+        vehicle_name:        vehicleData.name,
         renter_name:         activeBooking.name  || "",
         renter_email:        activeBooking.email || "",
         renter_phone:        activeBooking.phone || "",
@@ -263,7 +265,7 @@ export default async function handler(req, res) {
       extensionLabel,
       newReturnDate,
       newReturnTime:   newReturnTime || "",
-      vehicleName:     carData.name,
+      vehicleName:     vehicleData.name,
       renterName:      activeBooking.name || "",
     });
   } catch (err) {

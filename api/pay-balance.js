@@ -11,15 +11,15 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
 import {
-  CARS,
   computeRentalDays,
 } from "./_pricing.js";
 import {
   loadPricingSettings,
-  computeCamryAmountFromSettings,
+  computeCarAmountFromVehicleData,
   computeSlingshotAmountFromSettings,
   computeDppCostFromSettings,
 } from "./_settings.js";
+import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -48,12 +48,13 @@ export default async function handler(req, res) {
   try {
     const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration } = req.body;
 
-    // Validate vehicleId against the server-side allowlist
-    if (!vehicleId || !CARS[vehicleId]) {
+    // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
+    const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+    if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
 
-    const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
+    const isSlingshotVehicle = vehicleData.isSlingshot;
 
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (isSlingshotVehicle) {
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
     // Compute amounts server-side — never trust a client-supplied amount.
     const computedFullRental = isSlingshotVehicle
       ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
-      : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
+      : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 
     const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
@@ -101,12 +102,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No balance due for this booking." });
     }
 
-    const carData = CARS[vehicleId];
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${carData.name} Balance Payment`,
+      description: `Sly Transportation Services LLC – ${vehicleData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
       // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
       // based on the customer's billing address collected by the Payment Element.
@@ -114,7 +114,7 @@ export default async function handler(req, res) {
       metadata: {
         renter_name:           trimmedName,
         vehicle_id:            vehicleId,
-        vehicle_name:          carData.name,
+        vehicle_name:          vehicleData.name,
         pickup_date:           pickup,
         return_date:           returnDate,
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),

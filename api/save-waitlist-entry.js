@@ -11,8 +11,8 @@
 //   GITHUB_REPO   (defaults to kysboadi-afk/SLY-RIDES)
 import crypto from "crypto";
 import nodemailer from "nodemailer";
-import { CARS } from "./_pricing.js";
 import { createDecisionToken } from "./_waitlist-token.js";
+import { getVehicleById } from "./_vehicles.js";
 import { sendSms } from "./_textmagic.js";
 import { render, WAITLIST_JOINED } from "./_sms-templates.js";
 import { normalizePhone } from "./_bookings.js";
@@ -126,7 +126,8 @@ export default async function handler(req, res) {
       protectionPlanPref,
     } = req.body;
 
-    if (!vehicleId || !CARS[vehicleId]) {
+    const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+    if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -139,7 +140,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Driver's license upload is required" });
     }
 
-    const carData    = CARS[vehicleId];
     const trimmedName = name.trim();
 
     // Generate a unique entry ID used for approve/decline token binding
@@ -154,7 +154,7 @@ export default async function handler(req, res) {
       preferredReturn:     preferredReturn || "",
       depositPaid:         WAITLIST_DEPOSIT,
       paymentIntentId:     paymentIntentId || "",
-      vehicleName:         carData.name,
+      vehicleName:         vehicleData.name,
       status:              "pending",
       hasInsurance:        hasInsurance || "",
       protectionPlanPref:  protectionPlanPref || "standard",
@@ -189,9 +189,9 @@ export default async function handler(req, res) {
         const adminMailOpts = {
           from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
           to:      OWNER_EMAIL,
-          subject: `🔔 New Waitlist Sign-up #${position}: ${carData.name} — ${trimmedName} [PENDING REVIEW]`,
+          subject: `🔔 New Waitlist Sign-up #${position}: ${vehicleData.name} — ${trimmedName} [PENDING REVIEW]`,
           text: [
-            `New waitlist sign-up for ${carData.name}`,
+            `New waitlist sign-up for ${vehicleData.name}`,
             `Queue Position : #${position}`,
             `Status         : PENDING`,
             `Name           : ${trimmedName}`,
@@ -212,13 +212,13 @@ export default async function handler(req, res) {
             `DECLINE: ${declineUrl}`,
           ].join("\n"),
           html: `
-            <h2>🔔 New Waitlist Sign-up — ${esc(carData.name)}</h2>
+            <h2>🔔 New Waitlist Sign-up — ${esc(vehicleData.name)}</h2>
             <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
               <strong>⏳ Status: PENDING REVIEW</strong> — Please review the driver's license (attached) and approve or decline below.
             </p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Queue Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
-              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
+              <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleData.name)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(trimmedName)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email)}</td></tr>
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone || "Not provided")}</td></tr>
@@ -278,17 +278,17 @@ export default async function handler(req, res) {
           await transporter.sendMail({
             from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
             to:      email,
-            subject: `⏳ Waitlist Application Received — ${carData.name} | SLY Transportation`,
+            subject: `⏳ Waitlist Application Received — ${vehicleData.name} | SLY Transportation`,
             text: [
               `Hi ${trimmedName},`,
               "",
-              `Thank you for joining the waitlist for the ${carData.name}!`,
+              `Thank you for joining the waitlist for the ${vehicleData.name}!`,
               `You are #${position} in the queue.`,
               "",
               "Your application is now under review. Once we verify your driver's license, you'll receive a confirmation or decision email within 24–48 hours.",
               "",
               "Waitlist Details:",
-              `Vehicle          : ${carData.name}`,
+              `Vehicle          : ${vehicleData.name}`,
               `Your Position    : #${position}`,
               `Status           : Pending Review`,
               `Preferred Pickup : ${preferredPickup || "Not specified"}`,
@@ -309,12 +309,12 @@ export default async function handler(req, res) {
             html: `
               <h2>⏳ Waitlist Application Received</h2>
               <p>Hi <strong>${esc(trimmedName)}</strong>,</p>
-              <p>Thank you for joining the waitlist for the <strong>${esc(carData.name)}</strong>! You are <strong>#${position}</strong> in the queue.</p>
+              <p>Thank you for joining the waitlist for the <strong>${esc(vehicleData.name)}</strong>! You are <strong>#${position}</strong> in the queue.</p>
               <p style="background:#fff3cd;padding:10px;border-left:4px solid #ffc107;margin-bottom:16px">
                 <strong>⏳ Status: Pending Review</strong> — Your driver's license is under review. You'll hear back within 24–48 hours.
               </p>
               <table style="border-collapse:collapse;width:100%;margin-bottom:16px">
-                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(carData.name)}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleData.name)}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Your Position</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>#${position}</strong></td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Status</strong></td><td style="padding:8px;border:1px solid #ddd">⏳ Pending Review</td></tr>
                 <tr><td style="padding:8px;border:1px solid #ddd"><strong>Preferred Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(preferredPickup || "Not specified")}</td></tr>
@@ -346,7 +346,7 @@ export default async function handler(req, res) {
           normalizePhone(phone),
           render(WAITLIST_JOINED, {
             customer_name: trimmedName,
-            vehicle:       carData.name,
+            vehicle:       vehicleData.name,
           })
         );
       } catch (smsErr) {

@@ -6,9 +6,10 @@
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
-import { CARS, computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
-import { loadPricingSettings, computeCamryAmountFromSettings, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
+import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
+import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -38,13 +39,16 @@ export default async function handler(req, res) {
   try {
     const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice, pickupTime, returnTime } = req.body;
 
-    // Validate vehicleId against the server-side allowlist
-    if (!vehicleId || !CARS[vehicleId]) {
+    // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
+    const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+    if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
 
+    const isSlingshotVehicle = vehicleData.isSlingshot;
+
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
-    if (CARS[vehicleId].hourlyTiers) {
+    if (isSlingshotVehicle) {
       if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
         return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
       }
@@ -53,7 +57,7 @@ export default async function handler(req, res) {
     // For economy (non-Slingshot) vehicles: enforce that the renter declared either
     // personal auto insurance (verified at pickup) OR selected a valid DPP tier.
     // This is a server-side guard that cannot be bypassed via browser DevTools.
-    if (!CARS[vehicleId].hourlyTiers) {
+    if (!isSlingshotVehicle) {
       if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
         return res.status(400).json({ error: "Please indicate whether you have personal auto insurance or would like to add a Damage Protection Plan." });
       }
@@ -99,11 +103,9 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
 
     // Compute amount server-side — never trust a client-supplied amount.
-    const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
     const computedFullRental = isSlingshotVehicle
       ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
-      : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
-    const carData = CARS[vehicleId];
+      : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 
     // Slingshot: no Damage Protection Plan — DPP has been removed for Slingshot.
     // Economy cars: add DPP cost when the renter opted in.
@@ -135,10 +137,10 @@ export default async function handler(req, res) {
       currency: "usd",
       receipt_email: email,
       description: isSlingshotVehicle
-        ? `Sly Transportation Services LLC – ${carData.name} Rental`
+        ? `Sly Transportation Services LLC – ${vehicleData.name} Rental`
         : (isCamryDepositMode
-            ? `Sly Transportation Services LLC – ${carData.name} Reservation Deposit (Non-Refundable)`
-            : `Sly Transportation Services LLC – ${carData.name}`),
+            ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
+            : `Sly Transportation Services LLC – ${vehicleData.name}`),
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
@@ -156,7 +158,7 @@ export default async function handler(req, res) {
         renter_name:  trimmedName,
         renter_phone: phone && String(phone).trim() ? String(phone).trim() : "",
         vehicle_id:   vehicleId,
-        vehicle_name: carData.name,
+        vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
         pickup_time:  pickupTime  ? String(pickupTime).trim()  : "",
