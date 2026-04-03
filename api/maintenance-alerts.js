@@ -26,6 +26,7 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { buildServiceUrl } from "./_quick-service-token.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -221,8 +222,9 @@ export default async function handler(req, res) {
               const driverSent = await safeSendSms(phone,
                 `🚨 FINAL NOTICE: Your rental vehicle requires immediate maintenance (${svc.label}). Please contact us within 24 hours to schedule service. Failure to do so may result in rental restrictions.`
               );
+              const serviceUrl = buildServiceUrl(vid, svc.type);
               const ownerSmsSent = await safeSendSms(OWNER_PHONE,
-                `🚨 ${name} driver has ignored ${svc.label} request for ${Math.floor(hoursWaited)}h. Booking: ${bookingId}. Driver: ${booking.name || "Unknown"} (${phone || "no phone"}).`
+                `🚨 ${name} driver has ignored ${svc.label} request for ${Math.floor(hoursWaited)}h. Booking: ${bookingId}. Driver: ${booking.name || "Unknown"} (${phone || "no phone"}). Mark done: ${serviceUrl}`
               );
               await sendOwnerAlertEmail(
                 `🚨 Maintenance Non-Compliance — ${name}`,
@@ -233,7 +235,9 @@ export default async function handler(req, res) {
 <p><strong>Driver:</strong> ${booking.name || "Unknown"}</p>
 <p><strong>Driver phone:</strong> ${phone || "N/A"}</p>
 <p><strong>Current odometer:</strong> ${miles.toLocaleString()} mi</p>
-<p>Please review and take action immediately.</p>`
+<p>Please review and take action immediately.</p>
+<p><a href="${serviceUrl}" style="display:inline-block;padding:10px 20px;background:#2e7d32;color:#fff;border-radius:4px;text-decoration:none">✅ Mark ${svc.label} as complete</a></p>
+<p style="font-size:12px;color:#888">This link expires in 30 minutes. Open a new alert to get a fresh link.</p>`
               );
 
               if (driverSent || ownerSmsSent) {

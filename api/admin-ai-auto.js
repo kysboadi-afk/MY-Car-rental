@@ -30,6 +30,7 @@ import { computePriorityAlerts } from "../lib/ai/priority-alerts.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { sendSms } from "./_textmagic.js";
 import nodemailer from "nodemailer";
+import { buildServiceUrl } from "./_quick-service-token.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -102,6 +103,21 @@ async function runPriorityAlerts({ vehicles, mileageStatMap, activeBookingByVehi
     }
 
     // ── Owner email ──────────────────────────────────────────────────────────
+    // For maintenance alerts, include one-click service completion links.
+    const REASON_TO_SERVICE_TYPE = {
+      "oil change":       "oil",
+      "brake inspection": "brakes",
+      "tire replacement": "tires",
+    };
+    const maintenanceLinks = isMaintenance
+      ? Object.entries(REASON_TO_SERVICE_TYPE)
+          .filter(([label]) => reason.includes(label))
+          .map(([label, svcType]) => {
+            const url = buildServiceUrl(vehicleId, svcType);
+            return `<p><a href="${url}" style="display:inline-block;padding:8px 16px;background:#2e7d32;color:#fff;border-radius:4px;text-decoration:none">✅ Mark ${esc(label)} as complete</a></p>`;
+          })
+          .join("\n")
+      : "";
     const emailSent = await sendOwnerEmail(
       `🚨 Fleet Alert — ${esc(name)} (High Priority)`,
       `<p>🚨 <strong>High-priority issue detected for ${esc(name)}</strong></p>
@@ -110,7 +126,9 @@ ${isMaintenance ? `<p><strong>Type:</strong> Maintenance overdue</p>` : ""}
 ${bookingId  ? `<p><strong>Active booking:</strong> ${esc(bookingId)}</p>` : ""}
 ${driverName  ? `<p><strong>Driver:</strong> ${esc(driverName)}</p>` : ""}
 ${driverPhone ? `<p><strong>Driver phone:</strong> ${esc(driverPhone)}</p>` : ""}
-<p>Please log in to the admin dashboard to review and take action.</p>`
+<p>Please log in to the admin dashboard to review and take action.</p>
+${maintenanceLinks}
+${isMaintenance ? `<p style="font-size:12px;color:#888">Quick-service links expire in 30 minutes. Open a new alert to get a fresh link.</p>` : ""}`
     );
     if (emailSent) fired.push("owner_email");
 
