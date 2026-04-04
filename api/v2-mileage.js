@@ -97,10 +97,27 @@ export default async function handler(req, res) {
       }
 
       const startedAt = Date.now();
-      const [trackedVehicles, bouncieVehicles] = await Promise.all([
-        loadTrackedVehicles(sb),
-        getBouncieVehicles(),
-      ]);
+
+      // Fetch tracked vehicles from DB and live data from Bouncie in parallel.
+      // `getBouncieVehicles()` makes an external HTTP request and may throw when
+      // the token is expired or the Bouncie API is unreachable.  Catch that
+      // failure separately so we can surface a clear, actionable message to the
+      // admin instead of a generic 500.
+      let trackedVehicles, bouncieVehicles;
+      try {
+        [trackedVehicles, bouncieVehicles] = await Promise.all([
+          loadTrackedVehicles(sb),
+          getBouncieVehicles(),
+        ]);
+      } catch (bouncieErr) {
+        console.error("v2-mileage sync: Bouncie/DB fetch failed:", bouncieErr.message);
+        return res.status(200).json({
+          bouncie_error: true,
+          skipped:       true,
+          reason:        adminErrorMessage(bouncieErr),
+          duration_ms:   Date.now() - startedAt,
+        });
+      }
 
       const imeiMap = {};
       for (const v of trackedVehicles) {
