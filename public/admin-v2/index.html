@@ -2623,7 +2623,10 @@ async function triggerBouncieSync(vehicleId) {
     showToast('Syncing with Bouncie…', 'info');
     const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
-    if (synced) {
+    if (result.bouncie_error) {
+      showToast('Bouncie sync error: ' + (result.reason || 'check BOUNCIE_ACCESS_TOKEN in Vercel'), 'error');
+      return;
+    } else if (synced) {
       showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
     } else {
       showToast(result.skipped ? 'Bouncie not configured' : 'Sync complete (no new data)', 'info');
