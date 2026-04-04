@@ -6,7 +6,7 @@
 // raw API responses) are ever exposed.
 //
 // Error categories (in match priority order):
-//   1. Bouncie API auth / token exchange failure
+//   1. Bouncie API authentication failure (BOUNCIE_ACCESS_TOKEN)
 //   2. GitHub auth failure (401/403) — requires "github" in the error message
 //   3. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
 //   4. GitHub rate-limit (429)
@@ -55,11 +55,11 @@ export function adminErrorMessage(err) {
   // Supabase JS client exposes the PostgreSQL / PostgREST error code on err.code
   const code = (err && err.code)    ? String(err.code)    : "";
 
-  // ── Bouncie API authentication / token exchange failure ───────────────────
+  // ── Bouncie API authentication failure ────────────────────────────────────
   // Must be checked before the generic 401/403 GitHub block because Bouncie
   // errors also contain status codes like "(401)" but are unrelated to GitHub.
   if (/bouncie/i.test(raw)) {
-    return "Bouncie authentication failed — please verify BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET are configured correctly in Vercel, and that the authorization code and redirect_uri match your Bouncie OAuth application settings.";
+    return "Bouncie authentication failed — please verify that BOUNCIE_ACCESS_TOKEN is set correctly in your Vercel environment variables. Copy the access token from your Bouncie developer dashboard and add it as BOUNCIE_ACCESS_TOKEN in Vercel. No OAuth flow or redirect URI is required.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────
