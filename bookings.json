@@ -141,7 +141,8 @@
       "smsSentAt": {
         "maint_oil_urgent": "2026-04-03T16:30:47.451Z",
         "maint_brakes_urgent": "2026-04-03T16:30:47.451Z",
-        "maint_tires_urgent": "2026-04-03T16:30:47.451Z"
+        "maint_tires_urgent": "2026-04-03T16:30:47.451Z",
+        "active_mid": "2026-04-04T18:45:33.890Z"
       },
       "createdAt": "2026-04-02T17:59:36.566Z",
       "source": "admin_v2",
