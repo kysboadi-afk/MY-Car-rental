@@ -4125,8 +4125,6 @@ function renderBouncieAuthSection(status) {
   if (!container) return;
 
   const configured = status?.configured;
-  const updatedAt  = status?.updated_at ? new Date(status.updated_at).toLocaleString() : null;
-  const authUrl    = status?.auth_url;
 
   container.innerHTML = `
     <div class="form-section" style="max-width:680px;">
@@ -4138,57 +4136,31 @@ function renderBouncieAuthSection(status) {
             <span style="font-size:13px;padding:4px 10px;border-radius:6px;font-weight:600;background:${configured ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)'};color:${configured ? 'var(--success,#10b981)' : 'var(--danger)'};">
               ${configured ? '✅ Connected' : '❌ Not Connected'}
             </span>
-            ${updatedAt ? `<span style="font-size:12px;color:var(--text-sub);">Last updated: ${esc(updatedAt)}</span>` : ''}
           </div>
         </div>
-        ${!authUrl ? `
+        ${!configured ? `
         <div class="form-group" style="grid-column:1/-1;">
-          <p style="font-size:13px;color:var(--warning,#f59e0b);margin:0;">⚠️ <code>BOUNCIE_CLIENT_ID</code> is not configured in Vercel. Add it to enable GPS tracking.</p>
+          <p style="font-size:13px;color:var(--warning,#f59e0b);margin:0 0 8px;">
+            ⚠️ <code>BOUNCIE_ACCESS_TOKEN</code> is not set in Vercel. GPS mileage sync is disabled.
+          </p>
+          <p style="font-size:13px;color:var(--text-sub);margin:0;line-height:1.6;">
+            To enable GPS tracking:<br>
+            1. Copy your access token from the <strong>Bouncie developer dashboard</strong>.<br>
+            2. Add it as <code>BOUNCIE_ACCESS_TOKEN</code> in your <strong>Vercel environment variables</strong>.<br>
+            3. Redeploy — no OAuth flow or redirect URI is required.
+          </p>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
-          <label class="form-label">${configured ? 'Re-authorize Bouncie' : 'Connect Bouncie'}</label>
-          <div style="font-size:13px;color:var(--text-sub);margin-bottom:10px;line-height:1.6;">
-            <strong>Step 1:</strong> Click the link below to authorize in your Bouncie account.
-            After granting access you will be redirected to <code>www.slytrans.com</code> —
-            copy the <code>code=…</code> value from the address bar.<br>
-            <a href="${esc(authUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary,#6366f1);text-decoration:underline;">
-              🔗 Authorize with Bouncie →
-            </a>
-          </div>
-          <label class="form-label">Step 2: Paste authorization code</label>
-          <div style="display:flex;gap:8px;">
-            <input type="text" class="form-input" id="bouncie-auth-code"
-              placeholder="Paste the code= value from the redirect URL…"
-              style="flex:1;font-family:monospace;font-size:13px;">
-            <button class="btn btn-primary btn-sm" onclick="submitBouncieAuthCode()">Connect</button>
-          </div>
+          <p style="font-size:13px;color:var(--text-sub);margin:0;">
+            Mileage syncs automatically every 5 minutes via the Bouncie API.
+            To change the token, update <code>BOUNCIE_ACCESS_TOKEN</code> in Vercel and redeploy.
+          </p>
         </div>
         `}
       </div>
     </div>
   `;
-}
-
-async function submitBouncieAuthCode() {
-  const codeEl = document.getElementById('bouncie-auth-code');
-  const code   = codeEl ? codeEl.value.trim() : '';
-  if (!code) {
-    showToast('Please paste the authorization code first.', 'error');
-    return;
-  }
-  try {
-    showToast('Connecting to Bouncie…', 'info');
-    await apiPost('/api/bouncie-auth', {
-      secret:       adminSecret,
-      code,
-      redirect_uri: 'https://www.slytrans.com',
-    });
-    showToast('Bouncie connected! Sync will start within 5 minutes.', 'success');
-    loadSystemSettings();
-  } catch (err) {
-    showToast('Bouncie auth failed: ' + err.message, 'error');
-  }
 }
 
 // ── Site Content (Settings page) ─────────────────────────────────────────────
