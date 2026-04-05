@@ -113,17 +113,31 @@ export default async function handler(req, res) {
     const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
     const protectionCost = (!isSlingshotVehicle && protectionPlan) ? computeDppCostFromSettings(days, tier) : 0;
 
-    // For Slingshot: charge full rental upfront (tier price × 2 — rental + refundable deposit) + tax.
+    // For Slingshot: no tax — total is rental fee + security deposit only.
+    // Security deposit = rental fee (computedFullRental is already rental × 2 from _settings).
+    // For Slingshot deposit-only mode: charge only the security deposit (= rental fee) now.
     // For Camry with paymentMode:'deposit': charge only the booking deposit now; rest at pickup.
     // For all other Camry modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
     const afterTaxFullRental = applyTax(preTaxFullRental, settings);
 
+    // Slingshot-specific amounts (no tax applied).
+    // computeSlingshotAmountFromSettings() returns tier.price × 2 (rental + security deposit),
+    // where the security deposit equals the rental fee. So dividing by 2 gives each component.
+    const slingshotRentalFee = isSlingshotVehicle ? computedFullRental / 2 : 0;
+    const slingshotSecurityDeposit = slingshotRentalFee; // security deposit = rental fee
+    const slingshotFullTotal = computedFullRental; // rental + deposit, no tax
+
     let totalAmount;
 
     if (isSlingshotVehicle) {
-      // Full payment upfront — rental fee + security deposit (= rental fee) + tax
-      totalAmount = afterTaxFullRental;
+      if (paymentMode === "deposit") {
+        // Deposit-only: charge security deposit now, remaining rental fee paid later
+        totalAmount = slingshotSecurityDeposit;
+      } else {
+        // Full payment: rental + security deposit, no tax
+        totalAmount = slingshotFullTotal;
+      }
     } else if (paymentMode === "deposit") {
       totalAmount = settings.camry_booking_deposit;
     } else {
@@ -131,13 +145,16 @@ export default async function handler(req, res) {
     }
 
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
+    const isSlingshotDepositMode = isSlingshotVehicle && paymentMode === "deposit";
 
     const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
       receipt_email: email,
       description: isSlingshotVehicle
-        ? `Sly Transportation Services LLC – ${vehicleData.name} Rental`
+        ? (isSlingshotDepositMode
+            ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation (Security Deposit)`
+            : `Sly Transportation Services LLC – ${vehicleData.name} Rental`)
         : (isCamryDepositMode
             ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
             : `Sly Transportation Services LLC – ${vehicleData.name}`),
@@ -169,11 +186,27 @@ export default async function handler(req, res) {
             ? `${Number(slingshotDuration) / 24} days`
             : `${slingshotDuration} hours`,
         } : {}),
-        ...(isSlingshotVehicle ? {
-          payment_type:       "full_payment",
-          insurance_status:   insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_dpp_included",
-          protection_plan:    insuranceCoverageChoice === "no" ? "included" : "not_included",
-          full_rental_amount: afterTaxFullRental.toFixed(2),
+        ...(isSlingshotVehicle && !isSlingshotDepositMode ? {
+          payment_type:         "full_payment",
+          slingshot_payment_status: "fully_paid",
+          slingshot_booking_status: "reserved",
+          rental_price:         slingshotRentalFee.toFixed(2),
+          security_deposit:     slingshotSecurityDeposit.toFixed(2),
+          amount_paid:          slingshotFullTotal.toFixed(2),
+          remaining_balance:    "0.00",
+          full_rental_amount:   slingshotFullTotal.toFixed(2),
+          insurance_status:     insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_no_dpp",
+        } : {}),
+        ...(isSlingshotDepositMode ? {
+          payment_type:              "slingshot_security_deposit",
+          slingshot_payment_status:  "deposit_paid",
+          slingshot_booking_status:  "reserved",
+          rental_price:              slingshotRentalFee.toFixed(2),
+          security_deposit:          slingshotSecurityDeposit.toFixed(2),
+          amount_paid:               slingshotSecurityDeposit.toFixed(2),
+          remaining_balance:         slingshotRentalFee.toFixed(2),
+          full_rental_amount:        slingshotFullTotal.toFixed(2),
+          insurance_status:          insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_no_dpp",
         } : {}),
         ...(!isSlingshotVehicle && !isCamryDepositMode ? {
           payment_type:        "full_payment",

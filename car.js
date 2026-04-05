@@ -342,6 +342,9 @@ let _pendingPaymentMode = null;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
+// Slingshot payment mode — 'full' (rental + deposit) or 'deposit' (security deposit only).
+// Updated by the payment option radio buttons shown for Slingshot vehicles.
+let slingshotPaymentMode = 'full';
 
 // ----- Slingshot: set up the insurance/protection UI -----
 // For Slingshot: simplify the insurance question — no Damage Protection Plan offered.
@@ -364,11 +367,29 @@ if (carData.hourlyTiers) {
     noInsTextEl.removeAttribute("data-i18n");
     noInsTextEl.innerHTML = `<strong>No</strong> \u2014 I do not have personal auto insurance<br><small style='color:#aaa'>No Damage Protection Plan \u2014 renter assumes full liability for damages</small>`;
   }
-  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot
+  // Show the Slingshot payment options selector and hide the old deposit notice
+  const payOptSection = document.getElementById("slingshotPaymentOptions");
+  if (payOptSection) payOptSection.style.display = "";
   const oldDepositNotice = document.getElementById("slingshotDepositNotice");
   if (oldDepositNotice) oldDepositNotice.style.display = "none";
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) reserveBtnEl.style.display = "none";
+
+  // Wire up payment option radio buttons
+  const payFullRadio = document.getElementById("slingshotPayFull");
+  const payDepositRadio = document.getElementById("slingshotPayDeposit");
+  const depositOnlyNotice = document.getElementById("slingshotDepositOnlyNotice");
+  function onSlingshotPaymentModeChange() {
+    const checked = document.querySelector('input[name="slingshotPaymentMode"]:checked');
+    slingshotPaymentMode = checked ? checked.value : 'full';
+    if (depositOnlyNotice) {
+      depositOnlyNotice.style.display = slingshotPaymentMode === 'deposit' ? "" : "none";
+    }
+    updateTotal();
+    updatePayBtn();
+  }
+  if (payFullRadio) payFullRadio.addEventListener("change", onSlingshotPaymentModeChange);
+  if (payDepositRadio) payDepositRadio.addEventListener("change", onSlingshotPaymentModeChange);
 }
 
 // For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
@@ -1727,6 +1748,12 @@ window.addEventListener("pageshow", function(e) {
     document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
     const retSection = document.getElementById("returnDateSection");
     if (retSection) retSection.style.display = "none";
+    // Reset Slingshot payment mode to 'full' and hide deposit-only notice
+    slingshotPaymentMode = 'full';
+    const payFullRadioReset = document.getElementById("slingshotPayFull");
+    if (payFullRadioReset) payFullRadioReset.checked = true;
+    const depositOnlyNoticeReset = document.getElementById("slingshotDepositOnlyNotice");
+    if (depositOnlyNoticeReset) depositOnlyNoticeReset.style.display = "none";
   }
   const insuranceUploadSection = document.getElementById("insuranceUploadSection");
   const protectionPlanSection = document.getElementById("protectionPlanSection");
@@ -1817,24 +1844,29 @@ function updateTotal() {
     currentDayCount = slingshotDays;
 
     // Security deposit = rental tier price (refundable after return).
-    // No DPP for Slingshot. Total = rental fee + deposit (= rental fee × 2) + tax.
+    // No DPP for Slingshot. No tax — total is rental fee + security deposit only.
     const securityDeposit = tier.price;
-    const rentalBase = tier.price + securityDeposit;
+    const fullTotal = tier.price + securityDeposit; // rental + deposit, no tax
+
+    // Determine the payment amount based on the selected payment mode.
+    // 'full': charge rental + security deposit; 'deposit': charge security deposit only.
+    const isDepositMode = slingshotPaymentMode === 'deposit';
+    const chargeNow = isDepositMode ? securityDeposit : fullTotal;
 
     // Show the rental breakdown so renters know exactly what they're paying.
     const lines = [];
-    lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
+    if (!isDepositMode) {
+      lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
+      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
+    } else {
+      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 reserves your dates)`, amount: securityDeposit });
+      lines.push({ label: `\u23F3 Remaining rental fee (due before pickup \u2014 NOT charged now)`, amount: tier.price });
+    }
 
-    // Security deposit — equals the rental fee, refundable after return with no damage
-    lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
-
-    // Compute LA sales tax (10.25%) on the full rental base.
-    const taxAmount = Math.round(rentalBase * getTaxRate() * 100) / 100;
-    const afterTaxRental = Math.round((rentalBase + taxAmount) * 100) / 100;
-    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (getTaxRate() * 100).toFixed(2) }, `Sales tax (${(getTaxRate() * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
-
-    currentSubtotal = rentalBase;
-    carData._fullRentalCost = afterTaxRental.toFixed(2);
+    currentSubtotal = chargeNow;
+    carData._fullRentalCost = fullTotal.toFixed(2);
+    carData._rentalPrice = tier.price;
+    carData._securityDeposit = securityDeposit;
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
@@ -1855,16 +1887,20 @@ function updateTotal() {
     rowsEl.appendChild(frag);
     document.getElementById("priceBreakdown").style.display = "";
 
-    document.getElementById("subtotal").textContent = rentalBase;
+    // Hide tax line — no tax on Slingshot bookings
+    document.getElementById("subtotal").textContent = chargeNow;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
-    document.getElementById("tax").textContent = taxAmount.toFixed(2);
-    taxLineEl.style.display = "";
+    taxLineEl.style.display = "none";
     if (taxNoteEl) taxNoteEl.style.display = "none";
-    // Total shows the full amount charged online (rental + deposit + tax)
-    totalEl.textContent = afterTaxRental.toFixed(2);
-    // Standard pay button — full amount charged online
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    // Total reflects only what is charged now
+    totalEl.textContent = chargeNow.toFixed(2);
+    // Pay button text reflects the selected mode
+    if (isDepositMode) {
+      stripeBtn.textContent = `\uD83D\uDD12 Reserve with $${chargeNow.toFixed(2)} Deposit`;
+    } else {
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    }
     updatePayBtn();
     return;
   }
@@ -1969,10 +2005,11 @@ function updateTotal() {
 
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
-  // Resolve payment mode: deposit when reserveBtn was clicked, full when stripeBtn clicked directly.
-  // _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
+  // Resolve payment mode:
+  // - For Slingshot: use slingshotPaymentMode ('full' or 'deposit') set by the radio buttons.
+  // - For Camry: _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
   if (_pendingPaymentMode === null) {
-    _pendingPaymentMode = 'full'; // stripeBtn is always "Book Now" for all vehicles
+    _pendingPaymentMode = carData.hourlyTiers ? slingshotPaymentMode : 'full';
   }
   const paymentMode = _pendingPaymentMode;
   _pendingPaymentMode = null; // consume and reset
@@ -1983,10 +2020,11 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
 
-  // Determine the amount charged now: full payment for Slingshot, deposit or full for Camry.
+  // Determine the amount charged now based on vehicle type and payment mode.
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
+  const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
-  // For Slingshot: show full rental total; For Camry reserve: show deposit; For Camry full: full amount.
+  // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
 
   // Meta Pixel — track checkout initiation with the amount being charged
