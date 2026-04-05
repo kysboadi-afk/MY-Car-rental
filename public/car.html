@@ -329,16 +329,32 @@
 
     <p class="refund-notice" data-i18n-html="booking.refundNotice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
 
-    <!-- Slingshot non-refundable deposit notice — shown by car.js for slingshot only -->
-    <div id="slingshotDepositNotice" class="deposit-notice" style="display:none">
-      <strong>🔒 <span data-deposit-booking>$50</span> Non-Refundable Reservation Deposit</strong>
-      <ul>
-        <li>A <strong><span data-deposit-booking>$50</span> deposit</strong> is charged now to secure your Slingshot reservation.</li>
-        <li>The deposit is applied toward your total rental balance at pickup.</li>
-        <li>The deposit is <strong>NON-REFUNDABLE</strong> — it is forfeited if you cancel or no-show.</li>
-        <li>Remaining balance (rental fee + <span data-deposit-security>$150</span> security deposit) is due at pickup.</li>
-      </ul>
+    <!-- Slingshot payment options — shown by car.js for slingshot only -->
+    <div id="slingshotPaymentOptions" style="display:none">
+      <label style="font-weight:600;display:block;margin-bottom:8px">💳 Payment Option</label>
+      <div class="duration-options">
+        <label class="duration-option" id="slingshotPayFullLabel">
+          <input type="radio" name="slingshotPaymentMode" id="slingshotPayFull" value="full" checked>
+          <span id="slingshotPayFullText">Pay in Full (Rental + Security Deposit)</span>
+        </label>
+        <label class="duration-option" id="slingshotPayDepositLabel">
+          <input type="radio" name="slingshotPaymentMode" id="slingshotPayDeposit" value="deposit">
+          <span id="slingshotPayDepositText">Reserve with Security Deposit Only</span>
+        </label>
+      </div>
+      <div id="slingshotDepositOnlyNotice" class="deposit-notice" style="display:none;margin-top:10px">
+        <strong>🔒 Reserve with Security Deposit</strong>
+        <ul>
+          <li>Only the <strong>security deposit</strong> (equal to your rental fee) is charged now.</li>
+          <li>A unique link will be emailed and texted to you to complete the remaining rental payment.</li>
+          <li>Full payment must be completed before the vehicle is handed over.</li>
+          <li>Dates are held for you once the deposit is paid.</li>
+        </ul>
+      </div>
     </div>
+
+    <!-- Slingshot non-refundable deposit notice — legacy element kept for JS compatibility -->
+    <div id="slingshotDepositNotice" style="display:none"></div>
 
     <!-- Camry non-refundable deposit notice — shown by car.js for camry/camry2013 only -->
     <div id="camryDepositNotice" class="deposit-notice" style="display:none">

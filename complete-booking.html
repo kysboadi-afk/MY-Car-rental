@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Complete your Slingshot rental payment with Sly Transportation Services LLC.">
+  <title>Complete Your Slingshot Booking | Sly Transportation Services LLC</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    .cb-box {
+      max-width: 620px;
+      margin: 60px auto 40px;
+      background: #1a1a1a;
+      padding: 36px 32px;
+      border-radius: 16px;
+      border: 1px solid #2a2a2a;
+      box-shadow: 0 6px 25px rgba(0,0,0,0.5);
+    }
+    .cb-box h1 { color: #ffb400; font-size: 1.8rem; margin-bottom: 8px; }
+    .cb-box .cb-subtitle { color: #aaa; font-size: 1rem; margin-bottom: 24px; }
+    .cb-info-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .cb-info-table td { padding: 9px 10px; border: 1px solid #2a2a2a; font-size: 0.95rem; }
+    .cb-info-table td:first-child { color: #aaa; width: 44%; }
+    .cb-info-table td:last-child { color: #fff; font-weight: 600; }
+    .cb-balance { color: #ff9800; font-size: 1.2rem; }
+    .cb-paid { color: #4caf50; font-size: 1.1rem; }
+    .cb-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: #ffb400;
+      color: #000;
+      font-size: 1.05rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    .cb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cb-msg { margin: 12px 0; font-size: 0.95rem; min-height: 20px; }
+    .cb-error { color: #ff4444; }
+    .cb-success { color: #4caf50; }
+    #payment-element { margin-top: 16px; }
+    #complete-payment-form { margin-top: 16px; }
+    .cb-loading { color: #aaa; text-align: center; padding: 40px 0; }
+    .cb-already-paid { text-align: center; padding: 20px 0; }
+    .cb-already-paid h2 { color: #4caf50; }
+    .cb-already-paid p { color: #aaa; }
+    .cb-back { display: inline-block; margin-top: 20px; color: #ffb400; text-decoration: none; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="cb-box">
+    <div id="cb-loading" class="cb-loading">
+      <p>Loading your booking…</p>
+    </div>
+
+    <div id="cb-not-found" style="display:none">
+      <h1 style="color:#ff4444">❌ Booking Not Found</h1>
+      <p class="cb-subtitle">The link may have expired or already been used. Please contact us if you need help.</p>
+      <a href="slingshot.html" class="cb-back">← Back to Slingshot</a>
+    </div>
+
+    <div id="cb-already-paid" class="cb-already-paid" style="display:none">
+      <h2>✅ Booking Fully Paid</h2>
+      <p>Your Slingshot rental has been fully paid. See you at pickup!</p>
+      <table class="cb-info-table" id="paid-details-table"></table>
+      <a href="slingshot.html" class="cb-back">← Back to Slingshot</a>
+    </div>
+
+    <div id="cb-main" style="display:none">
+      <h1>🏎️ Complete Your Booking</h1>
+      <p class="cb-subtitle">Your Slingshot is reserved. Complete your rental payment below.</p>
+
+      <table class="cb-info-table" id="booking-details-table"></table>
+
+      <div id="complete-payment-form" style="display:none">
+        <div id="payment-element"></div>
+        <div class="cb-msg cb-error" id="payment-message" role="alert"></div>
+        <button id="submit-payment" class="cb-btn" type="button">Pay Remaining Balance</button>
+        <button id="cancel-payment" type="button" style="background:none;border:none;color:#aaa;cursor:pointer;margin-top:10px;width:100%;font-size:0.85rem">← Cancel</button>
+      </div>
+
+      <div id="initiate-payment-area">
+        <div class="cb-msg" id="initiate-msg"></div>
+        <button id="pay-balance-btn" class="cb-btn" type="button">💳 Complete Payment</button>
+      </div>
+
+      <a href="slingshot.html" class="cb-back">← Back to Slingshot</a>
+    </div>
+
+    <div id="cb-success" style="display:none">
+      <div style="text-align:center;padding:20px 0">
+        <h2 style="color:#4caf50">✅ Payment Complete!</h2>
+        <p style="color:#ccc">Your Slingshot rental is fully paid. We look forward to seeing you!</p>
+        <a href="slingshot.html" class="cb-back">← Back to Slingshot</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "https://sly-rides.vercel.app";
+
+    // Read token from URL
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    let bookingData = null;
+    let stripeInstance = null;
+    let elementsInstance = null;
+    let paymentElementMounted = false;
+
+    function show(id) {
+      ["cb-loading", "cb-not-found", "cb-already-paid", "cb-main", "cb-success"].forEach(function(k) {
+        const el = document.getElementById(k);
+        if (el) el.style.display = k === id ? "" : "none";
+      });
+    }
+
+    function buildTable(tableId, rows) {
+      const tbl = document.getElementById(tableId);
+      if (!tbl) return;
+      tbl.innerHTML = rows.map(function(r) {
+        return `<tr><td>${r[0]}</td><td class="${r[2] || ""}">${r[1]}</td></tr>`;
+      }).join("");
+    }
+
+    function fmtMoney(v) {
+      return "$" + parseFloat(v || 0).toFixed(2);
+    }
+
+    async function loadBooking() {
+      if (!token) { show("cb-not-found"); return; }
+      try {
+        const resp = await fetch(API_BASE + "/api/complete-booking?token=" + encodeURIComponent(token));
+        if (!resp.ok) { show("cb-not-found"); return; }
+        bookingData = await resp.json();
+
+        if (bookingData.paymentStatus === "fully_paid" || Number(bookingData.remainingBalance) <= 0) {
+          buildTable("paid-details-table", [
+            ["Vehicle",     bookingData.vehicleName || bookingData.vehicleId],
+            ["Pickup Date", bookingData.pickupDate],
+            ["Return Date", bookingData.returnDate],
+            ["Status",      "Fully Paid ✅", "cb-paid"],
+          ]);
+          show("cb-already-paid");
+          return;
+        }
+
+        // Deposit paid — show remaining balance form
+        const rows = [
+          ["Name",              bookingData.name || ""],
+          ["Email",             bookingData.email || ""],
+          ["Phone",             bookingData.phone || ""],
+          ["Vehicle",           bookingData.vehicleName || bookingData.vehicleId],
+          ["Pickup Date",       bookingData.pickupDate],
+          ["Return Date",       bookingData.returnDate],
+          ["Deposit Paid",      fmtMoney(bookingData.amountPaid)],
+          ["Remaining Balance", `<span class="cb-balance">${fmtMoney(bookingData.remainingBalance)}</span>`],
+        ];
+        buildTable("booking-details-table", rows);
+
+        document.getElementById("pay-balance-btn").textContent =
+          "💳 Pay Remaining " + fmtMoney(bookingData.remainingBalance);
+
+        show("cb-main");
+      } catch (err) {
+        console.error("complete-booking: load error:", err);
+        show("cb-not-found");
+      }
+    }
+
+    document.getElementById("pay-balance-btn").addEventListener("click", async function() {
+      const btn = document.getElementById("pay-balance-btn");
+      const msg = document.getElementById("initiate-msg");
+      btn.disabled = true;
+      btn.textContent = "Loading…";
+      msg.textContent = "";
+
+      try {
+        const resp = await fetch(API_BASE + "/api/complete-booking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create_payment_intent", token }),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          if (data.alreadyPaid) {
+            show("cb-already-paid");
+            return;
+          }
+          msg.textContent = data.error || "Failed to initialize payment. Please try again.";
+          btn.disabled = false;
+          btn.textContent = "💳 Pay Remaining " + fmtMoney(bookingData.remainingBalance);
+          return;
+        }
+
+        const { clientSecret, publishableKey } = data;
+
+        // Mount Stripe Payment Element
+        stripeInstance = Stripe(publishableKey);
+        elementsInstance = stripeInstance.elements({ clientSecret });
+        const paymentElement = elementsInstance.create("payment", {
+          fields: { billingDetails: { name: "never" } },
+        });
+        paymentElement.mount("#payment-element");
+        paymentElementMounted = true;
+
+        document.getElementById("initiate-payment-area").style.display = "none";
+        document.getElementById("complete-payment-form").style.display = "";
+
+        const submitBtn = document.getElementById("submit-payment");
+        submitBtn.textContent = "Pay " + fmtMoney(bookingData.remainingBalance);
+
+      } catch (err) {
+        console.error("complete-booking: init PI error:", err);
+        msg.textContent = "Payment initialization failed. Please try again.";
+        btn.disabled = false;
+        btn.textContent = "💳 Pay Remaining " + fmtMoney(bookingData.remainingBalance);
+      }
+    });
+
+    document.getElementById("submit-payment").addEventListener("click", async function() {
+      if (!stripeInstance || !elementsInstance) return;
+      const submitBtn = document.getElementById("submit-payment");
+      const msgEl     = document.getElementById("payment-message");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Processing…";
+      msgEl.textContent = "";
+
+      try {
+        const { error, paymentIntent } = await stripeInstance.confirmPayment({
+          elements: elementsInstance,
+          confirmParams: {
+            payment_method_data: {
+              billing_details: {
+                name:  bookingData.name || "Renter",
+                email: bookingData.email || undefined,
+              },
+            },
+          },
+          redirect: "if_required",
+        });
+
+        if (error) {
+          msgEl.textContent = error.message || "Payment failed. Please try again.";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Pay " + fmtMoney(bookingData.remainingBalance);
+          return;
+        }
+
+        if (paymentIntent && paymentIntent.status === "succeeded") {
+          // Finalize the booking server-side
+          try {
+            await fetch(API_BASE + "/api/complete-booking", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "finalize", token, paymentIntentId: paymentIntent.id }),
+            });
+          } catch (finalizeErr) {
+            console.error("complete-booking: finalize error:", finalizeErr);
+            // Non-fatal — webhook will handle the authoritative update
+          }
+          show("cb-success");
+        } else {
+          msgEl.textContent = "Payment did not complete. Please try again.";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Pay " + fmtMoney(bookingData.remainingBalance);
+        }
+      } catch (err) {
+        console.error("complete-booking: confirm error:", err);
+        msgEl.textContent = "An unexpected error occurred. Please try again.";
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Pay " + fmtMoney(bookingData.remainingBalance);
+      }
+    });
+
+    document.getElementById("cancel-payment").addEventListener("click", function() {
+      document.getElementById("complete-payment-form").style.display = "none";
+      document.getElementById("initiate-payment-area").style.display = "";
+      const btn = document.getElementById("pay-balance-btn");
+      btn.disabled = false;
+      btn.textContent = "💳 Pay Remaining " + fmtMoney(bookingData ? bookingData.remainingBalance : 0);
+      document.getElementById("payment-message").textContent = "";
+    });
+
+    // Load booking on page load
+    loadBooking();
+  </script>
+</body>
+</html>
