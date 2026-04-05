@@ -1763,7 +1763,7 @@ function updateTotal() {
       lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
     } else {
       lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 reserves your dates)`, amount: securityDeposit });
-      lines.push({ label: `\u23F3 Remaining rental fee (due before pickup)`, amount: tier.price });
+      lines.push({ label: `\u23F3 Remaining rental fee (due before pickup \u2014 NOT charged now)`, amount: tier.price });
     }
 
     currentSubtotal = chargeNow;

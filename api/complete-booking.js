@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   // ── GET: look up booking by token ─────────────────────────────────────────
   if (req.method === "GET") {
     const token = req.query.token;
-    if (!token || typeof token !== "string" || token.trim().length < 8) {
+    if (!token || typeof token !== "string" || token.trim().length < 32) {
       return res.status(400).json({ error: "Invalid or missing token." });
     }
     const booking = await findBookingByToken(token.trim());
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   // ── POST: create payment intent or finalize ───────────────────────────────
   if (req.method === "POST") {
     const { action, token } = req.body || {};
-    if (!token || typeof token !== "string" || token.trim().length < 8) {
+    if (!token || typeof token !== "string" || token.trim().length < 32) {
       return res.status(400).json({ error: "Invalid or missing token." });
     }
     const cleanToken = token.trim();

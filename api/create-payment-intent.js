@@ -122,8 +122,10 @@ export default async function handler(req, res) {
     const afterTaxFullRental = applyTax(preTaxFullRental, settings);
 
     // Slingshot-specific amounts (no tax applied).
+    // computeSlingshotAmountFromSettings() returns tier.price × 2 (rental + security deposit),
+    // where the security deposit equals the rental fee. So dividing by 2 gives each component.
     const slingshotRentalFee = isSlingshotVehicle ? computedFullRental / 2 : 0;
-    const slingshotSecurityDeposit = slingshotRentalFee; // deposit = rental fee
+    const slingshotSecurityDeposit = slingshotRentalFee; // security deposit = rental fee
     const slingshotFullTotal = computedFullRental; // rental + deposit, no tax
 
     let totalAmount;
