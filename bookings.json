@@ -137,7 +137,7 @@
       "amountPaid": 220,
       "totalPrice": 220,
       "paymentMethod": "cash",
-      "status": "active_rental",
+      "status": "completed_rental",
       "notes": "",
       "smsSentAt": {
         "maint_oil_urgent": "2026-04-03T16:30:47.451Z",
@@ -152,9 +152,10 @@
       },
       "createdAt": "2026-04-02T17:59:36.566Z",
       "source": "admin_v2",
-      "updatedAt": "2026-04-02T17:59:53.659Z",
+      "updatedAt": "2026-04-06T23:00:00.456Z",
       "activatedAt": "2026-04-02T17:59:53.659Z",
-      "lateFeeApplied": 50
+      "lateFeeApplied": 50,
+      "completedAt": "2026-04-06T23:00:00.456Z"
     }
   ]
 }
