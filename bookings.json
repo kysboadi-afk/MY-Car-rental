@@ -146,12 +146,15 @@
         "active_mid": "2026-04-04T18:45:33.890Z",
         "active_1h": "2026-04-06T18:00:04.137Z",
         "late_warning_30min": "2026-04-06T18:30:01.193Z",
-        "active_15min": "2026-04-06T18:45:01.140Z"
+        "active_15min": "2026-04-06T18:45:01.140Z",
+        "late_grace_expired": "2026-04-06T20:00:01.699Z",
+        "late_fee_applied": "2026-04-06T20:00:01.699Z"
       },
       "createdAt": "2026-04-02T17:59:36.566Z",
       "source": "admin_v2",
       "updatedAt": "2026-04-02T17:59:53.659Z",
-      "activatedAt": "2026-04-02T17:59:53.659Z"
+      "activatedAt": "2026-04-02T17:59:53.659Z",
+      "lateFeeApplied": 50
     }
   ]
 }
