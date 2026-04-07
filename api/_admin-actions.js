@@ -32,6 +32,7 @@ import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION
 import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates } from "./_availability.js";
 import { randomBytes } from "crypto";
+import nodemailer from "nodemailer";
 
 // DB → app status mapping (mirrors v2-bookings.js)
 const DB_TO_APP_STATUS = {
@@ -1816,6 +1817,158 @@ async function toolMarkMaintenance({ vehicleId, serviceType, mileage }) {
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+
+function esc(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Re-send a booking confirmation email to the renter and owner.
+ * Used when the browser-side email failed (e.g. "We couldn't send your confirmation")
+ * or when a booking was added manually via admin.
+ */
+async function toolResendBookingConfirmation({ bookingId }) {
+  if (!bookingId) throw new Error("bookingId is required");
+
+  // ── Find the booking ─────────────────────────────────────────────────────
+  const { data: bookingsData } = await loadBookings();
+  let booking = null;
+  for (const list of Object.values(bookingsData)) {
+    if (!Array.isArray(list)) continue;
+    const found = list.find(b => b.bookingId === bookingId);
+    if (found) { booking = found; break; }
+  }
+  if (!booking) throw new Error(`No booking found with bookingId "${bookingId}"`);
+
+  const {
+    name, email, phone, vehicleName, vehicleId,
+    pickupDate, pickupTime, returnDate, returnTime,
+    amountPaid, totalPrice, status,
+  } = booking;
+
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error("SMTP is not configured on the server — add SMTP_HOST, SMTP_USER, SMTP_PASS in Vercel environment variables.");
+  }
+
+  const transporter = nodemailer.createTransport({
+    host:   process.env.SMTP_HOST,
+    port:   parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_PORT === "465",
+    auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+
+  const displayTotal = amountPaid != null ? `$${Number(amountPaid).toFixed(2)}` : (totalPrice != null ? `$${Number(totalPrice).toFixed(2)}` : "N/A");
+  const pickupDisplay  = [pickupDate,  pickupTime ].filter(Boolean).join(" at ");
+  const returnDisplay  = [returnDate,  returnTime ].filter(Boolean).join(" at ");
+  const firstName = (name || "there").split(" ")[0];
+
+  // ── Owner notification ────────────────────────────────────────────────────
+  try {
+    await transporter.sendMail({
+      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:      OWNER_EMAIL,
+      ...(email ? { replyTo: email } : {}),
+      subject: `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
+      html: `
+        <h2>💰 Booking Confirmed — Admin Resend</h2>
+        <p>This is a manually re-sent confirmation for a booking that was recorded in the admin panel. The original browser-side confirmation email failed.</p>
+        <table style="border-collapse:collapse;width:100%">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || vehicleId || "N/A")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
+          ${phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>` : ""}
+          ${email ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email)}</td></tr>` : ""}
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(status || "booked_paid")}</td></tr>
+        </table>
+        <p style="margin-top:16px">Dates have been blocked on the booking calendar. The customer's confirmation email was also resent.</p>
+      `,
+      text: [
+        "Booking Confirmed — Admin Resend",
+        "",
+        `Booking ID   : ${bookingId}`,
+        `Vehicle      : ${vehicleName || vehicleId || "N/A"}`,
+        `Renter       : ${name || "Not provided"}`,
+        phone  ? `Phone        : ${phone}`  : "",
+        email  ? `Email        : ${email}`  : "",
+        `Pickup       : ${pickupDisplay || "N/A"}`,
+        `Return       : ${returnDisplay || "N/A"}`,
+        `Total        : ${displayTotal}`,
+        `Status       : ${status || "booked_paid"}`,
+      ].filter(Boolean).join("\n"),
+    });
+  } catch (ownerErr) {
+    throw new Error(`Owner notification email failed: ${ownerErr.message}`);
+  }
+
+  // ── Customer confirmation ─────────────────────────────────────────────────
+  let customerSent = false;
+  if (email) {
+    try {
+      await transporter.sendMail({
+        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:      email,
+        subject: "✅ Your Booking is Confirmed — Sly Transportation Services LLC",
+        html: `
+          <h2>✅ Payment Confirmed — Sly Transportation Services LLC</h2>
+          <p>Hi ${esc(firstName)}, your payment has been received and your booking is confirmed!</p>
+          <table style="border-collapse:collapse;width:100%;margin-top:12px">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || vehicleId || "N/A")}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
+          </table>
+          <p style="margin-top:16px">We will be in touch shortly to confirm your rental pick-up details.</p>
+          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
+          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+        `,
+        text: [
+          "Payment Confirmed — Sly Transportation Services LLC",
+          "",
+          `Hi ${firstName}, your payment has been received and your booking is confirmed!`,
+          "",
+          `Vehicle : ${vehicleName || vehicleId || "N/A"}`,
+          `Pickup  : ${pickupDisplay || "N/A"}`,
+          `Return  : ${returnDisplay || "N/A"}`,
+          `Total   : ${displayTotal}`,
+          "",
+          "We will be in touch shortly to confirm your rental pick-up details.",
+          `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
+          "",
+          "Sly Transportation Services LLC",
+        ].join("\n"),
+      });
+      customerSent = true;
+    } catch (custErr) {
+      console.error("toolResendBookingConfirmation: customer email failed:", custErr.message);
+    }
+  }
+
+  return {
+    success:       true,
+    bookingId,
+    renter:        name || "N/A",
+    vehicle:       vehicleName || vehicleId || "N/A",
+    ownerNotified: true,
+    customerEmail: email || null,
+    customerSent,
+    message: customerSent
+      ? `✅ Confirmation emails sent to owner and ${email}.`
+      : `✅ Owner notification sent. No customer email — no email address on this booking.`,
+  };
+}
+
 const IMEI_RE = /^\d{15}$/;
 const BOUNCIE_SYNC_STALE_MS = 48 * 60 * 60 * 1000; // 48 hours
 
@@ -1980,7 +2133,8 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_price_quote":          result = await toolGetPriceQuote(args);           break;
       case "get_sms_templates":        result = await toolGetSmsTemplates();             break;
       case "get_blocked_dates":        result = await toolGetBlockedDates(args);         break;
-      case "register_bouncie_device":  result = await toolRegisterBouncieDevice(args);  break;
+      case "register_bouncie_device":      result = await toolRegisterBouncieDevice(args);      break;
+      case "resend_booking_confirmation":   result = await toolResendBookingConfirmation(args);   break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
