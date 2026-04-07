@@ -9,9 +9,9 @@
         "available": true
     },
     "camry": {
-        "available": false
+        "available": true
     },
     "camry2013": {
-        "available": false
+        "available": true
     }
 }
