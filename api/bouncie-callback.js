@@ -101,7 +101,7 @@ export default async function handler(req, res) {
   // ── Exchange code for tokens ──────────────────────────────────────────────
   let tokenData;
   try {
-    console.log("Redirect URI used:", REDIRECT_URI);
+    console.log("Redirect URI used:", BOUNCIE_REDIRECT_URI);
     const body = new URLSearchParams({
       grant_type:    "authorization_code",
       client_id:     clientId,

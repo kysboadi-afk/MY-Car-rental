@@ -15,10 +15,10 @@
 const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
 function makeHeaders(token) {
-  // Strip any accidental "Bearer " prefix so the header is never doubled.
+  // Strip any accidental "Bearer " prefix before re-adding it so the header is never doubled.
   const cleanToken = token.replace(/^Bearer\s+/i, "");
   return {
-    Authorization: cleanToken,
+    Authorization: `Bearer ${cleanToken}`,
     "Content-Type": "application/json",
   };
 }
