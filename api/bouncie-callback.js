@@ -15,8 +15,6 @@
 // Required env vars (set in Vercel):
 //   BOUNCIE_CLIENT_ID      — your Bouncie application client ID
 //   BOUNCIE_CLIENT_SECRET  — your Bouncie application client secret
-//   BOUNCIE_REDIRECT_URI   — the exact redirect URI registered in Bouncie
-//                            e.g. https://sly-rides.vercel.app/api/bouncie-callback
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — to persist the tokens
 //
 // Optional env vars:
@@ -27,7 +25,8 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
-const BOUNCIE_TOKEN_URL = "https://auth.bouncie.com/oauth/token";
+const BOUNCIE_TOKEN_URL  = "https://auth.bouncie.com/oauth/token";
+const BOUNCIE_REDIRECT_URI = "https://sly-rides.vercel.app/api/bouncie-callback";
 
 /** Escape HTML special characters to prevent XSS in inline HTML strings. */
 function esc(str) {
@@ -82,7 +81,6 @@ export default async function handler(req, res) {
   // ── Validate required env vars ────────────────────────────────────────────
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const redirectUri  = process.env.BOUNCIE_REDIRECT_URI;
 
   if (!clientId || !clientSecret) {
     console.error("bouncie-callback: BOUNCIE_CLIENT_ID / BOUNCIE_CLIENT_SECRET not set");
@@ -104,7 +102,7 @@ export default async function handler(req, res) {
       client_id:     clientId,
       client_secret: clientSecret,
       code,
-      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+      redirect_uri:  BOUNCIE_REDIRECT_URI,
     });
 
     const tokenRes = await fetch(BOUNCIE_TOKEN_URL, {
