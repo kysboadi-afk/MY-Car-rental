@@ -92,7 +92,15 @@
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
       "updatedAt": "2026-04-07T04:28:10.078Z",
-      "activatedAt": "2026-04-07T04:28:10.078Z"
+      "activatedAt": "2026-04-07T04:28:10.078Z",
+      "extensionPendingPayment": {
+        "label": "+5 days",
+        "price": 303.19,
+        "newReturnDate": "2026-04-16",
+        "newReturnTime": "5:10 PM",
+        "paymentIntentId": "pi_3TJUidPo7fICjrtZ10TQ5gCX",
+        "createdAt": "2026-04-07T08:10:43.262Z"
+      }
     }
   ],
   "camry2013": [
