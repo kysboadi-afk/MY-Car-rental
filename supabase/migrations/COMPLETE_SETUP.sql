@@ -607,6 +607,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_status    text          NOT NULL DEFAULT 'unpaid',
   notes             text,
   payment_method    text,
+  payment_intent_id text,          -- Stripe PaymentIntent ID (migration 0033)
   activated_at      timestamptz,  -- stamped when status → 'active'   (migration 0017)
   completed_at      timestamptz,  -- stamped when status → 'completed' (migration 0017)
   created_at        timestamptz   NOT NULL DEFAULT now(),
@@ -621,13 +622,14 @@ DO $$ BEGIN ALTER TABLE bookings ADD CONSTRAINT bookings_payment_status_check
   CHECK (payment_status IN ('unpaid','partial','paid'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE INDEX IF NOT EXISTS bookings_customer_id_idx ON bookings (customer_id);
-CREATE INDEX IF NOT EXISTS bookings_vehicle_id_idx  ON bookings (vehicle_id);
-CREATE INDEX IF NOT EXISTS bookings_pickup_date_idx ON bookings (pickup_date);
-CREATE INDEX IF NOT EXISTS bookings_return_date_idx ON bookings (return_date);
-CREATE INDEX IF NOT EXISTS bookings_status_idx      ON bookings (status);
-CREATE INDEX IF NOT EXISTS bookings_created_at_idx  ON bookings (created_at DESC);
-CREATE INDEX IF NOT EXISTS bookings_booking_ref_idx ON bookings (booking_ref);
+CREATE INDEX IF NOT EXISTS bookings_customer_id_idx        ON bookings (customer_id);
+CREATE INDEX IF NOT EXISTS bookings_vehicle_id_idx         ON bookings (vehicle_id);
+CREATE INDEX IF NOT EXISTS bookings_pickup_date_idx        ON bookings (pickup_date);
+CREATE INDEX IF NOT EXISTS bookings_return_date_idx        ON bookings (return_date);
+CREATE INDEX IF NOT EXISTS bookings_status_idx             ON bookings (status);
+CREATE INDEX IF NOT EXISTS bookings_created_at_idx         ON bookings (created_at DESC);
+CREATE INDEX IF NOT EXISTS bookings_booking_ref_idx        ON bookings (booking_ref);
+CREATE INDEX IF NOT EXISTS bookings_payment_intent_id_idx  ON bookings (payment_intent_id) WHERE payment_intent_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS bookings_updated_at ON bookings;
 CREATE TRIGGER bookings_updated_at

@@ -101,7 +101,7 @@ export async function logAiAction(action, input, output, adminId = "admin") {
 // Columns selected from the Supabase bookings table for AI queries.
 // Keep in sync with DB schema (migration 0019 adds flagged + risk_score).
 const BOOKING_COLUMNS =
-  "id, booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at, flagged, risk_score";
+  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, created_at, flagged, risk_score, customers(name, phone, email)";
 
 // ── Supabase-first helpers ───────────────────────────────────────────────────
 
@@ -120,15 +120,15 @@ async function loadAllBookings() {
         .limit(500);
       if (!error && data) {
         return data.map((row) => ({
-          bookingId:  row.booking_id || String(row.id),
-          name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          bookingId:  row.booking_ref || String(row.id),
+          name:       row.customers?.name  || "",
+          phone:      row.customers?.phone || "",
+          email:      row.customers?.email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: row.deposit_paid || row.total_price || 0,
           createdAt:  row.created_at || "",
           flagged:    row.flagged || false,
           risk_score: row.risk_score || 0,
