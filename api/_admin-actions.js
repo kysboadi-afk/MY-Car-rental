@@ -1927,7 +1927,7 @@ async function blockBookedDatesForManualBooking(vehicleId, from, to) {
 async function toolCreateManualBooking({
   vehicleId, name, phone, email,
   pickupDate, pickupTime, returnDate, returnTime,
-  amountPaid, notes,
+  amountPaid, paymentIntentId: suppliedPaymentIntentId, notes,
 }) {
   if (!vehicleId || !MANUAL_BOOKING_VEHICLES[vehicleId]) {
     throw new Error(`Invalid vehicleId "${vehicleId}". Must be one of: ${Object.keys(MANUAL_BOOKING_VEHICLES).join(", ")}.`);
@@ -1950,6 +1950,15 @@ async function toolCreateManualBooking({
     throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
   }
 
+  // Use the real Stripe Payment Intent ID when the customer paid on the website,
+  // or generate a synthetic identifier for cash/phone bookings.
+  const resolvedPaymentIntentId =
+    suppliedPaymentIntentId && typeof suppliedPaymentIntentId === "string" && suppliedPaymentIntentId.trim()
+      ? suppliedPaymentIntentId.trim()
+      : "manual_" + randomBytes(6).toString("hex");
+
+  const isWebsitePayment = resolvedPaymentIntentId.startsWith("pi_");
+
   const booking = {
     bookingId:       randomBytes(8).toString("hex"),
     name:            name.trim(),
@@ -1963,11 +1972,12 @@ async function toolCreateManualBooking({
     returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
     location:        "",
     status:          "booked_paid",
-    paymentIntentId: "manual_" + randomBytes(6).toString("hex"),
+    paymentIntentId: resolvedPaymentIntentId,
     amountPaid:      typeof amountPaid === "number" && amountPaid > 0
                        ? Math.round(amountPaid * 100) / 100
                        : 0,
-    notes:           typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+    notes:           typeof notes === "string" ? notes.trim().slice(0, 500)
+                       : (isWebsitePayment ? "Website payment — confirmation email not received" : ""),
     createdAt:       new Date().toISOString(),
   };
 
@@ -1994,15 +2004,17 @@ async function toolCreateManualBooking({
   await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
 
   return {
-    success:     true,
-    bookingId:   booking.bookingId,
-    vehicle:     booking.vehicleName,
-    renter:      booking.name,
+    success:          true,
+    bookingId:        booking.bookingId,
+    vehicle:          booking.vehicleName,
+    renter:           booking.name,
     pickupDate,
     returnDate,
-    amountPaid:  booking.amountPaid,
-    notes:       booking.notes || null,
-    message:     `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${booking.vehicleName}.`,
+    amountPaid:       booking.amountPaid,
+    paymentIntentId:  resolvedPaymentIntentId,
+    isWebsitePayment,
+    notes:            booking.notes || null,
+    message:          `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${booking.vehicleName}. Use resend_booking_confirmation(bookingId: "${booking.bookingId}") to send the confirmation email.`,
   };
 }
 
@@ -2027,7 +2039,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
   const {
     name, email, phone, vehicleName, vehicleId,
     pickupDate, pickupTime, returnDate, returnTime,
-    amountPaid, totalPrice, status,
+    amountPaid, totalPrice, status, paymentIntentId,
   } = booking;
 
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -2046,6 +2058,10 @@ async function toolResendBookingConfirmation({ bookingId }) {
   const returnDisplay  = [returnDate,  returnTime ].filter(Boolean).join(" at ");
   const firstName = (name || "there").split(" ")[0];
 
+  // Determine whether this was a website (Stripe) payment or cash/manual.
+  const isWebsitePayment = typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_");
+  const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
+
   // ── Owner notification ────────────────────────────────────────────────────
   try {
     await transporter.sendMail({
@@ -2055,10 +2071,11 @@ async function toolResendBookingConfirmation({ bookingId }) {
       subject: `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
       html: `
         <h2>💰 Booking Confirmed — Admin Resend</h2>
-        <p>This is a manually re-sent confirmation for a booking that was recorded in the admin panel. The original browser-side confirmation email failed.</p>
+        <p>This is a manually re-sent confirmation. The original confirmation email was not received by the customer or owner.</p>
         <table style="border-collapse:collapse;width:100%">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Method</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentMethodLabel)}${isWebsitePayment ? ` <span style="color:#888;font-size:0.9em">(${esc(paymentIntentId)})</span>` : ""}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || vehicleId || "N/A")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
           ${phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>` : ""}
@@ -2068,20 +2085,23 @@ async function toolResendBookingConfirmation({ bookingId }) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(status || "booked_paid")}</td></tr>
         </table>
+        ${isWebsitePayment ? `<p style="margin-top:12px;color:#c07000">⚠️ <strong>Note:</strong> The original signed rental agreement PDF is only generated in the customer's browser at payment time. Since this is a resend, the PDF is not attached. The customer's rental agreement terms are available at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> — the renter agreed to these during booking.</p>` : ""}
         <p style="margin-top:16px">Dates have been blocked on the booking calendar. The customer's confirmation email was also resent.</p>
       `,
       text: [
         "Booking Confirmed — Admin Resend",
         "",
-        `Booking ID   : ${bookingId}`,
-        `Vehicle      : ${vehicleName || vehicleId || "N/A"}`,
-        `Renter       : ${name || "Not provided"}`,
-        phone  ? `Phone        : ${phone}`  : "",
-        email  ? `Email        : ${email}`  : "",
-        `Pickup       : ${pickupDisplay || "N/A"}`,
-        `Return       : ${returnDisplay || "N/A"}`,
-        `Total        : ${displayTotal}`,
-        `Status       : ${status || "booked_paid"}`,
+        `Booking ID     : ${bookingId}`,
+        `Payment Method : ${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
+        `Vehicle        : ${vehicleName || vehicleId || "N/A"}`,
+        `Renter         : ${name || "Not provided"}`,
+        phone  ? `Phone          : ${phone}`  : "",
+        email  ? `Email          : ${email}`  : "",
+        `Pickup         : ${pickupDisplay || "N/A"}`,
+        `Return         : ${returnDisplay || "N/A"}`,
+        `Total          : ${displayTotal}`,
+        `Status         : ${status || "booked_paid"}`,
+        isWebsitePayment ? "\nNote: The signed rental agreement PDF is only generated in the customer's browser. The renter agreed to the rental terms at slytrans.com/rental-agreement.html during booking." : "",
       ].filter(Boolean).join("\n"),
     });
   } catch (ownerErr) {
@@ -2095,9 +2115,9 @@ async function toolResendBookingConfirmation({ bookingId }) {
       await transporter.sendMail({
         from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
         to:      email,
-        subject: "✅ Your Booking is Confirmed — Sly Transportation Services LLC",
+        subject: "✅ Rental Agreement Confirmation — Sly Transportation Services LLC",
         html: `
-          <h2>✅ Payment Confirmed — Sly Transportation Services LLC</h2>
+          <h2>✅ Booking Confirmed — Sly Transportation Services LLC</h2>
           <p>Hi ${esc(firstName)}, your payment has been received and your booking is confirmed!</p>
           <table style="border-collapse:collapse;width:100%;margin-top:12px">
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
@@ -2106,12 +2126,13 @@ async function toolResendBookingConfirmation({ bookingId }) {
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
           </table>
-          <p style="margin-top:16px">We will be in touch shortly to confirm your rental pick-up details.</p>
+          <p style="margin-top:16px">You agreed to the <a href="https://www.slytrans.com/rental-agreement.html">Rental Agreement Terms &amp; Conditions</a> during booking — you can review them at any time at that link.</p>
+          <p>We will be in touch shortly to confirm your rental pick-up details.</p>
           <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
           <p><strong>Sly Transportation Services LLC 🚗</strong></p>
         `,
         text: [
-          "Payment Confirmed — Sly Transportation Services LLC",
+          "Booking Confirmed — Sly Transportation Services LLC",
           "",
           `Hi ${firstName}, your payment has been received and your booking is confirmed!`,
           "",
@@ -2119,6 +2140,9 @@ async function toolResendBookingConfirmation({ bookingId }) {
           `Pickup  : ${pickupDisplay || "N/A"}`,
           `Return  : ${returnDisplay || "N/A"}`,
           `Total   : ${displayTotal}`,
+          "",
+          "You agreed to the Rental Agreement Terms & Conditions during booking.",
+          "You can review them at: https://www.slytrans.com/rental-agreement.html",
           "",
           "We will be in touch shortly to confirm your rental pick-up details.",
           `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
@@ -2133,15 +2157,16 @@ async function toolResendBookingConfirmation({ bookingId }) {
   }
 
   return {
-    success:       true,
+    success:          true,
     bookingId,
-    renter:        name || "N/A",
-    vehicle:       vehicleName || vehicleId || "N/A",
-    ownerNotified: true,
-    customerEmail: email || null,
+    renter:           name || "N/A",
+    vehicle:          vehicleName || vehicleId || "N/A",
+    paymentMethod:    paymentMethodLabel,
+    ownerNotified:    true,
+    customerEmail:    email || null,
     customerSent,
     message: customerSent
-      ? `✅ Confirmation emails sent to owner and ${email}.`
+      ? `✅ Rental agreement confirmation emails sent to owner and ${email}.`
       : `✅ Owner notification sent. No customer email — no email address on this booking.`,
   };
 }
