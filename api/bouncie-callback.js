@@ -17,6 +17,10 @@
 //   BOUNCIE_CLIENT_SECRET  — your Bouncie application client secret
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — to persist the tokens
 //
+// The redirect URI is hardcoded to the production Vercel URL so that the
+// value used in the authorize step and the token exchange are always identical,
+// eliminating invalid_grant errors caused by env-var typos or mismatches.
+//
 // Optional env vars:
 //   BOUNCIE_STATE_SECRET   — if set, the `state` param is validated against it
 //                            (HMAC check skipped when unset — suitable for first
@@ -97,6 +101,7 @@ export default async function handler(req, res) {
   // ── Exchange code for tokens ──────────────────────────────────────────────
   let tokenData;
   try {
+    console.log("Redirect URI used:", REDIRECT_URI);
     const body = new URLSearchParams({
       grant_type:    "authorization_code",
       client_id:     clientId,
