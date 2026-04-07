@@ -69,6 +69,28 @@
   ],
   "camry2013": [
     {
+      "bookingId": "bk-bb-2026-0407",
+      "name": "Brandon Bookhart",
+      "phone": "+15303285561",
+      "email": "brandon.bookhart@gmail.com",
+      "vehicleId": "camry2013",
+      "vehicleName": "Camry 2013 SE",
+      "pickupDate": "2026-04-07",
+      "pickupTime": "",
+      "returnDate": "2026-04-12",
+      "returnTime": "",
+      "location": "",
+      "status": "booked_paid",
+      "paymentIntentId": "",
+      "paymentMethod": "stripe",
+      "amountPaid": 303.19,
+      "totalPrice": 303.19,
+      "notes": "5-day rental. Full payment $303.19 via Stripe. Confirmation email failed on browser — resent manually via admin.",
+      "smsSentAt": {},
+      "createdAt": "2026-04-07T04:58:14.000Z",
+      "source": "admin_v2"
+    },
+    {
       "bookingId": "bk-da-2026-0321",
       "name": "David Agbebaku",
       "phone": "+13463814616",

@@ -91,6 +91,7 @@ You have access to real-time business data through tools. Use them to answer adm
 - Flag bookings via flag_booking
 - Send SMS via send_sms or send_message_to_driver
 - Record vehicle decisions via confirm_vehicle_action / update_action_status
+- **Resend a booking confirmation email** to both the renter and owner via resend_booking_confirmation(bookingId). Use this when a customer says they never received their confirmation, or when a booking was added manually.
 
 ## Registering a Bouncie device (guided flow)
 
