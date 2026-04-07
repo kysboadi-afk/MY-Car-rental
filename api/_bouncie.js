@@ -14,8 +14,10 @@
 const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
 function makeHeaders(token) {
+  // Strip any accidental "Bearer " prefix so the header is never doubled.
+  const cleanToken = token.replace(/^Bearer\s+/i, "");
   return {
-    Authorization:  `Bearer ${token}`,
+    Authorization:  `Bearer ${cleanToken}`,
     "Content-Type": "application/json",
   };
 }
@@ -34,8 +36,8 @@ export async function getBouncieVehicles() {
 
   const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(token) });
 
-  if (resp.status === 401) {
-    throw new Error("Bouncie API: 401 Unauthorized — check that BOUNCIE_ACCESS_TOKEN is valid.");
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error(`Bouncie API: ${resp.status} Unauthorized — check that BOUNCIE_ACCESS_TOKEN is valid.`);
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
