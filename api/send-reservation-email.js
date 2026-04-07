@@ -775,6 +775,43 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+/**
+ * Build the core booking record for persistBooking() from request body fields.
+ * Shared between the SMTP-missing early fallback and the normal confirmation flow.
+ *
+ * @param {object} fields  - destructured req.body fields
+ * @param {string} [paymentLink] - optional balance-pay URL (not yet computed in early path)
+ * @returns {object}
+ */
+function buildBookingRecord(fields, paymentLink = "") {
+  const {
+    vehicleId, car, name, phone, email,
+    pickup, pickupTime, returnDate, returnTime,
+    total, fullRentalCost, paymentIntentId,
+  } = fields;
+  return {
+    vehicleId,
+    vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+    name:            name || "",
+    phone:           phone || "",
+    email:           email || "",
+    pickupDate:      pickup || "",
+    pickupTime:      pickupTime || "",
+    returnDate:      returnDate || "",
+    returnTime:      returnTime || "",
+    location:        DEFAULT_LOCATION,
+    status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
+    amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
+    totalPrice:      fullRentalCost
+      ? Math.round(parseFloat(fullRentalCost) * 100) / 100
+      : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
+    paymentIntentId: paymentIntentId || "",
+    paymentLink,
+    paymentMethod:   "stripe",
+    source:          "public_booking",
+  };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -792,31 +829,16 @@ export default async function handler(req, res) {
 
   // Guard: fail fast if SMTP credentials are missing — but persist the booking
   // first so a paid booking is never lost due to email misconfiguration.
+  // Convention (matching line ~854): absent paymentStatus is treated as "confirmed"
+  // because success.html always sends "confirmed" for successful payments and omits
+  // the field otherwise — an absent value here is always a confirmed payment.
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
-    const _isConfirmedEarly   = !paymentStatus || paymentStatus === "confirmed";
-    const _isBalanceEarly     = paymentType === "balance_payment";
-    if (_isConfirmedEarly && !_isBalanceEarly && vehicleId && (email || phone)) {
+    const isConfirmedPayment  = !paymentStatus || paymentStatus === "confirmed";
+    const isBalancePaymentReq = paymentType === "balance_payment";
+    if (isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
       try {
-        await persistBooking({
-          vehicleId,
-          vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
-          name:            name || "",
-          phone:           phone || "",
-          email:           email || "",
-          pickupDate:      pickup || "",
-          pickupTime:      pickupTime || "",
-          returnDate:      returnDate || "",
-          returnTime:      returnTime || "",
-          location:        DEFAULT_LOCATION,
-          status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
-          amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
-          totalPrice:      fullRentalCost ? Math.round(parseFloat(fullRentalCost) * 100) / 100 : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
-          paymentIntentId: paymentIntentId || "",
-          paymentLink:     "",
-          paymentMethod:   "stripe",
-          source:          "public_booking",
-        });
+        await persistBooking(buildBookingRecord(req.body));
         console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
       } catch (pipelineErr) {
         console.error("[send-reservation-email] SMTP missing and early booking persist also failed:", pipelineErr.message);
@@ -1063,25 +1085,7 @@ export default async function handler(req, res) {
     let persistedBooking = null;
     if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
-      const pipelineResult = await persistBooking({
-        vehicleId,
-        vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
-        name:            name || "",
-        phone:           phone || "",
-        email:           email || "",
-        pickupDate:      pickup || "",
-        pickupTime:      pickupTime || "",
-        returnDate:      returnDate || "",
-        returnTime:      returnTime || "",
-        location:        DEFAULT_LOCATION,
-        status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
-        amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
-        totalPrice:      fullRentalCost ? Math.round(parseFloat(fullRentalCost) * 100) / 100 : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
-        paymentIntentId: paymentIntentId || "",
-        paymentLink:     balancePayUrl || "",
-        paymentMethod:   "stripe",
-        source:          "public_booking",
-      });
+      const pipelineResult = await persistBooking(buildBookingRecord(req.body, balancePayUrl || ""));
       persistedBooking = pipelineResult.booking;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);
