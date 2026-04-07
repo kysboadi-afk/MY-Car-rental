@@ -457,10 +457,20 @@ export default async function handler(req, res) {
     }
   }
 
-  // Timeout must be shorter than Vercel's maxDuration (30s) so we can return
-  // a proper JSON error instead of the connection being killed (which causes
-  // the browser to see "Failed to fetch" with no useful message).
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 25000 });
+  // Per-round timeout budget.
+  // PR #396 fixed single-round "Failed to fetch" with a 25 s client timeout.
+  // PR #397 added write tools that trigger multi-round flows (fetch data →
+  // act → reply).  Two rounds × 25 s = 50 s, which exceeds Vercel's 30 s
+  // maxDuration — the function is killed mid-flight, the TCP connection drops,
+  // and the browser sees "TypeError: Failed to fetch" with no useful message.
+  //
+  // Fix: track total elapsed time and calculate a per-round timeout so the
+  // function always has enough time left to return a proper JSON response.
+  // vercel.json sets maxDuration: 60 for this function as a safety net.
+  const BUDGET_MS         = 50000; // 50 s soft budget (well under the 60 s maxDuration)
+  const MAX_ROUND_TIMEOUT = 20000; // cap per-round OpenAI timeout at 20 s
+  const startTime  = Date.now();
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model  = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
   // Build message list (system + history)
@@ -502,6 +512,22 @@ export default async function handler(req, res) {
 
   // ── Agentic loop ─────────────────────────────────────────────────────────
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Calculate remaining budget; reserve 3 s for response serialisation.
+    const elapsed   = Date.now() - startTime;
+    const remaining = BUDGET_MS - elapsed - 3000;
+
+    if (remaining < 2000) {
+      // Out of budget — return a readable message instead of dropping the connection.
+      return res.status(200).json({
+        reply:      "⏱ This request is taking longer than expected. Please try again or ask a simpler question.",
+        tool_calls: toolCallsMade,
+        messages:   messages.slice(1),
+      });
+    }
+
+    // Cap per-round timeout at MAX_ROUND_TIMEOUT so one slow call can't consume the entire budget.
+    const roundTimeout = Math.min(remaining, MAX_ROUND_TIMEOUT);
+
     let completion;
     try {
       completion = await client.chat.completions.create({
@@ -509,7 +535,7 @@ export default async function handler(req, res) {
         messages,
         tools: TOOL_DEFINITIONS,
         tool_choice: "auto",
-      });
+      }, { timeout: roundTimeout });
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });

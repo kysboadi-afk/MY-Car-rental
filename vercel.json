@@ -4,7 +4,7 @@
       "maxDuration": 20
     },
     "api/admin-chat.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/admin-ai-auto.js": {
       "maxDuration": 30
