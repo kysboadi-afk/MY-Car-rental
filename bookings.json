@@ -88,7 +88,9 @@
       "paymentLink": "https://www.slytrans.com/balance.html?v=camry&p=2026-04-07&r=2026-04-11&pp=1&n=David%20Agbebaku&e=davosama15%40gmail.com&ph=3463814616&pt=9%3A20%20PM&rt=9%3A20%20PM&car=Camry%202012",
       "paymentMethod": "stripe",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "maint_tires_urgent": "2026-04-07T18:00:50.538Z"
+      },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
       "updatedAt": "2026-04-07T04:28:10.078Z",
