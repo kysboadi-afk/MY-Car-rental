@@ -68,6 +68,29 @@
       "activatedAt": "2026-04-02T16:45:34.401Z",
       "updatedAt": "2026-04-03T09:16:26.986Z",
       "completedAt": "2026-04-03T04:00:16.257Z"
+    },
+    {
+      "bookingId": "d95643b10c87a02f1a510f7466b2bedf",
+      "name": "David Agbebaku",
+      "phone": "3463814616",
+      "email": "davosama15@gmail.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-07",
+      "pickupTime": "9:20 PM",
+      "returnDate": "2026-04-11",
+      "returnTime": "9:20 PM",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "reserved_unpaid",
+      "amountPaid": 308.7,
+      "totalPrice": 308.7,
+      "paymentIntentId": "pi_3TJR9RPo7fICjrtZ13jMnPSs",
+      "paymentLink": "https://www.slytrans.com/balance.html?v=camry&p=2026-04-07&r=2026-04-11&pp=1&n=David%20Agbebaku&e=davosama15%40gmail.com&ph=3463814616&pt=9%3A20%20PM&rt=9%3A20%20PM&car=Camry%202012",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-07T04:24:04.966Z",
+      "source": "public_booking"
     }
   ],
   "camry2013": [
