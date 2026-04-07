@@ -785,13 +785,45 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  // Guard: fail fast with a clear log if SMTP credentials are missing
+  // Parse body first so the booking can always be persisted, even when SMTP
+  // credentials are missing.  A misconfigured email server must never cause a
+  // paid booking to be silently lost.
+  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+
+  // Guard: fail fast if SMTP credentials are missing — but persist the booking
+  // first so a paid booking is never lost due to email misconfiguration.
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
+    const _isConfirmedEarly   = !paymentStatus || paymentStatus === "confirmed";
+    const _isBalanceEarly     = paymentType === "balance_payment";
+    if (_isConfirmedEarly && !_isBalanceEarly && vehicleId && (email || phone)) {
+      try {
+        await persistBooking({
+          vehicleId,
+          vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+          name:            name || "",
+          phone:           phone || "",
+          email:           email || "",
+          pickupDate:      pickup || "",
+          pickupTime:      pickupTime || "",
+          returnDate:      returnDate || "",
+          returnTime:      returnTime || "",
+          location:        DEFAULT_LOCATION,
+          status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
+          amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
+          totalPrice:      fullRentalCost ? Math.round(parseFloat(fullRentalCost) * 100) / 100 : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
+          paymentIntentId: paymentIntentId || "",
+          paymentLink:     "",
+          paymentMethod:   "stripe",
+          source:          "public_booking",
+        });
+        console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
+      } catch (pipelineErr) {
+        console.error("[send-reservation-email] SMTP missing and early booking persist also failed:", pipelineErr.message);
+      }
+    }
     return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
   }
-
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
 
   // Extract the customer's IP address from reverse-proxy headers (Vercel sets x-forwarded-for).
   const customerIp = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || null;
@@ -1029,13 +1061,13 @@ export default async function handler(req, res) {
     // saved.  The pipeline logs every step (start, DB attempt, DB result) so
     // there are NO silent failures.
     let persistedBooking = null;
-    if (isConfirmed && !isBalancePayment && vehicleId && phone) {
+    if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
       const pipelineResult = await persistBooking({
         vehicleId,
         vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
         name:            name || "",
-        phone,
+        phone:           phone || "",
         email:           email || "",
         pickupDate:      pickup || "",
         pickupTime:      pickupTime || "",
