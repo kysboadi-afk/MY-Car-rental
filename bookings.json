@@ -210,7 +210,11 @@
       "createdAt": "2026-04-07T09:38:17.544Z",
       "updatedAt": "2026-04-07T10:00:27.302Z",
       "activatedAt": "2026-04-07T09:45:27.428Z",
-      "completedAt": "2026-04-07T10:00:27.302Z"
+      "completedAt": "2026-04-07T10:00:27.302Z",
+      "smsSentAt": {
+        "late_fee_applied": "2026-04-07T10:00:31.520Z"
+      },
+      "lateFeeApplied": 50
     },
     {
       "bookingId": "3c19d7349b2e3f4b",
