@@ -114,7 +114,7 @@ async function runPriorityAlerts({ vehicles, mileageStatMap, activeBookingByVehi
       ? Object.entries(REASON_TO_SERVICE_TYPE)
           .filter(([label]) => reason.includes(label))
           .map(([label, svcType]) => {
-            const url = buildServiceUrl(vehicleId, svcType);
+            const url = buildServiceUrl(vehicleId, svcType, undefined, 7 * 24 * 60 * 60 * 1000);
             return `<p><a href="${url}" style="display:inline-block;padding:8px 16px;background:#2e7d32;color:#fff;border-radius:4px;text-decoration:none">✅ Mark ${esc(label)} as complete</a></p>`;
           })
           .join("\n")
@@ -129,7 +129,7 @@ ${driverName  ? `<p><strong>Driver:</strong> ${esc(driverName)}</p>` : ""}
 ${driverPhone ? `<p><strong>Driver phone:</strong> ${esc(driverPhone)}</p>` : ""}
 <p>Please log in to the admin dashboard to review and take action.</p>
 ${maintenanceLinks}
-${isMaintenance ? `<p style="font-size:12px;color:#888">Quick-service links expire in 30 minutes. Open a new alert to get a fresh link.</p>` : ""}`
+${isMaintenance ? `<p style="font-size:12px;color:#888">Quick-service links expire in 7 days. Open a new alert to get a fresh link.</p>` : ""}`
     );
     if (emailSent) fired.push("owner_email");
 
