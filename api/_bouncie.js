@@ -2,11 +2,12 @@
 // Bouncie GPS API client helpers.
 //
 // Base URL : https://api.bouncie.dev/v1
-// Auth     : Authorization: Bearer <BOUNCIE_ACCESS_TOKEN>
+// Auth     : Authorization: Bearer <token>
 //
-// Token source:
-//   The env var BOUNCIE_ACCESS_TOKEN must be set in Vercel.
-//   No OAuth flow or token exchange is required — the token is used directly.
+// Token source (in priority order):
+//   1. BOUNCIE_ACCESS_TOKEN env var (Vercel environment variable)
+//   2. app_config Supabase table, row key = "bouncie_tokens"
+//      (written by /api/bouncie-callback after OAuth flow completes)
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
@@ -22,17 +23,51 @@ function makeHeaders(token) {
   };
 }
 
+// ── Token helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the Bouncie access token.
+ *
+ * Priority:
+ *   1. BOUNCIE_ACCESS_TOKEN env var (fastest, no DB round-trip)
+ *   2. app_config Supabase row "bouncie_tokens".access_token
+ *      (set by /api/bouncie-callback after an OAuth authorisation)
+ *
+ * @param {object|null} [sb] - Supabase admin client (optional)
+ * @returns {Promise<string|null>} access token or null if none found
+ */
+export async function loadBouncieToken(sb = null) {
+  if (process.env.BOUNCIE_ACCESS_TOKEN) return process.env.BOUNCIE_ACCESS_TOKEN;
+
+  if (!sb) return null;
+
+  try {
+    const { data } = await sb
+      .from("app_config")
+      .select("value")
+      .eq("key", "bouncie_tokens")
+      .maybeSingle();
+
+    return data?.value?.access_token || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Bouncie REST helpers ──────────────────────────────────────────────────────
 
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
- * Uses BOUNCIE_ACCESS_TOKEN env var directly — no OAuth flow required.
  *
+ * Token is resolved via loadBouncieToken(): BOUNCIE_ACCESS_TOKEN env var
+ * first, then app_config Supabase table (written by /api/bouncie-callback).
+ *
+ * @param {object|null} [sb] - Supabase admin client (used for DB token lookup)
  * @returns {Promise<Array>}
  */
-export async function getBouncieVehicles() {
-  const token = process.env.BOUNCIE_ACCESS_TOKEN;
-  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN is not configured in Vercel env vars");
+export async function getBouncieVehicles(sb = null) {
+  const token = await loadBouncieToken(sb);
+  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN is not configured. Set it in Vercel env vars or complete the OAuth flow at /api/bouncie-callback.");
 
   const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(token) });
 
@@ -134,9 +169,10 @@ export async function insertTripLog(sb, trip) {
 
 // ── Vercel serverless handler ─────────────────────────────────────────────────
 //
-// OAuth callback route is no longer used — tokens are read directly from the
-// BOUNCIE_ACCESS_TOKEN environment variable.  This handler is kept to avoid
-// 404s from any bookmarked or cached redirect URIs.
+// The public OAuth callback is handled by /api/bouncie-callback.js.
+// This stub is kept so that the /api/bouncie-oauth route (and the vercel.json
+// rewrite from /api/_bouncie) continues to serve a meaningful response rather
+// than a 404 for any cached or bookmarked URLs.
 
 export default async function handler(req, res) {
   return res.status(200).send(

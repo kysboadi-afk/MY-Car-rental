@@ -14,7 +14,7 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
+import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBouncieToken } from "./_bouncie.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
@@ -86,20 +86,21 @@ export default async function handler(req, res) {
       return res.status(200).json({
         stats,
         alerts,
-        bouncie_configured: !!process.env.BOUNCIE_ACCESS_TOKEN,
+        bouncie_configured: !!(await loadBouncieToken(sb)),
       });
     }
 
     // ── SYNC ─────────────────────────────────────────────────────────────────
     if (action === "sync") {
-      if (!process.env.BOUNCIE_ACCESS_TOKEN) {
-        return res.status(200).json({ skipped: true, reason: "BOUNCIE_ACCESS_TOKEN not configured" });
+      const bouncieToken = await loadBouncieToken(sb);
+      if (!bouncieToken) {
+        return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — set BOUNCIE_ACCESS_TOKEN in Vercel or complete the OAuth flow" });
       }
 
       const startedAt = Date.now();
 
       // Fetch tracked vehicles from DB and live data from Bouncie in parallel.
-      // `getBouncieVehicles()` makes an external HTTP request and may throw when
+      // `getBouncieVehicles(sb)` makes an external HTTP request and may throw when
       // the token is expired or the Bouncie API is unreachable.  Catch that
       // failure separately so we can surface a clear, actionable message to the
       // admin instead of a generic 500.
@@ -107,7 +108,7 @@ export default async function handler(req, res) {
       try {
         [trackedVehicles, bouncieVehicles] = await Promise.all([
           loadTrackedVehicles(sb),
-          getBouncieVehicles(),
+          getBouncieVehicles(sb),
         ]);
       } catch (bouncieErr) {
         console.error("v2-mileage sync: Bouncie/DB fetch failed:", bouncieErr.message);

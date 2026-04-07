@@ -15,7 +15,7 @@
 //   BOUNCIE_ACCESS_TOKEN               — Bouncie OAuth access token
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
-import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
+import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBouncieToken } from "./_bouncie.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -59,13 +59,14 @@ export default async function handler(req, res) {
   }
 
   // Silently skip when Supabase is not configured — we need the DB to map IMEIs to vehicles.
-  // BOUNCIE_ACCESS_TOKEN must also be set for the Bouncie API call to succeed.
+  // A Bouncie token must also be available (env var or app_config) for the API call to succeed.
   const sb = getSupabaseAdmin();
   if (!sb) {
     return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
   }
-  if (!process.env.BOUNCIE_ACCESS_TOKEN) {
-    return res.status(200).json({ skipped: true, reason: "BOUNCIE_ACCESS_TOKEN is not set" });
+  const bouncieToken = await loadBouncieToken(sb);
+  if (!bouncieToken) {
+    return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — set BOUNCIE_ACCESS_TOKEN in Vercel or complete the OAuth flow" });
   }
 
   const startedAt = Date.now();
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
     // ── 1. Load our tracked vehicles and Bouncie vehicles in parallel ────────
     const [trackedVehicles, bouncieVehicles] = await Promise.all([
       loadTrackedVehicles(sb),
-      fetchWithRetry(() => getBouncieVehicles()),
+      fetchWithRetry(() => getBouncieVehicles(sb)),
     ]);
 
     // Build a map: IMEI → tracked vehicle row

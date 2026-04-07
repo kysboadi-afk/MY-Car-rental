@@ -111,6 +111,9 @@
     "api/bouncie-oauth.js": {
       "maxDuration": 15
     },
+    "api/bouncie-callback.js": {
+      "maxDuration": 15
+    },
     "api/complete-booking.js": {
       "maxDuration": 15
     }
