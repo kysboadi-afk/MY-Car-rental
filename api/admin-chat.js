@@ -174,7 +174,7 @@ Step 3 — Show a confirmation summary before creating:
 
 ---
 **New Manual Booking**
-- Vehicle: [vehicle name] (`[vehicleId]`)
+- Vehicle: [vehicle name] (\`[vehicleId]\`)
 - Customer: [name]
 - Phone: [phone or "Not provided"]
 - Email: [email or "Not provided"]
