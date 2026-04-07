@@ -12,7 +12,7 @@
 
 import { loadBookings, saveBookings } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
-import { loadExpenses } from "./_expenses.js";
+import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import {
   loadPricingSettings,
@@ -22,7 +22,7 @@ import {
 } from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
@@ -1835,6 +1835,359 @@ async function toolMarkMaintenance({ vehicleId, serviceType, mileage }) {
   };
 }
 
+// ── New tool implementations ───────────────────────────────────────────────────
+
+const ALLOWED_EXPENSE_CATEGORIES = ["maintenance", "insurance", "repair", "fuel", "registration", "other"];
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+async function toolAddExpense({ vehicle_id, date, category, amount, notes }) {
+  if (!vehicle_id || typeof vehicle_id !== "string") throw new Error("vehicle_id is required");
+  if (!date || !ISO_DATE_PATTERN.test(String(date))) throw new Error("date must be in YYYY-MM-DD format");
+  if (!category || !ALLOWED_EXPENSE_CATEGORIES.includes(category)) {
+    throw new Error(`category must be one of: ${ALLOWED_EXPENSE_CATEGORIES.join(", ")}`);
+  }
+  const parsedAmount = Number(amount);
+  if (isNaN(parsedAmount) || parsedAmount <= 0) throw new Error("amount must be a positive number");
+
+  const expense = {
+    expense_id: randomBytes(8).toString("hex"),
+    vehicle_id: String(vehicle_id).trim(),
+    date:       String(date),
+    category,
+    amount:     Math.round(parsedAmount * 100) / 100,
+    notes:      typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+    created_at: new Date().toISOString(),
+  };
+
+  const sb = getSupabaseAdmin();
+  let useGitHub = !sb;
+  if (sb) {
+    const { error: sbErr } = await sb.from("expenses").insert(expense);
+    if (sbErr) {
+      console.warn("toolAddExpense: Supabase insert failed, falling back to GitHub:", sbErr.message);
+      useGitHub = true;
+    }
+  }
+  if (useGitHub) {
+    if (!process.env.GITHUB_TOKEN) throw new Error("Neither Supabase nor GITHUB_TOKEN is configured.");
+    await updateJsonFileWithRetry({
+      load:    loadExpenses,
+      apply:   (data) => { if (!data.some((e) => e.expense_id === expense.expense_id)) data.push(expense); },
+      save:    saveExpenses,
+      message: `Add expense for ${vehicle_id}: ${category} $${expense.amount} on ${date}`,
+    });
+  }
+  return { success: true, expense };
+}
+
+async function toolDeleteExpense({ expense_id }) {
+  if (!expense_id || typeof expense_id !== "string") throw new Error("expense_id is required");
+
+  const sb = getSupabaseAdmin();
+  let useGitHub = !sb;
+  if (sb) {
+    const { data: existing, error: fetchErr } = await sb
+      .from("expenses").select("expense_id").eq("expense_id", expense_id).maybeSingle();
+    if (fetchErr && isSchemaError(fetchErr)) {
+      useGitHub = true;
+    } else if (fetchErr) {
+      throw new Error(fetchErr.message);
+    } else if (!existing) {
+      throw new Error(`Expense "${expense_id}" not found`);
+    } else {
+      const { error: delErr } = await sb.from("expenses").delete().eq("expense_id", expense_id);
+      if (delErr && isSchemaError(delErr)) {
+        useGitHub = true;
+      } else if (delErr) {
+        throw new Error(delErr.message);
+      }
+    }
+  }
+  if (useGitHub) {
+    if (!process.env.GITHUB_TOKEN) throw new Error("Neither Supabase nor GITHUB_TOKEN is configured.");
+    const { data: checkData } = await loadExpenses();
+    if (!checkData.some((e) => e.expense_id === expense_id)) {
+      throw new Error(`Expense "${expense_id}" not found`);
+    }
+    await updateJsonFileWithRetry({
+      load:    loadExpenses,
+      apply:   (data) => { const after = data.filter((e) => e.expense_id !== expense_id); data.splice(0, data.length, ...after); },
+      save:    saveExpenses,
+      message: `Delete expense ${expense_id}`,
+    });
+  }
+  return { success: true, deleted: expense_id };
+}
+
+async function toolBlockDates({ vehicleId, from, to }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!from || !ISO_DATE_PATTERN.test(from)) throw new Error("from must be in YYYY-MM-DD format");
+  if (!to   || !ISO_DATE_PATTERN.test(to))   throw new Error("to must be in YYYY-MM-DD format");
+  if (from > to) throw new Error("from must not be after to");
+  if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
+
+  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const ghHdrs  = {
+    Authorization:          `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  async function loadBD() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHdrs });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); if (typeof data !== "object" || Array.isArray(data)) data = {}; } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
+  async function saveBD(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...ghHdrs, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status}`);
+  }
+
+  let added = 0;
+  await updateJsonFileWithRetry({
+    load:    loadBD,
+    apply:   (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      if (!hasOverlap(data[vehicleId], from, to)) { data[vehicleId].push({ from, to }); added = 1; } else { added = 0; }
+    },
+    save:    saveBD,
+    message: `Block dates for ${vehicleId}: ${from} to ${to}`,
+  });
+
+  if (added > 0) {
+    try { await autoCreateBlockedDate(vehicleId, from, to, "manual"); }
+    catch (sbErr) { console.warn("toolBlockDates: Supabase sync failed (non-fatal):", sbErr.message); }
+  }
+
+  return {
+    success:  true,
+    vehicleId, from, to, added,
+    message: added > 0
+      ? `✅ ${from} → ${to} is now blocked for ${vehicleId}.`
+      : `ℹ️ Date range ${from} → ${to} was already blocked for ${vehicleId} (no change).`,
+  };
+}
+
+async function toolOpenDates({ vehicleId, from, to }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (!from || !ISO_DATE_PATTERN.test(from)) throw new Error("from must be in YYYY-MM-DD format");
+  if (!to   || !ISO_DATE_PATTERN.test(to))   throw new Error("to must be in YYYY-MM-DD format");
+  if (from > to) throw new Error("from must not be after to");
+  if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
+
+  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const ghHdrs  = {
+    Authorization:          `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  async function loadBD() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHdrs });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); if (typeof data !== "object" || Array.isArray(data)) data = {}; } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
+  async function saveBD(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...ghHdrs, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status}`);
+  }
+
+  let removed = 0;
+  await updateJsonFileWithRetry({
+    load:  loadBD,
+    apply: (data) => {
+      const before = (data[vehicleId] || []).length;
+      data[vehicleId] = (data[vehicleId] || []).filter((r) => !(r.from === from && r.to === to));
+      removed = before - data[vehicleId].length;
+    },
+    save:    saveBD,
+    message: `Open dates for ${vehicleId}: ${from} to ${to}`,
+  });
+
+  if (removed > 0) {
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        await sb.from("blocked_dates").delete().eq("vehicle_id", vehicleId).eq("start_date", from).eq("end_date", to);
+      }
+    } catch (sbErr) { console.warn("toolOpenDates: Supabase sync failed (non-fatal):", sbErr.message); }
+  }
+
+  return {
+    success:  true,
+    vehicleId, from, to, removed,
+    message: removed > 0
+      ? `✅ ${from} → ${to} is now unblocked for ${vehicleId}.`
+      : `ℹ️ Date range ${from} → ${to} was not blocked for ${vehicleId} (no change).`,
+  };
+}
+
+async function toolUpdateSystemSetting({ key, value, description, category }) {
+  if (!key || value === undefined || value === null) throw new Error("key and value are required");
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase not configured — cannot save system settings.");
+
+  const record = {
+    key:        String(key).trim(),
+    value,
+    updated_at: new Date().toISOString(),
+    updated_by: "admin-ai",
+  };
+  if (description !== undefined) record.description = description;
+  if (category    !== undefined) record.category    = category;
+
+  // Try UPDATE first; if no rows affected, INSERT the new row
+  const { data: updatedData, error: updateErr } = await sb
+    .from("system_settings").update(record).eq("key", record.key).select();
+  if (updateErr) throw new Error(`Supabase update failed: ${updateErr.message}`);
+
+  let finalData;
+  if (updatedData && updatedData.length > 0) {
+    finalData = updatedData[0];
+  } else {
+    const { data: insertedData, error: insertErr } = await sb
+      .from("system_settings").insert(record).select().single();
+    if (insertErr) throw new Error(`Supabase insert failed: ${insertErr.message}`);
+    finalData = insertedData;
+  }
+
+  return { success: true, setting: finalData };
+}
+
+async function toolUpdateSmsTemplate({ templateKey, message, enabled }) {
+  if (!templateKey) throw new Error("templateKey is required");
+  if (message === undefined && enabled === undefined) {
+    throw new Error("At least one of message or enabled must be provided");
+  }
+  // Validate templateKey against the known TEMPLATES map
+  if (!Object.prototype.hasOwnProperty.call(TEMPLATES, templateKey)) {
+    throw new Error(`Unknown template key "${templateKey}". Use get_sms_templates to see valid keys.`);
+  }
+
+  const sb = getSupabaseAdmin();
+  const record = { template_key: templateKey, updated_at: new Date().toISOString() };
+  if (message !== undefined) record.message = String(message).slice(0, 1000);
+  if (enabled !== undefined) record.enabled = !!enabled;
+
+  if (sb) {
+    const { data, error } = await sb
+      .from("sms_template_overrides")
+      .upsert(record, { onConflict: "template_key" })
+      .select("template_key, message, enabled")
+      .single();
+    if (error && !isSchemaError(error)) throw new Error(`Supabase upsert failed: ${error.message}`);
+    if (!error && data) return { success: true, template: data };
+  }
+
+  // GitHub fallback
+  if (!process.env.GITHUB_TOKEN) throw new Error("Neither Supabase nor GITHUB_TOKEN is configured.");
+  const TEMPLATES_DB_PATH = "sms-templates.json";
+  const GITHUB_TEMPLATES_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+  const apiUrl = `https://api.github.com/repos/${GITHUB_TEMPLATES_REPO}/contents/${TEMPLATES_DB_PATH}`;
+  const ghHdrs = {
+    Authorization:          `Bearer ${process.env.GITHUB_TOKEN}`,
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  async function loadTpl() {
+    const resp = await fetch(apiUrl, { headers: ghHdrs });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      throw new Error(`GitHub GET sms-templates.json failed: ${resp.status}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); if (typeof data !== "object" || Array.isArray(data)) data = {}; } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
+  async function saveTpl(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...ghHdrs, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok) throw new Error(`GitHub PUT sms-templates.json failed: ${resp.status}`);
+  }
+  await updateJsonFileWithRetry({
+    load:    loadTpl,
+    apply:   (data) => {
+      if (!data[templateKey]) data[templateKey] = {};
+      if (message !== undefined) data[templateKey].message = String(message).slice(0, 1000);
+      if (enabled !== undefined) data[templateKey].enabled = !!enabled;
+    },
+    save:    saveTpl,
+    message: `Update SMS template ${templateKey}`,
+  });
+  return { success: true, template: { template_key: templateKey, ...record } };
+}
+
+async function toolUpdateCustomer({ id, updates }) {
+  if (!id) throw new Error("id is required");
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+    throw new Error("updates object is required");
+  }
+  const allowed = ["flagged", "banned", "flag_reason", "ban_reason", "notes", "name", "phone", "email", "risk_flag"];
+  const sanitized = { updated_at: new Date().toISOString() };
+  for (const f of allowed) {
+    if (Object.prototype.hasOwnProperty.call(updates, f)) sanitized[f] = updates[f];
+  }
+  if (sanitized.risk_flag !== undefined && sanitized.risk_flag !== null &&
+      !["low", "medium", "high"].includes(sanitized.risk_flag)) {
+    throw new Error("risk_flag must be low, medium, or high");
+  }
+
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const { data, error } = await sb.from("customers").update(sanitized).eq("id", id).select().single();
+    if (!error) return { success: true, customer: data };
+    if (!isSchemaError(error)) throw new Error(`Supabase update failed: ${error.message}`);
+  }
+
+  throw new Error("Customer updates require Supabase — database not configured.");
+}
+
+const PROTECTED_VEHICLES = new Set(["slingshot", "slingshot2", "slingshot3"]);
+
+async function toolDeleteVehicle({ vehicleId }) {
+  if (!vehicleId) throw new Error("vehicleId is required");
+  if (PROTECTED_VEHICLES.has(vehicleId)) {
+    throw new Error(`Vehicle "${vehicleId}" is a core Slingshot unit and cannot be deleted via the AI assistant. Manage slingshots in the admin Fleet page.`);
+  }
+
+  const vehicles = await loadAllVehicles();
+  if (!vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" not found`);
+  const vehicleName = vehicles[vehicleId]?.vehicle_name || vehicleId;
+
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    const { error } = await sb.from("vehicles").delete().eq("vehicle_id", vehicleId);
+    if (error && !isSchemaError(error)) throw new Error(`Supabase delete failed: ${error.message}`);
+  }
+
+  const { data: jsonVehicles } = await loadVehicles();
+  if (jsonVehicles[vehicleId]) {
+    delete jsonVehicles[vehicleId];
+    await saveVehicles(jsonVehicles);
+  }
+
+  return { success: true, deleted: vehicleId, name: vehicleName };
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
@@ -2272,6 +2625,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "create_vehicle",
   "add_vehicle",
   "update_vehicle",
+  "delete_vehicle",
   "send_sms",
   "mark_maintenance",
   "flag_booking",
@@ -2281,6 +2635,13 @@ const DESTRUCTIVE_TOOLS = new Set([
   "send_message_to_driver",
   "register_bouncie_device",
   "create_manual_booking",
+  "add_expense",
+  "delete_expense",
+  "block_dates",
+  "open_dates",
+  "update_system_setting",
+  "update_sms_template",
+  "update_customer",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -2339,6 +2700,14 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "register_bouncie_device":      result = await toolRegisterBouncieDevice(args);      break;
       case "resend_booking_confirmation":   result = await toolResendBookingConfirmation(args);   break;
       case "create_manual_booking":         result = await toolCreateManualBooking(args);         break;
+      case "add_expense":                   result = await toolAddExpense(args);                   break;
+      case "delete_expense":                result = await toolDeleteExpense(args);                break;
+      case "block_dates":                   result = await toolBlockDates(args);                   break;
+      case "open_dates":                    result = await toolOpenDates(args);                    break;
+      case "update_system_setting":         result = await toolUpdateSystemSetting(args);          break;
+      case "update_sms_template":           result = await toolUpdateSmsTemplate(args);            break;
+      case "update_customer":               result = await toolUpdateCustomer(args);               break;
+      case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

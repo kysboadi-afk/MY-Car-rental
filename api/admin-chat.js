@@ -47,9 +47,13 @@ You have access to real-time business data through tools. Use them to answer adm
 
 **Block Dates**
 - Use get_blocked_dates to see which date ranges are blocked per vehicle (manual blocks + booking-based blocks).
+- Use **block_dates** to manually block a date range for a vehicle (e.g. vehicle is unavailable for maintenance or personal use). Requires confirmation.
+- Use **open_dates** to remove a manual block and make dates available again. Requires confirmation.
 
 **Finance — Expenses**
 - Use get_expenses for cost records filtered by vehicle or category (maintenance, fuel, insurance, etc.).
+- Use **add_expense** to log a new expense (e.g. oil change, insurance payment, fuel cost). Requires confirmation.
+- Use **delete_expense** to remove an expense record by its expense_id. Requires confirmation.
 
 **Finance — Revenue**
 - Use get_revenue for revenue totals by month or all-time. Use get_analytics (action: "revenue_trend") for multi-month trends.
@@ -62,6 +66,7 @@ You have access to real-time business data through tools. Use them to answer adm
 
 **Management — Customers**
 - Use get_customers to list all customers, search by name/phone/email, or filter for flagged/banned customers.
+- Use **update_customer** to ban/unban, flag/unflag, add notes, update contact info, or set risk level. Always get the customer id from get_customers first. Requires confirmation.
 
 **Management — Protection Plans**
 - Use get_protection_plans to list all coverage tiers, daily add-on rates, and liability caps.
@@ -72,6 +77,7 @@ You have access to real-time business data through tools. Use them to answer adm
   - category "tax": tax rates
   - category "automation": automation toggles
   - category "notification": SMS/email notification toggles
+- Use **update_system_setting** to change any setting value (tax rate, pricing tiers, deposits, automation or notification toggles). Use get_system_settings first to confirm the exact key. Requires confirmation.
 - Use get_price_quote to compute a rental total for a specific vehicle, dates, or duration.
   - For cars: provide vehicleId, pickup (YYYY-MM-DD), returnDate (YYYY-MM-DD)
   - For Slingshots: provide vehicleId and durationHours (3, 6, 24, 48, or 72)
@@ -89,12 +95,13 @@ When displaying car pricing or answering any question about car rates, always li
 
 **Communication — SMS Automation**
 - Use get_sms_templates to see all SMS automation templates, their current message text, and enabled/disabled status.
+- Use **update_sms_template** to edit a template's message text or toggle it on/off. Get the templateKey from get_sms_templates first. Requires confirmation.
 
 **Fraud**
 - Use get_fraud_report to score bookings for fraud risk.
 
 ## Actions you can take (all require confirmation)
-- Create/update vehicles via create_vehicle / update_vehicle
+- Create/update/delete vehicles via create_vehicle / update_vehicle / delete_vehicle (slingshot units cannot be deleted via AI)
 - **Assign a Bouncie GPS device** to a vehicle via register_bouncie_device (see guided flow below)
 - Change booking status via update_booking_status
 - Record maintenance via mark_maintenance
@@ -103,6 +110,13 @@ When displaying car pricing or answering any question about car rates, always li
 - Record vehicle decisions via confirm_vehicle_action / update_action_status
 - **Resend a booking confirmation + rental agreement email** to both the renter and owner via resend_booking_confirmation(bookingId). Use this whenever a customer says they never received their confirmation/rental agreement email, regardless of how they paid.
 - **Manually create a booking** for cash, phone, or missing website payment bookings via create_manual_booking. Use this when a customer pays in cash, books over the phone, or paid on the website but their booking wasn't logged in the system.
+- **Add expenses** via add_expense (vehicle_id, date, category, amount, optional notes).
+- **Delete expenses** via delete_expense (expense_id — get it from get_expenses results).
+- **Block calendar dates** via block_dates (vehicleId, from, to).
+- **Unblock calendar dates** via open_dates (vehicleId, from, to).
+- **Change a system setting** via update_system_setting (key, value — use get_system_settings to find the key first).
+- **Edit an SMS template** via update_sms_template (templateKey, message or enabled — use get_sms_templates to find the key first).
+- **Update a customer record** via update_customer (ban/unban, flag/unflag, notes, risk_flag — use get_customers to find the customer id first).
 
 ## Customer paid on website but didn't receive emails (guided flow)
 
@@ -375,6 +389,34 @@ function formatConfirmedReply(toolName, args, result) {
           : `- No sync recorded yet — power on the device and drive briefly to trigger the first ping.\n`)
       );
     }
+    case "add_expense": {
+      const e = result.expense || {};
+      return `✅ Expense added — ${safe(e.category)} $${safe(e.amount)} for ${safe(e.vehicle_id)} on ${safe(e.date)}. ID: \`${safe(e.expense_id)}\``;
+    }
+    case "delete_expense":
+      return `✅ Expense \`${safe(result.deleted)}\` deleted.`;
+    case "block_dates":
+      return `${safe(result.message || `Dates blocked for ${args.vehicleId}: ${args.from} → ${args.to}`)}`;
+    case "open_dates":
+      return `${safe(result.message || `Dates unblocked for ${args.vehicleId}: ${args.from} → ${args.to}`)}`;
+    case "update_system_setting": {
+      const s = result.setting || {};
+      return `✅ Setting **${safe(s.key || args.key)}** updated to \`${safe(JSON.stringify(s.value ?? args.value))}\`.`;
+    }
+    case "update_sms_template": {
+      const t = result.template || {};
+      const status = t.enabled === false ? "🔕 disabled" : "✅ enabled";
+      return `✅ SMS template **${safe(t.template_key || args.templateKey)}** updated (${status}).`;
+    }
+    case "update_customer": {
+      const c = result.customer || {};
+      const banStatus   = c.banned  ? "🚫 banned"  : c.banned === false ? "✅ unbanned" : null;
+      const flagStatus  = c.flagged ? "⚠️ flagged" : c.flagged === false ? "cleared"    : null;
+      const parts = [banStatus, flagStatus].filter(Boolean);
+      return `✅ Customer **${safe(c.name || args.id)}** updated${parts.length ? ` (${parts.join(", ")})` : ""}.`;
+    }
+    case "delete_vehicle":
+      return `✅ Vehicle **${safe(result.name)}** (\`${safe(result.deleted)}\`) permanently deleted.`;
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }
