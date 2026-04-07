@@ -335,7 +335,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
         auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
       });
       const escStr = (s) => String(s || "")
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
       await transporter.sendMail({
         from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
         to:      OWNER_EMAIL,
