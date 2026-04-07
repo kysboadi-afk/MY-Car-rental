@@ -94,7 +94,7 @@ export default async function handler(req, res) {
     if (action === "sync") {
       const bouncieToken = await loadBouncieToken(sb);
       if (!bouncieToken) {
-        return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — set BOUNCIE_ACCESS_TOKEN in Vercel or complete the OAuth flow" });
+        return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — please complete the OAuth flow at /api/bouncie-oauth to connect your Bouncie account" });
       }
 
       const startedAt = Date.now();

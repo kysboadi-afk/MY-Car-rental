@@ -4,10 +4,13 @@
 // Base URL : https://api.bouncie.dev/v1
 // Auth     : Authorization: Bearer <token>
 //
-// Token source (in priority order):
-//   1. BOUNCIE_ACCESS_TOKEN env var (Vercel environment variable)
-//   2. app_config Supabase table, row key = "bouncie_tokens"
-//      (written by /api/bouncie-callback after OAuth flow completes)
+// Token source:
+//   bouncie_tokens Supabase table (written by /api/bouncie-callback after OAuth
+//   flow completes).  There is exactly one row (id = 1).
+//
+//   If the API returns 401, the stored refresh_token is exchanged for a new
+//   access_token via POST https://auth.bouncie.com/oauth/token, the new tokens
+//   are saved back, and the request is retried once automatically.
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
@@ -26,32 +29,92 @@ function makeHeaders(token) {
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Resolve the Bouncie access token.
+ * Resolve the Bouncie access token from the bouncie_tokens Supabase table.
  *
- * Priority:
- *   1. BOUNCIE_ACCESS_TOKEN env var (fastest, no DB round-trip)
- *   2. app_config Supabase row "bouncie_tokens".access_token
- *      (set by /api/bouncie-callback after an OAuth authorisation)
- *
- * @param {object|null} [sb] - Supabase admin client (optional)
+ * @param {object|null} [sb] - Supabase admin client (required; returns null when absent)
  * @returns {Promise<string|null>} access token or null if none found
  */
 export async function loadBouncieToken(sb = null) {
-  if (process.env.BOUNCIE_ACCESS_TOKEN) return process.env.BOUNCIE_ACCESS_TOKEN;
-
   if (!sb) return null;
 
   try {
     const { data } = await sb
-      .from("app_config")
-      .select("value")
-      .eq("key", "bouncie_tokens")
+      .from("bouncie_tokens")
+      .select("access_token")
+      .eq("id", 1)
       .maybeSingle();
 
-    return data?.value?.access_token || null;
+    return data?.access_token || null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Use the stored refresh_token to obtain a new access_token from Bouncie,
+ * persist both tokens back to the bouncie_tokens table, and return the new
+ * access_token.
+ *
+ * Requires BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET in the environment.
+ *
+ * @param {object} sb - Supabase admin client
+ * @returns {Promise<string>} new access token
+ */
+export async function refreshBouncieToken(sb) {
+  const clientId     = process.env.BOUNCIE_CLIENT_ID;
+  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error("BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET must be set to refresh tokens.");
+  }
+
+  const { data: row } = await sb
+    .from("bouncie_tokens")
+    .select("refresh_token")
+    .eq("id", 1)
+    .maybeSingle();
+
+  if (!row?.refresh_token) {
+    throw new Error("No Bouncie refresh token found — please re-authorize via the OAuth flow from the admin dashboard.");
+  }
+
+  const body = new URLSearchParams({
+    grant_type:    "refresh_token",
+    client_id:     clientId,
+    client_secret: clientSecret,
+    refresh_token: row.refresh_token,
+  });
+
+  const tokenRes = await fetch("https://auth.bouncie.com/oauth/token", {
+    method:  "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body:    body.toString(),
+  });
+
+  if (!tokenRes.ok) {
+    const text = await tokenRes.text().catch(() => "");
+    throw new Error(`Bouncie token refresh failed: ${tokenRes.status} ${text}`);
+  }
+
+  const tokenData = await tokenRes.json();
+  const { access_token, refresh_token: newRefreshToken } = tokenData;
+
+  if (!access_token) {
+    throw new Error("Bouncie token refresh did not return an access_token.");
+  }
+
+  await sb.from("bouncie_tokens").upsert(
+    {
+      id:            1,
+      access_token,
+      refresh_token: newRefreshToken || row.refresh_token,
+      obtained_at:   new Date().toISOString(),
+      updated_at:    new Date().toISOString(),
+    },
+    { onConflict: "id" }
+  );
+
+  return access_token;
 }
 
 // ── Bouncie REST helpers ──────────────────────────────────────────────────────
@@ -59,20 +122,42 @@ export async function loadBouncieToken(sb = null) {
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
  *
- * Token is resolved via loadBouncieToken(): BOUNCIE_ACCESS_TOKEN env var
- * first, then app_config Supabase table (written by /api/bouncie-callback).
+ * Token is read from the bouncie_tokens Supabase table.  If the API returns
+ * 401 the refresh token is used to obtain a new access token (stored back to
+ * Supabase) and the request is retried once automatically.
  *
- * @param {object|null} [sb] - Supabase admin client (used for DB token lookup)
+ * @param {object|null} [sb] - Supabase admin client (required for token lookup)
  * @returns {Promise<Array>}
  */
 export async function getBouncieVehicles(sb = null) {
   const token = await loadBouncieToken(sb);
-  if (!token) throw new Error("BOUNCIE_ACCESS_TOKEN is not configured. Set it in Vercel env vars or complete the OAuth flow at /api/bouncie-callback.");
+  if (!token) throw new Error("No Bouncie access token found in the database. Please complete the OAuth flow from the admin dashboard to connect your Bouncie account.");
 
   const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(token) });
 
+  // Token expired — attempt automatic refresh and retry once.
+  if ((resp.status === 401 || resp.status === 403) && sb) {
+    let newToken;
+    try {
+      newToken = await refreshBouncieToken(sb);
+    } catch (refreshErr) {
+      throw new Error(`Bouncie API: ${resp.status} Unauthorized — token refresh failed: ${refreshErr.message}`);
+    }
+
+    const retryResp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(newToken) });
+    if (retryResp.status === 401 || retryResp.status === 403) {
+      throw new Error("Bouncie API: Unauthorized after token refresh — please re-authorize via the OAuth flow from the admin dashboard.");
+    }
+    if (!retryResp.ok) {
+      const text = await retryResp.text().catch(() => "");
+      throw new Error(`Bouncie API GET /vehicles failed: ${retryResp.status} ${text}`);
+    }
+    const retryData = await retryResp.json();
+    return Array.isArray(retryData) ? retryData : [];
+  }
+
   if (resp.status === 401 || resp.status === 403) {
-    throw new Error(`Bouncie API: ${resp.status} Unauthorized — check that BOUNCIE_ACCESS_TOKEN is valid.`);
+    throw new Error(`Bouncie API: ${resp.status} Unauthorized — please re-authorize via the OAuth flow from the admin dashboard.`);
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
@@ -181,9 +266,9 @@ export default async function handler(req, res) {
   return res.status(200).send(
     "<!DOCTYPE html><html><head><title>Bouncie</title></head>" +
     "<body style='font-family:sans-serif;padding:2rem'>" +
-    "<h2>ℹ️ OAuth callback not required</h2>" +
-    "<p>Bouncie is configured via the <code>BOUNCIE_ACCESS_TOKEN</code> environment variable. " +
-    "No OAuth flow is needed.</p>" +
+    "<h2>ℹ️ Bouncie OAuth</h2>" +
+    "<p>To connect Bouncie, start the OAuth flow from the admin dashboard or navigate to " +
+    "<code>/api/bouncie-oauth</code> to begin authorization.</p>" +
     "</body></html>"
   );
 }

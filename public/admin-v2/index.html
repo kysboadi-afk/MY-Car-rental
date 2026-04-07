@@ -2624,7 +2624,7 @@ async function triggerBouncieSync(vehicleId) {
     const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
     if (result.bouncie_error) {
-      showToast('Bouncie sync error: ' + (result.reason || 'check BOUNCIE_ACCESS_TOKEN in Vercel'), 'error');
+      showToast('Bouncie sync error: ' + (result.reason || 'please reconnect Bouncie via the OAuth flow'), 'error');
       return;
     } else if (synced) {
       showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
@@ -4160,20 +4160,16 @@ function renderBouncieAuthSection(status) {
         ${!configured ? `
         <div class="form-group" style="grid-column:1/-1;">
           <p style="font-size:13px;color:var(--warning,#f59e0b);margin:0 0 8px;">
-            ⚠️ <code>BOUNCIE_ACCESS_TOKEN</code> is not set in Vercel. GPS mileage sync is disabled.
+            ⚠️ Bouncie GPS is not connected. Mileage sync is disabled.
           </p>
           <p style="font-size:13px;color:var(--text-sub);margin:0;line-height:1.6;">
-            To enable GPS tracking:<br>
-            1. Copy your access token from the <strong>Bouncie developer dashboard</strong>.<br>
-            2. Add it as <code>BOUNCIE_ACCESS_TOKEN</code> in your <strong>Vercel environment variables</strong>.<br>
-            3. Redeploy — no OAuth flow or redirect URI is required.
+            To enable GPS tracking, complete the OAuth flow from the admin dashboard to connect your Bouncie account.
           </p>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
           <p style="font-size:13px;color:var(--text-sub);margin:0;">
-            Mileage syncs automatically every 5 minutes via the Bouncie API.
-            To change the token, update <code>BOUNCIE_ACCESS_TOKEN</code> in Vercel and redeploy.
+            Mileage syncs automatically every 5 minutes via the Bouncie API. Token is stored securely in Supabase and refreshes automatically.
           </p>
         </div>
         `}

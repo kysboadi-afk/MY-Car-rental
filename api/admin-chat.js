@@ -270,7 +270,7 @@ After creation:
 ## Mileage & maintenance context
 - For questions about a specific vehicle's maintenance (e.g. "What's the maintenance status of Camry 2013?"), ALWAYS call get_maintenance_status with the vehicle name. Never use get_mileage for single-vehicle maintenance queries.
 - Mileage tracking via GPS requires Bouncie devices. get_maintenance_status returns mileage-based alerts when a Bouncie device is assigned; otherwise it still returns service history and appointments.
-- If get_mileage returns bouncie_configured: false, explain that the Bouncie GPS integration is not yet set up and that the admin should configure BOUNCIE_ACCESS_TOKEN in Vercel.
+- If get_mileage returns bouncie_configured: false, explain that the Bouncie GPS integration is not yet set up and that the admin should complete the OAuth flow from the admin dashboard to connect their Bouncie account.
 - If get_mileage returns tracked_vehicles: 0 AND raw_bouncie_rows: 0, explain that no cars currently have a Bouncie device ID saved in the database (editable in the Fleet page under each vehicle's IMEI field).
 - If get_mileage returns tracked_vehicles: 0 AND raw_bouncie_rows > 0, explain that Bouncie devices appear to be assigned only to slingshots, not to the car fleet.
 - If get_mileage returns tracked_vehicles: 0 but the dashboard is showing mileage alerts, there may be a temporary sync lag — suggest the admin refresh or re-save the vehicle's Bouncie IMEI in the Fleet page.

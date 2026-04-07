@@ -6,7 +6,7 @@
 // raw API responses) are ever exposed.
 //
 // Error categories (in match priority order):
-//   1. Bouncie API authentication failure (BOUNCIE_ACCESS_TOKEN)
+//   1. Bouncie API authentication failure (expired/missing OAuth token)
 //   2. GitHub auth failure (401/403) — requires "github" in the error message
 //   3. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
 //   4. GitHub rate-limit (429)
@@ -65,7 +65,7 @@ export function adminErrorMessage(err) {
     /bouncie/i.test(raw) &&
     (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
   ) {
-    return "Bouncie authentication failed — please verify that BOUNCIE_ACCESS_TOKEN is set correctly in your Vercel environment variables. Copy the access token from your Bouncie developer dashboard and add it as BOUNCIE_ACCESS_TOKEN in Vercel. No OAuth flow or redirect URI is required.";
+    return "Bouncie authentication failed — the stored access token may have expired and could not be refreshed automatically. Please re-authorize via the OAuth flow from the admin dashboard.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────

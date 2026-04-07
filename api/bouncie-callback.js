@@ -155,25 +155,22 @@ export default async function handler(req, res) {
     );
   }
 
-  // ── Persist tokens in Supabase app_config ─────────────────────────────────
+  // ── Persist tokens in Supabase bouncie_tokens ─────────────────────────────
   const sb = getSupabaseAdmin();
   let savedToDb = false;
   if (sb) {
     try {
       const { error: upsertErr } = await sb
-        .from("app_config")
+        .from("bouncie_tokens")
         .upsert(
           {
-            key:        "bouncie_tokens",
-            value:      {
-              access_token,
-              refresh_token:  refresh_token  || null,
-              expires_in:     expires_in     || null,
-              obtained_at:    new Date().toISOString(),
-            },
-            updated_at: new Date().toISOString(),
+            id:            1,
+            access_token,
+            refresh_token:  refresh_token  || null,
+            obtained_at:    new Date().toISOString(),
+            updated_at:     new Date().toISOString(),
           },
-          { onConflict: "key" }
+          { onConflict: "id" }
         );
 
       if (upsertErr) {
@@ -189,8 +186,7 @@ export default async function handler(req, res) {
   // ── Success page ──────────────────────────────────────────────────────────
   const dbStatus = savedToDb
     ? "<p>✅ Token saved to Supabase — GPS sync will use it automatically.</p>"
-    : "<p>⚠️ Could not save to Supabase. Copy the token below and set it as " +
-      "<code>BOUNCIE_ACCESS_TOKEN</code> in your Vercel environment variables, then redeploy.</p>";
+    : "<p>⚠️ Could not save to Supabase. Please check your Supabase configuration and try the OAuth flow again.</p>";
 
   return res.status(200).send(
     htmlPage(
