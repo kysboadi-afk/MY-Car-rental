@@ -16,7 +16,7 @@
 //   ADMIN_SECRET   — admin password
 //   OPENAI_API_KEY — OpenAI API key
 // Optional:
-//   OPENAI_MODEL   — model ID override (default: gpt-4o-mini)
+//   OPENAI_MODEL   — model ID override (default: gpt-4.1-mini)
 
 import OpenAI from "openai";
 import { isAdminAuthorized } from "./_admin-auth.js";
@@ -415,8 +415,11 @@ export default async function handler(req, res) {
     }
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const model  = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  // Timeout must be shorter than Vercel's maxDuration (30s) so we can return
+  // a proper JSON error instead of the connection being killed (which causes
+  // the browser to see "Failed to fetch" with no useful message).
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 25000 });
+  const model  = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
   // Build message list (system + history)
   // System prompt is built dynamically to include the real-time current date/time.
