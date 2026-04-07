@@ -25,7 +25,6 @@
 //
 // Vercel cron configuration is in vercel.json.
 
-import Stripe from "stripe";
 import nodemailer from "nodemailer";
 import { sendSms } from "./_textmagic.js";
 import {

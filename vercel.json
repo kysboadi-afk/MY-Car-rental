@@ -119,6 +119,9 @@
     },
     "api/charge-fee.js": {
       "maxDuration": 20
+    },
+    "api/approve-late-fee.js": {
+      "maxDuration": 20
     }
   },
   "headers": [
