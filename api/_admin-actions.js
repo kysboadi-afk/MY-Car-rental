@@ -320,8 +320,11 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
       }
 
       if (search) {
+        // Strip characters that have special meaning in PostgREST filter strings
+        // to prevent filter injection via the .or() expression.
+        const safeSearch = search.replace(/[,()'"\\]/g, "");
         query = query.or(
-          `customer_name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%,booking_id.ilike.%${search}%`
+          `customer_name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,booking_id.ilike.%${safeSearch}%`
         );
       }
 
