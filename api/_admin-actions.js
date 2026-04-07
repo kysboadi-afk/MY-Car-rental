@@ -289,7 +289,7 @@ async function toolGetRevenue({ month } = {}) {
   };
 }
 
-async function toolGetBookings({ vehicleId, status, limit = 20 } = {}) {
+async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
   const safeLimit = Math.min(Number(limit) || 20, 100);
   const sb = getSupabaseAdmin();
 
@@ -317,6 +317,15 @@ async function toolGetBookings({ vehicleId, status, limit = 20 } = {}) {
         };
         const dbStatus = APP_TO_DB[status] || status;
         query = query.eq("status", dbStatus);
+      }
+
+      if (search) {
+        // Strip characters that have special meaning in PostgREST filter strings
+        // to prevent filter injection via the .or() expression.
+        const safeSearch = search.replace(/[,()'"\\]/g, "");
+        query = query.or(
+          `customer_name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,booking_id.ilike.%${safeSearch}%`
+        );
       }
 
       const { data, error, count } = await query;
@@ -347,6 +356,15 @@ async function toolGetBookings({ vehicleId, status, limit = 20 } = {}) {
   let all = await loadAllBookings();
   if (vehicleId) all = all.filter((b) => b.vehicleId === vehicleId);
   if (status)    all = all.filter((b) => b.status === status);
+  if (search) {
+    const q = search.toLowerCase();
+    all = all.filter((b) =>
+      (b.name || "").toLowerCase().includes(q) ||
+      (b.phone || "").includes(q) ||
+      (b.email || "").toLowerCase().includes(q) ||
+      (b.bookingId || "").toLowerCase().includes(q)
+    );
+  }
   all.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
   total   = all.length;
   results = all.slice(0, safeLimit).map((b) => ({

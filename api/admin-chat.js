@@ -38,7 +38,7 @@ You have access to real-time business data through tools. Use them to answer adm
 - Use get_vehicles for fleet list, status, pricing, booking counts, Bouncie tracking status, and decision badges.
 
 **Reservations & Bookings (including Raw Bookings)**
-- Use get_bookings to list/filter bookings by vehicle, status, or all. Works for all booking views.
+- Use get_bookings to list/filter bookings by vehicle, status, or all. Supports a `search` parameter to find bookings by customer name, phone number, email address, or booking ID. Use this whenever the admin asks to "find" or "look up" a specific customer's booking.
 
 **Fleet Status & Mileage**
 - Use **get_maintenance_status** (with vehicleName) whenever the admin asks about maintenance, service, oil change, brakes, tires, or vehicle condition for a specific vehicle. This works for ALL vehicles, including those without GPS tracking. The result includes scheduled appointments (from the driver maintenance scheduling form), completed service history, and mileage-based alerts.
