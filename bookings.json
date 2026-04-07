@@ -203,13 +203,14 @@
       "returnDate": "2026-01-06",
       "returnTime": "",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "manual_8ad801356b2e",
       "amountPaid": 250,
       "notes": "Cash payment for completed rental",
       "createdAt": "2026-04-07T09:38:17.544Z",
-      "updatedAt": "2026-04-07T09:45:27.428Z",
-      "activatedAt": "2026-04-07T09:45:27.428Z"
+      "updatedAt": "2026-04-07T10:00:27.302Z",
+      "activatedAt": "2026-04-07T09:45:27.428Z",
+      "completedAt": "2026-04-07T10:00:27.302Z"
     },
     {
       "bookingId": "3c19d7349b2e3f4b",
