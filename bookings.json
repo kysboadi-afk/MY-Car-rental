@@ -81,7 +81,7 @@
       "returnDate": "2026-04-11",
       "returnTime": "9:20 PM",
       "location": "1200 S Figueroa St, Los Angeles, CA 90015",
-      "status": "reserved_unpaid",
+      "status": "booked_paid",
       "amountPaid": 308.7,
       "totalPrice": 308.7,
       "paymentIntentId": "pi_3TJR9RPo7fICjrtZ13jMnPSs",
@@ -90,7 +90,8 @@
       "notes": "",
       "smsSentAt": {},
       "createdAt": "2026-04-07T04:24:04.966Z",
-      "source": "public_booking"
+      "source": "public_booking",
+      "updatedAt": "2026-04-07T04:27:43.346Z"
     }
   ],
   "camry2013": [
