@@ -96,6 +96,9 @@
     "api/bouncie-auth.js": {
       "maxDuration": 20
     },
+    "api/bouncie-location.js": {
+      "maxDuration": 20
+    },
     "api/v2-mileage.js": {
       "maxDuration": 30
     },
@@ -107,6 +110,9 @@
     },
     "api/missed-maintenance.js": {
       "maxDuration": 20
+    },
+    "api/bouncie-connect.js": {
+      "maxDuration": 10
     },
     "api/bouncie-oauth.js": {
       "maxDuration": 15

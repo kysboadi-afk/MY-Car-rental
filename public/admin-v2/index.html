@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPnI=" crossorigin=""></script>
   <style>
     /* ── Reset & Base ───────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -733,6 +735,10 @@
       <a class="nav-item" data-page="fleet-status" href="#" onclick="navigate('fleet-status');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
         Fleet Status
+      </a>
+      <a class="nav-item" data-page="gps" href="#" onclick="navigate('gps');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z" stroke-dasharray="2 3"/></svg>
+        GPS Tracking
       </a>
       <a class="nav-item" data-page="block-dates" href="#" onclick="navigate('block-dates');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -1557,6 +1563,56 @@
         <div id="bouncie-auth-content" style="display:none"></div>
       </div>
 
+      <!-- GPS TRACKING PAGE -->
+      <div class="page" id="page-gps">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:18px;font-weight:700;color:var(--text);">📡 GPS Tracking</div>
+            <div style="font-size:13px;color:var(--text-sub);margin-top:2px;">Live vehicle locations via Bouncie</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="gps-last-updated" style="font-size:12px;color:var(--text-sub);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="loadGpsTracking()">🔄 Refresh</button>
+            <button class="btn btn-sm" id="gps-auto-refresh-btn" onclick="toggleGpsAutoRefresh()" style="font-size:12px;">⏱ Auto-Refresh: OFF</button>
+          </div>
+        </div>
+
+        <!-- Not connected banner -->
+        <div id="gps-not-connected" style="display:none;" class="card">
+          <div style="text-align:center;padding:32px 16px;">
+            <div style="font-size:36px;margin-bottom:12px;">📡</div>
+            <div style="font-size:16px;font-weight:600;color:var(--danger);margin-bottom:8px;">Bouncie Not Connected</div>
+            <p style="font-size:13px;color:var(--text-sub);margin:0 0 16px;" id="gps-not-connected-msg"></p>
+            <a id="gps-connect-btn" href="#" onclick="navigate('system-settings');return false;" class="btn btn-primary" style="text-decoration:none;">⚙️ Go to System Settings</a>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="gps-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading GPS data…</div></div>
+
+        <!-- Vehicle cards -->
+        <div id="gps-cards" style="display:none;">
+          <div id="gps-vehicle-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:20px;"></div>
+
+          <!-- Map -->
+          <div class="card" id="gps-map-card" style="display:none;">
+            <div class="card-header">
+              <div class="card-title">🗺️ Fleet Map</div>
+              <div class="card-sub">Last known positions</div>
+            </div>
+            <div id="gps-map" style="height:420px;border-radius:8px;overflow:hidden;"></div>
+          </div>
+
+          <!-- No location note -->
+          <div id="gps-no-location" class="card" style="display:none;">
+            <div style="padding:24px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:8px;">🛰️</div>
+              <div style="font-size:14px;color:var(--text-sub);">No location data available. Vehicles may be parked with GPS signal unavailable, or Bouncie has not reported a location yet.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- AI ASSISTANT PAGE -->
       <div class="page" id="page-ai">
         <div class="ai-layout">
@@ -2056,6 +2112,7 @@ function navigate(page) {
     'bookings-raw':     'Raw Bookings',
     'manual-booking':   'Manual Booking',
     'fleet-status':     'Fleet Status',
+    'gps':              'GPS Tracking',
     'block-dates':      'Block / Unblock Dates',
     expenses:           'Expenses',
     sms:                'SMS Automation',
@@ -2088,6 +2145,7 @@ function navigate(page) {
   else if (page === 'protection-plans') loadProtectionPlans();
   else if (page === 'system-settings') loadSystemSettings();
   else if (page === 'fleet-status') loadFleetStatusPage();
+  else if (page === 'gps') loadGpsTracking();
   else if (page === 'block-dates') loadBlockedDates();
   else if (page === 'settings') loadSiteContent();
   else if (page === 'ai') loadAiInsights();
@@ -2115,6 +2173,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'protection-plans') loadProtectionPlans();
   else if (currentPage === 'system-settings') loadSystemSettings();
   else if (currentPage === 'fleet-status') loadFleetStatusPage();
+  else if (currentPage === 'gps') loadGpsTracking();
   else if (currentPage === 'block-dates') loadBlockedDates();
   else if (currentPage === 'settings') loadSiteContent();
 }
@@ -2600,6 +2659,194 @@ async function saveVehicle() {
     showToast('Error: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+// ── GPS Tracking page ────────────────────────────────────────────────────────
+
+let gpsAutoRefreshTimer = null;
+let gpsMap              = null;
+let gpsMarkers          = [];
+
+function loadGpsTracking() {
+  const loading      = document.getElementById('gps-loading');
+  const notConn      = document.getElementById('gps-not-connected');
+  const cards        = document.getElementById('gps-cards');
+
+  loading.style.display      = '';
+  notConn.style.display      = 'none';
+  cards.style.display        = 'none';
+
+  fetch(`${API_BASE}/api/bouncie-location?secret=${encodeURIComponent(adminSecret)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      loading.style.display = 'none';
+      if (!data.connected) {
+        notConn.style.display = '';
+        document.getElementById('gps-not-connected-msg').textContent =
+          data.message || 'Bouncie is not connected.';
+        return;
+      }
+      cards.style.display = '';
+      renderGpsVehicles(data.vehicles || []);
+      const now = new Date();
+      document.getElementById('gps-last-updated').textContent =
+        `Updated ${now.toLocaleTimeString()}`;
+    })
+    .catch((err) => {
+      loading.style.display = 'none';
+      showToast('GPS load error: ' + err.message, 'error');
+    });
+}
+
+function renderGpsVehicles(vehicles) {
+  const list      = document.getElementById('gps-vehicle-list');
+  const mapCard   = document.getElementById('gps-map-card');
+  const noLocDiv  = document.getElementById('gps-no-location');
+
+  list.innerHTML = '';
+
+  if (!vehicles.length) {
+    list.innerHTML = '<p style="color:var(--text-sub);font-size:13px;">No Bouncie-tracked vehicles found. Add a Bouncie Device ID to a vehicle to enable tracking.</p>';
+    mapCard.style.display  = 'none';
+    noLocDiv.style.display = 'none';
+    return;
+  }
+
+  const withLocation = vehicles.filter((v) => v.lat !== null && v.lon !== null);
+
+  vehicles.forEach((v) => {
+    const hasLoc   = v.lat !== null && v.lon !== null;
+    const moving   = v.isMoving;
+    const speed    = v.speed !== null ? `${v.speed} mph` : '—';
+    const odo      = v.odometer !== null ? `${Math.round(v.odometer).toLocaleString()} mi` : '—';
+    const updated  = v.lastUpdated ? new Date(v.lastUpdated).toLocaleString() : '—';
+    const statusDot = moving
+      ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#10b981;margin-right:5px;"></span>'
+      : '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#6b7280;margin-right:5px;"></span>';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'padding:16px;';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-weight:600;font-size:14px;color:var(--text);">🚗 ${esc(v.vehicleName)}</div>
+        <span style="font-size:12px;display:flex;align-items:center;color:${moving ? 'var(--success,#10b981)' : 'var(--text-sub)'};">
+          ${statusDot}${moving ? 'Moving' : 'Parked'}
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+        <div>
+          <div style="color:var(--text-sub);margin-bottom:2px;">Speed</div>
+          <div style="font-weight:600;color:var(--text);">${speed}</div>
+        </div>
+        <div>
+          <div style="color:var(--text-sub);margin-bottom:2px;">Odometer</div>
+          <div style="font-weight:600;color:var(--text);">${odo}</div>
+        </div>
+        <div>
+          <div style="color:var(--text-sub);margin-bottom:2px;">Location</div>
+          <div style="font-weight:600;color:var(--text);">${hasLoc ? `${v.lat.toFixed(4)}, ${v.lon.toFixed(4)}` : 'No signal'}</div>
+        </div>
+        <div>
+          <div style="color:var(--text-sub);margin-bottom:2px;">Last Update</div>
+          <div style="font-weight:600;color:var(--text);font-size:11px;">${updated}</div>
+        </div>
+      </div>
+      ${hasLoc ? `
+      <div style="margin-top:10px;">
+        <a href="https://www.google.com/maps?q=${v.lat},${v.lon}" target="_blank" rel="noopener noreferrer"
+           style="font-size:12px;color:var(--primary,#6366f1);text-decoration:none;">
+          📍 Open in Google Maps
+        </a>
+      </div>` : ''}
+    `;
+    list.appendChild(card);
+  });
+
+  if (withLocation.length) {
+    mapCard.style.display  = '';
+    noLocDiv.style.display = 'none';
+    initGpsMap(withLocation);
+  } else {
+    mapCard.style.display  = 'none';
+    noLocDiv.style.display = '';
+    destroyGpsMap();
+  }
+}
+
+function initGpsMap(vehicles) {
+  const mapEl = document.getElementById('gps-map');
+  if (!mapEl) return;
+
+  // Destroy previous instance if it exists
+  destroyGpsMap();
+
+  // Leaflet map centred on the first vehicle
+  gpsMap = L.map('gps-map').setView([vehicles[0].lat, vehicles[0].lon], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(gpsMap);
+
+  const bounds = [];
+  vehicles.forEach((v) => {
+    const color  = v.isMoving ? '#10b981' : '#6b7280';
+    const icon   = L.divIcon({
+      className: '',
+      html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+      iconSize:   [14, 14],
+      iconAnchor: [7, 7],
+    });
+    const marker = L.marker([v.lat, v.lon], { icon })
+      .addTo(gpsMap)
+      .bindPopup(`<strong>${esc(v.vehicleName)}</strong><br>${v.isMoving ? '🟢 Moving' : '⚫ Parked'}<br>Speed: ${v.speed !== null ? v.speed + ' mph' : '—'}<br>Odo: ${v.odometer !== null ? Math.round(v.odometer).toLocaleString() + ' mi' : '—'}`);
+    gpsMarkers.push(marker);
+    bounds.push([v.lat, v.lon]);
+  });
+
+  if (bounds.length > 1) {
+    gpsMap.fitBounds(bounds, { padding: [30, 30] });
+  }
+}
+
+function destroyGpsMap() {
+  if (gpsMap) {
+    gpsMarkers.forEach((m) => m.remove());
+    gpsMarkers = [];
+    gpsMap.remove();
+    gpsMap = null;
+    // Replace the map container so Leaflet can re-init cleanly next time
+    const mapCard = document.getElementById('gps-map-card');
+    const oldEl   = document.getElementById('gps-map');
+    if (mapCard && oldEl) {
+      const newEl = document.createElement('div');
+      newEl.id = 'gps-map';
+      newEl.style.cssText = oldEl.style.cssText;
+      oldEl.replaceWith(newEl);
+    }
+  }
+}
+
+function toggleGpsAutoRefresh() {
+  const btn = document.getElementById('gps-auto-refresh-btn');
+  if (gpsAutoRefreshTimer) {
+    clearInterval(gpsAutoRefreshTimer);
+    gpsAutoRefreshTimer = null;
+    if (btn) btn.textContent = '⏱ Auto-Refresh: OFF';
+  } else {
+    gpsAutoRefreshTimer = setInterval(() => {
+      if (currentPage === 'gps') {
+        loadGpsTracking();
+      } else {
+        clearInterval(gpsAutoRefreshTimer);
+        gpsAutoRefreshTimer = null;
+        if (btn) btn.textContent = '⏱ Auto-Refresh: OFF';
+      }
+    }, 60000);
+    if (btn) btn.textContent = '⏱ Auto-Refresh: ON (60s)';
+    showToast('GPS auto-refresh enabled (every 60 s)', 'info');
   }
 }
 
@@ -4162,15 +4409,21 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--warning,#f59e0b);margin:0 0 8px;">
             ⚠️ Bouncie GPS is not connected. Mileage sync is disabled.
           </p>
-          <p style="font-size:13px;color:var(--text-sub);margin:0;line-height:1.6;">
-            To enable GPS tracking, complete the OAuth flow from the admin dashboard to connect your Bouncie account.
+          <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
+            Click the button below to authorize SLY Rides to access your Bouncie account. You will be redirected to Bouncie and then returned here automatically.
           </p>
+          <a href="${API_BASE}/api/bouncie-connect?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+            🔗 Connect Bouncie
+          </a>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
-          <p style="font-size:13px;color:var(--text-sub);margin:0;">
+          <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
             Mileage syncs automatically every 5 minutes via the Bouncie API. Token is stored securely in Supabase and refreshes automatically.
           </p>
+          <a href="${API_BASE}/api/bouncie-connect?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+            🔄 Reconnect Bouncie
+          </a>
         </div>
         `}
       </div>
