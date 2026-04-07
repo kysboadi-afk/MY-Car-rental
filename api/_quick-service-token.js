@@ -104,12 +104,13 @@ export function verifyServiceToken(token) {
  * @param {string} vehicleId
  * @param {string} serviceType
  * @param {string} [baseUrl]  — e.g. "https://sly-rides.vercel.app" (defaults to VERCEL_URL or slytrans.com)
+ * @param {number} [ttlMs]    — token lifetime in ms (default: 30 min; use a longer value for email links)
  * @returns {string}
  */
-export function buildServiceUrl(vehicleId, serviceType, baseUrl) {
+export function buildServiceUrl(vehicleId, serviceType, baseUrl, ttlMs) {
   const base  = baseUrl || (process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : "https://sly-rides.vercel.app");
-  const token = createServiceToken(vehicleId, serviceType);
+  const token = createServiceToken(vehicleId, serviceType, ttlMs);
   return `${base}/api/quick-service?vehicleId=${encodeURIComponent(vehicleId)}&serviceType=${encodeURIComponent(serviceType)}&token=${encodeURIComponent(token)}`;
 }
