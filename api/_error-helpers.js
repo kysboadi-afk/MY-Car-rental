@@ -58,7 +58,13 @@ export function adminErrorMessage(err) {
   // ── Bouncie API authentication failure ────────────────────────────────────
   // Must be checked before the generic 401/403 GitHub block because Bouncie
   // errors also contain status codes like "(401)" but are unrelated to GitHub.
-  if (/bouncie/i.test(raw)) {
+  // Only actual auth failures (401/403, "Unauthorized", or missing token) map
+  // to the auth message.  Other Bouncie errors (429, 5xx, etc.) fall through
+  // to the more appropriate rate-limit / fallback handlers below.
+  if (
+    /bouncie/i.test(raw) &&
+    (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
+  ) {
     return "Bouncie authentication failed — please verify that BOUNCIE_ACCESS_TOKEN is set correctly in your Vercel environment variables. Copy the access token from your Bouncie developer dashboard and add it as BOUNCIE_ACCESS_TOKEN in Vercel. No OAuth flow or redirect URI is required.";
   }
 
