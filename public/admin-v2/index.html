@@ -2786,7 +2786,7 @@ function initGpsMap(vehicles) {
   gpsMap = L.map('gps-map').setView([vehicles[0].lat, vehicles[0].lon], 13);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+    attribution: '© <a href="https://www.openstreetmap.org/" rel="noopener noreferrer">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(gpsMap);
 
@@ -2817,9 +2817,15 @@ function destroyGpsMap() {
     gpsMarkers = [];
     gpsMap.remove();
     gpsMap = null;
-    // Leaflet leaves the div dirty; reset it so re-init works
-    const mapEl = document.getElementById('gps-map');
-    if (mapEl) { mapEl.innerHTML = ''; mapEl._leaflet_id = undefined; }
+    // Replace the map container so Leaflet can re-init cleanly next time
+    const mapCard = document.getElementById('gps-map-card');
+    const oldEl   = document.getElementById('gps-map');
+    if (mapCard && oldEl) {
+      const newEl = document.createElement('div');
+      newEl.id = 'gps-map';
+      newEl.style.cssText = oldEl.style.cssText;
+      oldEl.replaceWith(newEl);
+    }
   }
 }
 
@@ -2831,8 +2837,13 @@ function toggleGpsAutoRefresh() {
     if (btn) btn.textContent = '⏱ Auto-Refresh: OFF';
   } else {
     gpsAutoRefreshTimer = setInterval(() => {
-      if (currentPage === 'gps') loadGpsTracking();
-      else { clearInterval(gpsAutoRefreshTimer); gpsAutoRefreshTimer = null; if (btn) btn.textContent = '⏱ Auto-Refresh: OFF'; }
+      if (currentPage === 'gps') {
+        loadGpsTracking();
+      } else {
+        clearInterval(gpsAutoRefreshTimer);
+        gpsAutoRefreshTimer = null;
+        if (btn) btn.textContent = '⏱ Auto-Refresh: OFF';
+      }
     }, 60000);
     if (btn) btn.textContent = '⏱ Auto-Refresh: ON (60s)';
     showToast('GPS auto-refresh enabled (every 60 s)', 'info');

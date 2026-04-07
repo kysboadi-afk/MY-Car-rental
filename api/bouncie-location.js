@@ -76,10 +76,10 @@ export default async function handler(req, res) {
         imei,
         lat,
         lon,
-        speed:       typeof loc.speed   === "number" ? Math.round(loc.speed)   : null,
+        speed:       typeof loc.speed   === "number" ? Math.round(loc.speed) : null,
         heading:     typeof loc.heading === "number" ? Math.round(loc.heading) : null,
         isMoving:    loc.isMoving ?? false,
-        odometer:    stats?.odometer   ?? null,
+        odometer:    stats?.odometer ?? null,
         lastUpdated: stats?.lastUpdated ?? null,
       });
     }
