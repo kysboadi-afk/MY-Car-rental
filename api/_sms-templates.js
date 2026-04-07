@@ -283,7 +283,8 @@ export const LATE_FEE_APPLIED =
 export const MAINTENANCE_AVAILABILITY_REQUEST =
   "Hey {customer_name}, we need to do a quick routine service on the vehicle. " +
   "It\u2019s fully covered and only takes a short time. " +
-  "What time works best for you today or tomorrow?";
+  "What time works best for you today or tomorrow?\n\n" +
+  "Reply STOP to opt out.";
 
 /**
  * Sent when maintenance is overdue (100% threshold) and the first message went unanswered.
@@ -291,7 +292,8 @@ export const MAINTENANCE_AVAILABILITY_REQUEST =
 export const MAINTENANCE_AVAILABILITY_FOLLOWUP =
   "Hey {customer_name}, just following up on the quick service we mentioned. " +
   "It\u2019s fully covered and won\u2019t take long. " +
-  "What time works best for you today or tomorrow?";
+  "What time works best for you today or tomorrow?\n\n" +
+  "Reply STOP to opt out.";
 
 /**
  * Sent at the escalation stage — vehicle still in service without scheduling.
@@ -299,7 +301,8 @@ export const MAINTENANCE_AVAILABILITY_FOLLOWUP =
  */
 export const MAINTENANCE_AVAILABILITY_URGENT =
   "Hey {customer_name}, we need to schedule a quick service on the vehicle as soon as possible. " +
-  "It\u2019s fully covered. Please let us know your availability right away.";
+  "It\u2019s fully covered. Please let us know your availability right away.\n\n" +
+  "Reply STOP to opt out.";
 
 /**
  * Sent as a final follow-up when prior messages went unanswered.
@@ -308,7 +311,8 @@ export const MAINTENANCE_AVAILABILITY_URGENT =
 export const MAINTENANCE_AVAILABILITY_ESCALATION =
   "Hey {customer_name}, we really need to schedule this quick service on the vehicle. " +
   "It\u2019s fully covered and won\u2019t take long at all. " +
-  "Please reach out to us right away so we can get this taken care of.";
+  "Please reach out to us right away so we can get this taken care of.\n\n" +
+  "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 9. POST-RENTAL
