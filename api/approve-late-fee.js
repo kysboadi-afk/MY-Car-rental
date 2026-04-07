@@ -120,25 +120,6 @@ export default async function handler(req, res) {
 
   // ── Decline ───────────────────────────────────────────────────────────────
   if (action === "decline") {
-    // Mark declined in Supabase charges table (best-effort, non-fatal)
-    try {
-      const sb = getSupabaseAdmin();
-      if (sb) {
-        await sb.from("charges").insert({
-          booking_id:              bookingId,
-          charge_type:             "late_fee",
-          amount,
-          notes:                   "Late fee declined by admin",
-          stripe_payment_intent_id: null,
-          status:                  "failed",
-          charged_by:              "admin",
-          error_message:           "Declined by admin via approval link",
-        });
-      }
-    } catch (err) {
-      console.warn("approve-late-fee: decline log failed (non-fatal):", err.message);
-    }
-
     await sendResultEmail(
       `[Sly Rides] Late Fee Declined — Booking ${bookingId}`,
       `<h2>Late Fee Declined</h2>
@@ -155,7 +136,34 @@ export default async function handler(req, res) {
     ));
   }
 
-  // ── Approve: execute the charge ───────────────────────────────────────────
+  // ── Approve: idempotency check then execute the charge ────────────────────
+  // Guard against double-tap: if a succeeded late_fee charge already exists
+  // for this booking, return a "already charged" page instead of charging again.
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb) {
+      const { data: existing } = await sb
+        .from("charges")
+        .select("id, status")
+        .eq("booking_id", bookingId)
+        .eq("charge_type", "late_fee")
+        .in("status", ["succeeded", "pending"])
+        .maybeSingle();
+
+      if (existing) {
+        return res.status(200).send(htmlPage(
+          "Already Charged", "#1a73e8", "ℹ️ Already Charged",
+          `<p>A late fee of <strong>$${esc(String(amount))}</strong> was already charged for booking <strong>${esc(bookingId)}</strong>.</p>
+           <p>No duplicate charge was applied.</p>`
+        ));
+      }
+    }
+  } catch (err) {
+    // Non-fatal: if the idempotency check fails, proceed with the charge
+    // (better to risk a duplicate than block the owner from charging at all)
+    console.warn("approve-late-fee: idempotency check failed (non-fatal):", err.message);
+  }
+
   try {
     const result = await executeChargeFee({
       bookingId,
