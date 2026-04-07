@@ -13,7 +13,7 @@
 // POST — manual trigger: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
 //
 // Required env vars:
-//   BOUNCIE_ACCESS_TOKEN               — Bouncie OAuth access token
+//   BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET — for automatic token refresh
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
 import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBouncieToken } from "./_bouncie.js";
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
   }
   const bouncieToken = await loadBouncieToken(sb);
   if (!bouncieToken) {
-    return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — set BOUNCIE_ACCESS_TOKEN in Vercel or complete the OAuth flow" });
+    return res.status(200).json({ skipped: true, reason: "Bouncie token not configured — please complete the OAuth flow at /api/bouncie-oauth to connect your Bouncie account" });
   }
 
   const startedAt = Date.now();
@@ -180,5 +180,5 @@ export default async function handler(req, res) {
 // POST — manual trigger; requires: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
 //
 // Required env vars:
-//   BOUNCIE_ACCESS_TOKEN  — Bouncie OAuth access token
+//   BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET — for automatic token refresh
 //   BOUNCIE_DEVICE_MAP    — JSON {"<imei>":"<vehicle_id>", ...}  (optional if nicknames match)

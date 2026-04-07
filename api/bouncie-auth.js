@@ -1,17 +1,18 @@
 // api/bouncie-auth.js
-// Bouncie token status endpoint.
+// Bouncie connection status endpoint.
 //
-// The OAuth flow is no longer used — Bouncie access is configured via the
-// BOUNCIE_ACCESS_TOKEN environment variable set in Vercel.
+// Checks whether a valid Bouncie access token exists in the bouncie_tokens
+// Supabase table (written by /api/bouncie-callback after OAuth completes).
 //
 // GET /api/bouncie-auth?secret=<ADMIN_SECRET>
-//   Returns whether BOUNCIE_ACCESS_TOKEN is configured.
+//   Returns whether Bouncie is connected.
 //
 // Required env vars:
 //   ADMIN_SECRET            — protects this endpoint
-//   BOUNCIE_ACCESS_TOKEN    — Bouncie access token (set in Vercel)
 
 import { isAdminAuthorized } from "./_admin-auth.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { loadBouncieToken } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -30,12 +31,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const configured = !!process.env.BOUNCIE_ACCESS_TOKEN;
+    const sb = getSupabaseAdmin();
+    const token = sb ? await loadBouncieToken(sb) : null;
+    const configured = !!token;
     return res.status(200).json({
       configured,
       message: configured
-        ? "BOUNCIE_ACCESS_TOKEN is set. Mileage sync is active."
-        : "BOUNCIE_ACCESS_TOKEN is not set. Add it to Vercel environment variables.",
+        ? "Bouncie is connected. Mileage sync is active."
+        : "Bouncie is not connected. Please complete the OAuth flow to enable GPS mileage sync.",
     });
   } catch (err) {
     return res.status(500).json({ error: adminErrorMessage(err) });
