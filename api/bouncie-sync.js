@@ -6,7 +6,8 @@
 //
 // Only vehicles with bouncie_device_id set are synced.
 // Slingshots are never synced — the _bouncie helper filters them out.
-// The odometer is monotonically advancing — the DB is never decreased.
+// The stored mileage is always overwritten with Bouncie's latest value so that
+// any stale or inflated DB reading is corrected on the next sync cycle.
 //
 // GET  — called by Vercel Cron (trusted by Vercel's internal network)
 // POST — manual trigger: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
@@ -99,8 +100,7 @@ export default async function handler(req, res) {
           sb,
           tracked.vehicle_id,
           stats.odometer,
-          stats.lastUpdated || null,
-          Number(tracked.mileage) || 0
+          stats.lastUpdated || null
         );
         synced.push({
           vehicleId:    tracked.vehicle_id,

@@ -60,7 +60,7 @@ export default async function handler(req, res) {
   // they are naturally excluded.
   const { data: vehicleRow } = await sb
     .from("vehicles")
-    .select("vehicle_id, mileage")
+    .select("vehicle_id")
     .eq("bouncie_device_id", imei)
     .maybeSingle();
 
@@ -69,8 +69,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ received: true, stored: false, reason: "unknown IMEI" });
   }
 
-  const vehicleId      = vehicleRow.vehicle_id;
-  const currentMileage = Number(vehicleRow.mileage) || 0;
+  const vehicleId = vehicleRow.vehicle_id;
 
   try {
     switch (eventType) {
@@ -79,7 +78,7 @@ export default async function handler(req, res) {
       case "tripEnd": {
         const { transactionId, end } = body;
         if (end?.odometer) {
-          await updateVehicleMileage(sb, vehicleId, end.odometer, end.timestamp ?? null, currentMileage);
+          await updateVehicleMileage(sb, vehicleId, end.odometer, end.timestamp ?? null);
         }
         if (transactionId && end) {
           await insertTripLog(sb, {
