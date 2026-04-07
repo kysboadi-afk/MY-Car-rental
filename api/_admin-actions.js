@@ -33,6 +33,7 @@ import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates, hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
+import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -2188,6 +2189,58 @@ async function toolDeleteVehicle({ vehicleId }) {
   return { success: true, deleted: vehicleId, name: vehicleName };
 }
 
+async function toolChargeCustomerFee({ booking_id, charge_type, amount, notes }) {
+  // Validate before calling executeChargeFee so AI sees clean error messages
+  if (!booking_id) throw new Error("booking_id is required");
+  const validTypes = Object.keys(CHARGE_TYPE_LABELS);
+  if (!charge_type || !validTypes.includes(charge_type)) {
+    throw new Error(`charge_type must be one of: ${validTypes.join(", ")}`);
+  }
+  const resolvedAmount =
+    amount !== undefined && amount !== null
+      ? Number(amount)
+      : PREDEFINED_FEES[charge_type] ?? null;
+  if (resolvedAmount === null) {
+    throw new Error(`amount is required for charge_type "${charge_type}"`);
+  }
+  if (isNaN(resolvedAmount) || resolvedAmount <= 0) {
+    throw new Error("amount must be a positive number");
+  }
+
+  return await executeChargeFee({
+    bookingId:  booking_id,
+    chargeType: charge_type,
+    amount:     resolvedAmount,
+    notes:      notes || "",
+    chargedBy:  "ai",
+  });
+}
+
+async function toolGetCharges({ booking_id, limit = 50 } = {}) {
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase is not configured");
+
+  const cap = Math.min(Number(limit) || 50, 200);
+  let query = sb
+    .from("charges")
+    .select("id, booking_id, charge_type, amount, notes, stripe_payment_intent_id, status, charged_by, error_message, created_at")
+    .order("created_at", { ascending: false })
+    .limit(cap);
+
+  if (booking_id) query = query.eq("booking_id", booking_id);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Supabase query failed: ${error.message}`);
+
+  const rows = data || [];
+  const total = rows.filter((r) => r.status === "succeeded").reduce((s, r) => s + Number(r.amount || 0), 0);
+  return {
+    charges:         rows,
+    total_charged:   Math.round(total * 100) / 100,
+    count:           rows.length,
+  };
+}
+
 // ── Destructive-action guard ──────────────────────────────────────────────────
 // Tools that mutate data require the "confirmed" flag in their args.
 
@@ -2642,6 +2695,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "update_system_setting",
   "update_sms_template",
   "update_customer",
+  "charge_customer_fee",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -2708,6 +2762,8 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "update_sms_template":           result = await toolUpdateSmsTemplate(args);            break;
       case "update_customer":               result = await toolUpdateCustomer(args);               break;
       case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
+      case "charge_customer_fee":           result = await toolChargeCustomerFee(args);            break;
+      case "get_charges":                   result = await toolGetCharges(args);                   break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

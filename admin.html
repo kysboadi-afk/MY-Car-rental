@@ -362,6 +362,79 @@
     #mileageStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
     #mileageStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #mileageStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+    /* ── Extra Charges ────────────────────────────────────────────── */
+    .extra-charges-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .extra-charges-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .extra-charges-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .charge-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 480px) { .charge-form-grid { grid-template-columns: 1fr; } }
+    .charge-form-grid .span-2 { grid-column: 1 / -1; }
+    .charge-list-row {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #ccc;
+    }
+    .charge-list-row .charge-meta { color: #888; font-size: 11px; margin-top: 4px; }
+    .charge-list-row .charge-type-badge {
+      display: inline-block;
+      font-size: 11px;
+      background: #2a2a2a;
+      padding: 2px 8px;
+      border-radius: 12px;
+      color: #ffb400;
+      text-transform: capitalize;
+      margin-right: 6px;
+    }
+    .charge-list-row .status-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .charge-list-row .status-badge.succeeded { background: #1b3a1b; color: #4caf50; }
+    .charge-list-row .status-badge.failed    { background: #3a1b1b; color: #f44336; }
+    .charge-list-row .status-badge.pending   { background: #2a2a1b; color: #ffb400; }
+    .btn-charge { background: #e53935; color: #fff; border: none; border-radius: 8px; padding: 7px 13px; font-size: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+    .btn-charge:hover { background: #c62828; }
+    #chargeStatusMsg { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+    #chargeStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #chargeStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #chargeStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* ── Charge Fee Modal ─────────────────────────────────────────── */
+    #chargeFeeOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 9000;
+      align-items: center;
+      justify-content: center;
+    }
+    #chargeFeeOverlay.open { display: flex; }
+    #chargeFeeModal {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 420px;
+      margin: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    }
+    #chargeFeeModal h3 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
+    #chargeFeeModal .modal-subtitle { color: #888; font-size: 12px; margin-bottom: 20px; }
+    #chargeFeeModalMsg { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+    #chargeFeeModalMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #chargeFeeModalMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -1419,6 +1492,9 @@
                 + '<button class="btn-block btn-complete" style="padding:8px 14px;font-size:13px"'
                 + ' data-booking-id="' + esc(b.bookingId || "") + '" data-vehicle-id="' + esc(b.vehicleId || "") + '">'
                 + '\uD83C\uDFC1 Complete Booking</button>'
+                + '<button class="btn-charge btn-open-charge"'
+                + ' data-booking-id="' + esc(b.bookingId || "") + '" data-customer-name="' + esc(b.name || "") + '">'
+                + '\uD83D\uDCB3 Charge Fee</button>'
                 + '</div>'
                 + '<div class="mbr-msg"></div>'
                 + '</div>';
@@ -1487,6 +1563,342 @@
             btn.disabled = false;
           });
       });
+
+      // ── Handle Charge Fee button clicks from mileage section (event delegation) ──
+      document.getElementById("mileageBookingsList").addEventListener("click", function (e) {
+        var btn = e.target.closest("button.btn-open-charge");
+        if (!btn) return;
+        openChargeFeeModal(btn.dataset.bookingId, btn.dataset.customerName);
+      });
+
+    })();
+  </script>
+
+  <!-- ── Extra Charges Section ──────────────────────────────────────── -->
+  <div class="admin-box extra-charges-section">
+    <h2>💳 Extra Charges</h2>
+    <p class="subtitle">Charge a customer's saved card for damages, late fees, key replacement, or other penalties. Enter the booking ID, select the fee type, and confirm.</p>
+
+    <div class="charge-form-grid">
+      <div class="form-group">
+        <label for="cfBookingId">Booking ID <span style="color:#f44336">*</span></label>
+        <input type="text" id="cfBookingId" placeholder="e.g. bk-abc123" autocomplete="off" maxlength="80">
+      </div>
+
+      <div class="form-group">
+        <label for="cfChargeType">Fee Type <span style="color:#f44336">*</span></label>
+        <select id="cfChargeType">
+          <option value="key_replacement">Key Replacement ($150)</option>
+          <option value="smoking">Smoking Penalty ($50)</option>
+          <option value="late_fee">Late Return Fee (enter amount)</option>
+          <option value="custom">Custom Charge (enter amount)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="cfAmount">Amount ($) <span id="cfAmountHint" style="color:#888;font-size:11px"> — leave blank for predefined fee</span></label>
+        <input type="number" id="cfAmount" placeholder="0.00" min="0.01" step="0.01">
+      </div>
+
+      <div class="form-group">
+        <label for="cfNotes">Notes (optional)</label>
+        <input type="text" id="cfNotes" placeholder="e.g. Cigarette burns on rear seat" maxlength="500" autocomplete="off">
+      </div>
+    </div>
+
+    <button class="btn-block" id="cfSubmitBtn" style="margin-top:4px;background:#e53935">💳 Apply Charge</button>
+    <div id="chargeStatusMsg"></div>
+
+    <!-- View all charges -->
+    <div style="margin-top:28px;border-top:1px solid #222;padding-top:20px">
+      <h3 style="font-size:15px;color:#aaa;margin-bottom:12px">Recent Charges</h3>
+      <button class="btn-unblock" id="loadChargesBtn" style="max-width:200px;margin-bottom:14px">📋 Load Recent Charges</button>
+      <div id="chargesList"><span class="no-bookings">Click "Load Recent Charges" to view.</span></div>
+    </div>
+  </div>
+
+  <!-- ── Charge Fee Modal (opened from mileage booking rows) ──────── -->
+  <div id="chargeFeeOverlay" role="dialog" aria-modal="true" aria-labelledby="chargeFeeModalTitle">
+    <div id="chargeFeeModal">
+      <h3 id="chargeFeeModalTitle">💳 Charge Fee</h3>
+      <p class="modal-subtitle" id="chargeFeeModalSubtitle">Booking: —</p>
+
+      <div class="form-group">
+        <label for="mfChargeType">Fee Type</label>
+        <select id="mfChargeType">
+          <option value="key_replacement">Key Replacement ($150)</option>
+          <option value="smoking">Smoking Penalty ($50)</option>
+          <option value="late_fee">Late Return Fee (enter amount)</option>
+          <option value="custom">Custom Charge (enter amount)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="mfAmount">Amount ($) <span id="mfAmountHint" style="color:#888;font-size:11px"></span></label>
+        <input type="number" id="mfAmount" placeholder="0.00" min="0.01" step="0.01">
+      </div>
+
+      <div class="form-group">
+        <label for="mfNotes">Notes (optional)</label>
+        <input type="text" id="mfNotes" placeholder="e.g. Lost key" maxlength="500" autocomplete="off">
+      </div>
+
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn-block" id="mfSubmitBtn" style="background:#e53935">💳 Confirm Charge</button>
+        <button class="btn-unblock" id="mfCancelBtn">Cancel</button>
+      </div>
+
+      <div id="chargeFeeModalMsg"></div>
+    </div>
+  </div>
+
+  <!-- ── Extra Charges Script ───────────────────────────────────────── -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      var PREDEFINED_FEES   = { key_replacement: 150, smoking: 50 };
+      var CHARGE_TYPE_LABELS = {
+        key_replacement: "Key Replacement",
+        smoking:         "Smoking Penalty",
+        late_fee:        "Late Return Fee",
+        custom:          "Additional Charge",
+      };
+
+      function esc(s) {
+        return String(s || "")
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function showChargeStatus(msg, type) {
+        var el = document.getElementById("chargeStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        setTimeout(function () { el.style.display = "none"; }, 7000);
+      }
+
+      // ── Auto-fill amount when charge type changes ─────────────────────────────
+      function syncAmountHint(typeEl, amountEl, hintEl) {
+        var t = typeEl.value;
+        var fee = PREDEFINED_FEES[t];
+        if (fee) {
+          amountEl.placeholder = String(fee) + ".00";
+          amountEl.value = "";
+          hintEl.textContent = " — leave blank to use $" + fee + " predefined fee";
+        } else {
+          amountEl.placeholder = "0.00";
+          amountEl.value = "";
+          hintEl.textContent = " — required";
+        }
+      }
+
+      document.getElementById("cfChargeType").addEventListener("change", function () {
+        syncAmountHint(this, document.getElementById("cfAmount"), document.getElementById("cfAmountHint"));
+      });
+      // Initialize
+      syncAmountHint(
+        document.getElementById("cfChargeType"),
+        document.getElementById("cfAmount"),
+        document.getElementById("cfAmountHint")
+      );
+
+      // ── Submit charge from Extra Charges section ──────────────────────────────
+      document.getElementById("cfSubmitBtn").addEventListener("click", function () {
+        var secret    = getSecret();
+        var bookingId = document.getElementById("cfBookingId").value.trim();
+        var chargeType = document.getElementById("cfChargeType").value;
+        var amountStr = document.getElementById("cfAmount").value.trim();
+        var notes     = document.getElementById("cfNotes").value.trim();
+
+        if (!secret)    { showChargeStatus("Please enter the admin password first.", "error"); return; }
+        if (!bookingId) { showChargeStatus("Please enter a Booking ID.", "error"); return; }
+
+        var amount = amountStr ? parseFloat(amountStr) : undefined;
+        var predefined = PREDEFINED_FEES[chargeType];
+        if (amount === undefined && !predefined) {
+          showChargeStatus("Please enter an amount for " + (CHARGE_TYPE_LABELS[chargeType] || chargeType.replace(/_/g, " ")) + ".", "error");
+          return;
+        }
+        if (amount !== undefined && (isNaN(amount) || amount <= 0)) {
+          showChargeStatus("Amount must be a positive number.", "error");
+          return;
+        }
+
+        var displayAmount = amount !== undefined ? amount : predefined;
+        if (!confirm("Charge $" + displayAmount.toFixed(2) + " for " + (CHARGE_TYPE_LABELS[chargeType] || chargeType.replace(/_/g, " ")) + " to booking " + bookingId + "?")) return;
+
+        var btn = this;
+        btn.disabled = true;
+        showChargeStatus("Processing charge\u2026", "info");
+
+        var body = { secret: secret, booking_id: bookingId, charge_type: chargeType, notes: notes };
+        if (amount !== undefined) body.amount = amount;
+
+        fetch(API_BASE + "/api/charge-fee", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showChargeStatus("\u274C " + (result.data.error || "Charge failed"), "error");
+            } else {
+              showChargeStatus("\u2705 " + (result.data.message || "Charge applied successfully."), "success");
+              document.getElementById("cfBookingId").value = "";
+              document.getElementById("cfAmount").value    = "";
+              document.getElementById("cfNotes").value     = "";
+            }
+          })
+          .catch(function (err) {
+            showChargeStatus("Network error: " + err.message, "error");
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      // ── Load recent charges ───────────────────────────────────────────────────
+      document.getElementById("loadChargesBtn").addEventListener("click", function () {
+        var secret = getSecret();
+        if (!secret) { showChargeStatus("Please enter the admin password first.", "error"); return; }
+
+        var btn  = this;
+        var list = document.getElementById("chargesList");
+        btn.disabled = true;
+        list.innerHTML = '<span class="no-bookings">Loading\u2026</span>';
+
+        fetch(API_BASE + "/api/charge-fee", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ secret: secret, action: "list" }),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              list.innerHTML = '<span class="no-bookings">Error: ' + esc(result.data.error || "Unknown") + '</span>';
+              return;
+            }
+            var charges = result.data.charges || [];
+            if (!charges.length) {
+              list.innerHTML = '<span class="no-bookings">No charges recorded yet.</span>';
+              return;
+            }
+            list.innerHTML = charges.map(function (c) {
+              var label = CHARGE_TYPE_LABELS[c.charge_type] || (c.charge_type ? c.charge_type.replace(/_/g, " ") : "");
+              var date  = c.created_at ? c.created_at.slice(0, 10) : "";
+              var statusCls = c.status === "succeeded" ? "succeeded" : c.status === "failed" ? "failed" : "pending";
+              return '<div class="charge-list-row">'
+                + '<span class="charge-type-badge">' + esc(label) + '</span>'
+                + '<strong style="color:#fff">$' + esc(parseFloat(c.amount || 0).toFixed(2)) + '</strong>'
+                + ' &mdash; Booking: <code>' + esc(c.booking_id || "") + '</code>'
+                + '<span class="status-badge ' + statusCls + '" style="margin-left:8px">' + esc(c.status || "") + '</span>'
+                + '<div class="charge-meta">'
+                + esc(date) + (c.charged_by ? " &bull; via " + esc(c.charged_by) : "")
+                + (c.notes ? " &bull; " + esc(c.notes) : "")
+                + (c.error_message ? ' <span style="color:#f44336">&bull; ' + esc(c.error_message) + '</span>' : "")
+                + '</div>'
+                + '</div>';
+            }).join("");
+          })
+          .catch(function (err) {
+            list.innerHTML = '<span class="no-bookings">Network error: ' + esc(err.message) + '</span>';
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      // ── Modal: open/close/submit ──────────────────────────────────────────────
+      var modalBookingId = "";
+
+      window.openChargeFeeModal = function (bookingId, customerName) {
+        modalBookingId = bookingId || "";
+        var subtitle = "Booking: " + esc(bookingId || "");
+        if (customerName) subtitle += " &mdash; " + esc(customerName);
+        document.getElementById("chargeFeeModalSubtitle").innerHTML = subtitle;
+        document.getElementById("mfChargeType").value = "key_replacement";
+        document.getElementById("mfAmount").value     = "";
+        document.getElementById("mfNotes").value      = "";
+        document.getElementById("chargeFeeModalMsg").style.display = "none";
+        syncAmountHint(
+          document.getElementById("mfChargeType"),
+          document.getElementById("mfAmount"),
+          document.getElementById("mfAmountHint")
+        );
+        document.getElementById("chargeFeeOverlay").classList.add("open");
+      };
+
+      document.getElementById("mfChargeType").addEventListener("change", function () {
+        syncAmountHint(this, document.getElementById("mfAmount"), document.getElementById("mfAmountHint"));
+      });
+
+      document.getElementById("mfCancelBtn").addEventListener("click", function () {
+        document.getElementById("chargeFeeOverlay").classList.remove("open");
+      });
+      document.getElementById("chargeFeeOverlay").addEventListener("click", function (e) {
+        if (e.target === this) this.classList.remove("open");
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") document.getElementById("chargeFeeOverlay").classList.remove("open");
+      });
+
+      function showModalMsg(msg, type) {
+        var el = document.getElementById("chargeFeeModalMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+      }
+
+      document.getElementById("mfSubmitBtn").addEventListener("click", function () {
+        var secret     = getSecret();
+        var chargeType = document.getElementById("mfChargeType").value;
+        var amountStr  = document.getElementById("mfAmount").value.trim();
+        var notes      = document.getElementById("mfNotes").value.trim();
+
+        if (!secret) { showModalMsg("Please enter the admin password first.", "error"); return; }
+        if (!modalBookingId) { showModalMsg("No booking ID set.", "error"); return; }
+
+        var amount = amountStr ? parseFloat(amountStr) : undefined;
+        var predefined = PREDEFINED_FEES[chargeType];
+        if (amount === undefined && !predefined) {
+          showModalMsg("Please enter an amount.", "error");
+          return;
+        }
+        if (amount !== undefined && (isNaN(amount) || amount <= 0)) {
+          showModalMsg("Amount must be a positive number.", "error");
+          return;
+        }
+
+        var btn = this;
+        btn.disabled = true;
+        showModalMsg("Processing\u2026", "info");
+
+        var body = { secret: secret, booking_id: modalBookingId, charge_type: chargeType, notes: notes };
+        if (amount !== undefined) body.amount = amount;
+
+        fetch(API_BASE + "/api/charge-fee", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showModalMsg("\u274C " + (result.data.error || "Charge failed"), "error");
+            } else {
+              showModalMsg("\u2705 " + (result.data.message || "Charge applied!"), "success");
+              setTimeout(function () {
+                document.getElementById("chargeFeeOverlay").classList.remove("open");
+              }, 2500);
+            }
+          })
+          .catch(function (err) {
+            showModalMsg("Network error: " + err.message, "error");
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+
     })();
   </script>
 </body>

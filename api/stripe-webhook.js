@@ -192,6 +192,7 @@ function esc(str) {
 async function saveWebhookBookingRecord(paymentIntent) {
   const meta = paymentIntent.metadata || {};
   const {
+    booking_id,
     renter_name,
     renter_phone,
     vehicle_id,
@@ -216,7 +217,7 @@ async function saveWebhookBookingRecord(paymentIntent) {
   const status      = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
 
   const bookingRecord = {
-    bookingId:           "wh-" + crypto.randomBytes(8).toString("hex"),
+    bookingId:           booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
     name:                renter_name || "",
     phone:               renter_phone ? normalizePhone(renter_phone) : "",
     email:               email || "",
@@ -232,6 +233,8 @@ async function saveWebhookBookingRecord(paymentIntent) {
     totalPrice,
     paymentIntentId:     paymentIntent.id,
     paymentMethod:       "stripe",
+    stripeCustomerId:    paymentIntent.customer   || null,
+    stripePaymentMethodId: paymentIntent.payment_method || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
     smsSentAt:           {},
     createdAt:           new Date().toISOString(),
@@ -747,7 +750,7 @@ export default async function handler(req, res) {
       // Persist the booking record with the token and deposit-paid status
       const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
       const bookingRecord = {
-        bookingId:                "wh-" + crypto.randomBytes(8).toString("hex"),
+        bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
         name:                     renter_name || "",
         phone:                    renter_phone ? normalizePhone(renter_phone) : "",
         email:                    email || "",
@@ -772,6 +775,8 @@ export default async function handler(req, res) {
         paymentIntentId:          paymentIntent.id,
         paymentLinkToken,
         paymentMethod:            "stripe",
+        stripeCustomerId:         paymentIntent.customer          || null,
+        stripePaymentMethodId:    paymentIntent.payment_method    || null,
         smsSentAt:                {},
         createdAt:                new Date().toISOString(),
         source:                   "stripe_webhook",

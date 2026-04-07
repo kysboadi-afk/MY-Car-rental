@@ -248,26 +248,28 @@ export async function autoUpsertBooking(booking) {
     }
 
     const record = {
-      customer_id:       customerId,
-      vehicle_id:        booking.vehicleId   || null,
-      pickup_date:       booking.pickupDate  || null,
-      return_date:       booking.returnDate  || null,
-      pickup_time:       parseTime12h(booking.pickupTime),
-      return_time:       parseTime12h(booking.returnTime),
+      customer_id:               customerId,
+      vehicle_id:                booking.vehicleId   || null,
+      pickup_date:               booking.pickupDate  || null,
+      return_date:               booking.returnDate  || null,
+      pickup_time:               parseTime12h(booking.pickupTime),
+      return_time:               parseTime12h(booking.returnTime),
       status,
-      total_price:       totalPrice,
-      deposit_paid:      amountPaid,
-      remaining_balance: remaining,
-      payment_status:    paymentStatus,
-      notes:             booking.notes             || null,
-      payment_method:    booking.paymentMethod     || null,
-      payment_intent_id: booking.paymentIntentId   || null,
+      total_price:               totalPrice,
+      deposit_paid:              amountPaid,
+      remaining_balance:         remaining,
+      payment_status:            paymentStatus,
+      notes:                     booking.notes             || null,
+      payment_method:            booking.paymentMethod     || null,
+      payment_intent_id:         booking.paymentIntentId   || null,
+      stripe_customer_id:        booking.stripeCustomerId       || null,
+      stripe_payment_method_id:  booking.stripePaymentMethodId  || null,
       // Mirror the JS-side auto-stamps so the Supabase row is consistent with
       // the bookings.json record.  The DB trigger on_booking_status_timestamps
       // will also stamp these automatically, but passing the JS value ensures
       // idempotent re-syncs preserve the original timestamp.
-      activated_at:      safeIso(booking.activatedAt),
-      completed_at:      safeIso(booking.completedAt),
+      activated_at:              safeIso(booking.activatedAt),
+      completed_at:              safeIso(booking.completedAt),
     };
 
     // Check whether the booking already exists in Supabase

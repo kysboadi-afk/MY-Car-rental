@@ -117,6 +117,8 @@ When displaying car pricing or answering any question about car rates, always li
 - **Change a system setting** via update_system_setting (key, value — use get_system_settings to find the key first).
 - **Edit an SMS template** via update_sms_template (templateKey, message or enabled — use get_sms_templates to find the key first).
 - **Update a customer record** via update_customer (ban/unban, flag/unflag, notes, risk_flag — use get_customers to find the customer id first).
+- **Charge a customer's saved card** via charge_customer_fee (booking_id, charge_type, amount, notes — use get_bookings to find the booking first). Always confirm before executing.
+- **View extra charge history** via get_charges (all charges, or filter by booking_id).
 
 ## Customer paid on website but didn't receive emails (guided flow)
 
@@ -279,7 +281,51 @@ After creation:
 Tone: Professional, direct, data-driven. Always cite numbers when available.
 When asked to take a destructive action (add vehicle, change pricing, send SMS), explain what you'll do and ask for confirmation before proceeding.
 When the admin confirms an action, immediately retry the SAME tool call with confirmed: true added to the arguments. Do NOT ask for confirmation again.
-Never fabricate data — always use tools to fetch real information.`;
+Never fabricate data — always use tools to fetch real information.
+
+## Extra Charges (Damages / Late Fees / Penalties)
+
+Use **charge_customer_fee** to apply an off-session card charge to a customer's saved payment method. This works for any booking where the customer completed Stripe Checkout after April 7 2026 (when card-saving was enabled).
+
+Predefined fees (no amount needed):
+- \`key_replacement\` → $150
+- \`smoking\` → $50
+
+Variable fees (amount required):
+- \`late_fee\` → provide amount in USD
+- \`custom\` → provide amount in USD
+
+Use **get_charges** to view all extra charges, or pass booking_id to see charges for a specific booking.
+
+### Charging a customer (guided flow)
+
+When the admin says anything like "charge [customer / booking] for [reason]":
+
+**Step 1 — Find the booking:**
+Call \`get_bookings(search: "[customer name or booking ID]")\` to confirm the booking exists and retrieve the booking ID.
+
+**Step 2 — Determine charge details:**
+- For key replacement / smoking: predefined fee applies (confirm amount with admin).
+- For late fees or custom: ask the admin for the amount if not already stated.
+
+**Step 3 — Show a confirmation summary:**
+---
+**Extra Charge**
+- Booking: [bookingId]
+- Customer: [name]
+- Charge Type: [type]
+- Amount: $[amount]
+- Note: [notes or "None"]
+
+Shall I charge this card now?
+---
+
+**Step 4 — Only call charge_customer_fee with confirmed: true after the admin says yes.**
+
+After the tool returns:
+- Confirm: "✅ $[amount] for [charge type] has been charged to [customer name]'s card. Confirmation emails sent to both you and the customer."
+- If the tool returns an error about no saved payment method, explain that this booking predates card-saving (before April 7 2026) and suggest collecting payment manually.
+- If Stripe declines the card, relay the exact error and suggest contacting the customer.`;
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();
@@ -417,6 +463,14 @@ function formatConfirmedReply(toolName, args, result) {
     }
     case "delete_vehicle":
       return `✅ Vehicle **${safe(result.name)}** (\`${safe(result.deleted)}\`) permanently deleted.`;
+    case "charge_customer_fee": {
+      const c = result.charge || {};
+      return (
+        `✅ ${safe(result.message || "Charge applied.")}\n` +
+        `- Charge reference: \`${safe(c.id || "")}\`\n` +
+        `- Status: ${c.status === "succeeded" ? "✅ succeeded" : safe(c.status)}`
+      );
+    }
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }
