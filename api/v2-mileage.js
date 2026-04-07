@@ -137,7 +137,7 @@ export default async function handler(req, res) {
         try {
           await updateVehicleMileage(
             sb, tracked.vehicle_id, stats.odometer,
-            stats.lastUpdated ?? null, Number(tracked.mileage) || 0
+            stats.lastUpdated ?? null
           );
           synced.push({ vehicleId: tracked.vehicle_id, imei, odometer: stats.odometer });
         } catch (err) {

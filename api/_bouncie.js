@@ -105,19 +105,22 @@ export async function loadTrackedVehicles(sb) {
 }
 
 /**
- * Advance a vehicle's odometer reading and last_synced_at timestamp.
- * Only updates if the new reading is strictly greater (odometers are monotonic).
+ * Overwrite a vehicle's odometer reading and last_synced_at timestamp with the
+ * latest value from Bouncie.  The stored mileage is always replaced — there is
+ * no monotonic guard — so that a corrected Bouncie reading can fix a stale or
+ * inflated DB value.  The only check is that the incoming odometer is a
+ * positive number, guarding against a Bouncie API glitch zeroing the record.
+ *
  * Mirrors the mileage into the data JSONB for the GitHub fallback path.
  *
  * @param {object} sb
  * @param {string} vehicleId
  * @param {number} odometer
  * @param {string|null} lastUpdatedAt
- * @param {number} [currentMileage]
- * @returns {Promise<boolean>}
+ * @returns {Promise<boolean>} true if the row was written, false if skipped (odometer ≤ 0)
  */
-export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt, currentMileage = 0) {
-  if (odometer <= currentMileage) return false;
+export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt) {
+  if (!odometer || odometer <= 0) return false;
 
   const { data: row } = await sb
     .from("vehicles")
