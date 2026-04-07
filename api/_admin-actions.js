@@ -1875,7 +1875,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
       from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to:      OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
-      subject: `💰 Booking Confirmed (Admin Resend) — ${esc(vehicleName || vehicleId)}`,
+      subject: `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
       html: `
         <h2>💰 Booking Confirmed — Admin Resend</h2>
         <p>This is a manually re-sent confirmation for a booking that was recorded in the admin panel. The original browser-side confirmation email failed.</p>
