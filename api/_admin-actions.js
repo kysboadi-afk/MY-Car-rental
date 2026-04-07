@@ -101,7 +101,7 @@ export async function logAiAction(action, input, output, adminId = "admin") {
 // Columns selected from the Supabase bookings table for AI queries.
 // Keep in sync with DB schema (migration 0019 adds flagged + risk_score).
 const BOOKING_COLUMNS =
-  "id, booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at, flagged, risk_score";
+  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, created_at, flagged, risk_score, customers(name, phone, email)";
 
 // ── Supabase-first helpers ───────────────────────────────────────────────────
 
@@ -120,15 +120,15 @@ async function loadAllBookings() {
         .limit(500);
       if (!error && data) {
         return data.map((row) => ({
-          bookingId:  row.booking_id || String(row.id),
-          name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          bookingId:  row.booking_ref || String(row.id),
+          name:       row.customers?.name  || "",
+          phone:      row.customers?.phone || "",
+          email:      row.customers?.email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: row.deposit_paid || row.total_price || 0,
           createdAt:  row.created_at || "",
           flagged:    row.flagged || false,
           risk_score: row.risk_score || 0,
@@ -217,7 +217,7 @@ async function storeFraudFlags(bookingId, flagged, riskScore) {
     await sb
       .from("bookings")
       .update({ flagged, risk_score: riskScore })
-      .eq("booking_id", bookingId);
+      .eq("booking_ref", bookingId);
   } catch (err) {
     console.warn("_admin-actions: storeFraudFlags failed:", err.message);
   }
@@ -323,24 +323,25 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
         // Strip characters that have special meaning in PostgREST filter strings
         // to prevent filter injection via the .or() expression.
         const safeSearch = search.replace(/[,()'"\\]/g, "");
-        query = query.or(
-          `customer_name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,booking_id.ilike.%${safeSearch}%`
-        );
+        // PostgREST does not support filtering on embedded (joined) table columns
+        // inside .or() — restrict to booking_ref only.  Customer name/phone/email
+        // searches fall through to the GitHub JSON fallback which handles them fine.
+        query = query.or(`booking_ref.ilike.%${safeSearch}%`);
       }
 
       const { data, error, count } = await query;
       if (!error && data) {
         total   = count ?? data.length;
         results = data.map((row) => ({
-          bookingId:  row.booking_id || String(row.id),
-          name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          bookingId:  row.booking_ref || String(row.id),
+          name:       row.customers?.name  || "",
+          phone:      row.customers?.phone || "",
+          email:      row.customers?.email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: row.deposit_paid || row.total_price || 0,
           createdAt:  row.created_at || "",
           flagged:    row.flagged || false,
           risk_score: row.risk_score || 0,
@@ -1245,10 +1246,10 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
   const sb = getSupabaseAdmin();
   let blockedDates = null;
 
-  // Try Supabase booked_dates table first
+  // Try Supabase blocked_dates table first
   if (sb) {
     try {
-      let q = sb.from("booked_dates").select("vehicle_id, from_date, to_date, reason").order("from_date");
+      let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date");
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
       const { data, error } = await q;
       if (!error && data) {
@@ -1256,7 +1257,7 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
         for (const row of (data || [])) {
           const vid = row.vehicle_id;
           if (!byVehicle[vid]) byVehicle[vid] = [];
-          byVehicle[vid].push({ from: row.from_date, to: row.to_date, reason: row.reason || undefined });
+          byVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
         }
         blockedDates = byVehicle;
       }
@@ -1566,7 +1567,7 @@ async function toolFlagBooking({ bookingId, reason }) {
   const { error } = await sb
     .from("bookings")
     .update({ flagged: true, risk_score: ADMIN_FLAGGED_RISK_SCORE })
-    .eq("booking_id", bookingId);
+    .eq("booking_ref", bookingId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 
@@ -1595,7 +1596,7 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
   const { error } = await sb
     .from("bookings")
     .update({ status: APP_TO_DB_STATUS[status] })
-    .eq("booking_id", bookingId);
+    .eq("booking_ref", bookingId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 

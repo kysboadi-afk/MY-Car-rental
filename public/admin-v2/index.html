@@ -2855,6 +2855,7 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">Mark Completed</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
+    <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');
@@ -2903,6 +2904,21 @@ function updateBookingReturnDate(vehicleId, bookingId, btn) {
     showToast('Error: ' + err.message, 'error');
     if (btn) btn.disabled = false;
   });
+}
+
+function resendBookingEmail(bookingId, btn) {
+  if (!bookingId) { showToast('No booking ID — cannot resend.', 'error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'resend_confirmation', bookingId })
+    .then((data) => {
+      showToast(data.note || '✅ Confirmation email resent to owner and customer.', 'success');
+    })
+    .catch((err) => {
+      showToast('Error resending email: ' + err.message, 'error');
+    })
+    .finally(() => {
+      if (btn) { btn.disabled = false; btn.textContent = '📧 Resend Email'; }
+    });
 }
 
 // ── Manual Booking ─────────────────────────────────────────────────────────

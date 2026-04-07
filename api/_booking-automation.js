@@ -259,8 +259,9 @@ export async function autoUpsertBooking(booking) {
       deposit_paid:      amountPaid,
       remaining_balance: remaining,
       payment_status:    paymentStatus,
-      notes:             booking.notes          || null,
-      payment_method:    booking.paymentMethod  || null,
+      notes:             booking.notes             || null,
+      payment_method:    booking.paymentMethod     || null,
+      payment_intent_id: booking.paymentIntentId   || null,
       // Mirror the JS-side auto-stamps so the Supabase row is consistent with
       // the bookings.json record.  The DB trigger on_booking_status_timestamps
       // will also stamp these automatically, but passing the JS value ensures

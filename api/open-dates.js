@@ -19,6 +19,7 @@
 
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -122,6 +123,29 @@ export default async function handler(req, res) {
       save:    saveBookedDates,
       message: `Open dates for ${vehicleId}: ${from} to ${to}`,
     });
+
+    // Also remove from Supabase blocked_dates so both stores stay consistent.
+    // Delete ALL matching rows regardless of reason (manual or booking-based) so
+    // that an admin unblock fully clears the date range from both stores.
+    // Non-fatal — a Supabase failure must not block the GitHub remove from succeeding.
+    if (removed > 0) {
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          const { error: sbErr } = await sb
+            .from("blocked_dates")
+            .delete()
+            .eq("vehicle_id", vehicleId)
+            .eq("start_date", from)
+            .eq("end_date", to);
+          if (sbErr) {
+            console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
+          }
+        }
+      } catch (sbErr) {
+        console.warn("open-dates: Supabase sync failed (non-fatal):", sbErr.message);
+      }
+    }
 
     return res.status(200).json({ success: true, removed });
   } catch (err) {
