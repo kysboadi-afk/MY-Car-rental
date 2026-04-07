@@ -25,7 +25,7 @@
 //
 // Vercel cron configuration is in vercel.json.
 
-import Stripe from "stripe";
+import nodemailer from "nodemailer";
 import { sendSms } from "./_textmagic.js";
 import {
   render,
@@ -55,6 +55,7 @@ import { upsertContact } from "./_contacts.js";
 import { CARS } from "./_pricing.js";
 import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { buildLateFeeUrls } from "./_late-fee-token.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
@@ -75,6 +76,9 @@ const LATE_FEE_AMOUNTS = {
 // time are automatically transitioned to "completed_rental".  This frees up
 // the vehicle for new bookings without requiring manual admin intervention.
 const AUTO_COMPLETE_HOURS = 4;
+
+const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -297,43 +301,99 @@ function vars(booking) {
 }
 
 /**
- * Auto-charge a late fee via Stripe.
+ * Request admin approval before charging a late fee.
+ *
+ * Sends the owner:
+ *   1. An email with Approve / Decline buttons (HTML links).
+ *   2. An SMS with a short Approve link (if TEXTMAGIC is configured).
+ *
+ * The customer is notified that a late fee has been assessed (same
+ * LATE_FEE_APPLIED SMS that was sent before) so they are aware.
+ * The actual Stripe charge only happens when the admin clicks Approve.
+ *
  * @param {object} booking
- * @param {number} feeAmount - in dollars
- * @returns {Promise<boolean>} true if charge succeeded
+ * @param {number} feeAmount  — USD
+ * @returns {Promise<boolean>} true if at least one notification was sent
  */
-async function chargeLateFee(booking, feeAmount) {
-  if (!process.env.STRIPE_SECRET_KEY || !booking.paymentIntentId) return false;
-  try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    // Retrieve the original PaymentIntent to get the customer / payment method
-    const pi = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-    const paymentMethod = pi.payment_method;
-    const customer = pi.customer;
-    if (!paymentMethod) {
-      console.warn(`scheduled-reminders: no payment method for PI ${booking.paymentIntentId}`);
-      return false;
+async function requestLateFeeApproval(booking, feeAmount) {
+  const bookingId  = booking.bookingId || booking.paymentIntentId;
+  const renterName = booking.name || "Customer";
+  const vehicle    = booking.vehicleName || booking.vehicleId || "";
+
+  let sent = false;
+
+  // Build HMAC-signed approve / decline URLs (24 h expiry)
+  const { approveUrl, declineUrl } = buildLateFeeUrls(bookingId, feeAmount);
+
+  // ── Email to owner ──────────────────────────────────────────────────────
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host:   process.env.SMTP_HOST,
+        port:   parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_PORT === "465",
+        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+      const escStr = (s) => String(s || "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      await transporter.sendMail({
+        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:      OWNER_EMAIL,
+        subject: `[Action Required] Late Fee $${feeAmount} — ${renterName} (${vehicle})`,
+        html: `
+          <h2>⏰ Late Return — Approval Required</h2>
+          <p><strong>${escStr(renterName)}</strong> is overdue on their <strong>${escStr(vehicle)}</strong> rental.</p>
+          <table style="border-collapse:collapse;width:100%;margin:16px 0">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(bookingId)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(renterName)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(vehicle)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Late Fee</strong></td><td style="padding:8px;border:1px solid #ddd;color:#e53935"><strong>$${escStr(String(feeAmount))}</strong></td></tr>
+          </table>
+          <p style="margin-top:24px">
+            <a href="${escStr(approveUrl)}" style="display:inline-block;padding:12px 24px;background:#4caf50;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:12px">
+              ✅ Approve &amp; Charge $${escStr(String(feeAmount))}
+            </a>
+            <a href="${escStr(declineUrl)}" style="display:inline-block;padding:12px 24px;background:#888;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">
+              ❌ Decline — Do Not Charge
+            </a>
+          </p>
+          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>
+          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+        `,
+        text: [
+          `Late Return — Approval Required`,
+          ``,
+          `${renterName} is overdue on their ${vehicle} rental.`,
+          `Booking ID : ${bookingId}`,
+          `Late Fee   : $${feeAmount}`,
+          ``,
+          `APPROVE & charge: ${approveUrl}`,
+          `DECLINE (no charge): ${declineUrl}`,
+          ``,
+          `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin.html`,
+        ].join("\n"),
+      });
+      sent = true;
+    } catch (err) {
+      console.warn("scheduled-reminders: owner late-fee approval email failed:", err.message);
     }
-    await stripe.paymentIntents.create({
-      amount:         Math.round(feeAmount * 100),
-      currency:       "usd",
-      customer:       customer || undefined,
-      payment_method: paymentMethod,
-      confirm:        true,
-      off_session:    true,
-      description:    `Late fee — ${booking.vehicleName || booking.vehicleId} — ${booking.name}`,
-      metadata: {
-        payment_type:       "late_fee",
-        original_booking_id: booking.bookingId || booking.paymentIntentId,
-        vehicle_id:          booking.vehicleId,
-        renter_name:         booking.name || "",
-      },
-    });
-    return true;
-  } catch (err) {
-    console.error(`scheduled-reminders: late fee charge failed for ${booking.bookingId}:`, err.message);
-    return false;
   }
+
+  // ── SMS to owner (short approve link) ──────────────────────────────────
+  if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+    try {
+      const smsText =
+        `[SLY RIDES] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
+        `Approve $${feeAmount} charge: ${approveUrl}\n` +
+        `Decline: ${declineUrl}`;
+      await sendSms(OWNER_PHONE, smsText);
+      sent = true;
+    } catch (err) {
+      console.warn("scheduled-reminders: owner late-fee approval SMS failed:", err.message);
+    }
+  }
+
+  return sent;
 }
 
 /**
@@ -472,18 +532,22 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
       }
 
-      // Late fee — after grace, only if not already charged, and no active extension
+      // Late fee approval request — after grace, once per booking, no active extension
       if (
         minsOverdue >= grace &&
         !alreadySent(booking, "late_fee_applied") &&
+        !alreadySent(booking, "late_fee_pending") &&
         !booking.lateFeeApplied
       ) {
         const feeAmount = LATE_FEE_AMOUNTS[vehicleId] || 50;
-        const charged = await chargeLateFee(booking, feeAmount);
         const feeVars = { ...v, late_fee: String(feeAmount) };
-        const sent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
-        if (sent || charged) {
-          sentMarks.push({ vehicleId, id, key: "late_fee_applied" });
+        // 1. Notify customer that a late fee has been assessed
+        const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+        // 2. Request owner approval before charging (email + SMS with Approve/Decline links)
+        const approvalSent = await requestLateFeeApproval(booking, feeAmount);
+        if (smsSent || approvalSent) {
+          // Mark as pending so we don't send the approval request again next cron tick
+          sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
           sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
         }
       }

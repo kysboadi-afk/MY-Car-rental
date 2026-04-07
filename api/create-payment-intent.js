@@ -5,6 +5,7 @@
 // Required environment variables (set in Vercel dashboard → Settings → Environment Variables):
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
+import crypto from "crypto";
 import Stripe from "stripe";
 import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
 import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -147,9 +148,35 @@ export default async function handler(req, res) {
     const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
     const isSlingshotDepositMode = isSlingshotVehicle && paymentMode === "deposit";
 
+    // Find or create a Stripe Customer so the card can be saved for future
+    // off-session charges (e.g., damages, late fees).
+    let stripeCustomerId;
+    try {
+      const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+      if (existingCustomers.data.length > 0) {
+        stripeCustomerId = existingCustomers.data[0].id;
+      } else {
+        const newCustomer = await stripe.customers.create({
+          email,
+          name: trimmedName,
+          ...(phone && String(phone).trim() ? { phone: String(phone).trim() } : {}),
+        });
+        stripeCustomerId = newCustomer.id;
+      }
+    } catch (custErr) {
+      console.error("Stripe Customer create/lookup error:", custErr.message);
+      return res.status(500).json({ error: "Payment initialization failed. Please try again." });
+    }
+
+    // Generate a stable booking ID that links the PaymentIntent to the booking record.
+    const bookingId = "bk-" + crypto.randomBytes(6).toString("hex");
+
     const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
       currency: "usd",
+      customer: stripeCustomerId,
+      // Save the card for future off-session charges (damages, late fees, etc.).
+      setup_future_usage: "off_session",
       receipt_email: email,
       description: isSlingshotVehicle
         ? (isSlingshotDepositMode
@@ -172,6 +199,8 @@ export default async function handler(req, res) {
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
       // needed here — values are only rendered in the Stripe dashboard.
       metadata: {
+        booking_id:         bookingId,
+        stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: phone && String(phone).trim() ? String(phone).trim() : "",
         vehicle_id:   vehicleId,
@@ -229,6 +258,8 @@ export default async function handler(req, res) {
     res.status(200).json({
       clientSecret: paymentIntent.client_secret,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      bookingId,
+      stripeCustomerId,
     });
   } catch (err) {
     console.error("Stripe PaymentIntent error:", err);

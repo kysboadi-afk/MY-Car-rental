@@ -29,8 +29,8 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
-const BOUNCIE_TOKEN_URL = "https://auth.bouncie.com/oauth/token";
-const REDIRECT_URI = "https://sly-rides.vercel.app/api/bouncie-callback";
+const BOUNCIE_TOKEN_URL  = "https://auth.bouncie.com/oauth/token";
+const BOUNCIE_REDIRECT_URI = "https://sly-rides.vercel.app/api/bouncie-callback";
 
 /** Escape HTML special characters to prevent XSS in inline HTML strings. */
 function esc(str) {
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
       client_id:     clientId,
       client_secret: clientSecret,
       code,
-      redirect_uri:  REDIRECT_URI,
+      redirect_uri:  BOUNCIE_REDIRECT_URI,
     });
 
     const tokenRes = await fetch(BOUNCIE_TOKEN_URL, {
