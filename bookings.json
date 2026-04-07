@@ -212,7 +212,8 @@
       "activatedAt": "2026-04-07T09:45:27.428Z",
       "completedAt": "2026-04-07T10:00:27.302Z",
       "smsSentAt": {
-        "late_fee_applied": "2026-04-07T10:00:31.520Z"
+        "late_fee_applied": "2026-04-07T10:00:31.520Z",
+        "post_thank_you": "2026-04-07T10:15:28.934Z"
       },
       "lateFeeApplied": 50
     },
