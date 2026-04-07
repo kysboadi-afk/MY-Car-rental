@@ -177,7 +177,7 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     });
 
     const formattedAmount = `$${resolvedAmount.toFixed(2)}`;
-    const chargeIdDisplay = charge.id ? String(charge.id).slice(0, 8) + "…" : "N/A";
+    const chargeIdDisplay = charge.id ? String(charge.id).slice(0, 18) + "…" : "N/A";
     const sharedTable = `
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>

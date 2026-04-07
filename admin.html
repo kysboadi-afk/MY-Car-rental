@@ -1659,7 +1659,13 @@
 
       function getSecret() { return document.getElementById("adminSecret").value; }
 
-      var PREDEFINED_FEES = { key_replacement: 150, smoking: 50 };
+      var PREDEFINED_FEES   = { key_replacement: 150, smoking: 50 };
+      var CHARGE_TYPE_LABELS = {
+        key_replacement: "Key Replacement",
+        smoking:         "Smoking Penalty",
+        late_fee:        "Late Return Fee",
+        custom:          "Additional Charge",
+      };
 
       function esc(s) {
         return String(s || "")
@@ -1714,7 +1720,7 @@
         var amount = amountStr ? parseFloat(amountStr) : undefined;
         var predefined = PREDEFINED_FEES[chargeType];
         if (amount === undefined && !predefined) {
-          showChargeStatus("Please enter an amount for " + chargeType.replace(/_/g, " ") + ".", "error");
+          showChargeStatus("Please enter an amount for " + (CHARGE_TYPE_LABELS[chargeType] || chargeType.replace(/_/g, " ")) + ".", "error");
           return;
         }
         if (amount !== undefined && (isNaN(amount) || amount <= 0)) {
@@ -1723,7 +1729,7 @@
         }
 
         var displayAmount = amount !== undefined ? amount : predefined;
-        if (!confirm("Charge $" + displayAmount.toFixed(2) + " for " + chargeType.replace(/_/g, " ") + " to booking " + bookingId + "?")) return;
+        if (!confirm("Charge $" + displayAmount.toFixed(2) + " for " + (CHARGE_TYPE_LABELS[chargeType] || chargeType.replace(/_/g, " ")) + " to booking " + bookingId + "?")) return;
 
         var btn = this;
         btn.disabled = true;
@@ -1781,7 +1787,7 @@
               return;
             }
             list.innerHTML = charges.map(function (c) {
-              var label = c.charge_type ? c.charge_type.replace(/_/g, " ") : c.charge_type;
+              var label = CHARGE_TYPE_LABELS[c.charge_type] || (c.charge_type ? c.charge_type.replace(/_/g, " ") : "");
               var date  = c.created_at ? c.created_at.slice(0, 10) : "";
               var statusCls = c.status === "succeeded" ? "succeeded" : c.status === "failed" ? "failed" : "pending";
               return '<div class="charge-list-row">'
