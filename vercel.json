@@ -116,6 +116,9 @@
     },
     "api/complete-booking.js": {
       "maxDuration": 15
+    },
+    "api/charge-fee.js": {
+      "maxDuration": 20
     }
   },
   "headers": [
