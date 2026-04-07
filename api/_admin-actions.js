@@ -10,7 +10,7 @@
 //   loadBookings() / loadVehicles() helpers provide fallback when Supabase
 //   is not configured or a table does not yet exist.
 
-import { loadBookings } from "./_bookings.js";
+import { loadBookings, saveBookings } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
@@ -30,7 +30,9 @@ import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeFleetAlerts } from "../lib/ai/maintenance.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { TEMPLATES } from "./_sms-templates.js";
-import { fetchBookedDates } from "./_availability.js";
+import { fetchBookedDates, hasOverlap } from "./_availability.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -1848,6 +1850,162 @@ function esc(str) {
     .replace(/'/g, "&#39;");
 }
 
+// ── Vehicles supported by manual booking ─────────────────────────────────────
+const MANUAL_BOOKING_VEHICLES = {
+  slingshot:  "Slingshot R",
+  slingshot2: "Slingshot R (Unit 2)",
+  slingshot3: "Slingshot R (Unit 3)",
+  camry:      "Camry 2012",
+  camry2013:  "Camry 2013 SE",
+};
+
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+
+/**
+ * Block a date range in booked-dates.json for the given vehicle.
+ * Used by toolCreateManualBooking to mark calendar dates unavailable.
+ */
+async function blockBookedDatesForManualBooking(vehicleId, from, to) {
+  const token = process.env.GITHUB_TOKEN;
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const ghHeaders = {
+    Authorization:          `Bearer ${token}`,
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  async function loadBookedDates() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+      if (typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
+
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method:  "PUT",
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+    }
+  }
+
+  await updateJsonFileWithRetry({
+    load:    loadBookedDates,
+    apply:   (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      if (!hasOverlap(data[vehicleId], from, to)) {
+        data[vehicleId].push({ from, to });
+      }
+    },
+    save:    saveBookedDates,
+    message: `Block dates for ${vehicleId}: ${from} to ${to} (manual booking via admin AI)`,
+  });
+}
+
+/**
+ * Create a manual booking for a cash or offline reservation.
+ * Blocks the calendar dates, saves to bookings.json, and syncs to Supabase.
+ */
+async function toolCreateManualBooking({
+  vehicleId, name, phone, email,
+  pickupDate, pickupTime, returnDate, returnTime,
+  amountPaid, notes,
+}) {
+  if (!vehicleId || !MANUAL_BOOKING_VEHICLES[vehicleId]) {
+    throw new Error(`Invalid vehicleId "${vehicleId}". Must be one of: ${Object.keys(MANUAL_BOOKING_VEHICLES).join(", ")}.`);
+  }
+  if (!name || typeof name !== "string" || !name.trim()) {
+    throw new Error("Customer name is required.");
+  }
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if (!pickupDate || !ISO_DATE.test(pickupDate)) {
+    throw new Error("pickupDate must be in YYYY-MM-DD format.");
+  }
+  if (!returnDate || !ISO_DATE.test(returnDate)) {
+    throw new Error("returnDate must be in YYYY-MM-DD format.");
+  }
+  if (pickupDate > returnDate) {
+    throw new Error("pickupDate must not be after returnDate.");
+  }
+
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
+  }
+
+  const booking = {
+    bookingId:       randomBytes(8).toString("hex"),
+    name:            name.trim(),
+    phone:           typeof phone === "string" ? phone.trim() : "",
+    email:           typeof email === "string" ? email.trim() : "",
+    vehicleId,
+    vehicleName:     MANUAL_BOOKING_VEHICLES[vehicleId],
+    pickupDate,
+    pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
+    returnDate,
+    returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
+    location:        "",
+    status:          "booked_paid",
+    paymentIntentId: "manual_" + randomBytes(6).toString("hex"),
+    amountPaid:      typeof amountPaid === "number" && amountPaid > 0
+                       ? Math.round(amountPaid * 100) / 100
+                       : 0,
+    notes:           typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+    createdAt:       new Date().toISOString(),
+  };
+
+  // 1. Block calendar dates (booked-dates.json)
+  await blockBookedDatesForManualBooking(vehicleId, pickupDate, returnDate);
+
+  // 2. Save booking to bookings.json
+  await updateJsonFileWithRetry({
+    load:    loadBookings,
+    apply:   (data) => {
+      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+      if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+        data[vehicleId].push(booking);
+      }
+    },
+    save:    saveBookings,
+    message: `Add manual booking for ${vehicleId}: ${booking.name} (${booking.bookingId}) via admin AI`,
+  });
+
+  // 3. Sync to Supabase (non-fatal — all helpers are idempotent)
+  await autoCreateRevenueRecord(booking);
+  await autoUpsertCustomer(booking, false);
+  await autoUpsertBooking(booking);
+  await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
+
+  return {
+    success:     true,
+    bookingId:   booking.bookingId,
+    vehicle:     booking.vehicleName,
+    renter:      booking.name,
+    pickupDate,
+    returnDate,
+    amountPaid:  booking.amountPaid,
+    notes:       booking.notes || null,
+    message:     `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${booking.vehicleName}.`,
+  };
+}
+
 /**
  * Re-send a booking confirmation email to the renter and owner.
  * Used when the browser-side email failed (e.g. "We couldn't send your confirmation")
@@ -2097,6 +2255,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "update_action_status",
   "send_message_to_driver",
   "register_bouncie_device",
+  "create_manual_booking",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -2154,6 +2313,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_blocked_dates":        result = await toolGetBlockedDates(args);         break;
       case "register_bouncie_device":      result = await toolRegisterBouncieDevice(args);      break;
       case "resend_booking_confirmation":   result = await toolResendBookingConfirmation(args);   break;
+      case "create_manual_booking":         result = await toolCreateManualBooking(args);         break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
