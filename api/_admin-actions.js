@@ -217,7 +217,7 @@ async function storeFraudFlags(bookingId, flagged, riskScore) {
     await sb
       .from("bookings")
       .update({ flagged, risk_score: riskScore })
-      .eq("booking_id", bookingId);
+      .eq("booking_ref", bookingId);
   } catch (err) {
     console.warn("_admin-actions: storeFraudFlags failed:", err.message);
   }
@@ -323,24 +323,25 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
         // Strip characters that have special meaning in PostgREST filter strings
         // to prevent filter injection via the .or() expression.
         const safeSearch = search.replace(/[,()'"\\]/g, "");
-        query = query.or(
-          `customer_name.ilike.%${safeSearch}%,phone.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%,booking_id.ilike.%${safeSearch}%`
-        );
+        // PostgREST does not support filtering on embedded (joined) table columns
+        // inside .or() — restrict to booking_ref only.  Customer name/phone/email
+        // searches fall through to the GitHub JSON fallback which handles them fine.
+        query = query.or(`booking_ref.ilike.%${safeSearch}%`);
       }
 
       const { data, error, count } = await query;
       if (!error && data) {
         total   = count ?? data.length;
         results = data.map((row) => ({
-          bookingId:  row.booking_id || String(row.id),
-          name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          bookingId:  row.booking_ref || String(row.id),
+          name:       row.customers?.name  || "",
+          phone:      row.customers?.phone || "",
+          email:      row.customers?.email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: row.deposit_paid || row.total_price || 0,
           createdAt:  row.created_at || "",
           flagged:    row.flagged || false,
           risk_score: row.risk_score || 0,
@@ -1566,7 +1567,7 @@ async function toolFlagBooking({ bookingId, reason }) {
   const { error } = await sb
     .from("bookings")
     .update({ flagged: true, risk_score: ADMIN_FLAGGED_RISK_SCORE })
-    .eq("booking_id", bookingId);
+    .eq("booking_ref", bookingId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 
@@ -1595,7 +1596,7 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
   const { error } = await sb
     .from("bookings")
     .update({ status: APP_TO_DB_STATUS[status] })
-    .eq("booking_id", bookingId);
+    .eq("booking_ref", bookingId);
 
   if (error) throw new Error(`Supabase update failed: ${error.message}`);
 

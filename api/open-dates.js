@@ -125,6 +125,8 @@ export default async function handler(req, res) {
     });
 
     // Also remove from Supabase blocked_dates so both stores stay consistent.
+    // Delete ALL matching rows regardless of reason (manual or booking-based) so
+    // that an admin unblock fully clears the date range from both stores.
     // Non-fatal — a Supabase failure must not block the GitHub remove from succeeding.
     if (removed > 0) {
       try {
@@ -135,8 +137,7 @@ export default async function handler(req, res) {
             .delete()
             .eq("vehicle_id", vehicleId)
             .eq("start_date", from)
-            .eq("end_date", to)
-            .eq("reason", "manual");
+            .eq("end_date", to);
           if (sbErr) {
             console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
           }
