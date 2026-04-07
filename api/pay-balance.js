@@ -58,8 +58,8 @@ export default async function handler(req, res) {
 
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (isSlingshotVehicle) {
-      if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
-        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
+      if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
+        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
       }
     }
 

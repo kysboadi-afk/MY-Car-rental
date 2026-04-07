@@ -22,6 +22,7 @@
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { autoCreateBlockedDate } from "./_booking-automation.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -126,6 +127,16 @@ export default async function handler(req, res) {
       save:    saveBookedDates,
       message: `Block dates for ${vehicleId}: ${from} to ${to}`,
     });
+
+    // Also sync to Supabase blocked_dates table so both stores stay consistent.
+    // Non-fatal — a Supabase failure must not prevent the GitHub write from succeeding.
+    if (added > 0) {
+      try {
+        await autoCreateBlockedDate(vehicleId, from, to, "manual");
+      } catch (sbErr) {
+        console.warn("block-dates: Supabase sync failed (non-fatal):", sbErr.message);
+      }
+    }
 
     return res.status(200).json({ success: true, added });
   } catch (err) {

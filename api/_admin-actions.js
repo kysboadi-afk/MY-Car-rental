@@ -1245,10 +1245,10 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
   const sb = getSupabaseAdmin();
   let blockedDates = null;
 
-  // Try Supabase booked_dates table first
+  // Try Supabase blocked_dates table first
   if (sb) {
     try {
-      let q = sb.from("booked_dates").select("vehicle_id, from_date, to_date, reason").order("from_date");
+      let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date");
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
       const { data, error } = await q;
       if (!error && data) {
@@ -1256,7 +1256,7 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
         for (const row of (data || [])) {
           const vid = row.vehicle_id;
           if (!byVehicle[vid]) byVehicle[vid] = [];
-          byVehicle[vid].push({ from: row.from_date, to: row.to_date, reason: row.reason || undefined });
+          byVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
         }
         blockedDates = byVehicle;
       }
