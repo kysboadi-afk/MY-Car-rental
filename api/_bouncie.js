@@ -37,17 +37,18 @@ function makeHeaders(token) {
 export async function loadBouncieToken(sb = null) {
   if (!sb) return null;
 
-  try {
-    const { data } = await sb
-      .from("bouncie_tokens")
-      .select("access_token")
-      .eq("id", 1)
-      .maybeSingle();
+  const { data, error } = await sb
+    .from("bouncie_tokens")
+    .select("access_token")
+    .eq("id", 1)
+    .maybeSingle();
 
-    return data?.access_token || null;
-  } catch {
-    return null;
+  if (error) {
+    console.error("Supabase error in loadBouncieToken:", error);
+    throw error;
   }
+
+  return data?.access_token || null;
 }
 
 /**
@@ -188,7 +189,10 @@ export async function loadTrackedVehicles(sb) {
     .from("vehicles")
     .select("vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type, data")
     .not("bouncie_device_id", "is", null);
-  if (error) throw new Error(`loadTrackedVehicles failed: ${error.message}`);
+  if (error) {
+    console.error("Supabase error in loadTrackedVehicles:", error);
+    throw error;
+  }
 
   return (data || []).filter((row) => {
     const type = row.vehicle_type || row.data?.type || "";
@@ -214,11 +218,16 @@ export async function loadTrackedVehicles(sb) {
 export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt) {
   if (!odometer || odometer <= 0) return false;
 
-  const { data: row } = await sb
+  const { data: row, error: selectError } = await sb
     .from("vehicles")
     .select("data")
     .eq("vehicle_id", vehicleId)
     .maybeSingle();
+
+  if (selectError) {
+    console.error("Supabase error in updateVehicleMileage (select):", selectError);
+    throw selectError;
+  }
 
   const updatedData = { ...(row?.data || {}), mileage: odometer };
 
@@ -232,7 +241,10 @@ export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedA
     })
     .eq("vehicle_id", vehicleId);
 
-  if (error) throw new Error(`updateVehicleMileage failed for ${vehicleId}: ${error.message}`);
+  if (error) {
+    console.error("Supabase error in updateVehicleMileage (update):", error);
+    throw error;
+  }
   return true;
 }
 
