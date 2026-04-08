@@ -162,18 +162,16 @@ export async function insertTripLog(sb, trip) {
 
 // ── Vercel serverless handler ─────────────────────────────────────────────────
 //
-// The public OAuth callback is handled by /api/bouncie-callback.js.
-// This stub is kept so that the /api/bouncie-oauth route (and the vercel.json
-// rewrite from /api/_bouncie) continues to serve a meaningful response rather
-// than a 404 for any cached or bookmarked URLs.
+// This stub is kept so that any cached or bookmarked URLs under /api/bouncie-oauth
+// or /api/_bouncie continue to serve a meaningful response rather than a 404.
 
 export default async function handler(req, res) {
   return res.status(200).send(
     "<!DOCTYPE html><html><head><title>Bouncie</title></head>" +
     "<body style='font-family:sans-serif;padding:2rem'>" +
-    "<h2>ℹ️ Bouncie OAuth</h2>" +
-    "<p>To connect Bouncie, start the OAuth flow from the admin dashboard or navigate to " +
-    "<code>/api/bouncie-oauth</code> to begin authorization.</p>" +
+    "<h2>ℹ️ Bouncie — API Key Authentication</h2>" +
+    "<p>Bouncie GPS sync uses API key authentication. " +
+    "Set the <code>BOUNCIE_API_KEY</code> environment variable in your Vercel dashboard to enable mileage sync.</p>" +
     "</body></html>"
   );
 }
