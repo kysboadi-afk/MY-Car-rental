@@ -141,13 +141,20 @@ export async function getBouncieVehicles(sb = null) {
       throw new Error(`Token refresh failed: ${refreshErr.message}`);
     }
 
+    console.log("Using token:", newToken.slice(0, 15));
+
     const retryResp = await fetch(`${BOUNCIE_API}/vehicles`, {
-      headers: makeHeaders(newToken),
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${newToken}`,
+        "Content-Type": "application/json"
+      }
     });
 
-    console.log("Bouncie retry request status:", retryResp.status);
+    console.log("Retry status:", retryResp.status);
 
     const retryText = await retryResp.text();
+    console.log("Retry response body:", retryText);
 
     if (!retryResp.ok) {
       throw new Error(`Retry failed: ${retryResp.status} ${retryText}`);
