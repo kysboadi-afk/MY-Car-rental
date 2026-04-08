@@ -9,25 +9,20 @@
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
 
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const BOUNCIE_API = "https://api.bouncie.com/v1";
 
-function getSupabase() {
-  return createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-}
-
 async function getToken() {
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new Error("Bouncie is not configured — Supabase environment variables (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) are missing.");
+  }
   const { data, error } = await supabase
     .from("bouncie_tokens")
     .select("*")
     .eq("id", 1)
     .single();
-  console.log({ data, error });
   if (error && error.code !== "PGRST116") {
     throw new Error(`Supabase error loading bouncie_tokens: ${error.message} (code: ${error.code})`);
   }
@@ -54,7 +49,10 @@ async function refreshAccessToken(currentRefreshToken) {
   const data = await res.json();
   if (!res.ok) throw new Error("Bouncie token refresh failed");
 
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new Error("Bouncie token refresh succeeded but tokens could not be persisted — Supabase environment variables are missing.");
+  }
   await supabase.from("bouncie_tokens").upsert({
     id:            1,
     access_token:  data.access_token,
@@ -78,7 +76,7 @@ async function refreshAccessToken(currentRefreshToken) {
 export async function getBouncieVehicles() {
   const tokenData = await getToken();
   if (!tokenData?.access_token) {
-    throw new Error("Bouncie is not connected. Please visit /api/connectBouncie to authorize.");
+    throw new Error("Bouncie is not configured — no OAuth token found. Please connect your Bouncie account via System Settings.");
   }
 
   let accessToken = tokenData.access_token;
