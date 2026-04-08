@@ -43,10 +43,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [trackedVehicles, bouncieVehicles] = await Promise.all([
-      loadTrackedVehicles(sb),
-      getBouncieVehicles(),
-    ]);
+    // Load tracked vehicles from DB first; a DB failure is a hard server error.
+    const trackedVehicles = await loadTrackedVehicles(sb);
+
+    // Call the Bouncie API separately so that any failure (missing/expired/invalid
+    // token, upstream error) is surfaced as "not connected" rather than a 500.
+    let bouncieVehicles;
+    try {
+      bouncieVehicles = await getBouncieVehicles();
+    } catch (bouncieErr) {
+      return res.status(200).json({
+        connected: false,
+        message: adminErrorMessage(bouncieErr),
+      });
+    }
 
     // Build IMEI → DB vehicle map
     const imeiMap = {};
@@ -82,11 +92,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ connected: true, vehicles });
   } catch (err) {
-    const msg = adminErrorMessage(err);
-    // Auth failure — report as disconnected so UI shows setup instructions
-    if (/unauthorized|not configured/i.test(msg)) {
-      return res.status(200).json({ connected: false, message: msg });
-    }
-    return res.status(500).json({ error: msg });
+    return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }

@@ -12,6 +12,7 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { getBouncieVehicles } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -38,18 +39,21 @@ export default async function handler(req, res) {
       });
     }
 
-    const { data } = await sb
-      .from("bouncie_tokens")
-      .select("access_token")
-      .eq("id", 1)
-      .maybeSingle();
+    // Verify the token actually works by calling the Bouncie API.
+    // Simply checking whether a token row exists in the DB can show "Connected"
+    // even when the stored token is expired or invalid.
+    try {
+      await getBouncieVehicles();
+    } catch (bouncieErr) {
+      return res.status(200).json({
+        configured: false,
+        message: adminErrorMessage(bouncieErr),
+      });
+    }
 
-    const configured = !!(data?.access_token);
     return res.status(200).json({
-      configured,
-      message: configured
-        ? "Bouncie is connected. Mileage sync is active."
-        : "Bouncie is not connected. Please visit /api/connectBouncie to authorize.",
+      configured: true,
+      message: "Bouncie is connected. Mileage sync is active.",
     });
   } catch (err) {
     return res.status(500).json({ error: adminErrorMessage(err) });
