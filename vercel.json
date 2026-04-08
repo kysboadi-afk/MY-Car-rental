@@ -1,4 +1,8 @@
 {
+  "builds": [
+    { "src": "api/**/*.js", "use": "@vercel/node" },
+    { "src": "**/*", "use": "@vercel/static" }
+  ],
   "functions": {
     "api/admin-ai-insights.js": {
       "maxDuration": 20
