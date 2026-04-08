@@ -69,8 +69,11 @@ export default async function handler(req, res) {
     return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
   }
 
-  const test = await sb.from("vehicles").select("*").limit(1);
-  console.log("Supabase test result:", test);
+  const { data: testData, error: testError } = await sb.from("vehicles").select("*").limit(1);
+  console.log("TEST QUERY:", testData, testError);
+  if (testError) {
+    return res.status(500).json({ error: "Supabase error", details: testError });
+  }
 
   // Silently skip if Bouncie OAuth tokens have not been set up yet
 
