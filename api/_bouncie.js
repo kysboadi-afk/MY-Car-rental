@@ -61,13 +61,6 @@ export async function loadBouncieToken(sb = null) {
  * @returns {Promise<string>} new access token
  */
 export async function refreshBouncieToken(sb) {
-  const clientId     = process.env.BOUNCIE_CLIENT_ID;
-  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET must be set to refresh tokens.");
-  }
-
   const { data: row } = await sb
     .from("bouncie_tokens")
     .select("refresh_token")
@@ -80,8 +73,6 @@ export async function refreshBouncieToken(sb) {
 
   const body = new URLSearchParams({
     grant_type:    "refresh_token",
-    client_id:     clientId,
-    client_secret: clientSecret,
     refresh_token: row.refresh_token,
   });
 
