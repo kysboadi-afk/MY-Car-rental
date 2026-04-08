@@ -1,8 +1,8 @@
 // api/bouncie-auth.js
 // Bouncie connection status endpoint.
 //
-// Checks whether a valid Bouncie access token exists in the bouncie_tokens
-// Supabase table (written by /api/bouncie-callback after OAuth completes).
+// Checks whether a Bouncie API key is configured via the BOUNCIE_API_KEY
+// environment variable.
 //
 // GET /api/bouncie-auth?secret=<ADMIN_SECRET>
 //   Returns whether Bouncie is connected.

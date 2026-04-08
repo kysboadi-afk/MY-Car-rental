@@ -1,22 +1,12 @@
+// api/connect-gps.js
+// Stub — OAuth authentication has been replaced by API key authentication.
+//
+// Bouncie GPS sync now uses the BOUNCIE_API_KEY environment variable
+// (set in the Vercel dashboard) with the api.bouncie.dev/v1 API.
+// No OAuth flow is required.
+
 export default function handler(req, res) {
-  try {
-    const clientId = process.env.BOUNCIE_CLIENT_ID;
-
-    if (!clientId) {
-      return res.status(500).send("Missing BOUNCIE_CLIENT_ID");
-    }
-
-    const redirectUri = "https://sly-rides.vercel.app/api/bouncie-callback";
-
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-    });
-
-const url = `https://auth.bouncie.com/dialog/authorize?${params.toString()}`;
-    return res.redirect(302, url);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+  return res.status(200).json({
+    message: "Bouncie uses API key authentication. Set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.",
+  });
 }
