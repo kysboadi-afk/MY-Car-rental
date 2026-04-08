@@ -141,12 +141,10 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/_bouncie", "destination": "/api/bouncie-oauth" }
-  ],
-  "routes": [
+    { "source": "/api/_bouncie", "destination": "/api/bouncie-oauth" },
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1.js"
+      "source": "/api/(.*)",
+      "destination": "/api/$1.js"
     }
   ],
   "crons": [
