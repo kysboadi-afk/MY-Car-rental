@@ -44,6 +44,9 @@ async function fetchWithRetry(fn, retries = MAX_RETRIES) {
 }
 
 export default async function handler(req, res) {
+  // DIAGNOSTIC: confirm new code is being served — remove after verification
+  return res.status(200).json({ test: "NEW CODE RUNNING" });
+
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
