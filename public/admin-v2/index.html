@@ -1572,7 +1572,7 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <span id="gps-last-updated" style="font-size:12px;color:var(--text-sub);"></span>
-            <span id="gps-last-sync" style="font-size:12px;color:var(--text-sub);"></span>
+            <span id="gps-last-sync" aria-live="polite" style="font-size:12px;color:var(--text-sub);"></span>
             <button class="btn btn-primary btn-sm" id="gps-sync-now-btn" onclick="triggerGlobalBouncieSync()">🔃 Sync Now</button>
             <button class="btn btn-secondary btn-sm" onclick="loadGpsTracking()">🔄 Refresh</button>
             <button class="btn btn-sm" id="gps-auto-refresh-btn" onclick="toggleGpsAutoRefresh()" style="font-size:12px;">⏱ Auto-Refresh: OFF</button>
@@ -2895,11 +2895,12 @@ async function triggerGlobalBouncieSync() {
   const btn = document.getElementById('gps-sync-now-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing…'; }
   try {
-    const result = await fetch(`${API_BASE}/api/bouncie-sync`, {
+    const resp = await fetch(`${API_BASE}/api/bouncie-sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminSecret}` },
-    }).then((r) => r.json());
-    if (result.error) {
+    });
+    const result = await resp.json();
+    if (!resp.ok || result.error) {
       showToast('Sync error: ' + result.error, 'error');
     } else {
       const count = result.synced_count ?? (result.synced || []).length;
