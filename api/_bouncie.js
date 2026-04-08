@@ -112,16 +112,14 @@ export async function loadTrackedVehicles(sb) {
   const { data, error } = await sb
     .from("vehicles")
     .select("vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type, data")
-    .not("bouncie_device_id", "is", null);
+    .not("bouncie_device_id", "is", null)
+    .eq("is_tracked", true);
   if (error) {
     console.error("Supabase error in loadTrackedVehicles:", error);
     throw error;
   }
 
-  return (data || []).filter((row) => {
-    const type = row.vehicle_type || row.data?.type || "";
-    return type !== "slingshot";
-  });
+  return data || [];
 }
 
 /**

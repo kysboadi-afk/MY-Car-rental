@@ -7,15 +7,14 @@
 //   GET  — called by Vercel cron scheduler (no auth required from Vercel)
 //   POST — manual trigger; requires Authorization: Bearer <ADMIN_SECRET|CRON_SECRET>
 //
-// Only vehicles with a bouncie_device_id set in the DB are synced.
-// Slingshots are excluded by loadTrackedVehicles() regardless of IMEI.
+// Only vehicles with bouncie_device_id set AND is_tracked=true are synced.
 //
 // Required env vars:
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 //   BOUNCIE_CLIENT_ID + BOUNCIE_CLIENT_SECRET  (for OAuth token refresh)
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
+import { getBouncieVehicles, updateVehicleMileage } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 export default async function handler(req, res) {
@@ -47,14 +46,32 @@ export default async function handler(req, res) {
     });
   }
 
-  let trackedVehicles, bouncieVehicles;
+  // Fetch only tracked Bouncie vehicles (bouncie_device_id set + is_tracked=true).
+  // Do NOT filter by vehicle_type — is_tracked is the canonical flag.
+  const { data: trackedData, error: trackedError } = await sb
+    .from("vehicles")
+    .select("*")
+    .not("bouncie_device_id", "is", null)
+    .eq("is_tracked", true);
+
+  if (trackedError) {
+    console.error("bouncie-sync: vehicles query failed:", trackedError.message);
+    return res.status(200).json({
+      bouncie_error: true,
+      skipped:       true,
+      reason:        trackedError.message,
+      duration_ms:   Date.now() - startedAt,
+    });
+  }
+
+  console.log("Tracked vehicles:", trackedData);
+  const trackedVehicles = trackedData || [];
+
+  let bouncieVehicles;
   try {
-    [trackedVehicles, bouncieVehicles] = await Promise.all([
-      loadTrackedVehicles(sb),
-      getBouncieVehicles(),
-    ]);
+    bouncieVehicles = await getBouncieVehicles();
   } catch (err) {
-    console.error("bouncie-sync: fetch failed:", err.message);
+    console.error("bouncie-sync: Bouncie API fetch failed:", err.message);
     // Return 200 so Vercel cron does not treat this as a hard failure
     return res.status(200).json({
       bouncie_error: true,
