@@ -13,10 +13,10 @@
 // POST — manual trigger: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
 //
 // Required env vars:
-//   BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET — for automatic token refresh
+//   BOUNCIE_API_KEY — Bouncie API key (set in Vercel dashboard)
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
-import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBouncieToken } from "./_bouncie.js";
+import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
@@ -64,7 +64,7 @@ export default async function handler(req, res) {
   }
 
   // Silently skip when Supabase is not configured — we need the DB to map IMEIs to vehicles.
-  // A Bouncie token must also be available (env var or app_config) for the API call to succeed.
+  // BOUNCIE_API_KEY must also be set for the API call to succeed.
   const sb = getSupabaseAdmin();
   if (!sb) {
     return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
@@ -73,8 +73,7 @@ export default async function handler(req, res) {
   const test = await sb.from("vehicles").select("*").limit(1);
   console.log("Supabase test result:", test);
 
-  const bouncieToken = await loadBouncieToken(sb);
-  if (!bouncieToken) {
+  if (!process.env.BOUNCIE_API_KEY) {
     return res.status(200).json({ skipped: true, reason: "Bouncie API key not configured — please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard" });
   }
 
@@ -86,7 +85,7 @@ export default async function handler(req, res) {
     // ── 1. Load our tracked vehicles and Bouncie vehicles in parallel ────────
     const [trackedVehicles, bouncieVehicles] = await Promise.all([
       loadTrackedVehicles(sb),
-      fetchWithRetry(() => getBouncieVehicles(sb)),
+      fetchWithRetry(() => getBouncieVehicles()),
     ]);
 
     // Build a map: IMEI → tracked vehicle row
@@ -178,15 +177,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
 }
-
-//
-// Pulls the latest odometer readings from the Bouncie REST API and upserts
-// them into the vehicle_mileage Supabase table.  After each sync it runs the
-// mileage analysis engine and logs any maintenance/high-usage alerts to ai_logs.
-//
-// GET  — called by Vercel Cron (trusted by Vercel's internal network)
-// POST — manual trigger; requires: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
-//
-// Required env vars:
-//   BOUNCIE_CLIENT_ID, BOUNCIE_CLIENT_SECRET — for automatic token refresh
-//   BOUNCIE_DEVICE_MAP    — JSON {"<imei>":"<vehicle_id>", ...}  (optional if nicknames match)

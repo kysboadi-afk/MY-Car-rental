@@ -1,9 +1,6 @@
 // api/bouncie-callback.js
-// Stub — OAuth authentication has been replaced by API key authentication.
-//
-// Bouncie GPS sync now uses the BOUNCIE_API_KEY environment variable
-// (set in the Vercel dashboard) with the api.bouncie.dev/v1 API.
-// No OAuth flow or token exchange is required.
+// Stub — Bouncie GPS sync uses API key authentication (BOUNCIE_API_KEY env var).
+// No callback or token exchange is required.
 
 export default function handler(req, res) {
   return res.status(200).send(

@@ -12,26 +12,11 @@
 
 const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
-function makeHeaders(apiKey) {
+function makeHeaders() {
   return {
-    Authorization: apiKey,
+    Authorization: process.env.BOUNCIE_API_KEY,
     "Content-Type": "application/json",
   };
-}
-
-// ── API key helper ────────────────────────────────────────────────────────────
-
-/**
- * Return the Bouncie API key from the BOUNCIE_API_KEY environment variable.
- *
- * The `sb` parameter is accepted for backward-compatibility with existing
- * callers but is no longer used — the API key is read from the environment.
- *
- * @param {object|null} [sb] - Supabase admin client (ignored; kept for compat)
- * @returns {Promise<string|null>} API key or null if not configured
- */
-export async function loadBouncieToken(sb = null) {
-  return process.env.BOUNCIE_API_KEY || null;
 }
 
 // ── Bouncie REST helpers ──────────────────────────────────────────────────────
@@ -39,16 +24,15 @@ export async function loadBouncieToken(sb = null) {
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
  *
- * The API key is read from the BOUNCIE_API_KEY environment variable.
+ * Reads the API key directly from the BOUNCIE_API_KEY environment variable.
  *
- * @param {object|null} [sb] - Supabase admin client (accepted for compat; not used)
  * @returns {Promise<Array>}
  */
-export async function getBouncieVehicles(sb = null) {
-  const apiKey = await loadBouncieToken(sb);
+export async function getBouncieVehicles() {
+  const apiKey = process.env.BOUNCIE_API_KEY;
   if (!apiKey) throw new Error("No Bouncie API key found. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.");
 
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(apiKey) });
+  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders() });
 
   if (resp.status === 401 || resp.status === 403) {
     throw new Error(`Bouncie API: ${resp.status} Unauthorized — please verify your BOUNCIE_API_KEY is correct.`);
@@ -162,8 +146,8 @@ export async function insertTripLog(sb, trip) {
 
 // ── Vercel serverless handler ─────────────────────────────────────────────────
 //
-// This stub is kept so that any cached or bookmarked URLs under /api/bouncie-oauth
-// or /api/_bouncie continue to serve a meaningful response rather than a 404.
+// This stub is kept so that any cached or bookmarked URLs under /api/_bouncie
+// continue to serve a meaningful response rather than a 404.
 
 export default async function handler(req, res) {
   return res.status(200).send(

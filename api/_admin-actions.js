@@ -28,7 +28,6 @@ import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeFleetAlerts } from "../lib/ai/maintenance.js";
-import { loadBouncieToken } from "./_bouncie.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates, hasOverlap } from "./_availability.js";
@@ -804,7 +803,7 @@ async function toolGetMileage() {
         tracked_vehicles:   0,
         stats:              [],
         alerts:             [],
-        bouncie_configured: !!(await loadBouncieToken(sb)),
+        bouncie_configured: !!process.env.BOUNCIE_API_KEY,
         error:              vehicleResult.error.message,
       };
     }
@@ -817,7 +816,7 @@ async function toolGetMileage() {
       tracked_vehicles:   0,
       stats:              [],
       alerts:             [],
-      bouncie_configured: !!(await loadBouncieToken(sb).catch(() => null)),
+      bouncie_configured: !!process.env.BOUNCIE_API_KEY,
       error:              adminErrorMessage(err),
     };
   }
@@ -865,7 +864,7 @@ async function toolGetMileage() {
     raw_bouncie_rows:   rawBouncieRows.length,
     stats:              statsWithStatus,
     alerts,
-    bouncie_configured: !!(await loadBouncieToken(sb)),
+    bouncie_configured: !!process.env.BOUNCIE_API_KEY,
   };
 }
 
