@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   if (!token) {
     return res.status(200).json({
       connected: false,
-      message: "Bouncie is not connected. Complete the OAuth flow in Settings → System Settings.",
+      message: "Bouncie is not connected. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.",
     });
   }
 
