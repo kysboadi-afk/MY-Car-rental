@@ -5,13 +5,10 @@
 // grant access.  After the owner approves, Bouncie redirects back to
 // /api/bouncie-callback which exchanges the code for tokens and stores them.
 //
-// GET /api/bouncie-connect?secret=<ADMIN_SECRET>
+// GET /api/bouncie-connect
 //
 // Required env vars:
-//   ADMIN_SECRET        — protects this endpoint (admin-only action)
 //   BOUNCIE_CLIENT_ID   — registered Bouncie application client ID
-
-import { isAdminAuthorized } from "./_admin-auth.js";
 
 const BOUNCIE_AUTHORIZE_URL = "https://auth.bouncie.com/oauth/authorize";
 const BOUNCIE_REDIRECT_URI  = "https://sly-rides.vercel.app/api/bouncie-callback";
@@ -28,16 +25,6 @@ function htmlPage(title, body) {
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).send("Method Not Allowed");
-
-  const secret = req.query?.secret;
-  if (!isAdminAuthorized(secret)) {
-    return res.status(401).send(
-      htmlPage(
-        "Unauthorized",
-        "<h2>❌ Unauthorized</h2><p>A valid admin secret is required to connect Bouncie.</p>"
-      )
-    );
-  }
 
   const clientId = process.env.BOUNCIE_CLIENT_ID;
   if (!clientId) {
