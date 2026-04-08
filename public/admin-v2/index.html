@@ -1572,6 +1572,8 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <span id="gps-last-updated" style="font-size:12px;color:var(--text-sub);"></span>
+            <span id="gps-last-sync" aria-live="polite" style="font-size:12px;color:var(--text-sub);"></span>
+            <button class="btn btn-primary btn-sm" id="gps-sync-now-btn" onclick="triggerGlobalBouncieSync()">🔃 Sync Now</button>
             <button class="btn btn-secondary btn-sm" onclick="loadGpsTracking()">🔄 Refresh</button>
             <button class="btn btn-sm" id="gps-auto-refresh-btn" onclick="toggleGpsAutoRefresh()" style="font-size:12px;">⏱ Auto-Refresh: OFF</button>
           </div>
@@ -2871,12 +2873,12 @@ async function triggerBouncieSync(vehicleId) {
     const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
     if (result.bouncie_error) {
-      showToast('Bouncie sync error: ' + (result.reason || 'please verify BOUNCIE_API_KEY is set in your Vercel dashboard'), 'error');
+      showToast('Bouncie sync error: ' + (result.reason || 'Bouncie is not connected via OAuth'), 'error');
       return;
     } else if (synced) {
       showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
     } else {
-      showToast(result.skipped ? 'Bouncie not configured' : 'Sync complete (no new data)', 'info');
+      showToast(result.skipped ? 'Bouncie not connected' : 'Sync complete (no new data)', 'info');
     }
     // Reload vehicle to reflect updated mileage
     const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
@@ -2886,6 +2888,33 @@ async function triggerBouncieSync(vehicleId) {
     }
   } catch (err) {
     showToast('Sync failed: ' + err.message, 'error');
+  }
+}
+
+async function triggerGlobalBouncieSync() {
+  const btn = document.getElementById('gps-sync-now-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing…'; }
+  try {
+    const resp = await fetch(`${API_BASE}/api/bouncie-sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminSecret}` },
+    });
+    const result = await resp.json();
+    if (!resp.ok || result.error) {
+      showToast('Sync error: ' + result.error, 'error');
+    } else {
+      const count = result.synced_count ?? (result.synced || []).length;
+      showToast(count > 0 ? `✅ Synced ${count} vehicle${count !== 1 ? 's' : ''}` : 'Sync complete — no vehicles updated', 'success');
+      // Update last-sync label
+      const syncEl = document.getElementById('gps-last-sync');
+      if (syncEl) syncEl.textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+      // Refresh GPS cards to show updated mileage
+      loadGpsTracking();
+    }
+  } catch (err) {
+    showToast('Sync failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔃 Sync Now'; }
   }
 }
 
@@ -4410,13 +4439,14 @@ function renderBouncieAuthSection(status) {
             ⚠️ Bouncie GPS is not connected. Mileage sync is disabled.
           </p>
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
-            To enable GPS mileage sync, add the <code>BOUNCIE_API_KEY</code> environment variable in your <strong>Vercel dashboard</strong> (Settings → Environment Variables), then redeploy the project.
+            To enable GPS mileage sync, connect your Bouncie account via OAuth. Click the button below to start the authorization flow.
           </p>
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-primary btn-sm" style="text-decoration:none;">🔗 Connect Bouncie</a>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
-            Mileage syncs automatically every 5 minutes via the Bouncie API using the <code>BOUNCIE_API_KEY</code> environment variable.
+            Connected via Bouncie OAuth — syncing vehicle data automatically.
           </p>
         </div>
         `}
