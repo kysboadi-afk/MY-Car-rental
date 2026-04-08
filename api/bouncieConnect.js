@@ -1,13 +1,11 @@
-// api/bouncie-connect.js
-// force redeploy check
-console.log("bouncie-connect live");
+// api/bouncieConnect.js
 // Initiates the Bouncie OAuth 2.0 authorization flow.
 //
 // Redirects the browser to the Bouncie authorize URL so the account owner can
 // grant access.  After the owner approves, Bouncie redirects back to
 // /api/bouncie-callback which exchanges the code for tokens and stores them.
 //
-// GET /api/bouncie-connect
+// GET /api/bouncieConnect
 //
 // Required env vars:
 //   BOUNCIE_CLIENT_ID   — registered Bouncie application client ID
