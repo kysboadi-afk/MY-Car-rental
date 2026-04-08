@@ -91,8 +91,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ connected: true, vehicles });
   } catch (err) {
     const msg = adminErrorMessage(err);
-    // Expired / revoked token — report as disconnected so UI shows reconnect prompt
-    if (/unauthorized|oauth|token/i.test(msg)) {
+    // Auth failure — report as disconnected so UI shows setup instructions
+    if (/unauthorized|not configured/i.test(msg)) {
       return res.status(200).json({ connected: false, message: msg });
     }
     return res.status(500).json({ error: msg });
