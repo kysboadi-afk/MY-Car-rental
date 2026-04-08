@@ -143,6 +143,12 @@
   "rewrites": [
     { "source": "/api/_bouncie", "destination": "/api/bouncie-oauth" }
   ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1.js"
+    }
+  ],
   "crons": [
     {
       "path": "/api/scheduled-reminders",
