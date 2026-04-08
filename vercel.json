@@ -111,7 +111,7 @@
     "api/missed-maintenance.js": {
       "maxDuration": 20
     },
-    "api/bouncie-connect.js": {
+    "api/bouncieConnect.js": {
       "maxDuration": 10
     },
     "api/bouncie-oauth.js": {
