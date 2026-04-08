@@ -216,7 +216,8 @@
       "completedAt": "2026-04-07T10:00:27.302Z",
       "smsSentAt": {
         "late_fee_applied": "2026-04-07T10:00:31.520Z",
-        "post_thank_you": "2026-04-07T10:15:28.934Z"
+        "post_thank_you": "2026-04-07T10:15:28.934Z",
+        "retention_1d": "2026-04-08T10:15:03.399Z"
       },
       "lateFeeApplied": 50
     },
