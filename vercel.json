@@ -9,9 +9,6 @@
       ]
     }
   ],
-  "rewrites": [
-    { "source": "/api/_bouncie", "destination": "/api/bouncie-oauth" }
-  ],
   "crons": [
     {
       "path": "/api/scheduled-reminders",
