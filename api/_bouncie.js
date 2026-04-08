@@ -30,6 +30,7 @@ function makeHeaders() {
  */
 export async function getBouncieVehicles() {
   const apiKey = process.env.BOUNCIE_API_KEY;
+  console.log("API KEY RAW:", process.env.BOUNCIE_API_KEY);
   if (!apiKey) throw new Error("No Bouncie API key found. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.");
 
   const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders() });
