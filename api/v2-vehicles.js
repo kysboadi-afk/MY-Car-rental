@@ -65,9 +65,14 @@ export default async function handler(req, res) {
       try {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data, rental_status, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage");
-        if (!error) {
-          const vehicles = (rows || [])
+          .select("*");
+
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
+        }
+
+        const vehicles = (rows || [])
             .filter((row) => {
               // Only expose active vehicles publicly; treat missing status as active
               // for backward compatibility with records created before this field existed.
@@ -96,8 +101,6 @@ export default async function handler(req, res) {
             return obj;
           });
           return res.status(200).json(vehicles);
-        }
-        console.warn("v2-vehicles GET: Supabase error, falling back to GitHub:", error.message);
       } catch (err) {
         console.warn("v2-vehicles GET: Supabase threw, falling back to GitHub:", err.message);
       }
