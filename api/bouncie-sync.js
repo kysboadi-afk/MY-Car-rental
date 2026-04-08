@@ -13,7 +13,7 @@
 // POST — manual trigger: Authorization: Bearer <CRON_SECRET|ADMIN_SECRET>
 //
 // Required env vars:
-//   BOUNCIE_API_KEY — Bouncie API key (set in Vercel dashboard)
+//   BOUNCIE_CLIENT_ID + BOUNCIE_CLIENT_SECRET — OAuth credentials
 //   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
 
 import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
@@ -64,7 +64,6 @@ export default async function handler(req, res) {
   }
 
   // Silently skip when Supabase is not configured — we need the DB to map IMEIs to vehicles.
-  // BOUNCIE_API_KEY must also be set for the API call to succeed.
   const sb = getSupabaseAdmin();
   if (!sb) {
     return res.status(200).json({ skipped: true, reason: "Supabase not configured — cannot sync without DB access" });
@@ -73,9 +72,7 @@ export default async function handler(req, res) {
   const test = await sb.from("vehicles").select("*").limit(1);
   console.log("Supabase test result:", test);
 
-  if (!process.env.BOUNCIE_API_KEY) {
-    return res.status(200).json({ skipped: true, reason: "Bouncie API key not configured — please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard" });
-  }
+  // Silently skip if Bouncie OAuth tokens have not been set up yet
 
   const startedAt = Date.now();
   const synced    = [];

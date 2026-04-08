@@ -1,22 +1,64 @@
 // api/_bouncie.js
 // Bouncie GPS API client helpers.
 //
-// Base URL : https://api.bouncie.dev/v1
-// Auth     : Authorization: <BOUNCIE_API_KEY>  (raw key, no Bearer prefix)
-//
-// API key source:
-//   BOUNCIE_API_KEY environment variable (set in Vercel dashboard).
+// Base URL : https://api.bouncie.com/v1
+// Auth     : OAuth 2.0 — access token stored in the bouncie_tokens Supabase table.
+//            Tokens are obtained via /api/bouncie-connect → /api/bouncie-callback.
+//            A 401 response from the Bouncie API triggers an automatic token refresh.
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
 
-const BOUNCIE_API = "https://api.bouncie.dev/v1";
+import { createClient } from "@supabase/supabase-js";
 
-function makeHeaders() {
-  return {
-    Authorization: process.env.BOUNCIE_API_KEY,
-    "Content-Type": "application/json",
-  };
+const BOUNCIE_API = "https://api.bouncie.com/v1";
+
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
+async function getToken() {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from("bouncie_tokens")
+    .select("*")
+    .eq("id", 1)
+    .single();
+  return data;
+}
+
+async function refreshAccessToken(currentRefreshToken) {
+  const clientId     = process.env.BOUNCIE_CLIENT_ID;
+  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
+  const basic        = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+  const res = await fetch("https://auth.bouncie.com/oauth/token", {
+    method:  "POST",
+    headers: {
+      Authorization:  `Basic ${basic}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      grant_type:    "refresh_token",
+      refresh_token: currentRefreshToken,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error("Bouncie token refresh failed");
+
+  const supabase = getSupabase();
+  await supabase.from("bouncie_tokens").upsert({
+    id:            1,
+    access_token:  data.access_token,
+    refresh_token: data.refresh_token,
+    updated_at:    new Date().toISOString(),
+  });
+
+  return data.access_token;
 }
 
 // ── Bouncie REST helpers ──────────────────────────────────────────────────────
@@ -24,24 +66,35 @@ function makeHeaders() {
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
  *
- * Reads the API key directly from the BOUNCIE_API_KEY environment variable.
+ * Reads the OAuth access token from the bouncie_tokens Supabase table and
+ * automatically refreshes it on a 401 response.
  *
  * @returns {Promise<Array>}
  */
 export async function getBouncieVehicles() {
-  const apiKey = process.env.BOUNCIE_API_KEY;
-  console.log("API KEY RAW:", process.env.BOUNCIE_API_KEY);
-  if (!apiKey) throw new Error("No Bouncie API key found. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.");
-
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders() });
-
-  if (resp.status === 401 || resp.status === 403) {
-    throw new Error(`Bouncie API: ${resp.status} Unauthorized — please verify your BOUNCIE_API_KEY is correct.`);
+  const tokenData = await getToken();
+  if (!tokenData?.access_token) {
+    throw new Error("Bouncie is not connected. Please visit /api/bouncie-connect to authorize.");
   }
+
+  let accessToken = tokenData.access_token;
+
+  let resp = await fetch(`${BOUNCIE_API}/vehicles`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (resp.status === 401) {
+    accessToken = await refreshAccessToken(tokenData.refresh_token);
+    resp = await fetch(`${BOUNCIE_API}/vehicles`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`Bouncie API GET /vehicles failed: ${resp.status} ${text}`);
   }
+
   const data = await resp.json();
   return Array.isArray(data) ? data : [];
 }
@@ -154,9 +207,8 @@ export default async function handler(req, res) {
   return res.status(200).send(
     "<!DOCTYPE html><html><head><title>Bouncie</title></head>" +
     "<body style='font-family:sans-serif;padding:2rem'>" +
-    "<h2>ℹ️ Bouncie — API Key Authentication</h2>" +
-    "<p>Bouncie GPS sync uses API key authentication. " +
-    "Set the <code>BOUNCIE_API_KEY</code> environment variable in your Vercel dashboard to enable mileage sync.</p>" +
+    "<h2>ℹ️ Bouncie — OAuth Authentication</h2>" +
+    "<p>To connect Bouncie GPS sync, visit <a href='/api/bouncie-connect'>/api/bouncie-connect</a>.</p>" +
     "</body></html>"
   );
 }

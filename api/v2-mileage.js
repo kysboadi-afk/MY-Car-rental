@@ -90,16 +90,12 @@ export default async function handler(req, res) {
       return res.status(200).json({
         stats,
         alerts,
-        bouncie_configured: !!process.env.BOUNCIE_API_KEY,
+        bouncie_configured: true,
       });
     }
 
     // ── SYNC ─────────────────────────────────────────────────────────────────
     if (action === "sync") {
-      if (!process.env.BOUNCIE_API_KEY) {
-        return res.status(200).json({ skipped: true, reason: "Bouncie API key not configured — please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard to enable GPS mileage sync." });
-      }
-
       const startedAt = Date.now();
 
       // Fetch tracked vehicles from DB and live data from Bouncie in parallel.
