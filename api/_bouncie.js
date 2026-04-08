@@ -138,20 +138,25 @@ export async function getBouncieVehicles(sb = null) {
     let newToken;
     try {
       newToken = await refreshBouncieToken(sb);
+      console.log("Bouncie token refreshed successfully");
+      console.log("New token (first 10):", newToken.slice(0, 10));
     } catch (refreshErr) {
-      throw new Error(`Bouncie API: ${resp.status} Unauthorized — token refresh failed: ${refreshErr.message}`);
+      throw new Error(`Token refresh failed: ${refreshErr.message}`);
     }
 
-    const retryResp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(newToken) });
-    if (retryResp.status === 401 || retryResp.status === 403) {
-      throw new Error("Bouncie API: Unauthorized after token refresh — please re-authorize via the OAuth flow from the admin dashboard.");
-    }
+    const retryResp = await fetch(`${BOUNCIE_API}/vehicles`, {
+      headers: makeHeaders(newToken),
+    });
+
+    console.log("Bouncie retry request status:", retryResp.status);
+
+    const retryText = await retryResp.text();
+
     if (!retryResp.ok) {
-      const text = await retryResp.text().catch(() => "");
-      throw new Error(`Bouncie API GET /vehicles failed: ${retryResp.status} ${text}`);
+      throw new Error(`Retry failed: ${retryResp.status} ${retryText}`);
     }
-    const retryData = await retryResp.json();
-    return Array.isArray(retryData) ? retryData : [];
+
+    return JSON.parse(retryText);
   }
 
   if (resp.status === 401 || resp.status === 403) {
