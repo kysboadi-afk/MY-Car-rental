@@ -1,11 +1,11 @@
-// api/bouncieConnect.js
+// api/bouncie-connect.js
 // Initiates the Bouncie OAuth 2.0 authorization flow.
 //
 // Redirects the browser to the Bouncie authorize URL so the account owner can
 // grant access.  After the owner approves, Bouncie redirects back to
 // /api/bouncie-callback which exchanges the code for tokens and stores them.
 //
-// GET /api/bouncieConnect
+// GET /api/bouncie-connect
 //
 // Required env vars:
 //   BOUNCIE_CLIENT_ID   — registered Bouncie application client ID
