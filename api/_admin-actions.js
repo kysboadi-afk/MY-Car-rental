@@ -769,6 +769,10 @@ async function toolGetMileage() {
     };
   }
 
+  // Check if Bouncie OAuth token is stored in the bouncie_tokens table.
+  const { data: tokenRow } = await sb.from("bouncie_tokens").select("access_token").eq("id", 1).maybeSingle();
+  const bouncie_configured = !!(tokenRow?.access_token);
+
   // Load canonical vehicle names from the same source as the dashboard.
   // Non-fatal — falls back to the JSONB data field if unavailable.
   let vehicleNameMap = {};
@@ -803,7 +807,7 @@ async function toolGetMileage() {
         tracked_vehicles:   0,
         stats:              [],
         alerts:             [],
-        bouncie_configured: !!process.env.BOUNCIE_API_KEY,
+        bouncie_configured,
         error:              vehicleResult.error.message,
       };
     }
@@ -816,7 +820,7 @@ async function toolGetMileage() {
       tracked_vehicles:   0,
       stats:              [],
       alerts:             [],
-      bouncie_configured: !!process.env.BOUNCIE_API_KEY,
+      bouncie_configured,
       error:              adminErrorMessage(err),
     };
   }
@@ -864,7 +868,7 @@ async function toolGetMileage() {
     raw_bouncie_rows:   rawBouncieRows.length,
     stats:              statsWithStatus,
     alerts,
-    bouncie_configured: !!process.env.BOUNCIE_API_KEY,
+    bouncie_configured,
   };
 }
 

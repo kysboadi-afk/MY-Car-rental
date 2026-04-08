@@ -42,14 +42,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ connected: false, message: "Database not configured." });
   }
 
-  const token = process.env.BOUNCIE_API_KEY;
-  if (!token) {
-    return res.status(200).json({
-      connected: false,
-      message: "Bouncie is not connected. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.",
-    });
-  }
-
   try {
     const [trackedVehicles, bouncieVehicles] = await Promise.all([
       loadTrackedVehicles(sb),

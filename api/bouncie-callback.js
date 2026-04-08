@@ -1,17 +1,58 @@
 // api/bouncie-callback.js
-// Stub — Bouncie GPS sync uses API key authentication (BOUNCIE_API_KEY env var).
-// No callback or token exchange is required.
+// Handles the Bouncie OAuth 2.0 callback after user authorization.
+//
+// Exchanges the authorization code for access + refresh tokens and stores
+// them in the bouncie_tokens Supabase table (singleton row id=1).
+//
+// GET /api/bouncie-callback?code=<authorization_code>
+//
+// Required env vars:
+//   BOUNCIE_CLIENT_ID
+//   BOUNCIE_CLIENT_SECRET
+//   SUPABASE_URL
+//   SUPABASE_SERVICE_ROLE_KEY
 
-export default function handler(req, res) {
-  return res.status(200).send(
-    "<!DOCTYPE html><html lang=\"en\"><head>" +
-    "<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-    "<title>Bouncie</title>" +
-    "<style>body{font-family:system-ui,sans-serif;max-width:600px;margin:3rem auto;padding:0 1rem;}</style>" +
-    "</head><body>" +
-    "<h2>ℹ️ Bouncie — API Key Authentication</h2>" +
-    "<p>Bouncie GPS sync uses API key authentication. " +
-    "Set the <code>BOUNCIE_API_KEY</code> environment variable in your Vercel dashboard to enable mileage sync.</p>" +
-    "</body></html>"
+import { createClient } from "@supabase/supabase-js";
+
+export default async function handler(req, res) {
+  const code = req.query.code;
+
+  if (!code) return res.status(400).send("Missing code");
+
+  const clientId     = process.env.BOUNCIE_CLIENT_ID;
+  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
+  const redirectUri  = "https://sly-rides.vercel.app/api/bouncie-callback";
+
+  const response = await fetch("https://auth.bouncie.com/oauth/token", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      client_id:     clientId,
+      client_secret: clientSecret,
+      grant_type:    "authorization_code",
+      code,
+      redirect_uri:  redirectUri,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    return res.status(500).json(data);
+  }
+
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
   );
+
+  await supabase.from("bouncie_tokens").upsert({
+    id:            1,
+    access_token:  data.access_token,
+    refresh_token: data.refresh_token,
+    obtained_at:   new Date().toISOString(),
+    updated_at:    new Date().toISOString(),
+  });
+
+  res.send("✅ Bouncie connected successfully. You can close this tab.");
 }

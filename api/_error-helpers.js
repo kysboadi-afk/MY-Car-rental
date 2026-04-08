@@ -65,7 +65,7 @@ export function adminErrorMessage(err) {
     /bouncie/i.test(raw) &&
     (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
   ) {
-    return "Bouncie authentication failed — please verify that BOUNCIE_API_KEY is configured correctly in your Vercel dashboard.";
+    return "Bouncie authentication failed — please visit /api/bouncie-connect to re-authorize the Bouncie integration.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────
