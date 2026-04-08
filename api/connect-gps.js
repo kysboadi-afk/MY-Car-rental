@@ -14,8 +14,7 @@ export default function handler(req, res) {
       response_type: "code",
     });
 
-    const url = `https://auth.bouncie.com/oauth/authorize?${params.toString()}`;
-
+const url = `https://auth.bouncie.com/dialog/authorize?${params.toString()}`;
     return res.redirect(302, url);
   } catch (err) {
     return res.status(500).json({ error: err.message });
