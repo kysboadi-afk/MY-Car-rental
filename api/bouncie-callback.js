@@ -157,36 +157,22 @@ export default async function handler(req, res) {
 
   // ── Persist tokens in Supabase bouncie_tokens ─────────────────────────────
   const sb = getSupabaseAdmin();
-  let savedToDb = false;
-  if (sb) {
-    try {
-      const { error: upsertErr } = await sb
-        .from("bouncie_tokens")
-        .upsert(
-          {
-            id:            1,
-            access_token,
-            refresh_token:  refresh_token  || null,
-            obtained_at:    new Date().toISOString(),
-            updated_at:     new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
 
-      if (upsertErr) {
-        console.error("bouncie-callback: Supabase upsert failed:", upsertErr.message);
-      } else {
-        savedToDb = true;
-      }
-    } catch (err) {
-      console.error("bouncie-callback: Supabase error:", err.message);
-    }
+  const { error } = await sb.from("bouncie_tokens").upsert({
+    id:           1,
+    access_token:  access_token,
+    refresh_token: refresh_token,
+    obtained_at:   new Date().toISOString(),
+    updated_at:    new Date().toISOString(),
+  });
+
+  if (error) {
+    console.error("bouncie-callback: Supabase upsert failed:", error.message);
+    return res.status(500).send("SUPABASE ERROR: " + error.message);
   }
 
   // ── Success page ──────────────────────────────────────────────────────────
-  const dbStatus = savedToDb
-    ? "<p>✅ Token saved to Supabase — GPS sync will use it automatically.</p>"
-    : "<p>⚠️ Could not save to Supabase. Please check your Supabase configuration and try the OAuth flow again.</p>";
+  const dbStatus = "<p>✅ Token saved to Supabase — GPS sync will use it automatically.</p>";
 
   return res.status(200).send(
     htmlPage(
