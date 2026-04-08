@@ -15,7 +15,6 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { getBouncieVehicles, updateVehicleMileage } from "./_bouncie.js";
-import { adminErrorMessage } from "./_error-helpers.js";
 
 export default async function handler(req, res) {
   // Allow GET (cron) and POST (manual trigger)
@@ -71,12 +70,12 @@ export default async function handler(req, res) {
   try {
     bouncieVehicles = await getBouncieVehicles();
   } catch (err) {
-    console.error("bouncie-sync: Bouncie API fetch failed:", err.message);
+    console.error("bouncie-sync: Bouncie API fetch failed:", err.message, err);
     // Return 200 so Vercel cron does not treat this as a hard failure
     return res.status(200).json({
       bouncie_error: true,
       skipped:       true,
-      reason:        adminErrorMessage(err),
+      reason:        err.message,
       duration_ms:   Date.now() - startedAt,
     });
   }

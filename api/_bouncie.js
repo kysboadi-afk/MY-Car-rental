@@ -22,11 +22,15 @@ function getSupabase() {
 
 async function getToken() {
   const supabase = getSupabase();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("bouncie_tokens")
     .select("*")
     .eq("id", 1)
     .single();
+  console.log({ data, error });
+  if (error && error.code !== "PGRST116") {
+    throw new Error(`Supabase error loading bouncie_tokens: ${error.message} (code: ${error.code})`);
+  }
   return data;
 }
 
