@@ -65,7 +65,7 @@ export function adminErrorMessage(err) {
     /bouncie/i.test(raw) &&
     (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
   ) {
-    return "Bouncie authentication failed — please visit /api/bouncie-connect to re-authorize the Bouncie integration.";
+    return "Bouncie authentication failed — please visit /api/connectBouncie to re-authorize the Bouncie integration.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────

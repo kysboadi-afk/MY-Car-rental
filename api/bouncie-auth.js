@@ -49,7 +49,7 @@ export default async function handler(req, res) {
       configured,
       message: configured
         ? "Bouncie is connected. Mileage sync is active."
-        : "Bouncie is not connected. Please visit /api/bouncie-connect to authorize.",
+        : "Bouncie is not connected. Please visit /api/connectBouncie to authorize.",
     });
   } catch (err) {
     return res.status(500).json({ error: adminErrorMessage(err) });
