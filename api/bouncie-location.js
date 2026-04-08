@@ -15,7 +15,7 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getBouncieVehicles, loadTrackedVehicles, loadBouncieToken } from "./_bouncie.js";
+import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 export const config = {
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ connected: false, message: "Database not configured." });
   }
 
-  const token = await loadBouncieToken(sb);
+  const token = process.env.BOUNCIE_API_KEY;
   if (!token) {
     return res.status(200).json({
       connected: false,
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
   try {
     const [trackedVehicles, bouncieVehicles] = await Promise.all([
       loadTrackedVehicles(sb),
-      getBouncieVehicles(sb),
+      getBouncieVehicles(),
     ]);
 
     // Build IMEI → DB vehicle map
@@ -91,8 +91,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ connected: true, vehicles });
   } catch (err) {
     const msg = adminErrorMessage(err);
-    // Expired / revoked token — report as disconnected so UI shows reconnect prompt
-    if (/unauthorized|oauth|token/i.test(msg)) {
+    // Auth failure — report as disconnected so UI shows setup instructions
+    if (/unauthorized|not configured/i.test(msg)) {
       return res.status(200).json({ connected: false, message: msg });
     }
     return res.status(500).json({ error: msg });

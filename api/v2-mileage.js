@@ -14,7 +14,7 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBouncieToken } from "./_bouncie.js";
+import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage } from "./_bouncie.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
@@ -90,29 +90,28 @@ export default async function handler(req, res) {
       return res.status(200).json({
         stats,
         alerts,
-        bouncie_configured: !!(await loadBouncieToken(sb)),
+        bouncie_configured: !!process.env.BOUNCIE_API_KEY,
       });
     }
 
     // ── SYNC ─────────────────────────────────────────────────────────────────
     if (action === "sync") {
-      const bouncieToken = await loadBouncieToken(sb);
-      if (!bouncieToken) {
+      if (!process.env.BOUNCIE_API_KEY) {
         return res.status(200).json({ skipped: true, reason: "Bouncie API key not configured — please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard to enable GPS mileage sync." });
       }
 
       const startedAt = Date.now();
 
       // Fetch tracked vehicles from DB and live data from Bouncie in parallel.
-      // `getBouncieVehicles(sb)` makes an external HTTP request and may throw when
-      // the token is expired or the Bouncie API is unreachable.  Catch that
+      // `getBouncieVehicles()` makes an external HTTP request and may throw when
+      // the API key is invalid or the Bouncie API is unreachable.  Catch that
       // failure separately so we can surface a clear, actionable message to the
       // admin instead of a generic 500.
       let trackedVehicles, bouncieVehicles;
       try {
         [trackedVehicles, bouncieVehicles] = await Promise.all([
           loadTrackedVehicles(sb),
-          getBouncieVehicles(sb),
+          getBouncieVehicles(),
         ]);
       } catch (bouncieErr) {
         console.error("v2-mileage sync: Bouncie/DB fetch failed:", bouncieErr.message);

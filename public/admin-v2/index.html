@@ -2871,7 +2871,7 @@ async function triggerBouncieSync(vehicleId) {
     const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
     if (result.bouncie_error) {
-      showToast('Bouncie sync error: ' + (result.reason || 'please reconnect Bouncie via the OAuth flow'), 'error');
+      showToast('Bouncie sync error: ' + (result.reason || 'please verify BOUNCIE_API_KEY is set in your Vercel dashboard'), 'error');
       return;
     } else if (synced) {
       showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
@@ -4410,20 +4410,14 @@ function renderBouncieAuthSection(status) {
             ⚠️ Bouncie GPS is not connected. Mileage sync is disabled.
           </p>
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
-            Click the button below to authorize SLY Rides to access your Bouncie account. You will be redirected to Bouncie and then returned here automatically.
+            To enable GPS mileage sync, add the <code>BOUNCIE_API_KEY</code> environment variable in your <strong>Vercel dashboard</strong> (Settings → Environment Variables), then redeploy the project.
           </p>
-          <a href="${API_BASE}/api/connect-gps?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
-            🔗 Connect Bouncie
-          </a>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
-            Mileage syncs automatically every 5 minutes via the Bouncie API. Token is stored securely in Supabase and refreshes automatically.
+            Mileage syncs automatically every 5 minutes via the Bouncie API using the <code>BOUNCIE_API_KEY</code> environment variable.
           </p>
-          <a href="${API_BASE}/api/connect-gps?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
-            🔄 Reconnect Bouncie
-          </a>
         </div>
         `}
       </div>
