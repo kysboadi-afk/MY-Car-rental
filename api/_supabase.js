@@ -13,14 +13,27 @@ import { createClient } from "@supabase/supabase-js";
  * so callers can gracefully fall back to default values.
  */
 export function getSupabaseAdmin() {
-  console.log("SUPABASE_URL:", process.env.SUPABASE_URL ? "OK" : "MISSING");
-  console.log("SUPABASE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "OK" : "MISSING");
-
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
 
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  console.log("SUPABASE_URL:", url ? "OK" : "MISSING");
+  console.log("SUPABASE_KEY:", key ? "OK" : "MISSING");
+
+  if (!url || !key) {
+    console.error("❌ Supabase env vars missing");
+    return null;
+  }
+
+  try {
+    const client = createClient(url, key, {
+      auth: {
+        persistSession: false,
+      },
+    });
+
+    return client;
+  } catch (err) {
+    console.error("❌ Supabase client init failed:", err);
+    return null;
+  }
 }
