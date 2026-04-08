@@ -1,116 +1,37 @@
 // api/_bouncie.js
 // Bouncie GPS API client helpers.
 //
-// Base URL : https://api.bouncie.com/v1
-// Auth     : Authorization: Bearer <token>
+// Base URL : https://api.bouncie.dev/v1
+// Auth     : Authorization: <BOUNCIE_API_KEY>
 //
-// Token source:
-//   bouncie_tokens Supabase table (written by /api/bouncie-callback after OAuth
-//   flow completes).  There is exactly one row (id = 1).
-//
-//   If the API returns 401, the stored refresh_token is exchanged for a new
-//   access_token via POST https://auth.bouncie.com/oauth/token, the new tokens
-//   are saved back, and the request is retried once automatically.
+// API key source:
+//   BOUNCIE_API_KEY environment variable (set in Vercel dashboard).
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
 
-const BOUNCIE_API = "https://api.bouncie.com/v1";
+const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
-function makeHeaders(token) {
-  // Strip any accidental "Bearer " prefix before re-adding it so the header is never doubled.
-  const cleanToken = token.replace(/^Bearer\s+/i, "");
+function makeHeaders(apiKey) {
   return {
-    Authorization: `Bearer ${cleanToken}`,
+    Authorization: apiKey,
     "Content-Type": "application/json",
   };
 }
 
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// ── API key helper ────────────────────────────────────────────────────────────
 
 /**
- * Resolve the Bouncie access token from the bouncie_tokens Supabase table.
+ * Return the Bouncie API key from the BOUNCIE_API_KEY environment variable.
  *
- * @param {object|null} [sb] - Supabase admin client (required; returns null when absent)
- * @returns {Promise<string|null>} access token or null if none found
+ * The `sb` parameter is accepted for backward-compatibility with existing
+ * callers but is no longer used — the API key is read from the environment.
+ *
+ * @param {object|null} [sb] - Supabase admin client (ignored; kept for compat)
+ * @returns {Promise<string|null>} API key or null if not configured
  */
 export async function loadBouncieToken(sb = null) {
-  if (!sb) return null;
-
-  const { data, error } = await sb
-    .from("bouncie_tokens")
-    .select("access_token")
-    .eq("id", 1)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Supabase error in loadBouncieToken:", error);
-    throw error;
-  }
-
-  return data?.access_token || null;
-}
-
-/**
- * Use the stored refresh_token to obtain a new access_token from Bouncie,
- * persist both tokens back to the bouncie_tokens table, and return the new
- * access_token.
- *
- * Requires BOUNCIE_CLIENT_ID and BOUNCIE_CLIENT_SECRET in the environment.
- *
- * @param {object} sb - Supabase admin client
- * @returns {Promise<string>} new access token
- */
-export async function refreshBouncieToken(sb) {
-  const { data: row } = await sb
-    .from("bouncie_tokens")
-    .select("refresh_token")
-    .eq("id", 1)
-    .maybeSingle();
-
-  if (!row?.refresh_token) {
-    throw new Error("No Bouncie refresh token found — please re-authorize via the OAuth flow from the admin dashboard.");
-  }
-
-  const body = new URLSearchParams({
-    grant_type:    "refresh_token",
-    refresh_token: row.refresh_token,
-    client_id:     process.env.BOUNCIE_CLIENT_ID,
-    client_secret: process.env.BOUNCIE_CLIENT_SECRET,
-  });
-
-  const tokenRes = await fetch("https://auth.bouncie.com/oauth/token", {
-    method:  "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-
-  if (!tokenRes.ok) {
-    const text = await tokenRes.text().catch(() => "");
-    throw new Error(`Bouncie token refresh failed: ${tokenRes.status} ${text}`);
-  }
-
-  const tokenData = await tokenRes.json();
-  const { access_token, refresh_token: newRefreshToken } = tokenData;
-
-  if (!access_token) {
-    throw new Error("Bouncie token refresh did not return an access_token.");
-  }
-
-  await sb.from("bouncie_tokens").upsert(
-    {
-      id:            1,
-      access_token,
-      refresh_token: newRefreshToken || row.refresh_token,
-      obtained_at:   new Date().toISOString(),
-      updated_at:    new Date().toISOString(),
-    },
-    { onConflict: "id" }
-  );
-
-  return access_token;
+  return process.env.BOUNCIE_API_KEY || null;
 }
 
 // ── Bouncie REST helpers ──────────────────────────────────────────────────────
@@ -118,54 +39,19 @@ export async function refreshBouncieToken(sb) {
 /**
  * Fetch all vehicles from the Bouncie API with their current stats.
  *
- * Token is read from the bouncie_tokens Supabase table.  If the API returns
- * 401 the refresh token is used to obtain a new access token (stored back to
- * Supabase) and the request is retried once automatically.
+ * The API key is read from the BOUNCIE_API_KEY environment variable.
  *
- * @param {object|null} [sb] - Supabase admin client (required for token lookup)
+ * @param {object|null} [sb] - Supabase admin client (accepted for compat; not used)
  * @returns {Promise<Array>}
  */
 export async function getBouncieVehicles(sb = null) {
-  const token = await loadBouncieToken(sb);
-  if (!token) throw new Error("No Bouncie access token found in the database. Please complete the OAuth flow from the admin dashboard to connect your Bouncie account.");
+  const apiKey = await loadBouncieToken(sb);
+  if (!apiKey) throw new Error("No Bouncie API key found. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard.");
 
-  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(token) });
-
-  // Token expired — attempt automatic refresh and retry once.
-  if ((resp.status === 401 || resp.status === 403) && sb) {
-    let newToken;
-    try {
-      newToken = await refreshBouncieToken(sb);
-      console.log("Bouncie token refreshed successfully");
-      console.log("New token (first 10):", newToken.slice(0, 10));
-    } catch (refreshErr) {
-      throw new Error(`Token refresh failed: ${refreshErr.message}`);
-    }
-
-    console.log("Using token:", newToken.slice(0, 15));
-
-    const retryResp = await fetch(`${BOUNCIE_API}/vehicles`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${newToken}`,
-        "Content-Type": "application/json"
-      }
-    });
-
-    console.log("Retry status:", retryResp.status);
-
-    const retryText = await retryResp.text();
-    console.log("Retry response body:", retryText);
-
-    if (!retryResp.ok) {
-      throw new Error(`Retry failed: ${retryResp.status} ${retryText}`);
-    }
-
-    return JSON.parse(retryText);
-  }
+  const resp = await fetch(`${BOUNCIE_API}/vehicles`, { headers: makeHeaders(apiKey) });
 
   if (resp.status === 401 || resp.status === 403) {
-    throw new Error(`Bouncie API: ${resp.status} Unauthorized — please re-authorize via the OAuth flow from the admin dashboard.`);
+    throw new Error(`Bouncie API: ${resp.status} Unauthorized — please verify your BOUNCIE_API_KEY is correct.`);
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");

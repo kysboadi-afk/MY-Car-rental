@@ -38,7 +38,7 @@ export default async function handler(req, res) {
       configured,
       message: configured
         ? "Bouncie is connected. Mileage sync is active."
-        : "Bouncie is not connected. Please complete the OAuth flow to enable GPS mileage sync.",
+        : "Bouncie is not connected. Please set the BOUNCIE_API_KEY environment variable in your Vercel dashboard to enable GPS mileage sync.",
     });
   } catch (err) {
     return res.status(500).json({ error: adminErrorMessage(err) });
