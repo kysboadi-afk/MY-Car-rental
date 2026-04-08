@@ -21,6 +21,10 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
+export const config = {
+  runtime: "nodejs",
+};
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Maximum retries when Bouncie API returns a transient error

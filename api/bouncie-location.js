@@ -18,6 +18,10 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { getBouncieVehicles, loadTrackedVehicles, loadBouncieToken } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
+export const config = {
+  runtime: "nodejs",
+};
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 export default async function handler(req, res) {

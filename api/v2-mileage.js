@@ -18,6 +18,10 @@ import { getBouncieVehicles, loadTrackedVehicles, updateVehicleMileage, loadBoun
 import { analyzeMileage } from "../lib/ai/mileage.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
+export const config = {
+  runtime: "nodejs",
+};
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Maps serviceType param → DB column and JSONB key

@@ -1,7 +1,7 @@
 // api/_bouncie.js
 // Bouncie GPS API client helpers.
 //
-// Base URL : https://api.bouncie.dev/v1
+// Base URL : https://api.bouncie.com/v1
 // Auth     : Authorization: Bearer <token>
 //
 // Token source:
@@ -15,7 +15,7 @@
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
 // Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
 
-const BOUNCIE_API = "https://api.bouncie.dev/v1";
+const BOUNCIE_API = "https://api.bouncie.com/v1";
 
 function makeHeaders(token) {
   // Strip any accidental "Bearer " prefix before re-adding it so the header is never doubled.
