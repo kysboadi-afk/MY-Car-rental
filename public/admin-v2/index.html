@@ -4412,7 +4412,7 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
             Click the button below to authorize SLY Rides to access your Bouncie account. You will be redirected to Bouncie and then returned here automatically.
           </p>
-          <a href="${API_BASE}/api/bouncie-connect?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
             🔗 Connect Bouncie
           </a>
         </div>
@@ -4421,7 +4421,7 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
             Mileage syncs automatically every 5 minutes via the Bouncie API. Token is stored securely in Supabase and refreshes automatically.
           </p>
-          <a href="${API_BASE}/api/bouncie-connect?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">
             🔄 Reconnect Bouncie
           </a>
         </div>
