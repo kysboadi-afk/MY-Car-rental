@@ -3,7 +3,7 @@
 //
 // Base URL : https://api.bouncie.com/v1
 // Auth     : OAuth 2.0 — access token stored in the bouncie_tokens Supabase table.
-//            Tokens are obtained via /api/bouncie-connect → /api/bouncie-callback.
+//            Tokens are obtained via /api/connectBouncie → /api/bouncieCallback.
 //            A 401 response from the Bouncie API triggers an automatic token refresh.
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
@@ -74,7 +74,7 @@ async function refreshAccessToken(currentRefreshToken) {
 export async function getBouncieVehicles() {
   const tokenData = await getToken();
   if (!tokenData?.access_token) {
-    throw new Error("Bouncie is not connected. Please visit /api/bouncie-connect to authorize.");
+    throw new Error("Bouncie is not connected. Please visit /api/connectBouncie to authorize.");
   }
 
   let accessToken = tokenData.access_token;
@@ -208,7 +208,7 @@ export default async function handler(req, res) {
     "<!DOCTYPE html><html><head><title>Bouncie</title></head>" +
     "<body style='font-family:sans-serif;padding:2rem'>" +
     "<h2>ℹ️ Bouncie — OAuth Authentication</h2>" +
-    "<p>To connect Bouncie GPS sync, visit <a href='/api/bouncie-connect'>/api/bouncie-connect</a>.</p>" +
+    "<p>To connect Bouncie GPS sync, visit <a href='/api/connectBouncie'>/api/connectBouncie</a>.</p>" +
     "</body></html>"
   );
 }

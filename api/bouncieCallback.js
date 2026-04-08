@@ -1,10 +1,10 @@
-// api/bouncie-callback.js
+// api/bouncieCallback.js
 // Handles the Bouncie OAuth 2.0 callback after user authorization.
 //
 // Exchanges the authorization code for access + refresh tokens and stores
 // them in the bouncie_tokens Supabase table (singleton row id=1).
 //
-// GET /api/bouncie-callback?code=<authorization_code>
+// GET /api/bouncieCallback?code=<authorization_code>
 //
 // Required env vars:
 //   BOUNCIE_CLIENT_ID
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const redirectUri  = "https://sly-rides.vercel.app/api/bouncie-callback";
+  const redirectUri  = "https://sly-rides.vercel.app/api/bouncieCallback";
 
   const response = await fetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
