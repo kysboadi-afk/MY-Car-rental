@@ -2,7 +2,7 @@
 // Bouncie GPS API client helpers.
 //
 // Base URL : https://api.bouncie.dev/v1
-// Auth     : Authorization: <BOUNCIE_API_KEY>
+// Auth     : Authorization: Bearer <BOUNCIE_API_KEY>
 //
 // API key source:
 //   BOUNCIE_API_KEY environment variable (set in Vercel dashboard).
@@ -14,7 +14,7 @@ const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
 function makeHeaders() {
   return {
-    Authorization: process.env.BOUNCIE_API_KEY,
+    Authorization: `Bearer ${process.env.BOUNCIE_API_KEY}`,
     "Content-Type": "application/json",
   };
 }
