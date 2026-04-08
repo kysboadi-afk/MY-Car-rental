@@ -74,17 +74,14 @@ export async function refreshBouncieToken(sb) {
   const body = new URLSearchParams({
     grant_type:    "refresh_token",
     refresh_token: row.refresh_token,
+    client_id:     process.env.BOUNCIE_CLIENT_ID,
+    client_secret: process.env.BOUNCIE_CLIENT_SECRET,
   });
-
-  const clientId     = process.env.BOUNCIE_CLIENT_ID;
-  const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const basicAuth    = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
   const tokenRes = await fetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": `Basic ${basicAuth}`,
     },
     body: body.toString(),
   });
