@@ -39,7 +39,14 @@ export default async function handler(req, res) {
     }
 
     // Check whether an OAuth token row exists in the bouncie_tokens table.
-    // A present token means the user completed the OAuth flow successfully.
+    // id=1 is the singleton row used by this single-tenant system.
+    //
+    // We check token existence rather than making a live Bouncie API call.
+    // A live call can fail for reasons unrelated to the OAuth connection (e.g.
+    // no enrolled vehicles, Bouncie API downtime) and would incorrectly report
+    // "Not Connected" even when the credentials are valid.  If the stored token
+    // is expired it will be auto-refreshed by refreshAccessToken() on first use
+    // (mileage sync / GPS tracking).
     const { data, error } = await sb
       .from("bouncie_tokens")
       .select("access_token, updated_at")
