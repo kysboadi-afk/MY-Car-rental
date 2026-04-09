@@ -56,20 +56,30 @@ export default async function handler(req, res) {
   }
 
   // ── Resolve IMEI → our vehicle_id ─────────────────────────────────────────
-  // Look up directly by bouncie_device_id column; slingshots never have one so
-  // they are naturally excluded.
+  // Look up by the dedicated bouncie_device_id column first; fall back to the
+  // data JSONB for rows where the IMEI was stored before the column existed.
   const { data: vehicleRow } = await sb
     .from("vehicles")
     .select("vehicle_id")
     .eq("bouncie_device_id", imei)
     .maybeSingle();
 
-  if (!vehicleRow) {
+  let resolvedRow = vehicleRow;
+  if (!resolvedRow) {
+    const { data: jsonbRow } = await sb
+      .from("vehicles")
+      .select("vehicle_id")
+      .filter("data->>bouncie_device_id", "eq", imei)
+      .maybeSingle();
+    resolvedRow = jsonbRow;
+  }
+
+  if (!resolvedRow) {
     // Unknown IMEI — accept with 200 to prevent retries
     return res.status(200).json({ received: true, stored: false, reason: "unknown IMEI" });
   }
 
-  const vehicleId = vehicleRow.vehicle_id;
+  const vehicleId = resolvedRow.vehicle_id;
 
   try {
     switch (eventType) {

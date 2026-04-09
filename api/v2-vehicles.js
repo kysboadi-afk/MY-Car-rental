@@ -88,14 +88,14 @@ export default async function handler(req, res) {
               vehicle_id: row.vehicle_id,
               ...(row.data || {}),
               rental_status:             row.rental_status             || null,
-              bouncie_device_id:         row.bouncie_device_id         || null,
+              bouncie_device_id:         row.bouncie_device_id         || row.data?.bouncie_device_id || null,
               total_mileage:             Number(row.mileage)           || 0,
               last_synced_at:            row.last_synced_at            || null,
               last_oil_change_mileage:   row.last_oil_change_mileage   != null ? Number(row.last_oil_change_mileage)   : null,
               last_brake_check_mileage:  row.last_brake_check_mileage  != null ? Number(row.last_brake_check_mileage)  : null,
               last_tire_change_mileage:  row.last_tire_change_mileage  != null ? Number(row.last_tire_change_mileage)  : null,
               // tracked = true when a Bouncie IMEI is assigned (independent of rental status)
-              tracked: !!row.bouncie_device_id,
+              tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
             };
             if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
             return obj;
@@ -170,13 +170,13 @@ export default async function handler(req, res) {
             if (!scopeFilter(type)) continue;
             vehicles[row.vehicle_id] = {
               ...(row.data || {}),
-              bouncie_device_id:        row.bouncie_device_id        || null,
+              bouncie_device_id:        row.bouncie_device_id        || row.data?.bouncie_device_id || null,
               total_mileage:            Number(row.mileage)          || 0,
               last_synced_at:           row.last_synced_at           || null,
               last_oil_change_mileage:  row.last_oil_change_mileage  != null ? Number(row.last_oil_change_mileage)  : null,
               last_brake_check_mileage: row.last_brake_check_mileage != null ? Number(row.last_brake_check_mileage) : null,
               last_tire_change_mileage: row.last_tire_change_mileage != null ? Number(row.last_tire_change_mileage) : null,
-              tracked: !!row.bouncie_device_id,
+              tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
             };
           }
           return res.status(200).json({ vehicles });
