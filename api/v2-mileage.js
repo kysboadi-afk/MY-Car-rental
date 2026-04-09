@@ -11,6 +11,10 @@
 //                    Body: { vehicleId, serviceType: "oil"|"brakes"|"tires", mileage? }
 //                    When serviceType is omitted, all three service records are updated
 //                    (backward-compatible behaviour).
+//   driver_report  — per-driver mileage summary aggregated from the trips table
+//                    Body: { start_date?, end_date?, driver_phone? }
+//                    Returns: [{ driver_name, driver_phone, total_miles, trip_count,
+//                                vehicle_ids, last_trip_at }]
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -234,6 +238,175 @@ export default async function handler(req, res) {
         vehicleId,
         serviceType:  serviceType || "all",
         service_mileage: serviceMileage,
+      });
+    }
+
+    // ── DRIVER REPORT ─────────────────────────────────────────────────────────
+    if (action === "driver_report") {
+      const { start_date, end_date, driver_phone: filterPhone } = body;
+
+      // Default lookback window — 30 days when no dates provided
+      const DEFAULT_REPORT_DAYS = 30;
+      const endTs   = end_date   ? new Date(end_date   + "T23:59:59Z") : new Date();
+      const startTs = start_date ? new Date(start_date + "T00:00:00Z") : new Date(endTs.getTime() - DEFAULT_REPORT_DAYS * 86400_000);
+
+      if (isNaN(startTs.getTime()) || isNaN(endTs.getTime())) {
+        return res.status(400).json({ error: "Invalid start_date or end_date — use YYYY-MM-DD format" });
+      }
+      if (endTs < startTs) {
+        return res.status(400).json({ error: "end_date must be on or after start_date" });
+      }
+
+      // ── 1. Query trips rows in the date window ──────────────────────────────
+      // Include booking_id so we can cross-reference active-booking list below.
+      let tripsQuery = sb
+        .from("trips")
+        .select("driver_name, driver_phone, vehicle_id, booking_id, distance, start_mileage, end_mileage, created_at")
+        .gte("created_at", startTs.toISOString())
+        .lte("created_at", endTs.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (filterPhone) {
+        tripsQuery = tripsQuery.eq("driver_phone", String(filterPhone).trim());
+      }
+
+      const { data: tripRows, error: tripErr } = await tripsQuery;
+      if (tripErr) throw new Error(`Supabase trips query failed: ${tripErr.message}`);
+
+      // ── 2. Load currently active bookings ───────────────────────────────────
+      // These drivers may have a placeholder trips row (end_mileage=null) created
+      // on activation, OR they may have no trips row at all (pre-deployment).
+      // Either way we need live vehicle odometer to compute current miles.
+      let activeBookingsQuery = sb
+        .from("bookings")
+        .select("booking_ref, vehicle_id, customer_name, customer_phone, activated_at");
+      activeBookingsQuery = activeBookingsQuery.eq("status", "active");
+      if (filterPhone) {
+        activeBookingsQuery = activeBookingsQuery.eq("customer_phone", String(filterPhone).trim());
+      }
+      const { data: activeBookings } = await activeBookingsQuery;
+
+      // ── 3. Fetch current odometer for all vehicles with active rentals ───────
+      const activeVehicleIds = [...new Set(
+        (activeBookings || []).map((b) => b.vehicle_id).filter(Boolean)
+      )];
+      const vehicleOdoMap = {};
+      if (activeVehicleIds.length > 0) {
+        const { data: vRows } = await sb
+          .from("vehicles")
+          .select("vehicle_id, mileage")
+          .in("vehicle_id", activeVehicleIds);
+        for (const v of vRows || []) {
+          vehicleOdoMap[v.vehicle_id] = Number(v.mileage) || 0;
+        }
+      }
+
+      // Set of booking_refs covered by active bookings (for fast lookup)
+      const activeBookingRefs = new Set(
+        (activeBookings || []).map((b) => b.booking_ref).filter(Boolean)
+      );
+      // Set of booking_ids already present in our trips query result
+      const tripBookingIds = new Set(
+        (tripRows || []).map((r) => r.booking_id).filter(Boolean)
+      );
+
+      // ── 4. Aggregate per driver ─────────────────────────────────────────────
+      const driverMap = {};
+
+      for (const row of tripRows || []) {
+        const isActive = activeBookingRefs.has(row.booking_id) && row.end_mileage == null;
+
+        let miles;
+        if (row.distance != null) {
+          miles = Number(row.distance);
+        } else if (row.end_mileage != null && row.start_mileage != null) {
+          miles = Math.max(0, Number(row.end_mileage) - Number(row.start_mileage));
+        } else if (isActive && row.start_mileage != null) {
+          // In-progress rental: compute live miles as current_odometer − start_mileage
+          const currentOdo = vehicleOdoMap[row.vehicle_id] || 0;
+          miles = Math.max(0, currentOdo - Number(row.start_mileage));
+        } else {
+          miles = 0;
+        }
+
+        const key = row.driver_phone || row.driver_name || "unknown";
+        if (!driverMap[key]) {
+          driverMap[key] = {
+            driver_name:   row.driver_name  || null,
+            driver_phone:  row.driver_phone || null,
+            total_miles:   0,
+            trip_count:    0,
+            vehicle_ids:   new Set(),
+            last_trip_at:  null,
+            is_active:     false,
+            miles_live:    false, // true when at least one in-progress trip was estimated
+          };
+        }
+        const entry = driverMap[key];
+        entry.total_miles  += miles;
+        entry.trip_count   += 1;
+        if (row.vehicle_id) entry.vehicle_ids.add(row.vehicle_id);
+        if (!entry.last_trip_at || row.created_at > entry.last_trip_at) {
+          entry.last_trip_at = row.created_at;
+        }
+        if (isActive) {
+          entry.is_active = true;
+          if (row.start_mileage != null && row.distance == null) entry.miles_live = true;
+        }
+      }
+
+      // ── 5. Add active bookings with no trips row yet ────────────────────────
+      // Drivers who were in a rental before this feature was deployed won't have
+      // a trips row.  Surface them so they are visible and mark them active.
+      for (const ab of activeBookings || []) {
+        if (tripBookingIds.has(ab.booking_ref)) continue; // already in driverMap via trips
+
+        const key = ab.customer_phone || ab.customer_name || "unknown";
+        if (!driverMap[key]) {
+          driverMap[key] = {
+            driver_name:  ab.customer_name  || null,
+            driver_phone: ab.customer_phone || null,
+            total_miles:  0,
+            trip_count:   0,
+            vehicle_ids:  new Set(),
+            last_trip_at: ab.activated_at || null,
+            is_active:    true,
+            miles_live:   false, // start odometer unknown — can't compute live miles
+          };
+        }
+        const entry = driverMap[key];
+        entry.is_active = true;
+        if (ab.vehicle_id) entry.vehicle_ids.add(ab.vehicle_id);
+        if (!entry.last_trip_at || (ab.activated_at && ab.activated_at > entry.last_trip_at)) {
+          entry.last_trip_at = ab.activated_at || null;
+        }
+      }
+
+      // ── 6. Serialize and sort: active drivers first, then by miles desc ──────
+      const drivers = Object.values(driverMap)
+        .map((d) => ({
+          driver_name:  d.driver_name,
+          driver_phone: d.driver_phone,
+          total_miles:  Math.round(d.total_miles * 10) / 10,
+          trip_count:   d.trip_count,
+          vehicle_ids:  Array.from(d.vehicle_ids),
+          last_trip_at: d.last_trip_at,
+          is_active:    d.is_active,
+          miles_live:   d.miles_live,
+        }))
+        .sort((a, b) => {
+          if (a.is_active !== b.is_active) return a.is_active ? -1 : 1; // active first
+          return b.total_miles - a.total_miles;
+        });
+
+      return res.status(200).json({
+        drivers,
+        start_date:    startTs.toISOString().slice(0, 10),
+        end_date:      endTs.toISOString().slice(0, 10),
+        total_drivers: drivers.length,
+        active_count:  drivers.filter((d) => d.is_active).length,
+        total_trips:   drivers.reduce((s, d) => s + d.trip_count, 0),
+        total_miles:   Math.round(drivers.reduce((s, d) => s + d.total_miles, 0) * 10) / 10,
       });
     }
 

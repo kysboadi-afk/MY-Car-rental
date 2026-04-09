@@ -47,6 +47,13 @@ const ESCALATION_DELAY_MS = 48 * 60 * 60 * 1000; // 48 hours
 const SCHEDULE_REMINDER_HOURS = Math.max(1, Number(process.env.MAINT_SCHEDULE_HOURS) || 24);
 const SCHEDULE_REMINDER_MS    = SCHEDULE_REMINDER_HOURS * 60 * 60 * 1000;
 
+// Daily mileage threshold per driver — alerts owner when exceeded within 24 h.
+// Configurable via DRIVER_MILEAGE_THRESHOLD_DAILY env var (default: 200 miles/day).
+const DRIVER_MILEAGE_THRESHOLD_DAILY = Math.max(
+  1,
+  Number(process.env.DRIVER_MILEAGE_THRESHOLD_DAILY) || 200
+);
+
 // Base URL for owner/admin quick-service links (NOT sent to customers)
 const SITE_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -334,7 +341,73 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 4. Persist dedup marks + booking patches atomically ─────────────────
+    // ── 4. Per-driver daily mileage excess alerts ────────────────────────────
+    // Sum GPS trip_log distances from the last 24 h for each vehicle that has
+    // an active booking.  When a driver's daily total exceeds
+    // DRIVER_MILEAGE_THRESHOLD_DAILY, the fleet owner is alerted by SMS.
+    //
+    // Deduplication key: "driver_mileage_alert" stored in booking.smsSentAt.
+    // One alert is sent per booking per 24-hour window (cleared on a new day).
+    try {
+      const since24h = new Date(Date.now() - 86400_000).toISOString();
+      const activeVehicleIds = Object.keys(activeBookingByVehicle);
+
+      if (activeVehicleIds.length > 0) {
+        const { data: recentTrips } = await sb
+          .from("trip_log")
+          .select("vehicle_id, trip_distance, trip_at")
+          .in("vehicle_id", activeVehicleIds)
+          .gte("trip_at", since24h);
+
+        // Aggregate miles per vehicle over last 24 h
+        const milesBy = {};
+        for (const row of recentTrips || []) {
+          milesBy[row.vehicle_id] = (milesBy[row.vehicle_id] || 0) + (Number(row.trip_distance) || 0);
+        }
+
+        for (const [vid, dailyMiles] of Object.entries(milesBy)) {
+          if (dailyMiles < DRIVER_MILEAGE_THRESHOLD_DAILY) continue;
+
+          const booking     = activeBookingByVehicle[vid];
+          const bookingId   = booking.bookingId || booking.paymentIntentId;
+          const driverName  = booking.name  || "Unknown driver";
+          const driverPhone = booking.phone || "N/A";
+          const vehicleName = trackedVehicles.find((v) => v.vehicle_id === vid)?.data?.vehicle_name || vid;
+
+          // Dedup: only alert once per booking per 24-hour period
+          const alertKey   = "driver_mileage_alert";
+          const lastSentAt = booking.smsSentAt?.[alertKey];
+          if (lastSentAt && (Date.now() - new Date(lastSentAt).getTime()) < 86400_000) continue;
+
+          const msg =
+            `⚠️ High mileage alert: ${driverName} drove ${Math.round(dailyMiles)} mi in 24h ` +
+            `on ${vehicleName} (threshold: ${DRIVER_MILEAGE_THRESHOLD_DAILY} mi/day). ` +
+            `Booking: ${bookingId}. Driver phone: ${driverPhone}.`;
+
+          const smsSent = await safeSendSms(OWNER_PHONE, msg);
+          await sendOwnerAlertEmail(
+            `⚠️ High Daily Mileage — ${driverName} / ${vehicleName}`,
+            `<p>⚠️ A driver has exceeded the daily mileage threshold.</p>
+<p><strong>Driver:</strong> ${driverName}</p>
+<p><strong>Driver phone:</strong> ${driverPhone}</p>
+<p><strong>Vehicle:</strong> ${vehicleName}</p>
+<p><strong>Miles driven (last 24 h):</strong> ${Math.round(dailyMiles).toLocaleString()} mi</p>
+<p><strong>Threshold:</strong> ${DRIVER_MILEAGE_THRESHOLD_DAILY.toLocaleString()} mi/day</p>
+<p><strong>Booking ID:</strong> ${bookingId}</p>
+<p>Please review driver behavior and vehicle condition.</p>`
+          );
+
+          if (smsSent) {
+            sentMarks.push({ vehicleId: vid, id: bookingId, key: alertKey });
+            alertsSent++;
+          }
+        }
+      }
+    } catch (driverAlertErr) {
+      console.warn("maintenance-alerts: driver daily mileage check failed (non-fatal):", driverAlertErr.message);
+    }
+
+    // ── 5. Persist dedup marks + booking patches atomically ─────────────────
     if ((sentMarks.length > 0 || bookingUpdates.length > 0) && process.env.GITHUB_TOKEN) {
       try {
         await updateJsonFileWithRetry({

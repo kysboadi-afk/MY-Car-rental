@@ -478,6 +478,68 @@ export default async function handler(req, res) {
             console.error("v2-bookings: booking confirmation SMS failed (non-fatal):", smsErr.message);
           }
         }
+
+        // ── Capture start odometer on rental activation (non-fatal) ───────────
+        // Reads the current vehicle mileage (synced by the bouncie-sync cron every
+        // 5 minutes) and writes a placeholder trips record so the driver's start
+        // odometer is preserved even before GPS trip_log data accumulates.
+        // Idempotent: skips the insert when a placeholder already exists for this
+        // booking_id (e.g. created by migration 0040 for pre-deployment rentals).
+        if (newStatus === "active_rental" && updatedBooking.vehicleId) {
+          try {
+            const sb = getSupabaseAdmin();
+            if (sb) {
+              // Guard: only insert if no trips row already exists for this booking
+              const { data: existingStart } = await sb
+                .from("trips")
+                .select("id")
+                .eq("booking_id", updatedBooking.bookingId)
+                .is("end_mileage", null)
+                .limit(1)
+                .maybeSingle();
+
+              if (!existingStart) {
+                const { data: vRow } = await sb
+                  .from("vehicles")
+                  .select("mileage")
+                  .eq("vehicle_id", updatedBooking.vehicleId)
+                  .maybeSingle();
+
+                const startOdo = vRow?.mileage != null ? Number(vRow.mileage) : null;
+
+                const { error: startTripErr } = await sb.from("trips").insert({
+                  vehicle_id:    updatedBooking.vehicleId,
+                  booking_id:    updatedBooking.bookingId,
+                  start_mileage: startOdo,
+                  end_mileage:   null,
+                  distance:      null,
+                  driver_name:   updatedBooking.name  || null,
+                  driver_phone:  updatedBooking.phone || null,
+                });
+                if (startTripErr) {
+                  console.warn("v2-bookings: start mileage trips insert failed (non-fatal):", startTripErr.message);
+                } else {
+                  console.log(`v2-bookings: captured start odometer ${startOdo ?? "n/a"} mi for booking ${updatedBooking.bookingId}`);
+                }
+              } else {
+                // Placeholder already exists (from migration 0040) — ensure driver info is populated
+                const { error: patchErr } = await sb
+                  .from("trips")
+                  .update({
+                    driver_name:  updatedBooking.name  || null,
+                    driver_phone: updatedBooking.phone || null,
+                  })
+                  .eq("id", existingStart.id)
+                  .is("driver_name", null); // only patch if still empty
+                if (patchErr) {
+                  console.warn("v2-bookings: driver info patch on existing trips row failed (non-fatal):", patchErr.message);
+                }
+              }
+            }
+          } catch (startTripCatchErr) {
+            console.error("v2-bookings: start mileage capture failed (non-fatal):", startTripCatchErr.message);
+          }
+        }
       } else if (updatedBooking && newStatus === "completed_rental") {
         await autoUpsertCustomer(updatedBooking, true); // increment stats once on completion
         await autoUpsertBooking(updatedBooking);
@@ -504,15 +566,49 @@ export default async function handler(req, res) {
               ? Math.max(...endOdoRows.map((r) => Number(r.end_odometer)))
               : null;
 
-            // Insert booking-linked trip record (trips table — migration 0030)
-            const { error: tripErr } = await sb.from("trips").insert({
-              vehicle_id:   updatedBooking.vehicleId,
-              booking_id:   updatedBooking.bookingId,
-              start_mileage: null,          // start odometer not directly stored on booking
-              end_mileage:  endOdo,
-              distance:     distance > 0 ? distance : null,
-            });
-            if (tripErr) console.warn("v2-bookings: trips insert failed (non-fatal):", tripErr.message);
+            // ── Upsert booking-linked trip record (trips table — migration 0030) ──
+            // Check for a placeholder row inserted when the booking was activated.
+            // If found, update it with end mileage and driver info.
+            // If not found (e.g. booking was activated before this feature), insert fresh.
+            const { data: existingTrip } = await sb
+              .from("trips")
+              .select("id, start_mileage")
+              .eq("booking_id", updatedBooking.bookingId)
+              .is("end_mileage", null)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const startOdo = existingTrip?.start_mileage != null ? Number(existingTrip.start_mileage) : null;
+            // Prefer GPS-summed distance; fall back to odometer delta when start was captured
+            const finalDistance =
+              distance > 0
+                ? distance
+                : (startOdo != null && endOdo != null ? Math.max(0, endOdo - startOdo) : null);
+
+            if (existingTrip) {
+              const { error: tripErr } = await sb
+                .from("trips")
+                .update({
+                  end_mileage:  endOdo,
+                  distance:     finalDistance,
+                  driver_name:  updatedBooking.name  || null,
+                  driver_phone: updatedBooking.phone || null,
+                })
+                .eq("id", existingTrip.id);
+              if (tripErr) console.warn("v2-bookings: trips update failed (non-fatal):", tripErr.message);
+            } else {
+              const { error: tripErr } = await sb.from("trips").insert({
+                vehicle_id:    updatedBooking.vehicleId,
+                booking_id:    updatedBooking.bookingId,
+                start_mileage: null,
+                end_mileage:   endOdo,
+                distance:      finalDistance,
+                driver_name:   updatedBooking.name  || null,
+                driver_phone:  updatedBooking.phone || null,
+              });
+              if (tripErr) console.warn("v2-bookings: trips insert failed (non-fatal):", tripErr.message);
+            }
 
             // Update vehicle current_mileage (mileage column) when GPS data available
             if (endOdo) {
