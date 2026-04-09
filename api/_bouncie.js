@@ -1,7 +1,7 @@
 // api/_bouncie.js
 // Bouncie GPS API client helpers.
 //
-// Base URL : https://api.bouncie.com/v1
+// Base URL : https://api.bouncie.dev/v1
 // Auth     : OAuth 2.0 — access token stored in the bouncie_tokens Supabase table.
 //            Tokens are obtained via /api/connectBouncie → /api/bouncieCallback.
 //            A 401 response from the Bouncie API triggers an automatic token refresh.
@@ -11,7 +11,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const BOUNCIE_API = "https://api.bouncie.com/v1";
+const BOUNCIE_API = "https://api.bouncie.dev/v1";
 
 /** Wraps fetch so network-level failures carry Bouncie context for adminErrorMessage(). */
 async function bounciFetch(url, options) {
