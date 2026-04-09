@@ -4,6 +4,7 @@
 // Base URL : https://api.bouncie.dev/v1
 // Auth     : OAuth 2.0 — access token stored in the bouncie_tokens Supabase table.
 //            Tokens are obtained via /api/connectBouncie → /api/bouncieCallback.
+//            Bouncie expects `Authorization: <token>` (no "Bearer" prefix).
 //            A 401 response from the Bouncie API triggers an automatic token refresh.
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
@@ -89,13 +90,13 @@ export async function getBouncieVehicles() {
   let accessToken = tokenData.access_token;
 
   let resp = await bounciFetch(`${BOUNCIE_API}/vehicles`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: accessToken },
   });
 
   if (resp.status === 401) {
     accessToken = await refreshAccessToken(tokenData.refresh_token);
     resp = await bounciFetch(`${BOUNCIE_API}/vehicles`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: accessToken },
     });
   }
 
