@@ -58,14 +58,13 @@ export function adminErrorMessage(err) {
   // ── Bouncie API authentication failure ────────────────────────────────────
   // Must be checked before the generic 401/403 GitHub block because Bouncie
   // errors also contain status codes like "(401)" but are unrelated to GitHub.
-  // Only actual auth failures (401/403, "Unauthorized", or missing key) map
-  // to the auth message.  Other Bouncie errors (429, 5xx, etc.) fall through
-  // to the more appropriate rate-limit / fallback handlers below.
+  // Handles both missing/expired tokens (not configured) and actual auth
+  // failures (401/403 from the Bouncie API).
   if (
     /bouncie/i.test(raw) &&
     (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
   ) {
-    return "Bouncie authentication failed — please visit /api/connectBouncie to re-authorize the Bouncie integration.";
+    return "Bouncie is not connected — please go to System Settings and click 'Connect Bouncie' to authorize the GPS integration.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────
