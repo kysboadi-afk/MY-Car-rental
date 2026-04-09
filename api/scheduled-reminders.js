@@ -358,7 +358,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
               ❌ Decline — Do Not Charge
             </a>
           </p>
-          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>
+          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>
           <p><strong>Sly Transportation Services LLC 🚗</strong></p>
         `,
         text: [
@@ -371,7 +371,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
           `APPROVE & charge: ${approveUrl}`,
           `DECLINE (no charge): ${declineUrl}`,
           ``,
-          `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin.html`,
+          `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin-v2/`,
         ].join("\n"),
       });
       sent = true;

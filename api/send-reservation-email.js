@@ -1072,7 +1072,7 @@ export default async function handler(req, res) {
         <p style="font-size:13px;color:#555">
           <strong>📅 Calendar update:</strong> These dates are being automatically marked as unavailable on the booking calendar.
           If the calendar is not updated within a few minutes, use the
-          <a href="https://www.slytrans.com/admin.html?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
+          <a href="https://www.slytrans.com/admin-v2/?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
           to block them manually.
         </p>` : ""}
       `,
