@@ -65,7 +65,7 @@ export default async function handler(req, res) {
 
   if (upsertError) {
     return adminHtmlErrorPage(res, 500, "Token Storage Failed",
-      `Bouncie authorized successfully but the token could not be saved: ${upsertError.message}. Please try connecting again.`);
+      `Bouncie authorized successfully but the token could not be saved to the database: ${upsertError.message}. Check your Supabase configuration and ensure the bouncie_tokens table exists (run migration 0037).`);
   }
 
   res.redirect("https://www.slytrans.com/public/admin-v2/?bouncie=connected");
