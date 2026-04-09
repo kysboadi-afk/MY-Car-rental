@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const redirectUri  = "https://sly-rides.vercel.app/api/bouncieCallback";
+  const redirectUri  = process.env.BOUNCIE_REDIRECT_URI || "https://sly-rides.vercel.app/api/bouncieCallback";
 
   const response = await fetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
