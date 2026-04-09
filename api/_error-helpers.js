@@ -19,6 +19,45 @@
 //  11. Fallback
 
 /**
+ * Escapes characters that have special meaning in HTML.
+ * Used to prevent XSS when embedding strings in HTML responses.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Sends a human-readable HTML error page to the browser.
+ * Suitable for endpoints that are navigated to directly (OAuth flows, etc.)
+ * rather than endpoints called via fetch().
+ *
+ * @param {object} res         - Vercel/Node.js response object
+ * @param {number} status      - HTTP status code (e.g. 401, 503)
+ * @param {string} title       - Short error title (plain text, will be escaped)
+ * @param {string} body        - Longer description (plain text, will be escaped)
+ * @param {string} backUrl     - URL for the "Back" button
+ * @returns {object}           - The response object (for chaining / early return)
+ */
+export function adminHtmlErrorPage(res, status, title, body, backUrl = "https://www.slytrans.com/public/admin-v2/") {
+  return res.status(status).send(
+    `<!DOCTYPE html><html><head><title>${escHtml(title)}</title>` +
+    `<style>body{font-family:sans-serif;padding:2rem;max-width:560px;margin:auto}` +
+    `.btn{display:inline-block;margin-top:1.5rem;padding:.6rem 1.2rem;` +
+    `background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px}</style></head>` +
+    `<body><h2>⚠️ ${escHtml(title)}</h2><p>${escHtml(body)}</p>` +
+    `<a class="btn" href="${escHtml(backUrl)}">← Back to Admin Panel</a></body></html>`
+  );
+}
+
+/**
  * Returns true when the error is a Supabase/PostgreSQL "table or column not
  * found" error — indicating that Supabase migrations have not been applied yet.
  * Use this to decide whether to fall through to a GitHub-based fallback storage
