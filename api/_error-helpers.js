@@ -46,7 +46,7 @@ function escHtml(str) {
  * @param {string} backUrl     - URL for the "Back" button
  * @returns {object}           - The response object (for chaining / early return)
  */
-export function adminHtmlErrorPage(res, status, title, body, backUrl = "https://www.slytrans.com/public/admin-v2/") {
+export function adminHtmlErrorPage(res, status, title, body, backUrl = "https://www.slytrans.com/admin-v2/") {
   return res.status(status).send(
     `<!DOCTYPE html><html><head><title>${escHtml(title)}</title>` +
     `<style>body{font-family:sans-serif;padding:2rem;max-width:560px;margin:auto}` +
