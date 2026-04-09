@@ -748,6 +748,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Block Dates
       </a>
+      <a class="nav-item" data-page="driver-mileage" href="#" onclick="navigate('driver-mileage');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Driver Mileage
+      </a>
     </nav>
 
     <nav class="nav-section">
@@ -1397,18 +1401,12 @@
           <div class="form-section-title">Quick Links</div>
           <div class="form-grid one">
             <div class="form-group">
-              <label class="form-label">Legacy Admin</label>
-              <a href="../admin.html" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
+              <label class="form-label">Economy Admin Portal</label>
+              <a href="../admin-v2/" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                Open Legacy Admin
+                🚗 Open Economy Admin
               </a>
             </div>
-            <div class="form-group">
-              <label class="form-label">Slingshot Admin Portal</label>
-              <a href="../admin-slingshot/" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                🏍️ Open Slingshot Admin
-              </a>
             </div>
           </div>
         </div>
@@ -1626,6 +1624,52 @@
               <div style="font-size:14px;color:var(--text-sub);">No location data available. Vehicles may be parked with GPS signal unavailable, or Bouncie has not reported a location yet.</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- DRIVER MILEAGE REPORT PAGE -->
+      <div class="page" id="page-driver-mileage">
+        <div class="form-section" style="max-width:860px;">
+          <div class="form-section-title">🚦 Driver Mileage Report</div>
+          <p style="color:var(--text-sub);font-size:13px;margin-bottom:20px;">Miles driven per driver over a selected date range, based on completed rental trips.</p>
+
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:20px;">
+            <div>
+              <label class="form-label">Start Date</label>
+              <input type="text" class="form-input" id="dm-start-date" placeholder="YYYY-MM-DD" style="width:160px;">
+            </div>
+            <div>
+              <label class="form-label">End Date</label>
+              <input type="text" class="form-input" id="dm-end-date" placeholder="YYYY-MM-DD" style="width:160px;">
+            </div>
+            <div>
+              <label class="form-label">Driver Phone (optional)</label>
+              <input type="tel" class="form-input" id="dm-driver-phone" placeholder="+1…" style="width:160px;">
+            </div>
+            <button class="btn btn-primary" id="dm-load-btn" onclick="loadDriverMileage()">📊 Load Report</button>
+            <button class="btn btn-secondary" id="dm-export-btn" onclick="exportDriverMileageCsv()" disabled>⬇ Export CSV</button>
+          </div>
+
+          <div id="dm-summary" style="display:none;flex-wrap:wrap;gap:12px;margin-bottom:20px;"></div>
+
+          <div id="dm-table-wrap" style="display:none;overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">#</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Driver Name</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Phone</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Total Miles</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Trips</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Last Active</th>
+                  <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;font-weight:600;">Vehicles Used</th>
+                </tr>
+              </thead>
+              <tbody id="dm-table-body"></tbody>
+            </table>
+          </div>
+
+          <div id="dm-status-msg" style="display:none;margin-top:14px;padding:10px 14px;border-radius:8px;font-size:13px;"></div>
         </div>
       </div>
 
@@ -2156,6 +2200,7 @@ function navigate(page) {
     'protection-plans': 'Protection Plans',
     'system-settings':  'System Settings',
     'ai':               'AI Assistant',
+    'driver-mileage':   'Driver Mileage Report',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -2182,6 +2227,7 @@ function navigate(page) {
   else if (page === 'block-dates') loadBlockedDates();
   else if (page === 'settings') loadSiteContent();
   else if (page === 'ai') loadAiInsights();
+  else if (page === 'driver-mileage') initDriverMileagePage();
 }
 
 function refreshCurrentPage() {
@@ -5345,6 +5391,122 @@ async function loadAiInsights() {
     </div>
   </div>
 </div>
+
+// ── Driver Mileage Report ──────────────────────────────────────────────────
+let dmLastReport = null;
+let dmFlatpickrInit = false;
+
+function initDriverMileagePage() {
+  if (!dmFlatpickrInit && typeof flatpickr !== 'undefined') {
+    const today     = new Date();
+    const todayStr  = today.toISOString().slice(0, 10);
+    const thirtyAgo = new Date(today - 30 * 86400000).toISOString().slice(0, 10);
+    flatpickr('#dm-start-date', { dateFormat: 'Y-m-d', defaultDate: thirtyAgo });
+    flatpickr('#dm-end-date',   { dateFormat: 'Y-m-d', defaultDate: todayStr  });
+    dmFlatpickrInit = true;
+  }
+}
+
+async function loadDriverMileage() {
+  if (!adminSecret) { showDmMsg('Please sign in first.', 'error'); return; }
+  const startDate   = document.getElementById('dm-start-date').value.trim();
+  const endDate     = document.getElementById('dm-end-date').value.trim();
+  const driverPhone = document.getElementById('dm-driver-phone').value.trim();
+  const btn         = document.getElementById('dm-load-btn');
+
+  btn.disabled = true;
+  showDmMsg('Loading driver mileage report…', 'info');
+  document.getElementById('dm-summary').style.display    = 'none';
+  document.getElementById('dm-table-wrap').style.display = 'none';
+  document.getElementById('dm-export-btn').disabled      = true;
+
+  try {
+    const body = { secret: adminSecret, action: 'driver_report' };
+    if (startDate)   body.start_date   = startDate;
+    if (endDate)     body.end_date     = endDate;
+    if (driverPhone) body.driver_phone = driverPhone;
+
+    const data = await apiPost('/api/v2-mileage', body);
+    dmLastReport = data;
+    renderDriverMileageReport(data);
+    document.getElementById('dm-status-msg').style.display = 'none';
+    document.getElementById('dm-export-btn').disabled = false;
+  } catch (err) {
+    showDmMsg('❌ ' + (err.message || 'Request failed'), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderDriverMileageReport(data) {
+  const summary = document.getElementById('dm-summary');
+  summary.style.display = 'flex';
+  summary.innerHTML = [
+    `<div class="stat-card"><div class="stat-val">${data.total_drivers || 0}</div><div class="stat-lbl">Drivers</div></div>`,
+    `<div class="stat-card"><div class="stat-val">${data.total_trips || 0}</div><div class="stat-lbl">Trips</div></div>`,
+    `<div class="stat-card"><div class="stat-val">${(data.total_miles || 0).toLocaleString()}</div><div class="stat-lbl">Total Miles</div></div>`,
+    `<div class="stat-card" style="font-size:12px;color:var(--text-sub);min-width:100px;display:flex;align-items:center;justify-content:center;">${esc(data.start_date || '')} – ${esc(data.end_date || '')}</div>`,
+  ].join('');
+
+  const drivers = data.drivers || [];
+  if (!drivers.length) {
+    document.getElementById('dm-table-wrap').style.display = 'none';
+    showDmMsg('No trip records found for the selected period.', 'info');
+    return;
+  }
+
+  document.getElementById('dm-table-body').innerHTML = drivers.map((d, i) => {
+    const lastAt   = d.last_trip_at ? d.last_trip_at.slice(0, 10) : '–';
+    const vehicles = (d.vehicle_ids || []).join(', ') || '–';
+    return `<tr>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${i + 1}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);">${esc(d.driver_name || '–')}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${esc(d.driver_phone || '–')}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--primary);font-weight:600;">${(d.total_miles || 0).toLocaleString()} mi</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);">${d.trip_count || 0}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${esc(lastAt)}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;">${esc(vehicles)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('dm-table-wrap').style.display = 'block';
+}
+
+function exportDriverMileageCsv() {
+  if (!dmLastReport) return;
+  const drivers = dmLastReport.drivers || [];
+  const lines   = ['#,Driver Name,Phone,Total Miles,Trips,Last Active,Vehicles Used'];
+  drivers.forEach((d, i) => {
+    lines.push([
+      i + 1,
+      '"' + (d.driver_name  || '').replace(/"/g, '""') + '"',
+      '"' + (d.driver_phone || '').replace(/"/g, '""') + '"',
+      d.total_miles || 0,
+      d.trip_count  || 0,
+      d.last_trip_at ? d.last_trip_at.slice(0, 10) : '',
+      '"' + (d.vehicle_ids || []).join(', ').replace(/"/g, '""') + '"',
+    ].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `driver-mileage-${dmLastReport.start_date || 'report'}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function showDmMsg(msg, type) {
+  const el = document.getElementById('dm-status-msg');
+  if (!el) return;
+  el.textContent   = msg;
+  el.style.display = 'block';
+  const styles = {
+    info:    'background:#2a1800;color:#f0b060;border:1px solid #4a2800;',
+    success: 'background:#1b3a1b;color:#4caf50;border:1px solid #2e5e2e;',
+    error:   'background:#3a1b1b;color:#f44336;border:1px solid #5e2e2e;',
+  };
+  el.style.cssText += styles[type] || styles.info;
+  if (type !== 'info') setTimeout(() => { el.style.display = 'none'; }, 6000);
+}
 
 </body>
 </html>

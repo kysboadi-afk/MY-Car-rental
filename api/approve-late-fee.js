@@ -111,7 +111,7 @@ export default async function handler(req, res) {
     return res.status(401).send(htmlPage(
       "Link Expired", "#c62828", "⏰ Link expired or invalid",
       `<p>This approval link has expired (links are valid for 24 hours) or is invalid.</p>
-       <p>You can still charge the customer manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>`
+       <p>You can still charge the customer manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 
@@ -125,14 +125,14 @@ export default async function handler(req, res) {
       `<h2>Late Fee Declined</h2>
        <p>You chose not to charge the late fee of <strong>$${esc(String(amount))}</strong> for booking <strong>${esc(bookingId)}</strong>.</p>
        <p>No charge was applied to the customer's card.</p>
-       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>`
+       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     );
 
     return res.status(200).send(htmlPage(
       "Declined", "#888", "✅ Late Fee Declined",
       `<p>No charge was applied to the customer's card.</p>
        <p>Booking: <strong>${esc(bookingId)}</strong></p>
-       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>`
+       <p>You can still charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 
@@ -195,14 +195,14 @@ export default async function handler(req, res) {
       `<h2>Late Fee Charge Failed</h2>
        <p>Attempted to charge <strong>$${esc(String(amount))}</strong> for booking <strong>${esc(bookingId)}</strong> — but Stripe returned an error:</p>
        <blockquote>${esc(err.message)}</blockquote>
-       <p>Please charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>`
+       <p>Please charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     );
 
     return res.status(200).send(htmlPage(
       "Charge Failed", "#c62828", "❌ Charge Failed",
       `<p>Stripe could not process the late fee for booking <strong>${esc(bookingId)}</strong>.</p>
        <p><em>${esc(err.message)}</em></p>
-       <p>Please charge manually from the <a href="https://www.slytrans.com/admin.html">Admin Panel</a>.</p>`
+       <p>Please charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }
 }
