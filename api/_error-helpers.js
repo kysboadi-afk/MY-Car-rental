@@ -126,6 +126,14 @@ export function adminErrorMessage(err) {
     return "API rate limit exceeded — please wait a moment and try again.";
   }
 
+  // ── Bouncie API network / connectivity failure ─────────────────────────────
+  // Distinct from the auth-failure check above: the Bouncie fetch helpers in
+  // _bouncie.js rethrow network-level errors with "Bouncie API unreachable:"
+  // so they land here rather than in the generic network bucket.
+  if (/bouncie/i.test(raw) && /fetch failed|unreachable|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(raw)) {
+    return "Could not reach the Bouncie GPS API — please check that Bouncie is operational and try again.";
+  }
+
   // ── Network / DNS / connection errors ──────────────────────────────────────
   if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(raw)) {
     return "Could not reach the data store API — please check network connectivity and try again.";
