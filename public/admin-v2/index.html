@@ -2802,6 +2802,12 @@ function initGpsMap(vehicles) {
   const mapEl = document.getElementById('gps-map');
   if (!mapEl) return;
 
+  // Guard: Leaflet may fail to load from CDN (network error or SRI mismatch).
+  if (typeof L === 'undefined') {
+    mapEl.innerHTML = '<p style="padding:16px;color:var(--text-sub);font-size:13px;">⚠️ Map unavailable — the Leaflet library could not be loaded. Check your internet connection or try refreshing the page.</p>';
+    return;
+  }
+
   // Destroy previous instance if it exists
   destroyGpsMap();
 
