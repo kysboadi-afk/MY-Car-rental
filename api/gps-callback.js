@@ -1,4 +1,11 @@
 // api/gps-callback.js
-// Forwards Bouncie OAuth callback to the canonical bouncieCallback handler.
+// GPS / Bouncie OAuth callback alias — forwards to the shared implementation.
+//
+// NOTE: Vercel cannot bundle ESM re-exports (export { default } from "...")
+// into serverless functions — each route file must define its own handler.
 
-export { default } from "./bouncieCallback.js";
+import handleBouncieCallback from "./_handle-bouncie-callback.js";
+
+export default async function handler(req, res) {
+  return handleBouncieCallback(req, res);
+}
