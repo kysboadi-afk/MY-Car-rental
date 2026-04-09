@@ -45,12 +45,13 @@ export default async function handler(req, res) {
     });
   }
 
-  // Fetch all vehicles with a Bouncie IMEI assigned — bouncie_device_id is the
-  // canonical tracking signal (is_tracked may lag behind the IMEI column).
+  // Fetch all vehicles with a Bouncie IMEI assigned — prefer the dedicated
+  // bouncie_device_id column but also include is_tracked=true rows whose IMEI
+  // may only be stored in the data JSONB (legacy write path).
   const { data: trackedData, error: trackedError } = await sb
     .from("vehicles")
     .select("*")
-    .not("bouncie_device_id", "is", null);
+    .or("is_tracked.eq.true,bouncie_device_id.not.is.null");
 
   if (trackedError) {
     console.error("bouncie-sync: vehicles query failed:", trackedError.message);
@@ -63,7 +64,11 @@ export default async function handler(req, res) {
   }
 
   console.log("Tracked vehicles:", trackedData);
-  const trackedVehicles = trackedData || [];
+  // Normalize: fall back to data JSONB when the dedicated column is null.
+  const trackedVehicles = (trackedData || []).map((v) => ({
+    ...v,
+    bouncie_device_id: v.bouncie_device_id || v.data?.bouncie_device_id || null,
+  }));
 
   let bouncieVehicles;
   try {

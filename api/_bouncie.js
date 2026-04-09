@@ -128,7 +128,14 @@ export async function loadTrackedVehicles(sb) {
     throw error;
   }
 
-  return data || [];
+  // Normalize: if the dedicated column is null but the IMEI is stored in the
+  // data JSONB (written by the legacy update path before the column existed),
+  // fall back to the JSONB value so all downstream callers can rely on
+  // v.bouncie_device_id being populated whenever a device is assigned.
+  return (data || []).map((v) => ({
+    ...v,
+    bouncie_device_id: v.bouncie_device_id || v.data?.bouncie_device_id || null,
+  }));
 }
 
 /**

@@ -2022,6 +2022,9 @@ let editingSmsKey      = null;
 let currentPage   = 'dashboard';
 let revenueChart  = null;
 let bookingsChart = null;
+// Cache the last vehicleStats per vehicle so that sync re-renders don't need
+// to re-fetch the expensive v2-dashboard endpoint.
+let cachedVehicleStats = {};
 
 // AI assistant state
 let aiHistory      = [];   // { role, content }[] — conversation sent to backend
@@ -2438,6 +2441,7 @@ function showVehicleProfile(vehicleId) {
   apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
     .then((dash) => {
       const s = (dash.vehicleStats || {})[vehicleId] || {};
+      cachedVehicleStats[vehicleId] = s;
       renderVehicleProfile(vehicleId, v, s);
     })
     .catch((err) => {
@@ -2920,7 +2924,11 @@ async function triggerBouncieSync(vehicleId) {
     const latest = await apiPost('/api/v2-vehicles', { secret: adminSecret, action: 'list' });
     if (latest.vehicles && latest.vehicles[vehicleId]) {
       allVehicles[vehicleId] = latest.vehicles[vehicleId];
-      if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
+      if (currentPage === 'vehicle-profile') {
+        // Re-render directly using cached dashboard stats — avoids a slow
+        // v2-dashboard round-trip that would leave the profile at "Loading profile…".
+        renderVehicleProfile(vehicleId, allVehicles[vehicleId], cachedVehicleStats[vehicleId] || {});
+      }
     }
   } catch (err) {
     showToast('Sync failed: ' + err.message, 'error');
@@ -2971,7 +2979,7 @@ async function markVehicleServiced(vehicleId, serviceType) {
         for (const key of Object.values(colKeys)) allVehicles[vehicleId][key] = result.service_mileage;
       }
     }
-    if (currentPage === 'vehicle-profile') showVehicleProfile(vehicleId);
+    if (currentPage === 'vehicle-profile') renderVehicleProfile(vehicleId, allVehicles[vehicleId], cachedVehicleStats[vehicleId] || {});
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
   }
