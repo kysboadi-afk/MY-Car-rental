@@ -25,14 +25,14 @@ export default async function handler(req, res) {
 
   const response = await fetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body:    new URLSearchParams({
       client_id:     clientId,
       client_secret: clientSecret,
       grant_type:    "authorization_code",
       code,
       redirect_uri:  redirectUri,
-    }),
+    }).toString(),
   });
 
   const data = await response.json();

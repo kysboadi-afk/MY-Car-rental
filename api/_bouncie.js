@@ -32,18 +32,16 @@ async function getToken() {
 async function refreshAccessToken(currentRefreshToken) {
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
-  const basic        = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
   const res = await fetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
-    headers: {
-      Authorization:  `Basic ${basic}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
       grant_type:    "refresh_token",
       refresh_token: currentRefreshToken,
-    }),
+      client_id:     clientId,
+      client_secret: clientSecret,
+    }).toString(),
   });
 
   const data = await res.json();
