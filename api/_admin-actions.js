@@ -34,6 +34,7 @@ import { fetchBookedDates, hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
+import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -770,8 +771,15 @@ async function toolGetMileage() {
   }
 
   // Check if Bouncie OAuth token is stored in the bouncie_tokens table.
-  const { data: tokenRow } = await sb.from("bouncie_tokens").select("access_token").eq("id", 1).maybeSingle();
-  const bouncie_configured = !!(tokenRow?.access_token);
+  // Wrap in try/catch so a network error here doesn't propagate uncaught.
+  let bouncie_configured = false;
+  try {
+    const { data: tokenRow } = await sb.from("bouncie_tokens").select("access_token").eq("id", 1).maybeSingle();
+    bouncie_configured = !!(tokenRow?.access_token);
+  } catch (tokenErr) {
+    console.error("toolGetMileage: bouncie_tokens check error:", tokenErr.message);
+    // Non-fatal — continue with bouncie_configured = false
+  }
 
   // Load canonical vehicle names from the same source as the dashboard.
   // Non-fatal — falls back to the JSONB data field if unavailable.
@@ -808,7 +816,7 @@ async function toolGetMileage() {
         stats:              [],
         alerts:             [],
         bouncie_configured,
-        error:              vehicleResult.error.message,
+        error:              adminErrorMessage(vehicleResult.error),
       };
     }
 
@@ -871,6 +879,107 @@ async function toolGetMileage() {
     bouncie_configured,
   };
 }
+
+/**
+ * Real-time GPS tracking data for all Bouncie-tracked vehicles.
+ * Calls the Bouncie API directly — returns live location, speed, movement
+ * status, odometer, and last-sync timestamp for every tracked vehicle.
+ */
+async function toolGetGpsTracking() {
+  const sb = getSupabaseAdmin();
+  if (!sb) {
+    return {
+      connected: false,
+      message: "Database not configured — GPS tracking requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to be set in Vercel.",
+    };
+  }
+
+  // Fetch real-time data from Bouncie API.
+  let bouncieVehicles;
+  try {
+    bouncieVehicles = await getBouncieVehicles();
+  } catch (err) {
+    console.error("toolGetGpsTracking: Bouncie API error:", err.message);
+    return {
+      connected: false,
+      message: adminErrorMessage(err),
+    };
+  }
+
+  // Load tracked vehicles from DB so we can map IMEI → vehicle name/ID.
+  let trackedVehicles = [];
+  try {
+    trackedVehicles = await loadTrackedVehicles(sb);
+  } catch (err) {
+    console.error("toolGetGpsTracking: loadTrackedVehicles error:", err.message);
+    // Non-fatal — continue with Bouncie data only; names will fall back to IMEI.
+  }
+
+  // Build lookup maps: IMEI → DB vehicle record.
+  const imeiMap = {};
+  for (const v of trackedVehicles) {
+    if (v.bouncie_device_id) imeiMap[v.bouncie_device_id] = v;
+  }
+
+  // Build an entry for every tracked DB vehicle so vehicles with no GPS ping
+  // are still visible (with null location fields).
+  const vehicleMap = {};
+  for (const v of trackedVehicles) {
+    if (v.vehicle_type === "slingshot") continue;
+    vehicleMap[v.vehicle_id] = {
+      vehicle_id:   v.vehicle_id,
+      vehicle_name: v.vehicle_name || v.vehicle_id,
+      imei:         v.bouncie_device_id || null,
+      lat:          null,
+      lon:          null,
+      speed_mph:    null,
+      heading:      null,
+      is_moving:    false,
+      odometer:     typeof v.mileage === "number" ? v.mileage : null,
+      last_updated: null,
+      signal:       v.bouncie_device_id ? "no_signal" : "no_device",
+    };
+  }
+
+  // Enrich with live Bouncie data.
+  for (const bv of bouncieVehicles) {
+    const { imei, stats } = bv;
+    if (!imei) continue;
+    const dbVehicle = imeiMap[imei];
+    if (!dbVehicle) continue; // IMEI not in our fleet
+
+    const loc = stats?.location || {};
+    const vehicleId = dbVehicle.vehicle_id;
+
+    vehicleMap[vehicleId] = {
+      ...vehicleMap[vehicleId],
+      lat:          typeof loc.lat     === "number" ? loc.lat                : null,
+      lon:          typeof loc.lon     === "number" ? loc.lon                : null,
+      speed_mph:    typeof loc.speed   === "number" ? Math.round(loc.speed)  : null,
+      heading:      typeof loc.heading === "number" ? Math.round(loc.heading): null,
+      is_moving:    loc.isMoving ?? false,
+      odometer:     stats?.odometer ?? vehicleMap[vehicleId]?.odometer ?? null,
+      last_updated: stats?.lastUpdated ?? null,
+      signal:       loc.lat != null ? "ok" : "no_signal",
+    };
+  }
+
+  const vehicles = Object.values(vehicleMap);
+  const movingCount = vehicles.filter((v) => v.is_moving).length;
+  const noSignalCount = vehicles.filter((v) => v.signal === "no_signal").length;
+  const noDeviceCount = vehicles.filter((v) => v.signal === "no_device").length;
+
+  return {
+    connected:        true,
+    vehicle_count:    vehicles.length,
+    moving_count:     movingCount,
+    no_signal_count:  noSignalCount,
+    no_device_count:  noDeviceCount,
+    vehicles,
+    fetched_at:       new Date().toISOString(),
+  };
+}
+
 
 async function toolGetExpenses({ vehicleId, category } = {}) {
   const sb = getSupabaseAdmin();
@@ -2739,6 +2848,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "get_insights":             result = await toolGetInsights();                 break;
       case "get_fraud_report":         result = await toolGetFraudReport(args);          break;
       case "get_mileage":              result = await toolGetMileage();                  break;
+      case "get_gps_tracking":         result = await toolGetGpsTracking();              break;
       case "get_maintenance_status":   result = await toolGetMaintenanceStatus(args);    break;
       case "update_maintenance_status": result = await toolUpdateMaintenanceStatus();    break;
       case "mark_maintenance":         result = await toolMarkMaintenance(args);         break;
