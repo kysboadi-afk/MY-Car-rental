@@ -12,7 +12,8 @@
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY
 
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { adminHtmlErrorPage } from "./_error-helpers.js";
 
 export default async function handler(req, res) {
   const code = req.query.code;
@@ -23,36 +24,49 @@ export default async function handler(req, res) {
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
   const redirectUri  = process.env.BOUNCIE_REDIRECT_URI || "https://sly-rides.vercel.app/api/bouncieCallback";
 
-  const response = await fetch("https://auth.bouncie.com/oauth/token", {
-    method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body:    new URLSearchParams({
-      client_id:     clientId,
-      client_secret: clientSecret,
-      grant_type:    "authorization_code",
-      code,
-      redirect_uri:  redirectUri,
-    }).toString(),
-  });
+  let response;
+  try {
+    response = await fetch("https://auth.bouncie.com/oauth/token", {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body:    new URLSearchParams({
+        client_id:     clientId,
+        client_secret: clientSecret,
+        grant_type:    "authorization_code",
+        code,
+        redirect_uri:  redirectUri,
+      }).toString(),
+    });
+  } catch (fetchErr) {
+    return adminHtmlErrorPage(res, 502, "Bouncie Unreachable",
+      `Could not reach the Bouncie token endpoint: ${fetchErr.message}`);
+  }
 
   const data = await response.json();
 
   if (!response.ok) {
-    return res.status(500).json(data);
+    return adminHtmlErrorPage(res, 500, "Bouncie Token Exchange Failed",
+      `Bouncie returned an error: ${data.error || response.status} — ${data.error_description || JSON.stringify(data)}`);
   }
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return adminHtmlErrorPage(res, 503, "Database Not Configured",
+      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in your Vercel environment variables.");
+  }
 
-  await supabase.from("bouncie_tokens").upsert({
+  const { error: upsertError } = await supabase.from("bouncie_tokens").upsert({
     id:            1,
     access_token:  data.access_token,
     refresh_token: data.refresh_token,
     obtained_at:   new Date().toISOString(),
     updated_at:    new Date().toISOString(),
   });
+
+  if (upsertError) {
+    return adminHtmlErrorPage(res, 500, "Token Storage Failed",
+      `Bouncie authorized successfully but the token could not be saved: ${upsertError.message}. Please try connecting again.`);
+  }
 
   res.redirect("https://www.slytrans.com/public/admin-v2/?bouncie=connected");
 }

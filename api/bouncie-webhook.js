@@ -2,7 +2,7 @@
 // Bouncie GPS webhook receiver — handles real-time vehicle events.
 //
 // Register this URL in the Bouncie Developer Portal:
-//   https://www.slytrans.com/api/bouncie-webhook
+//   https://sly-rides.vercel.app/api/bouncie-webhook
 //
 // Webhook security:
 //   Set your webhook key in BOUNCIE_WEBHOOK_SECRET env var (Vercel).
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
 
 //
 // Register this URL in the Bouncie Developer Portal:
-//   https://www.slytrans.com/api/bouncie-webhook
+//   https://sly-rides.vercel.app/api/bouncie-webhook
 //
 // Webhook security: configure BOUNCIE_WEBHOOK_SECRET in Vercel to match the
 // Authorization key you set in the Bouncie Developer Portal.
