@@ -42,7 +42,7 @@ async function refreshAccessToken(currentRefreshToken) {
   const clientId     = process.env.BOUNCIE_CLIENT_ID;
   const clientSecret = process.env.BOUNCIE_CLIENT_SECRET;
 
-  const res = await fetch("https://auth.bouncie.com/oauth/token", {
+  const res = await bounciFetch("https://auth.bouncie.com/oauth/token", {
     method:  "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
