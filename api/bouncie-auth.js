@@ -12,7 +12,6 @@
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { getBouncieVehicles } from "./_bouncie.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -39,15 +38,32 @@ export default async function handler(req, res) {
       });
     }
 
-    // Verify the token actually works by calling the Bouncie API.
-    // Simply checking whether a token row exists in the DB can show "Connected"
-    // even when the stored token is expired or invalid.
-    try {
-      await getBouncieVehicles();
-    } catch (bouncieErr) {
+    // Check whether an OAuth token row exists in the bouncie_tokens table.
+    // id=1 is the singleton row used by this single-tenant system.
+    //
+    // We check token existence rather than making a live Bouncie API call.
+    // A live call can fail for reasons unrelated to the OAuth connection (e.g.
+    // no enrolled vehicles, Bouncie API downtime) and would incorrectly report
+    // "Not Connected" even when the credentials are valid.  If the stored token
+    // is expired it will be auto-refreshed by refreshAccessToken() on first use
+    // (mileage sync / GPS tracking).
+    const { data, error } = await sb
+      .from("bouncie_tokens")
+      .select("access_token, updated_at")
+      .eq("id", 1)
+      .maybeSingle();
+
+    if (error) {
       return res.status(200).json({
         configured: false,
-        message: adminErrorMessage(bouncieErr),
+        message: `Could not read Bouncie token: ${error.message}`,
+      });
+    }
+
+    if (!data?.access_token) {
+      return res.status(200).json({
+        configured: false,
+        message: "No Bouncie OAuth token found. Complete the authorization flow to connect.",
       });
     }
 
