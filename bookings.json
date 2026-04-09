@@ -190,7 +190,8 @@
         "late_grace_expired": "2026-04-06T20:00:01.699Z",
         "late_fee_applied": "2026-04-06T20:00:01.699Z",
         "post_thank_you": "2026-04-06T23:15:02.134Z",
-        "retention_1d": "2026-04-07T23:00:12.524Z"
+        "retention_1d": "2026-04-07T23:00:12.524Z",
+        "retention_3d": "2026-04-09T23:00:29.632Z"
       },
       "createdAt": "2026-04-02T17:59:36.566Z",
       "source": "admin_v2",
