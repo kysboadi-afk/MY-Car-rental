@@ -13,6 +13,15 @@ import { getSupabaseAdmin } from "./_supabase.js";
 
 const BOUNCIE_API = "https://api.bouncie.com/v1";
 
+/** Wraps fetch so network-level failures carry Bouncie context for adminErrorMessage(). */
+async function bounciFetch(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (fetchErr) {
+    throw new Error(`Bouncie API unreachable: ${fetchErr.name}: ${fetchErr.message}`);
+  }
+}
+
 async function getToken() {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -79,13 +88,13 @@ export async function getBouncieVehicles() {
 
   let accessToken = tokenData.access_token;
 
-  let resp = await fetch(`${BOUNCIE_API}/vehicles`, {
+  let resp = await bounciFetch(`${BOUNCIE_API}/vehicles`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (resp.status === 401) {
     accessToken = await refreshAccessToken(tokenData.refresh_token);
-    resp = await fetch(`${BOUNCIE_API}/vehicles`, {
+    resp = await bounciFetch(`${BOUNCIE_API}/vehicles`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
   }
