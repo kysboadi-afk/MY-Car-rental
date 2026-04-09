@@ -23,7 +23,7 @@ export default function handler(req, res) {
   }
 
   const redirectUri = "https://sly-rides.vercel.app/api/bouncieCallback";
-  const url = `https://auth.bouncie.com/oauth/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const url = `https://auth.bouncie.com/dialog/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   res.redirect(url);
 }
