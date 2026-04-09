@@ -2043,6 +2043,14 @@ function signIn() {
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
+
+      // Handle return from Bouncie OAuth callback
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('bouncie') === 'connected') {
+        showToast('✅ Bouncie connected successfully! GPS sync is now active.', 'success');
+        navigate('system-settings');
+        history.replaceState({}, '', window.location.pathname);
+      }
     })
     .catch((err) => {
       adminSecret = '';

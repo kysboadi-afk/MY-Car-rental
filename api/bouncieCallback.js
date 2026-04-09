@@ -54,5 +54,5 @@ export default async function handler(req, res) {
     updated_at:    new Date().toISOString(),
   });
 
-  res.send("✅ Bouncie connected successfully. You can close this tab.");
+  res.redirect("https://www.slytrans.com/public/admin-v2/?bouncie=connected");
 }

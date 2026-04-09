@@ -7,10 +7,23 @@
 // Required env vars:
 //   BOUNCIE_CLIENT_ID
 
+import { adminHtmlErrorPage } from "./_error-helpers.js";
+
 export default function handler(req, res) {
-  const clientId     = process.env.BOUNCIE_CLIENT_ID;
-  const redirectUri  = "https://sly-rides.vercel.app/api/bouncieCallback";
-  const url          = `https://auth.bouncie.com/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const clientId = process.env.BOUNCIE_CLIENT_ID;
+
+  if (!clientId) {
+    return adminHtmlErrorPage(
+      res,
+      503,
+      "Bouncie Not Configured",
+      "The BOUNCIE_CLIENT_ID environment variable is not set in Vercel. " +
+      "Add it in the Vercel dashboard under Settings → Environment Variables, then redeploy."
+    );
+  }
+
+  const redirectUri = "https://sly-rides.vercel.app/api/bouncieCallback";
+  const url = `https://auth.bouncie.com/oauth/authorize?response_type=code&client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   res.redirect(url);
 }
