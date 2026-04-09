@@ -350,7 +350,8 @@ function parsePickupDateTime(date, time) {
   const base = new Date(date + "T00:00:00"); // midnight local
   if (time) {
     const t = time.trim();
-    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    // Validate 12-hour format: hours 1–12, minutes 00–59
+    const ampmMatch = t.match(/^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM)$/i);
     if (ampmMatch) {
       let hours = parseInt(ampmMatch[1], 10);
       const mins = parseInt(ampmMatch[2], 10);
@@ -360,7 +361,8 @@ function parsePickupDateTime(date, time) {
       base.setHours(hours, mins, 0, 0);
       return base;
     }
-    const h24Match = t.match(/^(\d{1,2}):(\d{2})$/);
+    // Validate 24-hour format: hours 0–23, minutes 00–59
+    const h24Match = t.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
     if (h24Match) {
       base.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
       return base;
@@ -412,7 +414,14 @@ export async function autoActivateIfPickupArrived(booking) {
 
   const now      = new Date();
   const pickupDt = parsePickupDateTime(booking.pickupDate, booking.pickupTime);
-  if (isNaN(pickupDt.getTime()) || now < pickupDt) return false;
+  if (isNaN(pickupDt.getTime())) {
+    console.warn(
+      `_booking-automation: autoActivateIfPickupArrived — invalid pickupDate ` +
+      `"${booking.pickupDate}" for ${vehicleId}/${id} — skipping activation`
+    );
+    return false;
+  }
+  if (now < pickupDt) return false;
 
   const activatedAt = now.toISOString();
 
