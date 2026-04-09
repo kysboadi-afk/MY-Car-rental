@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS = [
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },
   { key: "auto_create_revenue_on_pay",  value: true,    description: "Auto-create revenue record when payment received",category: "automation" },
   { key: "auto_update_customer_stats",  value: true,    description: "Auto-update customer stats on booking events",    category: "automation" },
+  { key: "auto_activate_on_pickup",     value: true,    description: "Auto-transition booking to active rental when pickup time arrives (runs on payment and every 15 min)", category: "automation" },
   { key: "notify_sms_on_approve",       value: true,    description: "Send SMS to customer when booking approved",      category: "notification" },
   { key: "notify_email_on_approve",     value: true,    description: "Send email to customer when booking approved",    category: "notification" },
   { key: "overdue_grace_period_hours",  value: 2,       description: "Hours after return time before booking flagged overdue", category: "automation" },

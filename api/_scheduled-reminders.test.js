@@ -34,10 +34,11 @@ mock.module("./_bookings.js", {
 
 mock.module("./_booking-automation.js", {
   namedExports: {
-    autoUpsertCustomer:    async (b, countStats) => { customerCalls.push({ ...b, countStats }); },
-    autoUpsertBooking:     async (b)             => { bookingCalls.push({ ...b }); },
-    autoCreateRevenueRecord: async () => {},
-    autoCreateBlockedDate:   async () => {},
+    autoUpsertCustomer:          async (b, countStats) => { customerCalls.push({ ...b, countStats }); },
+    autoUpsertBooking:           async (b)             => { bookingCalls.push({ ...b }); },
+    autoCreateRevenueRecord:     async () => {},
+    autoCreateBlockedDate:       async () => {},
+    autoActivateIfPickupArrived: async () => false,
   },
 });
 
@@ -61,6 +62,10 @@ mock.module("./_contacts.js", {
 });
 mock.module("./_pricing.js", {
   namedExports: { CARS: {} },
+});
+
+mock.module("./_settings.js", {
+  namedExports: { loadBooleanSetting: async () => true },
 });
 
 mock.module("./_sms-templates.js", {

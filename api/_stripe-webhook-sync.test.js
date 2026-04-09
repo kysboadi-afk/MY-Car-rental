@@ -24,7 +24,7 @@ process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
 
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json
-const automationCalls = { revenue: [], customer: [], booking: [], blocked: [] };
+const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [] };
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 mock.module("stripe", {
@@ -77,10 +77,11 @@ mock.module("./_bookings.js", {
 
 mock.module("./_booking-automation.js", {
   namedExports: {
-    autoCreateRevenueRecord: async (b)         => { automationCalls.revenue.push({ ...b }); },
-    autoUpsertCustomer:      async (b, s)       => { automationCalls.customer.push({ ...b, countStats: s }); },
-    autoUpsertBooking:       async (b)          => { automationCalls.booking.push({ ...b }); },
-    autoCreateBlockedDate:   async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
+    autoCreateRevenueRecord:    async (b)         => { automationCalls.revenue.push({ ...b }); },
+    autoUpsertCustomer:         async (b, s)       => { automationCalls.customer.push({ ...b, countStats: s }); },
+    autoUpsertBooking:          async (b)          => { automationCalls.booking.push({ ...b }); },
+    autoCreateBlockedDate:      async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
+    autoActivateIfPickupArrived: async (b)         => { automationCalls.activated.push({ ...b }); return false; },
   },
 });
 
@@ -135,6 +136,7 @@ function resetCalls() {
   automationCalls.customer.length = 0;
   automationCalls.booking.length = 0;
   automationCalls.blocked.length = 0;
+  automationCalls.activated.length = 0;
 }
 
 function makeWebhookReq(event) {
@@ -293,4 +295,58 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking called with upda
   // Verify the synced booking has the new return date
   const synced = automationCalls.booking[0];
   assert.equal(synced.returnDate, "2026-11-02", "Supabase booking should reflect the extended return date");
+});
+
+// ─── 4. Auto-activation on payment confirmation ───────────────────────────────
+
+test("webhook full_payment: autoActivateIfPickupArrived is called for booked_paid booking", async () => {
+  resetStore(); resetCalls();
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-09-01", return_date: "2026-09-03",
+    renter_name: "Alex Smith", renter_phone: "+13105551234",
+    email: "alex@example.com", payment_type: "full_payment",
+  });
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.ok(
+    automationCalls.activated.length > 0,
+    "autoActivateIfPickupArrived must be called after a full_payment so same-day pickups can be immediately activated"
+  );
+  // The activation call should receive a booking with status booked_paid
+  assert.equal(
+    automationCalls.activated[0].status,
+    "booked_paid",
+    "autoActivateIfPickupArrived should receive the booking in booked_paid status"
+  );
+});
+
+test("webhook balance_payment: autoActivateIfPickupArrived is called after status update to booked_paid", async () => {
+  resetStore(); resetCalls();
+  const depositPiId = "pi_deposit_bal_act";
+  bookingsStore["camry"] = [{
+    bookingId:       "bk-balance-activation-test",
+    vehicleId:       "camry",
+    name:            "Balance Customer",
+    phone:           "+13105559999",
+    pickupDate:      "2026-10-05",
+    returnDate:      "2026-10-07",
+    status:          "reserved_unpaid",
+    amountPaid:      50,
+    paymentIntentId: depositPiId,
+  }];
+
+  const event = piSucceededEvent({
+    payment_type: "balance_payment",
+    vehicle_id:   "camry",
+    original_payment_intent_id: depositPiId,
+  });
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.ok(
+    automationCalls.activated.length > 0,
+    "autoActivateIfPickupArrived must be called after balance_payment so same-day pickups can be immediately activated"
+  );
 });

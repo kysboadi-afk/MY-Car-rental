@@ -56,6 +56,7 @@ import { CARS } from "./_pricing.js";
 import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
+import { loadBooleanSetting } from "./_settings.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
@@ -658,6 +659,13 @@ async function persistSentMarks(sentMarks) {
  */
 export async function processAutoActivations(allBookings, now) {
   if (!process.env.GITHUB_TOKEN) return;
+
+  // Respect the admin toggle — skip the entire cycle when disabled.
+  const enabled = await loadBooleanSetting("auto_activate_on_pickup", true);
+  if (!enabled) {
+    console.log("scheduled-reminders: auto_activate_on_pickup is disabled — skipping auto-activations");
+    return;
+  }
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {

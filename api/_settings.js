@@ -86,6 +86,34 @@ export async function loadPricingSettings() {
   }
 }
 
+/**
+ * Reads a single boolean setting from the system_settings table.
+ * Returns `defaultVal` when Supabase is unavailable or the key is not found.
+ *
+ * @param {string}  key          - system_settings key
+ * @param {boolean} defaultVal   - value to return when the setting cannot be read
+ * @returns {Promise<boolean>}
+ */
+export async function loadBooleanSetting(key, defaultVal = true) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return defaultVal;
+
+  try {
+    const { data, error } = await sb
+      .from("system_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data) return defaultVal;
+    // Supabase stores jsonb booleans as JS booleans; guard against "false" strings.
+    if (data.value === false || data.value === "false") return false;
+    if (data.value === true  || data.value === "true")  return true;
+    return defaultVal;
+  } catch {
+    return defaultVal;
+  }
+}
+
 // ─── Compute helpers using dynamic settings ──────────────────────────────────
 
 /**
