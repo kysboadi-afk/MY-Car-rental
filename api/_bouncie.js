@@ -112,8 +112,8 @@ export async function getBouncieVehicles() {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Load all vehicles that have a Bouncie IMEI assigned (actively tracked).
- * Slingshots are excluded regardless of whether they have an IMEI.
+ * Load all vehicles that are actively tracked: those with is_tracked=true or
+ * a Bouncie IMEI assigned.  Slingshots are excluded regardless.
  *
  * @param {object} sb - Supabase admin client
  * @returns {Promise<Array>}
@@ -122,7 +122,7 @@ export async function loadTrackedVehicles(sb) {
   const { data, error } = await sb
     .from("vehicles")
     .select("vehicle_id, bouncie_device_id, mileage, vehicle_name, vehicle_type, data")
-    .not("bouncie_device_id", "is", null);
+    .or("is_tracked.eq.true,bouncie_device_id.not.is.null");
   if (error) {
     console.error("Supabase error in loadTrackedVehicles:", error);
     throw error;
