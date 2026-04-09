@@ -11,6 +11,10 @@
 //                    Body: { vehicleId, serviceType: "oil"|"brakes"|"tires", mileage? }
 //                    When serviceType is omitted, all three service records are updated
 //                    (backward-compatible behaviour).
+//   driver_report  — per-driver mileage summary aggregated from the trips table
+//                    Body: { start_date?, end_date?, driver_phone? }
+//                    Returns: [{ driver_name, driver_phone, total_miles, trip_count,
+//                                vehicle_ids, last_trip_at }]
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -234,6 +238,89 @@ export default async function handler(req, res) {
         vehicleId,
         serviceType:  serviceType || "all",
         service_mileage: serviceMileage,
+      });
+    }
+
+    // ── DRIVER REPORT ─────────────────────────────────────────────────────────
+    if (action === "driver_report") {
+      const { start_date, end_date, driver_phone: filterPhone } = body;
+
+      // Resolve date window — default last 30 days when not provided
+      const endTs   = end_date   ? new Date(end_date   + "T23:59:59Z") : new Date();
+      const startTs = start_date ? new Date(start_date + "T00:00:00Z") : new Date(endTs.getTime() - 30 * 86400_000);
+
+      if (isNaN(startTs.getTime()) || isNaN(endTs.getTime())) {
+        return res.status(400).json({ error: "Invalid start_date or end_date — use YYYY-MM-DD format" });
+      }
+      if (endTs < startTs) {
+        return res.status(400).json({ error: "end_date must be on or after start_date" });
+      }
+
+      // Build query — filter by driver_phone when provided
+      let query = sb
+        .from("trips")
+        .select("driver_name, driver_phone, vehicle_id, distance, start_mileage, end_mileage, created_at")
+        .gte("created_at", startTs.toISOString())
+        .lte("created_at", endTs.toISOString())
+        .order("created_at", { ascending: false });
+
+      if (filterPhone) {
+        query = query.eq("driver_phone", String(filterPhone).trim());
+      }
+
+      const { data: tripRows, error: tripErr } = await query;
+      if (tripErr) throw new Error(`Supabase trips query failed: ${tripErr.message}`);
+
+      // Aggregate per driver (keyed by phone; fall back to name for unmatched rows)
+      const driverMap = {};
+      for (const row of tripRows || []) {
+        // Compute miles for this trip: prefer distance column, fall back to end−start
+        const miles =
+          row.distance != null
+            ? Number(row.distance)
+            : row.end_mileage != null && row.start_mileage != null
+              ? Math.max(0, Number(row.end_mileage) - Number(row.start_mileage))
+              : 0;
+
+        const key = row.driver_phone || row.driver_name || "unknown";
+        if (!driverMap[key]) {
+          driverMap[key] = {
+            driver_name:  row.driver_name  || null,
+            driver_phone: row.driver_phone || null,
+            total_miles:  0,
+            trip_count:   0,
+            vehicle_ids:  new Set(),
+            last_trip_at: null,
+          };
+        }
+        const entry = driverMap[key];
+        entry.total_miles += miles;
+        entry.trip_count  += 1;
+        if (row.vehicle_id) entry.vehicle_ids.add(row.vehicle_id);
+        if (!entry.last_trip_at || row.created_at > entry.last_trip_at) {
+          entry.last_trip_at = row.created_at;
+        }
+      }
+
+      // Serialize and sort by total miles descending
+      const drivers = Object.values(driverMap)
+        .map((d) => ({
+          driver_name:  d.driver_name,
+          driver_phone: d.driver_phone,
+          total_miles:  Math.round(d.total_miles * 10) / 10,
+          trip_count:   d.trip_count,
+          vehicle_ids:  Array.from(d.vehicle_ids),
+          last_trip_at: d.last_trip_at,
+        }))
+        .sort((a, b) => b.total_miles - a.total_miles);
+
+      return res.status(200).json({
+        drivers,
+        start_date: startTs.toISOString().slice(0, 10),
+        end_date:   endTs.toISOString().slice(0, 10),
+        total_drivers: drivers.length,
+        total_trips:   drivers.reduce((s, d) => s + d.trip_count, 0),
+        total_miles:   Math.round(drivers.reduce((s, d) => s + d.total_miles, 0) * 10) / 10,
       });
     }
 

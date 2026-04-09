@@ -362,8 +362,51 @@
     #mileageStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
     #mileageStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #mileageStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
-    /* ── Extra Charges ────────────────────────────────────────────── */
-    .extra-charges-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    /* ── Driver Mileage Report ────────────────────────────────────── */
+    .driver-mileage-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .driver-mileage-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .driver-mileage-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .dm-filters {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 16px;
+    }
+    .dm-filters .dm-field { display: flex; flex-direction: column; gap: 4px; }
+    .dm-filters label { font-size: 12px; color: #aaa; }
+    .dm-filters input[type="text"],
+    .dm-filters input[type="tel"] {
+      background: #111; border: 1px solid #333; color: #eee;
+      border-radius: 6px; padding: 7px 10px; font-size: 13px; width: 140px;
+    }
+    .dm-filters input:focus { outline: none; border-color: #ffb400; }
+    .dm-summary {
+      display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
+    }
+    .dm-summary-card {
+      background: #111; border: 1px solid #2a2a2a; border-radius: 8px;
+      padding: 10px 16px; min-width: 110px; text-align: center;
+    }
+    .dm-summary-card .dm-sc-val { font-size: 22px; font-weight: 700; color: #ffb400; }
+    .dm-summary-card .dm-sc-lbl { font-size: 11px; color: #888; margin-top: 2px; }
+    .dm-table-wrap { overflow-x: auto; }
+    table.dm-table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    table.dm-table th {
+      text-align: left; padding: 8px 10px; border-bottom: 1px solid #333;
+      color: #aaa; font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+    table.dm-table td {
+      padding: 9px 10px; border-bottom: 1px solid #1e1e1e; color: #ccc;
+      vertical-align: middle;
+    }
+    table.dm-table tr:last-child td { border-bottom: none; }
+    table.dm-table tr:hover td { background: #151515; }
+    table.dm-table .dm-miles { color: #ffb400; font-weight: 600; }
+    #dmStatusMsg { margin-top: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px; display: none; }
+    #dmStatusMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #dmStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #dmStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
+    /* ── Extra Charges ────────────────────────────────────────────── */    .extra-charges-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
     .extra-charges-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
     .extra-charges-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
     .charge-form-grid {
@@ -645,6 +688,48 @@
       <button class="btn-block" id="loadMileageBookingsBtn" style="max-width:220px;margin-bottom:16px">📋 Load Active Bookings</button>
       <div id="mileageBookingsList"><span class="no-bookings">Click "Load Active Bookings" to begin.</span></div>
       <div id="mileageStatusMsg"></div>
+    </div>
+
+    <!-- ── Driver Mileage Report ────────────────────────────────────── -->
+    <div class="driver-mileage-section">
+      <h2>🚦 Driver Mileage Report</h2>
+      <p class="subtitle">View miles driven per driver over a selected date range. Data comes from completed rental trips logged in the database.</p>
+
+      <div class="dm-filters">
+        <div class="dm-field">
+          <label for="dmStartDate">Start Date</label>
+          <input type="text" id="dmStartDate" placeholder="YYYY-MM-DD">
+        </div>
+        <div class="dm-field">
+          <label for="dmEndDate">End Date</label>
+          <input type="text" id="dmEndDate" placeholder="YYYY-MM-DD">
+        </div>
+        <div class="dm-field">
+          <label for="dmDriverPhone">Driver Phone (optional)</label>
+          <input type="tel" id="dmDriverPhone" placeholder="+1…">
+        </div>
+        <button class="btn-block" id="loadDriverMileageBtn" style="max-width:160px">📊 Load Report</button>
+        <button class="btn-unblock" id="exportDriverMileageBtn" style="flex:0;padding:10px 14px;font-size:13px" disabled>⬇ Export CSV</button>
+      </div>
+
+      <div class="dm-summary" id="dmSummary" style="display:none"></div>
+      <div class="dm-table-wrap" id="dmTableWrap" style="display:none">
+        <table class="dm-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Driver Name</th>
+              <th>Phone</th>
+              <th>Total Miles</th>
+              <th>Trips</th>
+              <th>Last Active</th>
+              <th>Vehicles Used</th>
+            </tr>
+          </thead>
+          <tbody id="dmTableBody"></tbody>
+        </table>
+      </div>
+      <div id="dmStatusMsg"></div>
     </div>
 
     <!-- ── Vehicle Tracking & Profit Dashboard ──────────────────────── -->
@@ -1569,6 +1654,143 @@
         var btn = e.target.closest("button.btn-open-charge");
         if (!btn) return;
         openChargeFeeModal(btn.dataset.bookingId, btn.dataset.customerName);
+      });
+
+    })();
+  </script>
+
+  <!-- ── Driver Mileage Report Script ──────────────────────────────────────── -->
+  <script>
+    (function () {
+      var API_BASE = "https://sly-rides.vercel.app";
+
+      function getSecret() { return document.getElementById("adminSecret").value; }
+
+      function showDmMsg(msg, type) {
+        var el = document.getElementById("dmStatusMsg");
+        el.textContent = msg;
+        el.className = type;
+        el.style.display = "block";
+        if (type !== "info") setTimeout(function () { el.style.display = "none"; }, 6000);
+      }
+
+      function esc(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // Date pickers defaulting to last 30 days
+      var today = new Date();
+      var todayStr = today.toISOString().slice(0, 10);
+      var thirtyAgo = new Date(today.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+      flatpickr("#dmStartDate", { dateFormat: "Y-m-d", defaultDate: thirtyAgo });
+      flatpickr("#dmEndDate",   { dateFormat: "Y-m-d", defaultDate: todayStr });
+
+      var lastReport = null; // cache for CSV export
+
+      // ── Load report ──────────────────────────────────────────────────────────
+      document.getElementById("loadDriverMileageBtn").addEventListener("click", function () {
+        var secret = getSecret();
+        if (!secret) { showDmMsg("Please enter the admin password first.", "error"); return; }
+
+        var startDate   = document.getElementById("dmStartDate").value.trim();
+        var endDate     = document.getElementById("dmEndDate").value.trim();
+        var driverPhone = document.getElementById("dmDriverPhone").value.trim();
+
+        var btn = this;
+        btn.disabled = true;
+        showDmMsg("Loading driver mileage report\u2026", "info");
+        document.getElementById("dmSummary").style.display = "none";
+        document.getElementById("dmTableWrap").style.display = "none";
+        document.getElementById("exportDriverMileageBtn").disabled = true;
+
+        var body = { secret: secret, action: "driver_report" };
+        if (startDate)   body.start_date   = startDate;
+        if (endDate)     body.end_date     = endDate;
+        if (driverPhone) body.driver_phone = driverPhone;
+
+        fetch(API_BASE + "/api/v2-mileage", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (result) {
+            if (!result.ok) {
+              showDmMsg("\u274C " + (result.data.error || "Request failed"), "error");
+              return;
+            }
+            lastReport = result.data;
+            renderDriverReport(result.data);
+            document.getElementById("dmStatusMsg").style.display = "none";
+            document.getElementById("exportDriverMileageBtn").disabled = false;
+          })
+          .catch(function (err) {
+            showDmMsg("Network error: " + err.message, "error");
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+
+      function renderDriverReport(data) {
+        // Summary cards
+        var summary = document.getElementById("dmSummary");
+        summary.style.display = "flex";
+        summary.innerHTML =
+          '<div class="dm-summary-card"><div class="dm-sc-val">' + (data.total_drivers || 0) + '</div><div class="dm-sc-lbl">Drivers</div></div>'
+          + '<div class="dm-summary-card"><div class="dm-sc-val">' + (data.total_trips || 0) + '</div><div class="dm-sc-lbl">Trips</div></div>'
+          + '<div class="dm-summary-card"><div class="dm-sc-val">' + ((data.total_miles || 0).toLocaleString()) + '</div><div class="dm-sc-lbl">Total Miles</div></div>'
+          + '<div class="dm-summary-card" style="font-size:12px;color:#888;padding:10px"><div>' + esc(data.start_date) + '</div><div>\u2013</div><div>' + esc(data.end_date) + '</div></div>';
+
+        // Table rows
+        var drivers = data.drivers || [];
+        var tbody = document.getElementById("dmTableBody");
+        if (!drivers.length) {
+          document.getElementById("dmTableWrap").style.display = "none";
+          showDmMsg("No trip records found for the selected period.", "info");
+          return;
+        }
+
+        var rows = "";
+        drivers.forEach(function (d, i) {
+          var lastAt = d.last_trip_at ? d.last_trip_at.slice(0, 10) : "\u2013";
+          var vehicles = (d.vehicle_ids || []).join(", ") || "\u2013";
+          rows += '<tr>'
+            + '<td style="color:#555">' + (i + 1) + '</td>'
+            + '<td>' + esc(d.driver_name || "\u2013") + '</td>'
+            + '<td style="color:#888">' + esc(d.driver_phone || "\u2013") + '</td>'
+            + '<td class="dm-miles">' + ((d.total_miles || 0).toLocaleString()) + ' mi</td>'
+            + '<td>' + (d.trip_count || 0) + '</td>'
+            + '<td style="color:#888">' + esc(lastAt) + '</td>'
+            + '<td style="color:#888;font-size:12px">' + esc(vehicles) + '</td>'
+            + '</tr>';
+        });
+        tbody.innerHTML = rows;
+        document.getElementById("dmTableWrap").style.display = "block";
+      }
+
+      // ── CSV Export ───────────────────────────────────────────────────────────
+      document.getElementById("exportDriverMileageBtn").addEventListener("click", function () {
+        if (!lastReport) return;
+        var drivers = lastReport.drivers || [];
+        var lines   = ["#,Driver Name,Phone,Total Miles,Trips,Last Active,Vehicles Used"];
+        drivers.forEach(function (d, i) {
+          lines.push([
+            i + 1,
+            '"' + (d.driver_name  || "").replace(/"/g, '""') + '"',
+            '"' + (d.driver_phone || "").replace(/"/g, '""') + '"',
+            d.total_miles || 0,
+            d.trip_count  || 0,
+            d.last_trip_at ? d.last_trip_at.slice(0, 10) : "",
+            '"' + (d.vehicle_ids || []).join(", ").replace(/"/g, '""') + '"',
+          ].join(","));
+        });
+        var blob = new Blob([lines.join("\n")], { type: "text/csv" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "driver-mileage-" + (lastReport.start_date || "report") + ".csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
       });
 
     })();
