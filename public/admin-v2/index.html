@@ -4456,6 +4456,7 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;">
             Connected via Bouncie OAuth — syncing vehicle data automatically.
           </p>
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔗 Reconnect</a>
         </div>
         `}
       </div>
