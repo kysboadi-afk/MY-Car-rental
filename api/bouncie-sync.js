@@ -45,13 +45,12 @@ export default async function handler(req, res) {
     });
   }
 
-  // Fetch only tracked Bouncie vehicles (bouncie_device_id set + is_tracked=true).
-  // Do NOT filter by vehicle_type — is_tracked is the canonical flag.
+  // Fetch all vehicles with a Bouncie IMEI assigned — bouncie_device_id is the
+  // canonical tracking signal (is_tracked may lag behind the IMEI column).
   const { data: trackedData, error: trackedError } = await sb
     .from("vehicles")
     .select("*")
-    .not("bouncie_device_id", "is", null)
-    .eq("is_tracked", true);
+    .not("bouncie_device_id", "is", null);
 
   if (trackedError) {
     console.error("bouncie-sync: vehicles query failed:", trackedError.message);
