@@ -239,7 +239,10 @@
       "notes": "Full payment for active rental",
       "createdAt": "2026-04-07T09:38:20.882Z",
       "updatedAt": "2026-04-07T09:44:07.154Z",
-      "activatedAt": "2026-04-07T09:44:07.154Z"
+      "activatedAt": "2026-04-07T09:44:07.154Z",
+      "smsSentAt": {
+        "active_mid": "2026-04-09T11:45:18.402Z"
+      }
     }
   ]
 }
