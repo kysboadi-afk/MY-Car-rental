@@ -1584,8 +1584,12 @@
           <div style="text-align:center;padding:32px 16px;">
             <div style="font-size:36px;margin-bottom:12px;">📡</div>
             <div style="font-size:16px;font-weight:600;color:var(--danger);margin-bottom:8px;">Bouncie Not Connected</div>
-            <p style="font-size:13px;color:var(--text-sub);margin:0 0 16px;" id="gps-not-connected-msg"></p>
-            <a id="gps-connect-btn" href="#" onclick="navigate('system-settings');return false;" class="btn btn-primary" style="text-decoration:none;">⚙️ Go to System Settings</a>
+            <p style="font-size:13px;color:var(--text-sub);margin:0 0 8px;" id="gps-not-connected-msg"></p>
+            <p style="font-size:11px;color:var(--text-sub);margin:0 0 16px;font-family:monospace;word-break:break-all;display:none;" id="gps-not-connected-hint"></p>
+            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="startBouncieConnect()">🔗 Connect Bouncie Now</button>
+              <a href="#" onclick="navigate('system-settings');return false;" class="btn btn-secondary" style="text-decoration:none;">⚙️ System Settings</a>
+            </div>
           </div>
         </div>
 
@@ -2048,7 +2052,7 @@ function signIn() {
       const params = new URLSearchParams(window.location.search);
       if (params.get('bouncie') === 'connected') {
         showToast('✅ Bouncie connected successfully! GPS sync is now active.', 'success');
-        navigate('system-settings');
+        navigate('gps');
         history.replaceState({}, '', window.location.pathname);
       }
     })
@@ -2695,6 +2699,15 @@ function loadGpsTracking() {
         notConn.style.display = '';
         document.getElementById('gps-not-connected-msg').textContent =
           data.message || 'Bouncie is not connected.';
+        const hintEl = document.getElementById('gps-not-connected-hint');
+        if (hintEl) {
+          if (data.hint && data.hint !== data.message) {
+            hintEl.textContent = 'Debug: ' + data.hint;
+            hintEl.style.display = '';
+          } else {
+            hintEl.style.display = 'none';
+          }
+        }
         return;
       }
       cards.style.display = '';
@@ -2861,6 +2874,14 @@ function toggleGpsAutoRefresh() {
 }
 
 // ── Bouncie / mileage helpers ──────────────────────────────────────────────
+
+/**
+ * Redirect to the Bouncie OAuth connect flow from the GPS tracking page.
+ */
+function startBouncieConnect() {
+  if (!adminSecret) { showToast('Please sign in first.', 'error'); return; }
+  window.location.href = `${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}`;
+}
 
 /**
  * Show/hide the "not tracked" warning in the Edit or Add Vehicle modal.
