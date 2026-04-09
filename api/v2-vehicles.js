@@ -263,6 +263,8 @@ export default async function handler(req, res) {
           };
           if (Object.prototype.hasOwnProperty.call(safeUpdates, "bouncie_device_id")) {
             upsertPayload.bouncie_device_id = newImei;
+            // Automatically enable/disable tracking when IMEI is set/cleared
+            upsertPayload.is_tracked = newImei !== null;
             // Mirror into JSONB too for the fallback path
             updatedData.bouncie_device_id = newImei;
           }
@@ -411,7 +413,7 @@ export default async function handler(req, res) {
               vehicle_id:        vehicleId,
               data:              newData,
               updated_at:        new Date().toISOString(),
-              ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
+              ...(safeBouncieId ? { bouncie_device_id: safeBouncieId, is_tracked: true } : {}),
             })
             .select("data, bouncie_device_id")
             .single();
