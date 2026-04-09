@@ -1,5 +1,5 @@
 // api/bouncie-location.js
-// Returns real-time GPS locations for all Bouncie-tracked fleet vehicles.
+// Returns real-time GPS locations for all tracked fleet vehicles.
 //
 // GET /api/bouncie-location?secret=<ADMIN_SECRET>
 //
@@ -10,8 +10,9 @@
 //   { connected: true, vehicles: [{ vehicleId, vehicleName, imei, lat, lon,
 //     speed, heading, isMoving, odometer, lastUpdated }] }
 //
-// Vehicles whose Bouncie record has no location data are still included with
-// lat/lon set to null so the UI can show them as "no signal".
+// All vehicles with is_tracked=true (or a bouncie_device_id set) are returned.
+// Vehicles without a matching Bouncie IMEI have lat/lon/speed/heading set to
+// null so the UI can show them as "no signal" rather than omitting them.
 
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -59,38 +60,50 @@ export default async function handler(req, res) {
       });
     }
 
-    // Build IMEI → DB vehicle map
-    const imeiMap = {};
+    // Build an entry for every tracked vehicle (null GPS until Bouncie enriches it).
+    // Slingshots never have Bouncie devices so skip them.
+    const vehicleMap = {};
+    const imeiToId   = {};
     for (const v of trackedVehicles) {
-      if (v.bouncie_device_id) imeiMap[v.bouncie_device_id] = v;
+      if (v.vehicle_type === "slingshot") continue;
+      vehicleMap[v.vehicle_id] = {
+        vehicleId:   v.vehicle_id,
+        vehicleName: v.vehicle_name || v.vehicle_id,
+        imei:        v.bouncie_device_id || null,
+        lat:         null,
+        lon:         null,
+        speed:       null,
+        heading:     null,
+        isMoving:    false,
+        odometer:    v.mileage || null,
+        lastUpdated: null,
+      };
+      if (v.bouncie_device_id) imeiToId[v.bouncie_device_id] = v.vehicle_id;
     }
 
-    const vehicles = [];
+    // Enrich with live Bouncie data for vehicles whose IMEI is registered.
     for (const bv of bouncieVehicles) {
       const { imei, stats } = bv;
       if (!imei) continue;
 
-      const tracked = imeiMap[imei];
-      if (!tracked) continue; // not in our fleet
+      const vehicleId = imeiToId[imei];
+      if (!vehicleId) continue; // IMEI not in our fleet
 
       const loc = stats?.location || {};
-      const lat = typeof loc.lat === "number" ? loc.lat : null;
-      const lon = typeof loc.lon === "number" ? loc.lon : null;
-
-      vehicles.push({
-        vehicleId:   tracked.vehicle_id,
-        vehicleName: tracked.vehicle_name || tracked.vehicle_id,
+      vehicleMap[vehicleId] = {
+        ...vehicleMap[vehicleId],
         imei,
-        lat,
-        lon,
-        speed:       typeof loc.speed   === "number" ? Math.round(loc.speed) : null,
-        heading:     typeof loc.heading === "number" ? Math.round(loc.heading) : null,
+        lat:         typeof loc.lat     === "number" ? loc.lat                : null,
+        lon:         typeof loc.lon     === "number" ? loc.lon                : null,
+        speed:       typeof loc.speed   === "number" ? Math.round(loc.speed)  : null,
+        heading:     typeof loc.heading === "number" ? Math.round(loc.heading): null,
         isMoving:    loc.isMoving ?? false,
-        odometer:    stats?.odometer ?? null,
+        odometer:    stats?.odometer ?? vehicleMap[vehicleId].odometer,
         lastUpdated: stats?.lastUpdated ?? null,
-      });
+      };
     }
 
+    const vehicles = Object.values(vehicleMap);
     return res.status(200).json({ connected: true, vehicles });
   } catch (err) {
     return res.status(500).json({ error: adminErrorMessage(err) });
