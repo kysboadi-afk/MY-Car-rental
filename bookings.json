@@ -90,7 +90,8 @@
       "notes": "",
       "smsSentAt": {
         "maint_tires_urgent": "2026-04-07T18:00:50.538Z",
-        "maint_oil_warn": "2026-04-09T17:15:43.926Z"
+        "maint_oil_warn": "2026-04-09T17:15:43.926Z",
+        "maint_tires_escalate": "2026-04-09T18:15:21.602Z"
       },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
@@ -103,7 +104,8 @@
         "newReturnTime": "5:10 PM",
         "paymentIntentId": "pi_3TJUidPo7fICjrtZ10TQ5gCX",
         "createdAt": "2026-04-07T08:10:43.262Z"
-      }
+      },
+      "maintenance_status": "non_compliant"
     }
   ],
   "camry2013": [
