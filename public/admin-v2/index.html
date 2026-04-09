@@ -5387,6 +5387,7 @@ function initDriverMileagePage() {
     flatpickr('#dm-end-date',   { dateFormat: 'Y-m-d', defaultDate: todayStr  });
     dmFlatpickrInit = true;
   }
+  loadDriverMileage();
 }
 
 async function loadDriverMileage() {
@@ -5425,6 +5426,7 @@ function renderDriverMileageReport(data) {
   summary.style.display = 'flex';
   summary.innerHTML = [
     `<div class="stat-card"><div class="stat-val">${data.total_drivers || 0}</div><div class="stat-lbl">Drivers</div></div>`,
+    `<div class="stat-card"><div class="stat-val">${data.active_count || 0}</div><div class="stat-lbl">Active Now</div></div>`,
     `<div class="stat-card"><div class="stat-val">${data.total_trips || 0}</div><div class="stat-lbl">Trips</div></div>`,
     `<div class="stat-card"><div class="stat-val">${(data.total_miles || 0).toLocaleString()}</div><div class="stat-lbl">Total Miles</div></div>`,
     `<div class="stat-card" style="font-size:12px;color:var(--text-sub);min-width:100px;display:flex;align-items:center;justify-content:center;">${esc(data.start_date || '')} – ${esc(data.end_date || '')}</div>`,
@@ -5440,11 +5442,17 @@ function renderDriverMileageReport(data) {
   document.getElementById('dm-table-body').innerHTML = drivers.map((d, i) => {
     const lastAt   = d.last_trip_at ? d.last_trip_at.slice(0, 10) : '–';
     const vehicles = (d.vehicle_ids || []).join(', ') || '–';
+    const activeBadge = d.is_active
+      ? `<span style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;font-size:11px;background:#dcfce7;color:#15803d;font-weight:600;">ACTIVE</span>`
+      : '';
+    const milesCell = d.miles_live
+      ? `<td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--primary);font-weight:600;">${(d.total_miles || 0).toLocaleString()} mi <span style="font-size:11px;color:var(--text-sub);font-weight:400;">(live)</span></td>`
+      : `<td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--primary);font-weight:600;">${(d.total_miles || 0).toLocaleString()} mi</td>`;
     return `<tr>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${i + 1}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--border);">${esc(d.driver_name || '–')}</td>
+      <td style="padding:9px 10px;border-bottom:1px solid var(--border);">${esc(d.driver_name || '–')}${activeBadge}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${esc(d.driver_phone || '–')}</td>
-      <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--primary);font-weight:600;">${(d.total_miles || 0).toLocaleString()} mi</td>
+      ${milesCell}
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);">${d.trip_count || 0}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);">${esc(lastAt)}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-sub);font-size:12px;">${esc(vehicles)}</td>
