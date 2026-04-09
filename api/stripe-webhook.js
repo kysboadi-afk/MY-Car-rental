@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -258,6 +258,17 @@ async function saveWebhookBookingRecord(paymentIntent) {
     }
   } catch (err) {
     console.error("stripe-webhook: Supabase sync error:", err.message);
+  }
+
+  // If the booking is fully paid and the pickup time has already arrived
+  // (e.g. same-day rental), immediately transition to active_rental without
+  // waiting for the next 15-minute cron cycle.
+  if (bookingRecord.status === "booked_paid") {
+    try {
+      await autoActivateIfPickupArrived(bookingRecord);
+    } catch (err) {
+      console.error("stripe-webhook: autoActivateIfPickupArrived error (non-fatal):", err.message);
+    }
   }
 }
 
@@ -708,6 +719,13 @@ export default async function handler(req, res) {
           );
           if (updatedBooking) {
             await autoUpsertBooking(updatedBooking);
+            // Auto-activate if the renter's pickup time has already arrived —
+            // e.g. they paid the balance on the day of pickup.
+            try {
+              await autoActivateIfPickupArrived(updatedBooking);
+            } catch (activErr) {
+              console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
+            }
           }
         } catch (err) {
           console.error("stripe-webhook: updateBooking (balance) error:", err);

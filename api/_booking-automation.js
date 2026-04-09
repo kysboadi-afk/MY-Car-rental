@@ -16,6 +16,8 @@
 //   autoCreateBlockedDate    — inserts a blocked_dates row for a booking
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { updateBooking } from "./_bookings.js";
+import { loadBooleanSetting } from "./_settings.js";
 
 /**
  * Auto-creates a revenue record in Supabase for a booking that is paid.
@@ -330,5 +332,128 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
     }
   } catch (err) {
     console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", err.message);
+  }
+}
+
+// ─── Pickup date/time parser (mirrors parseBookingDateTime in scheduled-reminders.js) ───
+
+/**
+ * Parses a booking pickup date + optional 12-h or 24-h time string into a Date.
+ * Falls back to midnight on the pickup date when the time cannot be parsed.
+ *
+ * @param {string} date  - YYYY-MM-DD
+ * @param {string} [time] - "3:00 PM" | "15:00"
+ * @returns {Date}
+ */
+function parsePickupDateTime(date, time) {
+  if (!date) return new Date(NaN);
+  const base = new Date(date + "T00:00:00"); // midnight local
+  if (time) {
+    const t = time.trim();
+    // Validate 12-hour format: hours 1–12, minutes 00–59
+    const ampmMatch = t.match(/^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      let hours = parseInt(ampmMatch[1], 10);
+      const mins = parseInt(ampmMatch[2], 10);
+      const period = ampmMatch[3].toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+      base.setHours(hours, mins, 0, 0);
+      return base;
+    }
+    // Validate 24-hour format: hours 0–23, minutes 00–59
+    const h24Match = t.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (h24Match) {
+      base.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
+      return base;
+    }
+  }
+  return base; // midnight if time can't be parsed
+}
+
+/**
+ * Auto-activates a booking if its pickup date/time has already arrived.
+ * Designed to be called immediately after a payment is confirmed, so that
+ * same-day pickups do not have to wait for the next 15-minute cron cycle.
+ *
+ * Behaviour:
+ *   • Skipped silently when the `auto_activate_on_pickup` system setting is false.
+ *   • Skipped when the booking status is not "booked_paid".
+ *   • Skipped when pickup date/time is in the future.
+ *   • Non-fatal — errors are logged but never propagate to the caller.
+ *   • Idempotent — safe to call multiple times; the underlying updateBooking
+ *     helper only writes when the record exists.
+ *
+ * @param {object} booking - booking record (bookingId/paymentIntentId, vehicleId,
+ *                           pickupDate, pickupTime, status are used)
+ * @returns {Promise<boolean>} true when the booking was transitioned to active_rental
+ */
+export async function autoActivateIfPickupArrived(booking) {
+  if (!booking || booking.status !== "booked_paid") return false;
+
+  const vehicleId = booking.vehicleId;
+  const id        = booking.bookingId || booking.paymentIntentId;
+  if (!vehicleId || !id) return false;
+
+  // Respect the admin toggle — default true when the setting cannot be read.
+  try {
+    const enabled = await loadBooleanSetting("auto_activate_on_pickup", true);
+    if (!enabled) {
+      console.log(
+        `_booking-automation: auto_activate_on_pickup is disabled — ` +
+        `skipping activation for ${vehicleId}/${id}`
+      );
+      return false;
+    }
+  } catch (err) {
+    console.warn(
+      "_booking-automation: failed to read auto_activate_on_pickup setting " +
+      `(defaulting to enabled): ${err.message}`
+    );
+  }
+
+  const now      = new Date();
+  const pickupDt = parsePickupDateTime(booking.pickupDate, booking.pickupTime);
+  if (isNaN(pickupDt.getTime())) {
+    console.warn(
+      `_booking-automation: autoActivateIfPickupArrived — invalid pickupDate ` +
+      `"${booking.pickupDate}" for ${vehicleId}/${id} — skipping activation`
+    );
+    return false;
+  }
+  if (now < pickupDt) return false;
+
+  const activatedAt = now.toISOString();
+
+  console.log(
+    `_booking-automation: auto-activating ${vehicleId}/${id} → active_rental ` +
+    `(pickup ${booking.pickupDate} ${booking.pickupTime || ""}, trigger: payment_confirmed)`
+  );
+
+  try {
+    await updateBooking(vehicleId, id, {
+      status:      "active_rental",
+      activatedAt,
+      updatedAt:   activatedAt,
+    });
+
+    const activatedBooking = {
+      ...booking,
+      status:      "active_rental",
+      activatedAt,
+      updatedAt:   activatedAt,
+    };
+    await autoUpsertBooking(activatedBooking);
+
+    console.log(
+      `_booking-automation: ${vehicleId}/${id} successfully transitioned to active_rental`
+    );
+    return true;
+  } catch (err) {
+    console.error(
+      `_booking-automation: auto-activation failed for ${vehicleId}/${id} (non-fatal):`,
+      err.message
+    );
+    return false;
   }
 }
