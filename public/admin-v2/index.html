@@ -2881,7 +2881,7 @@ async function triggerBouncieSync(vehicleId) {
     const result = await apiPost('/api/v2-mileage', { secret: adminSecret, action: 'sync' });
     const synced = (result.synced || []).find((s) => s.vehicleId === vehicleId);
     if (result.bouncie_error) {
-      showToast('Bouncie sync error: ' + (result.reason || 'Bouncie is not connected via OAuth'), 'error');
+      showToast('Bouncie sync error: ' + (result.reason || "Bouncie is not connected — please go to System Settings and click 'Connect Now' to authorize the GPS integration."), 'error');
       return;
     } else if (synced) {
       showToast(`Synced: ${Number(synced.odometer).toLocaleString()} mi`, 'success');
@@ -4449,7 +4449,7 @@ function renderBouncieAuthSection(status) {
           <p style="font-size:13px;color:var(--text-sub);margin:0 0 12px;line-height:1.6;">
             To enable GPS mileage sync, connect your Bouncie account via OAuth. Click the button below to start the authorization flow.
           </p>
-          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-primary btn-sm" style="text-decoration:none;">🔗 Connect Bouncie</a>
+          <a href="${API_BASE}/api/bouncie-start?secret=${encodeURIComponent(adminSecret)}" class="btn btn-primary btn-sm" style="text-decoration:none;">🔗 Connect Now</a>
         </div>
         ` : `
         <div class="form-group" style="grid-column:1/-1;">

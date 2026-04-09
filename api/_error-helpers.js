@@ -103,7 +103,7 @@ export function adminErrorMessage(err) {
     /bouncie/i.test(raw) &&
     (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
   ) {
-    return "Bouncie is not connected — please go to System Settings and click 'Connect Bouncie' to authorize the GPS integration.";
+    return "Bouncie is not connected — please go to System Settings and click 'Connect Now' to authorize the GPS integration.";
   }
 
   // ── GitHub authentication / authorisation failure ──────────────────────────
