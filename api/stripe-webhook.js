@@ -19,12 +19,14 @@
 import Stripe from "stripe";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import PDFDocument from "pdfkit";
 import { updateBooking, loadBookings, saveBookings, normalizePhone, appendBooking } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
+import { CARS } from "./_pricing.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -273,8 +275,165 @@ async function saveWebhookBookingRecord(paymentIntent) {
 }
 
 /**
- * Send confirmation emails to the owner and renter after a rental extension
- * payment is confirmed.
+ * Generate a PDF Rental Extension Agreement for the given extension.
+ * Returns a Promise<Buffer> of the PDF bytes.
+ */
+function generateExtensionAgreementPdf({
+  vehicleId,
+  renterName,
+  renterEmail,
+  renterPhone,
+  pickupDate,
+  pickupTime,
+  originalReturnDate,
+  newReturnDate,
+  newReturnTime,
+  extensionLabel,
+  extensionAmount,
+  paymentIntentId,
+  extensionCount,
+}) {
+  return new Promise((resolve, reject) => {
+    const issuedAt = new Date().toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+      dateStyle: "long",
+      timeStyle: "short",
+    });
+
+    const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
+    const vehicleName = (carInfo && carInfo.name) || vehicleId || "Vehicle";
+
+    const doc = new PDFDocument({ margin: 50, size: "LETTER" });
+    const chunks = [];
+    doc.on("data", chunk => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const BRAND_BLACK   = "#111111";
+    const SECTION_GRAY  = "#555555";
+    const TABLE_HEADER_BG = "#f0f0f0";
+    const LINE_COLOR    = "#cccccc";
+    const GREEN         = "#2e7d32";
+    const PAGE_WIDTH    = doc.page.width - 100;
+
+    function sectionHeader(text) {
+      doc.moveDown(0.4)
+        .moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y)
+        .strokeColor(LINE_COLOR).lineWidth(0.5).stroke()
+        .moveDown(0.2)
+        .font("Helvetica-Bold").fontSize(10).fillColor(BRAND_BLACK)
+        .text(text.toUpperCase())
+        .moveDown(0.15);
+      doc.font("Helvetica").fontSize(9).fillColor(BRAND_BLACK);
+    }
+
+    function tableRow(label, value) {
+      const rowY   = doc.y;
+      const labelW = PAGE_WIDTH * 0.4;
+      const valueW = PAGE_WIDTH * 0.6;
+      const rowH   = 18;
+      doc.rect(50, rowY, labelW, rowH).fill(TABLE_HEADER_BG);
+      doc.rect(50 + labelW, rowY, valueW, rowH).fill("#ffffff");
+      doc.rect(50, rowY, PAGE_WIDTH, rowH).strokeColor(LINE_COLOR).lineWidth(0.5).stroke();
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(BRAND_BLACK)
+        .text(label, 55, rowY + 4, { width: labelW - 10 });
+      doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
+        .text(String(value || ""), 55 + labelW, rowY + 4, { width: valueW - 10 });
+      doc.y = rowY + rowH;
+    }
+
+    function bodyText(text) {
+      doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK).text(text, { lineGap: 2 });
+    }
+
+    // ── Header ────────────────────────────────────────────────────────────────
+    doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND_BLACK)
+      .text("SLY TRANSPORTATION SERVICES — RENTAL EXTENSION AGREEMENT", { align: "center" });
+    doc.moveDown(0.3);
+    doc.font("Helvetica").fontSize(9).fillColor(SECTION_GRAY)
+      .text(`Issued: ${issuedAt} (Pacific Time)`, { align: "center" });
+    doc.moveDown(0.5);
+
+    // ── Notice ────────────────────────────────────────────────────────────────
+    doc.rect(50, doc.y, PAGE_WIDTH, 36).fill("#fffde7").strokeColor("#f9a825").lineWidth(0.5).stroke();
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#e65100")
+      .text("This is an official extension to an existing rental agreement. All original rental terms and conditions remain in full force. The renter's prior electronic signature on the original agreement covers this extension.", 55, doc.y + 6, { width: PAGE_WIDTH - 10 });
+    doc.moveDown(0.5);
+
+    // ── Parties ───────────────────────────────────────────────────────────────
+    sectionHeader("Parties");
+    bodyText("Owner:   SLY Transportation Services — (213) 916-6606 — info@slytrans.com");
+    bodyText(`Renter:  ${renterName || "Not provided"}`);
+
+    // ── Renter Information ────────────────────────────────────────────────────
+    sectionHeader("Renter Information");
+    tableRow("Full Name", renterName || "Not provided");
+    tableRow("Email",     renterEmail || "Not provided");
+    tableRow("Phone",     renterPhone || "Not provided");
+
+    // ── Vehicle Information ───────────────────────────────────────────────────
+    sectionHeader("Vehicle Information");
+    tableRow("Vehicle", vehicleName);
+
+    // ── Original Rental Period ────────────────────────────────────────────────
+    sectionHeader("Original Rental Period");
+    tableRow("Pickup Date",          pickupDate        || "Not provided");
+    tableRow("Pickup Time",          pickupTime        || "Not specified");
+    tableRow("Original Return Date", originalReturnDate || "Not provided");
+
+    // ── Extension Details ─────────────────────────────────────────────────────
+    sectionHeader("Extension Details");
+    tableRow("Extension",         extensionLabel  || "");
+    tableRow("New Return Date",   newReturnDate   || "");
+    tableRow("New Return Time",   newReturnTime   || "Not specified");
+    tableRow("Extension Amount",  `$${extensionAmount || "0.00"}`);
+    tableRow("Stripe Payment ID", paymentIntentId || "");
+    if (extensionCount) tableRow("Extension #", String(extensionCount));
+    doc.moveDown(0.3);
+    bodyText("⚠  Please return the vehicle by the new return date and time listed above. Late returns will be charged at the standard late fee rate per the original rental agreement.");
+
+    // ── Terms Carry-Over ──────────────────────────────────────────────────────
+    sectionHeader("Applicable Terms");
+    bodyText("All terms and conditions from the original signed rental agreement continue to apply during the extension period, including but not limited to:");
+    [
+      "Mileage and geographic restrictions (Los Angeles County / 50-mile radius)",
+      "Fuel policy (return with the same fuel level as at pickup)",
+      "No smoking, no pets, no off-road use, no subleasing",
+      "Late fee: $50/day (economy) or $100/hour (Slingshot) after grace period",
+      "Payment authorization for all charges under the original agreement",
+      "Damage liability and any applicable Protection Plan coverage",
+    ].forEach(item => {
+      doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
+        .text(`  •  ${item}`, { lineGap: 1 });
+    });
+    doc.moveDown(0.3);
+    bodyText("The renter's prior electronic signature on the original rental agreement constitutes acceptance of these extension terms and authorizes SLY Transportation Services to charge the payment method on file for the extension amount shown above, as well as any additional fees incurred during the extension period.");
+
+    // ── Chargeback Acknowledgment ─────────────────────────────────────────────
+    sectionHeader("Payment Authorization");
+    bodyText(`The extension payment of $${extensionAmount || "0.00"} was charged via Stripe (Payment ID: ${paymentIntentId || "N/A"}). By completing this payment, the renter confirms authorization of this charge and all associated costs for the extension period. Renter agrees not to dispute or reverse this charge.`);
+
+    // ── Governing Law ─────────────────────────────────────────────────────────
+    sectionHeader("Governing Law");
+    bodyText("This extension is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County.");
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    doc.moveDown(0.6);
+    doc.rect(50, doc.y, PAGE_WIDTH, 48).fill("#f9f9f9").strokeColor(BRAND_BLACK).lineWidth(1).stroke();
+    const footerY = doc.y + 8;
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(GREEN)
+      .text("✓ Extension Payment Confirmed — Original Signature on File", 60, footerY);
+    doc.moveDown(0.4);
+    doc.font("Helvetica").fontSize(8).fillColor(SECTION_GRAY)
+      .text(`Issued: ${issuedAt} (Pacific Time)  |  Renter: ${renterName || "Not provided"}  |  Email: ${renterEmail || "Not provided"}`, 60, doc.y, { width: PAGE_WIDTH - 20 });
+
+    doc.end();
+  });
+}
+
+/**
+ * Send confirmation emails (with updated rental agreement PDF attached) to
+ * the owner and renter after a rental extension payment is confirmed.
  *
  * @param {object} opts
  * @param {object} opts.paymentIntent        - Stripe PaymentIntent object
@@ -285,6 +444,8 @@ async function saveWebhookBookingRecord(paymentIntent) {
  * @param {string} opts.vehicleId            - vehicle ID
  * @param {string} opts.renterEmail          - renter's email address
  * @param {string} opts.renterName           - renter's name
+ * @param {string} opts.originalReturnDate   - return date before this extension
+ * @param {number} opts.extensionCount       - running count of extensions (1-based)
  */
 async function sendExtensionConfirmationEmails({
   paymentIntent,
@@ -295,6 +456,8 @@ async function sendExtensionConfirmationEmails({
   vehicleId,
   renterEmail,
   renterName,
+  originalReturnDate,
+  extensionCount,
 }) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.warn("stripe-webhook: SMTP not configured — skipping extension email");
@@ -317,15 +480,44 @@ async function sendExtensionConfirmationEmails({
   const newReturnDisplay = updatedReturnDate +
     (updatedReturnTime ? ` at ${updatedReturnTime}` : "");
 
+  // ── Generate updated rental agreement PDF ──────────────────────────────
+  let pdfBuffer = null;
+  try {
+    pdfBuffer = await generateExtensionAgreementPdf({
+      vehicleId,
+      renterName,
+      renterEmail,
+      renterPhone:        (booking && booking.phone) || "",
+      pickupDate:         (booking && booking.pickupDate) || "",
+      pickupTime:         (booking && booking.pickupTime) || "",
+      originalReturnDate: originalReturnDate || "",
+      newReturnDate:      updatedReturnDate,
+      newReturnTime:      updatedReturnTime,
+      extensionLabel,
+      extensionAmount:    amountDollars,
+      paymentIntentId:    paymentIntent.id,
+      extensionCount,
+    });
+    console.log(`stripe-webhook: extension agreement PDF generated for PI ${paymentIntent.id}`);
+  } catch (pdfErr) {
+    console.error("stripe-webhook: extension PDF generation failed (non-fatal):", pdfErr.message);
+  }
+
+  const pdfAttachment = pdfBuffer
+    ? [{ filename: `Rental-Agreement-Extension-${updatedReturnDate || "updated"}.pdf`, content: pdfBuffer, contentType: "application/pdf" }]
+    : [];
+
   // ── Owner notification ─────────────────────────────────────────────────
   try {
     await transporter.sendMail({
-      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
-      to:      OWNER_EMAIL,
+      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:          OWNER_EMAIL,
       ...(renterEmail ? { replyTo: renterEmail } : {}),
-      subject: `⏱️ Rental Extension Confirmed — ${esc(vehicleName)} — ${esc(renterName || "Renter")}`,
+      subject:     `⏱️ Rental Extension Confirmed — ${esc(vehicleName)} — ${esc(renterName || "Renter")}`,
+      attachments: pdfAttachment,
       html: `
         <h2>⏱️ Rental Extension Confirmed</h2>
+        ${pdfBuffer ? "<p>📄 <strong>Updated Rental Agreement is attached.</strong></p>" : ""}
         <table style="border-collapse:collapse;width:100%;margin-top:16px">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterName || "N/A")}</td></tr>
           ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
@@ -340,6 +532,7 @@ async function sendExtensionConfirmationEmails({
       `,
       text: [
         "⏱️ Rental Extension Confirmed",
+        pdfBuffer ? "Updated Rental Agreement PDF is attached." : "",
         "",
         `Renter         : ${renterName || "N/A"}`,
         renterEmail ? `Email          : ${renterEmail}` : "",
@@ -360,12 +553,14 @@ async function sendExtensionConfirmationEmails({
   if (renterEmail) {
     try {
       await transporter.sendMail({
-        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-        to:      renterEmail,
-        subject: "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+        from:        `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:          renterEmail,
+        subject:     "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
+        attachments: pdfAttachment,
         html: `
           <h2>✅ Rental Extension Confirmed</h2>
           <p>Hi ${esc(renterName ? renterName.split(" ")[0] : "there")}, your rental extension payment has been received!</p>
+          ${pdfBuffer ? "<p>📄 <strong>Your updated Rental Agreement is attached — please save it for your records.</strong></p>" : ""}
           <table style="border-collapse:collapse;width:100%;margin-top:12px">
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Extension</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(extensionLabel)}</td></tr>
@@ -380,6 +575,7 @@ async function sendExtensionConfirmationEmails({
           "✅ Rental Extension Confirmed — Sly Transportation Services LLC",
           "",
           `Hi ${renterName ? renterName.split(" ")[0] : "there"}, your rental extension payment has been received!`,
+          pdfBuffer ? "Your updated Rental Agreement is attached — please save it for your records." : "",
           "",
           `Vehicle        : ${vehicleName}`,
           `Extension      : ${extensionLabel}`,
@@ -390,7 +586,7 @@ async function sendExtensionConfirmationEmails({
           `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
           "",
           "Sly Transportation Services LLC",
-        ].join("\n"),
+        ].filter(Boolean).join("\n"),
       });
       console.log(`stripe-webhook: extension renter email sent to ${renterEmail} for PI ${paymentIntent.id}`);
     } catch (renterEmailErr) {
@@ -675,17 +871,19 @@ export default async function handler(req, res) {
                   }
                 }
 
-                // Send extension confirmation emails to owner and renter
+                // Send extension confirmation emails (with updated agreement PDF) to owner and renter
                 try {
                   await sendExtensionConfirmationEmails({
                     paymentIntent,
                     booking,
                     updatedReturnDate,
                     updatedReturnTime,
-                    extensionLabel: ext.label || extension_label || "",
-                    vehicleId:      vehicle_id,
-                    renterEmail:    booking.email || renter_email || "",
-                    renterName:     booking.name  || renter_name  || "",
+                    extensionLabel:     ext.label || extension_label || "",
+                    vehicleId:          vehicle_id,
+                    renterEmail:        booking.email || renter_email || "",
+                    renterName:         booking.name  || renter_name  || "",
+                    originalReturnDate: oldReturnDate,
+                    extensionCount:     data[vehicle_id][idx].extensionCount,
                   });
                 } catch (emailErr) {
                   console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
