@@ -92,7 +92,8 @@
         "maint_tires_urgent": "2026-04-07T18:00:50.538Z",
         "maint_oil_warn": "2026-04-09T17:15:43.926Z",
         "maint_tires_escalate": "2026-04-09T18:15:21.602Z",
-        "active_mid": "2026-04-09T21:15:09.361Z"
+        "active_mid": "2026-04-09T21:15:09.361Z",
+        "maint_oil_sched_remind": "2026-04-10T17:30:33.759Z"
       },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
