@@ -5374,6 +5374,7 @@ async function loadAiInsights() {
   </div>
 </div>
 
+<script>
 // ── Driver Mileage Report ──────────────────────────────────────────────────
 let dmLastReport = null;
 let dmFlatpickrInit = false;
@@ -5497,6 +5498,7 @@ function showDmMsg(msg, type) {
   el.style.cssText += styles[type] || styles.info;
   if (type !== 'info') setTimeout(() => { el.style.display = 'none'; }, 6000);
 }
+</script>
 
 </body>
 </html>
