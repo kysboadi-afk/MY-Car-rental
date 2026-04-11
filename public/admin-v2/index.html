@@ -1980,6 +1980,46 @@
   </div>
 </div>
 
+<!-- Sync Extension Modal -->
+<div class="modal-overlay" id="resend-extension-modal">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">🔄 Sync / Resend Extension</div>
+      <button class="modal-close" onclick="closeModal('resend-extension-modal')">✕</button>
+    </div>
+    <div style="padding:4px 0 12px;">
+      <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
+        Use this to manually sync an extension payment that wasn't reflected in the dashboard,
+        or to resend the extension confirmation email.
+      </p>
+      <input type="hidden" id="re-booking-id">
+      <input type="hidden" id="re-vehicle-id">
+      <div style="display:grid;gap:12px;">
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Date <span style="color:red;">*</span></label>
+          <input type="date" id="re-return-date" class="form-input" style="font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Time (optional)</label>
+          <input type="text" id="re-return-time" class="form-input" placeholder="e.g. 11:30 AM" style="font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Extension Label (optional)</label>
+          <input type="text" id="re-ext-label" class="form-input" placeholder="e.g. +3 days" style="font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Amount Charged (optional, $)</label>
+          <input type="number" id="re-amount" class="form-input" placeholder="e.g. 165" step="0.01" min="0" style="font-size:13px;">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('resend-extension-modal')">Cancel</button>
+      <button class="btn btn-success" id="re-submit-btn" onclick="submitResendExtension(this)">✓ Sync & Resend Email</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast Container -->
 <div id="toast-container"></div>
 
@@ -3221,6 +3261,9 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
+    ${(b.status === 'active_rental' || b.status === 'completed_rental') ? `
+      <button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Sync Extension</button>
+    ` : ''}
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');
@@ -3283,6 +3326,65 @@ function resendBookingEmail(bookingId, btn) {
     })
     .finally(() => {
       if (btn) { btn.disabled = false; btn.textContent = '📧 Resend Email'; }
+    });
+}
+
+function openResendExtensionModal(bookingId, vehicleId, _btn) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  document.getElementById('re-booking-id').value  = bookingId;
+  document.getElementById('re-vehicle-id').value  = vehicleId;
+  document.getElementById('re-return-date').value = (b && b.returnDate) || '';
+  document.getElementById('re-return-time').value = (b && b.returnTime) || '';
+  document.getElementById('re-ext-label').value   = '';
+  document.getElementById('re-amount').value      = '';
+  closeModal('booking-detail-modal');
+  openModal('resend-extension-modal');
+}
+
+function submitResendExtension(btn) {
+  const bookingId  = document.getElementById('re-booking-id').value;
+  const vehicleId  = document.getElementById('re-vehicle-id').value;
+  const returnDate = (document.getElementById('re-return-date').value || '').trim();
+  const returnTime = (document.getElementById('re-return-time').value || '').trim();
+  const extLabel   = (document.getElementById('re-ext-label').value  || '').trim();
+  const amount     = (document.getElementById('re-amount').value     || '').trim();
+
+  if (!returnDate || !/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) {
+    showToast('Please enter a valid new return date (YYYY-MM-DD).', 'error');
+    return;
+  }
+
+  const b = allBookings.find((x) => x.bookingId === bookingId) || {};
+  if (!b.email) {
+    showToast('Cannot sync extension: renter email is missing from this booking record.', 'error');
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+
+  apiPost('/api/admin-resend-extension', {
+    secret:              adminSecret,
+    vehicle_id:          vehicleId,
+    vehicle_name:        b.vehicleName || vehicleId,
+    original_booking_id: bookingId,
+    renter_name:         b.name  || '',
+    renter_email:        b.email || '',
+    renter_phone:        b.phone || '',
+    extension_label:     extLabel,
+    new_return_date:     returnDate,
+    new_return_time:     returnTime,
+    amount:              amount ? Number(amount) : undefined,
+  })
+    .then(() => {
+      showToast('✅ Extension synced and confirmation email resent.', 'success');
+      closeModal('resend-extension-modal');
+      loadBookings();
+    })
+    .catch((err) => {
+      showToast('Error: ' + (err.message || 'Unknown error'), 'error');
+    })
+    .finally(() => {
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Sync & Resend Email'; }
     });
 }
 

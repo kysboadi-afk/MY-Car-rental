@@ -24,9 +24,10 @@ import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { CARS } from "./_pricing.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -476,113 +477,162 @@ export default async function handler(req, res) {
 
       if (vehicle_id && original_booking_id) {
         try {
-          const { data, sha } = await loadBookings();
-          if (Array.isArray(data[vehicle_id])) {
-            const idx = data[vehicle_id].findIndex(
-              (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
-            );
-            if (idx !== -1) {
-              const booking = data[vehicle_id][idx];
-              // Use extensionPendingPayment from booking record if available,
-              // otherwise fall back to PI metadata (for web-initiated extensions
-              // where the booking update may not have completed yet).
-              const ext = booking.extensionPendingPayment || (new_return_date ? {
-                newReturnDate: new_return_date,
-                newReturnTime: new_return_time || "",
-                label:         extension_label || "",
-              } : null);
+          const { data } = await loadBookings();
+          const bookingList = Array.isArray(data[vehicle_id]) ? data[vehicle_id] : [];
+          const idx = bookingList.findIndex(
+            (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+          );
 
-              if (ext) {
-                const updatedReturnDate = ext.newReturnDate || booking.returnDate;
-                const updatedReturnTime = ext.newReturnTime || booking.returnTime;
-                const oldReturnDate     = booking.returnDate;
-                const pickupDate        = booking.pickupDate;
-                data[vehicle_id][idx].returnDate = updatedReturnDate;
-                data[vehicle_id][idx].returnTime = updatedReturnTime;
-                data[vehicle_id][idx].extensionPendingPayment = null;
-                data[vehicle_id][idx].extensionCount = (booking.extensionCount || 0) + 1;
-                await saveBookings(data, sha, `Confirm extension for booking ${original_booking_id}`);
+          if (idx !== -1) {
+            const booking = bookingList[idx];
+            // Use extensionPendingPayment from booking record if available,
+            // otherwise fall back to PI metadata (for web-initiated extensions
+            // where the booking update may not have completed yet).
+            const ext = booking.extensionPendingPayment || (new_return_date ? {
+              newReturnDate: new_return_date,
+              newReturnTime: new_return_time || "",
+              label:         extension_label || "",
+            } : null);
 
-                // Sync updated return date to Supabase bookings table
+            if (ext) {
+              const updatedReturnDate = ext.newReturnDate || booking.returnDate;
+              const updatedReturnTime = ext.newReturnTime || booking.returnTime;
+              const oldReturnDate     = booking.returnDate;
+              const pickupDate        = booking.pickupDate;
+              const newExtensionCount = (booking.extensionCount || 0) + 1;
+
+              // Build the updated booking object (used for both Supabase sync and emails)
+              const updatedBooking = {
+                ...booking,
+                returnDate:              updatedReturnDate,
+                returnTime:              updatedReturnTime,
+                extensionPendingPayment: null,
+                extensionCount:          newExtensionCount,
+              };
+
+              // ── 1. Supabase sync FIRST (own try-catch, independent of GitHub write)
+              // This ensures the admin dashboard always reflects the extension even if
+              // the bookings.json GitHub write fails due to a SHA conflict or API error.
+              try {
+                await autoUpsertBooking(updatedBooking);
+              } catch (syncErr) {
+                console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
+              }
+
+              // ── 2. Persist to bookings.json via retry loop (handles SHA conflicts)
+              // Non-fatal: Supabase was already updated above, so the admin dashboard
+              // will be correct even if the GitHub write fails after all retries.
+              try {
+                await updateJsonFileWithRetry({
+                  load:  loadBookings,
+                  apply: (freshData) => {
+                    const freshIdx = (freshData[vehicle_id] || []).findIndex(
+                      (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+                    );
+                    if (freshIdx !== -1) {
+                      freshData[vehicle_id][freshIdx].returnDate              = updatedReturnDate;
+                      freshData[vehicle_id][freshIdx].returnTime              = updatedReturnTime;
+                      freshData[vehicle_id][freshIdx].extensionPendingPayment = null;
+                      freshData[vehicle_id][freshIdx].extensionCount          = newExtensionCount;
+                    }
+                  },
+                  save:    saveBookings,
+                  message: `Confirm extension for booking ${original_booking_id}`,
+                });
+              } catch (saveErr) {
+                console.error("stripe-webhook: bookings.json extension save failed (non-fatal):", saveErr.message);
+              }
+
+              // Update booked-dates.json: replace old range with the extended range.
+              if (pickupDate && updatedReturnDate) {
                 try {
-                  await autoUpsertBooking(data[vehicle_id][idx]);
-                } catch (syncErr) {
-                  console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
+                  await blockBookedDates(vehicle_id, pickupDate, updatedReturnDate);
+                  console.log(`stripe-webhook: booked-dates.json updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
+                } catch (bdErr) {
+                  console.error("stripe-webhook: booked-dates.json extension update failed (non-fatal):", bdErr.message);
                 }
+              }
 
-                // Update booked-dates.json: replace old range with the extended range.
-                // The old range (pickupDate → oldReturnDate) is removed and the new
-                // range (pickupDate → updatedReturnDate) is added so that:
-                //   • the "Next Available" badge on cars.html shows the correct date
-                //   • the availability calendar blocks the full extended period
-                if (pickupDate && updatedReturnDate) {
-                  try {
-                    await blockBookedDates(vehicle_id, pickupDate, updatedReturnDate);
-                    console.log(`stripe-webhook: booked-dates.json updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
-                  } catch (bdErr) {
-                    console.error("stripe-webhook: booked-dates.json extension update failed (non-fatal):", bdErr.message);
-                  }
+              // Update Supabase blocked_dates: replace old end date with new one.
+              if (pickupDate && updatedReturnDate) {
+                try {
+                  await autoCreateBlockedDate(vehicle_id, pickupDate, updatedReturnDate, "booking");
+                  console.log(`stripe-webhook: Supabase blocked_dates updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
+                } catch (sbBlockErr) {
+                  console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
                 }
+              }
 
-                // Update Supabase blocked_dates: replace old end date with new one.
-                // autoCreateBlockedDate uses upsert so it will insert or update in place.
-                if (pickupDate && updatedReturnDate) {
-                  try {
-                    await autoCreateBlockedDate(vehicle_id, pickupDate, updatedReturnDate, "booking");
-                    console.log(`stripe-webhook: Supabase blocked_dates updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
-                  } catch (sbBlockErr) {
-                    console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
-                  }
-                }
-
-                // Send extension confirmed SMS
-                if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-                  const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
-                  const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
-                  const vars = {
+              // Send extension confirmed SMS
+              if (booking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+                const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
+                const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
+                try {
+                  await sendSms(normalizePhone(booking.phone), render(template, {
                     return_time: updatedReturnTime,
                     return_date: updatedReturnDate,
-                  };
-                  try {
-                    await sendSms(normalizePhone(booking.phone), render(template, vars));
-                  } catch (smsErr) {
-                    console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
-                  }
+                  }));
+                } catch (smsErr) {
+                  console.error("stripe-webhook: extension confirmed SMS failed:", smsErr.message);
                 }
+              }
 
-                // Send extension confirmation emails (with updated agreement PDF) to owner and renter.
-                // Skip if send-extension-confirmation.js already handled this (idempotency guard).
-                // Re-read the booking's extensionEmailSent from the freshly-saved data to avoid a
-                // stale-read race with send-extension-confirmation.js running concurrently.
-                if (!data[vehicle_id][idx].extensionEmailSent) {
+              // Send extension confirmation emails (with updated agreement PDF) to owner and renter.
+              // Skip if send-extension-confirmation.js already handled this (idempotency guard).
+              if (!booking.extensionEmailSent) {
+                try {
+                  await sendExtensionConfirmationEmails({
+                    paymentIntent,
+                    booking,
+                    updatedReturnDate,
+                    updatedReturnTime,
+                    extensionLabel:     ext.label || extension_label || "",
+                    vehicleId:          vehicle_id,
+                    renterEmail:        booking.email || renter_email || "",
+                    renterName:         booking.name  || renter_name  || "",
+                    originalReturnDate: oldReturnDate,
+                    extensionCount:     newExtensionCount,
+                  });
+                  // Mark emails sent so a webhook retry doesn't re-send.
                   try {
-                    await sendExtensionConfirmationEmails({
-                      paymentIntent,
-                      booking,
-                      updatedReturnDate,
-                      updatedReturnTime,
-                      extensionLabel:     ext.label || extension_label || "",
-                      vehicleId:          vehicle_id,
-                      renterEmail:        booking.email || renter_email || "",
-                      renterName:         booking.name  || renter_name  || "",
-                      originalReturnDate: oldReturnDate,
-                      extensionCount:     data[vehicle_id][idx].extensionCount,
-                    });
-                    // Mark emails sent so a webhook retry doesn't re-send.
-                    // Use updateBooking (which uses updateJsonFileWithRetry internally) so that
-                    // the fresh SHA is fetched automatically — the first saveBookings above already
-                    // changed the SHA, making the original sha variable stale.
-                    try {
-                      await updateBooking(vehicle_id, original_booking_id, { extensionEmailSent: true });
-                    } catch (markErr) {
-                      console.warn("stripe-webhook: could not mark extensionEmailSent (non-fatal):", markErr.message);
-                    }
-                  } catch (emailErr) {
-                    console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
+                    await updateBooking(vehicle_id, original_booking_id, { extensionEmailSent: true });
+                  } catch (markErr) {
+                    console.warn("stripe-webhook: could not mark extensionEmailSent (non-fatal):", markErr.message);
                   }
-                } else {
-                  console.log(`stripe-webhook: extension emails already sent for booking ${original_booking_id} — skipping`);
+                } catch (emailErr) {
+                  console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
                 }
+              } else {
+                console.log(`stripe-webhook: extension emails already sent for booking ${original_booking_id} — skipping`);
+              }
+            }
+          } else {
+            // ── Booking not found in bookings.json — update Supabase directly ──────
+            // This handles bookings that exist only in Supabase (e.g. created via the
+            // admin manual-booking form) or cases where bookings.json was unavailable
+            // when the extension payment arrived.
+            console.warn(`stripe-webhook: rental_extension booking ${original_booking_id} not found in bookings.json — attempting Supabase direct update`);
+            if (new_return_date) {
+              try {
+                const sb = getSupabaseAdmin();
+                if (sb) {
+                  const pgTime = parseTime12h(new_return_time || "");
+                  const { error: sbDirectErr } = await sb
+                    .from("bookings")
+                    .update({
+                      return_date: new_return_date,
+                      ...(pgTime ? { return_time: pgTime } : {}),
+                      updated_at:  new Date().toISOString(),
+                    })
+                    .eq("booking_ref", original_booking_id);
+                  if (sbDirectErr) {
+                    console.error("stripe-webhook: extension Supabase direct update error:", sbDirectErr.message);
+                  } else {
+                    console.log(`stripe-webhook: extension Supabase direct update succeeded for booking ${original_booking_id} → ${new_return_date}`);
+                  }
+                }
+              } catch (fbErr) {
+                console.error("stripe-webhook: extension Supabase direct update threw:", fbErr.message);
               }
             }
           }

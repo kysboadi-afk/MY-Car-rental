@@ -24,7 +24,8 @@
 import Stripe from "stripe";
 import { loadBookings, updateBooking } from "./_bookings.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
-import { autoUpsertBooking } from "./_booking-automation.js";
+import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -91,8 +92,64 @@ export default async function handler(req, res) {
     );
 
     if (idx === -1) {
-      console.error(`send-extension-confirmation: booking not found for vehicle ${vehicle_id} / id ${original_booking_id}`);
-      return res.status(404).json({ error: "Booking not found. Please contact us at (213) 916-6606." });
+      // Booking not in bookings.json — update Supabase directly so the admin
+      // dashboard is kept in sync, then attempt emails using PI metadata.
+      console.warn(`send-extension-confirmation: booking ${original_booking_id} not found in bookings.json — using Supabase direct update fallback`);
+
+      if (new_return_date) {
+        try {
+          const sb = getSupabaseAdmin();
+          if (sb) {
+            const pgTime = parseTime12h(new_return_time || "");
+            const { error: sbDirectErr } = await sb
+              .from("bookings")
+              .update({
+                return_date: new_return_date,
+                ...(pgTime ? { return_time: pgTime } : {}),
+                updated_at:  new Date().toISOString(),
+              })
+              .eq("booking_ref", original_booking_id);
+            if (sbDirectErr) {
+              console.error("send-extension-confirmation: Supabase direct update error:", sbDirectErr.message);
+            } else {
+              console.log(`send-extension-confirmation: Supabase direct update succeeded for booking ${original_booking_id} → ${new_return_date}`);
+            }
+          }
+        } catch (fbErr) {
+          console.error("send-extension-confirmation: Supabase direct update threw:", fbErr.message);
+        }
+      }
+
+      // Still attempt email delivery if we have enough metadata
+      if (new_return_date && renter_email) {
+        try {
+          const syntheticBooking = {
+            phone:      "",
+            pickupDate: "",
+            pickupTime: "",
+            returnDate: "",
+          };
+          await sendExtensionConfirmationEmails({
+            paymentIntent:      pi,
+            booking:            syntheticBooking,
+            updatedReturnDate:  new_return_date,
+            updatedReturnTime:  new_return_time || "",
+            extensionLabel:     extension_label || "",
+            vehicleId:          vehicle_id,
+            renterEmail:        renter_email,
+            renterName:         renter_name || "",
+            originalReturnDate: "",
+            extensionCount:     1,
+          });
+        } catch (emailErr) {
+          console.error("send-extension-confirmation: email failed for not-found booking (non-fatal):", emailErr.message);
+          return res.status(200).json({ ok: true, emailWarning: true });
+        }
+        return res.status(200).json({ ok: true });
+      }
+
+      // Stripe webhook will handle the update — return success to avoid customer-facing error
+      return res.status(200).json({ ok: true });
     }
 
     const booking = vehicleBookings[idx];
