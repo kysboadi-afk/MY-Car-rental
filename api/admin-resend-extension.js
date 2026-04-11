@@ -29,6 +29,24 @@
 import { loadBookings, updateBooking } from "./_bookings.js";
 import { autoUpsertBooking } from "./_booking-automation.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+
+/**
+ * Convert a "H:MM AM/PM" time string to PostgreSQL "HH:MM:SS" format.
+ * Returns null for absent or unparseable input.
+ */
+function toPostgresTime(timeStr) {
+  if (!timeStr || typeof timeStr !== "string") return null;
+  const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!m) return null;
+  let hours   = parseInt(m[1], 10);
+  const mins  = m[2];
+  const secs  = m[3] || "00";
+  const ampm  = (m[4] || "").toUpperCase();
+  if (ampm === "PM" && hours < 12) hours += 12;
+  if (ampm === "AM" && hours === 12) hours  = 0;
+  return `${String(hours).padStart(2, "0")}:${mins}:${secs}`;
+}
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -150,6 +168,30 @@ export default async function handler(req, res) {
         await autoUpsertBooking(updatedBooking);
       } catch (syncErr) {
         console.warn("admin-resend-extension: Supabase sync failed (non-fatal):", syncErr.message);
+      }
+    } else if (needsReturnDateUpdate) {
+      // Booking not in bookings.json — update Supabase directly so the admin
+      // dashboard reflects the new return date even without a bookings.json record.
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          const pgTime = toPostgresTime(new_return_time || "");
+          const { error: sbDirectErr } = await sb
+            .from("bookings")
+            .update({
+              return_date: new_return_date,
+              ...(pgTime ? { return_time: pgTime } : {}),
+              updated_at:  new Date().toISOString(),
+            })
+            .eq("booking_ref", original_booking_id);
+          if (sbDirectErr) {
+            console.warn("admin-resend-extension: Supabase direct update failed (non-fatal):", sbDirectErr.message);
+          } else {
+            console.log(`admin-resend-extension: Supabase direct update succeeded for booking ${original_booking_id} → ${new_return_date}`);
+          }
+        }
+      } catch (sbErr) {
+        console.warn("admin-resend-extension: Supabase direct update threw (non-fatal):", sbErr.message);
       }
     }
 

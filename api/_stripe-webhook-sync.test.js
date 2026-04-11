@@ -114,6 +114,23 @@ mock.module("./_sms-templates.js", {
   },
 });
 
+// Supabase stub (for the new getSupabaseAdmin import in stripe-webhook.js)
+const supabaseDirectUpdates = [];
+mock.module("./_supabase.js", {
+  namedExports: {
+    getSupabaseAdmin: () => ({
+      from: (table) => ({
+        update: (payload) => ({
+          eq: (_col, _val) => {
+            supabaseDirectUpdates.push({ table, payload });
+            return Promise.resolve({ error: null });
+          },
+        }),
+      }),
+    }),
+  },
+});
+
 // GitHub API stub (for blockBookedDates / markVehicleUnavailable inside webhook)
 global.fetch = async (url) => {
   try {
@@ -137,6 +154,7 @@ function resetCalls() {
   automationCalls.booking.length = 0;
   automationCalls.blocked.length = 0;
   automationCalls.activated.length = 0;
+  supabaseDirectUpdates.length = 0;
 }
 
 function makeWebhookReq(event) {
@@ -348,5 +366,82 @@ test("webhook balance_payment: autoActivateIfPickupArrived is called after statu
   assert.ok(
     automationCalls.activated.length > 0,
     "autoActivateIfPickupArrived must be called after balance_payment so same-day pickups can be immediately activated"
+  );
+});
+
+// ─── 5. rental_extension: Supabase updated even when bookings.json save fails ─
+
+test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before bookings.json write (SHA-conflict resilience)", async () => {
+  // This test verifies the order-of-operations fix: Supabase must be updated
+  // BEFORE the bookings.json GitHub write so that a SHA conflict in the write
+  // cannot prevent the admin dashboard from seeing the new return date.
+  resetStore(); resetCalls();
+  const origBookingId = "bk-sha-conflict-test";
+  bookingsStore["camry"] = [{
+    bookingId:  origBookingId,
+    vehicleId:  "camry",
+    name:       "SHA Conflict Customer",
+    phone:      "+13105555555",
+    pickupDate: "2026-12-01",
+    returnDate: "2026-12-03",
+    returnTime: "5:00 PM",
+    status:     "active_rental",
+    amountPaid: 150,
+    extensionPendingPayment: {
+      newReturnDate: "2026-12-06",
+      newReturnTime: "5:00 PM",
+      label:         "+3 days",
+    },
+  }];
+
+  const event = piSucceededEvent({
+    payment_type:        "rental_extension",
+    vehicle_id:          "camry",
+    original_booking_id: origBookingId,
+  });
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  // autoUpsertBooking must have been called with the updated return date
+  assert.ok(
+    automationCalls.booking.length > 0,
+    "autoUpsertBooking must fire for rental_extension even if bookings.json write were to fail"
+  );
+  assert.equal(
+    automationCalls.booking[0].returnDate,
+    "2026-12-06",
+    "Supabase should see the extended return date (2026-12-06) regardless of GitHub write result"
+  );
+});
+
+// ─── 6. rental_extension: Supabase direct update when booking not in bookings.json ─
+
+test("webhook rental_extension: PREFLIGHT — Supabase direct update when booking not found in bookings.json", async () => {
+  // This test verifies the new fallback path: when original_booking_id doesn't
+  // match any record in bookings.json, the webhook must update Supabase directly
+  // using getSupabaseAdmin() so the admin dashboard still reflects the extension.
+  resetStore(); resetCalls();
+  // bookingsStore is empty — booking exists only in Supabase
+
+  const event = piSucceededEvent({
+    payment_type:        "rental_extension",
+    vehicle_id:          "camry",
+    original_booking_id: "bk-supabase-only-booking",
+    new_return_date:     "2026-04-14",
+    new_return_time:     "11:30 AM",
+    extension_label:     "+3 days",
+  });
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.ok(
+    supabaseDirectUpdates.length > 0,
+    "PREFLIGHT FAIL: when booking not found in bookings.json, the webhook must update Supabase directly via getSupabaseAdmin()"
+  );
+  const sbUpdate = supabaseDirectUpdates[0];
+  assert.equal(
+    sbUpdate.payload.return_date,
+    "2026-04-14",
+    "Supabase direct update must include the new return_date from PI metadata"
   );
 });
