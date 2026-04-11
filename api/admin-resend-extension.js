@@ -26,7 +26,8 @@
 //
 // Returns: { ok: true } on success or { error: "..." } on failure.
 
-import { loadBookings } from "./_bookings.js";
+import { loadBookings, updateBooking } from "./_bookings.js";
+import { autoUpsertBooking } from "./_booking-automation.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -118,6 +119,39 @@ export default async function handler(req, res) {
     };
 
     const oldReturnDate = booking ? booking.returnDate : "";
+    const needsReturnDateUpdate = new_return_date && new_return_date !== (booking ? booking.returnDate : "");
+    const newExtensionCount = (booking ? (booking.extensionCount || 0) : 0) + (needsReturnDateUpdate ? 1 : 0);
+
+    // ── Update booking record (bookings.json + Supabase) ──────────────────
+    // This is what makes the admin dashboard and AI assistant see the new
+    // return date immediately without waiting for the Stripe webhook.
+    if (booking) {
+      try {
+        await updateBooking(vehicle_id, original_booking_id, {
+          ...(needsReturnDateUpdate ? {
+            returnDate:     new_return_date,
+            returnTime:     new_return_time || booking.returnTime || "",
+            extensionCount: newExtensionCount,
+          } : {}),
+        });
+      } catch (updateErr) {
+        console.warn("admin-resend-extension: bookings.json update failed (non-fatal):", updateErr.message);
+      }
+
+      try {
+        const updatedBooking = {
+          ...booking,
+          ...(needsReturnDateUpdate ? {
+            returnDate:     new_return_date,
+            returnTime:     new_return_time || booking.returnTime || "",
+            extensionCount: newExtensionCount,
+          } : {}),
+        };
+        await autoUpsertBooking(updatedBooking);
+      } catch (syncErr) {
+        console.warn("admin-resend-extension: Supabase sync failed (non-fatal):", syncErr.message);
+      }
+    }
 
     // ── Send emails ────────────────────────────────────────────────────────
     await sendExtensionConfirmationEmails({
@@ -130,7 +164,7 @@ export default async function handler(req, res) {
       renterEmail:        renter_email,
       renterName:         renter_name || "",
       originalReturnDate: oldReturnDate,
-      extensionCount:     booking ? (booking.extensionCount || 1) : 1,
+      extensionCount:     newExtensionCount || (booking ? (booking.extensionCount || 1) : 1),
     });
 
     console.log(`admin-resend-extension: emails sent for booking ${original_booking_id} (${vehicle_id})`);
