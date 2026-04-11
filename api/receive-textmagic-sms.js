@@ -149,23 +149,33 @@ function addDaysToDate(date, extraDays) {
 
 /**
  * Create a Stripe PaymentIntent for the extension charge.
+ * @param {string} vehicleId        - vehicle being extended
+ * @param {object} booking          - active booking record
+ * @param {string} newReturnDate    - new return date (YYYY-MM-DD)
+ * @param {string} newReturnTime    - new return time (e.g. "3:00 PM")
+ * @param {number} amount           - charge amount in dollars
+ * @param {string} label            - human-readable extension label (e.g. "+2 days")
  */
-async function createExtensionPaymentIntent(booking, amount, label) {
+async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, amount, label) {
   if (!process.env.STRIPE_SECRET_KEY) return null;
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   try {
     const pi = await stripe.paymentIntents.create({
       amount:   Math.round(amount * 100),
       currency: "usd",
-      description: `Rental extension — ${booking.vehicleName || booking.vehicleId} — ${label} — ${booking.name}`,
+      description: `Rental extension — ${booking.vehicleName || vehicleId} — ${label} — ${booking.name}`,
       automatic_payment_methods: { enabled: true },
       metadata: {
-        payment_type:    "rental_extension",
+        payment_type:        "rental_extension",
         original_booking_id: booking.bookingId || booking.paymentIntentId,
-        vehicle_id:      booking.vehicleId,
-        vehicle_name:    booking.vehicleName || booking.vehicleId,
-        renter_name:     booking.name || "",
-        extension_label: label,
+        vehicle_id:          vehicleId,
+        vehicle_name:        booking.vehicleName || vehicleId,
+        renter_name:         booking.name  || "",
+        renter_email:        booking.email || "",
+        renter_phone:        booking.phone || "",
+        extension_label:     label,
+        new_return_date:     newReturnDate || "",
+        new_return_time:     newReturnTime || "",
       },
     });
     return pi;
@@ -266,26 +276,23 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
     return;
   }
 
-  // Create Stripe PaymentIntent for extension charge
-  const pi = await createExtensionPaymentIntent(booking, selected.price, selected.label);
-  const paymentLink = pi
-    ? buildExtensionPaymentLink(pi.client_secret, pi.id)
-    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
-
-  // Compute new return time / date
+  // Compute new return time / date first (needed for PI metadata)
   let newReturnDate = booking.returnDate;
   let newReturnTime = booking.returnTime;
-  let confirmMsg;
 
   if (isSlingshot) {
     const updated = addHoursToDateTime(booking.returnDate, booking.returnTime, selected.hours);
     newReturnDate = updated.newDate;
     newReturnTime = updated.newTime;
-    confirmMsg = null; // will be sent after payment
   } else {
     newReturnDate = addDaysToDate(booking.returnDate, selected.days);
-    confirmMsg = null;
   }
+
+  // Create Stripe PaymentIntent for extension charge (with full metadata)
+  const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, selected.price, selected.label);
+  const paymentLink = pi
+    ? buildExtensionPaymentLink(pi.client_secret, pi.id)
+    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
 
   // Save extension info to booking
   const bookingId = booking.bookingId || booking.paymentIntentId;

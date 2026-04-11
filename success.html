@@ -139,8 +139,10 @@
 
       // ── Extension payment flow ─────────────────────────────────────────────
       // When ?ext=1 is present the customer paid to extend their active rental.
-      // No confirmation email is needed — the Stripe webhook updates the booking
-      // and sends an SMS with the new return time/date.
+      // Call send-extension-confirmation to send confirmation emails (owner +
+      // renter with updated rental agreement PDF) and update the admin.
+      // The Stripe webhook (stripe-webhook.js) also handles this but uses an
+      // idempotency flag so no duplicate emails are sent.
       var isExtension = urlParams.get("ext") === "1";
       if (isExtension) {
         var extTitle  = document.getElementById("messageTitle");
@@ -148,9 +150,37 @@
         var extStatus = document.getElementById("emailStatus");
         var extBtn    = document.getElementById("homeBtn");
         if (extTitle) { extTitle.textContent = "✅ Extension Confirmed!"; extTitle.style.color = "#4caf50"; }
-        if (extBody)  { extBody.textContent  = "Your rental has been extended. You'll receive a text message shortly with your new return time."; }
-        if (extStatus){ extStatus.style.display = "none"; }
+        if (extBody)  { extBody.textContent  = "Your rental has been extended. A confirmation email with your updated rental agreement will be sent shortly."; }
+        if (extStatus){ extStatus.textContent = "Sending confirmation…"; extStatus.style.display = ""; }
         if (extBtn)   { extBtn.href = "index.html"; extBtn.textContent = "Back to Homepage"; extBtn.style.pointerEvents = ""; extBtn.style.opacity = ""; }
+
+        // Trigger server-side email sending using the PaymentIntent ID that
+        // Stripe appended to this redirect URL.
+        var extPiId = urlParams.get("payment_intent") || "";
+        if (extPiId) {
+          fetch(API_BASE + "/api/send-extension-confirmation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paymentIntentId: extPiId }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (extStatus) {
+                if (d.ok) {
+                  extStatus.textContent = d.alreadySent
+                    ? "Confirmation already sent."
+                    : "Confirmation email sent ✓";
+                } else {
+                  extStatus.textContent = "Could not send confirmation email. Please call (213) 916-6606.";
+                }
+              }
+            })
+            .catch(function () {
+              if (extStatus) extStatus.textContent = "Could not send confirmation email. Please call (213) 916-6606.";
+            });
+        } else {
+          if (extStatus) extStatus.style.display = "none";
+        }
         return;
       }
 
