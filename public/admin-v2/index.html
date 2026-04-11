@@ -536,6 +536,12 @@
       margin-left: auto; display: flex; align-items: center; gap: 8px;
       font-size: 12px; color: var(--text-sub);
     }
+    .ai-new-chat-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      padding: 3px 8px; font-size: 11px; color: var(--text-sub); cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .ai-new-chat-btn:hover { background: var(--surface-hover, #f3f4f6); color: var(--text); }
     .ai-mode-toggle {
       position: relative; width: 36px; height: 20px; cursor: pointer;
     }
@@ -1708,6 +1714,7 @@
                 <div class="ai-chat-sub">Powered by GPT · Tool-based · Audit logged</div>
               </div>
               <div class="ai-chat-mode">
+                <button class="ai-new-chat-btn" onclick="newAiChat()" title="Clear chat history">↺ New Chat</button>
                 <span>Auto Mode</span>
                 <label class="ai-mode-toggle" title="Auto Mode: AI can execute actions without asking">
                   <input type="checkbox" id="ai-auto-mode-toggle" onchange="toggleAiAutoMode(this.checked)">
@@ -2140,10 +2147,36 @@ let bookingsChart = null;
 let cachedVehicleStats = {};
 
 // AI assistant state
+const AI_HISTORY_KEY = 'sly_ai_history';
 let aiHistory      = [];   // { role, content }[] — conversation sent to backend
 let aiTyping       = false;
 let aiInitialized  = false;
 let aiAutoMode     = false;
+
+function aiSaveHistory() {
+  try { localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(aiHistory)); } catch (_) {}
+}
+
+function aiClearHistory() {
+  aiHistory = [];
+  try { localStorage.removeItem(AI_HISTORY_KEY); } catch (_) {}
+}
+
+function aiRestoreHistory() {
+  try {
+    const raw = localStorage.getItem(AI_HISTORY_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!Array.isArray(saved) || saved.length === 0) return;
+    aiHistory = saved;
+    // Re-render all messages into the chat panel
+    saved.forEach((m) => {
+      if (m.role === 'user' || m.role === 'assistant') {
+        aiAppendMessage(m.role, typeof m.content === 'string' ? m.content : JSON.stringify(m.content));
+      }
+    });
+  } catch (_) {}
+}
 
 // ── Auth ───────────────────────────────────────────────────────────────────
 document.getElementById('auth-password').addEventListener('keydown', (e) => {
@@ -2164,6 +2197,7 @@ function signIn() {
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').classList.add('ready');
       renderDashboard(data);
+      aiRestoreHistory();
 
       // Handle return from Bouncie OAuth callback
       const params = new URLSearchParams(window.location.search);
@@ -2199,7 +2233,7 @@ function logout() {
   allProtectionPlans = [];
   allSystemSettings = [];
   fleetStatusData = {};
-  aiHistory = [];
+  aiClearHistory();
   aiTyping = false;
   aiInitialized = false;
   document.getElementById('app').classList.remove('ready');
@@ -5139,6 +5173,18 @@ function toggleAiAutoMode(on) {
     : '🔒 Auto Mode OFF — AI will suggest only', on ? 'warning' : 'info');
 }
 
+function newAiChat() {
+  aiClearHistory();
+  const container = document.getElementById('ai-messages');
+  container.innerHTML = `<div class="ai-empty" id="ai-empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    <p>Ask me anything about your business — revenue, bookings, vehicle performance, or detected problems.</p>
+  </div>`;
+  const chips = document.getElementById('ai-chips');
+  if (chips) chips.style.display = '';
+  showToast('🗑 Chat cleared', 'info');
+}
+
 function aiChip(text) {
   document.getElementById('ai-input').value = text;
   sendAiMessage();
@@ -5220,6 +5266,7 @@ async function sendAiMessage() {
     } else {
       aiHistory.push({ role: 'assistant', content: reply });
     }
+    aiSaveHistory();
   } catch (err) {
     aiRemoveTyping();
     const msg = err.message.includes('OPENAI_API_KEY')
