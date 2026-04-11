@@ -4,7 +4,8 @@
     "api/bouncie-webhook.js":               { "maxDuration": 20 },
     "api/bouncie-location.js":              { "maxDuration": 20 },
     "api/v2-mileage.js":                    { "maxDuration": 20 },
-    "api/send-extension-confirmation.js":   { "maxDuration": 25 }
+    "api/send-extension-confirmation.js":   { "maxDuration": 25 },
+    "api/admin-resend-extension.js":        { "maxDuration": 25 }
   },
   "headers": [
     {
