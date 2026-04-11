@@ -109,6 +109,24 @@
       },
       "maintenance_status": "non_compliant",
       "extensionCount": 1
+    },
+    {
+      "bookingId": "702b7109c05763a2",
+      "name": "David Agbebaku",
+      "phone": "3463814616",
+      "email": "davosama15@gmail.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-07",
+      "pickupTime": "",
+      "returnDate": "2026-04-14",
+      "returnTime": "",
+      "location": "",
+      "status": "booked_paid",
+      "paymentIntentId": "manual_2086c92cb302",
+      "amountPaid": 0,
+      "notes": "Rental Extension: Original Booking ID d95643b10c87a02f1a510f7466b2bedf, Extension Label: +3 days",
+      "createdAt": "2026-04-11T21:33:49.245Z"
     }
   ],
   "camry2013": [
