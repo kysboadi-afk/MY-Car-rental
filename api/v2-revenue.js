@@ -478,6 +478,62 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── RECORD EXTENSION FEE ────────────────────────────────────────────────
+    // Convenience action for recording an external or manual extension fee that
+    // was NOT processed through the Stripe rental-extension flow (e.g. cash,
+    // Zelle, or a phone-agreed payment).  Generates a unique synthetic booking_id
+    // (prefix "ext-") so it is picked up by the dashboard as supplemental revenue
+    // without conflicting with the original booking's record.
+    if (action === "record_extension_fee") {
+      const { original_booking_id, vehicle_id, amount, extension_label, payment_method, notes } = body;
+      if (!original_booking_id || !vehicle_id || amount == null)
+        return res.status(400).json({ error: "original_booking_id, vehicle_id, and amount are required" });
+
+      const resolvedAmount = Number(amount);
+      if (isNaN(resolvedAmount) || resolvedAmount <= 0)
+        return res.status(400).json({ error: "amount must be a positive number" });
+
+      const syntheticBookingId = `ext-${original_booking_id}-${Date.now()}`;
+      const label   = extension_label ? ` (${extension_label})` : "";
+      const noteText = notes || `Extension${label} for booking ${original_booking_id} — external payment`;
+
+      const commonFields = {
+        booking_id:        syntheticBookingId,
+        vehicle_id,
+        gross_amount:      resolvedAmount,
+        deposit_amount:    0,
+        refund_amount:     0,
+        payment_method:    payment_method || "external",
+        payment_status:    "paid",
+        notes:             noteText,
+        is_no_show:        false,
+        is_cancelled:      false,
+        override_by_admin: true,
+        created_at:        new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
+      };
+
+      if (sb) {
+        const { data, error } = await sb.from("revenue_records").insert(commonFields).select().single();
+        if (!error) return res.status(201).json({ record: data, booking_id: syntheticBookingId });
+        if (!isSchemaError(error)) throw error;
+        console.warn("v2-revenue record_extension_fee: Supabase unavailable, falling back to GitHub");
+      }
+      // GitHub fallback
+      const ghRecord = { id: crypto.randomUUID(), ...commonFields };
+      let created;
+      await updateJsonFileWithRetry({
+        load:    loadRecordsFromGitHub,
+        apply:   (data) => {
+          if (!data.some((r) => r.booking_id === ghRecord.booking_id)) data.push(ghRecord);
+          created = ghRecord;
+        },
+        save:    saveRecordsToGitHub,
+        message: `v2: Record extension fee for booking ${original_booking_id}`,
+      });
+      return res.status(201).json({ record: created, booking_id: syntheticBookingId });
+    }
+
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error("v2-revenue error:", err);
