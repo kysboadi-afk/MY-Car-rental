@@ -242,15 +242,15 @@ function generateRentalAgreementHtml(body) {
   const isHourly = !!(carInfo && carInfo.hourlyTiers);
   let depositSection = "";
   if (isHourly) {
-    // Full payment system: security deposit included in total, charged at booking
-    const dppLine = protectionPlan
-      ? `<p><strong>Damage Protection Plan (${dppRatesText}):</strong> automatically included &mdash; reduces your damage liability to $1,000</p>`
-      : "";
+    // Full payment system: security deposit included in total, charged at booking.
+    // No Damage Protection Plan for Slingshot — renter assumes full liability.
+    const insuranceChoiceLabel = insuranceCoverageChoice === "no"
+      ? "Option B — No personal insurance (no DPP available — renter assumes full liability)"
+      : "Option A — Renter provided own insurance (proof required at pickup)";
     depositSection = `
       <h4>SECURITY DEPOSIT (Refundable)</h4>
       <p>A <strong>refundable security deposit equal to your rental fee</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
-      <p><strong>Insurance/Protection Choice:</strong> ${insuranceCoverageChoice === "no" ? "Option B — No personal insurance (Damage Protection Plan included)" : "Option A — Renter provided own insurance (proof required at pickup)"}</p>
-      ${dppLine}
+      <p><strong>Insurance/Protection Choice:</strong> ${insuranceChoiceLabel}</p>
     `;
   } else {
     const dppDetail = protectionPlan
@@ -265,7 +265,7 @@ function generateRentalAgreementHtml(body) {
   // Insurance / protection plan summary
   const insuranceSummary = isHourly
     ? (insuranceCoverageChoice === "no"
-        ? "Option B: No personal insurance — Damage Protection Plan included"
+        ? "Option B: No personal insurance — no DPP available for Slingshot; renter assumes full liability"
         : "Option A: Renter has own insurance (proof required at pickup)")
     : (protectionPlan
         ? `Damage Protection Plan selected — ${tierLabel}`

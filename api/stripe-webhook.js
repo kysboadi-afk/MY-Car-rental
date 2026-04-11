@@ -217,7 +217,11 @@ async function saveWebhookBookingRecord(paymentIntent) {
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
   const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
-  const status      = payment_type === "reservation_deposit" ? "reserved_unpaid" : "booked_paid";
+  // "reservation_deposit" = Camry deposit-only; "slingshot_security_deposit" = Slingshot deposit-only.
+  // Both mean only a partial payment was made — rental fee is still owed.
+  const status      = (payment_type === "reservation_deposit" || payment_type === "slingshot_security_deposit")
+    ? "reserved_unpaid"
+    : "booked_paid";
 
   const bookingRecord = {
     bookingId:           booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
