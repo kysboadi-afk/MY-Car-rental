@@ -78,8 +78,8 @@
       "vehicleName": "Camry 2012",
       "pickupDate": "2026-04-07",
       "pickupTime": "9:20 PM",
-      "returnDate": "2026-04-11",
-      "returnTime": "9:20 PM",
+      "returnDate": "2026-04-14",
+      "returnTime": "11:30 AM",
       "location": "1200 S Figueroa St, Los Angeles, CA 90015",
       "status": "active_rental",
       "amountPaid": 308.7,
@@ -107,7 +107,8 @@
         "paymentIntentId": "pi_3TL5fkPo7fICjrtZ2y0zfu5h",
         "createdAt": "2026-04-11T17:50:20.471Z"
       },
-      "maintenance_status": "non_compliant"
+      "maintenance_status": "non_compliant",
+      "extensionCount": 1
     }
   ],
   "camry2013": [
