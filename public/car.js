@@ -1002,6 +1002,16 @@ let flatpickrActive = false;
 // ----- Date Pickers (Flatpickr) -----
 async function initDatePickers() {
   if (typeof flatpickr === "undefined") return; // fallback to native inputs
+
+  // For Slingshot: a date is only truly blocked when ALL units are booked on
+  // that date.  Customers book a generic Slingshot; we assign whichever unit
+  // is free at payment time.
+  const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
+  const isSlingshot = vehicleId.startsWith("slingshot");
+
+  // allUnitRanges: array-of-arrays (one per slingshot unit) for the combined
+  // disable check; unused for non-slingshot vehicles (uses bookedRanges instead).
+  let allUnitRanges = [];
   let bookedRanges = [];
   try {
     // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
@@ -1012,7 +1022,19 @@ async function initDatePickers() {
     const resp = await fetch(`${API_BASE}/api/booked-dates`);
     if (resp.ok) {
       const data = await resp.json();
-      bookedRanges = data[vehicleId] || [];
+      if (isSlingshot) {
+        // Collect each unit's ranges; missing unit = no bookings (empty array).
+        allUnitRanges = SLINGSHOT_IDS.map(function(id) {
+          return (data[id] || []).map(function(r) {
+            return {
+              from: new Date(r.from + "T00:00:00").getTime(),
+              to:   new Date(r.to   + "T23:59:59").getTime(),
+            };
+          });
+        });
+      } else {
+        bookedRanges = data[vehicleId] || [];
+      }
     }
   } catch (e) { console.error("Failed to load booked dates:", e); }
 
@@ -1027,6 +1049,12 @@ async function initDatePickers() {
 
   function isBooked(date) {
     const t = date.getTime();
+    if (isSlingshot) {
+      // Date is blocked only when EVERY Slingshot unit is booked on that day.
+      return allUnitRanges.every(function(unitRanges) {
+        return unitRanges.some(function(r) { return t >= r.from && t <= r.to; });
+      });
+    }
     return compiledRanges.some(function(r) { return t >= r.from && t <= r.to; });
   }
 
@@ -1091,8 +1119,16 @@ initDatePickers();
 // clear "Currently Rented" notice and replace the booking form with the
 // Extend Rental section.  Fails open on any API error so transient outages
 // do not lock out the form.
+//
+// For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
+// slingshot3).  The notice is shown only when ALL units are simultaneously
+// unavailable; the "next available" date is the earliest return date across all
+// currently-booked units.
 (async function checkFleetStatus() {
   try {
+    const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
+    const isSlingshot = vehicleId.startsWith("slingshot");
+
     const [fleetResp, datesResp] = await Promise.all([
       fetch(`${API_BASE}/api/fleet-status`),
       fetch(`${API_BASE}/api/booked-dates`),
@@ -1100,23 +1136,58 @@ initDatePickers();
     if (!fleetResp.ok) return;
     const status      = await fleetResp.json();
     const bookedDates = datesResp.ok ? await datesResp.json() : {};
-    const entry = status[vehicleId];
-    if (entry && entry.available === false) {
-      // Compute next available date from booked-dates
-      const today  = new Date().toISOString().slice(0, 10);
-      const ranges = ((bookedDates[vehicleId] || []).slice().sort((a, b) =>
-        a.from < b.from ? -1 : 1
-      ));
+
+    let isUnavailable;
+    if (isSlingshot) {
+      // Unavailable only when every Slingshot unit is marked unavailable.
+      isUnavailable = SLINGSHOT_IDS.every(function(id) {
+        return status[id] && status[id].available === false;
+      });
+    } else {
+      const entry = status[vehicleId];
+      isUnavailable = !!(entry && entry.available === false);
+    }
+
+    if (isUnavailable) {
+      const today = new Date().toISOString().slice(0, 10);
+      // For Slingshot: the next available date is the earliest date when ANY
+      // unit's current booking ends (that unit then becomes free).
+      const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
       let nextAvail = null;
-      for (const r of ranges) {
-        if (r.from <= today && today <= r.to) {
-          // Add one day after the booking ends
-          const d = new Date(r.to + "T00:00:00");
-          d.setDate(d.getDate() + 1);
-          nextAvail = d.toISOString().slice(0, 10);
-          break;
+
+      for (const id of idsToCheck) {
+        const ranges = ((bookedDates[id] || []).slice().sort((a, b) =>
+          a.from < b.from ? -1 : 1
+        ));
+        // 1. Preferred: find a range that covers today
+        for (const r of ranges) {
+          if (r.from <= today && today <= r.to) {
+            const d = new Date(r.to + "T00:00:00");
+            d.setDate(d.getDate() + 1);
+            const candidate = d.toISOString().slice(0, 10);
+            // Keep the earliest "next available" across all units
+            if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
+            break;
+          }
+        }
+        // 2. Fallback: vehicle is unavailable but recorded range already expired
+        //    (rental extended past original return date). Use most recently ended range.
+        if (!nextAvail) {
+          let latestExpired = null;
+          for (const r of ranges) {
+            if (r.to < today) {
+              if (!latestExpired || r.to > latestExpired.to) latestExpired = r;
+            }
+          }
+          if (latestExpired) {
+            const d = new Date(latestExpired.to + "T00:00:00");
+            d.setDate(d.getDate() + 1);
+            const candidate = d.toISOString().slice(0, 10);
+            if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
+          }
         }
       }
+
       showVehicleUnavailable(nextAvail);
     }
   } catch (err) {

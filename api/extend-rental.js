@@ -207,7 +207,11 @@ export default async function handler(req, res) {
       extensionAmountPreTax = cost;
     }
 
-    const extensionAmount = applyTax(extensionAmountPreTax, settings);
+    // Slingshot: no tax — consistent with the main booking flow which also charges no tax.
+    // Economy vehicles: apply LA sales tax (same as the main booking flow).
+    const extensionAmount = isSlingshot
+      ? extensionAmountPreTax
+      : applyTax(extensionAmountPreTax, settings);
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);

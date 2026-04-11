@@ -140,6 +140,29 @@ export async function isDatesAvailable(vehicleId, from, to) {
   }
 }
 
+// All Slingshot unit IDs. The customer books a generic "Slingshot" and the
+// server assigns whichever unit is free — customers never choose a specific unit.
+export const SLINGSHOT_UNIT_IDS = ["slingshot", "slingshot2", "slingshot3"];
+
+/**
+ * Find the first Slingshot unit that is both date-available and fleet-available
+ * for the given pickup→return window.
+ *
+ * @param {string} pickup      - ISO date "YYYY-MM-DD"
+ * @param {string} returnDate  - ISO date "YYYY-MM-DD"
+ * @returns {Promise<string|null>} unit ID (e.g. "slingshot2") or null if all busy
+ */
+export async function findAvailableSlingshotUnit(pickup, returnDate) {
+  for (const unitId of SLINGSHOT_UNIT_IDS) {
+    const [datesOk, fleetOk] = await Promise.all([
+      isDatesAvailable(unitId, pickup, returnDate),
+      isVehicleAvailable(unitId),
+    ]);
+    if (datesOk && fleetOk) return unitId;
+  }
+  return null;
+}
+
 /**
  * Returns true if the vehicle is currently marked available in fleet-status.json.
  * Fails open (returns true) on any fetch error so transient issues do not
