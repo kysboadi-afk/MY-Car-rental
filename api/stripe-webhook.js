@@ -552,7 +552,9 @@ export default async function handler(req, res) {
 
                 // Send extension confirmation emails (with updated agreement PDF) to owner and renter.
                 // Skip if send-extension-confirmation.js already handled this (idempotency guard).
-                if (!booking.extensionEmailSent) {
+                // Re-read the booking's extensionEmailSent from the freshly-saved data to avoid a
+                // stale-read race with send-extension-confirmation.js running concurrently.
+                if (!data[vehicle_id][idx].extensionEmailSent) {
                   try {
                     await sendExtensionConfirmationEmails({
                       paymentIntent,
@@ -566,9 +568,15 @@ export default async function handler(req, res) {
                       originalReturnDate: oldReturnDate,
                       extensionCount:     data[vehicle_id][idx].extensionCount,
                     });
-                    // Mark emails sent so a retry of this webhook doesn't re-send
-                    data[vehicle_id][idx].extensionEmailSent = true;
-                    await saveBookings(data, sha, `Mark extensionEmailSent for booking ${original_booking_id}`);
+                    // Mark emails sent so a webhook retry doesn't re-send.
+                    // Use updateBooking (which uses updateJsonFileWithRetry internally) so that
+                    // the fresh SHA is fetched automatically — the first saveBookings above already
+                    // changed the SHA, making the original sha variable stale.
+                    try {
+                      await updateBooking(vehicle_id, original_booking_id, { extensionEmailSent: true });
+                    } catch (markErr) {
+                      console.warn("stripe-webhook: could not mark extensionEmailSent (non-fatal):", markErr.message);
+                    }
                   } catch (emailErr) {
                     console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
                   }
