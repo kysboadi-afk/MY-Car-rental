@@ -10,6 +10,7 @@ import { loadExpenses } from "./_expenses.js";
 import { loadBookings } from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -117,6 +118,81 @@ export default async function handler(req, res) {
         roi: purchasePrice > 0 ? Math.round((netProfit / purchasePrice) * 10000) / 100 : null,
         bookingCount:  vBookings.length,
       };
+    }
+
+    // ── Supplemental revenue from Supabase ────────────────────────────────────
+    // Adds succeeded charges (damages, late fees, etc.) and supplemental revenue
+    // records (extension fees, external payments) to the totals without
+    // double-counting entries already reflected in bookings.json amountPaid.
+    const sb = getSupabaseAdmin();
+    if (sb) {
+      // Build lookup: bookingId → vehicleId (from already-loaded bookings.json)
+      const bookingVehicleMap = {};
+      const bookingIdSet = new Set();
+      for (const b of allBookings) {
+        if (b.bookingId) {
+          bookingVehicleMap[b.bookingId] = b.vehicleId;
+          bookingIdSet.add(b.bookingId);
+        }
+      }
+
+      // Helper: add an amount to global and per-vehicle revenue totals.
+      function addSupplemental(vid, amount, monthKey) {
+        if (!amount || isNaN(amount)) return;
+        if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) return;
+        totalRevenue += amount;
+        if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
+        if (vehicleStats[vid]) {
+          vehicleStats[vid].revenue   += amount;
+          vehicleStats[vid].netProfit += amount;
+          const pp = vehicleStats[vid].purchasePrice || 0;
+          vehicleStats[vid].roi = pp > 0
+            ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
+            : null;
+        }
+      }
+
+      // 1. Succeeded charges (damages, late fees, smoking penalties, etc.)
+      //    The charges table has booking_id but not vehicle_id; we resolve it
+      //    from the bookings.json lookup.  Charges are not reflected in
+      //    amountPaid, so there is no double-count risk.
+      try {
+        const { data: chargesData } = await sb
+          .from("charges")
+          .select("booking_id, amount, created_at")
+          .eq("status", "succeeded");
+        for (const charge of (chargesData || [])) {
+          const vid = bookingVehicleMap[charge.booking_id];
+          if (!vid) continue;
+          addSupplemental(vid, Number(charge.amount || 0), (charge.created_at || "").slice(0, 7));
+        }
+      } catch (chargesErr) {
+        console.error("v2-dashboard: charges load error (non-fatal):", chargesErr.message);
+      }
+
+      // 2. Supplemental revenue records — extension fees and external payments.
+      //    Records whose booking_id matches an existing bookingId are already
+      //    counted via bookings.json amountPaid and are excluded.
+      try {
+        const { data: rrData } = await sb
+          .from("revenue_records")
+          .select("booking_id, vehicle_id, gross_amount, created_at, payment_status, is_cancelled");
+        for (const rr of (rrData || [])) {
+          if (bookingIdSet.has(rr.booking_id)) continue; // already counted
+          if (rr.payment_status !== "paid") continue;
+          if (rr.is_cancelled) continue;
+          const vid = rr.vehicle_id || "unknown";
+          addSupplemental(vid, Number(rr.gross_amount || 0), (rr.created_at || "").slice(0, 7));
+        }
+      } catch (rrErr) {
+        console.error("v2-dashboard: revenue_records supplemental load error (non-fatal):", rrErr.message);
+      }
+
+      // Re-round per-vehicle revenue/profit after supplemental additions.
+      for (const stats of Object.values(vehicleStats)) {
+        stats.revenue   = Math.round(stats.revenue   * 100) / 100;
+        stats.netProfit = Math.round(stats.netProfit * 100) / 100;
+      }
     }
 
     // Alerts: negative-profit vehicles, upcoming bookings (next 7 days)
