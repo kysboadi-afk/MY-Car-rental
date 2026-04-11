@@ -101,7 +101,7 @@
       "returnDate": "2026-04-12",
       "returnTime": "",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "paymentIntentId": "",
       "paymentMethod": "stripe",
       "amountPaid": 303.19,
