@@ -1,5 +1,6 @@
 {
   "functions": {
+    "api/admin-chat.js":                    { "maxDuration": 60 },
     "api/bouncie-sync.js":                  { "maxDuration": 30 },
     "api/bouncie-webhook.js":               { "maxDuration": 20 },
     "api/bouncie-location.js":              { "maxDuration": 20 },
