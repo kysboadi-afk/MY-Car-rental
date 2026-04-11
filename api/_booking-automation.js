@@ -14,10 +14,42 @@
 //   autoUpsertCustomer       — upserts customer row (keyed by phone)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
 //   autoCreateBlockedDate    — inserts a blocked_dates row for a booking
+//   writeAuditLog            — appends rows to booking_audit_log
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { updateBooking } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
+
+/**
+ * Appends one or more rows to the booking_audit_log table.
+ * Non-fatal — errors are logged and never propagate to the caller.
+ *
+ * @param {string} bookingRef  - booking_ref / bookingId
+ * @param {Array<{field:string, oldValue:string|null, newValue:string|null}>} changes
+ * @param {string} [changedBy] - actor label, e.g. "stripe-webhook", "admin"
+ */
+export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
+  if (!bookingRef || !changes || changes.length === 0) return;
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  try {
+    const now = new Date().toISOString();
+    const rows = changes.map(({ field, oldValue, newValue }) => ({
+      booking_ref: bookingRef,
+      changed_by:  changedBy,
+      changed_at:  now,
+      field,
+      old_value:   oldValue != null ? String(oldValue) : null,
+      new_value:   newValue != null ? String(newValue) : null,
+    }));
+    const { error } = await sb.from("booking_audit_log").insert(rows);
+    if (error) {
+      console.error("_booking-automation writeAuditLog error (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.error("_booking-automation writeAuditLog error (non-fatal):", err.message);
+  }
+}
 
 /**
  * Auto-creates a revenue record in Supabase for a booking that is paid.
@@ -277,7 +309,7 @@ export async function autoUpsertBooking(booking) {
     // Check whether the booking already exists in Supabase
     const { data: existing } = await sb
       .from("bookings")
-      .select("id")
+      .select("id, status, return_date, total_price")
       .eq("booking_ref", booking.bookingId)
       .maybeSingle();
 
@@ -289,6 +321,15 @@ export async function autoUpsertBooking(booking) {
         .eq("id", existing.id);
       if (error) {
         console.error("_booking-automation autoUpsertBooking update error (non-fatal):", error.message);
+      } else {
+        // Audit log: record fields that actually changed
+        const auditChanges = [];
+        if (record.status     !== existing.status)      auditChanges.push({ field: "status",      oldValue: existing.status,      newValue: record.status });
+        if (record.return_date !== existing.return_date) auditChanges.push({ field: "return_date", oldValue: existing.return_date,  newValue: record.return_date });
+        if (String(record.total_price) !== String(existing.total_price)) auditChanges.push({ field: "total_price", oldValue: existing.total_price, newValue: record.total_price });
+        if (auditChanges.length > 0) {
+          await writeAuditLog(booking.bookingId, auditChanges, booking._changedBy || "system");
+        }
       }
     } else {
       // INSERT — conflict-check trigger fires; will reject overlapping dates
@@ -299,6 +340,8 @@ export async function autoUpsertBooking(booking) {
         console.error("_booking-automation autoUpsertBooking insert error (non-fatal):", error.message);
       } else {
         console.log(`_booking-automation: synced booking ${booking.bookingId} → Supabase bookings table`);
+        // Audit log: initial insert
+        await writeAuditLog(booking.bookingId, [{ field: "status", oldValue: null, newValue: record.status }], booking._changedBy || "system");
       }
     }
   } catch (err) {
