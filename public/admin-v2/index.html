@@ -368,6 +368,10 @@
       z-index: 200; align-items: center; justify-content: center; padding: 20px;
     }
     .modal-overlay.open { display: flex; }
+    @media (max-width: 600px) {
+      .modal-overlay { padding: 10px; align-items: flex-end; }
+      .modal { border-radius: 16px 16px 0 0; max-height: 92vh; padding: 20px 16px; }
+    }
     .modal {
       background: var(--surface); border-radius: 12px; padding: 24px;
       width: 100%; max-width: 520px; box-shadow: var(--shadow-md);
@@ -416,6 +420,10 @@
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
     /* ── Mobile ─────────────────────────────────────────────────── */
+    /* ── Responsive detail grid (booking modal) ─────────────────── */
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .detail-sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+
     @media (max-width: 900px) {
       :root { --sidebar-w: 0px; }
       .sidebar { transform: translateX(-240px); }
@@ -428,12 +436,34 @@
       .form-grid { grid-template-columns: 1fr; }
       .form-grid.three { grid-template-columns: 1fr; }
       .mobile-menu-btn { display: flex; }
+      /* Topbar: tighter spacing + icon-only buttons */
+      .topbar { padding: 0 12px; gap: 8px; }
+      .topbar-actions { gap: 6px; }
+      .btn-label { display: none; }
+      /* Modal footer wraps so action buttons don't overflow */
+      .modal-footer { flex-wrap: wrap; }
+      /* SMS template preview stays within card */
+      .sms-item-preview { max-width: 100%; }
     }
     @media (max-width: 600px) {
       .kpi-grid { grid-template-columns: 1fr 1fr; }
       .vehicles-grid { grid-template-columns: 1fr; }
-      .content { padding: 16px; }
+      .content { padding: 12px; }
       .block-dates-grid { grid-template-columns: 1fr !important; }
+      /* fin-grid collapses to single column */
+      .fin-grid { grid-template-columns: 1fr; }
+      /* Booking detail grids collapse to single column */
+      .detail-grid { grid-template-columns: 1fr; }
+      .detail-sub-grid { grid-template-columns: 1fr; }
+      /* Table tweaks for small screens */
+      td { font-size: 12px; padding: 10px 8px; }
+      th { padding: 8px; font-size: 10px; }
+      .td-actions { flex-wrap: wrap; }
+      /* Page title truncates rather than pushing buttons off screen */
+      .topbar-page-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+      /* Filter rows stack vertically */
+      .filters-row { flex-direction: column; align-items: stretch; }
+      .filter-select, .filter-input { min-width: unset; width: 100%; }
     }
     .mobile-menu-btn {
       display: none; background: none; border: none; cursor: pointer;
@@ -828,15 +858,15 @@
       <div class="topbar-actions">
         <button class="btn btn-secondary btn-sm" onclick="openPreviewModal()" title="Preview website as a renter">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          Preview Site
+          <span class="btn-label">Preview Site</span>
         </button>
         <button class="btn btn-secondary btn-sm" onclick="refreshCurrentPage()" title="Refresh">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-          Refresh
+          <span class="btn-label">Refresh</span>
         </button>
-        <button class="btn btn-primary btn-sm" onclick="navigate('manual-booking')">
+        <button class="btn btn-primary btn-sm" onclick="navigate('manual-booking')" title="New Booking">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Booking
+          <span class="btn-label">New Booking</span>
         </button>
       </div>
     </header>
@@ -3214,7 +3244,7 @@ function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
   document.getElementById('booking-detail-content').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="detail-grid">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}</div></div>
@@ -3229,7 +3259,7 @@ function viewBooking(bookingId, vehicleId) {
     </div>
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+      <div class="detail-sub-grid">
         <div>
           <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Date</label>
           <input type="date" id="bd-return-date" class="form-input" value="${esc(b.returnDate || '')}" style="font-size:13px;padding:6px 8px;">
