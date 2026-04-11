@@ -498,19 +498,20 @@ export default async function handler(req, res) {
       const noteText = notes || `Extension${label} for booking ${original_booking_id} — external payment`;
 
       const commonFields = {
-        booking_id:        syntheticBookingId,
+        booking_id:          syntheticBookingId,
+        original_booking_id: original_booking_id,
         vehicle_id,
-        gross_amount:      resolvedAmount,
-        deposit_amount:    0,
-        refund_amount:     0,
-        payment_method:    payment_method || "external",
-        payment_status:    "paid",
-        notes:             noteText,
-        is_no_show:        false,
-        is_cancelled:      false,
-        override_by_admin: true,
-        created_at:        new Date().toISOString(),
-        updated_at:        new Date().toISOString(),
+        gross_amount:        resolvedAmount,
+        deposit_amount:      0,
+        refund_amount:       0,
+        payment_method:      payment_method || "external",
+        payment_status:      "paid",
+        notes:               noteText,
+        is_no_show:          false,
+        is_cancelled:        false,
+        override_by_admin:   true,
+        created_at:          new Date().toISOString(),
+        updated_at:          new Date().toISOString(),
       };
 
       if (sb) {

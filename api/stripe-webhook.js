@@ -531,17 +531,46 @@ export default async function handler(req, res) {
                 const extensionAmountDollars =
                   (ext.price != null ? ext.price : paymentIntent.amount / 100);
                 await autoCreateRevenueRecord({
-                  bookingId:     paymentIntent.id,
-                  vehicleId:     vehicle_id,
-                  name:          booking.name  || renter_name  || "",
-                  phone:         booking.phone || "",
-                  email:         booking.email || renter_email || "",
-                  pickupDate:    booking.pickupDate  || "",
-                  returnDate:    updatedReturnDate,
-                  amountPaid:    extensionAmountDollars,
-                  paymentMethod: "stripe",
-                  notes:         `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
+                  bookingId:          paymentIntent.id,
+                  originalBookingId:  original_booking_id,
+                  vehicleId:          vehicle_id,
+                  name:               booking.name  || renter_name  || "",
+                  phone:              booking.phone || "",
+                  email:              booking.email || renter_email || "",
+                  pickupDate:         booking.pickupDate  || "",
+                  returnDate:         updatedReturnDate,
+                  amountPaid:         extensionAmountDollars,
+                  paymentMethod:      "stripe",
+                  notes:              `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
                 });
+
+                // ── 1c. Increment total_price on the original booking row ──────────
+                // This keeps the Supabase `bookings` table in sync so future
+                // queries on the original booking reflect the full rental cost.
+                try {
+                  const sb = getSupabaseAdmin();
+                  if (sb) {
+                    const { data: origRow } = await sb
+                      .from("bookings")
+                      .select("id, total_price, remaining_balance")
+                      .eq("booking_ref", original_booking_id)
+                      .maybeSingle();
+                    if (origRow) {
+                      const newTotal     = Number(origRow.total_price     || 0) + extensionAmountDollars;
+                      const newRemaining = Math.max(0, Number(origRow.remaining_balance || 0) - extensionAmountDollars);
+                      await sb
+                        .from("bookings")
+                        .update({
+                          total_price:       newTotal,
+                          remaining_balance: newRemaining,
+                          updated_at:        new Date().toISOString(),
+                        })
+                        .eq("id", origRow.id);
+                    }
+                  }
+                } catch (tpErr) {
+                  console.error("stripe-webhook: extension total_price update error (non-fatal):", tpErr.message);
+                }
               } catch (revErr) {
                 console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
               }

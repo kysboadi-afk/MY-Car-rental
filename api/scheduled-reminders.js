@@ -57,6 +57,8 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import Stripe from "stripe";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
@@ -782,6 +784,140 @@ export async function processAutoCompletions(allBookings, now) {
 }
 
 
+/**
+ * Reconciliation check — runs once per cron tick.
+ *
+ * Fetches the last 24 h of succeeded Stripe PaymentIntents and compares them
+ * against the `revenue_records` table.  Any PaymentIntent that has no matching
+ * revenue record (matched by payment_intent_id or booking_id column) is
+ * flagged as a mismatch and an alert is sent to the owner via email and SMS.
+ *
+ * Non-fatal — errors are caught and logged so the rest of the cron job is
+ * never blocked by a reconciliation failure.
+ */
+async function runReconciliation() {
+  if (!process.env.STRIPE_SECRET_KEY) return;
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+
+    // Fetch PaymentIntents succeeded in the last 24 hours
+    const since = Math.floor(Date.now() / 1000) - 86400;
+    const piList = await stripe.paymentIntents.list({
+      limit:  100,
+      created: { gte: since },
+    });
+
+    const succeededPIs = piList.data.filter((pi) => pi.status === "succeeded");
+    if (succeededPIs.length === 0) return;
+
+    // Fetch matching revenue_records by payment_intent_id
+    const piIds = succeededPIs.map((pi) => pi.id);
+    const { data: rrRows } = await sb
+      .from("revenue_records")
+      .select("payment_intent_id, booking_id")
+      .in("payment_intent_id", piIds);
+
+    const recordedPIIds = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+
+    // Also match extension rows that use the PI id as booking_id
+    const { data: extRows } = await sb
+      .from("revenue_records")
+      .select("booking_id")
+      .in("booking_id", piIds);
+
+    const recordedAsBookingId = new Set((extRows || []).map((r) => r.booking_id).filter(Boolean));
+
+    const mismatches = succeededPIs.filter(
+      (pi) => !recordedPIIds.has(pi.id) && !recordedAsBookingId.has(pi.id)
+    );
+
+    if (mismatches.length === 0) {
+      console.log(`scheduled-reminders reconciliation: all ${succeededPIs.length} PI(s) have matching revenue records ✓`);
+      return;
+    }
+
+    console.warn(`scheduled-reminders reconciliation: ${mismatches.length} PI(s) missing from revenue_records`, mismatches.map((pi) => pi.id));
+
+    const escStr = (s) => String(s || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    const rows = mismatches.map((pi) => {
+      const meta = pi.metadata || {};
+      return `<tr>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(pi.id)}</td>
+        <td style="padding:6px;border:1px solid #ddd">$${(pi.amount / 100).toFixed(2)}</td>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(meta.original_booking_id || meta.booking_id || "—")}</td>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(meta.payment_type || "—")}</td>
+        <td style="padding:6px;border:1px solid #ddd">${new Date(pi.created * 1000).toISOString()}</td>
+      </tr>`;
+    }).join("\n");
+
+    const subject = `[SLY RIDES] ⚠️ ${mismatches.length} Payment(s) Not Reconciled`;
+
+    // Email alert
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host:   process.env.SMTP_HOST,
+          port:   parseInt(process.env.SMTP_PORT || "587"),
+          secure: process.env.SMTP_PORT === "465",
+          auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          subject,
+          html: `
+            <h2>⚠️ Payment Reconciliation Alert</h2>
+            <p>${mismatches.length} Stripe PaymentIntent(s) succeeded in the last 24 hours but have <strong>no matching revenue record</strong> in the database.</p>
+            <table style="border-collapse:collapse;width:100%;margin:16px 0">
+              <thead>
+                <tr style="background:#f5f5f5">
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">PaymentIntent ID</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Amount</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Booking ID</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Type</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Created</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <p>Please review these payments in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>
+            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+          `,
+          text: [
+            subject,
+            "",
+            `${mismatches.length} Stripe PaymentIntent(s) are missing from revenue_records:`,
+            ...mismatches.map((pi) => `  ${pi.id}  $${(pi.amount / 100).toFixed(2)}`),
+            "",
+            "Review at: https://dashboard.stripe.com/payments",
+          ].join("\n"),
+        });
+      } catch (emailErr) {
+        console.warn("scheduled-reminders reconciliation: alert email failed:", emailErr.message);
+      }
+    }
+
+    // SMS alert (brief)
+    if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+      try {
+        const piSummary = mismatches.slice(0, 3).map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`).join(", ");
+        const smsText = `[SLY RIDES] ⚠️ ${mismatches.length} payment(s) not reconciled: ${piSummary}${mismatches.length > 3 ? ` +${mismatches.length - 3} more` : ""}. Check email.`;
+        await sendSms(OWNER_PHONE, smsText);
+      } catch (smsErr) {
+        console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
+      }
+    }
+  } catch (err) {
+    console.error("scheduled-reminders reconciliation: unexpected error (non-fatal):", err.message);
+  }
+}
+
+
 export default async function handler(req, res) {
   // Accept GET (Vercel cron) or POST (manual admin trigger)
   if (req.method !== "GET" && req.method !== "POST") {
@@ -812,6 +948,9 @@ export default async function handler(req, res) {
   // These must run on every cron tick so overdue bookings never stay stuck.
   await processAutoActivations(allBookings, now);
   await processAutoCompletions(allBookings, now);
+
+  // Reconcile Stripe payments against revenue_records (runs every tick, non-fatal).
+  await runReconciliation();
 
   // SMS reminders require TextMagic credentials.
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
