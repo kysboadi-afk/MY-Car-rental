@@ -12,6 +12,7 @@
 //
 //   3. rental_extension path (confirmed extension updates return date)
 //      → must call autoUpsertBooking with updated return date
+//      → must call autoCreateRevenueRecord with the extension PaymentIntent ID
 //
 // Run with: npm test
 
@@ -424,7 +425,57 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
   );
 });
 
-// ─── 6. rental_extension: Supabase direct update when booking not in bookings.json ─
+// ─── 5b. rental_extension: revenue record logged for extension payment ────────
+
+test("webhook rental_extension: autoCreateRevenueRecord called with extension PaymentIntent ID", async () => {
+  resetStore(); resetCalls();
+  const origBookingId = "bk-ext-revenue-test";
+  bookingsStore["camry"] = [{
+    bookingId:  origBookingId,
+    vehicleId:  "camry",
+    name:       "Revenue Test Renter",
+    phone:      "+13105556666",
+    email:      "revenue@example.com",
+    pickupDate: "2026-12-10",
+    returnDate: "2026-12-12",
+    status:     "active_rental",
+    amountPaid: 110,
+    extensionPendingPayment: {
+      newReturnDate: "2026-12-14",
+      newReturnTime: "3:00 PM",
+      label:         "+2 days",
+      price:         110,
+    },
+  }];
+
+  // amountCents = 11000 → $110.00 extension
+  const event = piSucceededEvent({
+    payment_type:        "rental_extension",
+    vehicle_id:          "camry",
+    original_booking_id: origBookingId,
+  }, 11000);
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  assert.ok(
+    automationCalls.revenue.length > 0,
+    "autoCreateRevenueRecord must be called when a rental_extension payment succeeds"
+  );
+  const rev = automationCalls.revenue[0];
+  // Must use the PaymentIntent ID (not the original booking ID) so each extension
+  // gets its own revenue ledger row and the idempotency guard works correctly.
+  assert.ok(rev.bookingId.startsWith("pi_"), "revenue bookingId must be the extension PaymentIntent ID");
+  assert.equal(rev.vehicleId,  "camry",   "revenue record must carry the correct vehicleId");
+  assert.equal(rev.amountPaid, 110,       "revenue amount must match extensionPendingPayment.price");
+  assert.equal(rev.paymentMethod, "stripe", "payment method must be stripe");
+  assert.ok(
+    (rev.notes || "").includes(origBookingId),
+    "revenue notes must reference the original booking ID for traceability"
+  );
+});
+
+
 
 test("webhook rental_extension: PREFLIGHT — Supabase direct update when booking not found in bookings.json", async () => {
   // This test verifies the new fallback path: when original_booking_id doesn't
