@@ -691,6 +691,28 @@ export default async function handler(req, res) {
                 console.error("stripe-webhook: extension Supabase direct update threw:", fbErr.message);
               }
             }
+
+            // ── Create revenue record for the extension payment ────────────────────
+            // The booking wasn't in bookings.json, so build the record from PI metadata.
+            // Using paymentIntent.id as bookingId gives each extension its own ledger row
+            // and matches the reconciliation check in scheduled-reminders.js.
+            try {
+              await autoCreateRevenueRecord({
+                bookingId:         paymentIntent.id,
+                originalBookingId: original_booking_id,
+                vehicleId:         vehicle_id,
+                name:              renter_name  || "",
+                phone:             "",
+                email:             renter_email || "",
+                pickupDate:        "",
+                returnDate:        new_return_date || "",
+                amountPaid:        paymentIntent.amount / 100,
+                paymentMethod:     "stripe",
+                notes:             `Extension (${extension_label || ""}) for booking ${original_booking_id}`,
+              });
+            } catch (revErr) {
+              console.error("stripe-webhook: extension revenue record error (fallback path, non-fatal):", revErr.message);
+            }
           }
         } catch (err) {
           console.error("stripe-webhook: extension confirmation error:", err);
