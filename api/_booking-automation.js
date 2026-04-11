@@ -187,7 +187,7 @@ const BOOKING_STATUS_MAP = {
  * Converts a pickup/return time string in "H:MM AM/PM" format to "HH:MM:SS"
  * PostgreSQL time format.  Returns null for unparseable input.
  */
-function parseTime12h(timeStr) {
+export function parseTime12h(timeStr) {
   if (!timeStr || typeof timeStr !== "string") return null;
   const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
   if (!m) return null;

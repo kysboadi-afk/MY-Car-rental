@@ -82,6 +82,16 @@ mock.module("./_booking-automation.js", {
     autoUpsertBooking:          async (b)          => { automationCalls.booking.push({ ...b }); },
     autoCreateBlockedDate:      async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
     autoActivateIfPickupArrived: async (b)         => { automationCalls.activated.push({ ...b }); return false; },
+    parseTime12h: (timeStr) => {
+      if (!timeStr || typeof timeStr !== "string") return null;
+      const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+      if (!m) return null;
+      let hours = parseInt(m[1], 10);
+      const ampm = (m[4] || "").toUpperCase();
+      if (ampm === "PM" && hours < 12) hours += 12;
+      if (ampm === "AM" && hours === 12) hours = 0;
+      return `${String(hours).padStart(2, "0")}:${m[2]}:${m[3] || "00"}`;
+    },
   },
 });
 

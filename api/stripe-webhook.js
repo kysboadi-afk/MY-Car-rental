@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { CARS } from "./_pricing.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -39,23 +39,6 @@ const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
-
-/**
- * Convert a "H:MM AM/PM" time string to PostgreSQL "HH:MM:SS" format.
- * Returns null for absent or unparseable input.
- */
-function toPostgresTime(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return null;
-  const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-  if (!m) return null;
-  let hours   = parseInt(m[1], 10);
-  const mins  = m[2];
-  const secs  = m[3] || "00";
-  const ampm  = (m[4] || "").toUpperCase();
-  if (ampm === "PM" && hours < 12) hours += 12;
-  if (ampm === "AM" && hours === 12) hours  = 0;
-  return `${String(hours).padStart(2, "0")}:${mins}:${secs}`;
-}
 
 /**
  * Read booked-dates.json from GitHub and block the given date range.
@@ -633,7 +616,7 @@ export default async function handler(req, res) {
               try {
                 const sb = getSupabaseAdmin();
                 if (sb) {
-                  const pgTime = toPostgresTime(new_return_time || "");
+                  const pgTime = parseTime12h(new_return_time || "");
                   const { error: sbDirectErr } = await sb
                     .from("bookings")
                     .update({

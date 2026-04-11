@@ -24,25 +24,8 @@
 import Stripe from "stripe";
 import { loadBookings, updateBooking } from "./_bookings.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
-import { autoUpsertBooking } from "./_booking-automation.js";
+import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-
-/**
- * Convert a "H:MM AM/PM" time string to PostgreSQL "HH:MM:SS" format.
- * Returns null for absent or unparseable input.
- */
-function toPostgresTime(timeStr) {
-  if (!timeStr || typeof timeStr !== "string") return null;
-  const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
-  if (!m) return null;
-  let hours   = parseInt(m[1], 10);
-  const mins  = m[2];
-  const secs  = m[3] || "00";
-  const ampm  = (m[4] || "").toUpperCase();
-  if (ampm === "PM" && hours < 12) hours += 12;
-  if (ampm === "AM" && hours === 12) hours  = 0;
-  return `${String(hours).padStart(2, "0")}:${mins}:${secs}`;
-}
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -117,7 +100,7 @@ export default async function handler(req, res) {
         try {
           const sb = getSupabaseAdmin();
           if (sb) {
-            const pgTime = toPostgresTime(new_return_time || "");
+            const pgTime = parseTime12h(new_return_time || "");
             const { error: sbDirectErr } = await sb
               .from("bookings")
               .update({

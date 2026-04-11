@@ -3356,7 +3356,7 @@ function submitResendExtension(btn) {
 
   const b = allBookings.find((x) => x.bookingId === bookingId) || {};
   if (!b.email) {
-    showToast('Cannot resend extension: renter email is missing from this booking.', 'error');
+    showToast('Cannot sync extension: renter email is missing from this booking record.', 'error');
     return;
   }
 
