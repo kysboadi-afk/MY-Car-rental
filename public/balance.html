@@ -285,7 +285,7 @@
                   extPayBtn.disabled    = false;
                   extPayBtn.textContent = "Pay $" + extAmount + " Now 🔒";
                 } else if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
-                  window.location.href = "/success.html?ext=1";
+                  window.location.href = "/success.html?ext=1&payment_intent=" + encodeURIComponent(result.paymentIntent.id);
                 }
               });
             });
