@@ -523,6 +523,29 @@ export default async function handler(req, res) {
                 console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
               }
 
+              // ── 1b. Log extension payment as a separate revenue record ──────────
+              // Uses the extension PaymentIntent ID as booking_id so each extension
+              // gets its own ledger row (distinct from the original booking's record).
+              // autoCreateRevenueRecord is idempotent — safe on webhook retries.
+              try {
+                const extensionAmountDollars =
+                  (ext.price != null ? ext.price : paymentIntent.amount / 100);
+                await autoCreateRevenueRecord({
+                  bookingId:     paymentIntent.id,
+                  vehicleId:     vehicle_id,
+                  name:          booking.name  || renter_name  || "",
+                  phone:         booking.phone || "",
+                  email:         booking.email || renter_email || "",
+                  pickupDate:    booking.pickupDate  || "",
+                  returnDate:    updatedReturnDate,
+                  amountPaid:    extensionAmountDollars,
+                  paymentMethod: "stripe",
+                  notes:         `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
+                });
+              } catch (revErr) {
+                console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
+              }
+
               // ── 2. Persist to bookings.json via retry loop (handles SHA conflicts)
               // Non-fatal: Supabase was already updated above, so the admin dashboard
               // will be correct even if the GitHub write fails after all retries.
