@@ -292,7 +292,8 @@
       "smsSentAt": {
         "active_mid": "2026-04-09T11:45:18.402Z",
         "maint_oil_warn": "2026-04-10T04:00:34.469Z",
-        "maint_oil_sched_remind": "2026-04-11T04:15:33.470Z"
+        "maint_oil_sched_remind": "2026-04-11T04:15:33.470Z",
+        "active_1h": "2026-04-11T23:00:14.562Z"
       }
     }
   ]
