@@ -9,7 +9,7 @@ import crypto from "crypto";
 import Stripe from "stripe";
 import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
 import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
-import { isDatesAvailable, isVehicleAvailable } from "./_availability.js";
+import { isDatesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -76,16 +76,29 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid dates" });
     }
 
-    // Check availability — reject if the requested dates overlap an existing booking
-    const available = await isDatesAvailable(vehicleId, pickup, returnDate);
-    if (!available) {
-      return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
-    }
+    // ── Availability check ──────────────────────────────────────────────────
+    // For Slingshot: auto-assign the first available unit — customers book a
+    // generic "Slingshot" and we give them whichever unit is free.
+    // For economy cars: check only the specific requested vehicle.
+    let assignedVehicleId = vehicleId;
+    if (isSlingshotVehicle) {
+      const unit = await findAvailableSlingshotUnit(pickup, returnDate);
+      if (!unit) {
+        return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
+      }
+      assignedVehicleId = unit;
+    } else {
+      // Check availability — reject if the requested dates overlap an existing booking
+      const available = await isDatesAvailable(vehicleId, pickup, returnDate);
+      if (!available) {
+        return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
+      }
 
-    // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
-    const vehicleAvailable = await isVehicleAvailable(vehicleId);
-    if (!vehicleAvailable) {
-      return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
+      // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
+      const vehicleAvailable = await isVehicleAvailable(vehicleId);
+      if (!vehicleAvailable) {
+        return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
+      }
     }
 
     // Validate email
@@ -203,7 +216,7 @@ export default async function handler(req, res) {
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: phone && String(phone).trim() ? String(phone).trim() : "",
-        vehicle_id:   vehicleId,
+        vehicle_id:   assignedVehicleId,
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
