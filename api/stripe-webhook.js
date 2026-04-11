@@ -531,16 +531,17 @@ export default async function handler(req, res) {
                 const extensionAmountDollars =
                   (ext.price != null ? ext.price : paymentIntent.amount / 100);
                 await autoCreateRevenueRecord({
-                  bookingId:     paymentIntent.id,
-                  vehicleId:     vehicle_id,
-                  name:          booking.name  || renter_name  || "",
-                  phone:         booking.phone || "",
-                  email:         booking.email || renter_email || "",
-                  pickupDate:    booking.pickupDate  || "",
-                  returnDate:    updatedReturnDate,
-                  amountPaid:    extensionAmountDollars,
-                  paymentMethod: "stripe",
-                  notes:         `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
+                  bookingId:          paymentIntent.id,
+                  originalBookingId:  original_booking_id,
+                  vehicleId:          vehicle_id,
+                  name:               booking.name  || renter_name  || "",
+                  phone:              booking.phone || "",
+                  email:              booking.email || renter_email || "",
+                  pickupDate:         booking.pickupDate  || "",
+                  returnDate:         updatedReturnDate,
+                  amountPaid:         extensionAmountDollars,
+                  paymentMethod:      "stripe",
+                  notes:              `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
                 });
 
                 // ── 1c. Increment total_price on the original booking row ──────────
