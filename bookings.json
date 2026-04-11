@@ -122,11 +122,13 @@
       "returnDate": "2026-04-14",
       "returnTime": "",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "paymentIntentId": "manual_2086c92cb302",
       "amountPaid": 0,
       "notes": "Rental Extension: Original Booking ID d95643b10c87a02f1a510f7466b2bedf, Extension Label: +3 days",
-      "createdAt": "2026-04-11T21:33:49.245Z"
+      "createdAt": "2026-04-11T21:33:49.245Z",
+      "activatedAt": "2026-04-11T21:45:48.268Z",
+      "updatedAt": "2026-04-11T21:45:48.268Z"
     },
     {
       "bookingId": "60cc4fe460b56350",
