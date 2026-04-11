@@ -248,13 +248,28 @@ async function toolGetRevenue({ month } = {}) {
   const allBookings  = await loadAllBookings();
 
   let filtered = allBookings.filter((b) => paidStatuses.has(b.status));
+
+  // Build booking-ID set for dedup against revenue_records
+  const bookingIdSet = new Set(filtered.map((b) => b.bookingId).filter(Boolean));
+  // Build bookingId → vehicleId map for charges lookup
+  const bookingVehicleMap = {};
+  for (const b of filtered) {
+    if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
+  }
+
+  const byVehicle = {};
+  function addToVehicle(vid, amount) {
+    if (!vid || !amount || isNaN(amount)) return;
+    if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
+    byVehicle[vid].revenue += amount;
+  }
+
   if (month) {
     // Try Supabase RPC for total
     const sbTotal = await getRevenueForMonth(month);
     filtered = filtered.filter((b) => (b.pickupDate || b.createdAt || "").startsWith(month));
 
     // Per-vehicle breakdown from local data
-    const byVehicle = {};
     for (const b of filtered) {
       const vid = b.vehicleId || "unknown";
       if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
@@ -270,26 +285,79 @@ async function toolGetRevenue({ month } = {}) {
       total:     Math.round(sbTotal * 100) / 100,
       bookings:  filtered.length,
       byVehicle,
+      note: "Total from Supabase RPC; per-vehicle breakdown from booking records only.",
     };
   }
 
-  const total = filtered.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
-  const byVehicle = {};
+  // All-time: sum bookings first
+  let total = 0;
   for (const b of filtered) {
     const vid = b.vehicleId || "unknown";
+    const amt = b.amountPaid || revenueFromBooking(b);
+    total += amt;
     if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
     byVehicle[vid].count   += 1;
-    byVehicle[vid].revenue += b.amountPaid || revenueFromBooking(b);
+    byVehicle[vid].revenue += amt;
   }
+
+  // Add supplemental sources (same as dashboard) so AI total matches.
+  const sb = getSupabaseAdmin();
+  let chargesTotal = 0;
+  let extensionsTotal = 0;
+  if (sb) {
+    // 1. Succeeded extra charges (damages, late fees, smoking, key replacement, etc.)
+    try {
+      const { data: chargesData } = await sb
+        .from("charges")
+        .select("booking_id, amount")
+        .eq("status", "succeeded");
+      for (const charge of (chargesData || [])) {
+        const amt = Number(charge.amount || 0);
+        if (!amt) continue;
+        chargesTotal += amt;
+        total += amt;
+        const vid = bookingVehicleMap[charge.booking_id] || "unknown";
+        addToVehicle(vid, amt);
+      }
+    } catch {
+      // non-fatal
+    }
+
+    // 2. Supplemental revenue_records not tied to a regular booking
+    //    (e.g. rental extensions, external payments)
+    try {
+      const { data: rrData } = await sb
+        .from("revenue_records")
+        .select("booking_id, vehicle_id, gross_amount, payment_status, is_cancelled");
+      for (const rr of (rrData || [])) {
+        if (bookingIdSet.has(rr.booking_id)) continue; // already in booking totals
+        if (rr.payment_status !== "paid") continue;
+        if (rr.is_cancelled) continue;
+        const amt = Number(rr.gross_amount || 0);
+        if (!amt) continue;
+        extensionsTotal += amt;
+        total += amt;
+        addToVehicle(rr.vehicle_id || "unknown", amt);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
   for (const v of Object.values(byVehicle)) {
     v.revenue = Math.round(v.revenue * 100) / 100;
   }
 
   return {
-    period:    "all-time",
-    total:     Math.round(total * 100) / 100,
-    bookings:  filtered.length,
+    period:           "all-time",
+    total:            Math.round(total * 100) / 100,
+    bookings:         filtered.length,
     byVehicle,
+    breakdown: {
+      booking_revenue:      Math.round((total - chargesTotal - extensionsTotal) * 100) / 100,
+      extra_charges:        Math.round(chargesTotal * 100) / 100,
+      extension_payments:   Math.round(extensionsTotal * 100) / 100,
+    },
   };
 }
 
