@@ -100,12 +100,12 @@
       "updatedAt": "2026-04-07T04:28:10.078Z",
       "activatedAt": "2026-04-07T04:28:10.078Z",
       "extensionPendingPayment": {
-        "label": "+5 days",
-        "price": 303.19,
-        "newReturnDate": "2026-04-16",
-        "newReturnTime": "5:10 PM",
-        "paymentIntentId": "pi_3TJUidPo7fICjrtZ10TQ5gCX",
-        "createdAt": "2026-04-07T08:10:43.262Z"
+        "label": "+3 days",
+        "price": 181.91,
+        "newReturnDate": "2026-04-14",
+        "newReturnTime": "11:30 AM",
+        "paymentIntentId": "pi_3TL5fkPo7fICjrtZ2y0zfu5h",
+        "createdAt": "2026-04-11T17:50:20.471Z"
       },
       "maintenance_status": "non_compliant"
     }
