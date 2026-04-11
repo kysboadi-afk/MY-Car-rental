@@ -127,6 +127,24 @@
       "amountPaid": 0,
       "notes": "Rental Extension: Original Booking ID d95643b10c87a02f1a510f7466b2bedf, Extension Label: +3 days",
       "createdAt": "2026-04-11T21:33:49.245Z"
+    },
+    {
+      "bookingId": "60cc4fe460b56350",
+      "name": "David Agbebaku",
+      "phone": "",
+      "email": "davosama15@gmail.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-07",
+      "pickupTime": "",
+      "returnDate": "2026-04-14",
+      "returnTime": "",
+      "location": "",
+      "status": "booked_paid",
+      "paymentIntentId": "manual_b52191489f91",
+      "amountPaid": 181.91,
+      "notes": "Rental Extension Payment for Booking ID: d95643b10c87a02f1a510f7466b2bedf",
+      "createdAt": "2026-04-11T21:39:05.620Z"
     }
   ],
   "camry2013": [
