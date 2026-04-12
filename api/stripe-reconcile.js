@@ -171,20 +171,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ updated: 0, message: "No unreconciled cash records found." });
       }
 
+      const updatedAt = new Date().toISOString();
+      // Run up to 10 updates in parallel (Supabase connection pool safe)
+      const CONCURRENCY = 10;
       let updated = 0;
-      // Update in batches of 50
-      for (let i = 0; i < cashRows.length; i += 50) {
-        const batch = cashRows.slice(i, i + 50);
-        for (const row of batch) {
-          const gross = Number(row.gross_amount || 0);
-          const { error: upErr } = await sb
-            .from("revenue_records")
-            .update({
-              stripe_fee: 0,
-              stripe_net: gross,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", row.id);
+      for (let i = 0; i < cashRows.length; i += CONCURRENCY) {
+        const batch = cashRows.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(
+          batch.map((row) => {
+            const gross = Number(row.gross_amount || 0);
+            return sb
+              .from("revenue_records")
+              .update({ stripe_fee: 0, stripe_net: gross, updated_at: updatedAt })
+              .eq("id", row.id);
+          })
+        );
+        for (const { error: upErr } of results) {
           if (!upErr) updated++;
           else console.warn("stripe-reconcile cash_update row error:", upErr.message);
         }
