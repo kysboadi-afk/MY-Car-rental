@@ -4,16 +4,26 @@
 //
 // POST /api/v2-dashboard
 // Body: { "secret": "<ADMIN_SECRET>" }
+//
+// Financial source of truth: revenue_records (Supabase)
+//   Gross Revenue = SUM(gross_amount  WHERE payment_status='paid' AND !is_cancelled AND !is_no_show)
+//   Total Fees    = SUM(stripe_fee)   (null treated as 0 for unreconciled rows)
+//   Net Revenue   = SUM(stripe_net)   (null treated as gross_amount − stripe_fee)
+//   Net Profit    = Net Revenue − Total Expenses
+//
+// Falls back to bookings.json when Supabase is unavailable or revenue_records
+// is empty, matching the same fallback behaviour as api/v2-revenue.js.
 
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { loadBookings } from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
+// Used only as a fallback when revenue_records is unavailable or empty.
 function bookingRevenue(booking) {
   if (typeof booking.amountPaid === "number" && booking.amountPaid > 0) {
     return booking.amountPaid;
@@ -58,109 +68,154 @@ export default async function handler(req, res) {
       if (scope === "slingshot") return type === "slingshot";
       return true;
     });
-    const filteredVehicles = Object.fromEntries(filteredVehicleEntries);
+    const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);
     const filteredVehicleIds = new Set(Object.keys(filteredVehicles));
 
-    // Flatten all bookings, limited to scoped vehicles
+    // All bookings limited to scoped vehicles (used for non-financial KPIs)
     const allBookings = Object.values(bookingsData).flat()
       .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
-    // KPIs
+    // Non-financial KPIs (always from bookings.json)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
-    const paidStatuses   = new Set(["booked_paid", "active_rental", "completed_rental"]);
-
-    let totalRevenue     = 0;
     let activeBookings   = 0;
     let pendingApprovals = 0;
-    // Total expenses across all scoped vehicles
+    for (const booking of allBookings) {
+      if (activeStatuses.has(booking.status)) activeBookings++;
+      if (booking.status === "reserved_unpaid") pendingApprovals++;
+    }
+
+    // Total expenses (scoped)
     const totalExpenses = expenses
       .filter((e) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(e.vehicle_id))
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
-    const monthlyRevenue = {};
+    // ── Financial KPIs: revenue_records (primary) or bookings.json (fallback) ─
+    // Mirrors the same source of truth used by api/v2-revenue.js so totals match.
+
+    let totalRevenue    = 0;
+    let totalStripeFees = 0;
+    let netRevenue      = 0;
+    let reconciledCount = 0;
+    const monthlyRevenue     = {};
     const bookingsPerVehicle = {};
+    // Per-vehicle revenue from revenue_records (keyed by vehicle_id)
+    const rrByVehicle = {}; // { [vehicleId]: { gross, net, count } }
+    let financialsFromRevRecords = false;
 
-    for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status)) activeBookings++;
+    const sb = getSupabaseAdmin();
 
-      if (booking.status === "reserved_unpaid") pendingApprovals++;
+    if (sb) {
+      try {
+        const { data: rrRows, error: rrErr } = await sb
+          .from("revenue_records")
+          .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, created_at, pickup_date")
+          .eq("payment_status", "paid")
+          .eq("sync_excluded", false);
 
-      if (paidStatuses.has(booking.status)) {
+        if (rrErr) {
+          if (isSchemaError(rrErr)) {
+            console.warn("v2-dashboard: revenue_records schema not ready, falling back to bookings.json:", rrErr.message);
+          } else {
+            console.error("v2-dashboard: revenue_records query error, falling back to bookings.json:", rrErr.message);
+          }
+        } else if ((rrRows || []).length > 0) {
+          financialsFromRevRecords = true;
+          for (const r of rrRows) {
+            if (r.is_cancelled || r.is_no_show) continue;
+            const vid = r.vehicle_id || "unknown";
+            if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
+
+            const gross = Number(r.gross_amount || 0);
+            // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
+            // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
+            // When both are set (reconciled row): use exact Stripe values.
+            const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+
+            totalRevenue    += gross;
+            totalStripeFees += fee;
+            netRevenue      += net;
+            if (r.stripe_fee != null) reconciledCount++;
+
+            const monthKey = (r.created_at || r.pickup_date || "").slice(0, 7);
+            if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + gross;
+
+            bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
+
+            if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, net: 0, count: 0 };
+            rrByVehicle[vid].gross += gross;
+            rrByVehicle[vid].net   += net;
+            rrByVehicle[vid].count += 1;
+          }
+        }
+        // If rrRows is empty (no paid records yet) we fall through to bookings.json.
+      } catch (rrEx) {
+        console.warn("v2-dashboard: revenue_records unavailable, falling back to bookings.json:", rrEx.message);
+      }
+    }
+
+    // Fallback: compute from bookings.json when Supabase unavailable or rev_records empty.
+    // Mirrors the same fallback used by api/v2-revenue.js.
+    if (!financialsFromRevRecords) {
+      const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      for (const booking of allBookings) {
+        if (!paidStatuses.has(booking.status)) continue;
         const amount = bookingRevenue(booking);
         totalRevenue += amount;
+        netRevenue   += amount; // No Stripe fee data available in fallback
 
         const monthKey = (booking.createdAt || booking.pickupDate || "").slice(0, 7);
-        if (monthKey) {
-          monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
-        }
+        if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
 
         const vid = booking.vehicleId || "unknown";
         bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
       }
     }
 
-    // Vehicles available
-    const vehicleList = Object.values(filteredVehicles);
-    const availableVehicles = vehicleList.filter((v) => v.status === "active").length;
-
-    // Per-vehicle stats for alerts
+    // ── Per-vehicle stats ─────────────────────────────────────────────────────
+    const paidStatusesFallback = new Set(["booked_paid", "active_rental", "completed_rental"]);
     const vehicleStats = {};
     for (const [vehicleId, vehicle] of Object.entries(filteredVehicles)) {
-      const vBookings = (bookingsData[vehicleId] || []).filter((b) => paidStatuses.has(b.status));
-      const vRevenue  = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
-      const vExpenses = expenses.filter((e) => e.vehicle_id === vehicleId).reduce((s, e) => s + (e.amount || 0), 0);
+      const vExpenses = expenses
+        .filter((e) => e.vehicle_id === vehicleId)
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
       const purchasePrice = vehicle.purchase_price || 0;
-      const netProfit = vRevenue - vExpenses;
 
+      let vGross, vNet, vBookingCount;
+      if (financialsFromRevRecords) {
+        const vr  = rrByVehicle[vehicleId] || { gross: 0, net: 0, count: 0 };
+        vGross        = vr.gross;
+        vNet          = vr.net;
+        vBookingCount = vr.count;
+      } else {
+        // Fallback from bookings.json
+        const vBookings = (bookingsData[vehicleId] || [])
+          .filter((b) => paidStatusesFallback.has(b.status));
+        vGross        = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
+        vNet          = vGross; // Assume zero fees when no Stripe data available
+        vBookingCount = vBookings.length;
+      }
+
+      const vNetProfit = vNet - vExpenses;
       vehicleStats[vehicleId] = {
         name:          vehicle.vehicle_name,
         status:        vehicle.status,
-        revenue:       Math.round(vRevenue   * 100) / 100,
+        revenue:       Math.round(vGross     * 100) / 100,
         expenses:      Math.round(vExpenses  * 100) / 100,
-        netProfit:     Math.round(netProfit  * 100) / 100,
+        netProfit:     Math.round(vNetProfit * 100) / 100,
         purchasePrice,
-        roi: purchasePrice > 0 ? Math.round((netProfit / purchasePrice) * 10000) / 100 : null,
-        bookingCount:  vBookings.length,
+        roi: purchasePrice > 0 ? Math.round((vNetProfit / purchasePrice) * 10000) / 100 : null,
+        bookingCount:  vBookingCount,
       };
     }
 
-    // ── Supplemental revenue from Supabase ────────────────────────────────────
-    // Adds succeeded charges (damages, late fees, etc.) and any revenue_records
-    // that have no matching bookingId in bookings.json (e.g. manual entries).
-    // Extension payments are now rolled into the original booking's amountPaid,
-    // so they are counted once via bookings.json and excluded here.
-    const sb = getSupabaseAdmin();
+    // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
+    // These are NOT in revenue_records and must always be added on top.
     if (sb) {
-      // Build lookup: bookingId → vehicleId (from already-loaded bookings.json)
       const bookingVehicleMap = {};
-      const bookingIdSet = new Set();
       for (const b of allBookings) {
-        if (b.bookingId) {
-          bookingVehicleMap[b.bookingId] = b.vehicleId;
-          bookingIdSet.add(b.bookingId);
-        }
+        if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
       }
-
-      // Helper: add an amount to global and per-vehicle revenue totals.
-      function addSupplemental(vid, amount, monthKey) {
-        if (!amount || isNaN(amount)) return;
-        if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) return;
-        totalRevenue += amount;
-        if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
-        if (vehicleStats[vid]) {
-          vehicleStats[vid].revenue   += amount;
-          vehicleStats[vid].netProfit += amount;
-          const pp = vehicleStats[vid].purchasePrice || 0;
-          vehicleStats[vid].roi = pp > 0
-            ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
-            : null;
-        }
-      }
-
-      // 1. Succeeded charges (damages, late fees, smoking penalties, etc.)
-      //    The charges table has booking_id but not vehicle_id; we resolve it
-      //    from the bookings.json lookup.  Charges are not reflected in
-      //    amountPaid, so there is no double-count risk.
       try {
         const { data: chargesData } = await sb
           .from("charges")
@@ -169,59 +224,31 @@ export default async function handler(req, res) {
         for (const charge of (chargesData || [])) {
           const vid = bookingVehicleMap[charge.booking_id];
           if (!vid) continue;
-          addSupplemental(vid, Number(charge.amount || 0), (charge.created_at || "").slice(0, 7));
+          if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
+          const amount = Number(charge.amount || 0);
+          totalRevenue += amount;
+          netRevenue   += amount;
+          const monthKey = (charge.created_at || "").slice(0, 7);
+          if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
+          if (vehicleStats[vid]) {
+            vehicleStats[vid].revenue   = Math.round((vehicleStats[vid].revenue   + amount) * 100) / 100;
+            vehicleStats[vid].netProfit = Math.round((vehicleStats[vid].netProfit + amount) * 100) / 100;
+            const pp = vehicleStats[vid].purchasePrice || 0;
+            vehicleStats[vid].roi = pp > 0
+              ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
+              : null;
+          }
         }
       } catch (chargesErr) {
         console.error("v2-dashboard: charges load error (non-fatal):", chargesErr.message);
       }
-
-      // 2. Revenue records not already covered by bookings.json.
-      //    Records whose booking_id matches an existing bookingId are already
-      //    counted via bookings.json amountPaid (which now includes extensions)
-      //    and are excluded.  Only truly external/manual records are added here.
-      try {
-        const { data: rrData } = await sb
-          .from("revenue_records")
-          .select("booking_id, vehicle_id, gross_amount, created_at, payment_status, is_cancelled");
-        for (const rr of (rrData || [])) {
-          if (bookingIdSet.has(rr.booking_id)) continue; // already counted
-          if (rr.payment_status !== "paid") continue;
-          if (rr.is_cancelled) continue;
-          const vid = rr.vehicle_id || "unknown";
-          addSupplemental(vid, Number(rr.gross_amount || 0), (rr.created_at || "").slice(0, 7));
-        }
-      } catch (rrErr) {
-        console.error("v2-dashboard: revenue_records supplemental load error (non-fatal):", rrErr.message);
-      }
-
-      // Re-round per-vehicle revenue/profit after supplemental additions.
-      for (const stats of Object.values(vehicleStats)) {
-        stats.revenue   = Math.round(stats.revenue   * 100) / 100;
-        stats.netProfit = Math.round(stats.netProfit * 100) / 100;
-      }
     }
 
-    // Stripe fee totals from revenue_records (non-fatal)
-    let totalStripeFees  = 0;
-    let totalStripeNet   = 0;
-    let reconciledCount  = 0;
-    if (sb) {
-      try {
-        const { data: feeRows } = await sb
-          .from("revenue_records")
-          .select("stripe_fee, stripe_net, gross_amount, is_cancelled, is_no_show, vehicle_id")
-          .not("stripe_fee", "is", null);
-        for (const r of (feeRows || [])) {
-          if (r.is_cancelled || r.is_no_show) continue;
-          if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(r.vehicle_id)) continue;
-          totalStripeFees += Number(r.stripe_fee || 0);
-          totalStripeNet  += Number(r.stripe_net != null ? r.stripe_net : (r.gross_amount || 0));
-          reconciledCount++;
-        }
-      } catch { /* non-fatal */ }
-    }
+    // Vehicles available
+    const vehicleList       = Object.values(filteredVehicles);
+    const availableVehicles = vehicleList.filter((v) => v.status === "active").length;
 
-    // Alerts: negative-profit vehicles, upcoming bookings (next 7 days)
+    // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
     const now  = new Date();
     const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -256,7 +283,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Revenue chart: last 12 months sorted
+    // Revenue chart: last 12 months sorted (gross revenue by month)
     const revenueChart = Object.entries(monthlyRevenue)
       .sort(([a], [b]) => (a > b ? 1 : -1))
       .slice(-12)
@@ -279,15 +306,16 @@ export default async function handler(req, res) {
         createdAt:   b.createdAt,
       }));
 
+    // Net profit = net revenue − total expenses
+    const netProfit = netRevenue - totalExpenses;
+
     return res.status(200).json({
       kpis: {
-        totalRevenue:        Math.round(totalRevenue                           * 100) / 100,
-        totalExpenses:       Math.round(totalExpenses                          * 100) / 100,
-        // netRevenue = gross − known Stripe fees (accurate even with partial reconciliation)
-        netRevenue:          Math.round((totalRevenue - totalStripeFees)       * 100) / 100,
-        netProfit:           Math.round((totalRevenue - totalStripeFees - totalExpenses) * 100) / 100,
-        totalStripeFees:     Math.round(totalStripeFees                        * 100) / 100,
-        totalStripeNet:      Math.round(totalStripeNet                         * 100) / 100,
+        totalRevenue:    Math.round(totalRevenue    * 100) / 100,
+        totalExpenses:   Math.round(totalExpenses   * 100) / 100,
+        netRevenue:      Math.round(netRevenue      * 100) / 100,
+        netProfit:       Math.round(netProfit       * 100) / 100,
+        totalStripeFees: Math.round(totalStripeFees * 100) / 100,
         reconciledCount,
         activeBookings,
         availableVehicles,
