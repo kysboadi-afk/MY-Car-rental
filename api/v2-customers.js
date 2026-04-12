@@ -248,16 +248,19 @@ export default async function handler(req, res) {
             .select("customer_phone, customer_name, customer_email, gross_amount, refund_amount, is_cancelled, pickup_date");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
-            // Group revenue records by customer_phone
+            // Group revenue records by normalized customer_phone to prevent
+            // duplicate customer rows caused by inconsistent phone formatting
+            // (e.g. "3463814616" vs "+13463814616").
             const byPhone = {};
             for (const r of rrData) {
               if (!r.customer_phone) continue;
-              if (!byPhone[r.customer_phone]) {
-                byPhone[r.customer_phone] = { name: r.customer_name || "Unknown", email: r.customer_email || null, records: [] };
+              const normPhone = normalizePhone(r.customer_phone);
+              if (!byPhone[normPhone]) {
+                byPhone[normPhone] = { name: r.customer_name || "Unknown", email: r.customer_email || null, records: [] };
               }
-              if (r.customer_name) byPhone[r.customer_phone].name  = r.customer_name;
-              if (r.customer_email) byPhone[r.customer_phone].email = r.customer_email;
-              byPhone[r.customer_phone].records.push(r);
+              if (r.customer_name) byPhone[normPhone].name  = r.customer_name;
+              if (r.customer_email) byPhone[normPhone].email = r.customer_email;
+              byPhone[normPhone].records.push(r);
             }
 
             const upserts = [];
@@ -284,6 +287,20 @@ export default async function handler(req, res) {
                 if (!isSchemaError(upsertErr)) throw upsertErr;
                 console.warn("v2-customers sync: customers table missing");
               } else {
+                // Clean up stale duplicate records whose phone was not already
+                // in normalized form (e.g. "3463814616" now that "+13463814616"
+                // is the canonical record).
+                const normalizedPhones = new Set(upserts.map((u) => u.phone));
+                const { data: allCustomers } = await sb.from("customers").select("id, phone").not("phone", "is", null);
+                if (allCustomers) {
+                  const staleIds = allCustomers
+                    .filter((c) => !normalizedPhones.has(c.phone) && normalizedPhones.has(normalizePhone(c.phone)))
+                    .map((c) => c.id);
+                  if (staleIds.length > 0) {
+                    await sb.from("customers").delete().in("id", staleIds);
+                    console.log(`v2-customers sync: removed ${staleIds.length} non-normalized duplicate customer(s)`);
+                  }
+                }
                 return res.status(200).json({ synced: upserts.length, message: `Synced ${upserts.length} customers from revenue records` });
               }
             }

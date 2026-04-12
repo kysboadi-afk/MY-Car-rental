@@ -17,7 +17,7 @@
 //   writeAuditLog            — appends rows to booking_audit_log
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { updateBooking } from "./_bookings.js";
+import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
 
 /**
@@ -150,7 +150,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
   if (!booking.phone) return;
 
   try {
-    const phone = String(booking.phone).trim();
+    const phone = normalizePhone(String(booking.phone).trim());
     const record = {
       name:       booking.name || "Unknown",
       phone,
