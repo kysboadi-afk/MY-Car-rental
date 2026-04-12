@@ -1118,6 +1118,41 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
   const { data: vehicles } = await loadVehicles();
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
 
+  // Load expenses for investment ROI / profit calculations
+  let expensesData = [];
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data, error } = await sb.from("expenses").select("vehicle_id, amount");
+      if (!error) expensesData = data || [];
+    } catch { /* fallback below */ }
+  }
+  if (!expensesData.length) {
+    const { data } = await loadExpenses();
+    expensesData = data || [];
+  }
+
+  // Helper: compute investment ROI fields for a vehicle
+  function computeInvestmentFields(v, revenue, vExpenseTotal) {
+    const profit        = Math.round((revenue - vExpenseTotal) * 100) / 100;
+    const purchasePrice = Number(v.purchase_price || 0);
+    const purchaseDateMs = v.purchase_date ? new Date(v.purchase_date).getTime() : 0;
+    const monthsActive  = purchaseDateMs > 0
+      ? Math.max(1, Math.round((Date.now() - purchaseDateMs) / (86400000 * 30.4375 /* avg days/month */)))
+      : null;
+    const vehicleRoi    = purchasePrice > 0 ? Math.round((profit / purchasePrice) * 10000) / 100 : null;
+    const monthlyProfit = monthsActive != null && monthsActive > 0
+      ? Math.round((profit / monthsActive) * 100) / 100
+      : null;
+    const annualRoi     = purchasePrice > 0 && monthlyProfit != null
+      ? Math.round(((monthlyProfit * 12) / purchasePrice) * 10000) / 100
+      : null;
+    const paybackMonths = purchasePrice > 0 && monthlyProfit != null && monthlyProfit > 0
+      ? Math.round((purchasePrice / monthlyProfit) * 10) / 10
+      : null;
+    return { profit, purchase_price: purchasePrice, months_active: monthsActive, vehicle_roi: vehicleRoi, monthly_profit: monthlyProfit, annual_roi: annualRoi, payback_months: paybackMonths };
+  }
+
   if (action === "revenue_trend") {
     const safeMonths = Math.min(Number(months) || 6, 24);
     const trend = [];
@@ -1151,14 +1186,20 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
       const day = new Date(b.pickupDate).toLocaleDateString("en-US", { weekday: "long" });
       dayCounts[day] = (dayCounts[day] || 0) + 1;
     }
+    const vExpenseTotal = expensesData
+      .filter((e) => e.vehicle_id === vehicleId)
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+    const inv = computeInvestmentFields(v, revenue, vExpenseTotal);
     return {
       action: "vehicle",
       vehicleId,
-      name:          v.vehicle_name || vehicleId,
-      total_bookings: vBookings.length,
-      total_revenue:  Math.round(revenue * 100) / 100,
+      name:            v.vehicle_name || vehicleId,
+      total_bookings:  vBookings.length,
+      total_revenue:   Math.round(revenue * 100) / 100,
+      total_expenses:  Math.round(vExpenseTotal * 100) / 100,
       avg_rental_days: Math.round(avgDays * 10) / 10,
-      popular_days:   Object.entries(dayCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([day, count]) => ({ day, count })),
+      popular_days:    Object.entries(dayCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([day, count]) => ({ day, count })),
+      ...inv,
     };
   }
 
@@ -1176,13 +1217,19 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     // Estimate utilization: assume average 3 rental days per booking as a rough proxy.
     const AVG_RENTAL_DAYS = 3;
     const utilization = Math.min(100, Math.round((vBookings.length * AVG_RENTAL_DAYS / daysSinceFirst) * 100));
+    const vExpenseTotal = expensesData
+      .filter((e) => e.vehicle_id === vid)
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+    const inv = computeInvestmentFields(v, revenue, vExpenseTotal);
     return {
       vehicleId:        vid,
       name:             v.vehicle_name || vid,
       type:             v.type || "car",
       total_bookings:   vBookings.length,
       total_revenue:    Math.round(revenue * 100) / 100,
+      total_expenses:   Math.round(vExpenseTotal * 100) / 100,
       utilization_pct:  utilization,
+      ...inv,
     };
   });
 
