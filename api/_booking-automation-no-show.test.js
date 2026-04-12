@@ -179,13 +179,13 @@ test("autoUpsertCustomer: countStats=true + isNoShow=true both apply on existing
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. Guard: no phone → silent skip
+// 4. Guard: no phone AND no email → silent skip
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test("autoUpsertCustomer: missing phone is silently skipped", async () => {
+test("autoUpsertCustomer: missing phone AND email is silently skipped", async () => {
   resetSbState(null);
 
-  await autoUpsertCustomer(baseBooking({ phone: "" }), true, true);
+  await autoUpsertCustomer(baseBooking({ phone: "", email: "" }), true, true);
 
   assert.equal(sbState.updateCalls.length, 0);
   assert.equal(sbState.insertCalls.length, 0);
