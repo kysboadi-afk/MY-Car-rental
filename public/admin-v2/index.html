@@ -4330,9 +4330,21 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
-    .then((data) => {
-      allRevenueRecords = data.records || [];
+  // Fetch revenue records and expenses in parallel so renderRevenueSummary()
+  // can include real expenses in calcFinancials (matching Dashboard/Fleet).
+  // If allExpenses is already populated (user visited Expenses page first) we
+  // skip the extra round-trip.
+  const expensesPromise = allExpenses.length
+    ? Promise.resolve({ expenses: allExpenses })
+    : apiPost('/api/get-expenses', { secret: adminSecret });
+
+  Promise.all([
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' }),
+    expensesPromise,
+  ])
+    .then(([revData, expData]) => {
+      allRevenueRecords = revData.records || [];
+      if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
       applyRevenueFilters();
       document.getElementById('revenue-loading').style.display = 'none';
@@ -4351,7 +4363,12 @@ function renderRevenueSummary() {
     (r) => r.payment_status === 'paid' && !r.is_cancelled && !r.is_no_show,
   );
   // All totals via the shared financial engine — no inline arithmetic.
-  const fin     = calcFinancials(active.map(normalizeRevenueRecord), 'Revenue');
+  // Inject total expenses so Revenue matches Dashboard/Fleet profit figures.
+  const totalExpenses = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const fin     = calcFinancials([
+    ...active.map(normalizeRevenueRecord),
+    ...(totalExpenses > 0 ? [{ amount_gross: 0, stripe_fee: 0, amount_net: 0, expenses: totalExpenses }] : []),
+  ], 'Revenue');
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
   const reconciled   = active.filter((r) => r.stripe_fee != null).length;
@@ -4364,6 +4381,8 @@ function renderRevenueSummary() {
       { label: 'Stripe Fees',      value: '$' + formatMoney(fin.stripe_fee),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
       { label: 'Net (after fees)', value: '$' + formatMoney(fin.amount_net - refunds),   icon: '✅', sub: 'After fees & refunds' },
       { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                    icon: '↩️', sub: '' },
+      { label: 'Expenses',         value: '$' + formatMoney(fin.expenses),               icon: '💸', sub: fin.expenses > 0 ? `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` : 'None recorded' },
+      { label: 'Profit',           value: '$' + formatMoney(fin.profit - refunds),       icon: '📈', sub: 'Net after fees, refunds & expenses' },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
