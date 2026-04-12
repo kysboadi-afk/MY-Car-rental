@@ -1993,9 +1993,7 @@ stripeBtn.addEventListener("click", async () => {
   const phone = document.getElementById("phone").value.trim();
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
-
-  // Determine the amount charged now based on vehicle type and payment mode.
-  const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
+  if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
