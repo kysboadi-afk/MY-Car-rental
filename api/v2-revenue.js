@@ -388,6 +388,7 @@ export default async function handler(req, res) {
         refund_amount:     0,
         payment_method:    b.paymentMethod || "cash",
         payment_status:    "paid",
+        payment_intent_id: b.paymentIntentId || null,
         notes:             b.notes || null,
         is_no_show:        false,
         is_cancelled:      b.status === "cancelled_rental",
@@ -414,29 +415,48 @@ export default async function handler(req, res) {
           const newRecords = toInsertBase.filter((r) => !existingIds.has(r.booking_id));
           const skipped = toInsertBase.length - newRecords.length;
 
-          if (newRecords.length === 0) {
-            return res.status(200).json({ synced: 0, skipped, message: `All ${skipped} booking${skipped !== 1 ? "s" : ""} already have revenue records.` });
-          }
-
           let synced = 0;
           const BATCH = 100;
           let batchFailed = false;
-          for (let i = 0; i < newRecords.length; i += BATCH) {
-            const batch = newRecords.slice(i, i + BATCH);
-            const { error: upsertErr } = await sb.from("revenue_records")
-              .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
-            if (upsertErr) {
-              if (isSchemaError(upsertErr)) { batchFailed = true; useGithubFallback = true; break; }
-              const { error: insertErr } = await sb.from("revenue_records").insert(batch);
-              if (insertErr) {
-                if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
-                throw insertErr;
+
+          if (newRecords.length > 0) {
+            for (let i = 0; i < newRecords.length; i += BATCH) {
+              const batch = newRecords.slice(i, i + BATCH);
+              const { error: upsertErr } = await sb.from("revenue_records")
+                .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
+              if (upsertErr) {
+                if (isSchemaError(upsertErr)) { batchFailed = true; useGithubFallback = true; break; }
+                const { error: insertErr } = await sb.from("revenue_records").insert(batch);
+                if (insertErr) {
+                  if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
+                  throw insertErr;
+                }
               }
+              synced += batch.length;
             }
-            synced += batch.length;
           }
 
           if (!batchFailed) {
+            // Backfill payment_intent_id on existing records that are missing it.
+            // This stamps Stripe PI IDs onto records created before migration 0043
+            // so the Stripe reconciler can match them by PI ID.
+            const toBackfill = toInsertBase.filter(
+              (r) => existingIds.has(r.booking_id) && r.payment_intent_id
+            );
+            if (toBackfill.length > 0) {
+              const updatedAt = new Date().toISOString();
+              const CONC = 10;
+              for (let i = 0; i < toBackfill.length; i += CONC) {
+                const batch = toBackfill.slice(i, i + CONC);
+                await Promise.all(batch.map((r) =>
+                  sb.from("revenue_records")
+                    .update({ payment_intent_id: r.payment_intent_id, updated_at: updatedAt })
+                    .eq("booking_id", r.booking_id)
+                    .is("payment_intent_id", null)
+                ));
+              }
+            }
+
             return res.status(200).json({
               synced,
               skipped,

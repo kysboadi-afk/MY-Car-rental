@@ -243,12 +243,28 @@ export default async function handler(req, res) {
     const byPIId      = new Map(); // payment_intent_id → record
     const byBookingId = new Map(); // booking_id → record (for extension rows that store PI id as booking_id)
     const byChargeId  = new Map(); // stripe_charge_id → record
+    // Fallback: email (lowercase) + exact amount → record, for records lacking PI IDs.
+    // Only index Stripe-method records to avoid accidentally matching cash rows.
+    const byEmailAndAmount = new Map();
 
     for (const r of (dbRecords || [])) {
       if (r.payment_intent_id) byPIId.set(r.payment_intent_id, r);
       if (r.booking_id)        byBookingId.set(r.booking_id, r);
       if (r.stripe_charge_id)  byChargeId.set(r.stripe_charge_id, r);
+      if (
+        r.customer_email &&
+        r.gross_amount != null &&
+        !r.payment_intent_id // only index records lacking payment_intent_id; records that
+                             // already have one will be matched via byPIId above
+      ) {
+        const key = `${r.customer_email.toLowerCase()}:${Number(r.gross_amount).toFixed(2)}`;
+        if (!byEmailAndAmount.has(key)) byEmailAndAmount.set(key, r);
+      }
     }
+
+    // Track which DB record IDs have already been matched to prevent double-matching
+    // when two Stripe PIs share the same email+amount (rare but possible).
+    const matchedRecordIds = new Set();
 
     const results = {
       matched:   0,
@@ -259,12 +275,24 @@ export default async function handler(req, res) {
     };
 
     for (const payment of succeededPayments) {
-      // STEP 4: Match by payment_intent_id (primary), then charge_id, then booking_id (for extensions)
-      const matchedRecord =
+      // STEP 4: Match by payment_intent_id (primary), then charge_id,
+      // then booking_id (for extensions), then email+amount (fallback for
+      // records created before PI IDs were stored).
+      let matchedRecord =
         byPIId.get(payment.payment_intent_id) ||
         (payment.stripe_charge_id ? byChargeId.get(payment.stripe_charge_id) : null) ||
         byBookingId.get(payment.payment_intent_id) ||
         null;
+
+      // Email+amount fallback: only used when primary keys failed and the Stripe
+      // payment has a customer email to match against.
+      if (!matchedRecord && payment.customer_email) {
+        const key = `${payment.customer_email.toLowerCase()}:${payment.amount_gross.toFixed(2)}`;
+        const candidate = byEmailAndAmount.get(key);
+        if (candidate && !matchedRecordIds.has(candidate.id)) {
+          matchedRecord = candidate;
+        }
+      }
 
       if (!matchedRecord) {
         results.unmatched++;
@@ -281,6 +309,8 @@ export default async function handler(req, res) {
         continue;
       }
 
+      // Mark this DB record as claimed so the fallback map can't re-use it
+      matchedRecordIds.add(matchedRecord.id);
       results.matched++;
 
       // STEP 7: Skip if already reconciled (idempotent)
