@@ -64,19 +64,32 @@ export async function autoCreateRevenueRecord(booking) {
   if (!sb) return;
 
   try {
-    // Idempotent: skip if a record already exists for this booking
-    const { data: existing } = await sb
-      .from("revenue_records")
-      .select("id")
-      .eq("booking_id", booking.bookingId)
-      .maybeSingle();
-    if (existing) return;
-
-    // Resolve the Stripe PaymentIntent ID.
+    // Resolve the Stripe PaymentIntent ID up front so it can be used in both
+    // the idempotency check and the inserted record.
     // • Regular bookings:  booking.paymentIntentId is set by the stripe-webhook.
     // • Extension records: bookingId IS the PI id (webhook passes paymentIntent.id as bookingId).
     const piId = booking.paymentIntentId ||
       (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
+
+    // Idempotent: skip if a record already exists for this booking.
+    // Check by booking_id first (fast path), then by payment_intent_id so that
+    // duplicate records created via different code paths (browser vs webhook)
+    // with different booking IDs but the same Stripe PI are also suppressed.
+    const { data: existingByBooking } = await sb
+      .from("revenue_records")
+      .select("id")
+      .eq("booking_id", booking.bookingId)
+      .maybeSingle();
+    if (existingByBooking) return;
+
+    if (piId) {
+      const { data: existingByPI } = await sb
+        .from("revenue_records")
+        .select("id")
+        .eq("payment_intent_id", piId)
+        .maybeSingle();
+      if (existingByPI) return;
+    }
 
     // For cash/non-Stripe payments: pre-fill fee=0, net=gross so analytics
     // are accurate immediately without needing a Stripe reconciliation pass.
