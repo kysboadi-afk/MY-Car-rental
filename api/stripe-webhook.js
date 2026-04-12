@@ -505,9 +505,19 @@ export default async function handler(req, res) {
               const pickupDate        = booking.pickupDate;
               const newExtensionCount = (booking.extensionCount || 0) + 1;
 
+              // Extension amount — computed once and shared across all steps below.
+              const extensionAmountDollars =
+                Math.round((ext.price != null ? ext.price : paymentIntent.amount / 100) * 100) / 100;
+
+              // Roll the extension amount into the original booking's amountPaid so
+              // every view (bookings.json, Supabase bookings table, revenue_records)
+              // reflects the full rental cost as a single record.
+              const updatedAmountPaid = Math.round(((booking.amountPaid || 0) + extensionAmountDollars) * 100) / 100;
+
               // Build the updated booking object (used for both Supabase sync and emails)
               const updatedBooking = {
                 ...booking,
+                amountPaid:              updatedAmountPaid,
                 returnDate:              updatedReturnDate,
                 returnTime:              updatedReturnTime,
                 extensionPendingPayment: null,
@@ -515,61 +525,55 @@ export default async function handler(req, res) {
               };
 
               // ── 1. Supabase sync FIRST (own try-catch, independent of GitHub write)
-              // This ensures the admin dashboard always reflects the extension even if
-              // the bookings.json GitHub write fails due to a SHA conflict or API error.
+              // autoUpsertBooking uses amountPaid → deposit_paid and derives total_price,
+              // so passing updatedAmountPaid keeps the bookings table accurate.
               try {
                 await autoUpsertBooking(updatedBooking);
               } catch (syncErr) {
                 console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
               }
 
-              // ── 1b. Log extension payment as a separate revenue record ──────────
-              // Uses the extension PaymentIntent ID as booking_id so each extension
-              // gets its own ledger row (distinct from the original booking's record).
-              // autoCreateRevenueRecord is idempotent — safe on webhook retries.
+              // ── 1b. Roll extension into the original revenue_record ─────────────
+              // Adds extensionAmountDollars to the original record's gross_amount so
+              // the Revenue Tracker and dashboard always see a single row per rental.
+              // Falls back to creating a record for the original booking_id if none
+              // exists yet (idempotent via autoCreateRevenueRecord's existence check).
               try {
-                const extensionAmountDollars =
-                  (ext.price != null ? ext.price : paymentIntent.amount / 100);
-                await autoCreateRevenueRecord({
-                  bookingId:          paymentIntent.id,
-                  originalBookingId:  original_booking_id,
-                  vehicleId:          vehicle_id,
-                  name:               booking.name  || renter_name  || "",
-                  phone:              booking.phone || "",
-                  email:              booking.email || renter_email || "",
-                  pickupDate:         booking.pickupDate  || "",
-                  returnDate:         updatedReturnDate,
-                  amountPaid:         extensionAmountDollars,
-                  paymentMethod:      "stripe",
-                  notes:              `Extension (${ext.label || extension_label || ""}) for booking ${original_booking_id}`,
-                });
-
-                // ── 1c. Increment total_price on the original booking row ──────────
-                // This keeps the Supabase `bookings` table in sync so future
-                // queries on the original booking reflect the full rental cost.
-                try {
-                  const sb = getSupabaseAdmin();
-                  if (sb) {
-                    const { data: origRow } = await sb
-                      .from("bookings")
-                      .select("id, total_price, remaining_balance")
-                      .eq("booking_ref", original_booking_id)
-                      .maybeSingle();
-                    if (origRow) {
-                      const newTotal     = Number(origRow.total_price     || 0) + extensionAmountDollars;
-                      const newRemaining = Math.max(0, Number(origRow.remaining_balance || 0) - extensionAmountDollars);
-                      await sb
-                        .from("bookings")
-                        .update({
-                          total_price:       newTotal,
-                          remaining_balance: newRemaining,
-                          updated_at:        new Date().toISOString(),
-                        })
-                        .eq("id", origRow.id);
+                const sb = getSupabaseAdmin();
+                if (sb) {
+                  const { data: origRev } = await sb
+                    .from("revenue_records")
+                    .select("id, gross_amount")
+                    .eq("booking_id", original_booking_id)
+                    .maybeSingle();
+                  if (origRev) {
+                    const newGross = Math.round((Number(origRev.gross_amount || 0) + extensionAmountDollars) * 100) / 100;
+                    const { error: revUpErr } = await sb
+                      .from("revenue_records")
+                      .update({
+                        gross_amount: newGross,
+                        return_date:  updatedReturnDate,
+                        updated_at:   new Date().toISOString(),
+                      })
+                      .eq("id", origRev.id);
+                    if (revUpErr) {
+                      console.error("stripe-webhook: extension revenue_record update error (non-fatal):", revUpErr.message);
                     }
+                  } else {
+                    // No original record yet — create one for the original booking id
+                    // with the combined amount (deposit + this extension).
+                    await autoCreateRevenueRecord({
+                      bookingId:     original_booking_id,
+                      vehicleId:     vehicle_id,
+                      name:          booking.name  || renter_name  || "",
+                      phone:         booking.phone || "",
+                      email:         booking.email || renter_email || "",
+                      pickupDate:    booking.pickupDate || "",
+                      returnDate:    updatedReturnDate,
+                      amountPaid:    updatedAmountPaid,
+                      paymentMethod: "stripe",
+                    });
                   }
-                } catch (tpErr) {
-                  console.error("stripe-webhook: extension total_price update error (non-fatal):", tpErr.message);
                 }
               } catch (revErr) {
                 console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
@@ -586,10 +590,12 @@ export default async function handler(req, res) {
                       (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
                     );
                     if (freshIdx !== -1) {
-                      freshData[vehicle_id][freshIdx].returnDate              = updatedReturnDate;
-                      freshData[vehicle_id][freshIdx].returnTime              = updatedReturnTime;
-                      freshData[vehicle_id][freshIdx].extensionPendingPayment = null;
-                      freshData[vehicle_id][freshIdx].extensionCount          = newExtensionCount;
+                      const cur = freshData[vehicle_id][freshIdx];
+                      cur.amountPaid              = Math.round(((cur.amountPaid || 0) + extensionAmountDollars) * 100) / 100;
+                      cur.returnDate              = updatedReturnDate;
+                      cur.returnTime              = updatedReturnTime;
+                      cur.extensionPendingPayment = null;
+                      cur.extensionCount          = newExtensionCount;
                     }
                   },
                   save:    saveBookings,
@@ -692,24 +698,38 @@ export default async function handler(req, res) {
               }
             }
 
-            // ── Create revenue record for the extension payment ────────────────────
-            // The booking wasn't in bookings.json, so build the record from PI metadata.
-            // Using paymentIntent.id as bookingId gives each extension its own ledger row
-            // and matches the reconciliation check in scheduled-reminders.js.
+            // ── Update/create revenue record for the extension payment ────────────
+            // Booking wasn't in bookings.json; update original revenue_record if it
+            // exists, or create one under the original booking_id as a fallback.
             try {
-              await autoCreateRevenueRecord({
-                bookingId:         paymentIntent.id,
-                originalBookingId: original_booking_id,
-                vehicleId:         vehicle_id,
-                name:              renter_name  || "",
-                phone:             "",
-                email:             renter_email || "",
-                pickupDate:        "",
-                returnDate:        new_return_date || "",
-                amountPaid:        paymentIntent.amount / 100,
-                paymentMethod:     "stripe",
-                notes:             `Extension (${extension_label || ""}) for booking ${original_booking_id}`,
-              });
+              const extAmountFallback = Math.round((paymentIntent.amount / 100) * 100) / 100;
+              const sbFb = getSupabaseAdmin();
+              if (sbFb) {
+                const { data: origRevFb } = await sbFb
+                  .from("revenue_records")
+                  .select("id, gross_amount")
+                  .eq("booking_id", original_booking_id)
+                  .maybeSingle();
+                if (origRevFb) {
+                  const newGross = Math.round((Number(origRevFb.gross_amount || 0) + extAmountFallback) * 100) / 100;
+                  await sbFb
+                    .from("revenue_records")
+                    .update({ gross_amount: newGross, return_date: new_return_date || null, updated_at: new Date().toISOString() })
+                    .eq("id", origRevFb.id);
+                } else {
+                  await autoCreateRevenueRecord({
+                    bookingId:     original_booking_id,
+                    vehicleId:     vehicle_id,
+                    name:          renter_name  || "",
+                    phone:         "",
+                    email:         renter_email || "",
+                    pickupDate:    "",
+                    returnDate:    new_return_date || "",
+                    amountPaid:    extAmountFallback,
+                    paymentMethod: "stripe",
+                  });
+                }
+              }
             } catch (revErr) {
               console.error("stripe-webhook: extension revenue record error (fallback path, non-fatal):", revErr.message);
             }

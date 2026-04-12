@@ -127,17 +127,45 @@ mock.module("./_sms-templates.js", {
 
 // Supabase stub (for the new getSupabaseAdmin import in stripe-webhook.js)
 const supabaseDirectUpdates = [];
+// Pre-populated by tests that need a revenue_record to already exist
+const supabaseRevenueStore = {}; // booking_id → { id, gross_amount }
+
 mock.module("./_supabase.js", {
   namedExports: {
     getSupabaseAdmin: () => ({
-      from: (table) => ({
-        update: (payload) => ({
-          eq: (_col, _val) => {
-            supabaseDirectUpdates.push({ table, payload });
-            return Promise.resolve({ error: null });
+      from: (table) => {
+        // Fluent builder — assembles select/eq/maybeSingle or update/eq chains.
+        let _selectCols = null;
+        let _updatePayload = null;
+        const _eqFilters = {};
+
+        const builder = {
+          select(cols) { _selectCols = cols; return builder; },
+          update(payload) { _updatePayload = payload; return builder; },
+          eq(col, val) {
+            _eqFilters[col] = val;
+            if (_updatePayload !== null) {
+              // Terminate an update().eq() chain immediately.
+              supabaseDirectUpdates.push({ table, payload: _updatePayload, filters: { ..._eqFilters } });
+              return Promise.resolve({ error: null });
+            }
+            return builder;
           },
-        }),
-      }),
+          // Supported select patterns:
+          //   revenue_records filtered by booking_id  → looks up supabaseRevenueStore
+          //   all other tables / filter combos        → returns { data: null }
+          maybeSingle() {
+            if (table === "revenue_records" && _eqFilters.booking_id) {
+              const stored = supabaseRevenueStore[_eqFilters.booking_id] || null;
+              return Promise.resolve({ data: stored });
+            }
+            return Promise.resolve({ data: null });
+          },
+          // Allow extra eq() chains in select paths
+          then(resolve) { return Promise.resolve({ data: null, error: null }).then(resolve); },
+        };
+        return builder;
+      },
     }),
   },
 });
@@ -166,6 +194,7 @@ function resetCalls() {
   automationCalls.blocked.length = 0;
   automationCalls.activated.length = 0;
   supabaseDirectUpdates.length = 0;
+  for (const k of Object.keys(supabaseRevenueStore)) delete supabaseRevenueStore[k];
 }
 
 function makeWebhookReq(event) {
@@ -425,9 +454,9 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
   );
 });
 
-// ─── 5b. rental_extension: revenue record logged for extension payment ────────
+// ─── 5b. rental_extension: extension rolled into original revenue_record ──────
 
-test("webhook rental_extension: autoCreateRevenueRecord called with extension PaymentIntent ID", async () => {
+test("webhook rental_extension: extension amount rolled into original revenue_record gross_amount", async () => {
   resetStore(); resetCalls();
   const origBookingId = "bk-ext-revenue-test";
   bookingsStore["camry"] = [{
@@ -448,6 +477,10 @@ test("webhook rental_extension: autoCreateRevenueRecord called with extension Pa
     },
   }];
 
+  // Pre-populate the revenue_record for the original booking so the webhook
+  // can find and update it (rather than calling autoCreateRevenueRecord).
+  supabaseRevenueStore[origBookingId] = { id: "rr-uuid-001", gross_amount: 110 };
+
   // amountCents = 11000 → $110.00 extension
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
@@ -458,21 +491,28 @@ test("webhook rental_extension: autoCreateRevenueRecord called with extension Pa
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
-  assert.ok(
-    automationCalls.revenue.length > 0,
-    "autoCreateRevenueRecord must be called when a rental_extension payment succeeds"
+  // autoCreateRevenueRecord must NOT be called — the original record is updated instead.
+  assert.equal(
+    automationCalls.revenue.length, 0,
+    "autoCreateRevenueRecord must NOT be called when the original revenue_record exists"
   );
-  const rev = automationCalls.revenue[0];
-  // Must use the PaymentIntent ID (not the original booking ID) so each extension
-  // gets its own revenue ledger row and the idempotency guard works correctly.
-  assert.ok(rev.bookingId.startsWith("pi_"), "revenue bookingId must be the extension PaymentIntent ID");
-  assert.equal(rev.vehicleId,  "camry",   "revenue record must carry the correct vehicleId");
-  assert.equal(rev.amountPaid, 110,       "revenue amount must match extensionPendingPayment.price");
-  assert.equal(rev.paymentMethod, "stripe", "payment method must be stripe");
-  assert.ok(
-    (rev.notes || "").includes(origBookingId),
-    "revenue notes must reference the original booking ID for traceability"
+
+  // The Supabase revenue_records row must be updated with the combined gross_amount.
+  const revUpdate = supabaseDirectUpdates.find(
+    (u) => u.table === "revenue_records" && u.payload.gross_amount != null
   );
+  assert.ok(revUpdate, "revenue_records must be updated via Supabase");
+  assert.equal(revUpdate.payload.gross_amount, 220, "gross_amount must be original (110) + extension (110) = 220");
+
+  // bookings.json amountPaid must be incremented on the original booking.
+  const saved = (bookingsStore["camry"] || []).find((b) => b.bookingId === origBookingId);
+  assert.ok(saved, "original booking must still exist in bookings.json");
+  assert.equal(saved.amountPaid, 220, "bookings.json amountPaid must be updated to 220 after extension");
+
+  // autoUpsertBooking must carry the updated amountPaid.
+  const upsert = automationCalls.booking.find((b) => b.bookingId === origBookingId);
+  assert.ok(upsert, "autoUpsertBooking must be called for the original booking");
+  assert.equal(upsert.amountPaid, 220, "upserted booking must have combined amountPaid = 220");
 });
 
 

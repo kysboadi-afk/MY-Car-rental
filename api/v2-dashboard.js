@@ -125,9 +125,10 @@ export default async function handler(req, res) {
     }
 
     // ── Supplemental revenue from Supabase ────────────────────────────────────
-    // Adds succeeded charges (damages, late fees, etc.) and supplemental revenue
-    // records (extension fees, external payments) to the totals without
-    // double-counting entries already reflected in bookings.json amountPaid.
+    // Adds succeeded charges (damages, late fees, etc.) and any revenue_records
+    // that have no matching bookingId in bookings.json (e.g. manual entries).
+    // Extension payments are now rolled into the original booking's amountPaid,
+    // so they are counted once via bookings.json and excluded here.
     const sb = getSupabaseAdmin();
     if (sb) {
       // Build lookup: bookingId → vehicleId (from already-loaded bookings.json)
@@ -174,9 +175,10 @@ export default async function handler(req, res) {
         console.error("v2-dashboard: charges load error (non-fatal):", chargesErr.message);
       }
 
-      // 2. Supplemental revenue records — extension fees and external payments.
+      // 2. Revenue records not already covered by bookings.json.
       //    Records whose booking_id matches an existing bookingId are already
-      //    counted via bookings.json amountPaid and are excluded.
+      //    counted via bookings.json amountPaid (which now includes extensions)
+      //    and are excluded.  Only truly external/manual records are added here.
       try {
         const { data: rrData } = await sb
           .from("revenue_records")
