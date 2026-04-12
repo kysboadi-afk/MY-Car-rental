@@ -25,6 +25,7 @@
 
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -252,6 +253,22 @@ export default async function handler(req, res) {
       .eq("sync_excluded", false);
     if (dbErr) throw dbErr;
 
+    // Load bookings.json so we can populate revenue records for unmatched PIs
+    // that carry a metadata booking_id linking them to a known booking.
+    let bookingsByBookingId = new Map();
+    let bookingsByPI       = new Map();
+    try {
+      const { data: bookingsData } = await loadBookings();
+      for (const list of Object.values(bookingsData)) {
+        for (const b of (list || [])) {
+          if (b.bookingId)       bookingsByBookingId.set(b.bookingId,       b);
+          if (b.paymentIntentId) bookingsByPI.set(b.paymentIntentId, b);
+        }
+      }
+    } catch (_) {
+      // Non-fatal — if bookings.json is unavailable we still create stub records.
+    }
+
     // Build lookup maps for matching
     const byPIId      = new Map(); // payment_intent_id → record
     const byBookingId = new Map(); // booking_id → record (for extension rows that store PI id as booking_id)
@@ -283,7 +300,8 @@ export default async function handler(req, res) {
       matched:   0,
       updated:   0,
       skipped:   0, // already up-to-date
-      unmatched: 0, // Stripe payment with no revenue_record
+      created:   0, // new revenue records auto-created from Stripe data
+      unmatched: 0, // Stripe payment with no revenue_record (after auto-create attempt)
       preview:   dryRun ? [] : undefined,
     };
 
@@ -311,16 +329,69 @@ export default async function handler(req, res) {
       }
 
       if (!matchedRecord) {
-        results.unmatched++;
+        // AUTO-CREATE: build a new revenue_record from Stripe + booking data
+        // so the payment appears in the Revenue Tracker without manual intervention.
+        const booking =
+          (payment.metadata_booking_id ? bookingsByBookingId.get(payment.metadata_booking_id) : null) ||
+          bookingsByPI.get(payment.payment_intent_id) ||
+          null;
+
+        // Derive a stable, unique booking_id — prefer the one from metadata/bookings.
+        const newBookingId =
+          (booking?.bookingId) ||
+          payment.metadata_booking_id ||
+          ("stripe-" + payment.payment_intent_id);
+
         if (dryRun) {
           results.preview.push({
-            status:  "unmatched",
-            pi_id:   payment.payment_intent_id,
-            gross:   payment.amount_gross,
-            fee:     payment.stripe_fee,
-            net:     payment.stripe_net,
-            email:   payment.customer_email,
+            status:     "will_create",
+            pi_id:      payment.payment_intent_id,
+            booking_id: newBookingId,
+            gross:      payment.amount_gross,
+            fee:        payment.stripe_fee,
+            net:        payment.stripe_net,
+            email:      payment.customer_email,
           });
+          results.created++;
+          continue;
+        }
+
+        const paymentDate = new Date(payment.created_at_unix * 1000).toISOString().slice(0, 10);
+
+        const newRecord = {
+          booking_id:        newBookingId,
+          vehicle_id:        booking?.vehicleId    || "unknown",
+          customer_name:     booking?.name         || null,
+          customer_phone:    booking?.phone        || null,
+          customer_email:    payment.customer_email || booking?.email || null,
+          pickup_date:       booking?.pickupDate   || paymentDate,
+          return_date:       booking?.returnDate   || null,
+          gross_amount:      payment.amount_gross,
+          deposit_amount:    0,
+          refund_amount:     0,
+          payment_method:    "stripe",
+          payment_status:    "paid",
+          payment_intent_id: payment.payment_intent_id,
+          stripe_charge_id:  payment.stripe_charge_id || null,
+          stripe_fee:        payment.stripe_fee,
+          stripe_net:        payment.stripe_net,
+          is_no_show:        false,
+          is_cancelled:      false,
+          override_by_admin: false,
+          sync_excluded:     false,
+          created_at:        new Date().toISOString(),
+          updated_at:        new Date().toISOString(),
+        };
+
+        const { error: insertErr } = await sb
+          .from("revenue_records")
+          .insert(newRecord);
+
+        if (insertErr) {
+          console.error("stripe-reconcile auto-create error for PI", payment.payment_intent_id, ":", insertErr.message);
+          results.unmatched++;
+        } else {
+          results.created++;
         }
         continue;
       }
@@ -414,6 +485,7 @@ export default async function handler(req, res) {
       matched:     results.matched,
       updated:     results.updated,
       skipped:     results.skipped,
+      created:     results.created,
       unmatched:   results.unmatched,
       analytics,
       verification,
