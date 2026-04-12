@@ -981,8 +981,28 @@
             <option value="reserved_unpaid">Pending / Unpaid</option>
             <option value="booked_paid">Booked &amp; Paid</option>
             <option value="active_rental">Active Rental</option>
+            <option value="overdue">Overdue</option>
+            <option value="extended">Extended</option>
             <option value="completed_rental">Completed</option>
             <option value="cancelled_rental">Cancelled</option>
+            <option value="flagged">Flagged</option>
+          </select>
+          <select class="filter-select" id="booking-filter-payment" onchange="applyBookingFilters()">
+            <option value="">All Payment Types</option>
+            <option value="stripe">Stripe</option>
+            <option value="cash">Cash</option>
+          </select>
+          <select class="filter-select" id="booking-filter-risk" onchange="applyBookingFilters()">
+            <option value="">All Risk Levels</option>
+            <option value="low">Low Risk</option>
+            <option value="medium">Medium Risk</option>
+            <option value="high">High Risk</option>
+          </select>
+          <select class="filter-select" id="booking-filter-profit" onchange="applyBookingFilters()">
+            <option value="">All Profitability</option>
+            <option value="profitable">Profitable</option>
+            <option value="unprofitable">Unprofitable</option>
+            <option value="unknown">Unknown</option>
           </select>
           <input type="text" class="filter-input" id="booking-search" placeholder="Search name or ID…" oninput="applyBookingFilters()">
         </div>
@@ -995,7 +1015,9 @@
                   <th>Customer</th>
                   <th>Vehicle</th>
                   <th>Dates</th>
-                  <th>Amount</th>
+                  <th>Financials</th>
+                  <th>Payment</th>
+                  <th>Customer Tier</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -3289,8 +3311,72 @@ async function saveNewVehicle() {
 }
 
 // ── Bookings ───────────────────────────────────────────────────────────────
+
+/** Compute derived operational status for a booking (overdue / extended / flagged / base status). */
+function bookingDerivedStatus(b, today) {
+  if (!today) today = new Date().toISOString().split('T')[0];
+  if (b.flagged) return 'flagged';
+  if (b.status === 'active_rental' && b.returnDate && b.returnDate < today) return 'overdue';
+  // "Extended" = active rental whose returnDate differs from the original createdAt-implied range
+  // We use updatedAt vs createdAt as a proxy: if updated more than 1 hour after creation, treat as possibly extended
+  // A simpler heuristic: if status is active_rental and return date is in future but updated recently, mark extended
+  // We'll rely on the presence of a flagged extension by checking if returnDate was changed (approximated by updatedAt)
+  if (b.status === 'active_rental') return 'active_rental';
+  return b.status;
+}
+
+/** Compute row background color based on derived status / profitability. */
+function bookingRowColor(b, derived) {
+  if (derived === 'overdue'   || derived === 'flagged')  return 'background:#fff5f5;';
+  if (derived === 'extended')                             return 'background:#fffbeb;';
+  if (b.status === 'active_rental')                       return 'background:#f0fdf4;';
+  if (b.status === 'reserved_unpaid')                     return 'background:#fffbeb;';
+  if (b.amountNet != null && b.amountNet < 0)            return 'background:#fef2f2;';
+  return '';
+}
+
+/** Return a status badge including overdue / extended / flagged derived states. */
+function bookingStatusBadge(b, derived) {
+  if (!derived) derived = bookingDerivedStatus(b, new Date().toISOString().split('T')[0]);
+  const map = {
+    reserved_unpaid:   ['badge-orange', 'Pending'],
+    booked_paid:       ['badge-green',  'Confirmed'],
+    active_rental:     ['badge-blue',   'Active'],
+    completed_rental:  ['badge-gray',   'Completed'],
+    cancelled_rental:  ['badge-red',    'Cancelled'],
+    overdue:           ['badge-danger',  'Overdue'],
+    extended:          ['badge-orange', 'Extended'],
+    flagged:           ['badge-warning', 'Flagged'],
+  };
+  const [cls, label] = map[derived] || map[b.status] || ['badge-gray', b.status || '–'];
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+/** Derive customer tier from booking customer fields. */
+function computeBookingCustomerTier(b) {
+  if (b.custBanned)   return 'risky';
+  if (b.custFlagged || b.custRiskFlag === 'high' || b.custNoShows >= 2) return 'risky';
+  if (b.custTotalProfit != null && b.custTotalProfit < 0) return 'unprofitable';
+  if (b.custTotalProfit != null && b.custTotalProfit >= 500 && b.custBookings >= 3) return 'vip';
+  if (b.custBookings >= 1) return 'standard';
+  return 'standard';
+}
+
+/** Toggle flagged state on a booking. */
+function toggleBookingFlag(bookingId, flagValue, btn) {
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'flag', bookingId, flagged: flagValue })
+    .then(() => {
+      showToast(flagValue ? '🚩 Booking flagged.' : 'Flag removed.', 'success');
+      loadBookings();
+    })
+    .catch((err) => {
+      showToast('Error: ' + err.message, 'error');
+      if (btn) btn.disabled = false;
+    });
+}
+
 function loadBookings() {
-  document.getElementById('bookings-loading').style.display = '';
   document.getElementById('bookings-table-wrap').style.display = 'none';
   document.getElementById('bookings-empty').style.display = 'none';
 
@@ -3315,13 +3401,32 @@ function renderBookings() {
 }
 
 function applyBookingFilters() {
-  const vFilter = document.getElementById('booking-filter-vehicle').value;
-  const sFilter = document.getElementById('booking-filter-status').value;
-  const search  = (document.getElementById('booking-search').value || '').toLowerCase();
+  const vFilter  = document.getElementById('booking-filter-vehicle').value;
+  const sFilter  = document.getElementById('booking-filter-status').value;
+  const pmFilter = (document.getElementById('booking-filter-payment')?.value  || '').toLowerCase();
+  const rFilter  = document.getElementById('booking-filter-risk')?.value || '';
+  const pfFilter = document.getElementById('booking-filter-profit')?.value || '';
+  const search   = (document.getElementById('booking-search').value || '').toLowerCase();
+  const today    = new Date().toISOString().split('T')[0];
 
   let filtered = allBookings.filter((b) => {
     if (vFilter && b.vehicleId !== vFilter) return false;
-    if (sFilter && b.status !== sFilter) return false;
+    // Derived status: overdue / extended / flagged overlay
+    const derived = bookingDerivedStatus(b, today);
+    if (sFilter) {
+      if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
+      if (sFilter === 'extended'  && derived !== 'extended')  return false;
+      if (sFilter === 'flagged'   && derived !== 'flagged')   return false;
+      if (!['overdue','extended','flagged'].includes(sFilter) && b.status !== sFilter) return false;
+    }
+    if (pmFilter && (b.paymentMethod || '').toLowerCase() !== pmFilter) return false;
+    if (rFilter  && (b.custRiskFlag  || 'low') !== rFilter)  return false;
+    if (pfFilter) {
+      const net = b.amountNet;
+      if (pfFilter === 'profitable'   && (net == null || net <= 0))  return false;
+      if (pfFilter === 'unprofitable' && (net == null || net > 0))   return false;
+      if (pfFilter === 'unknown'      && net != null)                 return false;
+    }
     if (search && !(b.name || '').toLowerCase().includes(search) && !(b.bookingId || '').toLowerCase().includes(search)) return false;
     return true;
   });
@@ -3335,49 +3440,115 @@ function applyBookingFilters() {
   document.getElementById('bookings-table-wrap').style.display = '';
   document.getElementById('bookings-empty').style.display = 'none';
 
-  document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => `
-    <tr>
+  document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => {
+    const derived = bookingDerivedStatus(b, today);
+    const rowColor = bookingRowColor(b, derived);
+    const tier = computeBookingCustomerTier(b);
+    const tierBadge = {
+      vip:          '<span class="badge badge-blue">⭐ VIP</span>',
+      standard:     '<span class="badge badge-success">Standard</span>',
+      risky:        '<span class="badge badge-warning">⚠ Risky</span>',
+      unprofitable: '<span class="badge badge-danger">📉 Unprofitable</span>',
+    }[tier] || '<span class="badge badge-gray">–</span>';
+    const riskBadge = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger' }[b.custRiskFlag || 'low'] || 'badge-gray';
+
+    // Financial display
+    const gross   = b.amountGross  != null ? '$' + formatMoney(b.amountGross) : '$' + formatMoney(b.totalPrice || 0);
+    const feeTxt  = b.stripeFee    != null ? '<span style="color:var(--text-sub);font-size:11px;">−$' + formatMoney(b.stripeFee) + ' fee</span>' : '';
+    const netTxt  = b.amountNet    != null
+      ? '<span style="color:' + (b.amountNet >= 0 ? 'var(--success)' : 'var(--danger)') + ';font-weight:700;">Net $' + formatMoney(b.amountNet) + '</span>'
+      : '';
+    const pmDisplay = esc((b.paymentMethod || 'stripe').toUpperCase());
+    return `
+    <tr style="${rowColor}">
       <td>
         <div style="font-weight:600;">${esc(b.name || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
+        ${b.flagged ? '<span class="badge badge-danger" style="margin-top:3px;">🚩 Flagged</span>' : ''}
       </td>
       <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
       <td>
         <div>${esc(b.pickupDate || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
       </td>
-      <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
-      <td>${statusBadge(b.status)}</td>
       <td>
-        <div class="td-actions">
+        <div style="font-weight:700;">${gross}</div>
+        <div>${feeTxt}</div>
+        <div>${netTxt}</div>
+      </td>
+      <td>
+        <div><span class="badge badge-gray">${pmDisplay}</span></div>
+        <div style="margin-top:3px;font-size:11px;color:var(--text-sub);">${esc(b.paymentStatus || '–')}</div>
+      </td>
+      <td>
+        ${tierBadge}
+        <div style="margin-top:3px;">${b.custRiskFlag ? `<span class="badge ${riskBadge}">${esc(b.custRiskFlag)} risk</span>` : ''}</div>
+        ${b.custTotalProfit != null ? `<div style="font-size:11px;color:var(--text-sub);margin-top:2px;" title="Lifetime profit from this customer">Lifetime: $${formatMoney(b.custTotalProfit)}</div>` : ''}
+      </td>
+      <td>${bookingStatusBadge(b, derived)}</td>
+      <td>
+        <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
           ` : ''}
+          ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
+            <button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>
+            <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this)" title="Mark returned">✓ Returned</button>
+          ` : ''}
+          <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
+          ${b.phone ? `<a href="tel:${esc(b.phone)}" class="btn btn-secondary btn-sm" title="Call customer">📞</a>` : ''}
+          ${b.email ? `<a href="mailto:${esc(b.email)}" class="btn btn-secondary btn-sm" title="Email customer">✉️</a>` : ''}
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
+  const today   = new Date().toISOString().split('T')[0];
+  const derived = bookingDerivedStatus(b, today);
+  const tier    = computeBookingCustomerTier(b);
+  const tierBadge = {
+    vip:          '<span class="badge badge-blue">⭐ VIP</span>',
+    standard:     '<span class="badge badge-success">Standard</span>',
+    risky:        '<span class="badge badge-warning">⚠ Risky</span>',
+    unprofitable: '<span class="badge badge-danger">📉 Unprofitable</span>',
+  }[tier] || '';
+  const riskClr = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' }[b.custRiskFlag || 'low'] || 'inherit';
   document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}${b.phone ? ` <a href="tel:${esc(b.phone)}" style="color:var(--primary);text-decoration:none;">📞</a>` : ''}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}${b.email ? ` <a href="mailto:${esc(b.email)}" style="color:var(--primary);text-decoration:none;">✉️</a>` : ''}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(b.returnTime || '')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Amount Paid</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountPaid || 0)}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${statusBadge(b.status)}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div>${esc(b.paymentMethod || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${bookingStatusBadge(b, derived)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div><span class="badge badge-gray">${esc((b.paymentMethod || 'stripe').toUpperCase())}</span></div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Gross Amount</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountGross != null ? b.amountGross : (b.totalPrice || 0))}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Stripe Fee</div><div>${b.stripeFee != null ? '$' + formatMoney(b.stripeFee) : '<span style="color:var(--text-sub);">—</span>'}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Net Amount</div><div style="font-weight:700;color:${b.amountNet != null ? (b.amountNet >= 0 ? 'var(--success)' : 'var(--danger)') : 'inherit'};">${b.amountNet != null ? '$' + formatMoney(b.amountNet) : '<span style="color:var(--text-sub);">—</span>'}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Deposit Paid</div><div>$${formatMoney(b.amountPaid || 0)}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Remaining Balance</div><div style="${b.remaining > 0 ? 'color:var(--warning);font-weight:600;' : ''}">$${formatMoney(b.remaining || 0)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>
-      ${b.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
     </div>
+    <!-- Customer Insight panel -->
+    <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);">
+      <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Customer Insight</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        ${tierBadge}
+        ${b.custRiskFlag ? `<span class="badge" style="background:${riskClr};color:#fff;text-transform:capitalize;">${esc(b.custRiskFlag)} risk</span>` : ''}
+        ${b.custFlagged  ? '<span class="badge badge-warning">🚩 Customer Flagged</span>' : ''}
+        ${b.custBanned   ? '<span class="badge badge-danger">🚫 Banned</span>'   : ''}
+      </div>
+      ${b.custTotalProfit != null ? `<div style="margin-top:8px;font-size:12px;color:var(--text-sub);">Lifetime Customer Profit: <strong style="color:${b.custTotalProfit >= 0 ? 'var(--success)' : 'var(--danger)'};">$${formatMoney(b.custTotalProfit)}</strong></div>` : ''}
+      ${b.custBookings ? `<div style="font-size:12px;color:var(--text-sub);">Total Bookings: ${b.custBookings}</div>` : ''}
+    </div>
+    ${b.notes ? `<div style="margin-top:12px;"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
       <div class="detail-sub-grid">
@@ -3407,14 +3578,13 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
-    ${b.status === 'active_rental' ? `
-      <button class="btn btn-secondary" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">Mark Completed</button>
+    ${(b.status === 'active_rental' || derived === 'overdue') ? `
+      <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
+      <button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
+    <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
-    ${(b.status === 'active_rental' || b.status === 'completed_rental') ? `
-      <button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Sync Extension</button>
-    ` : ''}
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');

@@ -188,10 +188,12 @@ export default async function handler(req, res) {
             payment_status,
             payment_method,
             payment_intent_id,
+            flagged,
+            risk_score,
             notes,
             created_at,
             updated_at,
-            customers ( id, name, phone, email )
+            customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
           `);
 
         if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
@@ -206,31 +208,70 @@ export default async function handler(req, res) {
         const { data: rows, error } = await q.order("created_at", { ascending: false });
 
         if (!error) {
-          const bookings = (rows || []).map((r) => ({
-            bookingId:       r.booking_ref || r.id,
-            vehicleId:       r.vehicle_id,
-            vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
-            name:            r.customers?.name  || "",
-            phone:           r.customers?.phone || "",
-            email:           r.customers?.email || "",
-            pickupDate:      r.pickup_date  || "",
-            pickupTime:      r.pickup_time  || "",
-            returnDate:      r.return_date  || "",
-            returnTime:      r.return_time  || "",
-            location:        "",
-            status:          DB_TO_APP_STATUS[r.status] || r.status,
-            amountPaid:      Number(r.deposit_paid      || 0),
-            totalPrice:      Number(r.total_price       || 0),
-            remaining:       Number(r.remaining_balance || 0),
-            paymentStatus:   r.payment_status  || "",
-            paymentMethod:   r.payment_method  || "",
-            paymentIntentId: r.payment_intent_id || "",
-            notes:           r.notes || "",
-            smsSentAt:       {},
-            createdAt:       r.created_at,
-            updatedAt:       r.updated_at || null,
-            _source:         "supabase",
-          }));
+          // Fetch revenue_records for stripe fee data (best-effort; non-fatal)
+          let revenueByBookingId = {};
+          try {
+            const bookingRefs = (rows || []).map((r) => r.booking_ref || String(r.id)).filter(Boolean);
+            if (bookingRefs.length) {
+              const { data: rrRows } = await sb
+                .from("revenue_records")
+                .select("booking_id, gross_amount, stripe_fee, stripe_net, payment_method")
+                .in("booking_id", bookingRefs);
+              for (const rr of (rrRows || [])) {
+                if (!revenueByBookingId[rr.booking_id]) {
+                  revenueByBookingId[rr.booking_id] = rr;
+                }
+              }
+            }
+          } catch (_e) { /* non-fatal */ }
+
+          const bookings = (rows || []).map((r) => {
+            const bookingRef = r.booking_ref || String(r.id);
+            const rr = revenueByBookingId[bookingRef] || null;
+            const totalPrice = Number(r.total_price || 0);
+            const gross      = rr ? Number(rr.gross_amount || 0) : totalPrice;
+            const stripeFee  = rr && rr.stripe_fee != null ? Number(rr.stripe_fee) : null;
+            const amountNet  = stripeFee != null ? gross - stripeFee : null;
+            const cust = r.customers || {};
+            return {
+              bookingId:       bookingRef,
+              vehicleId:       r.vehicle_id,
+              vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+              name:            cust.name  || "",
+              phone:           cust.phone || "",
+              email:           cust.email || "",
+              pickupDate:      r.pickup_date  || "",
+              pickupTime:      r.pickup_time  || "",
+              returnDate:      r.return_date  || "",
+              returnTime:      r.return_time  || "",
+              location:        "",
+              status:          DB_TO_APP_STATUS[r.status] || r.status,
+              amountPaid:      Number(r.deposit_paid      || 0),
+              totalPrice,
+              remaining:       Number(r.remaining_balance || 0),
+              paymentStatus:   r.payment_status  || "",
+              paymentMethod:   r.payment_method  || "",
+              paymentIntentId: r.payment_intent_id || "",
+              flagged:         r.flagged || false,
+              riskScore:       r.risk_score || 0,
+              // Financial
+              amountGross:     gross,
+              stripeFee,
+              amountNet,
+              // Customer insight
+              custRiskFlag:    cust.risk_flag    || "low",
+              custFlagged:     cust.flagged      || false,
+              custBanned:      cust.banned       || false,
+              custTotalProfit: cust.total_profit != null ? Number(cust.total_profit) : null,
+              custBookings:    cust.total_bookings || 0,
+              custNoShows:     cust.no_show_count  || 0,
+              notes:           r.notes || "",
+              smsSentAt:       {},
+              createdAt:       r.created_at,
+              updatedAt:       r.updated_at || null,
+              _source:         "supabase",
+            };
+          });
           return res.status(200).json({ bookings });
         }
 
@@ -661,6 +702,26 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, booking: updatedBooking });
+    }
+
+    // ── FLAG (toggle flagged state on a booking) ────────────────────────────
+    if (action === "flag") {
+      const { bookingId, flagged: flagValue, notes: flagNotes } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      const sbFlag = getSupabaseAdmin();
+      if (!sbFlag) return res.status(500).json({ error: "Database not configured" });
+
+      const flagPayload = {
+        flagged:    typeof flagValue === "boolean" ? flagValue : true,
+        updated_at: new Date().toISOString(),
+        ...(flagNotes !== undefined ? { notes: flagNotes } : {}),
+      };
+      const { error: flagErr } = await sbFlag
+        .from("bookings")
+        .update(flagPayload)
+        .eq("booking_ref", bookingId);
+      if (flagErr) return res.status(500).json({ error: flagErr.message });
+      return res.status(200).json({ success: true });
     }
 
     // ── CREATE (manual booking) ─────────────────────────────────────────────
