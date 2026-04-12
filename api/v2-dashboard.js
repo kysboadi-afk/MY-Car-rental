@@ -72,6 +72,10 @@ export default async function handler(req, res) {
     let totalRevenue     = 0;
     let activeBookings   = 0;
     let pendingApprovals = 0;
+    // Total expenses across all scoped vehicles
+    const totalExpenses = expenses
+      .filter((e) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(e.vehicle_id))
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
 
     const monthlyRevenue = {};
     const bookingsPerVehicle = {};
@@ -195,6 +199,26 @@ export default async function handler(req, res) {
       }
     }
 
+    // Stripe fee totals from revenue_records (non-fatal)
+    let totalStripeFees  = 0;
+    let totalStripeNet   = 0;
+    let reconciledCount  = 0;
+    if (sb) {
+      try {
+        const { data: feeRows } = await sb
+          .from("revenue_records")
+          .select("stripe_fee, stripe_net, gross_amount, is_cancelled, is_no_show, vehicle_id")
+          .not("stripe_fee", "is", null);
+        for (const r of (feeRows || [])) {
+          if (r.is_cancelled || r.is_no_show) continue;
+          if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(r.vehicle_id)) continue;
+          totalStripeFees += Number(r.stripe_fee || 0);
+          totalStripeNet  += Number(r.stripe_net != null ? r.stripe_net : (r.gross_amount || 0));
+          reconciledCount++;
+        }
+      } catch { /* non-fatal */ }
+    }
+
     // Alerts: negative-profit vehicles, upcoming bookings (next 7 days)
     const alerts = [];
     const now  = new Date();
@@ -255,7 +279,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       kpis: {
-        totalRevenue:     Math.round(totalRevenue * 100) / 100,
+        totalRevenue:        Math.round(totalRevenue     * 100) / 100,
+        totalExpenses:       Math.round(totalExpenses    * 100) / 100,
+        netProfit:           Math.round((totalRevenue - totalExpenses) * 100) / 100,
+        totalStripeFees:     Math.round(totalStripeFees  * 100) / 100,
+        totalStripeNet:      Math.round(totalStripeNet   * 100) / 100,
+        reconciledCount,
         activeBookings,
         availableVehicles,
         pendingApprovals,

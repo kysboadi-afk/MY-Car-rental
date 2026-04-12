@@ -254,6 +254,7 @@ export default async function handler(req, res) {
         "gross_amount","deposit_amount","refund_amount","payment_method","payment_status",
         "protection_plan_id","notes","is_no_show","is_cancelled","override_by_admin",
         "customer_name","customer_phone","customer_email","pickup_date","return_date",
+        "stripe_fee","stripe_net","stripe_charge_id","payment_intent_id",
       ];
       const updates = {};
       for (const f of allowed) {
@@ -533,6 +534,57 @@ export default async function handler(req, res) {
         message: `v2: Record extension fee for booking ${original_booking_id}`,
       });
       return res.status(201).json({ record: created, booking_id: syntheticBookingId });
+    }
+
+    // ── REBUILD ANALYTICS ───────────────────────────────────────────────────
+    // Recomputes total gross / stripe fees / net revenue and per-vehicle profit
+    // from the revenue_records table.  Requires Supabase.
+    if (action === "rebuild_analytics") {
+      if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
+      const { data: rows, error: rowsErr } = await sb
+        .from("revenue_records")
+        .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, payment_status");
+      if (rowsErr) throw rowsErr;
+
+      let totalGross = 0;
+      let totalFees  = 0;
+      let totalNet   = 0;
+      let totalRefunds = 0;
+      const byVehicle  = {};
+
+      for (const r of (rows || [])) {
+        if (r.is_cancelled || r.is_no_show) continue;
+        const gross   = Number(r.gross_amount  || 0);
+        const fee     = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+        const net     = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+        const refund  = Number(r.refund_amount || 0);
+
+        totalGross   += gross;
+        totalFees    += fee;
+        totalNet     += net;
+        totalRefunds += refund;
+
+        const vid = r.vehicle_id || "unknown";
+        if (!byVehicle[vid]) byVehicle[vid] = { vehicle_id: vid, gross: 0, fees: 0, net: 0, refunds: 0, count: 0 };
+        byVehicle[vid].gross   += gross;
+        byVehicle[vid].fees    += fee;
+        byVehicle[vid].net     += net;
+        byVehicle[vid].refunds += refund;
+        byVehicle[vid].count   += 1;
+      }
+
+      const round = (n) => Math.round(n * 100) / 100;
+      return res.status(200).json({
+        total_gross:   round(totalGross),
+        total_fees:    round(totalFees),
+        total_net:     round(totalNet),
+        total_refunds: round(totalRefunds),
+        net_after_refunds: round(totalNet - totalRefunds),
+        by_vehicle: Object.values(byVehicle)
+          .map((v) => ({ ...v, gross: round(v.gross), fees: round(v.fees), net: round(v.net), refunds: round(v.refunds) }))
+          .sort((a, b) => b.net - a.net),
+        record_count: (rows || []).length,
+      });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

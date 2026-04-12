@@ -62,6 +62,13 @@ You have access to real-time business data through tools. Use them to answer adm
 
 **Finance — Revenue**
 - Use get_revenue for revenue totals by month or all-time. Use get_analytics (action: "revenue_trend") for multi-month trends.
+  - get_revenue also returns stripe_fees (total Stripe processing fees and net payout) when reconciliation data is available.
+- Use **reconcile_stripe** to rebuild financial data directly from Stripe API (no CSV needed):
+  - action "reconcile" (default): fetches all succeeded PaymentIntents, expands balance_transaction for each, updates revenue records with stripe_fee and stripe_net. Also auto-sets stripe_fee=0 for cash bookings. Returns verification totals (Stripe gross, fees, net) and per-vehicle analytics.
+  - action "preview": dry-run — shows what would change without writing.
+  - action "cash_update": sets stripe_fee=0, stripe_net=gross for all cash/manual records.
+  - action "analytics": recalculates totals from the DB without calling Stripe.
+  - Use this when admin says "reconcile", "sync Stripe fees", "how much are my Stripe fees", "rebuild financials", or "verify payments".
 
 **Fleet Analytics**
 - Use get_analytics for utilization rates, per-vehicle revenue performance, booking trend analysis.

@@ -78,6 +78,11 @@ export async function autoCreateRevenueRecord(booking) {
     const piId = booking.paymentIntentId ||
       (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
 
+    // For cash/non-Stripe payments: pre-fill fee=0, net=gross so analytics
+    // are accurate immediately without needing a Stripe reconciliation pass.
+    const isCash = ["cash", "zelle", "venmo", "manual", "external"].includes(booking.paymentMethod);
+    const gross  = Number(booking.amountPaid || 0);
+
     const record = {
       booking_id:          booking.bookingId,
       original_booking_id: booking.originalBookingId || null,
@@ -88,7 +93,7 @@ export async function autoCreateRevenueRecord(booking) {
       customer_email:      booking.email || null,
       pickup_date:         booking.pickupDate  || null,
       return_date:         booking.returnDate  || null,
-      gross_amount:        Number(booking.amountPaid || 0),
+      gross_amount:        gross,
       deposit_amount:      0,
       refund_amount:       0,
       payment_method:      booking.paymentMethod || "stripe",
@@ -97,6 +102,10 @@ export async function autoCreateRevenueRecord(booking) {
       is_no_show:          false,
       is_cancelled:        false,
       override_by_admin:   false,
+      // Stripe fee data: cash bookings have no fee; Stripe bookings get
+      // populated later by stripe-reconcile.js which expands balance_transaction.
+      stripe_fee: isCash ? 0 : null,
+      stripe_net: isCash ? gross : null,
     };
 
     const { error } = await sb.from("revenue_records").insert(record);

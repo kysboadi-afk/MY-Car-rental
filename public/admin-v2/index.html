@@ -888,6 +888,7 @@
         </div>
         <div id="dashboard-content" style="display:none">
           <div class="kpi-grid" id="kpi-grid"></div>
+          <div class="kpi-grid" id="kpi-grid-secondary" style="margin-top:-8px;grid-template-columns:repeat(3,1fr);margin-bottom:24px;"></div>
           <div class="charts-grid">
             <div class="card">
               <div class="card-header">
@@ -1232,6 +1233,7 @@
             Add Expense
           </button>
         </div>
+        <div class="kpi-grid" id="exp-kpi-grid" style="margin-bottom:16px;"></div>
         <div class="filters-row">
           <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
             <option value="">All Vehicles</option>
@@ -1467,9 +1469,11 @@
             <option value="refunded">Refunded</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncRevenue(this)">↺ Sync from Bookings</button>
+          <button class="btn btn-secondary btn-sm" id="btn-stripe-reconcile" onclick="runStripeReconcile(this)">⚡ Sync from Stripe</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
+        <div class="card" id="rev-vehicle-breakdown" style="display:none;margin-bottom:16px;padding:12px 16px;"></div>
         <div class="card">
           <div id="revenue-loading" class="loading"><div class="loading-spinner"></div><div>Loading revenue…</div></div>
           <div id="revenue-table-wrap" style="display:none" class="table-wrap">
@@ -1480,6 +1484,7 @@
                   <th>Vehicle</th>
                   <th>Dates</th>
                   <th>Gross</th>
+                  <th>Stripe Fee</th>
                   <th>Refund</th>
                   <th>Net</th>
                   <th>Method</th>
@@ -1542,26 +1547,41 @@
         <div class="filters-row">
           <input type="text" class="filter-input" id="cust-search" placeholder="Search name, phone, email…" oninput="applyCustomerFilters()">
           <select class="filter-select" id="cust-filter-flag" onchange="applyCustomerFilters()">
-            <option value="">All Customers</option>
+            <option value="">All Statuses</option>
             <option value="flagged">Flagged</option>
             <option value="banned">Banned</option>
+            <option value="active">Active</option>
+          </select>
+          <select class="filter-select" id="cust-filter-risk" onchange="applyCustomerFilters()">
+            <option value="">All Risk Levels</option>
+            <option value="low">Low Risk</option>
+            <option value="medium">Medium Risk</option>
+            <option value="high">High Risk</option>
+          </select>
+          <select class="filter-select" id="cust-sort" onchange="applyCustomerFilters()">
+            <option value="total_spent">Sort: Total Spent</option>
+            <option value="total_bookings">Sort: Bookings</option>
+            <option value="last_booking_date">Sort: Last Booking</option>
+            <option value="no_show_count">Sort: No-Shows</option>
+            <option value="name">Sort: Name</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
           <button class="btn btn-primary btn-sm" onclick="openAddCustomerModal()">+ Add Customer</button>
         </div>
+        <div class="kpi-grid" id="cust-kpi-grid" style="margin-bottom:16px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
         <div class="card">
           <div id="customers-loading" class="loading"><div class="loading-spinner"></div><div>Loading customers…</div></div>
           <div id="customers-table-wrap" style="display:none" class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Email</th>
+                  <th>Customer</th>
+                  <th>Contact</th>
                   <th>Bookings</th>
                   <th>Total Spent</th>
                   <th>No Shows</th>
                   <th>Last Booking</th>
+                  <th>Risk</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -1571,7 +1591,8 @@
           </div>
           <div id="customers-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>No customers found. Click "Sync from Bookings" to import.</p>
+            <p>No customers found.</p>
+            <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>↻ Sync from Bookings</strong> to import existing customers.</p>
           </div>
         </div>
       </div>
@@ -2117,11 +2138,28 @@ async function loadVehiclesFromApi() {
         if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
       }
     });
+    // Populate dynamic vehicle filter dropdowns for Revenue and Expenses
+    populateVehicleFilters(vehicles.filter((v) => (v.type || '') !== 'slingshot'));
   } catch (err) {
     // Network/parse error — continue with hard-coded fallbacks
     console.error('admin-v2: failed to load vehicles from API, using fallback values', err);
   }
 }
+
+/** Populate <select> vehicle filters with live vehicle list. */
+function populateVehicleFilters(vehicles) {
+  const filterIds = ['rev-filter-vehicle', 'expense-filter-vehicle'];
+  const opts = vehicles.map((v) =>
+    `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
+  ).join('');
+  for (const id of filterIds) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    // Keep the "All Vehicles" option, replace the rest
+    el.innerHTML = '<option value="">All Vehicles</option>' + opts;
+  }
+}
+
 // Kick off the fetch immediately; UI functions consume the maps whenever they run
 loadVehiclesFromApi();
 
@@ -2356,6 +2394,20 @@ function closeSidebar() {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
+function navigateToUnpaidBookings() {
+  navigate('bookings');
+  // Apply the pending/unpaid filter once the page has rendered
+  const el = document.getElementById('booking-filter-status');
+  if (el) { el.value = 'reserved_unpaid'; applyBookingFilters(); }
+  else {
+    // Fallback: bookings may still be loading — wait for the next tick
+    requestAnimationFrame(() => {
+      const el2 = document.getElementById('booking-filter-status');
+      if (el2) { el2.value = 'reserved_unpaid'; applyBookingFilters(); }
+    });
+  }
+}
+
 function refreshDashboard() {
   document.getElementById('dashboard-loading').style.display = '';
   document.getElementById('dashboard-content').style.display = 'none';
@@ -2374,32 +2426,65 @@ function renderDashboard(data) {
   const badge = document.getElementById('pending-badge');
   if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; } else { badge.style.display = 'none'; }
 
+  // Determine which net to show: prefer Stripe-reconciled net, fall back to gross
+  const hasStripeData  = kpi.reconciledCount > 0;
+  const netLabel       = hasStripeData ? 'Net Revenue' : 'Gross Revenue';
+  const netValue       = hasStripeData ? kpi.totalStripeNet : kpi.totalRevenue;
+  const netSub         = hasStripeData
+    ? `After $${formatMoney(kpi.totalStripeFees)} Stripe fees`
+    : 'Run ⚡ Sync from Stripe for net';
+  const profitColor    = (kpi.netProfit || 0) < 0 ? 'color:var(--danger)' : '';
+
   document.getElementById('kpi-grid').innerHTML = `
-    <div class="kpi-card">
+    <div class="kpi-card" onclick="navigate('revenue')" style="cursor:pointer;" title="View Revenue">
       <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
-      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-label">Gross Revenue</div>
       <div class="kpi-value">$${formatMoney(kpi.totalRevenue)}</div>
-      <div class="kpi-change">Lifetime paid bookings</div>
+      <div class="kpi-change">All paid bookings</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>
-      <div class="kpi-label">Active Bookings</div>
-      <div class="kpi-value">${kpi.activeBookings}</div>
-      <div class="kpi-change">Paid + active rentals</div>
+    <div class="kpi-card" onclick="navigate('revenue')" style="cursor:pointer;" title="View Net Revenue">
+      <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+      <div class="kpi-label">${esc(netLabel)}</div>
+      <div class="kpi-value">$${formatMoney(netValue)}</div>
+      <div class="kpi-change" style="font-size:10px;">${esc(netSub)}</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
-      <div class="kpi-label">Vehicles Available</div>
-      <div class="kpi-value">${kpi.availableVehicles}</div>
-      <div class="kpi-change">Active in fleet</div>
+    <div class="kpi-card" onclick="navigate('expenses')" style="cursor:pointer;" title="View Expenses">
+      <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+      <div class="kpi-label">Total Expenses</div>
+      <div class="kpi-value" style="color:var(--danger);">$${formatMoney(kpi.totalExpenses || 0)}</div>
+      <div class="kpi-change">Operational costs</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-      <div class="kpi-label">Pending Approvals</div>
-      <div class="kpi-value">${kpi.pendingApprovals}</div>
-      <div class="kpi-change" style="${pendingCount > 0 ? 'color:var(--danger)' : ''}">Awaiting action</div>
+    <div class="kpi-card" style="${profitColor}">
+      <div class="kpi-icon ${(kpi.netProfit || 0) >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+      <div class="kpi-label">Net Profit</div>
+      <div class="kpi-value" style="${profitColor}">$${formatMoney(kpi.netProfit || 0)}</div>
+      <div class="kpi-change">Revenue − Expenses</div>
     </div>
   `;
+  // Secondary row: bookings + availability
+  const secondRow = document.getElementById('kpi-grid-secondary');
+  if (secondRow) {
+    secondRow.innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v5"/><circle cx="16" cy="17" r="3"/><circle cx="7" cy="17" r="3"/></svg></div>
+        <div class="kpi-label">Active Bookings</div>
+        <div class="kpi-value">${kpi.activeBookings}</div>
+        <div class="kpi-change">Paid + active rentals</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
+        <div class="kpi-label">Available Vehicles</div>
+        <div class="kpi-value">${kpi.availableVehicles}</div>
+        <div class="kpi-change">Active in fleet</div>
+      </div>
+      <div class="kpi-card" onclick="navigateToUnpaidBookings()" style="cursor:pointer;">
+        <div class="kpi-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+        <div class="kpi-label">Pending Approvals</div>
+        <div class="kpi-value">${kpi.pendingApprovals}</div>
+        <div class="kpi-change" style="${pendingCount > 0 ? 'color:var(--danger)' : ''}">Awaiting action</div>
+      </div>
+    `;
+  }
 
   // Revenue Chart
   const rcData = data.revenueChart || [];
@@ -3608,7 +3693,50 @@ function loadExpenses() {
 
 function renderExpenses() {
   document.getElementById('expenses-loading').style.display = 'none';
+  renderExpenseKpis();
   applyExpenseFilters();
+}
+
+function renderExpenseKpis() {
+  const grid = document.getElementById('exp-kpi-grid');
+  if (!grid) return;
+  if (!allExpenses.length) { grid.innerHTML = ''; return; }
+
+  const total = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+  // By category totals
+  const byCat = {};
+  for (const e of allExpenses) {
+    const cat = e.category || 'other';
+    byCat[cat] = (byCat[cat] || 0) + Number(e.amount || 0);
+  }
+  const topCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  const catSub  = topCats.map(([c, v]) => `${c}: $${formatMoney(v)}`).join(' · ');
+
+  // By vehicle totals
+  const byVeh = {};
+  for (const e of allExpenses) {
+    const vid = e.vehicle_id || 'unknown';
+    byVeh[vid] = (byVeh[vid] || 0) + Number(e.amount || 0);
+  }
+  const topVehs = Object.entries(byVeh).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  const vehSub  = topVehs.map(([v, amt]) => `${VEHICLE_NAMES_DYNAMIC[v] || VEHICLE_NAMES[v] || v}: $${formatMoney(amt)}`).join(' · ');
+
+  grid.innerHTML = [
+    { label: 'Total Expenses',   value: '$' + formatMoney(total),                    icon: '💸', sub: `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` },
+    { label: 'By Category',      value: topCats.length ? '$' + formatMoney(topCats[0][1]) : '–', icon: '🏷️', sub: catSub },
+    { label: 'By Vehicle',       value: topVehs.length ? '$' + formatMoney(topVehs[0][1]) : '–', icon: '🚗', sub: vehSub },
+    { label: 'Avg per Record',   value: allExpenses.length ? '$' + formatMoney(total / allExpenses.length) : '–', icon: '📊', sub: '' },
+  ].map((k) => `
+    <div class="kpi-card">
+      <div class="kpi-icon">${k.icon}</div>
+      <div class="kpi-body">
+        <div class="kpi-value" style="color:var(--danger);">${esc(k.value)}</div>
+        <div class="kpi-label">${esc(k.label)}</div>
+        ${k.sub ? `<div style="font-size:10px;color:var(--text-sub);margin-top:2px;">${esc(k.sub)}</div>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 function applyExpenseFilters() {
@@ -3630,6 +3758,7 @@ function applyExpenseFilters() {
   document.getElementById('expenses-table-wrap').style.display = '';
   document.getElementById('expenses-empty').style.display = 'none';
 
+  const filteredTotal = filtered.reduce((s, e) => s + Number(e.amount || 0), 0);
   document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => `
     <tr>
       <td>${esc(e.date || '–')}</td>
@@ -3641,7 +3770,13 @@ function applyExpenseFilters() {
         <button class="btn btn-danger btn-sm" onclick="deleteExpense('${esc(e.expense_id || '')}')">Delete</button>
       </td>
     </tr>
-  `).join('');
+  `).join('') + `
+    <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--bg);">
+      <td colspan="3" style="text-align:right;padding-right:8px;">Total (${filtered.length} record${filtered.length !== 1 ? 's' : ''})</td>
+      <td style="color:var(--danger);">$${formatMoney(filteredTotal)}</td>
+      <td colspan="2"></td>
+    </tr>
+  `;
 }
 
 function openAddExpenseModal() {
@@ -3675,6 +3810,9 @@ function submitExpense() {
       showToast('Expense added.', 'success');
       allExpenses = []; // Force refresh
       loadExpenses();
+      // Refresh dashboard so Net Profit KPI reflects new expense
+      dashboardData = null;
+      refreshDashboard();
     })
     .catch((err) => showToast('Error: ' + err.message, 'error'))
     .finally(() => { btn.disabled = false; btn.textContent = 'Save Expense'; });
@@ -3687,6 +3825,9 @@ function deleteExpense(expenseId) {
       showToast('Expense deleted.', 'success');
       allExpenses = allExpenses.filter((e) => e.expense_id !== expenseId);
       renderExpenses();
+      // Refresh dashboard KPIs
+      dashboardData = null;
+      refreshDashboard();
     })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
 }
@@ -3981,22 +4122,73 @@ function renderRevenueSummary() {
   const active  = allRevenueRecords.filter((r) => !r.is_cancelled && !r.is_no_show);
   const gross   = active.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
-  const net     = gross - refunds;
+  const fees    = active.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
+  // Use stripe_net when available, otherwise fall back to gross - fees
+  const netAfterFees = active.reduce((s, r) => {
+    if (r.stripe_net != null) return s + Number(r.stripe_net);
+    return s + Number(r.gross_amount || 0) - Number(r.stripe_fee || 0);
+  }, 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
+  const reconciled   = active.filter((r) => r.stripe_fee != null).length;
+  const unreconciled = active.filter((r) => r.stripe_fee == null && r.payment_method !== 'cash').length;
 
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
-      { label: 'Gross Revenue',   value: '$' + formatMoney(gross),   icon: '💵' },
-      { label: 'Total Refunds',   value: '$' + formatMoney(refunds), icon: '↩️' },
-      { label: 'Net Revenue',     value: '$' + formatMoney(net),     icon: '✅' },
-      { label: 'Total Deposits',  value: '$' + formatMoney(deposits),icon: '🔒' },
+      { label: 'Gross Revenue',    value: '$' + formatMoney(gross),                  icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
+      { label: 'Stripe Fees',      value: '$' + formatMoney(fees),                   icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
+      { label: 'Net (after fees)', value: '$' + formatMoney(netAfterFees - refunds), icon: '✅', sub: 'After fees & refunds' },
+      { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                icon: '↩️', sub: '' },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
-        <div class="kpi-body"><div class="kpi-value">${esc(k.value)}</div><div class="kpi-label">${esc(k.label)}</div></div>
+        <div class="kpi-body">
+          <div class="kpi-value">${esc(k.value)}</div>
+          <div class="kpi-label">${esc(k.label)}</div>
+          ${k.sub ? `<div style="font-size:10px;color:var(--text-sub);margin-top:2px;">${esc(k.sub)}</div>` : ''}
+        </div>
       </div>
     `).join('');
+  }
+
+  // Per-vehicle breakdown table
+  const byVehicle = {};
+  for (const r of active) {
+    const vid = r.vehicle_id || 'unknown';
+    if (!byVehicle[vid]) byVehicle[vid] = { gross: 0, fees: 0, net: 0, refunds: 0, count: 0 };
+    byVehicle[vid].gross   += Number(r.gross_amount  || 0);
+    byVehicle[vid].fees    += Number(r.stripe_fee    || 0);
+    byVehicle[vid].net     += r.stripe_net != null
+      ? Number(r.stripe_net)
+      : Number(r.gross_amount || 0) - Number(r.stripe_fee || 0);
+    byVehicle[vid].refunds += Number(r.refund_amount || 0);
+    byVehicle[vid].count   += 1;
+  }
+  const vehBreakdown = document.getElementById('rev-vehicle-breakdown');
+  if (vehBreakdown && Object.keys(byVehicle).length > 0) {
+    vehBreakdown.style.display = '';
+    vehBreakdown.innerHTML = `
+      <div class="card-header" style="padding-bottom:8px;">
+        <div class="card-title" style="font-size:13px;">Per-Vehicle Revenue</div>
+      </div>
+      <div class="table-wrap">
+        <table style="font-size:12px;">
+          <thead><tr><th>Vehicle</th><th>Records</th><th>Gross</th><th>Stripe Fees</th><th>Refunds</th><th>Net</th></tr></thead>
+          <tbody>${Object.entries(byVehicle).sort((a,b) => b[1].net - a[1].net).map(([vid, s]) => `
+            <tr>
+              <td>${esc(VEHICLE_NAMES_DYNAMIC[vid] || VEHICLE_NAMES[vid] || vid)}</td>
+              <td>${s.count}</td>
+              <td>$${formatMoney(s.gross)}</td>
+              <td style="color:var(--danger);">$${formatMoney(s.fees)}</td>
+              <td style="color:var(--danger);">$${formatMoney(s.refunds)}</td>
+              <td style="font-weight:700;">$${formatMoney(s.net - s.refunds)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else if (vehBreakdown) {
+    vehBreakdown.style.display = 'none';
   }
 }
 
@@ -4028,14 +4220,18 @@ function applyRevenueFilters() {
       refunded: '<span class="badge badge-danger">Refunded</span>',
     }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
 
-    const net = (Number(r.gross_amount || 0) - Number(r.refund_amount || 0)).toFixed(2);
+    const stripeFee = r.stripe_fee != null ? '$' + formatMoney(r.stripe_fee) : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
+    const netAfterFees = r.stripe_net != null
+      ? (Number(r.stripe_net) - Number(r.refund_amount || 0)).toFixed(2)
+      : (Number(r.gross_amount || 0) - Number(r.stripe_fee || 0) - Number(r.refund_amount || 0)).toFixed(2);
     return `<tr>
       <td>${esc(r.customer_name || '–')}</td>
       <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
       <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
       <td>$${formatMoney(r.gross_amount  || 0)}</td>
+      <td style="color:var(--danger);font-size:12px;">${stripeFee}</td>
       <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
-      <td style="font-weight:700;">$${formatMoney(net)}</td>
+      <td style="font-weight:700;">$${formatMoney(netAfterFees)}</td>
       <td style="font-size:12px;">${esc(r.payment_method || '–')}</td>
       <td>${payBadge}</td>
       <td class="td-actions">
@@ -4153,6 +4349,32 @@ function syncRevenue(btn) {
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Sync from Bookings'; } });
 }
 
+async function runStripeReconcile(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Reconciling…'; }
+  try {
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'reconcile' });
+    const v    = data.verification || {};
+    const msg  = [
+      `✅ Stripe reconcile done.`,
+      `${data.updated} updated, ${data.skipped} already current, ${data.unmatched} unmatched.`,
+      v.stripe_total_gross != null ? `Gross: $${formatMoney(v.stripe_total_gross)} | Fees: $${formatMoney(v.stripe_total_fees)} | Net: $${formatMoney(v.stripe_total_net)}` : '',
+    ].filter(Boolean).join(' ');
+    showToast(msg, 'success');
+    // Also update cash records
+    await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
+    // Refresh all finance views so they show updated data
+    allRevenueRecords = [];
+    loadRevenue();
+    // Refresh dashboard KPIs to reflect new Stripe net/fees
+    dashboardData = null;
+    refreshDashboard();
+  } catch (err) {
+    showToast('Stripe reconcile error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Sync from Stripe'; }
+  }
+}
+
 // ── Analytics ─────────────────────────────────────────────────────────────
 let analyticsChart1 = null, analyticsChart2 = null;
 
@@ -4254,16 +4476,49 @@ function renderAnalytics(fleet, trend) {
 // ── Customers ─────────────────────────────────────────────────────────────
 let allCustomers = [];
 
+// ── Customer KPI summary ──────────────────────────────────────────────────
+function renderCustomerKpis() {
+  const grid = document.getElementById('cust-kpi-grid');
+  if (!grid || !allCustomers.length) { if (grid) grid.innerHTML = ''; return; }
+
+  const total    = allCustomers.length;
+  const flagged  = allCustomers.filter((c) => c.flagged && !c.banned).length;
+  const banned   = allCustomers.filter((c) => c.banned).length;
+  const highRisk = allCustomers.filter((c) => c.risk_flag === 'high').length;
+  const vip      = allCustomers.filter((c) => (c.total_bookings || 0) >= 3).length;
+  const totalRev = allCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0);
+
+  grid.innerHTML = [
+    { label: 'Total Customers', value: total,                        icon: '👥', color: '' },
+    { label: 'Total Revenue',   value: '$' + formatMoney(totalRev),  icon: '💵', color: '' },
+    { label: 'VIP (3+ trips)',  value: vip,                          icon: '⭐', color: 'color:var(--primary)' },
+    { label: 'Flagged',         value: flagged,                      icon: '🚩', color: flagged  > 0 ? 'color:var(--warning)' : '' },
+    { label: 'Banned',          value: banned,                       icon: '🚫', color: banned   > 0 ? 'color:var(--danger)'  : '' },
+    { label: 'High Risk',       value: highRisk,                     icon: '⚠️', color: highRisk > 0 ? 'color:var(--danger)'  : '' },
+  ].map((k) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="font-size:20px;min-width:36px;text-align:center;">${k.icon}</div>
+      <div class="kpi-body">
+        <div class="kpi-value" style="${k.color}">${typeof k.value === 'number' ? k.value : esc(k.value)}</div>
+        <div class="kpi-label">${esc(k.label)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
 function loadCustomers() {
   document.getElementById('customers-loading').style.display = '';
   document.getElementById('customers-table-wrap').style.display = 'none';
   document.getElementById('customers-empty').style.display = 'none';
+  const kpiGrid = document.getElementById('cust-kpi-grid');
+  if (kpiGrid) kpiGrid.innerHTML = '';
 
   apiPost('/api/v2-customers', { secret: adminSecret, action: 'list' })
     .then((data) => {
       allCustomers = data.customers || [];
-      applyCustomerFilters();
       document.getElementById('customers-loading').style.display = 'none';
+      renderCustomerKpis();
+      applyCustomerFilters();
     })
     .catch((err) => {
       showToast('Customers error: ' + err.message, 'error');
@@ -4272,17 +4527,33 @@ function loadCustomers() {
 }
 
 function applyCustomerFilters() {
-  const search = (document.getElementById('cust-search')?.value || '').toLowerCase();
-  const flag   = document.getElementById('cust-filter-flag')?.value || '';
+  const search   = (document.getElementById('cust-search')?.value || '').toLowerCase();
+  const flag     = document.getElementById('cust-filter-flag')?.value  || '';
+  const riskFilt = document.getElementById('cust-filter-risk')?.value  || '';
+  const sortBy   = document.getElementById('cust-sort')?.value || 'total_spent';
 
-  let filtered = allCustomers;
-  if (search) filtered = filtered.filter((c) =>
-    (c.name  || '').toLowerCase().includes(search) ||
-    (c.phone || '').toLowerCase().includes(search) ||
-    (c.email || '').toLowerCase().includes(search)
-  );
-  if (flag === 'flagged') filtered = filtered.filter((c) => c.flagged);
-  if (flag === 'banned')  filtered = filtered.filter((c) => c.banned);
+  let filtered = allCustomers.filter((c) => {
+    if (search && !(
+      (c.name  || '').toLowerCase().includes(search) ||
+      (c.phone || '').toLowerCase().includes(search) ||
+      (c.email || '').toLowerCase().includes(search)
+    )) return false;
+    if (flag === 'flagged') { if (!c.flagged) return false; }
+    if (flag === 'banned')  { if (!c.banned)  return false; }
+    if (flag === 'active')  { if (c.banned || c.flagged) return false; }
+    if (riskFilt && c.risk_flag !== riskFilt) return false;
+    return true;
+  });
+
+  // Sort
+  filtered = [...filtered].sort((a, b) => {
+    if (sortBy === 'total_spent')       return (b.total_spent     || 0) - (a.total_spent     || 0);
+    if (sortBy === 'total_bookings')    return (b.total_bookings  || 0) - (a.total_bookings  || 0);
+    if (sortBy === 'no_show_count')     return (b.no_show_count   || 0) - (a.no_show_count   || 0);
+    if (sortBy === 'last_booking_date') return (b.last_booking_date || '') > (a.last_booking_date || '') ? 1 : -1;
+    if (sortBy === 'name')              return (a.name || '').localeCompare(b.name || '');
+    return 0;
+  });
 
   const tbody = document.getElementById('customers-tbody');
   const wrap  = document.getElementById('customers-table-wrap');
@@ -4296,25 +4567,42 @@ function applyCustomerFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
+  const riskBadge = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger' };
+
   tbody.innerHTML = filtered.map((c) => {
+    const isVip = (c.total_bookings || 0) >= 3;
+    const nameCell = `<div style="font-weight:600;">${esc(c.name || '–')}${isVip ? ' <span title="VIP Customer" style="color:gold;font-size:13px;">★</span>' : ''}</div>
+      ${c.full_name && c.full_name !== c.name ? `<div style="font-size:11px;color:var(--text-sub);">${esc(c.full_name)}</div>` : ''}`;
+    const phoneCell = c.phone
+      ? `<a href="tel:${esc(c.phone)}" style="color:var(--primary);text-decoration:none;font-size:13px;">${esc(c.phone)}</a>`
+      : '–';
+    const emailCell = c.email
+      ? `<a href="mailto:${esc(c.email)}" style="color:var(--text-sub);font-size:11px;text-decoration:none;">${esc(c.email)}</a>`
+      : '<span style="color:var(--text-sub);font-size:11px;">–</span>';
     const statusBadges = [
       c.banned  ? '<span class="badge badge-danger">Banned</span>'  : '',
       c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '',
       (!c.banned && !c.flagged) ? '<span class="badge badge-success">Active</span>' : '',
     ].filter(Boolean).join(' ');
-    return `<tr>
-      <td style="font-weight:600;">${esc(c.name || '–')}</td>
-      <td>${esc(c.phone || '–')}</td>
-      <td style="font-size:12px;">${esc(c.email || '–')}</td>
-      <td>${c.total_bookings || 0}</td>
-      <td>$${formatMoney(c.total_spent || 0)}</td>
-      <td style="color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};">${c.no_show_count || 0}</td>
+    const noShowStyle = (c.no_show_count || 0) > 0
+      ? 'color:var(--danger);font-weight:700;' : '';
+    return `<tr style="cursor:pointer;" onclick="viewCustomer('${esc(c.id)}')">
+      <td>${nameCell}</td>
+      <td><div>${phoneCell}</div><div style="margin-top:2px;">${emailCell}</div></td>
+      <td style="text-align:center;">${c.total_bookings || 0}</td>
+      <td style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</td>
+      <td style="${noShowStyle}text-align:center;">${c.no_show_count || 0}</td>
       <td style="font-size:12px;">${esc(c.last_booking_date || '–')}</td>
+      <td><span class="badge ${riskBadge[c.risk_flag] || 'badge-success'}" style="text-transform:capitalize;">${esc(c.risk_flag || 'low')}</span></td>
       <td>${statusBadges}</td>
-      <td class="td-actions">
+      <td class="td-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="viewCustomer('${esc(c.id)}')">View</button>
-        ${!c.flagged ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(c.id)}', true)">Flag</button>` : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(c.id)}', false)">Unflag</button>`}
-        ${!c.banned  ? `<button class="btn btn-danger btn-sm"  onclick="banCustomer('${esc(c.id)}', true)">Ban</button>`  : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(c.id)}', false)">Unban</button>`}
+        ${!c.flagged
+          ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(c.id)}', true)">Flag</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(c.id)}', false)">Unflag</button>`}
+        ${!c.banned
+          ? `<button class="btn btn-danger btn-sm" onclick="banCustomer('${esc(c.id)}', true)">Ban</button>`
+          : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(c.id)}', false)">Unban</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -4324,33 +4612,58 @@ function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
   if (!c) return;
   const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
-  const riskColor = riskColors[c.risk_flag] || 'inherit';
+  const riskColor  = riskColors[c.risk_flag] || 'inherit';
+  const isVip      = (c.total_bookings || 0) >= 3;
+
+  // Header summary bar
+  const statusBadge = c.banned
+    ? '<span class="badge badge-danger">Banned</span>'
+    : c.flagged ? '<span class="badge badge-warning">Flagged</span>'
+    : '<span class="badge badge-success">Active</span>';
+
   document.getElementById('cust-detail-content').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Name</div><div style="font-weight:600;">${esc(c.name || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(c.phone || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
-      ${c.full_name ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Full Name</div><div>${esc(c.full_name)}</div></div>` : '<div></div>'}
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Risk Level</div><div style="font-weight:600;color:${riskColor};text-transform:capitalize;">${esc(c.risk_flag || 'low')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
-      ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
-      ${c.ban_reason  ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Ban Reason</div><div>${esc(c.ban_reason)}</div></div>`  : ''}
-      ${c.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(c.notes)}</div></div>` : ''}
+    <!-- Summary header -->
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0;">
+        ${esc((c.name || '?')[0].toUpperCase())}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:700;">${esc(c.name || '–')}${isVip ? ' <span title="VIP" style="color:gold;">★</span>' : ''}</div>
+        ${c.full_name && c.full_name !== c.name ? `<div style="font-size:12px;color:var(--text-sub);">${esc(c.full_name)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        ${statusBadge}
+        <span class="badge" style="background:${riskColor};color:#fff;text-transform:capitalize;">${esc(c.risk_flag || 'low')} risk</span>
+        ${isVip ? '<span class="badge badge-blue">VIP</span>' : ''}
+      </div>
+    </div>
+
+    <!-- Quick contact row -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      ${c.phone ? `<a href="tel:${esc(c.phone)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">📞 ${esc(c.phone)}</a>` : ''}
+      ${c.email ? `<a href="mailto:${esc(c.email)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">✉️ ${esc(c.email)}</a>` : ''}
+    </div>
+
+    <!-- Detail grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Total Bookings</div><div style="font-weight:700;">${c.total_bookings || 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Total Spent</div><div style="font-weight:700;color:var(--primary);">$${formatMoney(c.total_spent || 0)}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
+      ${c.flag_reason ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
+      ${c.ban_reason  ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Ban Reason</div><div>${esc(c.ban_reason)}</div></div>`  : ''}
+      ${c.notes       ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Notes</div><div style="color:var(--text-sub);">${esc(c.notes)}</div></div>` : ''}
     </div>
   `;
   document.getElementById('cust-detail-id').value = id;
-  // Action buttons
   document.getElementById('cust-detail-actions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="viewCustomerBookings('${esc(c.phone || '')}', '${esc(c.name || '')}')">📋 Bookings</button>
     <button class="btn btn-secondary btn-sm" onclick="openEditCustomerModal('${esc(id)}')">✏️ Edit</button>
     ${!c.flagged
       ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
-      : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Remove Flag</button>`}
+      : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Unflag</button>`}
     ${!c.banned
       ? `<button class="btn btn-danger btn-sm" onclick="banCustomer('${esc(id)}', true)">🚫 Ban</button>`
       : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(id)}', false)">✓ Unban</button>`}
@@ -4359,15 +4672,30 @@ function viewCustomer(id) {
   openModal('customer-detail-modal');
 }
 
+/** Navigate to Bookings and filter by this customer's name. */
+function viewCustomerBookings(phone, name) {
+  closeModal('customer-detail-modal');
+  navigate('bookings');
+  const searchEl = document.getElementById('booking-search');
+  if (searchEl) {
+    searchEl.value = name || phone || '';
+    applyBookingFilters();
+  }
+}
+
 function flagCustomer(id, flagged) {
   const reason = flagged ? (prompt('Reason for flagging (optional):') || '') : '';
   apiPost('/api/v2-customers', {
     secret: adminSecret, action: 'update', id,
-    updates: { flagged, flag_reason: reason || null }
+    updates: { flagged, flag_reason: reason || null },
   }).then(() => {
     showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
     closeModal('customer-detail-modal');
-    loadCustomers();
+    // Update in-memory record immediately so re-render is instant
+    const c = allCustomers.find((x) => x.id === id);
+    if (c) { c.flagged = flagged; c.flag_reason = reason || null; }
+    renderCustomerKpis();
+    applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
 
@@ -4376,11 +4704,14 @@ function banCustomer(id, banned) {
   const reason = banned ? (prompt('Reason for ban (optional):') || '') : '';
   apiPost('/api/v2-customers', {
     secret: adminSecret, action: 'update', id,
-    updates: { banned, ban_reason: reason || null }
+    updates: { banned, ban_reason: reason || null },
   }).then(() => {
     showToast(banned ? 'Customer banned.' : 'Customer unbanned.', 'success');
     closeModal('customer-detail-modal');
-    loadCustomers();
+    const c = allCustomers.find((x) => x.id === id);
+    if (c) { c.banned = banned; c.ban_reason = reason || null; }
+    renderCustomerKpis();
+    applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
 
