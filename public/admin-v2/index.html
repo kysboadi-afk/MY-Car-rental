@@ -1561,6 +1561,7 @@
           </select>
           <select class="filter-select" id="cust-sort" onchange="applyCustomerFilters()">
             <option value="total_spent">Sort: Total Spent</option>
+            <option value="total_profit">Sort: Profit</option>
             <option value="total_bookings">Sort: Bookings</option>
             <option value="last_booking_date">Sort: Last Booking</option>
             <option value="no_show_count">Sort: No-Shows</option>
@@ -1580,9 +1581,10 @@
                   <th>Contact</th>
                   <th>Bookings</th>
                   <th>Total Spent</th>
+                  <th>Profit</th>
                   <th>No Shows</th>
                   <th>Last Booking</th>
-                  <th>Risk</th>
+                  <th>Tier</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -4517,20 +4519,24 @@ function renderCustomerKpis() {
   const grid = document.getElementById('cust-kpi-grid');
   if (!grid || !allCustomers.length) { if (grid) grid.innerHTML = ''; return; }
 
-  const total    = allCustomers.length;
-  const flagged  = allCustomers.filter((c) => c.flagged && !c.banned).length;
-  const banned   = allCustomers.filter((c) => c.banned).length;
-  const highRisk = allCustomers.filter((c) => c.risk_flag === 'high').length;
-  const vip      = allCustomers.filter((c) => (c.total_bookings || 0) >= 3).length;
-  const totalRev = allCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0);
+  const total        = allCustomers.length;
+  const flagged      = allCustomers.filter((c) => c.flagged && !c.banned).length;
+  const banned       = allCustomers.filter((c) => c.banned).length;
+  const highRisk     = allCustomers.filter((c) => c.risk_flag === 'high').length;
+  const totalRev     = allCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0);
+  const totalProfit  = allCustomers.reduce((s, c) => s + Number(c.total_profit ?? 0), 0);
+  const vip          = allCustomers.filter((c) => computeCustomerTier(c) === 'vip').length;
+  const unprofitable = allCustomers.filter((c) => computeCustomerTier(c) === 'unprofitable').length;
 
   grid.innerHTML = [
-    { label: 'Total Customers', value: total,                        icon: '👥', color: '' },
-    { label: 'Total Revenue',   value: '$' + formatMoney(totalRev),  icon: '💵', color: '' },
-    { label: 'VIP (3+ trips)',  value: vip,                          icon: '⭐', color: 'color:var(--primary)' },
-    { label: 'Flagged',         value: flagged,                      icon: '🚩', color: flagged  > 0 ? 'color:var(--warning)' : '' },
-    { label: 'Banned',          value: banned,                       icon: '🚫', color: banned   > 0 ? 'color:var(--danger)'  : '' },
-    { label: 'High Risk',       value: highRisk,                     icon: '⚠️', color: highRisk > 0 ? 'color:var(--danger)'  : '' },
+    { label: 'Total Customers',  value: total,                          icon: '👥', color: '' },
+    { label: 'Total Revenue',    value: '$' + formatMoney(totalRev),    icon: '💵', color: '' },
+    { label: 'Total Profit',     value: '$' + formatMoney(totalProfit), icon: '📈', color: totalProfit < 0 ? 'color:var(--danger)' : 'color:var(--success)' },
+    { label: 'VIP Customers',    value: vip,                            icon: '⭐', color: 'color:var(--primary)' },
+    { label: 'Unprofitable',     value: unprofitable,                   icon: '📉', color: unprofitable > 0 ? 'color:var(--danger)' : '' },
+    { label: 'Flagged',          value: flagged,                        icon: '🚩', color: flagged   > 0 ? 'color:var(--warning)' : '' },
+    { label: 'Banned',           value: banned,                         icon: '🚫', color: banned    > 0 ? 'color:var(--danger)'  : '' },
+    { label: 'High Risk',        value: highRisk,                       icon: '⚠️', color: highRisk  > 0 ? 'color:var(--danger)'  : '' },
   ].map((k) => `
     <div class="kpi-card">
       <div class="kpi-icon" style="font-size:20px;min-width:36px;text-align:center;">${k.icon}</div>
@@ -4584,6 +4590,7 @@ function applyCustomerFilters() {
   // Sort
   filtered = [...filtered].sort((a, b) => {
     if (sortBy === 'total_spent')       return (b.total_spent     || 0) - (a.total_spent     || 0);
+    if (sortBy === 'total_profit')      return (b.total_profit    ?? -Infinity) - (a.total_profit    ?? -Infinity);
     if (sortBy === 'total_bookings')    return (b.total_bookings  || 0) - (a.total_bookings  || 0);
     if (sortBy === 'no_show_count')     return (b.no_show_count   || 0) - (a.no_show_count   || 0);
     if (sortBy === 'last_booking_date') return (b.last_booking_date || '') > (a.last_booking_date || '') ? 1 : -1;
@@ -4606,9 +4613,16 @@ function applyCustomerFilters() {
   const riskBadge = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger' };
 
   tbody.innerHTML = filtered.map((c) => {
-    const isVip = (c.total_bookings || 0) >= 3;
+    const tier     = computeCustomerTier(c);
+    const isVip    = tier === 'vip';
     const nameCell = `<div style="font-weight:600;">${esc(c.name || '–')}${isVip ? ' <span title="VIP Customer" style="color:gold;font-size:13px;">★</span>' : ''}</div>
       ${c.full_name && c.full_name !== c.name ? `<div style="font-size:11px;color:var(--text-sub);">${esc(c.full_name)}</div>` : ''}`;
+    const tierBadges = {
+      vip:          '<span class="badge badge-blue">VIP</span>',
+      standard:     '<span class="badge badge-success">Standard</span>',
+      risky:        '<span class="badge badge-warning">Risky</span>',
+      unprofitable: '<span class="badge badge-danger">Unprofitable</span>',
+    };
     const phoneCell = c.phone
       ? `<a href="tel:${esc(c.phone)}" style="color:var(--primary);text-decoration:none;font-size:13px;">${esc(c.phone)}</a>`
       : '–';
@@ -4622,14 +4636,18 @@ function applyCustomerFilters() {
     ].filter(Boolean).join(' ');
     const noShowStyle = (c.no_show_count || 0) > 0
       ? 'color:var(--danger);font-weight:700;' : '';
+    const profitCell = c.total_profit != null
+      ? `<span style="font-weight:700;color:${(c.total_profit || 0) >= 0 ? 'var(--success)' : 'var(--danger)'};">$${formatMoney(c.total_profit || 0)}</span>`
+      : '<span style="color:var(--text-sub);font-size:11px;">–</span>';
     return `<tr style="cursor:pointer;" onclick="viewCustomer('${esc(c.id)}')">
       <td>${nameCell}</td>
       <td><div>${phoneCell}</div><div style="margin-top:2px;">${emailCell}</div></td>
       <td style="text-align:center;">${c.total_bookings || 0}</td>
       <td style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</td>
+      <td>${profitCell}</td>
       <td style="${noShowStyle}text-align:center;">${c.no_show_count || 0}</td>
       <td style="font-size:12px;">${esc(c.last_booking_date || '–')}</td>
-      <td><span class="badge ${riskBadge[c.risk_flag] || 'badge-success'}" style="text-transform:capitalize;">${esc(c.risk_flag || 'low')}</span></td>
+      <td>${tierBadges[tier] || ''}</td>
       <td>${statusBadges}</td>
       <td class="td-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="viewCustomer('${esc(c.id)}')">View</button>
@@ -4644,12 +4662,27 @@ function applyCustomerFilters() {
   }).join('');
 }
 
+/** Derive a customer tier label from financial + risk data. */
+function computeCustomerTier(c) {
+  const profit    = c.total_profit    ?? null;
+  const bookings  = c.total_bookings  || 0;
+  const riskFlag  = c.risk_flag       || 'low';
+  const noShows   = c.no_show_count   || 0;
+  if (c.banned)                                               return 'risky';
+  if (profit !== null && profit < 0)                          return 'unprofitable';
+  if (c.flagged || riskFlag === 'high' || noShows >= 2)       return 'risky';
+  if (profit !== null && profit >= 500 && bookings >= 3)      return 'vip';
+  if (bookings >= 1)                                          return 'standard';
+  return 'standard';
+}
+
 function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
   if (!c) return;
   const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
   const riskColor  = riskColors[c.risk_flag] || 'inherit';
-  const isVip      = (c.total_bookings || 0) >= 3;
+  const tier       = computeCustomerTier(c);
+  const isVip      = tier === 'vip';
 
   // Header summary bar
   const statusBadge = c.banned
@@ -4670,7 +4703,10 @@ function viewCustomer(id) {
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
         ${statusBadge}
         <span class="badge" style="background:${riskColor};color:#fff;text-transform:capitalize;">${esc(c.risk_flag || 'low')} risk</span>
-        ${isVip ? '<span class="badge badge-blue">VIP</span>' : ''}
+        ${tier === 'vip'          ? '<span class="badge badge-blue">VIP</span>' : ''}
+        ${tier === 'standard'     ? '<span class="badge badge-success">Standard</span>' : ''}
+        ${tier === 'risky'        ? '<span class="badge badge-warning">Risky</span>' : ''}
+        ${tier === 'unprofitable' ? '<span class="badge badge-danger">Unprofitable</span>' : ''}
       </div>
     </div>
 
@@ -4679,6 +4715,50 @@ function viewCustomer(id) {
       ${c.phone ? `<a href="tel:${esc(c.phone)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">📞 ${esc(c.phone)}</a>` : ''}
       ${c.email ? `<a href="mailto:${esc(c.email)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">✉️ ${esc(c.email)}</a>` : ''}
     </div>
+
+    <!-- Financial profitability panel -->
+    ${c.total_gross_revenue != null ? `
+    <div style="background:var(--bg-alt,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;font-weight:700;margin-bottom:10px;letter-spacing:.05em;">💰 Profitability</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Gross Revenue</div>
+          <div style="font-weight:600;">$${formatMoney(c.total_gross_revenue || 0)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Stripe Fees</div>
+          <div style="font-weight:600;color:var(--danger);">–$${formatMoney(c.total_stripe_fees || 0)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Net Revenue</div>
+          <div style="font-weight:600;color:var(--primary);">$${formatMoney(c.total_net_revenue || 0)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Vehicle Expenses</div>
+          <div style="font-weight:600;color:var(--danger);">–$${formatMoney(c.associated_vehicle_expenses || 0)}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-sub);">PROFIT</span>
+        <span style="font-size:18px;font-weight:800;color:${(c.total_profit || 0) >= 0 ? 'var(--success)' : 'var(--danger)'};">
+          ${(c.total_profit || 0) >= 0 ? '' : '–'}$${formatMoney(Math.abs(c.total_profit || 0))}
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Profit / Booking</div>
+          <div style="font-weight:600;color:${(c.profit_per_booking || 0) >= 0 ? 'inherit' : 'var(--danger)'};">$${formatMoney(c.profit_per_booking || 0)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Profit / Day</div>
+          <div style="font-weight:600;color:${(c.avg_profit_per_day || 0) >= 0 ? 'inherit' : 'var(--danger)'};">$${formatMoney(c.avg_profit_per_day || 0)}</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">LTV</div>
+          <div style="font-weight:600;color:var(--primary);">$${formatMoney(c.lifetime_value || 0)}</div>
+        </div>
+      </div>
+    </div>` : ''}
 
     <!-- Detail grid -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
