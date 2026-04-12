@@ -85,6 +85,107 @@ function extractFields(pi) {
   };
 }
 
+/**
+ * Deduplicate revenue_records.
+ *
+ * Two duplicate scenarios are handled:
+ *   A) Two records share the same non-null payment_intent_id — the "stripe-xxx"
+ *      auto-created record is the loser; the original booking record is kept.
+ *   B) A "stripe-xxx" auto-created record whose payment_intent_id maps back to a
+ *      real booking (via bookingsByPI) that already has its own revenue_record —
+ *      the auto-created record is the loser.
+ *
+ * In both cases the winner is updated with any stripe fee/charge data it is
+ * missing, then the loser is soft-deleted (sync_excluded = true).
+ *
+ * @param {object} sb - Supabase admin client
+ * @param {Map<string,object>} bookingsByPI - paymentIntentId → booking from loadBookings()
+ * @returns {Promise<{merged: number}>}
+ */
+async function deduplicateRevenueRecords(sb, bookingsByPI) {
+  const { data: records, error } = await sb
+    .from("revenue_records")
+    .select("id, booking_id, payment_intent_id, stripe_fee, stripe_net, stripe_charge_id, customer_email, vehicle_id, gross_amount")
+    .eq("sync_excluded", false);
+
+  if (error || !records?.length) return { merged: 0 };
+
+  let merged = 0;
+  const updatedAt = new Date().toISOString();
+  const excludedIds = new Set();
+
+  // ── Scenario A: same non-null payment_intent_id on multiple records ──────────
+  const byPiId = {};
+  for (const r of records) {
+    if (!r.payment_intent_id) continue;
+    if (!byPiId[r.payment_intent_id]) byPiId[r.payment_intent_id] = [];
+    byPiId[r.payment_intent_id].push(r);
+  }
+
+  for (const group of Object.values(byPiId)) {
+    if (group.length < 2) continue;
+
+    // Prefer the record whose booking_id is NOT a "stripe-xxx" auto-created key
+    // (it carries real booking context: customer name, vehicle, dates).
+    const winner = group.find((r) => !r.booking_id?.startsWith("stripe-")) || group[0];
+    const losers = group.filter((r) => r.id !== winner.id && !excludedIds.has(r.id));
+    if (!losers.length) continue;
+
+    // Collect stripe fields from whichever record has them
+    const src = group.find((r) => r.stripe_fee != null && r.stripe_net != null) || group[0];
+    const updates = { updated_at: updatedAt };
+    if (winner.stripe_fee    == null && src.stripe_fee    != null) updates.stripe_fee    = src.stripe_fee;
+    if (winner.stripe_net    == null && src.stripe_net    != null) updates.stripe_net    = src.stripe_net;
+    if (!winner.stripe_charge_id    && src.stripe_charge_id)       updates.stripe_charge_id = src.stripe_charge_id;
+    if (!winner.customer_email      && src.customer_email)         updates.customer_email   = src.customer_email;
+
+    if (Object.keys(updates).length > 1) {
+      await sb.from("revenue_records").update(updates).eq("id", winner.id);
+    }
+    for (const loser of losers) {
+      await sb.from("revenue_records")
+        .update({ sync_excluded: true, updated_at: updatedAt })
+        .eq("id", loser.id);
+      excludedIds.add(loser.id);
+      merged++;
+    }
+  }
+
+  // ── Scenario B: "stripe-xxx" record whose PI maps to an existing booking record ─
+  // bookingsByPI maps paymentIntentId → booking object; each booking has .bookingId.
+  const dbByBookingId = new Map(records.map((r) => [r.booking_id, r]));
+
+  const stripeAutoRecords = records.filter(
+    (r) => r.booking_id?.startsWith("stripe-") && r.payment_intent_id && !excludedIds.has(r.id)
+  );
+
+  for (const stripeRec of stripeAutoRecords) {
+    const booking = bookingsByPI?.get(stripeRec.payment_intent_id);
+    if (!booking?.bookingId) continue;
+
+    const originalRec = dbByBookingId.get(booking.bookingId);
+    if (!originalRec || excludedIds.has(originalRec.id)) continue;
+
+    // Only merge when the amounts are the same (within 1 cent) to avoid false matches
+    if (Math.abs(Number(originalRec.gross_amount) - Number(stripeRec.gross_amount)) > 0.01) continue;
+
+    const updates = { payment_intent_id: stripeRec.payment_intent_id, updated_at: updatedAt };
+    if (originalRec.stripe_fee    == null && stripeRec.stripe_fee    != null) updates.stripe_fee    = stripeRec.stripe_fee;
+    if (originalRec.stripe_net    == null && stripeRec.stripe_net    != null) updates.stripe_net    = stripeRec.stripe_net;
+    if (!originalRec.stripe_charge_id    && stripeRec.stripe_charge_id)       updates.stripe_charge_id = stripeRec.stripe_charge_id;
+    if (!originalRec.customer_email      && stripeRec.customer_email)         updates.customer_email   = stripeRec.customer_email;
+
+    await sb.from("revenue_records").update(updates).eq("id", originalRec.id);
+    await sb.from("revenue_records")
+      .update({ sync_excluded: true, updated_at: updatedAt })
+      .eq("id", stripeRec.id);
+    excludedIds.add(stripeRec.id);
+    merged++;
+  }
+
+  return { merged };
+}
+
 /** Compute per-vehicle and overall analytics totals from revenue_records rows. */
 function buildAnalytics(rows) {
   let totalGross = 0;
@@ -145,6 +246,30 @@ export default async function handler(req, res) {
 
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
+
+  // ── DEDUP — merge duplicate revenue_records ──────────────────────────────────
+  if (action === "dedup") {
+    try {
+      let bookingsByPI = new Map();
+      try {
+        const { data: bookingsData } = await loadBookings();
+        for (const list of Object.values(bookingsData)) {
+          for (const b of (list || [])) {
+            if (b.paymentIntentId) bookingsByPI.set(b.paymentIntentId, b);
+          }
+        }
+      } catch (_) { /* non-fatal */ }
+
+      const result = await deduplicateRevenueRecords(sb, bookingsByPI);
+      return res.status(200).json({
+        merged:  result.merged,
+        message: `Removed ${result.merged} duplicate revenue record${result.merged !== 1 ? "s" : ""}.`,
+      });
+    } catch (err) {
+      console.error("stripe-reconcile dedup error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
+    }
+  }
 
   // ── ANALYTICS only — no Stripe call ─────────────────────────────────────────
   if (action === "analytics") {
@@ -479,6 +604,18 @@ export default async function handler(req, res) {
       unmatched_pi_count:  results.unmatched,
     };
 
+    // STEP 10: Auto-dedup — collapse any duplicate records created in prior runs
+    // (e.g. "stripe-pi_xxx" auto-creates that overlap with booking-synced "bk-xxx" records).
+    let deduped = 0;
+    if (!dryRun) {
+      try {
+        const { merged } = await deduplicateRevenueRecords(sb, bookingsByPI);
+        deduped = merged;
+      } catch (dedupErr) {
+        console.warn("stripe-reconcile: auto-dedup failed (non-fatal):", dedupErr.message);
+      }
+    }
+
     return res.status(200).json({
       dry_run:     dryRun,
       total_pis:   succeededPayments.length,
@@ -487,6 +624,7 @@ export default async function handler(req, res) {
       skipped:     results.skipped,
       created:     results.created,
       unmatched:   results.unmatched,
+      deduped,
       analytics,
       verification,
       ...(dryRun ? { preview: results.preview } : {}),

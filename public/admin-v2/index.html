@@ -1470,6 +1470,7 @@
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncRevenue(this)">↺ Sync from Bookings</button>
           <button class="btn btn-secondary btn-sm" id="btn-stripe-reconcile" onclick="runStripeReconcile(this)">⚡ Sync from Stripe</button>
+          <button class="btn btn-secondary btn-sm" id="btn-dedup" onclick="runDedup(this)" title="Remove duplicate revenue records created by Sync from Stripe">🔁 Fix Duplicates</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
@@ -4362,6 +4363,7 @@ async function runStripeReconcile(btn) {
     if (data.updated)   stats.push(`${data.updated} updated`);
     if (data.created)   stats.push(`${data.created} new records added`);
     if (data.skipped)   stats.push(`${data.skipped} already current`);
+    if (data.deduped)   stats.push(`${data.deduped} duplicate${data.deduped !== 1 ? 's' : ''} removed`);
     if (data.unmatched) stats.push(`${data.unmatched} unmatched`);
     if (stats.length)   parts.push(stats.join(', ') + '.');
     if (v.stripe_total_gross != null) parts.push(`Gross: $${formatMoney(v.stripe_total_gross)} | Fees: $${formatMoney(v.stripe_total_fees)} | Net: $${formatMoney(v.stripe_total_net)}`);
@@ -4379,6 +4381,25 @@ async function runStripeReconcile(btn) {
     showToast('Stripe reconcile error: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⚡ Sync from Stripe'; }
+  }
+}
+
+async function runDedup(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Deduplicating…'; }
+  try {
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'dedup' });
+    const msg = data.merged > 0
+      ? `✅ Removed ${data.merged} duplicate record${data.merged !== 1 ? 's' : ''}.`
+      : '✅ No duplicates found.';
+    showToast(msg, 'success');
+    allRevenueRecords = [];
+    loadRevenue();
+    dashboardData = null;
+    refreshDashboard();
+  } catch (err) {
+    showToast('Dedup error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔁 Fix Duplicates'; }
   }
 }
 
