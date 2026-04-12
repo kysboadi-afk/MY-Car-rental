@@ -35,6 +35,38 @@ import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 /**
+ * Load vehicles from Supabase when available (spreading the `data` JSONB column
+ * so that purchase_price and purchase_date are included), falling back to
+ * GitHub vehicles.json.  Returns the same { [vehicleId]: vehicleObject } shape
+ * as loadVehicles().data.
+ * @returns {Promise<object>}
+ */
+async function loadVehiclesWithPurchaseData() {
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data: rows, error } = await sb
+        .from("vehicles")
+        .select("vehicle_id, data");
+      if (!error && rows && rows.length > 0) {
+        const vehicles = {};
+        for (const row of rows) {
+          vehicles[row.vehicle_id] = { ...(row.data || {}), vehicle_id: row.vehicle_id };
+        }
+        return vehicles;
+      }
+      if (error) {
+        console.warn("v2-analytics: supabase vehicles error, falling back to GitHub:", error.message);
+      }
+    } catch (e) {
+      console.warn("v2-analytics: supabase vehicles threw, falling back to GitHub:", e.message);
+    }
+  }
+  const { data } = await loadVehicles();
+  return data;
+}
+
+/**
  * Load expenses from Supabase when available; fall back to GitHub expenses.json.
  * @returns {Promise<Array>}
  */
@@ -85,9 +117,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const [{ data: bookingsData }, { data: vehicles }, expenses] = await Promise.all([
+    const [{ data: bookingsData }, vehicles, expenses] = await Promise.all([
       loadBookings(),
-      loadVehicles(),
+      loadVehiclesWithPurchaseData(),
       loadExpensesAny(),
     ]);
 
