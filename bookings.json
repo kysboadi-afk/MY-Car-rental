@@ -296,8 +296,11 @@
         "active_1h": "2026-04-11T23:00:14.562Z",
         "late_warning_30min": "2026-04-11T23:30:35.680Z",
         "active_15min": "2026-04-11T23:45:35.738Z",
-        "late_at_return": "2026-04-12T00:00:37.573Z"
-      }
+        "late_at_return": "2026-04-12T00:00:37.573Z",
+        "late_grace_expired": "2026-04-12T01:00:37.295Z",
+        "late_fee_pending": "2026-04-12T01:00:37.295Z"
+      },
+      "lateFeeApplied": 50
     }
   ]
 }
