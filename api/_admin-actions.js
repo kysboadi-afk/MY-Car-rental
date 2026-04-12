@@ -348,6 +348,27 @@ async function toolGetRevenue({ month } = {}) {
     v.revenue = Math.round(v.revenue * 100) / 100;
   }
 
+  // Include Stripe fee analytics when Supabase is available
+  let feeAnalytics = null;
+  if (sb) {
+    try {
+      const { data: rrFees } = await sb
+        .from("revenue_records")
+        .select("stripe_fee, stripe_net, gross_amount, is_cancelled, is_no_show")
+        .not("stripe_fee", "is", null);
+      if (rrFees && rrFees.length > 0) {
+        const active = rrFees.filter((r) => !r.is_cancelled && !r.is_no_show);
+        const totalStripeFees = active.reduce((s, r) => s + Number(r.stripe_fee || 0), 0);
+        const totalStripeNet  = active.reduce((s, r) => s + Number(r.stripe_net  || 0), 0);
+        feeAnalytics = {
+          reconciled_records: active.length,
+          total_stripe_fees:  Math.round(totalStripeFees * 100) / 100,
+          total_stripe_net:   Math.round(totalStripeNet  * 100) / 100,
+        };
+      }
+    } catch { /* non-fatal */ }
+  }
+
   return {
     period:           "all-time",
     total:            Math.round(total * 100) / 100,
@@ -358,6 +379,7 @@ async function toolGetRevenue({ month } = {}) {
       extra_charges:        Math.round(chargesTotal * 100) / 100,
       extension_payments:   Math.round(extensionsTotal * 100) / 100,
     },
+    ...(feeAnalytics ? { stripe_fees: feeAnalytics } : {}),
   };
 }
 
@@ -2855,6 +2877,60 @@ async function toolRegisterBouncieDevice({ vehicleId, imei }) {
   };
 }
 
+// ── Stripe Reconciliation ─────────────────────────────────────────────────────
+
+/**
+ * Calls stripe-reconcile.js to rebuild financial data from Stripe API.
+ * Supports reconcile (full sync), preview (dry-run), cash_update, and analytics.
+ */
+async function toolReconcileStripe({ action = "reconcile" } = {}) {
+  const validActions = ["reconcile", "preview", "cash_update", "analytics"];
+  if (!validActions.includes(action)) {
+    return { error: `Invalid action. Must be one of: ${validActions.join(", ")}` };
+  }
+
+  const secret = process.env.ADMIN_SECRET;
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "https://sly-rides.vercel.app";
+
+  const resp = await fetch(`${baseUrl}/api/stripe-reconcile`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", origin: "https://www.slytrans.com" },
+    body:    JSON.stringify({ secret, action }),
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `stripe-reconcile returned ${resp.status}`);
+
+  if (action === "analytics") {
+    return { analytics: data.analytics };
+  }
+
+  if (action === "cash_update") {
+    return { updated: data.updated, message: data.message };
+  }
+
+  const v = data.verification || {};
+  return {
+    dry_run:     data.dry_run || false,
+    total_pis:   data.total_pis,
+    matched:     data.matched,
+    updated:     data.updated,
+    skipped:     data.skipped,
+    unmatched:   data.unmatched,
+    analytics:   data.analytics,
+    verification: {
+      stripe_total_gross:  v.stripe_total_gross,
+      stripe_total_fees:   v.stripe_total_fees,
+      stripe_total_net:    v.stripe_total_net,
+      db_reconciled_net:   v.db_reconciled_net,
+      unmatched_pi_count:  v.unmatched_pi_count,
+    },
+    ...(data.preview ? { preview: data.preview } : {}),
+  };
+}
+
 const DESTRUCTIVE_TOOLS = new Set([
   "create_vehicle",
   "add_vehicle",
@@ -2946,6 +3022,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
       case "charge_customer_fee":           result = await toolChargeCustomerFee(args);            break;
       case "get_charges":                   result = await toolGetCharges(args);                   break;
+      case "reconcile_stripe":              result = await toolReconcileStripe(args);              break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }

@@ -1467,6 +1467,7 @@
             <option value="refunded">Refunded</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncRevenue(this)">↺ Sync from Bookings</button>
+          <button class="btn btn-secondary btn-sm" id="btn-stripe-reconcile" onclick="runStripeReconcile(this)">⚡ Sync from Stripe</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
@@ -1480,6 +1481,7 @@
                   <th>Vehicle</th>
                   <th>Dates</th>
                   <th>Gross</th>
+                  <th>Stripe Fee</th>
                   <th>Refund</th>
                   <th>Net</th>
                   <th>Method</th>
@@ -3981,20 +3983,27 @@ function renderRevenueSummary() {
   const active  = allRevenueRecords.filter((r) => !r.is_cancelled && !r.is_no_show);
   const gross   = active.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
-  const net     = gross - refunds;
+  const fees    = active.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
+  // Use stripe_net when available, otherwise fall back to gross - fees
+  const netAfterFees = active.reduce((s, r) => {
+    if (r.stripe_net != null) return s + Number(r.stripe_net);
+    return s + Number(r.gross_amount || 0) - Number(r.stripe_fee || 0);
+  }, 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
+  const reconciled = active.filter((r) => r.stripe_fee != null).length;
+  const unreconciled = active.filter((r) => r.stripe_fee == null && r.payment_method !== 'cash').length;
 
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
-      { label: 'Gross Revenue',   value: '$' + formatMoney(gross),   icon: '💵' },
-      { label: 'Total Refunds',   value: '$' + formatMoney(refunds), icon: '↩️' },
-      { label: 'Net Revenue',     value: '$' + formatMoney(net),     icon: '✅' },
-      { label: 'Total Deposits',  value: '$' + formatMoney(deposits),icon: '🔒' },
+      { label: 'Gross Revenue',      value: '$' + formatMoney(gross),            icon: '💵' },
+      { label: 'Stripe Fees',        value: '$' + formatMoney(fees),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending` : ''}` },
+      { label: 'Net (after fees)',   value: '$' + formatMoney(netAfterFees - refunds), icon: '✅' },
+      { label: 'Total Refunds',      value: '$' + formatMoney(refunds),          icon: '↩️' },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
-        <div class="kpi-body"><div class="kpi-value">${esc(k.value)}</div><div class="kpi-label">${esc(k.label)}</div></div>
+        <div class="kpi-body"><div class="kpi-value">${esc(k.value)}</div><div class="kpi-label">${esc(k.label)}</div>${k.sub ? `<div class="kpi-sub" style="font-size:11px;color:var(--text-sub);margin-top:2px;">${esc(k.sub)}</div>` : ''}</div>
       </div>
     `).join('');
   }
@@ -4028,14 +4037,18 @@ function applyRevenueFilters() {
       refunded: '<span class="badge badge-danger">Refunded</span>',
     }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
 
-    const net = (Number(r.gross_amount || 0) - Number(r.refund_amount || 0)).toFixed(2);
+    const stripeFee = r.stripe_fee != null ? '$' + formatMoney(r.stripe_fee) : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
+    const netAfterFees = r.stripe_net != null
+      ? (Number(r.stripe_net) - Number(r.refund_amount || 0)).toFixed(2)
+      : (Number(r.gross_amount || 0) - Number(r.stripe_fee || 0) - Number(r.refund_amount || 0)).toFixed(2);
     return `<tr>
       <td>${esc(r.customer_name || '–')}</td>
       <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
       <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
       <td>$${formatMoney(r.gross_amount  || 0)}</td>
+      <td style="color:var(--danger);font-size:12px;">${stripeFee}</td>
       <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
-      <td style="font-weight:700;">$${formatMoney(net)}</td>
+      <td style="font-weight:700;">$${formatMoney(netAfterFees)}</td>
       <td style="font-size:12px;">${esc(r.payment_method || '–')}</td>
       <td>${payBadge}</td>
       <td class="td-actions">
@@ -4151,6 +4164,28 @@ function syncRevenue(btn) {
     })
     .catch((err) => showToast('Sync error: ' + err.message, 'error'))
     .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '↺ Sync from Bookings'; } });
+}
+
+async function runStripeReconcile(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Reconciling…'; }
+  try {
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'reconcile' });
+    const v    = data.verification || {};
+    const msg  = [
+      `✅ Stripe reconcile done.`,
+      `${data.updated} updated, ${data.skipped} already current, ${data.unmatched} unmatched.`,
+      v.stripe_total_gross != null ? `Stripe gross: $${formatMoney(v.stripe_total_gross)} | fees: $${formatMoney(v.stripe_total_fees)} | net: $${formatMoney(v.stripe_total_net)}` : '',
+    ].filter(Boolean).join(' ');
+    showToast(msg, 'success');
+    // Also update cash records
+    await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
+    allRevenueRecords = [];
+    loadRevenue();
+  } catch (err) {
+    showToast('Stripe reconcile error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Sync from Stripe'; }
+  }
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────
