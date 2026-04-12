@@ -72,9 +72,16 @@ export async function autoCreateRevenueRecord(booking) {
       .maybeSingle();
     if (existing) return;
 
+    // Resolve the Stripe PaymentIntent ID.
+    // • Regular bookings:  booking.paymentIntentId is set by the stripe-webhook.
+    // • Extension records: bookingId IS the PI id (webhook passes paymentIntent.id as bookingId).
+    const piId = booking.paymentIntentId ||
+      (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
+
     const record = {
       booking_id:          booking.bookingId,
       original_booking_id: booking.originalBookingId || null,
+      payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
       customer_name:       booking.name  || null,
       customer_phone:      booking.phone || null,

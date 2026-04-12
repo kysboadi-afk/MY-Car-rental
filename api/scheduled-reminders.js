@@ -839,12 +839,42 @@ async function runReconciliation() {
       return;
     }
 
-    console.warn(`scheduled-reminders reconciliation: ${mismatches.length} PI(s) missing from revenue_records`, mismatches.map((pi) => pi.id));
+    // ── Deduplication: only alert once per PI ID per 25-hour window ─────────
+    // Without this guard the 15-minute cron re-alerts for the same payment up
+    // to 96 times before the PI falls out of the 24-hour look-back window.
+    const DEDUP_KEY = "reconciliation_alerted_pi_ids";
+    let alertedPIs = {}; // { [piId]: ISO timestamp of when first alerted }
+    try {
+      const { data: configRow } = await sb
+        .from("app_config")
+        .select("value")
+        .eq("key", DEDUP_KEY)
+        .maybeSingle();
+      if (configRow && configRow.value && typeof configRow.value === "object") {
+        alertedPIs = configRow.value;
+      }
+    } catch (readErr) {
+      console.warn("scheduled-reminders reconciliation: failed to read dedup state (non-fatal):", readErr.message);
+    }
+
+    // Prune entries older than 25 hours so the map doesn't grow unbounded
+    const cutoffMs = Date.now() - 25 * 60 * 60 * 1000;
+    for (const [piId, ts] of Object.entries(alertedPIs)) {
+      if (new Date(ts).getTime() < cutoffMs) delete alertedPIs[piId];
+    }
+
+    const newMismatches = mismatches.filter((pi) => !alertedPIs[pi.id]);
+    if (newMismatches.length === 0) {
+      console.log(`scheduled-reminders reconciliation: ${mismatches.length} mismatch(es) already alerted — skipping repeat notification`);
+      return;
+    }
+
+    console.warn(`scheduled-reminders reconciliation: ${newMismatches.length} PI(s) missing from revenue_records`, newMismatches.map((pi) => pi.id));
 
     const escStr = (s) => String(s || "")
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-    const rows = mismatches.map((pi) => {
+    const rows = newMismatches.map((pi) => {
       const meta = pi.metadata || {};
       return `<tr>
         <td style="padding:6px;border:1px solid #ddd">${escStr(pi.id)}</td>
@@ -855,7 +885,7 @@ async function runReconciliation() {
       </tr>`;
     }).join("\n");
 
-    const subject = `[SLY RIDES] ⚠️ ${mismatches.length} Payment(s) Not Reconciled`;
+    const subject = `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Not Reconciled`;
 
     // Email alert
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
@@ -872,7 +902,7 @@ async function runReconciliation() {
           subject,
           html: `
             <h2>⚠️ Payment Reconciliation Alert</h2>
-            <p>${mismatches.length} Stripe PaymentIntent(s) succeeded in the last 24 hours but have <strong>no matching revenue record</strong> in the database.</p>
+            <p>${newMismatches.length} Stripe PaymentIntent(s) succeeded in the last 24 hours but have <strong>no matching revenue record</strong> in the database.</p>
             <table style="border-collapse:collapse;width:100%;margin:16px 0">
               <thead>
                 <tr style="background:#f5f5f5">
@@ -891,8 +921,8 @@ async function runReconciliation() {
           text: [
             subject,
             "",
-            `${mismatches.length} Stripe PaymentIntent(s) are missing from revenue_records:`,
-            ...mismatches.map((pi) => `  ${pi.id}  $${(pi.amount / 100).toFixed(2)}`),
+            `${newMismatches.length} Stripe PaymentIntent(s) are missing from revenue_records:`,
+            ...newMismatches.map((pi) => `  ${pi.id}  $${(pi.amount / 100).toFixed(2)}`),
             "",
             "Review at: https://dashboard.stripe.com/payments",
           ].join("\n"),
@@ -905,12 +935,24 @@ async function runReconciliation() {
     // SMS alert (brief)
     if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
       try {
-        const piSummary = mismatches.slice(0, 3).map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`).join(", ");
-        const smsText = `[SLY RIDES] ⚠️ ${mismatches.length} payment(s) not reconciled: ${piSummary}${mismatches.length > 3 ? ` +${mismatches.length - 3} more` : ""}. Check email.`;
+        const piSummary = newMismatches.slice(0, 3).map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`).join(", ");
+        const smsText = `[SLY RIDES] ⚠️ ${newMismatches.length} payment(s) not reconciled: ${piSummary}${newMismatches.length > 3 ? ` +${newMismatches.length - 3} more` : ""}. Check email.`;
         await sendSms(OWNER_PHONE, smsText);
       } catch (smsErr) {
         console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
       }
+    }
+
+    // Persist the newly alerted PI IDs so we don't re-alert on the next cron tick
+    try {
+      const nowIso = new Date().toISOString();
+      for (const pi of newMismatches) alertedPIs[pi.id] = nowIso;
+      await sb.from("app_config").upsert(
+        { key: DEDUP_KEY, value: alertedPIs, updated_at: nowIso },
+        { onConflict: "key" }
+      );
+    } catch (dedupErr) {
+      console.warn("scheduled-reminders reconciliation: failed to persist dedup state (non-fatal):", dedupErr.message);
     }
   } catch (err) {
     console.error("scheduled-reminders reconciliation: unexpected error (non-fatal):", err.message);
