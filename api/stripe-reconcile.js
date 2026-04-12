@@ -25,7 +25,7 @@
 
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -155,6 +155,9 @@ export default async function handler(req, res) {
       if (error) throw error;
       return res.status(200).json({ analytics: buildAnalytics(rows || []) });
     } catch (err) {
+      if (isSchemaError(err)) {
+        return res.status(503).json({ error: "Database schema is missing columns required for Stripe analytics. Please apply all Supabase migrations (run migration 0046 or use COMPLETE_SETUP.sql)." });
+      }
       console.error("stripe-reconcile analytics error:", err);
       return res.status(500).json({ error: adminErrorMessage(err) });
     }
@@ -203,6 +206,9 @@ export default async function handler(req, res) {
         message: `Updated ${updated} cash/manual record${updated !== 1 ? "s" : ""} (stripe_fee=0).`,
       });
     } catch (err) {
+      if (isSchemaError(err)) {
+        return res.status(503).json({ error: "Database schema is missing columns required for Stripe cash update. Please apply all Supabase migrations (run migration 0046 or use COMPLETE_SETUP.sql)." });
+      }
       console.error("stripe-reconcile cash_update error:", err);
       return res.status(500).json({ error: adminErrorMessage(err) });
     }
@@ -414,6 +420,9 @@ export default async function handler(req, res) {
       ...(dryRun ? { preview: results.preview } : {}),
     });
   } catch (err) {
+    if (isSchemaError(err)) {
+      return res.status(503).json({ error: "Database schema is missing columns required for Stripe reconciliation. Please apply all Supabase migrations (run migration 0046 or use COMPLETE_SETUP.sql)." });
+    }
     console.error("stripe-reconcile error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }
