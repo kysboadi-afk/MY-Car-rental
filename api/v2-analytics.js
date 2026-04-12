@@ -27,6 +27,8 @@ import { getSupabaseAdmin } from "./_supabase.js";
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
 const MIN_UTILIZATION_WINDOW_DAYS = 90;
+// Average days per month (365.25 / 12) used for months_active calculation
+const AVG_DAYS_PER_MONTH = 30.4375;
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
@@ -189,7 +191,7 @@ export default async function handler(req, res) {
         const purchaseDateStr = vehicle.purchase_date || "";
         const purchaseDateMs  = purchaseDateStr ? new Date(purchaseDateStr).getTime() : 0;
         const monthsActive    = purchaseDateMs > 0
-          ? Math.max(1, Math.round((now - purchaseDateMs) / (86400000 * 30.4375)))
+          ? Math.max(1, Math.round((now - purchaseDateMs) / (86400000 * AVG_DAYS_PER_MONTH)))
           : null;
         // Investment ROI = profit / purchase_price
         const vehicleRoi     = purchasePrice > 0 ? Math.round((vProfit / purchasePrice) * 10000) / 100 : null;

@@ -1138,7 +1138,7 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     const purchasePrice = Number(v.purchase_price || 0);
     const purchaseDateMs = v.purchase_date ? new Date(v.purchase_date).getTime() : 0;
     const monthsActive  = purchaseDateMs > 0
-      ? Math.max(1, Math.round((Date.now() - purchaseDateMs) / (86400000 * 30.4375)))
+      ? Math.max(1, Math.round((Date.now() - purchaseDateMs) / (86400000 * 30.4375 /* avg days/month */)))
       : null;
     const vehicleRoi    = purchasePrice > 0 ? Math.round((profit / purchasePrice) * 10000) / 100 : null;
     const monthlyProfit = monthsActive != null && monthsActive > 0

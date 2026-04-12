@@ -4754,9 +4754,10 @@ function renderAnalytics(fleet, trend) {
       const roiDisplay = roiVal === null ? '—' : roiVal.toFixed(1) + '%';
       const roiColor   = roiVal === null ? 'color:var(--text-sub)' : roiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
       const invRoiVal     = v.vehicle_roi;
-      const invRoiDisplay = invRoiVal === null || invRoiVal === undefined ? '—' : (invRoiVal * 1).toFixed(1) + '%';
-      const invRoiColor   = invRoiVal == null ? 'color:var(--text-sub)' : invRoiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
+      const invRoiDisplay = invRoiVal === null || invRoiVal === undefined ? '—' : invRoiVal.toFixed(1) + '%';
+      const invRoiColor   = invRoiVal === null || invRoiVal === undefined ? 'color:var(--text-sub)' : invRoiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
       const monthlyProfitDisplay = v.monthly_profit != null ? '$' + formatMoney(v.monthly_profit) : '—';
+      const monthlyProfitColor   = v.monthly_profit == null ? 'color:var(--text-sub)' : v.monthly_profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)';
       const paybackDisplay = v.payback_months != null ? v.payback_months.toFixed(1) + ' mo' : '—';
       return `<tr>
         <td style="font-weight:600;">${esc(v.name)}</td>
@@ -4768,7 +4769,7 @@ function renderAnalytics(fleet, trend) {
         <td style="font-weight:700;${profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profit)}</td>
         <td style="${roiColor}">${esc(roiDisplay)}</td>
         <td style="${invRoiColor}">${esc(invRoiDisplay)}</td>
-        <td style="${v.monthly_profit != null && v.monthly_profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">${esc(monthlyProfitDisplay)}</td>
+        <td style="${monthlyProfitColor}">${esc(monthlyProfitDisplay)}</td>
         <td style="color:var(--text-sub)">${esc(paybackDisplay)}</td>
         <td><span style="color:${utilColor};font-weight:700;">${v.utilizationRate}%</span></td>
         <td>$${formatMoney(v.avgRevenuePerBooking)}</td>
