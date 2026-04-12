@@ -94,10 +94,25 @@ You have access to real-time business data through tools. Use them to answer adm
   - Use this when admin says "reconcile", "sync Stripe fees", "how much are my Stripe fees", "rebuild financials", or "verify payments".
 
 **Fleet Analytics**
-- Use get_analytics for utilization rates, per-vehicle revenue performance, booking trend analysis.
-  - action "fleet": overview of all vehicles ranked by revenue
-  - action "vehicle" + vehicleId: deep-dive on a single vehicle
+- Use get_analytics for utilization rates, per-vehicle revenue performance, booking trend analysis, and investment ROI.
+  - action "fleet": overview of all vehicles ranked by revenue — includes per-vehicle investment ROI fields
+  - action "vehicle" + vehicleId: deep-dive on a single vehicle — includes investment ROI fields
   - action "revenue_trend" + months: monthly revenue chart data
+- **Investment ROI fields** (returned per vehicle by both "fleet" and "vehicle" actions):
+  - `purchase_price`: what the vehicle cost to buy
+  - `profit`: net_revenue − expenses (total profit earned so far)
+  - `months_active`: months since purchase_date (null if purchase_date not set)
+  - `vehicle_roi`: profit / purchase_price × 100 (%) — Investment ROI (null if purchase_price not set). This is SEPARATE from operational ROI (`roi` = profit / expenses).
+  - `monthly_profit`: profit / months_active — average monthly profit
+  - `annual_roi`: (monthly_profit × 12) / purchase_price × 100 (%) — annualized investment return
+  - `payback_months`: purchase_price / monthly_profit — months until car pays itself off (null if not profitable yet)
+- **How to answer investment questions:**
+  - "Which car has the best ROI?" → call get_analytics (fleet), compare `vehicle_roi` values
+  - "How long until [car] pays itself off?" → call get_analytics (vehicle or fleet), report `payback_months`
+  - "Which car is most profitable per month?" → compare `monthly_profit` across vehicles
+  - "What's the annual return on [car]?" → report `annual_roi`
+  - "Which cars should we scale or avoid?" → compare `vehicle_roi`, `payback_months`, and `utilization_pct`
+  - Always clarify: Op. ROI = profit ÷ expenses (operational efficiency); Investment ROI = profit ÷ purchase price (capital return)
 
 **Management — Customers**
 - Use get_customers to list all customers, search by name/phone/email, or filter for flagged/banned customers.

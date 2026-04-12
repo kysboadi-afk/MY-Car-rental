@@ -1559,7 +1559,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Vehicle</th><th>Bookings</th><th>Gross Revenue</th><th>Stripe Fees</th><th>Net Revenue</th><th>Expenses</th><th>Profit</th><th>Op. ROI</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
+                  <tr><th>Vehicle</th><th>Bookings</th><th>Gross Revenue</th><th>Stripe Fees</th><th>Net Revenue</th><th>Expenses</th><th>Profit</th><th>Op. ROI</th><th>Invest. ROI</th><th>Monthly Profit</th><th>Payback</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
                 </thead>
                 <tbody id="analytics-tbody"></tbody>
               </table>
@@ -4753,6 +4753,11 @@ function renderAnalytics(fleet, trend) {
       const roiVal     = v.roi;
       const roiDisplay = roiVal === null ? '—' : roiVal.toFixed(1) + '%';
       const roiColor   = roiVal === null ? 'color:var(--text-sub)' : roiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
+      const invRoiVal     = v.vehicle_roi;
+      const invRoiDisplay = invRoiVal === null || invRoiVal === undefined ? '—' : (invRoiVal * 1).toFixed(1) + '%';
+      const invRoiColor   = invRoiVal == null ? 'color:var(--text-sub)' : invRoiVal >= 0 ? 'color:var(--success);font-weight:700' : 'color:var(--danger);font-weight:700';
+      const monthlyProfitDisplay = v.monthly_profit != null ? '$' + formatMoney(v.monthly_profit) : '—';
+      const paybackDisplay = v.payback_months != null ? v.payback_months.toFixed(1) + ' mo' : '—';
       return `<tr>
         <td style="font-weight:600;">${esc(v.name)}</td>
         <td>${v.totalBookings}</td>
@@ -4762,6 +4767,9 @@ function renderAnalytics(fleet, trend) {
         <td style="color:var(--danger);">$${formatMoney(vf.expenses)}</td>
         <td style="font-weight:700;${profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profit)}</td>
         <td style="${roiColor}">${esc(roiDisplay)}</td>
+        <td style="${invRoiColor}">${esc(invRoiDisplay)}</td>
+        <td style="${v.monthly_profit != null && v.monthly_profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">${esc(monthlyProfitDisplay)}</td>
+        <td style="color:var(--text-sub)">${esc(paybackDisplay)}</td>
         <td><span style="color:${utilColor};font-weight:700;">${v.utilizationRate}%</span></td>
         <td>$${formatMoney(v.avgRevenuePerBooking)}</td>
         <td>${v.status === 'active'

@@ -183,6 +183,29 @@ export default async function handler(req, res) {
           return pick && ret && pick <= now && ret >= now;
         });
 
+        const vProfit        = Math.round((net - vExpenses) * 100) / 100;
+        const purchasePrice  = Number(vehicle.purchase_price || 0);
+        // months_active: from purchase_date to now (min 1)
+        const purchaseDateStr = vehicle.purchase_date || "";
+        const purchaseDateMs  = purchaseDateStr ? new Date(purchaseDateStr).getTime() : 0;
+        const monthsActive    = purchaseDateMs > 0
+          ? Math.max(1, Math.round((now - purchaseDateMs) / (86400000 * 30.4375)))
+          : null;
+        // Investment ROI = profit / purchase_price
+        const vehicleRoi     = purchasePrice > 0 ? Math.round((vProfit / purchasePrice) * 10000) / 100 : null;
+        // Monthly profit (for payback calculation)
+        const monthlyProfit  = monthsActive != null && monthsActive > 0
+          ? Math.round((vProfit / monthsActive) * 100) / 100
+          : null;
+        // Annual ROI = (monthly_profit * 12) / purchase_price
+        const annualRoi      = purchasePrice > 0 && monthlyProfit != null
+          ? Math.round(((monthlyProfit * 12) / purchasePrice) * 10000) / 100
+          : null;
+        // Payback period in months = purchase_price / monthly_profit
+        const paybackMonths  = purchasePrice > 0 && monthlyProfit != null && monthlyProfit > 0
+          ? Math.round((purchasePrice / monthlyProfit) * 10) / 10
+          : null;
+
         vehicleStats[vehicleId] = {
           vehicleId,
           name:                vehicle.vehicle_name || vehicleId,
@@ -193,14 +216,21 @@ export default async function handler(req, res) {
           total_fees:          Math.round(fees     * 100) / 100,
           net_revenue:         Math.round(net      * 100) / 100,
           expenses:            Math.round(vExpenses * 100) / 100,
-          profit:              Math.round((net - vExpenses) * 100) / 100,
+          profit:              vProfit,
           // Operational ROI = profit / expenses * 100 (null when no expenses recorded)
           roi:                 vExpenses > 0
             ? Math.round(((net - vExpenses) / vExpenses) * 10000) / 100
             : null,
+          // Investment ROI fields
+          purchase_price:      purchasePrice,
+          months_active:       monthsActive,
+          vehicle_roi:         vehicleRoi,
+          monthly_profit:      monthlyProfit,
+          annual_roi:          annualRoi,
+          payback_months:      paybackMonths,
           // Legacy aliases so existing admin UI fields keep working
           revenue:             Math.round(gross    * 100) / 100,
-          netProfit:           Math.round((net - vExpenses) * 100) / 100,
+          netProfit:           vProfit,
           rentedDays,
           utilizationRate,
           avgRevenuePerBooking: totalBookings > 0
