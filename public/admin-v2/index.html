@@ -2445,44 +2445,49 @@ function renderDashboard(data) {
   document.getElementById('dashboard-loading').style.display = 'none';
   document.getElementById('dashboard-content').style.display = '';
 
-  // KPIs
+  // KPIs — all totals via the shared financial engine
   const kpi = data.kpis;
   const pendingCount = kpi.pendingApprovals;
   const badge = document.getElementById('pending-badge');
   if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; } else { badge.style.display = 'none'; }
 
-  // Net Revenue = Gross Revenue − Total Expenses (operational costs deducted).
-  const netValue  = kpi.totalRevenue - (kpi.totalExpenses || 0);
-  const netLabel  = 'Net Revenue';
-  const netSub    = (kpi.totalExpenses || 0) > 0
-    ? `After $${formatMoney(kpi.totalExpenses)} in expenses`
+  // Normalise the aggregated KPI into the canonical financial shape and let
+  // calcFinancials() own every total — no ad-hoc arithmetic here.
+  const fin = calcFinancials([{
+    amount_gross: kpi.totalRevenue   || 0,
+    stripe_fee:   (kpi.totalRevenue  || 0) - (kpi.netRevenue || 0),
+    amount_net:   kpi.netRevenue     || 0,
+    expenses:     kpi.totalExpenses  || 0,
+  }], 'Dashboard');
+  const profitColor = fin.profit < 0 ? 'color:var(--danger)' : '';
+  const netSub      = fin.expenses > 0
+    ? `After $${formatMoney(fin.expenses)} in expenses`
     : 'No expenses recorded';
-  const profitColor    = (kpi.netProfit || 0) < 0 ? 'color:var(--danger)' : '';
 
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi-card" onclick="navigate('revenue')" style="cursor:pointer;" title="View Revenue">
       <div class="kpi-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
       <div class="kpi-label">Gross Revenue</div>
-      <div class="kpi-value">$${formatMoney(kpi.totalRevenue)}</div>
+      <div class="kpi-value">$${formatMoney(fin.amount_gross)}</div>
       <div class="kpi-change">All paid bookings</div>
     </div>
     <div class="kpi-card" onclick="navigate('revenue')" style="cursor:pointer;" title="View Net Revenue">
       <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
-      <div class="kpi-label">${esc(netLabel)}</div>
-      <div class="kpi-value">$${formatMoney(netValue)}</div>
-      <div class="kpi-change" style="font-size:10px;">${esc(netSub)}</div>
+      <div class="kpi-label">Net Revenue</div>
+      <div class="kpi-value">$${formatMoney(fin.amount_net)}</div>
+      <div class="kpi-change" style="font-size:10px;">After Stripe fees</div>
     </div>
     <div class="kpi-card" onclick="navigate('expenses')" style="cursor:pointer;" title="View Expenses">
       <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
       <div class="kpi-label">Total Expenses</div>
-      <div class="kpi-value" style="color:var(--danger);">$${formatMoney(kpi.totalExpenses || 0)}</div>
-      <div class="kpi-change">Operational costs</div>
+      <div class="kpi-value" style="color:var(--danger);">$${formatMoney(fin.expenses)}</div>
+      <div class="kpi-change">${esc(netSub)}</div>
     </div>
     <div class="kpi-card" style="${profitColor}">
-      <div class="kpi-icon ${(kpi.netProfit || 0) >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+      <div class="kpi-icon ${fin.profit >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
       <div class="kpi-label">Net Profit</div>
-      <div class="kpi-value" style="${profitColor}">$${formatMoney(kpi.netProfit || 0)}</div>
-      <div class="kpi-change">Net Revenue − Stripe fees</div>
+      <div class="kpi-value" style="${profitColor}">$${formatMoney(fin.profit)}</div>
+      <div class="kpi-change">Net Revenue − Expenses</div>
     </div>
   `;
   // Secondary row: bookings + availability
@@ -4120,6 +4125,59 @@ function showToast(msg, type = 'info') {
   setTimeout(() => toast.remove(), 3500);
 }
 
+// ── Shared Financial Engine ────────────────────────────────────────────────
+// Single source of truth for all financial totals across Dashboard, Revenue,
+// Fleet, and Customers.  Every record must be normalised to this shape first:
+//   { amount_gross, stripe_fee, amount_net, expenses }
+// No other section is allowed to compute its own sums.
+// opts.totalExpenses — when provided, overrides the per-record expenses sum so
+// callers that track expenses separately (e.g. Revenue page) don't need to
+// inject synthetic records just to carry the expense total.
+function calcFinancials(records, label, opts = {}) {
+  const amount_gross = records.reduce((s, r) => s + Number(r.amount_gross || 0), 0);
+  const stripe_fee   = records.reduce((s, r) => s + Number(r.stripe_fee   || 0), 0);
+  const amount_net   = records.reduce((s, r) => s + Number(r.amount_net   || 0), 0);
+  const expenses     = opts.totalExpenses !== undefined
+    ? Math.round(Number(opts.totalExpenses) * 100) / 100
+    : records.reduce((s, r) => s + Number(r.expenses || 0), 0);
+  // Temporary diagnostic logging — remove once cross-page totals are confirmed.
+  console.log(`[calcFinancials] ${label || 'unknown'}:`, {
+    records:      records.length,
+    amount_gross: Math.round(amount_gross * 100) / 100,
+    amount_net:   Math.round(amount_net   * 100) / 100,
+    expenses:     Math.round(expenses     * 100) / 100,
+  });
+  return { amount_gross, stripe_fee, amount_net, expenses, profit: amount_net - expenses };
+}
+
+// Normalise a raw revenue_records row to the canonical financial shape.
+function normalizeRevenueRecord(r) {
+  const amount_gross = Number(r.gross_amount || 0);
+  const stripe_fee   = Number(r.stripe_fee   || 0);
+  const amount_net   = r.stripe_net != null ? Number(r.stripe_net) : amount_gross - stripe_fee;
+  return { amount_gross, stripe_fee, amount_net, expenses: 0 };
+}
+
+// Normalise a fleet analytics vehicle row to the canonical financial shape.
+function normalizeFleetVehicle(v) {
+  return {
+    amount_gross: v.gross_revenue ?? v.revenue ?? 0,
+    stripe_fee:   v.total_fees    ?? 0,
+    amount_net:   v.net_revenue   ?? v.revenue ?? 0,
+    expenses:     v.expenses      ?? 0,
+  };
+}
+
+// Normalise a customer summary row to the canonical financial shape.
+function normalizeCustomer(c) {
+  return {
+    amount_gross: Number(c.total_gross_revenue || c.total_spent || 0),
+    stripe_fee:   Number(c.total_stripe_fees   || 0),
+    amount_net:   Number(c.total_net_revenue   || c.total_spent || 0),
+    expenses:     Number(c.associated_vehicle_expenses || 0),
+  };
+}
+
 // ── Utility ────────────────────────────────────────────────────────────────
 function esc(str) {
   return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -4277,9 +4335,21 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
-    .then((data) => {
-      allRevenueRecords = data.records || [];
+  // Fetch revenue records and expenses in parallel so renderRevenueSummary()
+  // can include real expenses in calcFinancials (matching Dashboard/Fleet).
+  // If allExpenses is already populated (user visited Expenses page first) we
+  // skip the extra round-trip.
+  const expensesPromise = allExpenses.length
+    ? Promise.resolve({ expenses: allExpenses })
+    : apiPost('/api/get-expenses', { secret: adminSecret });
+
+  Promise.all([
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' }),
+    expensesPromise,
+  ])
+    .then(([revData, expData]) => {
+      allRevenueRecords = revData.records || [];
+      if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
       applyRevenueFilters();
       document.getElementById('revenue-loading').style.display = 'none';
@@ -4291,15 +4361,17 @@ function loadRevenue() {
 }
 
 function renderRevenueSummary() {
-  const active  = allRevenueRecords.filter((r) => !r.is_cancelled && !r.is_no_show);
-  const gross   = active.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
+  // Only include paid rental records — excludes refunded, pending, partial,
+  // cancelled, and no-show rows.  This matches the server-side filters used by
+  // the Dashboard and Fleet APIs so cross-page totals are identical.
+  const active  = allRevenueRecords.filter(
+    (r) => r.payment_status === 'paid' && !r.is_cancelled && !r.is_no_show,
+  );
+  // All totals via the shared financial engine — no inline arithmetic.
+  // Pass totalExpenses directly so no synthetic record is needed.
+  const totalExpenses = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const fin     = calcFinancials(active.map(normalizeRevenueRecord), 'Revenue', { totalExpenses });
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
-  const fees    = active.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
-  // Use stripe_net when available, otherwise fall back to gross - fees
-  const netAfterFees = active.reduce((s, r) => {
-    if (r.stripe_net != null) return s + Number(r.stripe_net);
-    return s + Number(r.gross_amount || 0) - Number(r.stripe_fee || 0);
-  }, 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
   const reconciled   = active.filter((r) => r.stripe_fee != null).length;
   const unreconciled = active.filter((r) => r.stripe_fee == null && r.payment_method !== 'cash').length;
@@ -4307,10 +4379,12 @@ function renderRevenueSummary() {
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
-      { label: 'Gross Revenue',    value: '$' + formatMoney(gross),                  icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
-      { label: 'Stripe Fees',      value: '$' + formatMoney(fees),                   icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
-      { label: 'Net (after fees)', value: '$' + formatMoney(netAfterFees - refunds), icon: '✅', sub: 'After fees & refunds' },
-      { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                icon: '↩️', sub: '' },
+      { label: 'Gross Revenue',    value: '$' + formatMoney(fin.amount_gross),           icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
+      { label: 'Stripe Fees',      value: '$' + formatMoney(fin.stripe_fee),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
+      { label: 'Net (after fees)', value: '$' + formatMoney(fin.amount_net - refunds),   icon: '✅', sub: 'After fees & refunds' },
+      { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                    icon: '↩️', sub: '' },
+      { label: 'Expenses',         value: '$' + formatMoney(fin.expenses),               icon: '💸', sub: fin.expenses > 0 ? `${allExpenses.length} record${allExpenses.length !== 1 ? 's' : ''}` : 'None recorded' },
+      { label: 'Profit',           value: '$' + formatMoney(fin.profit - refunds),       icon: '📈', sub: 'Net after fees, refunds & expenses' },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
@@ -4327,14 +4401,13 @@ function renderRevenueSummary() {
   const byVehicle = {};
   for (const r of active) {
     const vid = r.vehicle_id || 'unknown';
-    if (!byVehicle[vid]) byVehicle[vid] = { gross: 0, fees: 0, net: 0, refunds: 0, count: 0 };
-    byVehicle[vid].gross   += Number(r.gross_amount  || 0);
-    byVehicle[vid].fees    += Number(r.stripe_fee    || 0);
-    byVehicle[vid].net     += r.stripe_net != null
-      ? Number(r.stripe_net)
-      : Number(r.gross_amount || 0) - Number(r.stripe_fee || 0);
-    byVehicle[vid].refunds += Number(r.refund_amount || 0);
-    byVehicle[vid].count   += 1;
+    if (!byVehicle[vid]) byVehicle[vid] = { amount_gross: 0, stripe_fee: 0, amount_net: 0, expenses: 0, refunds: 0, count: 0 };
+    const norm = normalizeRevenueRecord(r);
+    byVehicle[vid].amount_gross += norm.amount_gross;
+    byVehicle[vid].stripe_fee   += norm.stripe_fee;
+    byVehicle[vid].amount_net   += norm.amount_net;
+    byVehicle[vid].refunds      += Number(r.refund_amount || 0);
+    byVehicle[vid].count        += 1;
   }
   const vehBreakdown = document.getElementById('rev-vehicle-breakdown');
   if (vehBreakdown && Object.keys(byVehicle).length > 0) {
@@ -4346,14 +4419,14 @@ function renderRevenueSummary() {
       <div class="table-wrap">
         <table style="font-size:12px;">
           <thead><tr><th>Vehicle</th><th>Records</th><th>Gross</th><th>Stripe Fees</th><th>Refunds</th><th>Net</th></tr></thead>
-          <tbody>${Object.entries(byVehicle).sort((a,b) => b[1].net - a[1].net).map(([vid, s]) => `
+          <tbody>${Object.entries(byVehicle).sort((a,b) => b[1].amount_net - a[1].amount_net).map(([vid, s]) => `
             <tr>
               <td>${esc(VEHICLE_NAMES_DYNAMIC[vid] || VEHICLE_NAMES[vid] || vid)}</td>
               <td>${s.count}</td>
-              <td>$${formatMoney(s.gross)}</td>
-              <td style="color:var(--danger);">$${formatMoney(s.fees)}</td>
+              <td>$${formatMoney(s.amount_gross)}</td>
+              <td style="color:var(--danger);">$${formatMoney(s.stripe_fee)}</td>
               <td style="color:var(--danger);">$${formatMoney(s.refunds)}</td>
-              <td style="font-weight:700;">$${formatMoney(s.net - s.refunds)}</td>
+              <td style="font-weight:700;">$${formatMoney(s.amount_net - s.refunds)}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -4393,9 +4466,8 @@ function applyRevenueFilters() {
     }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
 
     const stripeFee = r.stripe_fee != null ? '$' + formatMoney(r.stripe_fee) : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
-    const netAfterFees = r.stripe_net != null
-      ? (Number(r.stripe_net) - Number(r.refund_amount || 0)).toFixed(2)
-      : (Number(r.gross_amount || 0) - Number(r.stripe_fee || 0) - Number(r.refund_amount || 0)).toFixed(2);
+    const norm = normalizeRevenueRecord(r);
+    const netAfterFees = (norm.amount_net - Number(r.refund_amount || 0)).toFixed(2);
     return `<tr>
       <td>${esc(r.customer_name || '–')}</td>
       <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
@@ -4592,11 +4664,9 @@ function loadAnalytics() {
 }
 
 function renderAnalytics(fleet, trend) {
-  // KPI grid — use Stripe-adjusted financial fields from revenue_records
+  // KPI grid — all totals via the shared financial engine.
   const vehicles = Object.values(fleet);
-  const totalGross    = vehicles.reduce((s, v) => s + (v.gross_revenue ?? v.revenue ?? 0), 0);
-  const totalFees     = vehicles.reduce((s, v) => s + (v.total_fees   ?? 0), 0);
-  const totalNet      = vehicles.reduce((s, v) => s + (v.net_revenue  ?? v.revenue ?? 0), 0);
+  const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle), 'Fleet');
   const totalBookings = vehicles.reduce((s, v) => s + v.totalBookings, 0);
   const avgUtil   = vehicles.length
     ? Math.round(vehicles.reduce((s, v) => s + v.utilizationRate, 0) / vehicles.length * 10) / 10
@@ -4606,10 +4676,10 @@ function renderAnalytics(fleet, trend) {
   const kpiGrid = document.getElementById('analytics-kpi-grid');
   if (kpiGrid) {
     kpiGrid.innerHTML = [
-      { label: 'Gross Revenue',       value: '$' + formatMoney(totalGross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
-      { label: 'Stripe Fees',         value: '$' + formatMoney(totalFees),  icon: '💳', sub: 'Total processing fees' },
-      { label: 'Net Revenue',         value: '$' + formatMoney(totalNet),   icon: '✅', sub: 'After Stripe fees' },
-      { label: 'Avg Utilization',     value: avgUtil + '%',                 icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
+      { label: 'Gross Revenue',       value: '$' + formatMoney(fin.amount_gross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
+      { label: 'Stripe Fees',         value: '$' + formatMoney(fin.stripe_fee),   icon: '💳', sub: 'Total processing fees' },
+      { label: 'Net Revenue',         value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees' },
+      { label: 'Avg Utilization',     value: avgUtil + '%',                       icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
@@ -4658,17 +4728,15 @@ function renderAnalytics(fleet, trend) {
   if (tbody) {
     tbody.innerHTML = vehicles.map((v) => {
       const utilColor  = v.utilizationRate >= 70 ? 'var(--success)' : v.utilizationRate >= 40 ? 'var(--warning)' : 'var(--danger)';
-      const gross      = v.gross_revenue   ?? v.revenue   ?? 0;
-      const fees       = v.total_fees      ?? 0;
-      const net        = v.net_revenue     ?? v.revenue   ?? 0;
-      const profit     = v.profit          ?? v.netProfit ?? 0;
+      const vf         = normalizeFleetVehicle(v);
+      const profit     = vf.amount_net - vf.expenses;
       return `<tr>
         <td style="font-weight:600;">${esc(v.name)}</td>
         <td>${v.totalBookings}</td>
-        <td>$${formatMoney(gross)}</td>
-        <td style="color:var(--danger);">$${formatMoney(fees)}</td>
-        <td style="font-weight:600;">$${formatMoney(net)}</td>
-        <td style="color:var(--danger);">$${formatMoney(v.expenses)}</td>
+        <td>$${formatMoney(vf.amount_gross)}</td>
+        <td style="color:var(--danger);">$${formatMoney(vf.stripe_fee)}</td>
+        <td style="font-weight:600;">$${formatMoney(vf.amount_net)}</td>
+        <td style="color:var(--danger);">$${formatMoney(vf.expenses)}</td>
         <td style="font-weight:700;${profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profit)}</td>
         <td><span style="color:${utilColor};font-weight:700;">${v.utilizationRate}%</span></td>
         <td>$${formatMoney(v.avgRevenuePerBooking)}</td>
@@ -4693,15 +4761,15 @@ function renderCustomerKpis() {
   const flagged      = allCustomers.filter((c) => c.flagged && !c.banned).length;
   const banned       = allCustomers.filter((c) => c.banned).length;
   const highRisk     = allCustomers.filter((c) => c.risk_flag === 'high').length;
-  const totalRev     = allCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0);
-  const totalProfit  = allCustomers.reduce((s, c) => s + Number(c.total_profit ?? 0), 0);
+  // All financial totals via the shared financial engine.
+  const fin          = calcFinancials(allCustomers.map(normalizeCustomer), 'Customers');
   const vip          = allCustomers.filter((c) => computeCustomerTier(c) === 'vip').length;
   const unprofitable = allCustomers.filter((c) => computeCustomerTier(c) === 'unprofitable').length;
 
   grid.innerHTML = [
-    { label: 'Total Customers',  value: total,                          icon: '👥', color: '' },
-    { label: 'Total Revenue',    value: '$' + formatMoney(totalRev),    icon: '💵', color: '' },
-    { label: 'Total Profit',     value: '$' + formatMoney(totalProfit), icon: '📈', color: totalProfit < 0 ? 'color:var(--danger)' : 'color:var(--success)' },
+    { label: 'Total Customers',  value: total,                              icon: '👥', color: '' },
+    { label: 'Total Revenue',    value: '$' + formatMoney(fin.amount_gross), icon: '💵', color: '' },
+    { label: 'Total Profit',     value: '$' + formatMoney(fin.profit),       icon: '📈', color: fin.profit < 0 ? 'color:var(--danger)' : 'color:var(--success)' },
     { label: 'VIP Customers',    value: vip,                            icon: '⭐', color: 'color:var(--primary)' },
     { label: 'Unprofitable',     value: unprofitable,                   icon: '📉', color: unprofitable > 0 ? 'color:var(--danger)' : '' },
     { label: 'Flagged',          value: flagged,                        icon: '🚩', color: flagged   > 0 ? 'color:var(--warning)' : '' },
