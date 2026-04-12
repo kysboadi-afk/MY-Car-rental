@@ -4357,11 +4357,15 @@ async function runStripeReconcile(btn) {
   try {
     const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'reconcile' });
     const v    = data.verification || {};
-    const msg  = [
-      `✅ Stripe reconcile done.`,
-      `${data.updated} updated, ${data.skipped} already current, ${data.unmatched} unmatched.`,
-      v.stripe_total_gross != null ? `Gross: $${formatMoney(v.stripe_total_gross)} | Fees: $${formatMoney(v.stripe_total_fees)} | Net: $${formatMoney(v.stripe_total_net)}` : '',
-    ].filter(Boolean).join(' ');
+    const parts = [`✅ Stripe reconcile done.`];
+    const stats = [];
+    if (data.updated)   stats.push(`${data.updated} updated`);
+    if (data.created)   stats.push(`${data.created} new records added`);
+    if (data.skipped)   stats.push(`${data.skipped} already current`);
+    if (data.unmatched) stats.push(`${data.unmatched} unmatched`);
+    if (stats.length)   parts.push(stats.join(', ') + '.');
+    if (v.stripe_total_gross != null) parts.push(`Gross: $${formatMoney(v.stripe_total_gross)} | Fees: $${formatMoney(v.stripe_total_fees)} | Net: $${formatMoney(v.stripe_total_net)}`);
+    const msg = parts.filter(Boolean).join(' ');
     showToast(msg, 'success');
     // Also update cash records
     await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
