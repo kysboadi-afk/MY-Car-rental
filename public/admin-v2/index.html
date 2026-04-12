@@ -1547,26 +1547,41 @@
         <div class="filters-row">
           <input type="text" class="filter-input" id="cust-search" placeholder="Search name, phone, email…" oninput="applyCustomerFilters()">
           <select class="filter-select" id="cust-filter-flag" onchange="applyCustomerFilters()">
-            <option value="">All Customers</option>
+            <option value="">All Statuses</option>
             <option value="flagged">Flagged</option>
             <option value="banned">Banned</option>
+            <option value="active">Active</option>
+          </select>
+          <select class="filter-select" id="cust-filter-risk" onchange="applyCustomerFilters()">
+            <option value="">All Risk Levels</option>
+            <option value="low">Low Risk</option>
+            <option value="medium">Medium Risk</option>
+            <option value="high">High Risk</option>
+          </select>
+          <select class="filter-select" id="cust-sort" onchange="applyCustomerFilters()">
+            <option value="total_spent">Sort: Total Spent</option>
+            <option value="total_bookings">Sort: Bookings</option>
+            <option value="last_booking_date">Sort: Last Booking</option>
+            <option value="no_show_count">Sort: No-Shows</option>
+            <option value="name">Sort: Name</option>
           </select>
           <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
           <button class="btn btn-primary btn-sm" onclick="openAddCustomerModal()">+ Add Customer</button>
         </div>
+        <div class="kpi-grid" id="cust-kpi-grid" style="margin-bottom:16px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));"></div>
         <div class="card">
           <div id="customers-loading" class="loading"><div class="loading-spinner"></div><div>Loading customers…</div></div>
           <div id="customers-table-wrap" style="display:none" class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Email</th>
+                  <th>Customer</th>
+                  <th>Contact</th>
                   <th>Bookings</th>
                   <th>Total Spent</th>
                   <th>No Shows</th>
                   <th>Last Booking</th>
+                  <th>Risk</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -1576,7 +1591,8 @@
           </div>
           <div id="customers-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>No customers found. Click "Sync from Bookings" to import.</p>
+            <p>No customers found.</p>
+            <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>↻ Sync from Bookings</strong> to import existing customers.</p>
           </div>
         </div>
       </div>
@@ -4460,16 +4476,49 @@ function renderAnalytics(fleet, trend) {
 // ── Customers ─────────────────────────────────────────────────────────────
 let allCustomers = [];
 
+// ── Customer KPI summary ──────────────────────────────────────────────────
+function renderCustomerKpis() {
+  const grid = document.getElementById('cust-kpi-grid');
+  if (!grid || !allCustomers.length) { if (grid) grid.innerHTML = ''; return; }
+
+  const total    = allCustomers.length;
+  const flagged  = allCustomers.filter((c) => c.flagged && !c.banned).length;
+  const banned   = allCustomers.filter((c) => c.banned).length;
+  const highRisk = allCustomers.filter((c) => c.risk_flag === 'high').length;
+  const vip      = allCustomers.filter((c) => (c.total_bookings || 0) >= 3).length;
+  const totalRev = allCustomers.reduce((s, c) => s + Number(c.total_spent || 0), 0);
+
+  grid.innerHTML = [
+    { label: 'Total Customers', value: total,                        icon: '👥', color: '' },
+    { label: 'Total Revenue',   value: '$' + formatMoney(totalRev),  icon: '💵', color: '' },
+    { label: 'VIP (3+ trips)',  value: vip,                          icon: '⭐', color: 'color:var(--primary)' },
+    { label: 'Flagged',         value: flagged,                      icon: '🚩', color: flagged  > 0 ? 'color:var(--warning)' : '' },
+    { label: 'Banned',          value: banned,                       icon: '🚫', color: banned   > 0 ? 'color:var(--danger)'  : '' },
+    { label: 'High Risk',       value: highRisk,                     icon: '⚠️', color: highRisk > 0 ? 'color:var(--danger)'  : '' },
+  ].map((k) => `
+    <div class="kpi-card">
+      <div class="kpi-icon" style="font-size:20px;min-width:36px;text-align:center;">${k.icon}</div>
+      <div class="kpi-body">
+        <div class="kpi-value" style="${k.color}">${typeof k.value === 'number' ? k.value : esc(k.value)}</div>
+        <div class="kpi-label">${esc(k.label)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
 function loadCustomers() {
   document.getElementById('customers-loading').style.display = '';
   document.getElementById('customers-table-wrap').style.display = 'none';
   document.getElementById('customers-empty').style.display = 'none';
+  const kpiGrid = document.getElementById('cust-kpi-grid');
+  if (kpiGrid) kpiGrid.innerHTML = '';
 
   apiPost('/api/v2-customers', { secret: adminSecret, action: 'list' })
     .then((data) => {
       allCustomers = data.customers || [];
-      applyCustomerFilters();
       document.getElementById('customers-loading').style.display = 'none';
+      renderCustomerKpis();
+      applyCustomerFilters();
     })
     .catch((err) => {
       showToast('Customers error: ' + err.message, 'error');
@@ -4478,17 +4527,33 @@ function loadCustomers() {
 }
 
 function applyCustomerFilters() {
-  const search = (document.getElementById('cust-search')?.value || '').toLowerCase();
-  const flag   = document.getElementById('cust-filter-flag')?.value || '';
+  const search   = (document.getElementById('cust-search')?.value || '').toLowerCase();
+  const flag     = document.getElementById('cust-filter-flag')?.value  || '';
+  const riskFilt = document.getElementById('cust-filter-risk')?.value  || '';
+  const sortBy   = document.getElementById('cust-sort')?.value || 'total_spent';
 
-  let filtered = allCustomers;
-  if (search) filtered = filtered.filter((c) =>
-    (c.name  || '').toLowerCase().includes(search) ||
-    (c.phone || '').toLowerCase().includes(search) ||
-    (c.email || '').toLowerCase().includes(search)
-  );
-  if (flag === 'flagged') filtered = filtered.filter((c) => c.flagged);
-  if (flag === 'banned')  filtered = filtered.filter((c) => c.banned);
+  let filtered = allCustomers.filter((c) => {
+    if (search && !(
+      (c.name  || '').toLowerCase().includes(search) ||
+      (c.phone || '').toLowerCase().includes(search) ||
+      (c.email || '').toLowerCase().includes(search)
+    )) return false;
+    if (flag === 'flagged') { if (!c.flagged) return false; }
+    if (flag === 'banned')  { if (!c.banned)  return false; }
+    if (flag === 'active')  { if (c.banned || c.flagged) return false; }
+    if (riskFilt && c.risk_flag !== riskFilt) return false;
+    return true;
+  });
+
+  // Sort
+  filtered = [...filtered].sort((a, b) => {
+    if (sortBy === 'total_spent')       return (b.total_spent     || 0) - (a.total_spent     || 0);
+    if (sortBy === 'total_bookings')    return (b.total_bookings  || 0) - (a.total_bookings  || 0);
+    if (sortBy === 'no_show_count')     return (b.no_show_count   || 0) - (a.no_show_count   || 0);
+    if (sortBy === 'last_booking_date') return (b.last_booking_date || '') > (a.last_booking_date || '') ? 1 : -1;
+    if (sortBy === 'name')              return (a.name || '').localeCompare(b.name || '');
+    return 0;
+  });
 
   const tbody = document.getElementById('customers-tbody');
   const wrap  = document.getElementById('customers-table-wrap');
@@ -4502,25 +4567,42 @@ function applyCustomerFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
+  const riskBadge = { low: 'badge-success', medium: 'badge-warning', high: 'badge-danger' };
+
   tbody.innerHTML = filtered.map((c) => {
+    const isVip = (c.total_bookings || 0) >= 3;
+    const nameCell = `<div style="font-weight:600;">${esc(c.name || '–')}${isVip ? ' <span title="VIP Customer" style="color:gold;font-size:13px;">★</span>' : ''}</div>
+      ${c.full_name && c.full_name !== c.name ? `<div style="font-size:11px;color:var(--text-sub);">${esc(c.full_name)}</div>` : ''}`;
+    const phoneCell = c.phone
+      ? `<a href="tel:${esc(c.phone)}" style="color:var(--primary);text-decoration:none;font-size:13px;">${esc(c.phone)}</a>`
+      : '–';
+    const emailCell = c.email
+      ? `<a href="mailto:${esc(c.email)}" style="color:var(--text-sub);font-size:11px;text-decoration:none;">${esc(c.email)}</a>`
+      : '<span style="color:var(--text-sub);font-size:11px;">–</span>';
     const statusBadges = [
       c.banned  ? '<span class="badge badge-danger">Banned</span>'  : '',
       c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '',
       (!c.banned && !c.flagged) ? '<span class="badge badge-success">Active</span>' : '',
     ].filter(Boolean).join(' ');
-    return `<tr>
-      <td style="font-weight:600;">${esc(c.name || '–')}</td>
-      <td>${esc(c.phone || '–')}</td>
-      <td style="font-size:12px;">${esc(c.email || '–')}</td>
-      <td>${c.total_bookings || 0}</td>
-      <td>$${formatMoney(c.total_spent || 0)}</td>
-      <td style="color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};">${c.no_show_count || 0}</td>
+    const noShowStyle = (c.no_show_count || 0) > 0
+      ? 'color:var(--danger);font-weight:700;' : '';
+    return `<tr style="cursor:pointer;" onclick="viewCustomer('${esc(c.id)}')">
+      <td>${nameCell}</td>
+      <td><div>${phoneCell}</div><div style="margin-top:2px;">${emailCell}</div></td>
+      <td style="text-align:center;">${c.total_bookings || 0}</td>
+      <td style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</td>
+      <td style="${noShowStyle}text-align:center;">${c.no_show_count || 0}</td>
       <td style="font-size:12px;">${esc(c.last_booking_date || '–')}</td>
+      <td><span class="badge ${riskBadge[c.risk_flag] || 'badge-success'}" style="text-transform:capitalize;">${esc(c.risk_flag || 'low')}</span></td>
       <td>${statusBadges}</td>
-      <td class="td-actions">
+      <td class="td-actions" onclick="event.stopPropagation()">
         <button class="btn btn-secondary btn-sm" onclick="viewCustomer('${esc(c.id)}')">View</button>
-        ${!c.flagged ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(c.id)}', true)">Flag</button>` : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(c.id)}', false)">Unflag</button>`}
-        ${!c.banned  ? `<button class="btn btn-danger btn-sm"  onclick="banCustomer('${esc(c.id)}', true)">Ban</button>`  : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(c.id)}', false)">Unban</button>`}
+        ${!c.flagged
+          ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(c.id)}', true)">Flag</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(c.id)}', false)">Unflag</button>`}
+        ${!c.banned
+          ? `<button class="btn btn-danger btn-sm" onclick="banCustomer('${esc(c.id)}', true)">Ban</button>`
+          : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(c.id)}', false)">Unban</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -4530,33 +4612,58 @@ function viewCustomer(id) {
   const c = allCustomers.find((x) => x.id === id);
   if (!c) return;
   const riskColors = { low: 'var(--success)', medium: 'var(--warning)', high: 'var(--danger)' };
-  const riskColor = riskColors[c.risk_flag] || 'inherit';
+  const riskColor  = riskColors[c.risk_flag] || 'inherit';
+  const isVip      = (c.total_bookings || 0) >= 3;
+
+  // Header summary bar
+  const statusBadge = c.banned
+    ? '<span class="badge badge-danger">Banned</span>'
+    : c.flagged ? '<span class="badge badge-warning">Flagged</span>'
+    : '<span class="badge badge-success">Active</span>';
+
   document.getElementById('cust-detail-content').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Name</div><div style="font-weight:600;">${esc(c.name || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(c.phone || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div style="font-size:13px;">${esc(c.email || '–')}</div></div>
-      ${c.full_name ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Full Name</div><div>${esc(c.full_name)}</div></div>` : '<div></div>'}
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Risk Level</div><div style="font-weight:600;color:${riskColor};text-transform:capitalize;">${esc(c.risk_flag || 'low')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Bookings</div><div>${c.total_bookings || 0}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Total Spent</div><div style="font-weight:700;">$${formatMoney(c.total_spent || 0)}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${c.banned ? '<span class="badge badge-danger">Banned</span>' : c.flagged ? '<span class="badge badge-warning">Flagged</span>' : '<span class="badge badge-success">Active</span>'}</div></div>
-      ${c.flag_reason ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
-      ${c.ban_reason  ? `<div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Ban Reason</div><div>${esc(c.ban_reason)}</div></div>`  : ''}
-      ${c.notes ? `<div style="grid-column:1/-1"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(c.notes)}</div></div>` : ''}
+    <!-- Summary header -->
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap;">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;flex-shrink:0;">
+        ${esc((c.name || '?')[0].toUpperCase())}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:16px;font-weight:700;">${esc(c.name || '–')}${isVip ? ' <span title="VIP" style="color:gold;">★</span>' : ''}</div>
+        ${c.full_name && c.full_name !== c.name ? `<div style="font-size:12px;color:var(--text-sub);">${esc(c.full_name)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        ${statusBadge}
+        <span class="badge" style="background:${riskColor};color:#fff;text-transform:capitalize;">${esc(c.risk_flag || 'low')} risk</span>
+        ${isVip ? '<span class="badge badge-blue">VIP</span>' : ''}
+      </div>
+    </div>
+
+    <!-- Quick contact row -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      ${c.phone ? `<a href="tel:${esc(c.phone)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">📞 ${esc(c.phone)}</a>` : ''}
+      ${c.email ? `<a href="mailto:${esc(c.email)}" class="btn btn-secondary btn-sm" style="text-decoration:none;">✉️ ${esc(c.email)}</a>` : ''}
+    </div>
+
+    <!-- Detail grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;">
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Driver License</div><div>${esc(c.driver_license || '–')}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Total Bookings</div><div style="font-weight:700;">${c.total_bookings || 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Total Spent</div><div style="font-weight:700;color:var(--primary);">$${formatMoney(c.total_spent || 0)}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">No-Shows</div><div style="font-weight:${(c.no_show_count || 0) > 0 ? '700' : '400'};color:${(c.no_show_count || 0) > 0 ? 'var(--danger)' : 'inherit'};">${c.no_show_count || 0}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">First Booking</div><div>${esc(c.first_booking_date || '–')}</div></div>
+      <div><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Last Booking</div><div>${esc(c.last_booking_date || '–')}</div></div>
+      ${c.flag_reason ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Flag Reason</div><div>${esc(c.flag_reason)}</div></div>` : ''}
+      ${c.ban_reason  ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Ban Reason</div><div>${esc(c.ban_reason)}</div></div>`  : ''}
+      ${c.notes       ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:var(--text-sub);text-transform:uppercase;margin-bottom:2px;">Notes</div><div style="color:var(--text-sub);">${esc(c.notes)}</div></div>` : ''}
     </div>
   `;
   document.getElementById('cust-detail-id').value = id;
-  // Action buttons
   document.getElementById('cust-detail-actions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="viewCustomerBookings('${esc(c.phone || '')}', '${esc(c.name || '')}')">📋 Bookings</button>
     <button class="btn btn-secondary btn-sm" onclick="openEditCustomerModal('${esc(id)}')">✏️ Edit</button>
     ${!c.flagged
       ? `<button class="btn btn-warning btn-sm" onclick="flagCustomer('${esc(id)}', true)">🚩 Flag</button>`
-      : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Remove Flag</button>`}
+      : `<button class="btn btn-secondary btn-sm" onclick="flagCustomer('${esc(id)}', false)">Unflag</button>`}
     ${!c.banned
       ? `<button class="btn btn-danger btn-sm" onclick="banCustomer('${esc(id)}', true)">🚫 Ban</button>`
       : `<button class="btn btn-success btn-sm" onclick="banCustomer('${esc(id)}', false)">✓ Unban</button>`}
@@ -4565,15 +4672,30 @@ function viewCustomer(id) {
   openModal('customer-detail-modal');
 }
 
+/** Navigate to Bookings and filter by this customer's name. */
+function viewCustomerBookings(phone, name) {
+  closeModal('customer-detail-modal');
+  navigate('bookings');
+  const searchEl = document.getElementById('booking-search');
+  if (searchEl) {
+    searchEl.value = name || phone || '';
+    applyBookingFilters();
+  }
+}
+
 function flagCustomer(id, flagged) {
   const reason = flagged ? (prompt('Reason for flagging (optional):') || '') : '';
   apiPost('/api/v2-customers', {
     secret: adminSecret, action: 'update', id,
-    updates: { flagged, flag_reason: reason || null }
+    updates: { flagged, flag_reason: reason || null },
   }).then(() => {
     showToast(flagged ? 'Customer flagged.' : 'Flag removed.', 'success');
     closeModal('customer-detail-modal');
-    loadCustomers();
+    // Update in-memory record immediately so re-render is instant
+    const c = allCustomers.find((x) => x.id === id);
+    if (c) { c.flagged = flagged; c.flag_reason = reason || null; }
+    renderCustomerKpis();
+    applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
 
@@ -4582,11 +4704,14 @@ function banCustomer(id, banned) {
   const reason = banned ? (prompt('Reason for ban (optional):') || '') : '';
   apiPost('/api/v2-customers', {
     secret: adminSecret, action: 'update', id,
-    updates: { banned, ban_reason: reason || null }
+    updates: { banned, ban_reason: reason || null },
   }).then(() => {
     showToast(banned ? 'Customer banned.' : 'Customer unbanned.', 'success');
     closeModal('customer-detail-modal');
-    loadCustomers();
+    const c = allCustomers.find((x) => x.id === id);
+    if (c) { c.banned = banned; c.ban_reason = reason || null; }
+    renderCustomerKpis();
+    applyCustomerFilters();
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
 
