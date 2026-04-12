@@ -112,6 +112,12 @@ export default async function handler(req, res) {
     }
     const trimmedName = name.trim();
 
+    // Validate phone — required so we can contact the renter and link them to a customer record
+    const trimmedPhone = phone && typeof phone === "string" ? phone.trim() : "";
+    if (!trimmedPhone) {
+      return res.status(400).json({ error: "Phone number is required" });
+    }
+
     // Load live pricing from Supabase system_settings (admin-configurable).
     // Falls back to hardcoded _pricing.js defaults when Supabase is unavailable.
     const settings = await loadPricingSettings();
@@ -172,7 +178,7 @@ export default async function handler(req, res) {
         const newCustomer = await stripe.customers.create({
           email,
           name: trimmedName,
-          ...(phone && String(phone).trim() ? { phone: String(phone).trim() } : {}),
+          ...(trimmedPhone ? { phone: trimmedPhone } : {}),
         });
         stripeCustomerId = newCustomer.id;
       }
@@ -215,7 +221,7 @@ export default async function handler(req, res) {
         booking_id:         bookingId,
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
-        renter_phone: phone && String(phone).trim() ? String(phone).trim() : "",
+        renter_phone: trimmedPhone,
         vehicle_id:   assignedVehicleId,
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,

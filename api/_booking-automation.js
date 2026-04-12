@@ -11,7 +11,7 @@
 //
 // Exported helpers:
 //   autoCreateRevenueRecord  — writes to legacy revenue_records table
-//   autoUpsertCustomer       — upserts customer row (keyed by phone)
+//   autoUpsertCustomer       — upserts customer row (keyed by phone; falls back to email)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
 //   autoCreateBlockedDate    — inserts a blocked_dates row for a booking
 //   writeAuditLog            — appends rows to booking_audit_log
@@ -147,22 +147,45 @@ export async function autoCreateRevenueRecord(booking) {
 export async function autoUpsertCustomer(booking, countStats = false, isNoShow = false) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
-  if (!booking.phone) return;
+
+  const hasPhone = !!booking.phone;
+  const hasEmail = !!booking.email && typeof booking.email === "string" && booking.email.trim().length > 0;
+
+  // Need at least one of phone or email to key the customer record.
+  if (!hasPhone && !hasEmail) return;
 
   try {
-    const phone = normalizePhone(String(booking.phone).trim());
+    const phone = hasPhone ? normalizePhone(String(booking.phone).trim()) : null;
+    const email = hasEmail ? booking.email.trim().toLowerCase() : null;
+
     const record = {
       name:       booking.name || "Unknown",
       phone,
-      email:      booking.email || null,
+      email,
       updated_at: new Date().toISOString(),
     };
 
-    const { data: existing } = await sb
-      .from("customers")
-      .select("total_bookings, total_spent, first_booking_date, no_show_count")
-      .eq("phone", phone)
-      .maybeSingle();
+    // ── Look up existing customer (phone first; fall back to email) ──────────
+    let existing = null;
+    let lookupKey = null; // "phone" | "email"
+
+    if (phone) {
+      const { data } = await sb
+        .from("customers")
+        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .eq("phone", phone)
+        .maybeSingle();
+      if (data) { existing = data; lookupKey = "phone"; }
+    }
+
+    if (!existing && email) {
+      const { data } = await sb
+        .from("customers")
+        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .eq("email", email)
+        .maybeSingle();
+      if (data) { existing = data; lookupKey = "email"; }
+    }
 
     /**
      * Fetches revenue-record stats for a phone number.
@@ -185,12 +208,18 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
     }
 
     if (existing) {
-      const updates = { name: record.name, email: record.email, updated_at: record.updated_at };
+      const updates = {
+        name:       record.name,
+        email:      record.email,
+        updated_at: record.updated_at,
+        // If the existing row had no phone but we now have one, fill it in.
+        ...(phone && !existing.phone ? { phone } : {}),
+      };
       if (countStats) {
         // Use SET semantics: recompute totals from revenue_records so this
         // function is idempotent even when called multiple times for the same
         // customer (e.g. repeated scheduler runs or status re-transitions).
-        const stats = await fetchRrStats(phone);
+        const stats = phone ? await fetchRrStats(phone) : null;
         if (stats) {
           updates.total_bookings     = stats.totalBookings;
           updates.total_spent        = stats.totalSpent;
@@ -206,11 +235,13 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
       if (isNoShow) {
         updates.no_show_count = (existing.no_show_count || 0) + 1;
       }
-      await sb.from("customers").update(updates).eq("phone", phone);
+      const filter = lookupKey === "email" ? { email } : { phone };
+      const col    = lookupKey === "email" ? "email" : "phone";
+      await sb.from("customers").update(updates).eq(col, filter[col]);
     } else {
       let totalBookings = 0, totalSpent = 0, firstDate = booking.pickupDate || null, lastDate = booking.pickupDate || null;
       if (countStats) {
-        const stats = await fetchRrStats(phone);
+        const stats = phone ? await fetchRrStats(phone) : null;
         if (stats) {
           totalBookings = stats.totalBookings;
           totalSpent    = stats.totalSpent;
@@ -230,7 +261,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
         last_booking_date:  lastDate,
       });
     }
-    console.log(`_booking-automation: upserted customer ${phone} (${record.name})`);
+    console.log(`_booking-automation: upserted customer ${phone || email} (${record.name})`);
   } catch (err) {
     console.error("_booking-automation autoUpsertCustomer error (non-fatal):", err.message);
   }
@@ -286,7 +317,7 @@ export async function autoUpsertBooking(booking) {
   if (!booking.bookingId) return;
 
   try {
-    // Resolve customer_id by phone
+    // Resolve customer_id — prefer phone lookup; fall back to email.
     let customerId = null;
     if (booking.phone) {
       const phone = String(booking.phone).trim();
@@ -294,6 +325,15 @@ export async function autoUpsertBooking(booking) {
         .from("customers")
         .select("id")
         .eq("phone", phone)
+        .maybeSingle();
+      customerId = cust?.id ?? null;
+    }
+    if (!customerId && booking.email) {
+      const email = String(booking.email).trim().toLowerCase();
+      const { data: cust } = await sb
+        .from("customers")
+        .select("id")
+        .eq("email", email)
         .maybeSingle();
       customerId = cust?.id ?? null;
     }

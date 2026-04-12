@@ -215,7 +215,7 @@ export default async function handler(req, res) {
             if (bookingRefs.length) {
               const { data: rrRows } = await sb
                 .from("revenue_records")
-                .select("booking_id, gross_amount, stripe_fee, stripe_net, payment_method")
+                .select("booking_id, gross_amount, stripe_fee, stripe_net, payment_method, customer_name, customer_phone, customer_email")
                 .in("booking_id", bookingRefs);
               for (const rr of (rrRows || [])) {
                 if (!revenueByBookingId[rr.booking_id]) {
@@ -237,9 +237,9 @@ export default async function handler(req, res) {
               bookingId:       bookingRef,
               vehicleId:       r.vehicle_id,
               vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
-              name:            cust.name  || "",
-              phone:           cust.phone || "",
-              email:           cust.email || "",
+              name:            cust.name  || rr?.customer_name  || "",
+              phone:           cust.phone || rr?.customer_phone || "",
+              email:           cust.email || rr?.customer_email || "",
               pickupDate:      r.pickup_date  || "",
               pickupTime:      r.pickup_time  || "",
               returnDate:      r.return_date  || "",
