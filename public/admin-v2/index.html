@@ -2427,16 +2427,12 @@ function renderDashboard(data) {
   const badge = document.getElementById('pending-badge');
   if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; } else { badge.style.display = 'none'; }
 
-  // Net Revenue = Gross Revenue − known Stripe fees (correct even with partial reconciliation).
-  // totalStripeNet only covers already-reconciled records (a subset), so using it directly
-  // would show a misleadingly low number when reconciliation is incomplete.
-  const netValue  = kpi.totalRevenue - (kpi.totalStripeFees || 0);
+  // Net Revenue = Gross Revenue − Total Expenses (operational costs deducted).
+  const netValue  = kpi.totalRevenue - (kpi.totalExpenses || 0);
   const netLabel  = 'Net Revenue';
-  const netSub    = (kpi.totalStripeFees || 0) > 0
-    ? `After $${formatMoney(kpi.totalStripeFees)} Stripe fees`
-    : kpi.reconciledCount > 0
-      ? 'Stripe payments pending — run ⚡ Sync'
-      : 'Run ⚡ Sync from Stripe for net';
+  const netSub    = (kpi.totalExpenses || 0) > 0
+    ? `After $${formatMoney(kpi.totalExpenses)} in expenses`
+    : 'No expenses recorded';
   const profitColor    = (kpi.netProfit || 0) < 0 ? 'color:var(--danger)' : '';
 
   document.getElementById('kpi-grid').innerHTML = `
@@ -2462,7 +2458,7 @@ function renderDashboard(data) {
       <div class="kpi-icon ${(kpi.netProfit || 0) >= 0 ? 'green' : 'red'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
       <div class="kpi-label">Net Profit</div>
       <div class="kpi-value" style="${profitColor}">$${formatMoney(kpi.netProfit || 0)}</div>
-      <div class="kpi-change">Revenue − Expenses</div>
+      <div class="kpi-change">Net Revenue − Stripe fees</div>
     </div>
   `;
   // Secondary row: bookings + availability
