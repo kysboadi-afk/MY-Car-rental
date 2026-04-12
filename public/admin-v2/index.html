@@ -2426,13 +2426,16 @@ function renderDashboard(data) {
   const badge = document.getElementById('pending-badge');
   if (pendingCount > 0) { badge.style.display = ''; badge.textContent = pendingCount; } else { badge.style.display = 'none'; }
 
-  // Determine which net to show: prefer Stripe-reconciled net, fall back to gross
-  const hasStripeData  = kpi.reconciledCount > 0;
-  const netLabel       = hasStripeData ? 'Net Revenue' : 'Gross Revenue';
-  const netValue       = hasStripeData ? kpi.totalStripeNet : kpi.totalRevenue;
-  const netSub         = hasStripeData
+  // Net Revenue = Gross Revenue − known Stripe fees (correct even with partial reconciliation).
+  // totalStripeNet only covers already-reconciled records (a subset), so using it directly
+  // would show a misleadingly low number when reconciliation is incomplete.
+  const netValue  = kpi.totalRevenue - (kpi.totalStripeFees || 0);
+  const netLabel  = 'Net Revenue';
+  const netSub    = (kpi.totalStripeFees || 0) > 0
     ? `After $${formatMoney(kpi.totalStripeFees)} Stripe fees`
-    : 'Run ⚡ Sync from Stripe for net';
+    : kpi.reconciledCount > 0
+      ? 'Stripe payments pending — run ⚡ Sync'
+      : 'Run ⚡ Sync from Stripe for net';
   const profitColor    = (kpi.netProfit || 0) < 0 ? 'color:var(--danger)' : '';
 
   document.getElementById('kpi-grid').innerHTML = `

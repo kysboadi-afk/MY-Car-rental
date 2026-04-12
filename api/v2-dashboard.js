@@ -279,11 +279,13 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       kpis: {
-        totalRevenue:        Math.round(totalRevenue     * 100) / 100,
-        totalExpenses:       Math.round(totalExpenses    * 100) / 100,
-        netProfit:           Math.round((totalRevenue - totalExpenses) * 100) / 100,
-        totalStripeFees:     Math.round(totalStripeFees  * 100) / 100,
-        totalStripeNet:      Math.round(totalStripeNet   * 100) / 100,
+        totalRevenue:        Math.round(totalRevenue                           * 100) / 100,
+        totalExpenses:       Math.round(totalExpenses                          * 100) / 100,
+        // netRevenue = gross − known Stripe fees (accurate even with partial reconciliation)
+        netRevenue:          Math.round((totalRevenue - totalStripeFees)       * 100) / 100,
+        netProfit:           Math.round((totalRevenue - totalStripeFees - totalExpenses) * 100) / 100,
+        totalStripeFees:     Math.round(totalStripeFees                        * 100) / 100,
+        totalStripeNet:      Math.round(totalStripeNet                         * 100) / 100,
         reconciledCount,
         activeBookings,
         availableVehicles,
