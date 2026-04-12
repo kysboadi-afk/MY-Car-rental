@@ -2458,7 +2458,7 @@ function renderDashboard(data) {
     stripe_fee:   (kpi.totalRevenue  || 0) - (kpi.netRevenue || 0),
     amount_net:   kpi.netRevenue     || 0,
     expenses:     kpi.totalExpenses  || 0,
-  }]);
+  }], 'Dashboard');
   const profitColor = fin.profit < 0 ? 'color:var(--danger)' : '';
   const netSub      = fin.expenses > 0
     ? `After $${formatMoney(fin.expenses)} in expenses`
@@ -4130,11 +4130,18 @@ function showToast(msg, type = 'info') {
 // Fleet, and Customers.  Every record must be normalised to this shape first:
 //   { amount_gross, stripe_fee, amount_net, expenses }
 // No other section is allowed to compute its own sums.
-function calcFinancials(records) {
+function calcFinancials(records, label) {
   const amount_gross = records.reduce((s, r) => s + Number(r.amount_gross || 0), 0);
   const stripe_fee   = records.reduce((s, r) => s + Number(r.stripe_fee   || 0), 0);
   const amount_net   = records.reduce((s, r) => s + Number(r.amount_net   || 0), 0);
   const expenses     = records.reduce((s, r) => s + Number(r.expenses     || 0), 0);
+  // Temporary diagnostic logging — remove once cross-page totals are confirmed.
+  console.log(`[calcFinancials] ${label || 'unknown'}:`, {
+    records:      records.length,
+    amount_gross: Math.round(amount_gross * 100) / 100,
+    amount_net:   Math.round(amount_net   * 100) / 100,
+    expenses:     Math.round(expenses     * 100) / 100,
+  });
   return { amount_gross, stripe_fee, amount_net, expenses, profit: amount_net - expenses };
 }
 
@@ -4337,9 +4344,14 @@ function loadRevenue() {
 }
 
 function renderRevenueSummary() {
-  const active  = allRevenueRecords.filter((r) => !r.is_cancelled && !r.is_no_show);
+  // Only include paid rental records — excludes refunded, pending, partial,
+  // cancelled, and no-show rows.  This matches the server-side filters used by
+  // the Dashboard and Fleet APIs so cross-page totals are identical.
+  const active  = allRevenueRecords.filter(
+    (r) => r.payment_status === 'paid' && !r.is_cancelled && !r.is_no_show,
+  );
   // All totals via the shared financial engine — no inline arithmetic.
-  const fin     = calcFinancials(active.map(normalizeRevenueRecord));
+  const fin     = calcFinancials(active.map(normalizeRevenueRecord), 'Revenue');
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
   const reconciled   = active.filter((r) => r.stripe_fee != null).length;
@@ -4633,7 +4645,7 @@ function loadAnalytics() {
 function renderAnalytics(fleet, trend) {
   // KPI grid — all totals via the shared financial engine.
   const vehicles = Object.values(fleet);
-  const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle));
+  const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle), 'Fleet');
   const totalBookings = vehicles.reduce((s, v) => s + v.totalBookings, 0);
   const avgUtil   = vehicles.length
     ? Math.round(vehicles.reduce((s, v) => s + v.utilizationRate, 0) / vehicles.length * 10) / 10
@@ -4729,7 +4741,7 @@ function renderCustomerKpis() {
   const banned       = allCustomers.filter((c) => c.banned).length;
   const highRisk     = allCustomers.filter((c) => c.risk_flag === 'high').length;
   // All financial totals via the shared financial engine.
-  const fin          = calcFinancials(allCustomers.map(normalizeCustomer));
+  const fin          = calcFinancials(allCustomers.map(normalizeCustomer), 'Customers');
   const vip          = allCustomers.filter((c) => computeCustomerTier(c) === 'vip').length;
   const unprofitable = allCustomers.filter((c) => computeCustomerTier(c) === 'unprofitable').length;
 
