@@ -281,12 +281,12 @@ export default async function handler(req, res) {
       if (r.payment_intent_id) byPIId.set(r.payment_intent_id, r);
       if (r.booking_id)        byBookingId.set(r.booking_id, r);
       if (r.stripe_charge_id)  byChargeId.set(r.stripe_charge_id, r);
-      if (
-        r.customer_email &&
-        r.gross_amount != null &&
-        !r.payment_intent_id // only index records lacking payment_intent_id; records that
-                             // already have one will be matched via byPIId above
-      ) {
+      // Index ALL records with customer_email+amount for the email+amount fallback.
+      // Records that already have a payment_intent_id are still preferred via byPIId
+      // (matched first above), but if that PI ID lookup fails — e.g. the stored ID is
+      // stale/wrong — the email+amount fallback will still find and update the record.
+      // The matchedRecordIds set prevents the same record from being claimed twice.
+      if (r.customer_email && r.gross_amount != null) {
         const key = `${r.customer_email.toLowerCase()}:${Number(r.gross_amount).toFixed(2)}`;
         if (!byEmailAndAmount.has(key)) byEmailAndAmount.set(key, r);
       }
