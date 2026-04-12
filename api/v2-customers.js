@@ -289,12 +289,18 @@ export default async function handler(req, res) {
               } else {
                 // Clean up stale duplicate records whose phone was not already
                 // in normalized form (e.g. "3463814616" now that "+13463814616"
-                // is the canonical record).
+                // is the canonical record). Only query customers with non-normalized
+                // phones (those not already in E.164 / "+1…" format) to keep the
+                // query small.
                 const normalizedPhones = new Set(upserts.map((u) => u.phone));
-                const { data: allCustomers } = await sb.from("customers").select("id, phone").not("phone", "is", null);
-                if (allCustomers) {
-                  const staleIds = allCustomers
-                    .filter((c) => !normalizedPhones.has(c.phone) && normalizedPhones.has(normalizePhone(c.phone)))
+                const { data: nonNormCustomers } = await sb
+                  .from("customers")
+                  .select("id, phone")
+                  .not("phone", "is", null)
+                  .not("phone", "like", "+%");
+                if (nonNormCustomers) {
+                  const staleIds = nonNormCustomers
+                    .filter((c) => normalizedPhones.has(normalizePhone(c.phone)))
                     .map((c) => c.id);
                   if (staleIds.length > 0) {
                     await sb.from("customers").delete().in("id", staleIds);
