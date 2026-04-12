@@ -4130,11 +4130,16 @@ function showToast(msg, type = 'info') {
 // Fleet, and Customers.  Every record must be normalised to this shape first:
 //   { amount_gross, stripe_fee, amount_net, expenses }
 // No other section is allowed to compute its own sums.
-function calcFinancials(records, label) {
+// opts.totalExpenses — when provided, overrides the per-record expenses sum so
+// callers that track expenses separately (e.g. Revenue page) don't need to
+// inject synthetic records just to carry the expense total.
+function calcFinancials(records, label, opts = {}) {
   const amount_gross = records.reduce((s, r) => s + Number(r.amount_gross || 0), 0);
   const stripe_fee   = records.reduce((s, r) => s + Number(r.stripe_fee   || 0), 0);
   const amount_net   = records.reduce((s, r) => s + Number(r.amount_net   || 0), 0);
-  const expenses     = records.reduce((s, r) => s + Number(r.expenses     || 0), 0);
+  const expenses     = opts.totalExpenses !== undefined
+    ? Math.round(Number(opts.totalExpenses) * 100) / 100
+    : records.reduce((s, r) => s + Number(r.expenses || 0), 0);
   // Temporary diagnostic logging — remove once cross-page totals are confirmed.
   console.log(`[calcFinancials] ${label || 'unknown'}:`, {
     records:      records.length,
@@ -4363,12 +4368,9 @@ function renderRevenueSummary() {
     (r) => r.payment_status === 'paid' && !r.is_cancelled && !r.is_no_show,
   );
   // All totals via the shared financial engine — no inline arithmetic.
-  // Inject total expenses so Revenue matches Dashboard/Fleet profit figures.
+  // Pass totalExpenses directly so no synthetic record is needed.
   const totalExpenses = allExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const fin     = calcFinancials([
-    ...active.map(normalizeRevenueRecord),
-    ...(totalExpenses > 0 ? [{ amount_gross: 0, stripe_fee: 0, amount_net: 0, expenses: totalExpenses }] : []),
-  ], 'Revenue');
+  const fin     = calcFinancials(active.map(normalizeRevenueRecord), 'Revenue', { totalExpenses });
   const refunds = active.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
   const deposits = allRevenueRecords.reduce((s, r) => s + Number(r.deposit_amount || 0), 0);
   const reconciled   = active.filter((r) => r.stripe_fee != null).length;
