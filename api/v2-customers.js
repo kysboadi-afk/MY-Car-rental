@@ -22,6 +22,30 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings, normalizePhone } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { loadExpenses } from "./_expenses.js";
+
+/**
+ * Compute the number of rental days between two date strings.
+ * Defaults to 1 if dates are missing or the result is <= 0.
+ */
+function computeRentalDays(pickup, returnDate) {
+  if (!pickup || !returnDate) return 1;
+  const diff = Math.ceil((new Date(returnDate) - new Date(pickup)) / 86400000);
+  return diff > 0 ? diff : 1;
+}
+
+/**
+ * Derive a customer tier from financial and risk data.
+ * Returns one of: 'vip' | 'standard' | 'risky' | 'unprofitable'
+ */
+function computeCustomerTier({ totalProfit, totalBookings, riskFlag, flagged, banned, noShowCount }) {
+  if (banned)                                    return "risky";
+  if (totalProfit < 0)                           return "unprofitable";
+  if (flagged || riskFlag === "high" || (noShowCount || 0) >= 2) return "risky";
+  if (totalProfit >= 500 && totalBookings >= 3)  return "vip";
+  if (totalBookings >= 1 && totalProfit >= 0)    return "standard";
+  return "standard";
+}
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
@@ -245,7 +269,7 @@ export default async function handler(req, res) {
         try {
           const { data: rrData, error: rrError } = await sb
             .from("revenue_records")
-            .select("customer_phone, customer_name, customer_email, gross_amount, refund_amount, is_cancelled, pickup_date");
+            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, refund_amount, is_cancelled, pickup_date, return_date, vehicle_id");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
             // Group revenue records by normalized customer_phone to prevent
@@ -263,20 +287,80 @@ export default async function handler(req, res) {
               byPhone[normPhone].records.push(r);
             }
 
+            // Pre-compute total rental days per vehicle across ALL records (for expense attribution).
+            const vehicleTotalDays = {};
+            for (const r of rrData) {
+              if (!r.vehicle_id || r.is_cancelled) continue;
+              vehicleTotalDays[r.vehicle_id] = (vehicleTotalDays[r.vehicle_id] || 0)
+                + computeRentalDays(r.pickup_date, r.return_date);
+            }
+
+            // Load vehicle expenses for profitability attribution.
+            const expensesByVehicle = {};
+            try {
+              const { data: expData } = await loadExpenses();
+              for (const exp of (expData || [])) {
+                if (!exp.vehicle_id) continue;
+                expensesByVehicle[exp.vehicle_id] = (expensesByVehicle[exp.vehicle_id] || 0)
+                  + Number(exp.amount || 0);
+              }
+            } catch (expErr) {
+              console.warn("v2-customers sync: could not load expenses for attribution:", expErr.message);
+            }
+
             const upserts = [];
             for (const [phone, cust] of Object.entries(byPhone)) {
               const valid       = cust.records.filter((r) => !r.is_cancelled);
-              const totalSpent  = Math.round(valid.reduce((s, r) => s + Number(r.gross_amount || 0) - Number(r.refund_amount || 0), 0) * 100) / 100;
               const pickupDates = cust.records.map((r) => r.pickup_date).filter(Boolean).sort();
+
+              // Financial totals
+              const grossRevenue  = valid.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
+              const stripeFees    = valid.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
+              const refunds       = valid.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
+              const netRevenue    = grossRevenue - stripeFees - refunds;
+              // total_spent kept for backwards compatibility (= net after refunds, no Stripe fee deduction)
+              const totalSpent    = Math.round((grossRevenue - refunds) * 100) / 100;
+
+              // Rental-days per vehicle for this customer (used for expense attribution)
+              const custVehicleDays = {};
+              for (const r of valid) {
+                if (!r.vehicle_id) continue;
+                custVehicleDays[r.vehicle_id] = (custVehicleDays[r.vehicle_id] || 0)
+                  + computeRentalDays(r.pickup_date, r.return_date);
+              }
+              const totalRentalDays = Object.values(custVehicleDays).reduce((s, d) => s + d, 0);
+
+              // Pro-rate vehicle expenses by this customer's share of each vehicle's rental days
+              let associatedExpenses = 0;
+              for (const [vid, custDays] of Object.entries(custVehicleDays)) {
+                const totalDays     = vehicleTotalDays[vid] || custDays;
+                const fraction      = custDays / totalDays;
+                associatedExpenses += fraction * (expensesByVehicle[vid] || 0);
+              }
+
+              const totalProfit       = netRevenue - associatedExpenses;
+              const bookingCount      = valid.length;
+              const profitPerBooking  = bookingCount  > 0 ? totalProfit / bookingCount  : 0;
+              const avgProfitPerDay   = totalRentalDays > 0 ? totalProfit / totalRentalDays : 0;
+              const lifetimeValue     = netRevenue; // standard LTV = cumulative net revenue
+
               upserts.push({
-                name:               cust.name,
+                name:                        cust.name,
                 phone,
-                email:              cust.email,
-                total_bookings:     valid.length,
-                total_spent:        totalSpent,
-                first_booking_date: pickupDates[0] || null,
-                last_booking_date:  pickupDates[pickupDates.length - 1] || null,
-                updated_at:         new Date().toISOString(),
+                email:                       cust.email,
+                total_bookings:              bookingCount,
+                total_spent:                 totalSpent,
+                total_gross_revenue:         Math.round(grossRevenue       * 100) / 100,
+                total_stripe_fees:           Math.round(stripeFees         * 100) / 100,
+                total_net_revenue:           Math.round(netRevenue         * 100) / 100,
+                associated_vehicle_expenses: Math.round(associatedExpenses * 100) / 100,
+                total_profit:                Math.round(totalProfit        * 100) / 100,
+                profit_per_booking:          Math.round(profitPerBooking   * 100) / 100,
+                avg_profit_per_day:          Math.round(avgProfitPerDay    * 100) / 100,
+                lifetime_value:              Math.round(lifetimeValue      * 100) / 100,
+                first_booking_date:          pickupDates[0] || null,
+                last_booking_date:           pickupDates[pickupDates.length - 1] || null,
+                updated_at:                  new Date().toISOString(),
               });
             }
 
@@ -346,14 +430,23 @@ export default async function handler(req, res) {
         const noShowBookings = c.bookings.filter((b) => b.isNoShow === true || b.no_show === true);
         const pickupDates    = c.bookings.map((b) => b.pickupDate).filter(Boolean).sort();
         const spent = paidBookings.reduce((s, b) => s + (Number(b.amountPaid || 0)), 0);
+        const totalRentalDays = paidBookings.reduce((s, b) => s + computeRentalDays(b.pickupDate, b.returnDate), 0);
         const record = {
-          name:               c.name  || "Unknown",
-          email:              c.email || null,
-          total_bookings:     paidBookings.length,
-          total_spent:        Math.round(spent * 100) / 100,
-          no_show_count:      noShowBookings.length,
-          first_booking_date: pickupDates[0]  || null,
-          last_booking_date:  pickupDates[pickupDates.length - 1] || null,
+          name:                        c.name  || "Unknown",
+          email:                       c.email || null,
+          total_bookings:              paidBookings.length,
+          total_spent:                 Math.round(spent * 100) / 100,
+          total_gross_revenue:         Math.round(spent * 100) / 100,
+          total_stripe_fees:           0,
+          total_net_revenue:           Math.round(spent * 100) / 100,
+          associated_vehicle_expenses: 0,
+          total_profit:                Math.round(spent * 100) / 100,
+          profit_per_booking:          paidBookings.length > 0 ? Math.round((spent / paidBookings.length) * 100) / 100 : 0,
+          avg_profit_per_day:          totalRentalDays > 0 ? Math.round((spent / totalRentalDays) * 100) / 100 : 0,
+          lifetime_value:              Math.round(spent * 100) / 100,
+          no_show_count:               noShowBookings.length,
+          first_booking_date:          pickupDates[0]  || null,
+          last_booking_date:           pickupDates[pickupDates.length - 1] || null,
           updated_at:         new Date().toISOString(),
         };
         if (c.phone) {
