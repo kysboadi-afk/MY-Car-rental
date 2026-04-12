@@ -55,9 +55,24 @@ export default async function handler(req, res) {
   }
 
   try {
+    const sb = getSupabaseAdmin();
+
+    // Load expenses: prefer Supabase (matches the write path in add-expense.js),
+    // fall back to GitHub expenses.json when Supabase is unavailable or errors.
+    async function fetchExpenses() {
+      if (sb) {
+        const { data, error } = await sb.from("expenses").select("*");
+        if (!error && data) {
+          return { data };
+        }
+        console.warn("v2-dashboard: Supabase expenses query failed, falling back to GitHub:", error?.message);
+      }
+      return loadExpenses();
+    }
+
     const [{ data: vehicles }, { data: expenses }, { data: bookingsData }] = await Promise.all([
       loadVehicles(),
-      loadExpenses(),
+      fetchExpenses(),
       loadBookings(),
     ]);
 
@@ -101,8 +116,6 @@ export default async function handler(req, res) {
     // Per-vehicle revenue from revenue_records (keyed by vehicle_id)
     const rrByVehicle = {}; // { [vehicleId]: { gross, net, count } }
     let financialsFromRevRecords = false;
-
-    const sb = getSupabaseAdmin();
 
     if (sb) {
       try {
@@ -308,6 +321,7 @@ export default async function handler(req, res) {
 
     // Net profit = net revenue − total expenses
     const netProfit = netRevenue - totalExpenses;
+    console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
 
     return res.status(200).json({
       kpis: {
