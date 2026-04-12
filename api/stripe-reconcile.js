@@ -68,15 +68,19 @@ function extractFields(pi) {
     charge?.billing_details?.email ||
     null;
 
+  // booking_id stored in Stripe metadata by create-payment-intent.js
+  const metadataBookingId = pi.metadata?.booking_id || null;
+
   return {
-    payment_intent_id: pi.id,
-    stripe_charge_id:  chargeId,
-    amount_gross:      amountGross,
-    stripe_fee:        stripeFee,
-    stripe_net:        stripeNet,
-    created_at_unix:   pi.created,
-    customer_email:    email,
-    status:            pi.status,
+    payment_intent_id:   pi.id,
+    stripe_charge_id:    chargeId,
+    amount_gross:        amountGross,
+    stripe_fee:          stripeFee,
+    stripe_net:          stripeNet,
+    created_at_unix:     pi.created,
+    customer_email:      email,
+    status:              pi.status,
+    metadata_booking_id: metadataBookingId,
   };
 }
 
@@ -146,7 +150,8 @@ export default async function handler(req, res) {
     try {
       const { data: rows, error } = await sb
         .from("revenue_records")
-        .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status");
+        .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status")
+        .eq("sync_excluded", false);
       if (error) throw error;
       return res.status(200).json({ analytics: buildAnalytics(rows || []) });
     } catch (err) {
@@ -158,12 +163,13 @@ export default async function handler(req, res) {
   // ── CASH UPDATE — set stripe_fee=0, stripe_net=gross_amount for cash rows ───
   if (action === "cash_update") {
     try {
-      // Fetch all cash/manual records that haven't been reconciled yet
+      // Fetch all cash/manual records that haven't been reconciled yet (exclude soft-deleted)
       const { data: cashRows, error: fetchErr } = await sb
         .from("revenue_records")
         .select("id, gross_amount")
         .in("payment_method", ["cash", "zelle", "venmo", "manual", "external"])
-        .is("stripe_fee", null);
+        .is("stripe_fee", null)
+        .eq("sync_excluded", false);
 
       if (fetchErr) throw fetchErr;
 
@@ -233,10 +239,11 @@ export default async function handler(req, res) {
     const stripeTotalFees  = succeededPayments.reduce((s, p) => s + (p.stripe_fee ?? 0), 0);
     const stripeTotalNet   = succeededPayments.reduce((s, p) => s + (p.stripe_net ?? p.amount_gross), 0);
 
-    // STEP 4: Load all revenue_records to match against
+    // STEP 4: Load all revenue_records to match against (exclude soft-deleted rows)
     const { data: dbRecords, error: dbErr } = await sb
       .from("revenue_records")
-      .select("id, booking_id, payment_intent_id, stripe_charge_id, gross_amount, customer_email, pickup_date, created_at, stripe_fee, stripe_net");
+      .select("id, booking_id, payment_intent_id, stripe_charge_id, gross_amount, customer_email, pickup_date, created_at, stripe_fee, stripe_net")
+      .eq("sync_excluded", false);
     if (dbErr) throw dbErr;
 
     // Build lookup maps for matching
@@ -276,12 +283,15 @@ export default async function handler(req, res) {
 
     for (const payment of succeededPayments) {
       // STEP 4: Match by payment_intent_id (primary), then charge_id,
-      // then booking_id (for extensions), then email+amount (fallback for
-      // records created before PI IDs were stored).
+      // then booking_id (for extensions where booking_id === PI ID),
+      // then metadata.booking_id (stored by create-payment-intent.js —
+      //   always a "bk-…" string, never a "pi_…" PI ID, so no key collision),
+      // then email+amount (fallback for records created before PI IDs were stored).
       let matchedRecord =
         byPIId.get(payment.payment_intent_id) ||
         (payment.stripe_charge_id ? byChargeId.get(payment.stripe_charge_id) : null) ||
         byBookingId.get(payment.payment_intent_id) ||
+        (payment.metadata_booking_id ? byBookingId.get(payment.metadata_booking_id) : null) ||
         null;
 
       // Email+amount fallback: only used when primary keys failed and the Stripe
@@ -374,7 +384,8 @@ export default async function handler(req, res) {
     // STEP 8: Rebuild analytics from updated DB
     const { data: updatedRows } = await sb
       .from("revenue_records")
-      .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status");
+      .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status")
+      .eq("sync_excluded", false);
 
     const analytics = buildAnalytics(updatedRows || []);
 

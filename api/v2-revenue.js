@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
-          let q = sb.from("revenue_records").select("*").order("created_at", { ascending: false });
+          let q = sb.from("revenue_records").select("*").eq("sync_excluded", false).order("created_at", { ascending: false });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       }
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      let records = ghRecords;
+      let records = ghRecords.filter((r) => !r.sync_excluded);
       if (body.vehicleId)  records = records.filter((r) => r.vehicle_id    === body.vehicleId);
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
@@ -286,23 +286,28 @@ export default async function handler(req, res) {
     }
 
     // ── DELETE ──────────────────────────────────────────────────────────────
+    // Soft-delete: mark sync_excluded=true so the record is hidden from the
+    // revenue list but its booking_id remains in the table.  This prevents
+    // "Sync from Bookings" from recreating the record on the next run.
     if (action === "delete") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       if (sb) {
-        const { error } = await sb.from("revenue_records").delete().eq("id", body.id);
+        const { error } = await sb.from("revenue_records")
+          .update({ sync_excluded: true, updated_at: new Date().toISOString() })
+          .eq("id", body.id);
         if (!error) return res.status(200).json({ success: true });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue delete: revenue_records table missing, falling back to GitHub");
       }
-      // GitHub fallback
+      // GitHub fallback — mark sync_excluded instead of splicing
       await updateJsonFileWithRetry({
         load:    loadRecordsFromGitHub,
         apply:   (data) => {
           const idx = data.findIndex((r) => r.id === body.id);
-          if (idx !== -1) data.splice(idx, 1);
+          if (idx !== -1) data[idx] = { ...data[idx], sync_excluded: true, updated_at: new Date().toISOString() };
         },
         save:    saveRecordsToGitHub,
-        message: `v2: Delete revenue record ${body.id}`,
+        message: `v2: Exclude revenue record ${body.id} from sync`,
       });
       return res.status(200).json({ success: true });
     }
@@ -349,7 +354,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ summary: rows, totals });
           }
           // View may not exist — try raw table
-          const { data: recs, error: err2 } = await sb.from("revenue_records").select("*");
+          const { data: recs, error: err2 } = await sb.from("revenue_records").select("*").eq("sync_excluded", false);
           if (!err2) return res.status(200).json(aggregateRecords(recs));
           console.error("v2-revenue summary error:", err2.message);
         } catch (sumErr) {
@@ -358,7 +363,7 @@ export default async function handler(req, res) {
       }
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      return res.status(200).json(aggregateRecords(ghRecords));
+      return res.status(200).json(aggregateRecords(ghRecords.filter((r) => !r.sync_excluded)));
     }
 
     // ── SYNC — build/refresh revenue_records from bookings.json ─────────────
