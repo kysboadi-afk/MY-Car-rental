@@ -194,6 +194,10 @@ export default async function handler(req, res) {
           net_revenue:         Math.round(net      * 100) / 100,
           expenses:            Math.round(vExpenses * 100) / 100,
           profit:              Math.round((net - vExpenses) * 100) / 100,
+          // Operational ROI = profit / expenses * 100 (null when no expenses recorded)
+          roi:                 vExpenses > 0
+            ? Math.round(((net - vExpenses) / vExpenses) * 10000) / 100
+            : null,
           // Legacy aliases so existing admin UI fields keep working
           revenue:             Math.round(gross    * 100) / 100,
           netProfit:           Math.round((net - vExpenses) * 100) / 100,

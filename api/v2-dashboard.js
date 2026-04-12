@@ -211,14 +211,15 @@ export default async function handler(req, res) {
 
       const vNetProfit = vNet - vExpenses;
       vehicleStats[vehicleId] = {
-        name:          vehicle.vehicle_name,
-        status:        vehicle.status,
-        revenue:       Math.round(vGross     * 100) / 100,
-        expenses:      Math.round(vExpenses  * 100) / 100,
-        netProfit:     Math.round(vNetProfit * 100) / 100,
+        name:             vehicle.vehicle_name,
+        status:           vehicle.status,
+        revenue:          Math.round(vGross     * 100) / 100,
+        expenses:         Math.round(vExpenses  * 100) / 100,
+        netProfit:        Math.round(vNetProfit * 100) / 100,
         purchasePrice,
-        roi: purchasePrice > 0 ? Math.round((vNetProfit / purchasePrice) * 10000) / 100 : null,
-        bookingCount:  vBookingCount,
+        roi:              purchasePrice > 0 ? Math.round((vNetProfit / purchasePrice) * 10000) / 100 : null,
+        operationalROI:   vExpenses > 0 ? Math.round((vNetProfit / vExpenses) * 10000) / 100 : null,
+        bookingCount:     vBookingCount,
       };
     }
 
@@ -246,9 +247,13 @@ export default async function handler(req, res) {
           if (vehicleStats[vid]) {
             vehicleStats[vid].revenue   = Math.round((vehicleStats[vid].revenue   + amount) * 100) / 100;
             vehicleStats[vid].netProfit = Math.round((vehicleStats[vid].netProfit + amount) * 100) / 100;
-            const pp = vehicleStats[vid].purchasePrice || 0;
+            const pp  = vehicleStats[vid].purchasePrice || 0;
+            const exp = vehicleStats[vid].expenses      || 0;
             vehicleStats[vid].roi = pp > 0
               ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
+              : null;
+            vehicleStats[vid].operationalROI = exp > 0
+              ? Math.round((vehicleStats[vid].netProfit / exp) * 10000) / 100
               : null;
           }
         }
@@ -321,6 +326,10 @@ export default async function handler(req, res) {
 
     // Net profit = net revenue − total expenses
     const netProfit = netRevenue - totalExpenses;
+    // Operational ROI = profit / expenses * 100 (null when no expenses recorded)
+    const operationalROI = totalExpenses > 0
+      ? Math.round((netProfit / totalExpenses) * 10000) / 100
+      : null;
     console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
 
     return res.status(200).json({
@@ -330,6 +339,7 @@ export default async function handler(req, res) {
         netRevenue:      Math.round(netRevenue      * 100) / 100,
         netProfit:       Math.round(netProfit       * 100) / 100,
         totalStripeFees: Math.round(totalStripeFees * 100) / 100,
+        operationalROI,
         reconciledCount,
         activeBookings,
         availableVehicles,
