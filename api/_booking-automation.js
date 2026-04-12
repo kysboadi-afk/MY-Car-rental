@@ -104,7 +104,7 @@ export async function autoCreateRevenueRecord(booking) {
       override_by_admin:   false,
       // Stripe fee data: cash bookings have no fee; Stripe bookings get
       // populated later by stripe-reconcile.js which expands balance_transaction.
-      stripe_fee: isCash ? 0    : null,
+      stripe_fee: isCash ? 0 : null,
       stripe_net: isCash ? gross : null,
     };
 
