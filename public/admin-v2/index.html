@@ -1534,7 +1534,7 @@
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Vehicle</th><th>Bookings</th><th>Revenue</th><th>Expenses</th><th>Net Profit</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
+                  <tr><th>Vehicle</th><th>Bookings</th><th>Gross Revenue</th><th>Stripe Fees</th><th>Net Revenue</th><th>Expenses</th><th>Profit</th><th>Utilization</th><th>Avg/Booking</th><th>Status</th></tr>
                 </thead>
                 <tbody id="analytics-tbody"></tbody>
               </table>
@@ -4424,9 +4424,11 @@ function loadAnalytics() {
 }
 
 function renderAnalytics(fleet, trend) {
-  // KPI grid
+  // KPI grid — use Stripe-adjusted financial fields from revenue_records
   const vehicles = Object.values(fleet);
-  const totalRev  = vehicles.reduce((s, v) => s + v.revenue, 0);
+  const totalGross    = vehicles.reduce((s, v) => s + (v.gross_revenue ?? v.revenue ?? 0), 0);
+  const totalFees     = vehicles.reduce((s, v) => s + (v.total_fees   ?? 0), 0);
+  const totalNet      = vehicles.reduce((s, v) => s + (v.net_revenue  ?? v.revenue ?? 0), 0);
   const totalBookings = vehicles.reduce((s, v) => s + v.totalBookings, 0);
   const avgUtil   = vehicles.length
     ? Math.round(vehicles.reduce((s, v) => s + v.utilizationRate, 0) / vehicles.length * 10) / 10
@@ -4436,14 +4438,18 @@ function renderAnalytics(fleet, trend) {
   const kpiGrid = document.getElementById('analytics-kpi-grid');
   if (kpiGrid) {
     kpiGrid.innerHTML = [
-      { label: 'Total Fleet Revenue', value: '$' + formatMoney(totalRev),      icon: '💰' },
-      { label: 'Total Bookings',      value: totalBookings,                     icon: '📋' },
-      { label: 'Avg Utilization',     value: avgUtil + '%',                     icon: '📊' },
-      { label: 'Vehicles Active Now', value: activeNow + ' / ' + vehicles.length, icon: '🚗' },
+      { label: 'Gross Revenue',       value: '$' + formatMoney(totalGross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
+      { label: 'Stripe Fees',         value: '$' + formatMoney(totalFees),  icon: '💳', sub: 'Total processing fees' },
+      { label: 'Net Revenue',         value: '$' + formatMoney(totalNet),   icon: '✅', sub: 'After Stripe fees' },
+      { label: 'Avg Utilization',     value: avgUtil + '%',                 icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
     ].map((k) => `
       <div class="kpi-card">
         <div class="kpi-icon">${k.icon}</div>
-        <div class="kpi-body"><div class="kpi-value">${esc(String(k.value))}</div><div class="kpi-label">${esc(k.label)}</div></div>
+        <div class="kpi-body">
+          <div class="kpi-value">${esc(String(k.value))}</div>
+          <div class="kpi-label">${esc(k.label)}</div>
+          ${k.sub ? `<div class="kpi-sub" style="font-size:11px;color:var(--text-sub);margin-top:2px;">${esc(k.sub)}</div>` : ''}
+        </div>
       </div>
     `).join('');
   }
@@ -4483,13 +4489,19 @@ function renderAnalytics(fleet, trend) {
   const tbody = document.getElementById('analytics-tbody');
   if (tbody) {
     tbody.innerHTML = vehicles.map((v) => {
-      const utilColor = v.utilizationRate >= 70 ? 'var(--success)' : v.utilizationRate >= 40 ? 'var(--warning)' : 'var(--danger)';
+      const utilColor  = v.utilizationRate >= 70 ? 'var(--success)' : v.utilizationRate >= 40 ? 'var(--warning)' : 'var(--danger)';
+      const gross      = v.gross_revenue   ?? v.revenue   ?? 0;
+      const fees       = v.total_fees      ?? 0;
+      const net        = v.net_revenue     ?? v.revenue   ?? 0;
+      const profit     = v.profit          ?? v.netProfit ?? 0;
       return `<tr>
         <td style="font-weight:600;">${esc(v.name)}</td>
         <td>${v.totalBookings}</td>
-        <td>$${formatMoney(v.revenue)}</td>
+        <td>$${formatMoney(gross)}</td>
+        <td style="color:var(--danger);">$${formatMoney(fees)}</td>
+        <td style="font-weight:600;">$${formatMoney(net)}</td>
         <td style="color:var(--danger);">$${formatMoney(v.expenses)}</td>
-        <td style="font-weight:700;${v.netProfit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(v.netProfit)}</td>
+        <td style="font-weight:700;${profit >= 0 ? 'color:var(--success)' : 'color:var(--danger)'}">$${formatMoney(profit)}</td>
         <td><span style="color:${utilColor};font-weight:700;">${v.utilizationRate}%</span></td>
         <td>$${formatMoney(v.avgRevenuePerBooking)}</td>
         <td>${v.status === 'active'
