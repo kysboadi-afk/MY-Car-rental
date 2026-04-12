@@ -282,12 +282,12 @@
       "returnDate": "2026-04-12",
       "returnTime": "",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "manual_2048e74616bd",
       "amountPaid": 303.19,
       "notes": "Full payment for active rental",
       "createdAt": "2026-04-07T09:38:20.882Z",
-      "updatedAt": "2026-04-07T09:44:07.154Z",
+      "updatedAt": "2026-04-12T04:00:50.430Z",
       "activatedAt": "2026-04-07T09:44:07.154Z",
       "smsSentAt": {
         "active_mid": "2026-04-09T11:45:18.402Z",
@@ -300,7 +300,8 @@
         "late_grace_expired": "2026-04-12T01:00:37.295Z",
         "late_fee_pending": "2026-04-12T01:00:37.295Z"
       },
-      "lateFeeApplied": 50
+      "lateFeeApplied": 50,
+      "completedAt": "2026-04-12T04:00:50.430Z"
     }
   ]
 }
