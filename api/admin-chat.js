@@ -71,18 +71,18 @@ You have access to real-time business data through tools. Use them to answer adm
   - **Total Expenses** = all logged business expenses (fuel, insurance, maintenance, etc.) via get_expenses.
   - **Net Profit** = Net Revenue − Total Expenses (the true bottom line after all costs).
 - **get_revenue response fields:**
-  - `total` = gross revenue for the period.
-  - `byVehicle` = per-vehicle gross revenue and booking count.
-  - `breakdown.booking_revenue` = revenue from rental bookings.
-  - `breakdown.extra_charges` = additional charges applied post-rental (damages, late fees, smoking, key replacement, etc.).
-  - `breakdown.extension_payments` = rental extension payments.
-  - `stripe_fees.total_stripe_fees` = total Stripe processing fees (only present when reconciled).
-  - `stripe_fees.total_stripe_net` = net revenue after Stripe fees (only present when reconciled).
-  - `stripe_fees.reconciled_records` = number of records reconciled with Stripe.
+  - \`total\` = gross revenue for the period.
+  - \`byVehicle\` = per-vehicle gross revenue and booking count.
+  - \`breakdown.booking_revenue\` = revenue from rental bookings.
+  - \`breakdown.extra_charges\` = additional charges applied post-rental (damages, late fees, smoking, key replacement, etc.).
+  - \`breakdown.extension_payments\` = rental extension payments.
+  - \`stripe_fees.total_stripe_fees\` = total Stripe processing fees (only present when reconciled).
+  - \`stripe_fees.total_stripe_net\` = net revenue after Stripe fees (only present when reconciled).
+  - \`stripe_fees.reconciled_records\` = number of records reconciled with Stripe.
 - **How to answer revenue questions:**
-  - "How much revenue did I make?" → call get_revenue, report `total` as gross revenue. If `stripe_fees` is present, also show net revenue.
-  - "What's my net profit?" or "How much am I actually keeping?" → call get_revenue AND get_expenses. Net Revenue = gross (`total`) − Stripe fees (`stripe_fees.total_stripe_fees`, if reconciled). Net Profit = Net Revenue − total expenses.
-  - "How much were my Stripe fees?" → call get_revenue and report `stripe_fees.total_stripe_fees`. If not reconciled, suggest running reconcile_stripe first.
+  - "How much revenue did I make?" → call get_revenue, report \`total\` as gross revenue. If \`stripe_fees\` is present, also show net revenue.
+  - "What's my net profit?" or "How much am I actually keeping?" → call get_revenue AND get_expenses. Net Revenue = gross (\`total\`) − Stripe fees (\`stripe_fees.total_stripe_fees\`, if reconciled). Net Profit = Net Revenue − total expenses.
+  - "How much were my Stripe fees?" → call get_revenue and report \`stripe_fees.total_stripe_fees\`. If not reconciled, suggest running reconcile_stripe first.
   - "What's my revenue this month?" → call get_revenue with the current month (YYYY-MM).
   - "Show me a revenue trend" → call get_analytics with action "revenue_trend".
   - For dashboard-level KPIs (active bookings, net profit, vehicle stats) use get_insights, which also returns revenue and detected problems.
@@ -99,19 +99,19 @@ You have access to real-time business data through tools. Use them to answer adm
   - action "vehicle" + vehicleId: deep-dive on a single vehicle — includes investment ROI fields
   - action "revenue_trend" + months: monthly revenue chart data
 - **Investment ROI fields** (returned per vehicle by both "fleet" and "vehicle" actions):
-  - `purchase_price`: what the vehicle cost to buy
-  - `profit`: net_revenue − expenses (total profit earned so far)
-  - `months_active`: months since purchase_date (null if purchase_date not set)
-  - `vehicle_roi`: profit / purchase_price × 100 (%) — Investment ROI (null if purchase_price not set). This is SEPARATE from operational ROI (`roi` = profit / expenses).
-  - `monthly_profit`: profit / months_active — average monthly profit
-  - `annual_roi`: (monthly_profit × 12) / purchase_price × 100 (%) — annualized investment return
-  - `payback_months`: purchase_price / monthly_profit — months until car pays itself off (null if not profitable yet)
+  - \`purchase_price\`: what the vehicle cost to buy
+  - \`profit\`: net_revenue − expenses (total profit earned so far)
+  - \`months_active\`: months since purchase_date (null if purchase_date not set)
+  - \`vehicle_roi\`: profit / purchase_price × 100 (%) — Investment ROI (null if purchase_price not set). This is SEPARATE from operational ROI (\`roi\` = profit / expenses).
+  - \`monthly_profit\`: profit / months_active — average monthly profit
+  - \`annual_roi\`: (monthly_profit × 12) / purchase_price × 100 (%) — annualized investment return
+  - \`payback_months\`: purchase_price / monthly_profit — months until car pays itself off (null if not profitable yet)
 - **How to answer investment questions:**
-  - "Which car has the best ROI?" → call get_analytics (fleet), compare `vehicle_roi` values
-  - "How long until [car] pays itself off?" → call get_analytics (vehicle or fleet), report `payback_months`
-  - "Which car is most profitable per month?" → compare `monthly_profit` across vehicles
-  - "What's the annual return on [car]?" → report `annual_roi`
-  - "Which cars should we scale or avoid?" → compare `vehicle_roi`, `payback_months`, and `utilization_pct`
+  - "Which car has the best ROI?" → call get_analytics (fleet), compare \`vehicle_roi\` values
+  - "How long until [car] pays itself off?" → call get_analytics (vehicle or fleet), report \`payback_months\`
+  - "Which car is most profitable per month?" → compare \`monthly_profit\` across vehicles
+  - "What's the annual return on [car]?" → report \`annual_roi\`
+  - "Which cars should we scale or avoid?" → compare \`vehicle_roi\`, \`payback_months\`, and \`utilization_pct\`
   - Always clarify: Op. ROI = profit ÷ expenses (operational efficiency); Investment ROI = profit ÷ purchase price (capital return)
 
 **Management — Customers**

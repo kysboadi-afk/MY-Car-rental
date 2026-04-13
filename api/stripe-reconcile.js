@@ -247,6 +247,92 @@ export default async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
 
+  // ── CLEANUP ORPHANS — fix NULL/unknown vehicle_id by re-linking to bookings ──
+  // Finds revenue records whose vehicle_id is NULL or the legacy string "unknown",
+  // attempts to backfill vehicle_id from bookings.json via booking_id, and marks
+  // any unresolvable records as sync_excluded so they are hidden from analytics.
+  if (action === "cleanup_orphans") {
+    try {
+      // Fetch records with NULL or 'unknown' vehicle_id that are not already excluded
+      const { data: orphans, error: fetchErr } = await sb
+        .from("revenue_records")
+        .select("id, booking_id, vehicle_id")
+        .or("vehicle_id.is.null,vehicle_id.eq.unknown")
+        .eq("sync_excluded", false);
+      if (fetchErr) throw fetchErr;
+
+      if (!orphans || orphans.length === 0) {
+        return res.status(200).json({
+          total: 0, linked: 0, excluded: 0,
+          message: "No orphan records found — data is already clean.",
+        });
+      }
+
+      // Collect only the booking_ids that are actually referenced by orphans
+      // to avoid loading the entire bookings file unnecessarily.
+      const neededIds = new Set(orphans.map((r) => r.booking_id).filter(Boolean));
+      const bookingVehicleMap = {};
+      if (neededIds.size > 0) {
+        const { data: bookingsData } = await loadBookings();
+        for (const list of Object.values(bookingsData)) {
+          for (const b of (list || [])) {
+            if (b.bookingId && neededIds.has(b.bookingId)) {
+              bookingVehicleMap[b.bookingId] = b.vehicleId || null;
+            }
+          }
+        }
+      }
+
+      // Split orphans into those that can be linked and true orphans
+      const toLink    = []; // { id, vehicleId }
+      const toExclude = []; // ids
+
+      for (const r of orphans) {
+        const vehicleId = r.booking_id ? (bookingVehicleMap[r.booking_id] || null) : null;
+        if (vehicleId) {
+          toLink.push({ id: r.id, vehicleId });
+        } else {
+          toExclude.push(r.id);
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Batch: exclude unresolvable orphans in one query
+      if (toExclude.length > 0) {
+        const { error: exclErr } = await sb
+          .from("revenue_records")
+          .update({ sync_excluded: true, updated_at: now })
+          .in("id", toExclude);
+        if (exclErr) throw exclErr;
+      }
+
+      // Link: vehicle_id values may differ per record, so group by vehicleId and batch
+      const byVehicle = {};
+      for (const { id, vehicleId } of toLink) {
+        if (!byVehicle[vehicleId]) byVehicle[vehicleId] = [];
+        byVehicle[vehicleId].push(id);
+      }
+      for (const [vehicleId, ids] of Object.entries(byVehicle)) {
+        const { error: linkErr } = await sb
+          .from("revenue_records")
+          .update({ vehicle_id: vehicleId, updated_at: now })
+          .in("id", ids);
+        if (linkErr) throw linkErr;
+      }
+
+      return res.status(200).json({
+        total:    orphans.length,
+        linked:   toLink.length,
+        excluded: toExclude.length,
+        message:  `Cleanup complete — linked ${toLink.length} record(s) to vehicles, excluded ${toExclude.length} unresolvable orphan(s).`,
+      });
+    } catch (err) {
+      console.error("stripe-reconcile cleanup_orphans error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
+    }
+  }
+
   // ── DEDUP — merge duplicate revenue_records ──────────────────────────────────
   if (action === "dedup") {
     try {
@@ -485,7 +571,7 @@ export default async function handler(req, res) {
 
         const newRecord = {
           booking_id:        newBookingId,
-          vehicle_id:        booking?.vehicleId    || "unknown",
+          vehicle_id:        booking?.vehicleId    || null,
           customer_name:     booking?.name         || null,
           customer_phone:    booking?.phone        || null,
           customer_email:    payment.customer_email || booking?.email || null,

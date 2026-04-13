@@ -1496,6 +1496,7 @@
           <button class="btn btn-secondary btn-sm" onclick="syncRevenue(this)">↺ Sync from Bookings</button>
           <button class="btn btn-secondary btn-sm" id="btn-stripe-reconcile" onclick="runStripeReconcile(this)">⚡ Sync from Stripe</button>
           <button class="btn btn-secondary btn-sm" id="btn-dedup" onclick="runDedup(this)" title="Remove duplicate revenue records created by Sync from Stripe">🔁 Fix Duplicates</button>
+          <button class="btn btn-secondary btn-sm" id="btn-cleanup-orphans" onclick="runCleanupOrphans(this)" title="Fix revenue records with missing or unknown vehicle — links them to bookings or hides unresolvable ones">🧹 Fix Unknown</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
@@ -4654,6 +4655,22 @@ async function runDedup(btn) {
     showToast('Dedup error: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔁 Fix Duplicates'; }
+  }
+}
+
+async function runCleanupOrphans(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Fixing…'; }
+  try {
+    const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
+    showToast(data.message || '✅ Cleanup complete.', 'success');
+    allRevenueRecords = [];
+    loadRevenue();
+    dashboardData = null;
+    refreshDashboard();
+  } catch (err) {
+    showToast('Cleanup error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🧹 Fix Unknown'; }
   }
 }
 
