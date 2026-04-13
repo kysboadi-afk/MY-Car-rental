@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
-          let q = sb.from("revenue_records").select("*").eq("sync_excluded", false).order("created_at", { ascending: false });
+          let q = sb.from("revenue_records_effective").select("*").eq("sync_excluded", false).order("created_at", { ascending: false });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
@@ -182,7 +182,7 @@ export default async function handler(req, res) {
     if (action === "get") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       if (sb) {
-        const { data, error } = await sb.from("revenue_records").select("*").eq("id", body.id).single();
+        const { data, error } = await sb.from("revenue_records_effective").select("*").eq("id", body.id).single();
         if (!error) return res.status(200).json({ record: data });
         if (!isSchemaError(error)) throw error;
       }
@@ -354,7 +354,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ summary: rows, totals });
           }
           // View may not exist — try raw table
-          const { data: recs, error: err2 } = await sb.from("revenue_records").select("*").eq("sync_excluded", false);
+          const { data: recs, error: err2 } = await sb.from("revenue_records_effective").select("*").eq("sync_excluded", false);
           if (!err2) return res.status(200).json(aggregateRecords(recs));
           console.error("v2-revenue summary error:", err2.message);
         } catch (sumErr) {
@@ -407,7 +407,7 @@ export default async function handler(req, res) {
         // Pre-check existing booking_ids to compute accurate counts
         let existingIds = new Set();
         try {
-          const { data: existing, error: existErr } = await sb.from("revenue_records").select("booking_id");
+          const { data: existing, error: existErr } = await sb.from("revenue_records_effective").select("booking_id");
           if (existErr) {
             // Any error (schema or otherwise) on the pre-check: fall through to GitHub
             useGithubFallback = true;
@@ -567,7 +567,7 @@ export default async function handler(req, res) {
     if (action === "rebuild_analytics") {
       if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
       const { data: rows, error: rowsErr } = await sb
-        .from("revenue_records")
+        .from("revenue_records_effective")
         .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, payment_status");
       if (rowsErr) throw rowsErr;
 
