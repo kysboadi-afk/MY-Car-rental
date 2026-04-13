@@ -1995,6 +1995,7 @@ stripeBtn.addEventListener("click", async () => {
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
+  const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
