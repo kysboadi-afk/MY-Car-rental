@@ -315,7 +315,7 @@
       "pickupDate": "2026-04-13",
       "pickupTime": "9:24 AM",
       "returnDate": "2026-04-17",
-      "returnTime": "9:24 AM",
+      "returnTime": "09:24:00",
       "amountPaid": 220,
       "totalPrice": 220,
       "paymentMethod": "stripe",
@@ -325,7 +325,7 @@
       "smsSentAt": {},
       "createdAt": "2026-04-13T19:24:58.614Z",
       "source": "admin_v2",
-      "updatedAt": "2026-04-13T19:26:05.146Z",
+      "updatedAt": "2026-04-13T19:27:23.540Z",
       "activatedAt": "2026-04-13T19:26:05.146Z"
     }
   ]
