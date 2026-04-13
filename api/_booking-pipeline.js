@@ -105,6 +105,10 @@ function isSupabaseConfigured() {
  * @param {string}  [opts.notes]
  * @param {string}  [opts.source]        - "public_booking" | "admin_v2" | etc.
  * @param {string}  [opts.location]
+ * @param {string}  [opts.stripeCustomerId]
+ * @param {string}  [opts.stripePaymentMethodId]
+ * @param {string}  [opts.protectionPlanTier]
+ * @param {object}  [opts.*]             - any extra fields are passed through into the booking record
  *
  * @returns {Promise<{
  *   ok:        boolean,
@@ -154,6 +158,19 @@ export async function persistBooking(opts) {
     createdAt:       new Date().toISOString(),
     source:          opts.source          || "public_booking",
   };
+
+  // Pass through any extra caller-provided fields not covered above
+  // (e.g. stripeCustomerId, stripePaymentMethodId, protectionPlanTier, paymentLinkToken).
+  const STANDARD_OPTS = new Set([
+    "vehicleId","vehicleName","name","phone","email","pickupDate","pickupTime",
+    "returnDate","returnTime","amountPaid","totalPrice","paymentMethod",
+    "paymentIntentId","paymentLink","status","notes","source","location","bookingId",
+  ]);
+  for (const [key, val] of Object.entries(opts)) {
+    if (!STANDARD_OPTS.has(key) && val !== undefined && val !== null) {
+      booking[key] = val;
+    }
+  }
 
   // ── 3. Supabase persistence (BEFORE emails) ───────────────────────────────
   const sbConfigured = isSupabaseConfigured();
