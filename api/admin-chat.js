@@ -622,9 +622,10 @@ export default async function handler(req, res) {
   // Fix: track total elapsed time and calculate a per-round timeout so the
   // function always has enough time left to return a proper JSON response.
   // vercel.json sets maxDuration: 60 for this function as a safety net.
-  const BUDGET_MS             = 45000; // 45 s soft budget (15 s under the 60 s maxDuration)
-  const MAX_ROUND_TIMEOUT     = 20000; // cap per-round OpenAI timeout at 20 s
+  const BUDGET_MS              = 45000; // 45 s soft budget (15 s under the 60 s maxDuration)
+  const MAX_ROUND_TIMEOUT      = 20000; // cap per-round OpenAI timeout at 20 s
   const MIN_RESPONSE_BUFFER_MS =  3000; // reserve 3 s for JSON serialisation
+  const MIN_TOOL_EXECUTION_MS  =  1000; // bail if < 1 s remains before starting a tool call
   const startTime  = Date.now();
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model  = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -649,11 +650,16 @@ export default async function handler(req, res) {
   if (pending && lastUserMsg && isConfirmation(lastUserMsg.content)) {
     let toolResult;
     try {
-      toolResult = await executeAction(
-        pending.toolName,
-        { ...pending.args, confirmed: true },
-        { requireConfirmation: !autoMode },
-      );
+      toolResult = await Promise.race([
+        executeAction(
+          pending.toolName,
+          { ...pending.args, confirmed: true },
+          { requireConfirmation: !autoMode },
+        ),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Action "${pending.toolName}" timed out`)), BUDGET_MS - MIN_RESPONSE_BUFFER_MS)
+        ),
+      ]);
     } catch (err) {
       toolResult = { error: err.message };
     }
@@ -714,6 +720,7 @@ export default async function handler(req, res) {
     }
 
     // Execute each tool call
+    let toolBudgetExceeded = false;
     for (const tc of msg.tool_calls) {
       const toolName = tc.function.name;
       let args;
@@ -725,10 +732,29 @@ export default async function handler(req, res) {
 
       toolCallsMade.push(toolName);
 
+      // Calculate per-tool timeout from the remaining budget so a hanging
+      // Supabase / external-API call cannot block until Vercel kills the
+      // function (which drops the TCP connection and causes "Failed to fetch"
+      // on the client instead of a clean JSON error response).
+      const toolElapsed   = Date.now() - startTime;
+      const toolRemaining = BUDGET_MS - toolElapsed - MIN_RESPONSE_BUFFER_MS;
+      if (toolRemaining < MIN_TOOL_EXECUTION_MS) {
+        toolBudgetExceeded = true;
+        break;
+      }
+      const toolTimeout = Math.min(toolRemaining, MAX_ROUND_TIMEOUT);
+
       let toolResult;
       try {
-        // Pass requireConfirmation=true unless autoMode is explicitly on
-        toolResult = await executeAction(toolName, args, { requireConfirmation: !autoMode });
+        // Pass requireConfirmation=true unless autoMode is explicitly on.
+        // Race against a budget-aware timeout so a hanging tool cannot block
+        // until Vercel kills the function at maxDuration.
+        toolResult = await Promise.race([
+          executeAction(toolName, args, { requireConfirmation: !autoMode }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
+          ),
+        ]);
       } catch (err) {
         toolResult = { error: err.message };
       }
@@ -742,9 +768,7 @@ export default async function handler(req, res) {
     }
 
     // Guard against slow tool execution consuming the entire budget.
-    // (The check at the top of each round only accounts for elapsed time
-    // up to the OpenAI call; tool calls have no independent timeout.)
-    if (Date.now() - startTime >= BUDGET_MS - MIN_RESPONSE_BUFFER_MS) {
+    if (toolBudgetExceeded || Date.now() - startTime >= BUDGET_MS - MIN_RESPONSE_BUFFER_MS) {
       return res.status(200).json({
         reply:      "⏱ This request is taking longer than expected. Please try again or ask a simpler question.",
         tool_calls: toolCallsMade,
