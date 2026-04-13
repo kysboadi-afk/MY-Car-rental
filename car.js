@@ -147,6 +147,19 @@ function _fmt(key, vars, fallback) {
   return s;
 }
 
+// Show an inline error near the pay buttons (replaces alert() which Chrome can suppress).
+function showPayError(msg) {
+  const el = document.getElementById("payError");
+  if (!el) { console.error("Payment error:", msg); return; }
+  el.textContent = msg;
+  el.style.display = "block";
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function clearPayError() {
+  const el = document.getElementById("payError");
+  if (el) { el.textContent = ""; el.style.display = "none"; }
+}
+
 // ----- Dynamic Pricing -----
 // Fetches live prices from the admin System Settings (Supabase) so that any
 // rate change in the admin panel is immediately reflected on the booking page.
@@ -2075,9 +2088,10 @@ stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
   const phone = document.getElementById("phone").value.trim();
-  if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
-  if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
-  if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
+  clearPayError();
+  if (!email) { showPayError(window.slyI18n.t("booking.alertEmail")); return; }
+  if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
+  if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
@@ -2345,6 +2359,7 @@ stripeBtn.addEventListener("click", async () => {
     if (payHint) payHint.style.display = "none";
 
     paymentElement.mount("#payment-element");
+    paymentForm.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Handle cancel — go back to booking form.
     // { once: true } is intentional: each "Pay Now" click registers a fresh cancel
@@ -2494,7 +2509,7 @@ stripeBtn.addEventListener("click", async () => {
     _pendingPaymentMode = null;
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
-      alert(err.message);
+      showPayError(err.message);
       initDatePickers(); // reload availability so the calendar reflects the new booking
       return;
     }
@@ -2508,7 +2523,7 @@ stripeBtn.addEventListener("click", async () => {
     const userMessage = isSetupError
       ? "Payment setup error:\n\n" + err.message
       : window.slyI18n.t("booking.loadError");
-    alert(userMessage);
+    showPayError(userMessage);
   }
 });
 

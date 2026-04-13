@@ -1262,6 +1262,18 @@ body {
   margin-bottom: 10px;
 }
 
+/* Inline payment error — replaces alert() so Chrome cannot suppress it */
+#payError {
+  background: #3a0f0f;
+  border: 1px solid #c62828;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  color: #ff8a80;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .booking #stripePay {
   width: 100%;
   padding: 14px;
