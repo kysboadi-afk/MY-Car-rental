@@ -248,8 +248,8 @@ async function saveWebhookBookingRecord(paymentIntent) {
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
     // Extra fields passed through into the booking record
-    stripeCustomerId:      paymentIntent.customer          || undefined,
-    stripePaymentMethodId: paymentIntent.payment_method    || undefined,
+    stripeCustomerId:      paymentIntent.customer          || null,
+    stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
   });
 
@@ -836,8 +836,8 @@ export default async function handler(req, res) {
         fullRentalAmount:         Number(full_rental_amount || 0),
         rentalDuration:           rental_duration || "",
         paymentLinkToken,
-        stripeCustomerId:         paymentIntent.customer          || undefined,
-        stripePaymentMethodId:    paymentIntent.payment_method    || undefined,
+        stripeCustomerId:         paymentIntent.customer          || null,
+        stripePaymentMethodId:    paymentIntent.payment_method    || null,
       });
 
       if (!slingshotDepositResult.ok) {

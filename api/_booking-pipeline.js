@@ -161,14 +161,16 @@ export async function persistBooking(opts) {
 
   // Pass through any extra caller-provided fields not covered above
   // (e.g. stripeCustomerId, stripePaymentMethodId, protectionPlanTier, paymentLinkToken).
+  // IMPORTANT: keep STANDARD_OPTS in sync with the booking fields built above; any field
+  // listed here is handled explicitly and will not be double-written via the loop below.
   const STANDARD_OPTS = new Set([
     "vehicleId","vehicleName","name","phone","email","pickupDate","pickupTime",
     "returnDate","returnTime","amountPaid","totalPrice","paymentMethod",
     "paymentIntentId","paymentLink","status","notes","source","location","bookingId",
   ]);
   for (const [key, val] of Object.entries(opts)) {
-    if (!STANDARD_OPTS.has(key) && val !== undefined && val !== null) {
-      booking[key] = val;
+    if (!STANDARD_OPTS.has(key) && val !== undefined) {
+      booking[key] = val;   // null is intentionally allowed (explicit absence)
     }
   }
 
