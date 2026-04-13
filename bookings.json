@@ -287,7 +287,7 @@
       "amountPaid": 303.19,
       "notes": "Full payment for active rental",
       "createdAt": "2026-04-07T09:38:20.882Z",
-      "updatedAt": "2026-04-12T04:00:50.430Z",
+      "updatedAt": "2026-04-13T18:10:24.369Z",
       "activatedAt": "2026-04-07T09:44:07.154Z",
       "smsSentAt": {
         "active_mid": "2026-04-09T11:45:18.402Z",
@@ -303,7 +303,7 @@
         "retention_1d": "2026-04-13T04:15:32.546Z"
       },
       "lateFeeApplied": 50,
-      "completedAt": "2026-04-12T04:00:50.430Z"
+      "completedAt": "2026-04-13T18:10:24.369Z"
     }
   ]
 }
