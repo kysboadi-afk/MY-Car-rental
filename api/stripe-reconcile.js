@@ -253,15 +253,6 @@ export default async function handler(req, res) {
   // any unresolvable records as sync_excluded so they are hidden from analytics.
   if (action === "cleanup_orphans") {
     try {
-      // Load all bookings to build a booking_id → vehicleId map
-      const { data: bookingsData } = await loadBookings();
-      const bookingVehicleMap = {};
-      for (const list of Object.values(bookingsData)) {
-        for (const b of (list || [])) {
-          if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId || null;
-        }
-      }
-
       // Fetch records with NULL or 'unknown' vehicle_id that are not already excluded
       const { data: orphans, error: fetchErr } = await sb
         .from("revenue_records")
@@ -270,31 +261,71 @@ export default async function handler(req, res) {
         .eq("sync_excluded", false);
       if (fetchErr) throw fetchErr;
 
-      const now = new Date().toISOString();
-      let linked = 0, excluded = 0;
+      if (!orphans || orphans.length === 0) {
+        return res.status(200).json({
+          total: 0, linked: 0, excluded: 0,
+          message: "No orphan records found — data is already clean.",
+        });
+      }
 
-      for (const r of (orphans || [])) {
-        const vehicleId = r.booking_id ? (bookingVehicleMap[r.booking_id] || null) : null;
-        if (vehicleId) {
-          // Backfill vehicle_id from the linked booking
-          await sb.from("revenue_records")
-            .update({ vehicle_id: vehicleId, updated_at: now })
-            .eq("id", r.id);
-          linked++;
-        } else {
-          // Unresolvable orphan — hide from analytics
-          await sb.from("revenue_records")
-            .update({ sync_excluded: true, updated_at: now })
-            .eq("id", r.id);
-          excluded++;
+      // Collect only the booking_ids that are actually referenced by orphans
+      // to avoid loading the entire bookings file unnecessarily.
+      const neededIds = new Set(orphans.map((r) => r.booking_id).filter(Boolean));
+      const bookingVehicleMap = {};
+      if (neededIds.size > 0) {
+        const { data: bookingsData } = await loadBookings();
+        for (const list of Object.values(bookingsData)) {
+          for (const b of (list || [])) {
+            if (b.bookingId && neededIds.has(b.bookingId)) {
+              bookingVehicleMap[b.bookingId] = b.vehicleId || null;
+            }
+          }
         }
       }
 
+      // Split orphans into those that can be linked and true orphans
+      const toLink    = []; // { id, vehicleId }
+      const toExclude = []; // ids
+
+      for (const r of orphans) {
+        const vehicleId = r.booking_id ? (bookingVehicleMap[r.booking_id] || null) : null;
+        if (vehicleId) {
+          toLink.push({ id: r.id, vehicleId });
+        } else {
+          toExclude.push(r.id);
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Batch: exclude unresolvable orphans in one query
+      if (toExclude.length > 0) {
+        const { error: exclErr } = await sb
+          .from("revenue_records")
+          .update({ sync_excluded: true, updated_at: now })
+          .in("id", toExclude);
+        if (exclErr) throw exclErr;
+      }
+
+      // Link: vehicle_id values may differ per record, so group by vehicleId and batch
+      const byVehicle = {};
+      for (const { id, vehicleId } of toLink) {
+        if (!byVehicle[vehicleId]) byVehicle[vehicleId] = [];
+        byVehicle[vehicleId].push(id);
+      }
+      for (const [vehicleId, ids] of Object.entries(byVehicle)) {
+        const { error: linkErr } = await sb
+          .from("revenue_records")
+          .update({ vehicle_id: vehicleId, updated_at: now })
+          .in("id", ids);
+        if (linkErr) throw linkErr;
+      }
+
       return res.status(200).json({
-        total:    (orphans || []).length,
-        linked,
-        excluded,
-        message:  `Cleanup complete — linked ${linked} record(s) to vehicles, excluded ${excluded} unresolvable orphan(s).`,
+        total:    orphans.length,
+        linked:   toLink.length,
+        excluded: toExclude.length,
+        message:  `Cleanup complete — linked ${toLink.length} record(s) to vehicles, excluded ${toExclude.length} unresolvable orphan(s).`,
       });
     } catch (err) {
       console.error("stripe-reconcile cleanup_orphans error:", err);
