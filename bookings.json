@@ -304,6 +304,27 @@
       },
       "lateFeeApplied": 50,
       "completedAt": "2026-04-13T18:10:24.369Z"
+    },
+    {
+      "bookingId": "ca51d24e6b2c006d",
+      "name": "Brandon Bookhart",
+      "phone": "5303285561",
+      "email": "Brandon.bookhart@gmail.com",
+      "vehicleId": "camry2013",
+      "vehicleName": "Camry 2013 SE",
+      "pickupDate": "2026-04-13",
+      "pickupTime": "9:24 AM",
+      "returnDate": "2026-04-17",
+      "returnTime": "9:24 AM",
+      "amountPaid": 220,
+      "totalPrice": 220,
+      "paymentMethod": "stripe",
+      "paymentIntentId": "",
+      "status": "booked_paid",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-13T19:24:58.614Z",
+      "source": "admin_v2"
     }
   ]
 }
