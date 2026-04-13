@@ -727,6 +727,7 @@ returnDate.setAttribute("min", todayStr);
 agreeCheckbox.addEventListener("change", updatePayBtn);
 document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
+document.getElementById("phone").addEventListener("input", updatePayBtn);
 
 // ----- Inline Rental Agreement / Signing -----
 // Opens the inline agreement panel pre-filled with the current booking details.
@@ -1877,11 +1878,12 @@ function updatePayBtn() {
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
                           (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
+  const phoneVal = document.getElementById("phone").value.trim();
   // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
   const datesReady = carData.hourlyTiers
     ? pickup.value && currentSlingshotDuration
     : pickup.value && returnDate.value;
-  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
+  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
