@@ -626,15 +626,39 @@ export default async function handler(req, res) {
   const MAX_ROUND_TIMEOUT      = 20000; // cap per-round OpenAI timeout at 20 s
   const MIN_RESPONSE_BUFFER_MS =  3000; // reserve 3 s for JSON serialisation
   const MIN_TOOL_EXECUTION_MS  =  1000; // bail if < 1 s remains before starting a tool call
+  // Max messages to send to OpenAI (system prompt excluded).  Long conversation
+  // histories increase token count and latency — trimming prevents "Failed to
+  // fetch" timeouts caused by the OpenAI call taking too long.
+  const MAX_HISTORY_MESSAGES   =    20;
   const startTime  = Date.now();
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model  = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-  // Build message list (system + history)
+  // Trim conversation history to at most MAX_HISTORY_MESSAGES entries so that
+  // long conversations don't inflate the OpenAI request size and slow things
+  // down past the budget.  Trimming always starts at a "user" message so the
+  // resulting slice is a valid conversation (never an orphaned tool result).
+  let trimmedMessages = clientMessages;
+  if (clientMessages.length > MAX_HISTORY_MESSAGES) {
+    const slice = clientMessages.slice(clientMessages.length - MAX_HISTORY_MESSAGES);
+    const firstUserIdx = slice.findIndex((m) => m.role === "user");
+    if (firstUserIdx >= 0) {
+      trimmedMessages = slice.slice(firstUserIdx);
+    } else {
+      // No user message found in the last MAX_HISTORY_MESSAGES — find the most
+      // recent user message in the full history and start from there.
+      const lastUserIdxFull = clientMessages.map((m) => m.role).lastIndexOf("user");
+      trimmedMessages = lastUserIdxFull >= 0
+        ? clientMessages.slice(lastUserIdxFull)
+        : clientMessages.slice(-1);
+    }
+  }
+
+  // Build message list (system + trimmed history)
   // System prompt is built dynamically to include the real-time current date/time.
   const messages = [
     { role: "system", content: buildSystemPrompt() },
-    ...clientMessages,
+    ...trimmedMessages,
   ];
 
   const toolCallsMade = [];
@@ -678,7 +702,7 @@ export default async function handler(req, res) {
     const elapsed   = Date.now() - startTime;
     const remaining = BUDGET_MS - elapsed - MIN_RESPONSE_BUFFER_MS;
 
-    if (remaining < 2000) {
+    if (remaining <= 2000) {
       // Out of budget — return a readable message instead of dropping the connection.
       return res.status(200).json({
         reply:      "⏱ This request is taking longer than expected. Please try again or ask a simpler question.",
