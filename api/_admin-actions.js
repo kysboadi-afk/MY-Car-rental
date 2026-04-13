@@ -2412,6 +2412,17 @@ async function toolUpdateCustomer({ id, updates }) {
   throw new Error("Customer updates require Supabase — database not configured.");
 }
 
+async function toolRecountCustomerCounts() {
+  const resp = await fetch(`${process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "http://localhost:3000"}/api/v2-customers`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ secret: process.env.ADMIN_SECRET, action: "recount" }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json.error || `recount failed: ${resp.status}`);
+  return json;
+}
+
 const PROTECTED_VEHICLES = new Set(["slingshot", "slingshot2", "slingshot3"]);
 
 async function toolDeleteVehicle({ vehicleId }) {
@@ -3066,6 +3077,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "update_system_setting":         result = await toolUpdateSystemSetting(args);          break;
       case "update_sms_template":           result = await toolUpdateSmsTemplate(args);            break;
       case "update_customer":               result = await toolUpdateCustomer(args);               break;
+      case "recount_customer_counts":        result = await toolRecountCustomerCounts();            break;
       case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
       case "charge_customer_fee":           result = await toolChargeCustomerFee(args);            break;
       case "get_charges":                   result = await toolGetCharges(args);                   break;

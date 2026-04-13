@@ -348,6 +348,8 @@ export default async function handler(req, res) {
                 name:                        cust.name,
                 phone,
                 email:                       cust.email,
+                // total_bookings is patched below from the bookings table
+                // after upsert — set to revenue_records count as initial value.
                 total_bookings:              bookingCount,
                 total_spent:                 totalSpent,
                 total_gross_revenue:         Math.round(grossRevenue       * 100) / 100,
@@ -391,6 +393,46 @@ export default async function handler(req, res) {
                     console.log(`v2-customers sync: removed ${staleIds.length} non-normalized duplicate customer(s)`);
                   }
                 }
+
+                // ── Patch total_bookings from the bookings table ──────────────
+                // revenue_records may include duplicates or missing records, so
+                // the authoritative booking count comes from the bookings table.
+                // This runs after the upsert so all customer rows exist with IDs.
+                try {
+                  const CANCELLED_STATUSES = ["cancelled", "cancelled_rental"];
+                  const { data: bkRows } = await sb
+                    .from("bookings")
+                    .select("customer_id")
+                    .not("customer_id", "is", null)
+                    .not("status", "in", `(${CANCELLED_STATUSES.join(",")})`);
+
+                  if (Array.isArray(bkRows) && bkRows.length > 0) {
+                    const countById = {};
+                    for (const row of bkRows) {
+                      countById[row.customer_id] = (countById[row.customer_id] || 0) + 1;
+                    }
+
+                    // Fetch the IDs of the customers we just upserted by phone
+                    const phones = upserts.map((u) => u.phone);
+                    const { data: freshCustomers } = await sb
+                      .from("customers")
+                      .select("id, phone, total_bookings")
+                      .in("phone", phones);
+
+                    for (const cust of (freshCustomers || [])) {
+                      const accurate = countById[cust.id] || 0;
+                      if (accurate !== (cust.total_bookings || 0)) {
+                        await sb.from("customers")
+                          .update({ total_bookings: accurate, updated_at: new Date().toISOString() })
+                          .eq("id", cust.id);
+                        console.log(`v2-customers sync: corrected total_bookings for ${cust.id}: ${cust.total_bookings} → ${accurate}`);
+                      }
+                    }
+                  }
+                } catch (bkCountErr) {
+                  console.warn("v2-customers sync: bookings-table count patch failed (non-fatal):", bkCountErr.message);
+                }
+
                 return res.status(200).json({ synced: upserts.length, message: `Synced ${upserts.length} customers from revenue records` });
               }
             }
@@ -516,6 +558,131 @@ export default async function handler(req, res) {
         message: `v2: Sync ${allRecords.length} customers from bookings`,
       });
       return res.status(200).json({ synced, message: `Synced ${synced} customers from bookings` });
+    }
+
+    // ── RECOUNT — recalculate customer booking counts from the bookings table ─
+    // This is the authoritative recount: reads customer_id links from the
+    // bookings table so duplicate/orphan revenue_records can't inflate counts.
+    // Also backfills bookings.customer_id for any rows that are missing a link
+    // (matched by customer_email on the booking row → customers.email or phone).
+    //
+    // POST /api/v2-customers { secret, action:"recount" }
+    if (action === "recount") {
+      if (!sb) {
+        return res.status(503).json({ error: "Supabase is not configured — recount requires database access." });
+      }
+
+      const updatedCustomers = [];
+      const errors = [];
+
+      try {
+        // ── Step 1: backfill bookings.customer_id for unlinked rows ──────────
+        // Fetch all bookings that have customer_email but no customer_id.
+        const { data: unlinkedBookings, error: unlinkedErr } = await sb
+          .from("bookings")
+          .select("id, customer_email, customer_id")
+          .is("customer_id", null)
+          .not("customer_email", "is", null);
+
+        if (unlinkedErr) {
+          errors.push(`backfill-fetch: ${unlinkedErr.message}`);
+        } else if (Array.isArray(unlinkedBookings) && unlinkedBookings.length > 0) {
+          // Collect distinct emails to look up in one query
+          const emails = [...new Set(unlinkedBookings.map((b) => b.customer_email.trim().toLowerCase()))];
+          const { data: custByEmail, error: custEmailErr } = await sb
+            .from("customers")
+            .select("id, email")
+            .in("email", emails);
+
+          if (custEmailErr) {
+            errors.push(`backfill-lookup: ${custEmailErr.message}`);
+          } else if (Array.isArray(custByEmail) && custByEmail.length > 0) {
+            const emailToId = new Map(custByEmail.map((c) => [c.email.toLowerCase(), c.id]));
+            let backfilled = 0;
+            for (const bk of unlinkedBookings) {
+              const custId = emailToId.get(bk.customer_email.trim().toLowerCase());
+              if (!custId) continue;
+              const { error: patchErr } = await sb
+                .from("bookings")
+                .update({ customer_id: custId, updated_at: new Date().toISOString() })
+                .eq("id", bk.id);
+              if (patchErr) {
+                errors.push(`backfill-patch(${bk.id}): ${patchErr.message}`);
+              } else {
+                backfilled++;
+              }
+            }
+            console.log(`v2-customers recount: backfilled customer_id on ${backfilled} booking(s)`);
+          }
+        }
+
+        // ── Step 2: fetch all customers ───────────────────────────────────────
+        const { data: customers, error: custErr } = await sb
+          .from("customers")
+          .select("id, phone, email, name, total_bookings");
+
+        if (custErr) {
+          return res.status(500).json({ error: `Could not fetch customers: ${custErr.message}` });
+        }
+        if (!Array.isArray(customers) || customers.length === 0) {
+          return res.status(200).json({ updated: 0, message: "No customers found — run sync first." });
+        }
+
+        // ── Step 3: count actual bookings per customer from the bookings table ─
+        // Cancelled bookings are excluded (they never generated confirmed revenue).
+        const CANCELLED_STATUSES = ["cancelled", "cancelled_rental"];
+        const { data: bookingCounts, error: countErr } = await sb
+          .from("bookings")
+          .select("customer_id")
+          .not("customer_id", "is", null)
+          .not("status", "in", `(${CANCELLED_STATUSES.join(",")})`);
+
+        if (countErr) {
+          return res.status(500).json({ error: `Could not count bookings: ${countErr.message}` });
+        }
+
+        // Aggregate counts in JS (avoids needing a DB aggregation function)
+        const countByCustomerId = {};
+        for (const row of (bookingCounts || [])) {
+          const cid = row.customer_id;
+          countByCustomerId[cid] = (countByCustomerId[cid] || 0) + 1;
+        }
+
+        // ── Step 4: update each customer where total_bookings differs ─────────
+        for (const cust of customers) {
+          const accurate = countByCustomerId[cust.id] || 0;
+          if (accurate === (cust.total_bookings || 0)) continue; // no change needed
+
+          const { error: upErr } = await sb
+            .from("customers")
+            .update({ total_bookings: accurate, updated_at: new Date().toISOString() })
+            .eq("id", cust.id);
+
+          if (upErr) {
+            errors.push(`update(${cust.id}): ${upErr.message}`);
+          } else {
+            updatedCustomers.push({
+              id:   cust.id,
+              name: cust.name,
+              old:  cust.total_bookings,
+              new:  accurate,
+            });
+            console.log(`v2-customers recount: ${cust.name} ${cust.total_bookings ?? "null"} → ${accurate}`);
+          }
+        }
+
+        return res.status(200).json({
+          updated:  updatedCustomers.length,
+          changes:  updatedCustomers,
+          errors:   errors.length > 0 ? errors : undefined,
+          message:  updatedCustomers.length === 0
+            ? "All booking counts are already accurate."
+            : `Updated ${updatedCustomers.length} customer(s) with corrected booking counts.`,
+        });
+      } catch (recountErr) {
+        console.error("v2-customers recount error:", recountErr);
+        return res.status(500).json({ error: adminErrorMessage(recountErr) });
+      }
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

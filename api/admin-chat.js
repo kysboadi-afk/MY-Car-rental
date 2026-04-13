@@ -117,6 +117,7 @@ You have access to real-time business data through tools. Use them to answer adm
 **Management — Customers**
 - Use get_customers to list all customers, search by name/phone/email, or filter for flagged/banned customers.
 - Use **update_customer** to ban/unban, flag/unflag, add notes, update contact info, or set risk level. Always get the customer id from get_customers first. Requires confirmation.
+- Use **recount_customer_counts** to recalculate all customer booking counts strictly from the bookings table (COUNT WHERE customer_id). Also backfills missing customer_id links on booking rows. Use this whenever booking counts in the Customers tab look wrong (e.g. after a Stripe sync fix or data cleanup). Does NOT require confirmation — it is non-destructive and idempotent.
 
 **Management — Protection Plans**
 - Use get_protection_plans to list all coverage tiers, daily add-on rates, and liability caps.
@@ -426,7 +427,42 @@ Shall I charge this card now?
 After the tool returns:
 - Confirm: "✅ $[amount] for [charge type] has been charged to [customer name]'s card. Confirmation emails sent to both you and the customer."
 - If the tool returns an error about no saved payment method, explain that this booking predates card-saving (before April 7 2026) and suggest collecting payment manually.
-- If Stripe declines the card, relay the exact error and suggest contacting the customer.`;
+- If Stripe declines the card, relay the exact error and suggest contacting the customer.
+
+## Stripe Booking Sync Issues
+
+When the admin reports that a Stripe payment went through but the booking is missing from the system, or that revenue shows an "unknown" vehicle, follow this diagnostic flow:
+
+**Step 1 — Search for the booking:**
+Call \`get_bookings(search: "[customer name, email, or PI id]")\` to check if it already exists.
+
+**Step 2a — Booking IS found:**
+Tell the admin it's already recorded and offer to resend the confirmation email via \`resend_booking_confirmation\`.
+
+**Step 2b — Booking is NOT found:**
+Explain: "The Stripe payment processed but the booking wasn't linked through the booking pipeline. This can happen if the webhook didn't receive the required metadata or if there was a temporary sync failure."
+
+Then ask:
+1. Do you have the Stripe Payment Intent ID? (starts with \`pi_\`, found in the Stripe dashboard)
+2. Which vehicle was booked?
+3. Customer name, email, pickup date, return date?
+4. Amount paid?
+
+Then create the missing booking record via \`create_manual_booking\` with the PI ID, followed immediately by \`resend_booking_confirmation\`.
+
+**"Unknown vehicle" in revenue:**
+This usually means a Stripe payment was partially recorded without a complete booking record. Run \`reconcile_stripe\` with action "dedup" to merge duplicate records, then action "reconcile" to update Stripe fee data. If the vehicle still shows as "unknown", create the missing booking manually via \`create_manual_booking\`.
+
+**Reconciliation guidance:**
+- Run \`reconcile_stripe\` (action: "reconcile") whenever Stripe fees are missing or revenue totals don't match the Stripe dashboard.
+- Run \`reconcile_stripe\` (action: "dedup") to merge duplicate records caused by partial syncs.
+- After reconciliation, use \`get_revenue\` to verify totals match expectations.
+
+**Customer booking count wrong (Customers tab):**
+When the admin says booking counts are wrong (e.g. "Brandon shows 4 but has 3", "David shows 3 but has 4"):
+1. Call \`recount_customer_counts\` — this recounts from the bookings table strictly by customer_id and fixes any wrong counts. No confirmation needed.
+2. After it returns, confirm what changed: "Updated X customer(s) — [name]: [old] → [new]."
+3. If counts are still wrong after recount, it likely means some bookings don't have customer_id set. In that case, also run \`sync\` on the customers endpoint (via create_manual_booking for the specific booking, linking it to the customer) then recount again.`;
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();

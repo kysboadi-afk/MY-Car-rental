@@ -25,6 +25,7 @@ import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_L
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
+import { persistBooking } from "./_booking-pipeline.js";
 import { CARS } from "./_pricing.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -182,12 +183,31 @@ function esc(str) {
 }
 
 /**
- * Save a booking record to bookings.json and Supabase from PaymentIntent metadata.
+ * Determines the booking status for a Stripe payment based on payment_type.
+ * Deposit-only payment types leave the booking in "reserved_unpaid" since
+ * the rental fee is still owed; all other payment types are fully paid.
+ *
+ * @param {string} paymentType - value of metadata.payment_type
+ * @returns {"reserved_unpaid" | "booked_paid"}
+ */
+function resolveBookingStatus(paymentType) {
+  // "reservation_deposit"       = Camry deposit-only (balance owed)
+  // "slingshot_security_deposit" = Slingshot deposit-only (balance owed)
+  return (paymentType === "reservation_deposit" || paymentType === "slingshot_security_deposit")
+    ? "reserved_unpaid"
+    : "booked_paid";
+}
+
+/**
+ * Save a booking record to bookings.json and Supabase from PaymentIntent metadata,
+ * routing through the centralised booking pipeline (persistBooking) so every step
+ * fires in the correct order — identical to manual bookings:
+ *   customer upsert → booking upsert → revenue record → blocked_dates
  *
  * This is the guaranteed server-side path for every new booking — it fires on
  * every payment_intent.succeeded event, meaning bookings land in the admin
  * portal automatically without requiring the browser to complete success.html.
- * appendBooking() is idempotent: it deduplicates by paymentIntentId so a
+ * persistBooking() is idempotent: it deduplicates by paymentIntentId so a
  * double-save with the browser-side record is always safe.
  *
  * @param {object} paymentIntent - Stripe PaymentIntent object
@@ -217,62 +237,50 @@ async function saveWebhookBookingRecord(paymentIntent) {
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
   const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
-  // "reservation_deposit" = Camry deposit-only; "slingshot_security_deposit" = Slingshot deposit-only.
-  // Both mean only a partial payment was made — rental fee is still owed.
-  const status      = (payment_type === "reservation_deposit" || payment_type === "slingshot_security_deposit")
-    ? "reserved_unpaid"
-    : "booked_paid";
+  const status = resolveBookingStatus(payment_type);
 
-  const bookingRecord = {
-    bookingId:           booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
-    name:                renter_name || "",
-    phone:               renter_phone ? normalizePhone(renter_phone) : "",
-    email:               email || "",
-    vehicleId:           vehicle_id,
-    vehicleName:         vehicle_name || vehicle_id,
-    pickupDate:          pickup_date,
-    pickupTime:          pickup_time  || "",
-    returnDate:          return_date,
-    returnTime:          return_time  || "",
-    location:            DEFAULT_LOCATION,
+  // Route through the centralised booking pipeline — same as manual bookings.
+  // This ensures the correct order: customer upsert → booking upsert → revenue record → blocked_dates.
+  const result = await persistBooking({
+    bookingId:             booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
+    name:                  renter_name || "",
+    phone:                 renter_phone ? normalizePhone(renter_phone) : "",
+    email:                 email || "",
+    vehicleId:             vehicle_id,
+    vehicleName:           vehicle_name || vehicle_id,
+    pickupDate:            pickup_date,
+    pickupTime:            pickup_time  || "",
+    returnDate:            return_date,
+    returnTime:            return_time  || "",
+    location:              DEFAULT_LOCATION,
     status,
     amountPaid,
     totalPrice,
-    paymentIntentId:     paymentIntent.id,
-    paymentMethod:       "stripe",
-    stripeCustomerId:    paymentIntent.customer   || null,
-    stripePaymentMethodId: paymentIntent.payment_method || null,
+    paymentIntentId:       paymentIntent.id,
+    paymentMethod:         "stripe",
+    source:                "stripe_webhook",
+    // Extra fields passed through into the booking record
+    stripeCustomerId:      paymentIntent.customer          || null,
+    stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
-    smsSentAt:           {},
-    createdAt:           new Date().toISOString(),
-    source:              "stripe_webhook",
-  };
+  });
 
-  try {
-    await appendBooking(bookingRecord);
-    console.log(`stripe-webhook: booking record saved for PI ${paymentIntent.id} (${vehicle_id})`);
-  } catch (err) {
-    console.error("stripe-webhook: saveWebhookBookingRecord error:", err.message);
-  }
-
-  // Non-fatal Supabase sync — this is what the admin portal reads via list action
-  try {
-    await autoCreateRevenueRecord(bookingRecord);
-    await autoUpsertCustomer(bookingRecord, false);
-    await autoUpsertBooking(bookingRecord);
-    if (bookingRecord.pickupDate && bookingRecord.returnDate) {
-      await autoCreateBlockedDate(bookingRecord.vehicleId, bookingRecord.pickupDate, bookingRecord.returnDate, "booking");
-    }
-  } catch (err) {
-    console.error("stripe-webhook: Supabase sync error:", err.message);
+  if (!result.ok) {
+    console.error(
+      `stripe-webhook: booking pipeline failed for PI ${paymentIntent.id} — errors: ${result.errors.join("; ")}`
+    );
+    // Log alert — operator should investigate Supabase connectivity or schema issues.
+    // We do NOT silently continue: the booking may be missing from the admin portal.
+  } else {
+    console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${result.bookingId}`);
   }
 
   // If the booking is fully paid and the pickup time has already arrived
   // (e.g. same-day rental), immediately transition to active_rental without
   // waiting for the next 15-minute cron cycle.
-  if (bookingRecord.status === "booked_paid") {
+  if (result.booking.status === "booked_paid") {
     try {
-      await autoActivateIfPickupArrived(bookingRecord);
+      await autoActivateIfPickupArrived(result.booking);
     } catch (err) {
       console.error("stripe-webhook: autoActivateIfPickupArrived error (non-fatal):", err.message);
     }
@@ -806,9 +814,12 @@ export default async function handler(req, res) {
       // Generate a unique token for the completion link
       const paymentLinkToken = crypto.randomBytes(24).toString("hex");
 
-      // Persist the booking record with the token and deposit-paid status
+      // Persist the booking record with the token and deposit-paid status.
+      // Route through persistBooking so all four pipeline steps fire in the
+      // correct order (customer → booking → revenue record → blocked_dates).
+      // Extra slingshot-specific fields are passed through into the booking record.
       const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
-      const bookingRecord = {
+      const slingshotDepositResult = await persistBooking({
         bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
         name:                     renter_name || "",
         phone:                    renter_phone ? normalizePhone(renter_phone) : "",
@@ -821,42 +832,32 @@ export default async function handler(req, res) {
         returnTime:               meta.return_time || "",
         location:                 DEFAULT_LOCATION,
         status:                   "reserved_unpaid",
+        amountPaid,
+        totalPrice:               Number(full_rental_amount || 0) || amountPaid,
+        paymentIntentId:          paymentIntent.id,
+        paymentMethod:            "stripe",
+        source:                   "stripe_webhook",
+        // Extra slingshot-specific fields passed through into the booking record
         paymentStatus:            "deposit_paid",
         slingshot_payment_status: "deposit_paid",
         bookingStatus:            "reserved",
         slingshot_booking_status: "reserved",
         rentalPrice:              Number(rental_price || 0),
         securityDeposit:          Number(security_deposit || 0),
-        amountPaid,
         remainingBalance:         Number(remaining_balance || rental_price || 0),
         fullRentalAmount:         Number(full_rental_amount || 0),
         rentalDuration:           rental_duration || "",
-        paymentIntentId:          paymentIntent.id,
         paymentLinkToken,
-        paymentMethod:            "stripe",
         stripeCustomerId:         paymentIntent.customer          || null,
         stripePaymentMethodId:    paymentIntent.payment_method    || null,
-        smsSentAt:                {},
-        createdAt:                new Date().toISOString(),
-        source:                   "stripe_webhook",
-      };
+      });
 
-      try {
-        await appendBooking(bookingRecord);
-        console.log(`stripe-webhook: slingshot deposit booking saved (PI ${paymentIntent.id})`);
-      } catch (err) {
-        console.error("stripe-webhook: slingshot deposit booking save error:", err.message);
-      }
-
-      // Supabase sync
-      try {
-        await autoUpsertCustomer(bookingRecord, false);
-        await autoUpsertBooking(bookingRecord);
-        if (pickup_date && return_date) {
-          await autoCreateBlockedDate(vehicle_id, pickup_date, return_date, "booking");
-        }
-      } catch (err) {
-        console.error("stripe-webhook: slingshot deposit Supabase sync error:", err.message);
+      if (!slingshotDepositResult.ok) {
+        console.error(
+          `stripe-webhook: slingshot deposit pipeline failed for PI ${paymentIntent.id} — errors: ${slingshotDepositResult.errors.join("; ")}`
+        );
+      } else {
+        console.log(`stripe-webhook: slingshot deposit pipeline succeeded (PI ${paymentIntent.id}) bookingId=${slingshotDepositResult.bookingId}`);
       }
 
       // Build the completion link
