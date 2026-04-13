@@ -322,7 +322,9 @@
       "paymentIntentId": "",
       "status": "active_rental",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "maint_oil_warn": "2026-04-13T19:30:50.558Z"
+      },
       "createdAt": "2026-04-13T19:24:58.614Z",
       "source": "admin_v2",
       "updatedAt": "2026-04-13T19:27:23.540Z",
