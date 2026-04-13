@@ -183,6 +183,22 @@ function esc(str) {
 }
 
 /**
+ * Determines the booking status for a Stripe payment based on payment_type.
+ * Deposit-only payment types leave the booking in "reserved_unpaid" since
+ * the rental fee is still owed; all other payment types are fully paid.
+ *
+ * @param {string} paymentType - value of metadata.payment_type
+ * @returns {"reserved_unpaid" | "booked_paid"}
+ */
+function resolveBookingStatus(paymentType) {
+  // "reservation_deposit"       = Camry deposit-only (balance owed)
+  // "slingshot_security_deposit" = Slingshot deposit-only (balance owed)
+  return (paymentType === "reservation_deposit" || paymentType === "slingshot_security_deposit")
+    ? "reserved_unpaid"
+    : "booked_paid";
+}
+
+/**
  * Save a booking record to bookings.json and Supabase from PaymentIntent metadata,
  * routing through the centralised booking pipeline (persistBooking) so every step
  * fires in the correct order — identical to manual bookings:
@@ -221,11 +237,7 @@ async function saveWebhookBookingRecord(paymentIntent) {
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
   const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
-  // "reservation_deposit" = Camry deposit-only; "slingshot_security_deposit" = Slingshot deposit-only.
-  // Both mean only a partial payment was made — rental fee is still owed.
-  const status = (payment_type === "reservation_deposit" || payment_type === "slingshot_security_deposit")
-    ? "reserved_unpaid"
-    : "booked_paid";
+  const status = resolveBookingStatus(payment_type);
 
   // Route through the centralised booking pipeline — same as manual bookings.
   // This ensures the correct order: customer upsert → booking upsert → revenue record → blocked_dates.
