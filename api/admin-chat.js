@@ -622,8 +622,9 @@ export default async function handler(req, res) {
   // Fix: track total elapsed time and calculate a per-round timeout so the
   // function always has enough time left to return a proper JSON response.
   // vercel.json sets maxDuration: 60 for this function as a safety net.
-  const BUDGET_MS         = 50000; // 50 s soft budget (well under the 60 s maxDuration)
-  const MAX_ROUND_TIMEOUT = 20000; // cap per-round OpenAI timeout at 20 s
+  const BUDGET_MS             = 45000; // 45 s soft budget (15 s under the 60 s maxDuration)
+  const MAX_ROUND_TIMEOUT     = 20000; // cap per-round OpenAI timeout at 20 s
+  const MIN_RESPONSE_BUFFER_MS =  3000; // reserve 3 s for JSON serialisation
   const startTime  = Date.now();
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model  = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -669,7 +670,7 @@ export default async function handler(req, res) {
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Calculate remaining budget; reserve 3 s for response serialisation.
     const elapsed   = Date.now() - startTime;
-    const remaining = BUDGET_MS - elapsed - 3000;
+    const remaining = BUDGET_MS - elapsed - MIN_RESPONSE_BUFFER_MS;
 
     if (remaining < 2000) {
       // Out of budget — return a readable message instead of dropping the connection.
@@ -737,6 +738,17 @@ export default async function handler(req, res) {
         role:          "tool",
         tool_call_id:  tc.id,
         content:       JSON.stringify(toolResult),
+      });
+    }
+
+    // Guard against slow tool execution consuming the entire budget.
+    // (The check at the top of each round only accounts for elapsed time
+    // up to the OpenAI call; tool calls have no independent timeout.)
+    if (Date.now() - startTime >= BUDGET_MS - MIN_RESPONSE_BUFFER_MS) {
+      return res.status(200).json({
+        reply:      "⏱ This request is taking longer than expected. Please try again or ask a simpler question.",
+        tool_calls: toolCallsMade,
+        messages:   messages.slice(1),
       });
     }
   }
