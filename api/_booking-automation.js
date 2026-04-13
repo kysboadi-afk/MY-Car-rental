@@ -82,9 +82,11 @@ export async function autoCreateRevenueRecord(booking) {
     const recordType = booking.type || "rental";
 
     // Idempotent: skip if a record already exists for this booking.
-    // For extension records, payment_intent_id is the primary dedup key because
-    // booking_id is reused across the original rental and its extensions.
-    // For rental records, also check booking_id (fast path).
+    // For extension records the bookingId is the extension PaymentIntent ID
+    // (pi_…), which is unique per payment, so checking by booking_id would
+    // always find zero matches and is skipped.  The payment_intent_id check
+    // below covers dedup for both rental and extension records.
+    // For rental records, also check booking_id as a fast path.
     if (recordType !== "extension") {
       const { data: existingByBooking } = await sb
         .from("revenue_records")

@@ -11,11 +11,12 @@
 --   When an extension payment succeeds the webhook:
 --     1. Updates the existing booking row (return_date, amountPaid).
 --     2. Creates a NEW revenue_records row:
---          booking_id   = original booking_id   (same booking)
---          type         = 'extension'
---          customer_id  = customers.id (looked up by phone / email)
---          vehicle_id   = vehicle_id
---          gross_amount = extension charge
+--          booking_id        = extension PaymentIntent ID (unique per payment)
+--          original_booking_id = original booking_id (links back to rental row)
+--          type              = 'extension'
+--          customer_id       = customers.id (looked up by phone / email)
+--          vehicle_id        = vehicle_id
+--          gross_amount      = extension charge
 --     3. Does NOT mutate the original rental revenue_records row.
 --     4. Extends blocked_dates accordingly.
 --

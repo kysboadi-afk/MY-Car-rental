@@ -199,6 +199,32 @@ function resolveBookingStatus(paymentType) {
 }
 
 /**
+ * Looks up a customer's UUID in the Supabase customers table by phone then email.
+ * Returns null if not found or if Supabase is unavailable.
+ *
+ * @param {string} [phone] - normalised phone number
+ * @param {string} [email] - email address
+ * @returns {Promise<string|null>} customer UUID or null
+ */
+async function resolveCustomerIdFromSupabase(phone, email) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  try {
+    if (phone) {
+      const { data } = await sb.from("customers").select("id").eq("phone", phone).maybeSingle();
+      if (data?.id) return data.id;
+    }
+    if (email) {
+      const { data } = await sb.from("customers").select("id").eq("email", email.trim().toLowerCase()).maybeSingle();
+      if (data?.id) return data.id;
+    }
+  } catch {
+    // Non-fatal — extension record will be created without customer_id.
+  }
+  return null;
+}
+
+/**
  * Save a booking record to bookings.json and Supabase from PaymentIntent metadata,
  * routing through the centralised booking pipeline (persistBooking) so every step
  * fires in the correct order — identical to manual bookings:
@@ -549,41 +575,24 @@ export default async function handler(req, res) {
               // customer_id is resolved from the booking's phone / email.
               try {
                 // Resolve customer_id for the extension revenue record.
-                let extCustomerId = null;
-                const sbRev = getSupabaseAdmin();
-                if (sbRev) {
-                  if (booking.phone) {
-                    const { data: custByPhone } = await sbRev
-                      .from("customers")
-                      .select("id")
-                      .eq("phone", booking.phone)
-                      .maybeSingle();
-                    extCustomerId = custByPhone?.id ?? null;
-                  }
-                  if (!extCustomerId && (booking.email || renter_email)) {
-                    const lookupEmail = (booking.email || renter_email).trim().toLowerCase();
-                    const { data: custByEmail } = await sbRev
-                      .from("customers")
-                      .select("id")
-                      .eq("email", lookupEmail)
-                      .maybeSingle();
-                    extCustomerId = custByEmail?.id ?? null;
-                  }
-                }
+                const extCustomerId = await resolveCustomerIdFromSupabase(
+                  booking.phone || "",
+                  booking.email || renter_email || "",
+                );
 
                 await autoCreateRevenueRecord({
-                  bookingId:        paymentIntent.id,
+                  bookingId:         paymentIntent.id,
                   originalBookingId: original_booking_id,
-                  vehicleId:        vehicle_id,
-                  customerId:       extCustomerId,
-                  name:             booking.name  || renter_name  || "",
-                  phone:            booking.phone || "",
-                  email:            booking.email || renter_email || "",
-                  pickupDate:       booking.pickupDate || "",
-                  returnDate:       updatedReturnDate,
-                  amountPaid:       extensionAmountDollars,
-                  paymentMethod:    "stripe",
-                  type:             "extension",
+                  vehicleId:         vehicle_id,
+                  customerId:        extCustomerId,
+                  name:              booking.name  || renter_name  || "",
+                  phone:             booking.phone || "",
+                  email:             booking.email || renter_email || "",
+                  pickupDate:        booking.pickupDate || "",
+                  returnDate:        updatedReturnDate,
+                  amountPaid:        extensionAmountDollars,
+                  paymentMethod:     "stripe",
+                  type:              "extension",
                 });
               } catch (revErr) {
                 console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
@@ -713,17 +722,7 @@ export default async function handler(req, res) {
             // using the extension PI id as booking_id (unique per payment).
             try {
               const extAmountFallback = Math.round((paymentIntent.amount / 100) * 100) / 100;
-              // Resolve customer_id for the extension revenue record.
-              let extCustomerIdFb = null;
-              const sbCustFb = getSupabaseAdmin();
-              if (sbCustFb && renter_email) {
-                const { data: custFb } = await sbCustFb
-                  .from("customers")
-                  .select("id")
-                  .eq("email", renter_email.trim().toLowerCase())
-                  .maybeSingle();
-                extCustomerIdFb = custFb?.id ?? null;
-              }
+              const extCustomerIdFb = await resolveCustomerIdFromSupabase("", renter_email || "");
 
               await autoCreateRevenueRecord({
                 bookingId:         paymentIntent.id,
