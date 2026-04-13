@@ -2311,12 +2311,13 @@ function logout() {
 }
 
 // ── API ────────────────────────────────────────────────────────────────────
-async function apiPost(path, body) {
+async function apiPost(path, body, signal = undefined) {
   const url = API_BASE + path;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   let data;
   try {
@@ -5967,13 +5968,19 @@ async function sendAiMessage() {
   document.getElementById('ai-send-btn').disabled = true;
   aiShowTyping();
 
+  // Abort the request after 58 s so the browser gives a clean error instead
+  // of hanging until Vercel's 60 s maxDuration kills the connection.
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 58000);
+
   try {
     const data = await apiPost('/api/admin-chat', {
       secret:    adminSecret,
       messages:  aiHistory,
       auto_mode: aiAutoMode,
-    });
+    }, controller.signal);
 
+    clearTimeout(abortTimer);
     aiRemoveTyping();
     const reply = data.reply || '(no response)';
     aiAppendMessage('assistant', reply, data.tool_calls);
@@ -5986,6 +5993,7 @@ async function sendAiMessage() {
     }
     aiSaveHistory();
   } catch (err) {
+    clearTimeout(abortTimer);
     aiRemoveTyping();
     let msg = err.message;
     if (msg.toLowerCase().includes('failed to fetch') || err.name === 'AbortError') {
