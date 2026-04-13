@@ -117,6 +117,7 @@ You have access to real-time business data through tools. Use them to answer adm
 **Management — Customers**
 - Use get_customers to list all customers, search by name/phone/email, or filter for flagged/banned customers.
 - Use **update_customer** to ban/unban, flag/unflag, add notes, update contact info, or set risk level. Always get the customer id from get_customers first. Requires confirmation.
+- Use **recount_customer_counts** to recalculate all customer booking counts strictly from the bookings table (COUNT WHERE customer_id). Also backfills missing customer_id links on booking rows. Use this whenever booking counts in the Customers tab look wrong (e.g. after a Stripe sync fix or data cleanup). Does NOT require confirmation — it is non-destructive and idempotent.
 
 **Management — Protection Plans**
 - Use get_protection_plans to list all coverage tiers, daily add-on rates, and liability caps.
@@ -455,7 +456,13 @@ This usually means a Stripe payment was partially recorded without a complete bo
 **Reconciliation guidance:**
 - Run \`reconcile_stripe\` (action: "reconcile") whenever Stripe fees are missing or revenue totals don't match the Stripe dashboard.
 - Run \`reconcile_stripe\` (action: "dedup") to merge duplicate records caused by partial syncs.
-- After reconciliation, use \`get_revenue\` to verify totals match expectations.`;
+- After reconciliation, use \`get_revenue\` to verify totals match expectations.
+
+**Customer booking count wrong (Customers tab):**
+When the admin says booking counts are wrong (e.g. "Brandon shows 4 but has 3", "David shows 3 but has 4"):
+1. Call \`recount_customer_counts\` — this recounts from the bookings table strictly by customer_id and fixes any wrong counts. No confirmation needed.
+2. After it returns, confirm what changed: "Updated X customer(s) — [name]: [old] → [new]."
+3. If counts are still wrong after recount, it likely means some bookings don't have customer_id set. In that case, also run \`sync\` on the customers endpoint (via create_manual_booking for the specific booking, linking it to the customer) then recount again.`;
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();
