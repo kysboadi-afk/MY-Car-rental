@@ -27,13 +27,6 @@
 ALTER TABLE revenue_records
   ADD COLUMN IF NOT EXISTS type text NOT NULL DEFAULT 'rental';
 
--- Backfill any pre-existing rows that were created before this migration.
-UPDATE revenue_records
-SET    type = 'extension'
-WHERE  type = 'rental'
-  AND  original_booking_id IS NOT NULL
-  AND  original_booking_id <> booking_id;
-
 -- ── 2. Add customer_id column ─────────────────────────────────────────────────
 
 ALTER TABLE revenue_records
@@ -45,6 +38,7 @@ SET    customer_id = c.id
 FROM   customers c
 WHERE  rr.customer_id IS NULL
   AND  rr.customer_phone IS NOT NULL
+  AND  rr.customer_phone <> ''
   AND  c.phone = rr.customer_phone;
 
 -- ── 3. Indexes ────────────────────────────────────────────────────────────────

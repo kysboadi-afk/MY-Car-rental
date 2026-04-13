@@ -210,11 +210,11 @@ async function resolveCustomerIdFromSupabase(phone, email) {
   const sb = getSupabaseAdmin();
   if (!sb) return null;
   try {
-    if (phone) {
-      const { data } = await sb.from("customers").select("id").eq("phone", phone).maybeSingle();
+    if (phone && phone.trim()) {
+      const { data } = await sb.from("customers").select("id").eq("phone", phone.trim()).maybeSingle();
       if (data?.id) return data.id;
     }
-    if (email) {
+    if (email && email.trim()) {
       const { data } = await sb.from("customers").select("id").eq("email", email.trim().toLowerCase()).maybeSingle();
       if (data?.id) return data.id;
     }
