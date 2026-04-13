@@ -57,7 +57,15 @@ export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
  *
  * @param {object} booking - booking record (bookingId, vehicleId, name, phone,
  *                           email, pickupDate, returnDate, amountPaid,
- *                           paymentMethod, notes, status)
+ *                           paymentMethod, notes, status, type, customerId,
+ *                           originalBookingId)
+ *
+ * For extension records set:
+ *   type             = 'extension'
+ *   originalBookingId = original booking_id
+ *   customerId        = customers.id (looked up by caller)
+ * The bookingId for an extension should be the extension PaymentIntent ID
+ * (guarantees uniqueness; original booking keeps its own rental record).
  */
 export async function autoCreateRevenueRecord(booking) {
   const sb = getSupabaseAdmin();
@@ -71,16 +79,20 @@ export async function autoCreateRevenueRecord(booking) {
     const piId = booking.paymentIntentId ||
       (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
 
+    const recordType = booking.type || "rental";
+
     // Idempotent: skip if a record already exists for this booking.
-    // Check by booking_id first (fast path), then by payment_intent_id so that
-    // duplicate records created via different code paths (browser vs webhook)
-    // with different booking IDs but the same Stripe PI are also suppressed.
-    const { data: existingByBooking } = await sb
-      .from("revenue_records")
-      .select("id")
-      .eq("booking_id", booking.bookingId)
-      .maybeSingle();
-    if (existingByBooking) return;
+    // For extension records, payment_intent_id is the primary dedup key because
+    // booking_id is reused across the original rental and its extensions.
+    // For rental records, also check booking_id (fast path).
+    if (recordType !== "extension") {
+      const { data: existingByBooking } = await sb
+        .from("revenue_records")
+        .select("id")
+        .eq("booking_id", booking.bookingId)
+        .maybeSingle();
+      if (existingByBooking) return;
+    }
 
     if (piId) {
       const { data: existingByPI } = await sb
@@ -101,6 +113,7 @@ export async function autoCreateRevenueRecord(booking) {
       original_booking_id: booking.originalBookingId || null,
       payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
+      customer_id:         booking.customerId        || null,
       customer_name:       booking.name  || null,
       customer_phone:      booking.phone || null,
       customer_email:      booking.email || null,
@@ -111,6 +124,7 @@ export async function autoCreateRevenueRecord(booking) {
       refund_amount:       0,
       payment_method:      booking.paymentMethod || "stripe",
       payment_status:      "paid",
+      type:                recordType,
       notes:               booking.notes || null,
       is_no_show:          false,
       is_cancelled:        false,
@@ -125,7 +139,7 @@ export async function autoCreateRevenueRecord(booking) {
     if (error) {
       console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", error.message);
     } else {
-      console.log(`_booking-automation: created revenue record for booking ${booking.bookingId}`);
+      console.log(`_booking-automation: created ${recordType} revenue record for booking ${booking.bookingId}`);
     }
   } catch (err) {
     console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", err.message);

@@ -257,7 +257,10 @@ ON CONFLICT (key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS revenue_records (
   id                 uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id         text          NOT NULL,
+  original_booking_id text         DEFAULT NULL,
+  payment_intent_id  text          DEFAULT NULL,
   vehicle_id         text          NOT NULL,
+  customer_id        uuid          REFERENCES customers(id) ON DELETE SET NULL,
   customer_name      text,
   customer_phone     text,
   customer_email     text,
@@ -269,20 +272,31 @@ CREATE TABLE IF NOT EXISTS revenue_records (
   net_amount         numeric(10,2) GENERATED ALWAYS AS (gross_amount - refund_amount) STORED,
   payment_method     text          DEFAULT 'stripe',
   payment_status     text          DEFAULT 'pending',
+  type               text          NOT NULL DEFAULT 'rental',
   protection_plan_id uuid,
   notes              text,
   is_no_show         boolean       DEFAULT false,
   is_cancelled       boolean       DEFAULT false,
   override_by_admin  boolean       DEFAULT false,
+  stripe_fee         numeric(10,2) DEFAULT NULL,
+  stripe_net         numeric(10,2) DEFAULT NULL,
+  stripe_charge_id   text          DEFAULT NULL,
+  sync_excluded      boolean       NOT NULL DEFAULT false,
   created_at         timestamptz   NOT NULL DEFAULT now(),
   updated_at         timestamptz   NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS revenue_records_booking_id_idx     ON revenue_records (booking_id);
-CREATE INDEX IF NOT EXISTS revenue_records_vehicle_id_idx     ON revenue_records (vehicle_id);
-CREATE INDEX IF NOT EXISTS revenue_records_payment_status_idx ON revenue_records (payment_status);
-CREATE INDEX IF NOT EXISTS revenue_records_pickup_date_idx    ON revenue_records (pickup_date);
-CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx     ON revenue_records (created_at DESC);
+CREATE INDEX IF NOT EXISTS revenue_records_booking_id_idx          ON revenue_records (booking_id);
+CREATE INDEX IF NOT EXISTS revenue_records_original_booking_id_idx  ON revenue_records (original_booking_id) WHERE original_booking_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS revenue_records_payment_intent_id_idx    ON revenue_records (payment_intent_id) WHERE payment_intent_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS revenue_records_vehicle_id_idx           ON revenue_records (vehicle_id);
+CREATE INDEX IF NOT EXISTS revenue_records_customer_id_idx          ON revenue_records (customer_id) WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS revenue_records_type_idx                 ON revenue_records (type);
+CREATE INDEX IF NOT EXISTS revenue_records_payment_status_idx       ON revenue_records (payment_status);
+CREATE INDEX IF NOT EXISTS revenue_records_pickup_date_idx          ON revenue_records (pickup_date);
+CREATE INDEX IF NOT EXISTS revenue_records_stripe_charge_id_idx     ON revenue_records (stripe_charge_id) WHERE stripe_charge_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS revenue_records_sync_excluded_idx        ON revenue_records (sync_excluded) WHERE sync_excluded = true;
+CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx           ON revenue_records (created_at DESC);
 
 -- Unique booking_id constraint (idempotent — safe even if table already has rows)
 DO $$
