@@ -320,11 +320,13 @@
       "totalPrice": 220,
       "paymentMethod": "stripe",
       "paymentIntentId": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "notes": "",
       "smsSentAt": {},
       "createdAt": "2026-04-13T19:24:58.614Z",
-      "source": "admin_v2"
+      "source": "admin_v2",
+      "updatedAt": "2026-04-13T19:26:05.146Z",
+      "activatedAt": "2026-04-13T19:26:05.146Z"
     }
   ]
 }
