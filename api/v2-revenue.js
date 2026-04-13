@@ -382,7 +382,7 @@ export default async function handler(req, res) {
       // Build records without `id` so Supabase can generate it via gen_random_uuid()
       const toInsertBase = paidBookings.map((b) => ({
         booking_id:        b.bookingId,
-        vehicle_id:        b.vehicleId || "unknown",
+        vehicle_id:        b.vehicleId || null,
         customer_name:     b.name        || null,
         customer_phone:    b.phone       || null,
         customer_email:    b.email       || null,

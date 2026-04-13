@@ -247,6 +247,61 @@ export default async function handler(req, res) {
   const sb = getSupabaseAdmin();
   if (!sb) return res.status(503).json({ error: "Supabase is not configured." });
 
+  // ── CLEANUP ORPHANS — fix NULL/unknown vehicle_id by re-linking to bookings ──
+  // Finds revenue records whose vehicle_id is NULL or the legacy string "unknown",
+  // attempts to backfill vehicle_id from bookings.json via booking_id, and marks
+  // any unresolvable records as sync_excluded so they are hidden from analytics.
+  if (action === "cleanup_orphans") {
+    try {
+      // Load all bookings to build a booking_id → vehicleId map
+      const { data: bookingsData } = await loadBookings();
+      const bookingVehicleMap = {};
+      for (const list of Object.values(bookingsData)) {
+        for (const b of (list || [])) {
+          if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId || null;
+        }
+      }
+
+      // Fetch records with NULL or 'unknown' vehicle_id that are not already excluded
+      const { data: orphans, error: fetchErr } = await sb
+        .from("revenue_records")
+        .select("id, booking_id, vehicle_id")
+        .or("vehicle_id.is.null,vehicle_id.eq.unknown")
+        .eq("sync_excluded", false);
+      if (fetchErr) throw fetchErr;
+
+      const now = new Date().toISOString();
+      let linked = 0, excluded = 0;
+
+      for (const r of (orphans || [])) {
+        const vehicleId = r.booking_id ? (bookingVehicleMap[r.booking_id] || null) : null;
+        if (vehicleId) {
+          // Backfill vehicle_id from the linked booking
+          await sb.from("revenue_records")
+            .update({ vehicle_id: vehicleId, updated_at: now })
+            .eq("id", r.id);
+          linked++;
+        } else {
+          // Unresolvable orphan — hide from analytics
+          await sb.from("revenue_records")
+            .update({ sync_excluded: true, updated_at: now })
+            .eq("id", r.id);
+          excluded++;
+        }
+      }
+
+      return res.status(200).json({
+        total:    (orphans || []).length,
+        linked,
+        excluded,
+        message:  `Cleanup complete — linked ${linked} record(s) to vehicles, excluded ${excluded} unresolvable orphan(s).`,
+      });
+    } catch (err) {
+      console.error("stripe-reconcile cleanup_orphans error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
+    }
+  }
+
   // ── DEDUP — merge duplicate revenue_records ──────────────────────────────────
   if (action === "dedup") {
     try {
@@ -485,7 +540,7 @@ export default async function handler(req, res) {
 
         const newRecord = {
           booking_id:        newBookingId,
-          vehicle_id:        booking?.vehicleId    || "unknown",
+          vehicle_id:        booking?.vehicleId    || null,
           customer_name:     booking?.name         || null,
           customer_phone:    booking?.phone        || null,
           customer_email:    payment.customer_email || booking?.email || null,
