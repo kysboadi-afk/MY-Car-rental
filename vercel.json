@@ -2,6 +2,8 @@
   "functions": {
     "api/admin-chat.js":                    { "maxDuration": 60 },
     "api/stripe-reconcile.js":              { "maxDuration": 60 },
+    "api/send-reservation-email.js":        { "maxDuration": 60 },
+    "api/stripe-webhook.js":                { "maxDuration": 60 },
     "api/bouncie-sync.js":                  { "maxDuration": 30 },
     "api/bouncie-webhook.js":               { "maxDuration": 20 },
     "api/bouncie-location.js":              { "maxDuration": 20 },
