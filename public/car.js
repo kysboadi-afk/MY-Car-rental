@@ -1999,6 +1999,14 @@ stripeBtn.addEventListener("click", async () => {
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
+  // For Camry deposit mode, compute the balance the renter still owes at pickup so
+  // the confirmation email can display the exact amount (full after-tax total minus deposit).
+  if (isCamryDepositMode) {
+    const fullAmtFloat = parseFloat(totalEl.textContent);
+    if (isFinite(fullAmtFloat) && fullAmtFloat > camryDepositAmount) {
+      carData._balanceAtPickup = (fullAmtFloat - camryDepositAmount).toFixed(2);
+    }
+  }
 
   // Meta Pixel — track checkout initiation with the amount being charged
   if (typeof fbq === "function") {
