@@ -382,7 +382,8 @@
       "paymentMethod": "stripe",
       "notes": "",
       "smsSentAt": {
-        "late_fee_pending": "2026-04-14T03:45:30.258Z"
+        "late_fee_pending": "2026-04-14T03:45:30.258Z",
+        "post_thank_you": "2026-04-14T04:00:30.719Z"
       },
       "createdAt": "2026-04-14T03:19:23.526Z",
       "source": "stripe_backfill",
