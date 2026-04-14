@@ -384,6 +384,31 @@
       "source": "stripe_backfill",
       "stripeCustomerId": null,
       "stripePaymentMethodId": "pm_1TJRIyPo7fICjrtZqrgIHCJ3"
+    },
+    {
+      "bookingId": "backfill-91c3bed97e494860",
+      "name": "David Agbebaku",
+      "phone": "",
+      "email": "davosama15@gmail.com",
+      "vehicleId": "camry2013",
+      "vehicleName": "Camry 2013 SE",
+      "pickupDate": "2026-03-21",
+      "pickupTime": "",
+      "returnDate": "2026-03-28",
+      "returnTime": "",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "booked_paid",
+      "amountPaid": 479.59,
+      "totalPrice": 479.59,
+      "paymentIntentId": "pi_3TDXj5Po7fICjrtZ1E93OPiQ",
+      "paymentLink": "",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-14T03:19:25.222Z",
+      "source": "stripe_backfill",
+      "stripeCustomerId": null,
+      "stripePaymentMethodId": "pm_1TDXjIPo7fICjrtZ5mdpOPML"
     }
   ]
 }
