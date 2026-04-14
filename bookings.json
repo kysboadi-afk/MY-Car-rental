@@ -399,7 +399,7 @@
       "returnDate": "2026-03-28",
       "returnTime": "",
       "location": "1200 S Figueroa St, Los Angeles, CA 90015",
-      "status": "booked_paid",
+      "status": "active_rental",
       "amountPaid": 479.59,
       "totalPrice": 479.59,
       "paymentIntentId": "pi_3TDXj5Po7fICjrtZ1E93OPiQ",
@@ -410,7 +410,9 @@
       "createdAt": "2026-04-14T03:19:25.222Z",
       "source": "stripe_backfill",
       "stripeCustomerId": null,
-      "stripePaymentMethodId": "pm_1TDXjIPo7fICjrtZ5mdpOPML"
+      "stripePaymentMethodId": "pm_1TDXjIPo7fICjrtZ5mdpOPML",
+      "activatedAt": "2026-04-14T03:30:24.135Z",
+      "updatedAt": "2026-04-14T03:30:24.135Z"
     }
   ]
 }
