@@ -135,7 +135,8 @@
         "active_15min": "2026-04-13T23:45:16.612Z",
         "late_at_return": "2026-04-14T00:00:16.236Z",
         "late_grace_expired": "2026-04-14T01:00:19.118Z",
-        "late_fee_pending": "2026-04-14T01:00:19.118Z"
+        "late_fee_pending": "2026-04-14T01:00:19.118Z",
+        "post_thank_you": "2026-04-14T04:15:22.515Z"
       },
       "lateFeeApplied": 50,
       "completedAt": "2026-04-14T04:00:23.611Z"
