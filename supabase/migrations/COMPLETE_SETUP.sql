@@ -298,26 +298,31 @@ CREATE INDEX IF NOT EXISTS revenue_records_stripe_charge_id_idx     ON revenue_r
 CREATE INDEX IF NOT EXISTS revenue_records_sync_excluded_idx        ON revenue_records (sync_excluded) WHERE sync_excluded = true;
 CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx           ON revenue_records (created_at DESC);
 
--- Unique booking_id constraint (idempotent — safe even if table already has rows)
+-- booking_id uniqueness: one rental per booking; extensions share the booking_id
+-- (Replaces the old revenue_records_booking_id_unique full UNIQUE constraint.)
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE  table_name      = 'revenue_records'
       AND  constraint_name = 'revenue_records_booking_id_unique'
       AND  constraint_type = 'UNIQUE'
   ) THEN
-    -- Remove duplicates first (keep oldest per booking_id)
-    DELETE FROM revenue_records
-    WHERE id NOT IN (
-      SELECT DISTINCT ON (booking_id) id
-      FROM   revenue_records
-      ORDER  BY booking_id, created_at ASC
-    );
     ALTER TABLE revenue_records
-      ADD CONSTRAINT revenue_records_booking_id_unique UNIQUE (booking_id);
+      DROP CONSTRAINT revenue_records_booking_id_unique;
   END IF;
 END $$;
+
+-- Partial unique: prevents duplicate rental records per booking.
+-- Extension rows (type='extension') may share a booking_id.
+CREATE UNIQUE INDEX IF NOT EXISTS revenue_records_rental_booking_id_unique
+  ON revenue_records (booking_id)
+  WHERE type = 'rental';
+
+-- Unique on payment_intent_id to prevent duplicate rows for the same Stripe payment.
+CREATE UNIQUE INDEX IF NOT EXISTS revenue_records_payment_intent_id_unique
+  ON revenue_records (payment_intent_id)
+  WHERE payment_intent_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS revenue_records_updated_at ON revenue_records;
 CREATE TRIGGER revenue_records_updated_at

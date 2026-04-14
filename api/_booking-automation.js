@@ -58,35 +58,32 @@ export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
  * @param {object} booking - booking record (bookingId, vehicleId, name, phone,
  *                           email, pickupDate, returnDate, amountPaid,
  *                           paymentMethod, notes, status, type, customerId,
- *                           originalBookingId)
+ *                           paymentIntentId)
  *
  * For extension records set:
  *   type             = 'extension'
- *   originalBookingId = original booking_id
- *   customerId        = customers.id (looked up by caller)
- * The bookingId for an extension should be the extension PaymentIntent ID
- * (guarantees uniqueness; original booking keeps its own rental record).
+ *   bookingId        = original booking_id  (groups all records per rental)
+ *   paymentIntentId  = extension PaymentIntent ID (stored in payment_intent_id)
+ *   customerId       = customers.id (looked up by caller)
  */
 export async function autoCreateRevenueRecord(booking) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
 
   try {
-    // Resolve the Stripe PaymentIntent ID up front so it can be used in both
-    // the idempotency check and the inserted record.
-    // • Regular bookings:  booking.paymentIntentId is set by the stripe-webhook.
-    // • Extension records: bookingId IS the PI id (webhook passes paymentIntent.id as bookingId).
+    // Resolve the Stripe PaymentIntent ID.
+    // • Rental records:   booking.paymentIntentId or bookingId if it starts with "pi_".
+    // • Extension records: booking.paymentIntentId holds the extension PI;
+    //                      bookingId is the original booking ref (not a PI).
     const piId = booking.paymentIntentId ||
       (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
 
     const recordType = booking.type || "rental";
 
     // Idempotent: skip if a record already exists for this booking.
-    // For extension records the bookingId is the extension PaymentIntent ID
-    // (pi_…), which is unique per payment, so checking by booking_id would
-    // always find zero matches and is skipped.  The payment_intent_id check
-    // below covers dedup for both rental and extension records.
-    // For rental records, also check booking_id as a fast path.
+    // • Rental records: check booking_id (fast path), then payment_intent_id.
+    // • Extension records: multiple rows share the same booking_id, so skip the
+    //   booking_id check and rely solely on payment_intent_id for dedup.
     if (recordType !== "extension") {
       const { data: existingByBooking } = await sb
         .from("revenue_records")

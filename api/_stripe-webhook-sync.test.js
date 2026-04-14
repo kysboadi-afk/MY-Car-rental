@@ -495,9 +495,13 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
   const extRev = automationCalls.revenue[0];
   assert.equal(extRev.type, "extension", "extension revenue record must have type='extension'");
   assert.equal(extRev.vehicleId, "camry", "extension revenue record must carry vehicle_id");
-  assert.equal(extRev.originalBookingId, origBookingId, "extension revenue record must link back via originalBookingId");
-  // The extension record uses the PI id as booking_id (unique per payment)
-  assert.ok(extRev.bookingId !== origBookingId, "extension booking_id must differ from original to avoid unique-key conflict");
+  // booking_id must be the original booking ref (groups all records per rental)
+  assert.equal(extRev.bookingId, origBookingId, "extension booking_id must equal the original booking ID");
+  // payment_intent_id must hold the extension PI (separate from booking_id)
+  assert.ok(
+    extRev.paymentIntentId && extRev.paymentIntentId.startsWith("pi_"),
+    "extension paymentIntentId must be the Stripe PaymentIntent ID"
+  );
   assert.equal(extRev.amountPaid, 110, "extension revenue record must carry only the extension amount, not the combined total");
 
   // The original revenue_records row must NOT be mutated (no gross_amount update).
