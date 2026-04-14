@@ -109,6 +109,9 @@ export async function autoCreateRevenueRecord(booking) {
 
     const record = {
       booking_id:          booking.bookingId,
+      // original_booking_id is only set for manual extensions (v2-revenue.js)
+      // which use a synthetic booking_id (e.g. "ext-…").  Stripe-paid extensions
+      // use the original booking_id directly and leave this field null.
       original_booking_id: booking.originalBookingId || null,
       payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
