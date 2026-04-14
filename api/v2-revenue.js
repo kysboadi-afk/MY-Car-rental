@@ -106,7 +106,7 @@ export default async function handler(req, res) {
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
-          let q = sb.from("revenue_records_effective").select("*").eq("sync_excluded", false).order("created_at", { ascending: false });
+          let q = sb.from("revenue_records_effective").select("*").order("created_at", { ascending: false });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
@@ -354,7 +354,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ summary: rows, totals });
           }
           // View may not exist — try raw table
-          const { data: recs, error: err2 } = await sb.from("revenue_records_effective").select("*").eq("sync_excluded", false);
+          const { data: recs, error: err2 } = await sb.from("revenue_records_effective").select("*");
           if (!err2) return res.status(200).json(aggregateRecords(recs));
           console.error("v2-revenue summary error:", err2.message);
         } catch (sumErr) {
