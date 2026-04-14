@@ -4306,13 +4306,13 @@ function renderActionRequired(data) {
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
-  // For day-of counts, use recentBookings as a best-effort approximation
-  const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
-  const returns  = bookings.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
-  const overdue  = bookings.filter((b) => {
+  // returnsTodayCount and overdueCount from server-side KPI cover ALL active bookings (not just recent 10)
+  const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const overdue  = kpis.overdueCount != null ? kpis.overdueCount : bookings.filter((b) => {
     if (b.status !== 'active_rental' || !b.returnDate) return false;
     return b.returnDate < today;
   }).length;
+  const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
 
   const setTile = (id, count, urgency) => {
     const el = document.getElementById(id + '-count');

@@ -615,6 +615,18 @@ export default async function handler(req, res) {
                       cur.returnTime              = updatedReturnTime;
                       cur.extensionPendingPayment = null;
                       cur.extensionCount          = newExtensionCount;
+                      // Clear late-return and end-of-rental markers so they re-fire
+                      // for the new return date (prevents stale markers from blocking
+                      // legitimate late-fee and return-reminder automation).
+                      if (cur.smsSentAt) {
+                        delete cur.smsSentAt.late_warning_30min;
+                        delete cur.smsSentAt.late_at_return;
+                        delete cur.smsSentAt.late_grace_expired;
+                        delete cur.smsSentAt.late_fee_pending;
+                        delete cur.smsSentAt.active_1h;
+                        delete cur.smsSentAt.active_15min;
+                      }
+                      delete cur.lateFeeApplied;
                     }
                   },
                   save:    saveBookings,

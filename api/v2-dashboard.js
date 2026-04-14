@@ -92,11 +92,18 @@ export default async function handler(req, res) {
 
     // Non-financial KPIs (always from bookings.json)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
+    const today = new Date().toISOString().split("T")[0];
     let activeBookings   = 0;
     let pendingApprovals = 0;
+    let overdueCount     = 0;
+    let returnsTodayCount = 0;
     for (const booking of allBookings) {
       if (activeStatuses.has(booking.status)) activeBookings++;
       if (booking.status === "reserved_unpaid") pendingApprovals++;
+      if (booking.status === "active_rental" && booking.returnDate) {
+        if (booking.returnDate < today) overdueCount++;
+        if (booking.returnDate === today) returnsTodayCount++;
+      }
     }
 
     // Total expenses (scoped)
@@ -344,6 +351,8 @@ export default async function handler(req, res) {
         activeBookings,
         availableVehicles,
         pendingApprovals,
+        overdueCount,
+        returnsTodayCount,
       },
       revenueChart,
       bookingsPerVehicle,
