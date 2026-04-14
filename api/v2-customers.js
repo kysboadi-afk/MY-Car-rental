@@ -268,7 +268,7 @@ export default async function handler(req, res) {
       if (sb) {
         try {
           const { data: rrData, error: rrError } = await sb
-            .from("revenue_records")
+            .from("revenue_records_effective")
             .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, refund_amount, is_cancelled, pickup_date, return_date, vehicle_id");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {

@@ -214,7 +214,7 @@ export default async function handler(req, res) {
             const bookingRefs = (rows || []).map((r) => r.booking_ref || String(r.id)).filter(Boolean);
             if (bookingRefs.length) {
               const { data: rrRows } = await sb
-                .from("revenue_records")
+                .from("revenue_records_effective")
                 .select("booking_id, gross_amount, stripe_fee, stripe_net, payment_method, customer_name, customer_phone, customer_email")
                 .in("booking_id", bookingRefs);
               for (const rr of (rrRows || [])) {
