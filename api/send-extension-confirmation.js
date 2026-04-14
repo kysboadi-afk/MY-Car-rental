@@ -22,12 +22,62 @@
 //   GITHUB_TOKEN, GITHUB_REPO          (for bookings.json read/write)
 
 import Stripe from "stripe";
-import { loadBookings, updateBooking } from "./_bookings.js";
+import { loadBookings, saveBookings, updateBooking } from "./_bookings.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
-import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
+import { autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+
+/**
+ * Add or extend a booking date range in booked-dates.json.
+ * Mirrors the same logic in stripe-webhook.js so both paths keep the file consistent.
+ */
+async function blockBookedDates(vehicleId, from, to) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token || !vehicleId || !from || !to) return;
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  async function loadBookedDates() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
+    if (!resp.ok) return { data: {}, sha: null };
+    const file = await resp.json();
+    let data = {};
+    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); } catch (parseErr) { console.warn("send-extension-confirmation: booked-dates.json parse error (non-fatal):", parseErr.message); data = {}; }
+    return { data, sha: file.sha };
+  }
+
+  async function saveBookedDates(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!resp.ok) { const text = await resp.text().catch(() => ""); throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`); }
+  }
+
+  await updateJsonFileWithRetry({
+    load:  loadBookedDates,
+    apply: (data) => {
+      if (!data[vehicleId]) data[vehicleId] = [];
+      // Remove any existing range with this pickup date and add the updated one
+      data[vehicleId] = data[vehicleId].filter((r) => r.from !== from);
+      data[vehicleId].push({ from, to });
+    },
+    save:    saveBookedDates,
+    message: `Extend blocked dates for ${vehicleId}: ${from} → ${to} (extension-confirmation)`,
+  });
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -186,14 +236,39 @@ export default async function handler(req, res) {
     const newExtensionCount     = (booking.extensionCount || 0) + (needsReturnDateUpdate ? 1 : 0);
 
     try {
-      await updateBooking(vehicle_id, original_booking_id, {
-        ...(needsReturnDateUpdate ? {
-          returnDate:     updatedReturnDate,
-          returnTime:     updatedReturnTime,
-          extensionCount: newExtensionCount,
-        } : {}),
-        extensionPendingPayment: null,
-        extensionEmailSent:      true,
+      // Use updateJsonFileWithRetry directly so we can clear nested smsSentAt markers
+      // (which updateBooking's shallow spread cannot do).
+      await updateJsonFileWithRetry({
+        load:  loadBookings,
+        apply: (data) => {
+          if (!Array.isArray(data[vehicle_id])) return;
+          const i = data[vehicle_id].findIndex(
+            (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+          );
+          if (i === -1) return;
+          const cur = data[vehicle_id][i];
+          if (needsReturnDateUpdate) {
+            cur.returnDate     = updatedReturnDate;
+            cur.returnTime     = updatedReturnTime;
+            cur.extensionCount = newExtensionCount;
+            // Clear late-return and end-of-rental SMS markers so they re-fire
+            // for the new return date. Without this, stale markers block the
+            // late-fee and return-reminder automation after an extension.
+            if (cur.smsSentAt) {
+              delete cur.smsSentAt.late_warning_30min;
+              delete cur.smsSentAt.late_at_return;
+              delete cur.smsSentAt.late_grace_expired;
+              delete cur.smsSentAt.late_fee_pending;
+              delete cur.smsSentAt.active_1h;
+              delete cur.smsSentAt.active_15min;
+            }
+            delete cur.lateFeeApplied;
+          }
+          cur.extensionPendingPayment = null;
+          cur.extensionEmailSent      = true;
+        },
+        save:    saveBookings,
+        message: `Confirm extension for booking ${original_booking_id}`,
       });
     } catch (updateErr) {
       // Non-fatal: still attempt to send emails even if the update fails.
@@ -215,6 +290,24 @@ export default async function handler(req, res) {
       await autoUpsertBooking(updatedBooking);
     } catch (syncErr) {
       console.error("send-extension-confirmation: Supabase sync error (non-fatal):", syncErr.message);
+    }
+
+    // ── Update availability: blocked_dates (Supabase) + booked-dates.json ──
+    // Ensures vehicle availability reflects the extended return date immediately,
+    // regardless of whether the Stripe webhook has fired yet.
+    if (needsReturnDateUpdate && booking.pickupDate && updatedReturnDate) {
+      try {
+        await blockBookedDates(vehicle_id, booking.pickupDate, updatedReturnDate);
+        console.log(`send-extension-confirmation: booked-dates.json updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
+      } catch (bdErr) {
+        console.error("send-extension-confirmation: booked-dates.json extension update failed (non-fatal):", bdErr.message);
+      }
+      try {
+        await autoCreateBlockedDate(vehicle_id, booking.pickupDate, updatedReturnDate, "booking");
+        console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
+      } catch (sbBlockErr) {
+        console.error("send-extension-confirmation: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
+      }
     }
 
     // ── Send confirmation emails ───────────────────────────────────────────
