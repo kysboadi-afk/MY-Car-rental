@@ -269,7 +269,8 @@ export default async function handler(req, res) {
         try {
           const { data: rrData, error: rrError } = await sb
             .from("revenue_records_effective")
-            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, refund_amount, is_cancelled, pickup_date, return_date, vehicle_id");
+            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id")
+            .eq("payment_status", "paid");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
             // Group revenue records by normalized customer_phone to prevent
@@ -290,7 +291,7 @@ export default async function handler(req, res) {
             // Pre-compute total rental days per vehicle across ALL records (for expense attribution).
             const vehicleTotalDays = {};
             for (const r of rrData) {
-              if (!r.vehicle_id || r.is_cancelled) continue;
+              if (!r.vehicle_id || r.is_cancelled || r.is_no_show) continue;
               vehicleTotalDays[r.vehicle_id] = (vehicleTotalDays[r.vehicle_id] || 0)
                 + computeRentalDays(r.pickup_date, r.return_date);
             }
@@ -310,15 +311,21 @@ export default async function handler(req, res) {
 
             const upserts = [];
             for (const [phone, cust] of Object.entries(byPhone)) {
-              const valid       = cust.records.filter((r) => !r.is_cancelled);
+              const valid       = cust.records.filter((r) => !r.is_cancelled && !r.is_no_show);
               const pickupDates = cust.records.map((r) => r.pickup_date).filter(Boolean).sort();
 
-              // Financial totals
+              // Financial totals — canonical formula matching dashboard & analytics:
+              //   net per record = (stripe_net ?? gross − fee) − refund_amount
               const grossRevenue  = valid.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
               const stripeFees    = valid.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
               const refunds       = valid.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
-              const netRevenue    = grossRevenue - stripeFees - refunds;
-              // total_spent kept for backwards compatibility (= net after refunds, no Stripe fee deduction)
+              const netRevenue    = valid.reduce((s, r) => {
+                const gross = Number(r.gross_amount || 0);
+                const fee   = Number(r.stripe_fee   || 0);
+                const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+                return s + net - Number(r.refund_amount || 0);
+              }, 0);
+              // total_spent kept for backwards compatibility (= gross after refunds, no Stripe fee deduction)
               const totalSpent    = Math.round((grossRevenue - refunds) * 100) / 100;
 
               // Rental-days per vehicle for this customer (used for expense attribution)
