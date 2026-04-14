@@ -251,6 +251,7 @@ export default async function handler(req, res) {
     if (action === "update") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       const allowed = [
+        "vehicle_id",
         "gross_amount","deposit_amount","refund_amount","payment_method","payment_status",
         "protection_plan_id","notes","is_no_show","is_cancelled","override_by_admin",
         "customer_name","customer_phone","customer_email","pickup_date","return_date",
@@ -262,6 +263,9 @@ export default async function handler(req, res) {
       }
       if (!Object.keys(updates).length)
         return res.status(400).json({ error: "No valid update fields provided" });
+      if ("vehicle_id" in updates && !updates.vehicle_id) {
+        console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
+      }
 
       if (sb) {
         const { data, error } = await sb.from("revenue_records").update(updates).eq("id", body.id).select().single();
