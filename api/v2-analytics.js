@@ -138,16 +138,28 @@ export default async function handler(req, res) {
     const sb = getSupabaseAdmin();
     if (sb) {
       try {
-        const { data: rrRows, error: rrErr } = await sb
+        let rrResult = await sb
           .from("revenue_reporting_base")
           .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show");
 
+        // If the canonical view is not deployed yet (migration pending), fall back to the
+        // underlying revenue_records_effective view with the same filters applied server-side.
+        // This matches exactly what the Revenue page does for its own display.
+        if (rrResult.error && isSchemaError(rrResult.error)) {
+          console.warn("v2-analytics: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
+          rrResult = await sb
+            .from("revenue_records_effective")
+            .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show")
+            .eq("payment_status", "paid");
+        }
+
+        const { data: rrRows, error: rrErr } = rrResult;
+
         if (rrErr) {
-          if (isSchemaError(rrErr)) {
-            console.warn("v2-analytics: revenue_records schema not ready, falling back to bookings.json:", rrErr.message);
-          } else {
-            console.error("v2-analytics: revenue_reporting_base query error, falling back to bookings.json:", rrErr.message);
-          }
+          // At this point revenue_reporting_base was already tried (and failed with a schema
+          // error), so any remaining error here means revenue_records_effective is also
+          // unavailable — fall through to the bookings.json fallback below.
+          console.error("v2-analytics: revenue records unavailable, falling back to bookings.json:", rrErr.message);
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
