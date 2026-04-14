@@ -139,16 +139,14 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const { data: rrRows, error: rrErr } = await sb
-          .from("revenue_records_effective")
-          .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, pickup_date, created_at")
-          .eq("payment_status", "paid")
-          .eq("sync_excluded", false);
+          .from("revenue_reporting_base")
+          .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, pickup_date, created_at");
 
         if (rrErr) {
           if (isSchemaError(rrErr)) {
             console.warn("v2-analytics: revenue_records schema not ready, falling back to bookings.json:", rrErr.message);
           } else {
-            console.error("v2-analytics: revenue_records query error, falling back to bookings.json:", rrErr.message);
+            console.error("v2-analytics: revenue_reporting_base query error, falling back to bookings.json:", rrErr.message);
           }
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
