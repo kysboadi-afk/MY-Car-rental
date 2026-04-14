@@ -122,13 +122,15 @@ export default async function handler(req, res) {
     const bookingsPerVehicle = {};
     // Per-vehicle revenue from revenue_records (keyed by vehicle_id)
     const rrByVehicle = {}; // { [vehicleId]: { gross, net, count } }
+    // Per-booking revenue from revenue_records (for recentBookings display)
+    const rrByBookingId = {}; // { [bookingId]: gross_amount }
     let financialsFromRevRecords = false;
 
     if (sb) {
       try {
         const { data: rrRows, error: rrErr } = await sb
           .from("revenue_records_effective")
-          .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, created_at, pickup_date")
+          .select("booking_id, vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, created_at, pickup_date")
           .eq("payment_status", "paid")
           .eq("sync_excluded", false);
 
@@ -166,6 +168,8 @@ export default async function handler(req, res) {
             rrByVehicle[vid].gross += gross;
             rrByVehicle[vid].net   += net;
             rrByVehicle[vid].count += 1;
+
+            if (r.booking_id) rrByBookingId[r.booking_id] = gross;
           }
         }
         // If rrRows is empty (no paid records yet) we fall through to bookings.json.
@@ -327,7 +331,9 @@ export default async function handler(req, res) {
         pickupDate:  b.pickupDate,
         returnDate:  b.returnDate,
         status:      b.status,
-        amountPaid:  bookingRevenue(b),
+        amountPaid:  financialsFromRevRecords && b.bookingId != null && rrByBookingId[b.bookingId] != null
+          ? rrByBookingId[b.bookingId]
+          : bookingRevenue(b),
         createdAt:   b.createdAt,
       }));
 

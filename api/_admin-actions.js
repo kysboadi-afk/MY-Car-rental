@@ -189,28 +189,6 @@ async function loadAllVehicles() {
 }
 
 /**
- * Get revenue for a period using the get_monthly_revenue SQL function when
- * available, otherwise fall back to summing booking records.
- */
-async function getRevenueForMonth(month) {
-  const sb = getSupabaseAdmin();
-  if (sb) {
-    try {
-      const { data, error } = await sb.rpc("get_monthly_revenue", { month_input: month });
-      if (!error && data !== null) return Number(data);
-    } catch {
-      // fall through
-    }
-  }
-  // Fallback: compute from bookings
-  const allBookings = await loadAllBookings();
-  const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
-  return allBookings
-    .filter((b) => paidStatuses.has(b.status) && (b.pickupDate || b.createdAt || "").startsWith(month))
-    .reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
-}
-
-/**
  * Store fraud flags for a booking back to Supabase bookings table.
  * Non-fatal — failure is logged as a warning.
  */
@@ -244,13 +222,68 @@ async function upsertVehicleToSupabase(vehicleId, vehicleData) {
 // ── Tool implementations ──────────────────────────────────────────────────────
 
 async function toolGetRevenue({ month } = {}) {
+  const sb = getSupabaseAdmin();
+
+  // Primary source: revenue_records_effective (same as v2-dashboard.js and v2-analytics.js).
+  // Falls back to bookings.amountPaid only when Supabase is unavailable or the view is empty.
+  if (sb) {
+    try {
+      let q = sb
+        .from("revenue_records_effective")
+        .select("booking_id, vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, pickup_date, created_at")
+        .eq("payment_status", "paid")
+        .eq("sync_excluded", false);
+      if (month) q = q.gte("pickup_date", `${month}-01`).lte("pickup_date", `${month}-31`);
+      const { data: rrRows, error: rrErr } = await q;
+
+      if (!rrErr && (rrRows || []).length > 0) {
+        const byVehicle = {};
+        let total = 0;
+        let totalFees = 0;
+        let totalNet  = 0;
+        let bookingCount = 0;
+
+        for (const r of rrRows) {
+          if (r.is_cancelled || r.is_no_show) continue;
+          const gross = Number(r.gross_amount || 0);
+          const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          const vid   = r.vehicle_id || "unknown";
+
+          total     += gross;
+          totalFees += fee;
+          totalNet  += net;
+          bookingCount++;
+
+          if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
+          byVehicle[vid].count   += 1;
+          byVehicle[vid].revenue += gross;
+        }
+
+        for (const v of Object.values(byVehicle)) {
+          v.revenue = Math.round(v.revenue * 100) / 100;
+        }
+
+        return {
+          period:    month || "all-time",
+          total:     Math.round(total     * 100) / 100,
+          gross:     Math.round(total     * 100) / 100,
+          fees:      Math.round(totalFees * 100) / 100,
+          net:       Math.round(totalNet  * 100) / 100,
+          bookings:  bookingCount,
+          byVehicle,
+          _source:   "revenue_records_effective",
+        };
+      }
+    } catch { /* fall through to bookings fallback */ }
+  }
+
+  // Fallback: compute from bookings.json when Supabase is unavailable or view is empty.
   const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
   const allBookings  = await loadAllBookings();
-
   let filtered = allBookings.filter((b) => paidStatuses.has(b.status));
+  if (month) filtered = filtered.filter((b) => (b.pickupDate || b.createdAt || "").startsWith(month));
 
-  // Build booking-ID set for dedup against revenue_records
-  const bookingIdSet = new Set(filtered.map((b) => b.bookingId).filter(Boolean));
   // Build bookingId → vehicleId map for charges lookup
   const bookingVehicleMap = {};
   for (const b of filtered) {
@@ -258,128 +291,27 @@ async function toolGetRevenue({ month } = {}) {
   }
 
   const byVehicle = {};
-  function addToVehicle(vid, amount) {
-    if (!vid || !amount || isNaN(amount)) return;
-    if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
-    byVehicle[vid].revenue += amount;
-  }
-
-  if (month) {
-    // Try Supabase RPC for total
-    const sbTotal = await getRevenueForMonth(month);
-    filtered = filtered.filter((b) => (b.pickupDate || b.createdAt || "").startsWith(month));
-
-    // Per-vehicle breakdown from local data
-    for (const b of filtered) {
-      const vid = b.vehicleId || "unknown";
-      if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
-      byVehicle[vid].count   += 1;
-      byVehicle[vid].revenue += b.amountPaid || revenueFromBooking(b);
-    }
-    for (const v of Object.values(byVehicle)) {
-      v.revenue = Math.round(v.revenue * 100) / 100;
-    }
-
-    return {
-      period:    month,
-      total:     Math.round(sbTotal * 100) / 100,
-      bookings:  filtered.length,
-      byVehicle,
-      note: "Total from Supabase RPC; per-vehicle breakdown from booking records only.",
-    };
-  }
-
-  // All-time: sum bookings first
   let total = 0;
   for (const b of filtered) {
     const vid = b.vehicleId || "unknown";
-    const amt = b.amountPaid || revenueFromBooking(b);
+    const amt = revenueFromBooking(b);
     total += amt;
     if (!byVehicle[vid]) byVehicle[vid] = { count: 0, revenue: 0 };
     byVehicle[vid].count   += 1;
     byVehicle[vid].revenue += amt;
   }
 
-  // Add supplemental sources (same as dashboard) so AI total matches.
-  const sb = getSupabaseAdmin();
-  let chargesTotal = 0;
-  let extensionsTotal = 0;
-  if (sb) {
-    // 1. Succeeded extra charges (damages, late fees, smoking, key replacement, etc.)
-    try {
-      const { data: chargesData } = await sb
-        .from("charges")
-        .select("booking_id, amount")
-        .eq("status", "succeeded");
-      for (const charge of (chargesData || [])) {
-        const amt = Number(charge.amount || 0);
-        if (!amt) continue;
-        chargesTotal += amt;
-        total += amt;
-        const vid = bookingVehicleMap[charge.booking_id] || "unknown";
-        addToVehicle(vid, amt);
-      }
-    } catch {
-      // non-fatal
-    }
-
-    // 2. Supplemental revenue_records not tied to a regular booking
-    //    (e.g. rental extensions, external payments)
-    try {
-      const { data: rrData } = await sb
-        .from("revenue_records")
-        .select("booking_id, vehicle_id, gross_amount, payment_status, is_cancelled");
-      for (const rr of (rrData || [])) {
-        if (bookingIdSet.has(rr.booking_id)) continue; // already in booking totals
-        if (rr.payment_status !== "paid") continue;
-        if (rr.is_cancelled) continue;
-        const amt = Number(rr.gross_amount || 0);
-        if (!amt) continue;
-        extensionsTotal += amt;
-        total += amt;
-        addToVehicle(rr.vehicle_id || "unknown", amt);
-      }
-    } catch {
-      // non-fatal
-    }
-  }
-
   for (const v of Object.values(byVehicle)) {
     v.revenue = Math.round(v.revenue * 100) / 100;
   }
 
-  // Include Stripe fee analytics when Supabase is available
-  let feeAnalytics = null;
-  if (sb) {
-    try {
-      const { data: rrFees } = await sb
-        .from("revenue_records")
-        .select("stripe_fee, stripe_net, gross_amount, is_cancelled, is_no_show")
-        .not("stripe_fee", "is", null);
-      if (rrFees && rrFees.length > 0) {
-        const active = rrFees.filter((r) => !r.is_cancelled && !r.is_no_show);
-        const totalStripeFees = active.reduce((s, r) => s + Number(r.stripe_fee || 0), 0);
-        const totalStripeNet  = active.reduce((s, r) => s + Number(r.stripe_net  || 0), 0);
-        feeAnalytics = {
-          reconciled_records: active.length,
-          total_stripe_fees:  Math.round(totalStripeFees * 100) / 100,
-          total_stripe_net:   Math.round(totalStripeNet  * 100) / 100,
-        };
-      }
-    } catch { /* non-fatal */ }
-  }
-
   return {
-    period:           "all-time",
-    total:            Math.round(total * 100) / 100,
-    bookings:         filtered.length,
+    period:   month || "all-time",
+    total:    Math.round(total * 100) / 100,
+    gross:    Math.round(total * 100) / 100,
+    bookings: filtered.length,
     byVehicle,
-    breakdown: {
-      booking_revenue:      Math.round((total - chargesTotal - extensionsTotal) * 100) / 100,
-      extra_charges:        Math.round(chargesTotal * 100) / 100,
-      extension_payments:   Math.round(extensionsTotal * 100) / 100,
-    },
-    ...(feeAnalytics ? { stripe_fees: feeAnalytics } : {}),
+    _source:  "bookings_fallback",
   };
 }
 
@@ -1132,6 +1064,40 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     expensesData = data || [];
   }
 
+  // Load revenue from revenue_records_effective (primary) — same source as v2-dashboard.js
+  // and v2-analytics.js so AI-reported totals match the admin pages.
+  // rrByVehicle: { [vehicleId]: { gross, fees, net, count, monthly: { [YYYY-MM]: gross } } }
+  const rrByVehicle = {};
+  let financialsFromRevRecords = false;
+  if (sb) {
+    try {
+      const { data: rrRows, error: rrErr } = await sb
+        .from("revenue_records_effective")
+        .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, pickup_date, created_at")
+        .eq("payment_status", "paid")
+        .eq("sync_excluded", false);
+      if (!rrErr && (rrRows || []).length > 0) {
+        financialsFromRevRecords = true;
+        for (const r of rrRows) {
+          if (r.is_cancelled || r.is_no_show) continue;
+          const vid   = r.vehicle_id || "unknown";
+          const gross = Number(r.gross_amount || 0);
+          const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
+          rrByVehicle[vid].gross += gross;
+          rrByVehicle[vid].fees  += fee;
+          rrByVehicle[vid].net   += net;
+          rrByVehicle[vid].count += 1;
+          const monthKey = (r.pickup_date || r.created_at || "").slice(0, 7);
+          if (monthKey) {
+            rrByVehicle[vid].monthly[monthKey] = (rrByVehicle[vid].monthly[monthKey] || 0) + gross;
+          }
+        }
+      }
+    } catch { /* fall through to bookings fallback */ }
+  }
+
   // Helper: compute investment ROI fields for a vehicle
   function computeInvestmentFields(v, revenue, vExpenseTotal) {
     const profit        = Math.round((revenue - vExpenseTotal) * 100) / 100;
@@ -1157,23 +1123,61 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     const safeMonths = Math.min(Number(months) || 6, 24);
     const trend = [];
     const now = new Date();
-    for (let i = safeMonths - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const monthBookings = allBookings.filter(
-        (b) => paidStatuses.has(b.status) && (b.pickupDate || b.createdAt || "").startsWith(month)
-      );
-      const revenue = monthBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
-      trend.push({ month, revenue: Math.round(revenue * 100) / 100, bookings: monthBookings.length });
+
+    if (financialsFromRevRecords) {
+      // Build trend from revenue_records monthly data.
+      // Initialize all months in the requested range first so booking counts
+      // from bookings.json are included even if no revenue_records exist for that month.
+      const monthly = {};
+      for (let i = safeMonths - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthly[m] = { revenue: 0, bookings: 0 };
+      }
+      for (const vr of Object.values(rrByVehicle)) {
+        for (const [m, amount] of Object.entries(vr.monthly)) {
+          if (monthly[m]) monthly[m].revenue += amount;
+        }
+      }
+      // Count bookings per month from bookings.json (non-financial, same as v2-analytics.js)
+      for (const b of allBookings) {
+        if (!paidStatuses.has(b.status)) continue;
+        const m = (b.pickupDate || b.createdAt || "").slice(0, 7);
+        if (m && monthly[m]) monthly[m].bookings += 1;
+      }
+      for (let i = safeMonths - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const entry = monthly[month];
+        trend.push({ month, revenue: Math.round(entry.revenue * 100) / 100, bookings: entry.bookings });
+      }
+    } else {
+      // Fallback: bookings.json
+      for (let i = safeMonths - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const monthBookings = allBookings.filter(
+          (b) => paidStatuses.has(b.status) && (b.pickupDate || b.createdAt || "").startsWith(month)
+        );
+        const revenue = monthBookings.reduce((s, b) => s + revenueFromBooking(b), 0);
+        trend.push({ month, revenue: Math.round(revenue * 100) / 100, bookings: monthBookings.length });
+      }
     }
-    return { action: "revenue_trend", months: safeMonths, trend };
+    return { action: "revenue_trend", months: safeMonths, trend, _source: financialsFromRevRecords ? "revenue_records_effective" : "bookings_fallback" };
   }
 
   if (action === "vehicle" && vehicleId) {
     const v = vehicles[vehicleId];
     if (!v) return { error: `Vehicle "${vehicleId}" not found` };
     const vBookings = allBookings.filter((b) => b.vehicleId === vehicleId && paidStatuses.has(b.status));
-    const revenue = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+
+    let revenue;
+    if (financialsFromRevRecords) {
+      revenue = (rrByVehicle[vehicleId] || { gross: 0 }).gross;
+    } else {
+      revenue = vBookings.reduce((s, b) => s + revenueFromBooking(b), 0);
+    }
+
     const avgDays = vBookings.length
       ? vBookings.reduce((s, b) => {
           if (!b.pickupDate || !b.returnDate) return s;
@@ -1194,11 +1198,12 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
       action: "vehicle",
       vehicleId,
       name:            v.vehicle_name || vehicleId,
-      total_bookings:  vBookings.length,
+      total_bookings:  financialsFromRevRecords ? (rrByVehicle[vehicleId] || { count: 0 }).count : vBookings.length,
       total_revenue:   Math.round(revenue * 100) / 100,
       total_expenses:  Math.round(vExpenseTotal * 100) / 100,
       avg_rental_days: Math.round(avgDays * 10) / 10,
       popular_days:    Object.entries(dayCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([day, count]) => ({ day, count })),
+      _source: financialsFromRevRecords ? "revenue_records_effective" : "bookings_fallback",
       ...inv,
     };
   }
@@ -1206,7 +1211,17 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
   // Default: fleet overview
   const summary = Object.entries(vehicles).map(([vid, v]) => {
     const vBookings = allBookings.filter((b) => b.vehicleId === vid && paidStatuses.has(b.status));
-    const revenue   = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
+
+    let revenue, totalBookings;
+    if (financialsFromRevRecords) {
+      const vr = rrByVehicle[vid] || { gross: 0, count: 0 };
+      revenue       = vr.gross;
+      totalBookings = vr.count;
+    } else {
+      revenue       = vBookings.reduce((s, b) => s + revenueFromBooking(b), 0);
+      totalBookings = vBookings.length;
+    }
+
     const firstBooking = vBookings.reduce((earliest, b) => {
       const d = b.pickupDate || b.createdAt || "";
       return !earliest || d < earliest ? d : earliest;
@@ -1216,7 +1231,7 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
       : 90;
     // Estimate utilization: assume average 3 rental days per booking as a rough proxy.
     const AVG_RENTAL_DAYS = 3;
-    const utilization = Math.min(100, Math.round((vBookings.length * AVG_RENTAL_DAYS / daysSinceFirst) * 100));
+    const utilization = Math.min(100, Math.round((totalBookings * AVG_RENTAL_DAYS / daysSinceFirst) * 100));
     const vExpenseTotal = expensesData
       .filter((e) => e.vehicle_id === vid)
       .reduce((s, e) => s + Number(e.amount || 0), 0);
@@ -1225,7 +1240,7 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
       vehicleId:        vid,
       name:             v.vehicle_name || vid,
       type:             v.type || "car",
-      total_bookings:   vBookings.length,
+      total_bookings:   totalBookings,
       total_revenue:    Math.round(revenue * 100) / 100,
       total_expenses:   Math.round(vExpenseTotal * 100) / 100,
       utilization_pct:  utilization,
@@ -1238,6 +1253,7 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
     vehicles: summary.sort((a, b) => b.total_revenue - a.total_revenue),
     total_revenue: Math.round(summary.reduce((s, v) => s + v.total_revenue, 0) * 100) / 100,
     total_bookings: summary.reduce((s, v) => s + v.total_bookings, 0),
+    _source: financialsFromRevRecords ? "revenue_records_effective" : "bookings_fallback",
   };
 }
 
