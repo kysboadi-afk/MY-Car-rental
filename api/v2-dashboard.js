@@ -120,7 +120,7 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const { data: rrRows, error: rrErr } = await sb
-          .from("revenue_records")
+          .from("revenue_records_effective")
           .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, created_at, pickup_date")
           .eq("payment_status", "paid")
           .eq("sync_excluded", false);
