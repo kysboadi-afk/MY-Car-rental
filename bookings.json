@@ -152,13 +152,14 @@
       "returnDate": "2026-04-14",
       "returnTime": "",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "manual_b52191489f91",
       "amountPaid": 181.91,
       "notes": "Rental Extension Payment for Booking ID: d95643b10c87a02f1a510f7466b2bedf",
       "createdAt": "2026-04-11T21:39:05.620Z",
       "activatedAt": "2026-04-11T21:45:48.268Z",
-      "updatedAt": "2026-04-11T21:45:48.268Z"
+      "updatedAt": "2026-04-14T04:00:23.611Z",
+      "completedAt": "2026-04-14T04:00:23.611Z"
     }
   ],
   "camry2013": [
