@@ -8,7 +8,7 @@
 // Financial source of truth: revenue_records (Supabase)
 //   Gross Revenue = SUM(gross_amount  WHERE payment_status='paid' AND !is_cancelled AND !is_no_show)
 //   Total Fees    = SUM(stripe_fee)   (null treated as 0 for unreconciled rows)
-//   Net Revenue   = SUM(stripe_net)   (null treated as gross_amount − stripe_fee)
+//   Net Revenue   = SUM(stripe_net − refund_amount)   (null stripe_net treated as gross_amount − stripe_fee)
 //   Net Profit    = Net Revenue − Total Expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       try {
         let rrResult = await sb
           .from("revenue_reporting_base")
-          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show");
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show");
 
         // If the canonical view is not deployed yet (migration pending), fall back to the
         // underlying revenue_records_effective view with the same filters applied server-side.
@@ -139,7 +139,7 @@ export default async function handler(req, res) {
           console.warn("v2-dashboard: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
           rrResult = await sb
             .from("revenue_records_effective")
-            .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show")
+            .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
             .eq("payment_status", "paid");
         }
 
@@ -157,12 +157,13 @@ export default async function handler(req, res) {
             const vid = r.vehicle_id || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
 
-            const gross = Number(r.gross_amount || 0);
+            const gross  = Number(r.gross_amount || 0);
             // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
             // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
             // When both are set (reconciled row): use exact Stripe values.
-            const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-            const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+            const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const refund = Number(r.refund_amount || 0);
+            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
 
             totalRevenue    += gross;
             totalStripeFees += fee;
