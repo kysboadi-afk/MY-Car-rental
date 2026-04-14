@@ -129,16 +129,14 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const { data: rrRows, error: rrErr } = await sb
-          .from("revenue_records_effective")
-          .select("booking_id, vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, created_at, pickup_date")
-          .eq("payment_status", "paid")
-          .eq("sync_excluded", false);
+          .from("revenue_reporting_base")
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show");
 
         if (rrErr) {
           if (isSchemaError(rrErr)) {
             console.warn("v2-dashboard: revenue_records schema not ready, falling back to bookings.json:", rrErr.message);
           } else {
-            console.error("v2-dashboard: revenue_records query error, falling back to bookings.json:", rrErr.message);
+            console.error("v2-dashboard: revenue_reporting_base query error, falling back to bookings.json:", rrErr.message);
           }
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
@@ -159,7 +157,7 @@ export default async function handler(req, res) {
             netRevenue      += net;
             if (r.stripe_fee != null) reconciledCount++;
 
-            const monthKey = (r.created_at || r.pickup_date || "").slice(0, 7);
+            const monthKey = (r.pickup_date || "").slice(0, 7);
             if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + gross;
 
             bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
@@ -188,7 +186,7 @@ export default async function handler(req, res) {
         totalRevenue += amount;
         netRevenue   += amount; // No Stripe fee data available in fallback
 
-        const monthKey = (booking.createdAt || booking.pickupDate || "").slice(0, 7);
+        const monthKey = (booking.pickupDate || "").slice(0, 7);
         if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
 
         const vid = booking.vehicleId || "unknown";

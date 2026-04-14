@@ -139,16 +139,14 @@ export default async function handler(req, res) {
     if (sb) {
       try {
         const { data: rrRows, error: rrErr } = await sb
-          .from("revenue_records_effective")
-          .select("vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, payment_status, pickup_date, created_at")
-          .eq("payment_status", "paid")
-          .eq("sync_excluded", false);
+          .from("revenue_reporting_base")
+          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show");
 
         if (rrErr) {
           if (isSchemaError(rrErr)) {
             console.warn("v2-analytics: revenue_records schema not ready, falling back to bookings.json:", rrErr.message);
           } else {
-            console.error("v2-analytics: revenue_records query error, falling back to bookings.json:", rrErr.message);
+            console.error("v2-analytics: revenue_reporting_base query error, falling back to bookings.json:", rrErr.message);
           }
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
@@ -163,7 +161,7 @@ export default async function handler(req, res) {
             rrByVehicle[vid].fees  += fee;
             rrByVehicle[vid].net   += net;
             rrByVehicle[vid].count += 1;
-            const monthKey = (r.pickup_date || r.created_at || "").slice(0, 7);
+            const monthKey = (r.pickup_date || "").slice(0, 7);
             if (monthKey) {
               rrByVehicle[vid].monthly[monthKey] = (rrByVehicle[vid].monthly[monthKey] || 0) + gross;
             }
@@ -304,8 +302,7 @@ export default async function handler(req, res) {
         // Fallback: compute from bookings.json
         const monthly = {};
         for (const b of paid) {
-          const m = (b.pickupDate || b.createdAt || "").slice(0, 7);
-          if (m) monthly[m] = (monthly[m] || 0) + bookingRevenue(b);
+          const m = (b.pickupDate || "").slice(0, 7);
         }
         totalRevenue = paid.reduce((s, b) => s + bookingRevenue(b), 0);
         totalFees    = 0;
@@ -364,14 +361,14 @@ export default async function handler(req, res) {
         for (const m of Object.keys(monthly)) monthly[m].bookings = 0;
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
-          const m = (b.pickupDate || b.createdAt || "").slice(0, 7);
+          const m = (b.pickupDate || "").slice(0, 7);
           if (m && monthly[m]) monthly[m].bookings += 1;
         }
       } else {
         // Fallback: bookings.json
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
-          const m = (b.pickupDate || b.createdAt || "").slice(0, 7);
+          const m = (b.pickupDate || "").slice(0, 7);
           if (!m) continue;
           if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
           monthly[m].revenue  += bookingRevenue(b);
