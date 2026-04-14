@@ -318,26 +318,43 @@ export default async function handler(req, res) {
 
     // ── SUMMARY (per-vehicle) ────────────────────────────────────────────────
     if (action === "summary") {
-      // Helper to aggregate records manually
+      // Aggregate revenue_records rows using the same formula as v2-dashboard.js and
+      // v2-analytics.js so all three pages report identical totals:
+      //   gross   = SUM(gross_amount)
+      //   fees    = SUM(stripe_fee)          (null → 0 for unreconciled rows)
+      //   net     = SUM(stripe_net ?? gross − fee)
+      //   refunds = SUM(refund_amount)
+      //
+      // NOTE: The vehicle_revenue_summary Supabase view is intentionally NOT used here
+      // because it computes net via the generated net_amount column (gross − refunds)
+      // which differs from the stripe_net-based formula used by the dashboard and analytics.
       function aggregateRecords(recs) {
         const summary = {};
-        const totals = { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
+        const totals = { gross: 0, fees: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
         for (const r of (recs || [])) {
-          if (!summary[r.vehicle_id]) {
-            summary[r.vehicle_id] = { vehicle_id: r.vehicle_id, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_refunds:0, total_net:0, total_deposits:0 };
+          const vid = r.vehicle_id || "unknown";
+          if (!summary[vid]) {
+            summary[vid] = { vehicle_id: vid, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_fees:0, total_refunds:0, total_net:0, total_deposits:0 };
           }
-          const s = summary[r.vehicle_id];
+          const s = summary[vid];
           if (r.is_cancelled) { s.cancelled_count++; continue; }
           if (r.is_no_show)   { s.no_show_count++;   continue; }
+          const gross  = Number(r.gross_amount   || 0);
+          const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+          const net    = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          const refund = Number(r.refund_amount  || 0);
+          const dep    = Number(r.deposit_amount || 0);
           s.booking_count++;
-          s.total_gross    += Number(r.gross_amount   || 0);
-          s.total_refunds  += Number(r.refund_amount  || 0);
-          s.total_net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
-          s.total_deposits += Number(r.deposit_amount || 0);
-          totals.gross    += Number(r.gross_amount   || 0);
-          totals.refunds  += Number(r.refund_amount  || 0);
-          totals.net      += Number(r.gross_amount   || 0) - Number(r.refund_amount || 0);
-          totals.deposits += Number(r.deposit_amount || 0);
+          s.total_gross    += gross;
+          s.total_fees     += fee;
+          s.total_refunds  += refund;
+          s.total_net      += net;
+          s.total_deposits += dep;
+          totals.gross    += gross;
+          totals.fees     += fee;
+          totals.refunds  += refund;
+          totals.net      += net;
+          totals.deposits += dep;
           totals.bookingCount++;
         }
         return { summary: Object.values(summary), totals };
@@ -345,29 +362,21 @@ export default async function handler(req, res) {
 
       if (sb) {
         try {
-          const { data, error } = await sb.from("vehicle_revenue_summary").select("*");
-          if (!error) {
-            const rows = data || [];
-            const totals = rows.reduce((acc, r) => ({
-              gross:        acc.gross        + Number(r.total_gross    || 0),
-              refunds:      acc.refunds      + Number(r.total_refunds  || 0),
-              net:          acc.net          + Number(r.total_net      || 0),
-              deposits:     acc.deposits     + Number(r.total_deposits || 0),
-              bookingCount: acc.bookingCount + Number(r.booking_count  || 0),
-            }), { gross: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 });
-            return res.status(200).json({ summary: rows, totals });
-          }
-          // View may not exist — try raw table
-          const { data: recs, error: err2 } = await sb.from("revenue_records_effective").select("*");
-          if (!err2) return res.status(200).json(aggregateRecords(recs));
-          console.error("v2-revenue summary error:", err2.message);
+          // Query revenue_records_effective (sync_excluded=false already filtered by view).
+          // Filter payment_status='paid' to match v2-dashboard.js and v2-analytics.js.
+          const { data: recs, error: recsErr } = await sb
+            .from("revenue_records_effective")
+            .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, deposit_amount, is_cancelled, is_no_show, payment_status")
+            .eq("payment_status", "paid");
+          if (!recsErr) return res.status(200).json(aggregateRecords(recs));
+          if (!isSchemaError(recsErr)) console.error("v2-revenue summary error:", recsErr.message);
         } catch (sumErr) {
           console.error("v2-revenue summary error:", sumErr);
         }
       }
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      return res.status(200).json(aggregateRecords(ghRecords.filter((r) => !r.sync_excluded)));
+      return res.status(200).json(aggregateRecords(ghRecords.filter((r) => !r.sync_excluded && r.payment_status === "paid")));
     }
 
     // ── SYNC — build/refresh revenue_records from bookings.json ─────────────
