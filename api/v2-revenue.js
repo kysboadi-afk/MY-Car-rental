@@ -263,10 +263,8 @@ export default async function handler(req, res) {
       }
       if (!Object.keys(updates).length)
         return res.status(400).json({ error: "No valid update fields provided" });
-      if (!updates.vehicle_id && (body.updates || {}).vehicle_id !== undefined) {
+      if ("vehicle_id" in updates && !updates.vehicle_id) {
         console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
-      } else if (!updates.vehicle_id) {
-        console.warn(`v2-revenue update [${body.id}]: vehicle_id not included in update — existing vehicle assignment unchanged`);
       }
 
       if (sb) {
