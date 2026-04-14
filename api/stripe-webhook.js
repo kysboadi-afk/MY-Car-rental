@@ -199,6 +199,32 @@ function resolveBookingStatus(paymentType) {
 }
 
 /**
+ * Looks up a customer's UUID in the Supabase customers table by phone then email.
+ * Returns null if not found or if Supabase is unavailable.
+ *
+ * @param {string} [phone] - normalised phone number
+ * @param {string} [email] - email address
+ * @returns {Promise<string|null>} customer UUID or null
+ */
+async function resolveCustomerIdFromSupabase(phone, email) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  try {
+    if (phone && phone.trim()) {
+      const { data } = await sb.from("customers").select("id").eq("phone", phone.trim()).maybeSingle();
+      if (data?.id) return data.id;
+    }
+    if (email && email.trim()) {
+      const { data } = await sb.from("customers").select("id").eq("email", email.trim().toLowerCase()).maybeSingle();
+      if (data?.id) return data.id;
+    }
+  } catch {
+    // Non-fatal — extension record will be created without customer_id.
+  }
+  return null;
+}
+
+/**
  * Save a booking record to bookings.json and Supabase from PaymentIntent metadata,
  * routing through the centralised booking pipeline (persistBooking) so every step
  * fires in the correct order — identical to manual bookings:
@@ -541,48 +567,33 @@ export default async function handler(req, res) {
                 console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
               }
 
-              // ── 1b. Roll extension into the original revenue_record ─────────────
-              // Adds extensionAmountDollars to the original record's gross_amount so
-              // the Revenue Tracker and dashboard always see a single row per rental.
-              // Falls back to creating a record for the original booking_id if none
-              // exists yet (idempotent via autoCreateRevenueRecord's existence check).
+              // ── 1b. Create a new extension revenue record ──────────────────────
+              // Each paid extension gets its own revenue_records row (type='extension')
+              // so the Revenue Tracker shows a clear per-payment audit trail.
+              // booking_id stays the original booking_id so all records for a rental
+              // are grouped together; payment_intent_id holds the extension PI.
+              // customer_id is resolved from the booking's phone / email.
               try {
-                const sb = getSupabaseAdmin();
-                if (sb) {
-                  const { data: origRev } = await sb
-                    .from("revenue_records")
-                    .select("id, gross_amount")
-                    .eq("booking_id", original_booking_id)
-                    .maybeSingle();
-                  if (origRev) {
-                    const newGross = Math.round((Number(origRev.gross_amount || 0) + extensionAmountDollars) * 100) / 100;
-                    const { error: revUpErr } = await sb
-                      .from("revenue_records")
-                      .update({
-                        gross_amount: newGross,
-                        return_date:  updatedReturnDate,
-                        updated_at:   new Date().toISOString(),
-                      })
-                      .eq("id", origRev.id);
-                    if (revUpErr) {
-                      console.error("stripe-webhook: extension revenue_record update error (non-fatal):", revUpErr.message);
-                    }
-                  } else {
-                    // No original record yet — create one for the original booking id
-                    // with the combined amount (deposit + this extension).
-                    await autoCreateRevenueRecord({
-                      bookingId:     original_booking_id,
-                      vehicleId:     vehicle_id,
-                      name:          booking.name  || renter_name  || "",
-                      phone:         booking.phone || "",
-                      email:         booking.email || renter_email || "",
-                      pickupDate:    booking.pickupDate || "",
-                      returnDate:    updatedReturnDate,
-                      amountPaid:    updatedAmountPaid,
-                      paymentMethod: "stripe",
-                    });
-                  }
-                }
+                // Resolve customer_id for the extension revenue record.
+                const extCustomerId = await resolveCustomerIdFromSupabase(
+                  booking.phone || "",
+                  booking.email || renter_email || "",
+                );
+
+                await autoCreateRevenueRecord({
+                  bookingId:        original_booking_id,
+                  paymentIntentId:  paymentIntent.id,
+                  vehicleId:        vehicle_id,
+                  customerId:       extCustomerId,
+                  name:             booking.name  || renter_name  || "",
+                  phone:            booking.phone || "",
+                  email:            booking.email || renter_email || "",
+                  pickupDate:       booking.pickupDate || "",
+                  returnDate:       updatedReturnDate,
+                  amountPaid:       extensionAmountDollars,
+                  paymentMethod:    "stripe",
+                  type:             "extension",
+                });
               } catch (revErr) {
                 console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
               }
@@ -706,38 +717,28 @@ export default async function handler(req, res) {
               }
             }
 
-            // ── Update/create revenue record for the extension payment ────────────
-            // Booking wasn't in bookings.json; update original revenue_record if it
-            // exists, or create one under the original booking_id as a fallback.
+            // ── Create extension revenue record (fallback: booking not in bookings.json) ──
+            // Booking exists only in Supabase; create a new extension revenue record
+            // with booking_id = original_booking_id so all records for this rental
+            // stay grouped; payment_intent_id = extension PI for dedup.
             try {
               const extAmountFallback = Math.round((paymentIntent.amount / 100) * 100) / 100;
-              const sbFb = getSupabaseAdmin();
-              if (sbFb) {
-                const { data: origRevFb } = await sbFb
-                  .from("revenue_records")
-                  .select("id, gross_amount")
-                  .eq("booking_id", original_booking_id)
-                  .maybeSingle();
-                if (origRevFb) {
-                  const newGross = Math.round((Number(origRevFb.gross_amount || 0) + extAmountFallback) * 100) / 100;
-                  await sbFb
-                    .from("revenue_records")
-                    .update({ gross_amount: newGross, return_date: new_return_date || null, updated_at: new Date().toISOString() })
-                    .eq("id", origRevFb.id);
-                } else {
-                  await autoCreateRevenueRecord({
-                    bookingId:     original_booking_id,
-                    vehicleId:     vehicle_id,
-                    name:          renter_name  || "",
-                    phone:         "",
-                    email:         renter_email || "",
-                    pickupDate:    "",
-                    returnDate:    new_return_date || "",
-                    amountPaid:    extAmountFallback,
-                    paymentMethod: "stripe",
-                  });
-                }
-              }
+              const extCustomerIdFb = await resolveCustomerIdFromSupabase("", renter_email || "");
+
+              await autoCreateRevenueRecord({
+                bookingId:        original_booking_id,
+                paymentIntentId:  paymentIntent.id,
+                vehicleId:        vehicle_id,
+                customerId:       extCustomerIdFb,
+                name:             renter_name  || "",
+                phone:            "",
+                email:            renter_email || "",
+                pickupDate:       "",
+                returnDate:       new_return_date || "",
+                amountPaid:       extAmountFallback,
+                paymentMethod:    "stripe",
+                type:             "extension",
+              });
             } catch (revErr) {
               console.error("stripe-webhook: extension revenue record error (fallback path, non-fatal):", revErr.message);
             }

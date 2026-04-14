@@ -57,30 +57,41 @@ export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
  *
  * @param {object} booking - booking record (bookingId, vehicleId, name, phone,
  *                           email, pickupDate, returnDate, amountPaid,
- *                           paymentMethod, notes, status)
+ *                           paymentMethod, notes, status, type, customerId,
+ *                           paymentIntentId)
+ *
+ * For extension records set:
+ *   type             = 'extension'
+ *   bookingId        = original booking_id  (groups all records per rental)
+ *   paymentIntentId  = extension PaymentIntent ID (stored in payment_intent_id)
+ *   customerId       = customers.id (looked up by caller)
  */
 export async function autoCreateRevenueRecord(booking) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
 
   try {
-    // Resolve the Stripe PaymentIntent ID up front so it can be used in both
-    // the idempotency check and the inserted record.
-    // • Regular bookings:  booking.paymentIntentId is set by the stripe-webhook.
-    // • Extension records: bookingId IS the PI id (webhook passes paymentIntent.id as bookingId).
+    // Resolve the Stripe PaymentIntent ID.
+    // • Rental records:   booking.paymentIntentId or bookingId if it starts with "pi_".
+    // • Extension records: booking.paymentIntentId holds the extension PI;
+    //                      bookingId is the original booking ref (not a PI).
     const piId = booking.paymentIntentId ||
       (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
 
+    const recordType = booking.type || "rental";
+
     // Idempotent: skip if a record already exists for this booking.
-    // Check by booking_id first (fast path), then by payment_intent_id so that
-    // duplicate records created via different code paths (browser vs webhook)
-    // with different booking IDs but the same Stripe PI are also suppressed.
-    const { data: existingByBooking } = await sb
-      .from("revenue_records")
-      .select("id")
-      .eq("booking_id", booking.bookingId)
-      .maybeSingle();
-    if (existingByBooking) return;
+    // • Rental records: check booking_id (fast path), then payment_intent_id.
+    // • Extension records: multiple rows share the same booking_id, so skip the
+    //   booking_id check and rely solely on payment_intent_id for dedup.
+    if (recordType !== "extension") {
+      const { data: existingByBooking } = await sb
+        .from("revenue_records")
+        .select("id")
+        .eq("booking_id", booking.bookingId)
+        .maybeSingle();
+      if (existingByBooking) return;
+    }
 
     if (piId) {
       const { data: existingByPI } = await sb
@@ -98,9 +109,13 @@ export async function autoCreateRevenueRecord(booking) {
 
     const record = {
       booking_id:          booking.bookingId,
+      // original_booking_id is only set for manual extensions (v2-revenue.js)
+      // which use a synthetic booking_id (e.g. "ext-…").  Stripe-paid extensions
+      // use the original booking_id directly and leave this field null.
       original_booking_id: booking.originalBookingId || null,
       payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
+      customer_id:         booking.customerId        || null,
       customer_name:       booking.name  || null,
       customer_phone:      booking.phone || null,
       customer_email:      booking.email || null,
@@ -111,6 +126,7 @@ export async function autoCreateRevenueRecord(booking) {
       refund_amount:       0,
       payment_method:      booking.paymentMethod || "stripe",
       payment_status:      "paid",
+      type:                recordType,
       notes:               booking.notes || null,
       is_no_show:          false,
       is_cancelled:        false,
@@ -125,7 +141,7 @@ export async function autoCreateRevenueRecord(booking) {
     if (error) {
       console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", error.message);
     } else {
-      console.log(`_booking-automation: created revenue record for booking ${booking.bookingId}`);
+      console.log(`_booking-automation: created ${recordType} revenue record for booking ${booking.bookingId}`);
     }
   } catch (err) {
     console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", err.message);

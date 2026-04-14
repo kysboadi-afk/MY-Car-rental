@@ -427,15 +427,10 @@ export default async function handler(req, res) {
           if (newRecords.length > 0) {
             for (let i = 0; i < newRecords.length; i += BATCH) {
               const batch = newRecords.slice(i, i + BATCH);
-              const { error: upsertErr } = await sb.from("revenue_records")
-                .upsert(batch, { onConflict: "booking_id", ignoreDuplicates: true });
-              if (upsertErr) {
-                if (isSchemaError(upsertErr)) { batchFailed = true; useGithubFallback = true; break; }
-                const { error: insertErr } = await sb.from("revenue_records").insert(batch);
-                if (insertErr) {
-                  if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
-                  throw insertErr;
-                }
+              const { error: insertErr } = await sb.from("revenue_records").insert(batch);
+              if (insertErr) {
+                if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
+                throw insertErr;
               }
               synced += batch.length;
             }

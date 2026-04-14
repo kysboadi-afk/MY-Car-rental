@@ -454,9 +454,9 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
   );
 });
 
-// ─── 5b. rental_extension: extension rolled into original revenue_record ──────
+// ─── 5b. rental_extension: creates a new extension revenue record ─────────────
 
-test("webhook rental_extension: extension amount rolled into original revenue_record gross_amount", async () => {
+test("webhook rental_extension: creates a new extension revenue record (type=extension)", async () => {
   resetStore(); resetCalls();
   const origBookingId = "bk-ext-revenue-test";
   bookingsStore["camry"] = [{
@@ -477,10 +477,6 @@ test("webhook rental_extension: extension amount rolled into original revenue_re
     },
   }];
 
-  // Pre-populate the revenue_record for the original booking so the webhook
-  // can find and update it (rather than calling autoCreateRevenueRecord).
-  supabaseRevenueStore[origBookingId] = { id: "rr-uuid-001", gross_amount: 110 };
-
   // amountCents = 11000 → $110.00 extension
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
@@ -491,20 +487,30 @@ test("webhook rental_extension: extension amount rolled into original revenue_re
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
-  // autoCreateRevenueRecord must NOT be called — the original record is updated instead.
-  assert.equal(
-    automationCalls.revenue.length, 0,
-    "autoCreateRevenueRecord must NOT be called when the original revenue_record exists"
+  // autoCreateRevenueRecord MUST be called with type='extension'.
+  assert.ok(
+    automationCalls.revenue.length > 0,
+    "autoCreateRevenueRecord must be called to create a new extension revenue record"
   );
+  const extRev = automationCalls.revenue[0];
+  assert.equal(extRev.type, "extension", "extension revenue record must have type='extension'");
+  assert.equal(extRev.vehicleId, "camry", "extension revenue record must carry vehicle_id");
+  // booking_id must be the original booking ref (groups all records per rental)
+  assert.equal(extRev.bookingId, origBookingId, "extension booking_id must equal the original booking ID");
+  // payment_intent_id must hold the extension PI (separate from booking_id)
+  assert.ok(
+    extRev.paymentIntentId && extRev.paymentIntentId.startsWith("pi_"),
+    "extension paymentIntentId must be the Stripe PaymentIntent ID"
+  );
+  assert.equal(extRev.amountPaid, 110, "extension revenue record must carry only the extension amount, not the combined total");
 
-  // The Supabase revenue_records row must be updated with the combined gross_amount.
+  // The original revenue_records row must NOT be mutated (no gross_amount update).
   const revUpdate = supabaseDirectUpdates.find(
     (u) => u.table === "revenue_records" && u.payload.gross_amount != null
   );
-  assert.ok(revUpdate, "revenue_records must be updated via Supabase");
-  assert.equal(revUpdate.payload.gross_amount, 220, "gross_amount must be original (110) + extension (110) = 220");
+  assert.equal(revUpdate, undefined, "original revenue_records row must NOT be updated — extension gets its own row");
 
-  // bookings.json amountPaid must be incremented on the original booking.
+  // bookings.json amountPaid must still be incremented so the booking reflects the total collected.
   const saved = (bookingsStore["camry"] || []).find((b) => b.bookingId === origBookingId);
   assert.ok(saved, "original booking must still exist in bookings.json");
   assert.equal(saved.amountPaid, 220, "bookings.json amountPaid must be updated to 220 after extension");
