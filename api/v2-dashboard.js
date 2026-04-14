@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       try {
         const { data: rrRows, error: rrErr } = await sb
           .from("revenue_reporting_base")
-          .select("booking_id, vehicle_id, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show, created_at, pickup_date");
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, is_cancelled, is_no_show");
 
         if (rrErr) {
           if (isSchemaError(rrErr)) {
@@ -157,7 +157,7 @@ export default async function handler(req, res) {
             netRevenue      += net;
             if (r.stripe_fee != null) reconciledCount++;
 
-            const monthKey = (r.created_at || r.pickup_date || "").slice(0, 7);
+            const monthKey = (r.pickup_date || "").slice(0, 7);
             if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + gross;
 
             bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
@@ -186,7 +186,7 @@ export default async function handler(req, res) {
         totalRevenue += amount;
         netRevenue   += amount; // No Stripe fee data available in fallback
 
-        const monthKey = (booking.createdAt || booking.pickupDate || "").slice(0, 7);
+        const monthKey = (booking.pickupDate || "").slice(0, 7);
         if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
 
         const vid = booking.vehicleId || "unknown";

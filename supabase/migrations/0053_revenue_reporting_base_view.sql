@@ -52,7 +52,6 @@ SELECT
   booking_id,
   vehicle_id,
   pickup_date,
-  created_at,
   gross_amount,
   stripe_fee,
   stripe_net,
