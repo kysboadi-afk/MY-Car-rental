@@ -100,7 +100,8 @@
         "active_15min": "2026-04-14T11:15:30.087Z",
         "late_at_return": "2026-04-14T11:30:30.219Z",
         "late_grace_expired": "2026-04-14T12:30:34.084Z",
-        "late_fee_pending": "2026-04-14T12:30:34.084Z"
+        "late_fee_pending": "2026-04-14T12:30:34.084Z",
+        "post_thank_you": "2026-04-14T15:45:30.792Z"
       },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
