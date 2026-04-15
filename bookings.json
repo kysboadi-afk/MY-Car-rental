@@ -348,7 +348,8 @@
       "status": "active_rental",
       "notes": "",
       "smsSentAt": {
-        "maint_oil_warn": "2026-04-13T19:30:50.558Z"
+        "maint_oil_warn": "2026-04-13T19:30:50.558Z",
+        "active_mid": "2026-04-15T04:30:20.502Z"
       },
       "createdAt": "2026-04-13T19:24:58.614Z",
       "source": "admin_v2",
