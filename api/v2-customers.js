@@ -308,10 +308,13 @@ export default async function handler(req, res) {
                   records: [],
                 };
               }
-              // Prefer the most complete values seen across all records for this key
+              // Prefer the most complete values seen across all records for this key:
+              // use first-non-null-wins for all three fields, except we upgrade the
+              // "Unknown" placeholder name if a real name appears later.
               if (normPhone && !byKey[key].phone) byKey[key].phone = normPhone;
               if (normEmail && !byKey[key].email) byKey[key].email = normEmail;
-              if (r.customer_name)                byKey[key].name  = r.customer_name;
+              if (r.customer_name && (!byKey[key].name || byKey[key].name === "Unknown"))
+                byKey[key].name = r.customer_name;
               byKey[key].records.push(r);
             }
 
@@ -482,8 +485,8 @@ export default async function handler(req, res) {
               // ── 2. Email-only records via individual lookup ───────────────
               if (!schemaError) {
                 for (const record of emailFallbacks) {
-                  const emailKey = record._emailKey;
-                  const { _emailKey: _ignored, ...cleanRecord } = record;
+                  // Strip the internal routing key before writing to the DB
+                  const { _emailKey: emailKey, ...cleanRecord } = record;
                   try {
                     const { data: existing } = await sb.from("customers")
                       .select("id").eq("email", emailKey).is("phone", null).maybeSingle();

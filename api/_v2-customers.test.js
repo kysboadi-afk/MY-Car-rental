@@ -203,9 +203,10 @@ async function runSync() {
 function parseAggLog() {
   const line = logLines.find((l) => l.includes("v2-customers sync aggregation"));
   if (!line) return null;
-  // Prefix each key with a space so "net_total" doesn't match inside "stripe_net_total"
+  // Prefix each key with a space so "net_total" doesn't match inside "stripe_net_total".
+  // Use [-\d.]+ to handle negative values (e.g. net after a large refund).
   const extract = (key) => {
-    const m = line.match(new RegExp(` ${key}=([\\d.]+)`));
+    const m = line.match(new RegExp(` ${key}=([-\\d.]+)`));
     return m ? Number(m[1]) : null;
   };
   return {
