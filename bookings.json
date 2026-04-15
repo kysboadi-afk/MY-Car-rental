@@ -395,7 +395,8 @@
       "notes": "",
       "smsSentAt": {
         "late_fee_pending": "2026-04-14T03:45:30.258Z",
-        "post_thank_you": "2026-04-14T04:00:30.719Z"
+        "post_thank_you": "2026-04-14T04:00:30.719Z",
+        "retention_1d": "2026-04-15T04:00:20.736Z"
       },
       "createdAt": "2026-04-14T03:19:23.526Z",
       "source": "stripe_backfill",
