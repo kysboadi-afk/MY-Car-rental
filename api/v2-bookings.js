@@ -439,6 +439,34 @@ export default async function handler(req, res) {
               .maybeSingle();
             if (!sbErr && sbRow) {
               sbUpdateSuccess = true;
+            } else if (!sbErr && !sbRow) {
+              // The booking_ref lookup matched 0 rows — try payment_intent_id as a
+              // fallback.  This handles Supabase rows that have no booking_ref set
+              // (e.g. created before the column was populated, or where the initial
+              // autoUpsertBooking failed).  Using UPDATE avoids the INSERT conflict-
+              // check trigger that fires on date-overlapping bookings.
+              const preCheck = checkData[vehicleId].find(
+                (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+              );
+              const piId = preCheck?.paymentIntentId;
+              if (piId) {
+                const { data: piRow } = await sbInstance
+                  .from("bookings")
+                  .select("id")
+                  .eq("payment_intent_id", piId)
+                  .maybeSingle();
+                if (piRow) {
+                  const { error: piErr } = await sbInstance
+                    .from("bookings")
+                    .update(sbPayload)
+                    .eq("id", piRow.id);
+                  if (!piErr) {
+                    sbUpdateSuccess = true;
+                  } else {
+                    console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message);
+                  }
+                }
+              }
             } else if (sbErr) {
               console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
             }

@@ -393,18 +393,38 @@ export async function autoUpsertBooking(booking) {
       completed_at:              safeIso(booking.completedAt),
     };
 
-    // Check whether the booking already exists in Supabase
-    const { data: existing } = await sb
+    // Check whether the booking already exists in Supabase (primary: booking_ref)
+    const { data: byRef } = await sb
       .from("bookings")
       .select("id, status, return_date, total_price")
       .eq("booking_ref", booking.bookingId)
       .maybeSingle();
+    let existing = byRef;
+    let fixBookingRef = false;
+
+    // Fallback: look up by payment_intent_id when booking_ref didn't match.
+    // This handles Supabase rows that lack a booking_ref (e.g. created before
+    // the column was populated, or where the initial autoUpsertBooking failed).
+    // Using UPDATE instead of INSERT avoids the date-conflict check trigger.
+    if (!existing && booking.paymentIntentId) {
+      const { data: byPi } = await sb
+        .from("bookings")
+        .select("id, status, return_date, total_price, booking_ref")
+        .eq("payment_intent_id", booking.paymentIntentId)
+        .maybeSingle();
+      if (byPi) {
+        existing = byPi;
+        fixBookingRef = !byPi.booking_ref; // repair null booking_ref in the update
+      }
+    }
 
     if (existing) {
       // UPDATE — no conflict-check trigger fires on plain UPDATE
+      const patchRecord = { ...record, updated_at: new Date().toISOString() };
+      if (fixBookingRef) patchRecord.booking_ref = booking.bookingId;
       const { error } = await sb
         .from("bookings")
-        .update({ ...record, updated_at: new Date().toISOString() })
+        .update(patchRecord)
         .eq("id", existing.id);
       if (error) {
         console.error("_booking-automation autoUpsertBooking update error (non-fatal):", error.message);

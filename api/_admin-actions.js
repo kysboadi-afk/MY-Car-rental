@@ -10,7 +10,7 @@
 //   loadBookings() / loadVehicles() helpers provide fallback when Supabase
 //   is not configured or a table does not yet exist.
 
-import { loadBookings, saveBookings } from "./_bookings.js";
+import { loadBookings, saveBookings, updateBooking } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
@@ -1859,17 +1859,192 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
     throw new Error(`Invalid status "${status}". Must be one of: ${validStatuses.join(", ")}`);
   }
 
+  // ── Find the booking in bookings.json to get vehicleId ────────────────────
+  const { data: bookingsData } = await loadBookings();
+  let foundVehicleId = null;
+  let foundBooking   = null;
+  for (const [vid, list] of Object.entries(bookingsData)) {
+    if (!Array.isArray(list)) continue;
+    const booking = list.find((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId);
+    if (booking) { foundVehicleId = vid; foundBooking = booking; break; }
+  }
+
+  // Build status update fields including auto-stamps for activated/completed
+  const now = new Date().toISOString();
+  const statusUpdates = { status };
+  if (status === "active_rental"    && !foundBooking?.activatedAt)  statusUpdates.activatedAt  = now;
+  if (status === "completed_rental" && !foundBooking?.completedAt)  statusUpdates.completedAt  = now;
+
+  // ── 1. Update bookings.json ────────────────────────────────────────────────
+  let updatedInJson = false;
+  if (foundVehicleId && foundBooking) {
+    try {
+      await updateBooking(foundVehicleId, bookingId, statusUpdates);
+      updatedInJson = true;
+    } catch (jsonErr) {
+      console.warn("toolUpdateBookingStatus: bookings.json update failed (non-fatal):", jsonErr.message);
+    }
+  }
+
+  // ── 2. Sync to Supabase ────────────────────────────────────────────────────
   const sb = getSupabaseAdmin();
-  if (!sb) throw new Error("Supabase not configured — cannot update booking status");
+  if (!sb) {
+    if (!updatedInJson) throw new Error("Supabase not configured and booking not found in bookings.json");
+    return { success: true, bookingId, status, updatedInJson };
+  }
 
-  const { error } = await sb
-    .from("bookings")
-    .update({ status: APP_TO_DB_STATUS[status] })
-    .eq("booking_ref", bookingId);
+  if (foundBooking) {
+    // Use autoUpsertBooking for a complete sync (updates deposit_paid, status, audit log)
+    try {
+      await autoUpsertBooking({ ...foundBooking, ...statusUpdates });
+    } catch (upsertErr) {
+      // Fall back to a targeted status-only update
+      console.warn("toolUpdateBookingStatus: autoUpsertBooking failed, falling back:", upsertErr.message);
+      const { error } = await sb
+        .from("bookings")
+        .update({ status: APP_TO_DB_STATUS[status] })
+        .eq("booking_ref", bookingId);
+      if (error) throw new Error(`Supabase update failed: ${error.message}`);
+    }
+  } else {
+    // Booking only exists in Supabase — do a targeted update
+    const { error } = await sb
+      .from("bookings")
+      .update({ status: APP_TO_DB_STATUS[status] })
+      .eq("booking_ref", bookingId);
+    if (error) throw new Error(`Supabase update failed: ${error.message}`);
+  }
 
-  if (error) throw new Error(`Supabase update failed: ${error.message}`);
+  return { success: true, bookingId, status, updatedInJson };
+}
 
-  return { success: true, bookingId, status };
+/**
+ * Manually record a rental extension payment (cash, phone, or admin-logged).
+ * Updates amountPaid + returnDate on the booking, creates an extension revenue
+ * record, and syncs both bookings.json and Supabase.
+ */
+async function toolRecordExtensionPayment({
+  bookingId, vehicleId, extensionAmount, newReturnDate, newReturnTime, notes,
+}) {
+  if (!bookingId) throw new Error("bookingId is required");
+  if (typeof extensionAmount !== "number" || extensionAmount <= 0) {
+    throw new Error("extensionAmount must be a positive number (in dollars)");
+  }
+  if (!newReturnDate || !/^\d{4}-\d{2}-\d{2}$/.test(newReturnDate)) {
+    throw new Error("newReturnDate is required in YYYY-MM-DD format");
+  }
+
+  const amount = Math.round(extensionAmount * 100) / 100;
+
+  // ── Find the booking in bookings.json ──────────────────────────────────────
+  const { data: bookingsData } = await loadBookings();
+  let foundVehicleId = vehicleId || null;
+  let foundBooking   = null;
+
+  if (foundVehicleId) {
+    const list = Array.isArray(bookingsData[foundVehicleId]) ? bookingsData[foundVehicleId] : [];
+    foundBooking = list.find((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId) || null;
+  }
+  if (!foundBooking) {
+    for (const [vid, list] of Object.entries(bookingsData)) {
+      if (!Array.isArray(list)) continue;
+      const b = list.find((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId);
+      if (b) { foundVehicleId = vid; foundBooking = b; break; }
+    }
+  }
+  if (!foundBooking) throw new Error(`Booking "${bookingId}" not found`);
+
+  const oldReturnDate     = foundBooking.returnDate;
+  const newExtensionCount = (foundBooking.extensionCount || 0) + 1;
+  const updatedReturnTime = typeof newReturnTime === "string" ? newReturnTime.trim() : (foundBooking.returnTime || "");
+
+  // Clear late-return / end-of-rental SMS markers so automation re-fires for the new return date
+  const clearedSmsSentAt = { ...(foundBooking.smsSentAt || {}) };
+  delete clearedSmsSentAt.late_warning_30min;
+  delete clearedSmsSentAt.late_at_return;
+  delete clearedSmsSentAt.late_grace_expired;
+  delete clearedSmsSentAt.late_fee_pending;
+  delete clearedSmsSentAt.active_1h;
+  delete clearedSmsSentAt.active_15min;
+
+  // ── 1. Update bookings.json ────────────────────────────────────────────────
+  await updateJsonFileWithRetry({
+    load:  loadBookings,
+    apply: (freshData) => {
+      const list = freshData[foundVehicleId];
+      if (!Array.isArray(list)) return;
+      const idx = list.findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId);
+      if (idx === -1) return;
+      const cur = list[idx];
+      cur.amountPaid     = Math.round(((cur.amountPaid || 0) + amount) * 100) / 100;
+      cur.returnDate     = newReturnDate;
+      cur.returnTime     = updatedReturnTime;
+      cur.extensionCount = (cur.extensionCount || 0) + 1;
+      cur.smsSentAt      = clearedSmsSentAt;
+      delete cur.lateFeeApplied;
+      if (notes) cur.notes = (cur.notes ? cur.notes + " | " : "") + String(notes).trim().slice(0, 500);
+    },
+    save:    saveBookings,
+    message: `Record extension payment for booking ${bookingId}: +$${amount}, return → ${newReturnDate}`,
+  });
+
+  const updatedBooking = {
+    ...foundBooking,
+    amountPaid:     Math.round(((foundBooking.amountPaid || 0) + amount) * 100) / 100,
+    returnDate:     newReturnDate,
+    returnTime:     updatedReturnTime,
+    extensionCount: newExtensionCount,
+    smsSentAt:      clearedSmsSentAt,
+  };
+
+  // ── 2. Supabase booking sync ───────────────────────────────────────────────
+  try {
+    await autoUpsertBooking(updatedBooking);
+  } catch (syncErr) {
+    console.warn("toolRecordExtensionPayment: Supabase sync error (non-fatal):", syncErr.message);
+  }
+
+  // ── 3. Extension revenue record ────────────────────────────────────────────
+  try {
+    await autoCreateRevenueRecord({
+      bookingId,
+      paymentIntentId: "manual_ext_" + randomBytes(6).toString("hex"),
+      vehicleId:       foundVehicleId,
+      name:            foundBooking.name  || "",
+      phone:           foundBooking.phone || "",
+      email:           foundBooking.email || "",
+      pickupDate:      foundBooking.pickupDate || "",
+      returnDate:      newReturnDate,
+      amountPaid:      amount,
+      paymentMethod:   "cash",
+      type:            "extension",
+    });
+  } catch (revErr) {
+    console.warn("toolRecordExtensionPayment: revenue record error (non-fatal):", revErr.message);
+  }
+
+  // ── 4. Update blocked dates ────────────────────────────────────────────────
+  if (foundBooking.pickupDate && newReturnDate) {
+    try {
+      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking");
+    } catch (bdErr) {
+      console.warn("toolRecordExtensionPayment: blocked_dates update error (non-fatal):", bdErr.message);
+    }
+  }
+
+  return {
+    success:          true,
+    bookingId,
+    vehicleId:        foundVehicleId,
+    customerName:     foundBooking.name || "",
+    extensionAmount:  amount,
+    extensionCount:   newExtensionCount,
+    oldReturnDate,
+    newReturnDate,
+    newReturnTime:    updatedReturnTime,
+    updatedAmountPaid: updatedBooking.amountPaid,
+    message: `Extension recorded: +$${amount.toFixed(2)} for ${foundBooking.name || bookingId}. Return date updated ${oldReturnDate} → ${newReturnDate}. Total paid: $${updatedBooking.amountPaid.toFixed(2)}.`,
+  };
 }
 
 async function toolConfirmVehicleAction({ vehicleId, action }) {
@@ -3114,6 +3289,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "update_sms_template",
   "update_customer",
   "charge_customer_fee",
+  "record_extension_payment",
 ]);
 
 // ── Main dispatcher ──────────────────────────────────────────────────────────
@@ -3184,6 +3360,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "delete_vehicle":                result = await toolDeleteVehicle(args);                break;
       case "charge_customer_fee":           result = await toolChargeCustomerFee(args);            break;
       case "get_charges":                   result = await toolGetCharges(args);                   break;
+      case "record_extension_payment":      result = await toolRecordExtensionPayment(args);       break;
       case "reconcile_stripe":              result = await toolReconcileStripe(args);              break;
       default:
         throw new Error(`Unknown tool: ${toolName}`);
