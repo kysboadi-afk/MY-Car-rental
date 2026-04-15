@@ -390,8 +390,45 @@ export default async function handler(req, res) {
       if (!Array.isArray(checkData[vehicleId])) {
         return res.status(404).json({ error: "Vehicle not found" });
       }
-      if (!checkData[vehicleId].some((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)) {
-        return res.status(404).json({ error: "Booking not found" });
+      const foundInJson = checkData[vehicleId].some(
+        (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+      );
+
+      // If the booking isn't in bookings.json, it may exist only in Supabase
+      // (e.g. created via the Stripe webhook before bookings.json was written,
+      //  or an extended booking whose Supabase row diverged from the JSON).
+      // Try to locate it in Supabase so the status update can still proceed.
+      let sbOnlyRow = null;
+      if (!foundInJson) {
+        const sbVal = getSupabaseAdmin();
+        if (sbVal) {
+          try {
+            // Try by booking_ref first
+            let { data: sbCheck } = await sbVal
+              .from("bookings")
+              .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
+              .eq("vehicle_id", vehicleId)
+              .eq("booking_ref", bookingId)
+              .maybeSingle();
+            // Fallback: try by numeric Supabase row id
+            if (!sbCheck) {
+              const numId = parseInt(bookingId, 10);
+              if (!isNaN(numId)) {
+                const { data: sbCheckById } = await sbVal
+                  .from("bookings")
+                  .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
+                  .eq("vehicle_id", vehicleId)
+                  .eq("id", numId)
+                  .maybeSingle();
+                sbCheck = sbCheckById;
+              }
+            }
+            sbOnlyRow = sbCheck || null;
+          } catch (_sbValErr) { /* non-fatal */ }
+        }
+        if (!sbOnlyRow) {
+          return res.status(404).json({ error: "Booking not found" });
+        }
       }
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
@@ -431,44 +468,60 @@ export default async function handler(req, res) {
               ...(safeUpdates.completedAt ? { completed_at: safeUpdates.completedAt } : {}),
               ...(safeUpdates.notes !== undefined  ? { notes: safeUpdates.notes } : {}),
             };
-            const { data: sbRow, error: sbErr } = await sbInstance
-              .from("bookings")
-              .update(sbPayload)
-              .eq("booking_ref", bookingId)
-              .select("id")
-              .maybeSingle();
-            if (!sbErr && sbRow) {
-              sbUpdateSuccess = true;
-            } else if (!sbErr && !sbRow) {
-              // The booking_ref lookup matched 0 rows — try payment_intent_id as a
-              // fallback.  This handles Supabase rows that have no booking_ref set
-              // (e.g. created before the column was populated, or where the initial
-              // autoUpsertBooking failed).  Using UPDATE avoids the INSERT conflict-
-              // check trigger that fires on date-overlapping bookings.
-              const preCheck = checkData[vehicleId].find(
-                (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
-              );
-              const piId = preCheck?.paymentIntentId;
-              if (piId) {
-                const { data: piRow } = await sbInstance
-                  .from("bookings")
-                  .select("id")
-                  .eq("payment_intent_id", piId)
-                  .maybeSingle();
-                if (piRow) {
-                  const { error: piErr } = await sbInstance
+
+            // If we already located the Supabase row during validation (Supabase-only
+            // bookings not present in bookings.json), update it directly by id to avoid
+            // any booking_ref / payment_intent_id mismatch.
+            if (sbOnlyRow) {
+              const { error: soErr } = await sbInstance
+                .from("bookings")
+                .update(sbPayload)
+                .eq("id", sbOnlyRow.id);
+              if (!soErr) {
+                sbUpdateSuccess = true;
+              } else {
+                console.error("v2-bookings: Supabase-only booking update error (non-fatal):", soErr.message);
+              }
+            } else {
+              const { data: sbRow, error: sbErr } = await sbInstance
+                .from("bookings")
+                .update(sbPayload)
+                .eq("booking_ref", bookingId)
+                .select("id")
+                .maybeSingle();
+              if (!sbErr && sbRow) {
+                sbUpdateSuccess = true;
+              } else if (!sbErr && !sbRow) {
+                // The booking_ref lookup matched 0 rows — try payment_intent_id as a
+                // fallback.  This handles Supabase rows that have no booking_ref set
+                // (e.g. created before the column was populated, or where the initial
+                // autoUpsertBooking failed).  Using UPDATE avoids the INSERT conflict-
+                // check trigger that fires on date-overlapping bookings.
+                const preCheck = checkData[vehicleId].find(
+                  (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+                );
+                const piId = preCheck?.paymentIntentId;
+                if (piId) {
+                  const { data: piRow } = await sbInstance
                     .from("bookings")
-                    .update(sbPayload)
-                    .eq("id", piRow.id);
-                  if (!piErr) {
-                    sbUpdateSuccess = true;
-                  } else {
-                    console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message);
+                    .select("id")
+                    .eq("payment_intent_id", piId)
+                    .maybeSingle();
+                  if (piRow) {
+                    const { error: piErr } = await sbInstance
+                      .from("bookings")
+                      .update(sbPayload)
+                      .eq("id", piRow.id);
+                    if (!piErr) {
+                      sbUpdateSuccess = true;
+                    } else {
+                      console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message);
+                    }
                   }
                 }
+              } else if (sbErr) {
+                console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
               }
-            } else if (sbErr) {
-              console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
             }
           } catch (sbCatchErr) {
             console.error("v2-bookings: Supabase direct update threw (non-fatal):", sbCatchErr.message);
@@ -477,39 +530,70 @@ export default async function handler(req, res) {
       }
 
       let updatedBooking;
-      try {
-        await updateJsonFileWithRetry({
-          load:    loadBookings,
-          apply:   (data) => {
-            if (!Array.isArray(data[vehicleId])) return;
-            const idx = data[vehicleId].findIndex(
+      // Only attempt the bookings.json write when the booking exists there.
+      // Supabase-only bookings (sbOnlyRow set) skip the GitHub write entirely
+      // to avoid writing an unchanged file and creating a spurious commit.
+      if (!sbOnlyRow) {
+        try {
+          await updateJsonFileWithRetry({
+            load:    loadBookings,
+            apply:   (data) => {
+              if (!Array.isArray(data[vehicleId])) return;
+              const idx = data[vehicleId].findIndex(
+                (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+              );
+              if (idx === -1) return;
+              data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
+              updatedBooking = data[vehicleId][idx];
+            },
+            save:    saveBookings,
+            message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
+          });
+        } catch (githubErr) {
+          if (sbUpdateSuccess) {
+            // Supabase already has the updated status — treat the GitHub write
+            // failure as non-fatal and reconstruct updatedBooking from local state.
+            console.error(
+              "v2-bookings: bookings.json write failed after Supabase update succeeded (non-fatal):",
+              githubErr.message
+            );
+            const preCheckBooking = checkData[vehicleId].find(
               (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
             );
-            if (idx === -1) return;
-            data[vehicleId][idx] = { ...data[vehicleId][idx], ...safeUpdates };
-            updatedBooking = data[vehicleId][idx];
-          },
-          save:    saveBookings,
-          message: `v2: Update booking ${bookingId} for ${vehicleId}: ${JSON.stringify(Object.keys(safeUpdates))}`,
-        });
-      } catch (githubErr) {
-        if (sbUpdateSuccess) {
-          // Supabase already has the updated status — treat the GitHub write
-          // failure as non-fatal and reconstruct updatedBooking from local state.
-          console.error(
-            "v2-bookings: bookings.json write failed after Supabase update succeeded (non-fatal):",
-            githubErr.message
-          );
-          const preCheckBooking = checkData[vehicleId].find(
-            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
-          );
-          if (preCheckBooking) {
-            updatedBooking = { ...preCheckBooking, ...safeUpdates };
+            if (preCheckBooking) {
+              updatedBooking = { ...preCheckBooking, ...safeUpdates };
+            }
+          } else {
+            // No Supabase fallback available — propagate the error to the client.
+            throw githubErr;
           }
-        } else {
-          // No Supabase fallback available — propagate the error to the client.
-          throw githubErr;
         }
+      }
+
+      // For Supabase-only bookings (not found in bookings.json), the apply()
+      // callback above silently skips the write (idx === -1) so updatedBooking
+      // stays undefined.  Reconstruct a minimal booking object from the Supabase
+      // row so that downstream automation (unblock dates, customer stats, etc.)
+      // can still run correctly.
+      if (sbOnlyRow) {
+        if (!sbUpdateSuccess) {
+          // The Supabase update failed and there is no bookings.json to fall back on.
+          return res.status(500).json({ error: "Failed to update booking status in database" });
+        }
+        updatedBooking = {
+          bookingId,
+          vehicleId,
+          pickupDate:      sbOnlyRow.pickup_date  || "",
+          pickupTime:      sbOnlyRow.pickup_time  || "",
+          returnDate:      sbOnlyRow.return_date  || "",
+          returnTime:      sbOnlyRow.return_time  || "",
+          totalPrice:      Number(sbOnlyRow.total_price  || 0),
+          amountPaid:      Number(sbOnlyRow.deposit_paid || 0),
+          paymentMethod:   sbOnlyRow.payment_method  || "",
+          paymentIntentId: sbOnlyRow.payment_intent_id || "",
+          notes:           sbOnlyRow.notes || "",
+          ...safeUpdates,
+        };
       }
 
       // ── Booking automation ────────────────────────────────────────────────
