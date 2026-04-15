@@ -273,19 +273,49 @@ export default async function handler(req, res) {
             .eq("payment_status", "paid");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
-            // Group revenue records by normalized customer_phone to prevent
-            // duplicate customer rows caused by inconsistent phone formatting
-            // (e.g. "3463814616" vs "+13463814616").
-            const byPhone = {};
+            // Group revenue records by the best available identity key, in priority order:
+            //   1. Normalized phone (E.164) — most reliable deduplication key
+            //   2. Normalized email (lowercase + trim) — for phone-less records
+            //   3. Normalized name (lowercase + trim) — last-resort fallback
+            // This ensures no revenue row is silently dropped.
+            const byKey = {};
             for (const r of rrData) {
-              if (!r.customer_phone) continue;
-              const normPhone = normalizePhone(r.customer_phone);
-              if (!byPhone[normPhone]) {
-                byPhone[normPhone] = { name: r.customer_name || "Unknown", email: r.customer_email || null, records: [] };
+              const normPhone = r.customer_phone ? normalizePhone(r.customer_phone) : null;
+              const normEmail = r.customer_email ? r.customer_email.toLowerCase().trim() : null;
+              const normName  = r.customer_name  ? r.customer_name.toLowerCase().trim()  : null;
+
+              let key;
+              let keyType;
+              if (normPhone) {
+                key = normPhone;
+                keyType = "phone";
+              } else if (normEmail) {
+                key = `email:${normEmail}`;
+                keyType = "email";
+              } else if (normName) {
+                key = `name:${normName}`;
+                keyType = "name";
+              } else {
+                continue; // no identity at all — truly unattributable
               }
-              if (r.customer_name) byPhone[normPhone].name  = r.customer_name;
-              if (r.customer_email) byPhone[normPhone].email = r.customer_email;
-              byPhone[normPhone].records.push(r);
+
+              if (!byKey[key]) {
+                byKey[key] = {
+                  keyType,
+                  phone: normPhone,
+                  email: normEmail,
+                  name:  r.customer_name || "Unknown",
+                  records: [],
+                };
+              }
+              // Prefer the most complete values seen across all records for this key:
+              // use first-non-null-wins for all three fields, except we upgrade the
+              // "Unknown" placeholder name if a real name appears later.
+              if (normPhone && !byKey[key].phone) byKey[key].phone = normPhone;
+              if (normEmail && !byKey[key].email) byKey[key].email = normEmail;
+              if (r.customer_name && (!byKey[key].name || byKey[key].name === "Unknown"))
+                byKey[key].name = r.customer_name;
+              byKey[key].records.push(r);
             }
 
             // Pre-compute total rental days per vehicle across ALL records (for expense attribution).
@@ -309,8 +339,23 @@ export default async function handler(req, res) {
               console.warn("v2-customers sync: could not load expenses for attribution:", expErr.message);
             }
 
-            const upserts = [];
-            for (const [phone, cust] of Object.entries(byPhone)) {
+            // ── Build per-customer financial records ──────────────────────
+            // Separate into three buckets for different upsert strategies:
+            //   phoneUpserts   — have a phone, upserted via onConflict:"phone"
+            //   emailFallbacks — phone-less but have email, looked up by email
+            //   nameFallbacks  — no phone, no email, looked up by name+null-phone
+            const phoneUpserts   = [];
+            const emailFallbacks = [];
+            const nameFallbacks  = [];
+
+            // Accumulators for the aggregation console log
+            let aggGross  = 0;
+            let aggFees   = 0;
+            let aggStrNet = 0;
+            let aggNet    = 0;
+            let aggRows   = 0;
+
+            for (const [, cust] of Object.entries(byKey)) {
               const valid       = cust.records.filter((r) => !r.is_cancelled && !r.is_no_show);
               const pickupDates = cust.records.map((r) => r.pickup_date).filter(Boolean).sort();
 
@@ -325,8 +370,20 @@ export default async function handler(req, res) {
                 const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
                 return s + net - Number(r.refund_amount || 0);
               }, 0);
+              const stripeNetSum  = valid.reduce((s, r) => {
+                const gross = Number(r.gross_amount || 0);
+                const fee   = Number(r.stripe_fee   || 0);
+                return s + (r.stripe_net != null ? Number(r.stripe_net) : gross - fee);
+              }, 0);
               // total_spent kept for backwards compatibility (= gross after refunds, no Stripe fee deduction)
               const totalSpent    = Math.round((grossRevenue - refunds) * 100) / 100;
+
+              // Accumulate into aggregation totals
+              aggGross  += grossRevenue;
+              aggFees   += stripeFees;
+              aggStrNet += stripeNetSum;
+              aggNet    += netRevenue;
+              aggRows   += valid.length;
 
               // Rental-days per vehicle for this customer (used for expense attribution)
               const custVehicleDays = {};
@@ -351,9 +408,8 @@ export default async function handler(req, res) {
               const avgProfitPerDay   = totalRentalDays > 0 ? totalProfit / totalRentalDays : 0;
               const lifetimeValue     = netRevenue; // standard LTV = cumulative net revenue
 
-              upserts.push({
+              const record = {
                 name:                        cust.name,
-                phone,
                 email:                       cust.email,
                 // total_bookings is patched below from the bookings table
                 // after upsert — set to revenue_records count as initial value.
@@ -370,37 +426,103 @@ export default async function handler(req, res) {
                 first_booking_date:          pickupDates[0] || null,
                 last_booking_date:           pickupDates[pickupDates.length - 1] || null,
                 updated_at:                  new Date().toISOString(),
-              });
+              };
+
+              if (cust.phone) {
+                phoneUpserts.push({ ...record, phone: cust.phone });
+              } else if (cust.email) {
+                emailFallbacks.push({ ...record, phone: null, _emailKey: cust.email });
+              } else {
+                nameFallbacks.push({ ...record, phone: null });
+              }
             }
 
-            if (upserts.length > 0) {
-              const { error: upsertErr } = await sb.from("customers")
-                .upsert(upserts, { onConflict: "phone", ignoreDuplicates: false });
-              if (upsertErr) {
-                if (!isSchemaError(upsertErr)) throw upsertErr;
-                console.warn("v2-customers sync: customers table missing");
-              } else {
-                // Clean up stale duplicate records whose phone was not already
-                // in normalized form (e.g. "3463814616" now that "+13463814616"
-                // is the canonical record). Only query customers with non-normalized
-                // phones (those not already in E.164 / "+1…" format) to keep the
-                // query small.
-                const normalizedPhones = new Set(upserts.map((u) => u.phone));
-                const { data: nonNormCustomers } = await sb
-                  .from("customers")
-                  .select("id, phone")
-                  .not("phone", "is", null)
-                  .not("phone", "like", "+%");
-                if (nonNormCustomers) {
-                  const staleIds = nonNormCustomers
-                    .filter((c) => normalizedPhones.has(normalizePhone(c.phone)))
-                    .map((c) => c.id);
-                  if (staleIds.length > 0) {
-                    await sb.from("customers").delete().in("id", staleIds);
-                    console.log(`v2-customers sync: removed ${staleIds.length} non-normalized duplicate customer(s)`);
+            // Print aggregation summary so it can be verified against Revenue/Dashboard totals
+            console.log(
+              `v2-customers sync aggregation: row_count=${aggRows}` +
+              ` gross_total=${Math.round(aggGross * 100) / 100}` +
+              ` stripe_fee_total=${Math.round(aggFees * 100) / 100}` +
+              ` stripe_net_total=${Math.round(aggStrNet * 100) / 100}` +
+              ` net_total=${Math.round(aggNet * 100) / 100}`,
+            );
+
+            const totalCustomers = phoneUpserts.length + emailFallbacks.length + nameFallbacks.length;
+            if (totalCustomers > 0) {
+              let schemaError = false;
+
+              // ── 1. Phone-keyed records via bulk upsert ────────────────────
+              if (phoneUpserts.length > 0) {
+                const { error: upsertErr } = await sb.from("customers")
+                  .upsert(phoneUpserts, { onConflict: "phone", ignoreDuplicates: false });
+                if (upsertErr) {
+                  if (!isSchemaError(upsertErr)) throw upsertErr;
+                  console.warn("v2-customers sync: customers table missing");
+                  schemaError = true;
+                } else {
+                  // Clean up stale duplicate records whose phone was not already
+                  // in normalized form (e.g. "3463814616" now that "+13463814616"
+                  // is the canonical record). Only query customers with non-normalized
+                  // phones (those not already in E.164 / "+1…" format) to keep the
+                  // query small.
+                  const normalizedPhones = new Set(phoneUpserts.map((u) => u.phone));
+                  const { data: nonNormCustomers } = await sb
+                    .from("customers")
+                    .select("id, phone")
+                    .not("phone", "is", null)
+                    .not("phone", "like", "+%");
+                  if (nonNormCustomers) {
+                    const staleIds = nonNormCustomers
+                      .filter((c) => normalizedPhones.has(normalizePhone(c.phone)))
+                      .map((c) => c.id);
+                    if (staleIds.length > 0) {
+                      await sb.from("customers").delete().in("id", staleIds);
+                      console.log(`v2-customers sync: removed ${staleIds.length} non-normalized duplicate customer(s)`);
+                    }
                   }
                 }
+              }
 
+              // ── 2. Email-only records via individual lookup ───────────────
+              if (!schemaError) {
+                for (const record of emailFallbacks) {
+                  // Strip the internal routing key before writing to the DB
+                  const { _emailKey: emailKey, ...cleanRecord } = record;
+                  try {
+                    const { data: existing } = await sb.from("customers")
+                      .select("id").eq("email", emailKey).is("phone", null).maybeSingle();
+                    if (existing) {
+                      const { error } = await sb.from("customers").update(cleanRecord).eq("id", existing.id);
+                      if (error) { console.error("v2-customers sync email-update error:", error.message); }
+                    } else {
+                      const { error } = await sb.from("customers").insert({ ...cleanRecord, phone: null });
+                      if (error) { console.error("v2-customers sync email-insert error:", error.message); }
+                    }
+                  } catch (emailErr) {
+                    console.error("v2-customers sync email-fallback error:", emailErr.message);
+                  }
+                }
+              }
+
+              // ── 3. Name-only records via individual lookup ────────────────
+              if (!schemaError) {
+                for (const record of nameFallbacks) {
+                  try {
+                    const { data: existing } = await sb.from("customers")
+                      .select("id").eq("name", record.name).is("phone", null).maybeSingle();
+                    if (existing) {
+                      const { error } = await sb.from("customers").update(record).eq("id", existing.id);
+                      if (error) { console.error("v2-customers sync name-update error:", error.message); }
+                    } else {
+                      const { error } = await sb.from("customers").insert({ ...record, phone: null });
+                      if (error) { console.error("v2-customers sync name-insert error:", error.message); }
+                    }
+                  } catch (nameErr) {
+                    console.error("v2-customers sync name-fallback error:", nameErr.message);
+                  }
+                }
+              }
+
+              if (!schemaError) {
                 // ── Patch total_bookings from the bookings table ──────────────
                 // revenue_records may include duplicates or missing records, so
                 // the authoritative booking count comes from the bookings table.
@@ -419,8 +541,8 @@ export default async function handler(req, res) {
                       countById[row.customer_id] = (countById[row.customer_id] || 0) + 1;
                     }
 
-                    // Fetch the IDs of the customers we just upserted by phone
-                    const phones = upserts.map((u) => u.phone);
+                    // Fetch the IDs of the phone-keyed customers we just upserted
+                    const phones = phoneUpserts.map((u) => u.phone);
                     const { data: freshCustomers } = await sb
                       .from("customers")
                       .select("id, phone, total_bookings")
@@ -440,7 +562,7 @@ export default async function handler(req, res) {
                   console.warn("v2-customers sync: bookings-table count patch failed (non-fatal):", bkCountErr.message);
                 }
 
-                return res.status(200).json({ synced: upserts.length, message: `Synced ${upserts.length} customers from revenue records` });
+                return res.status(200).json({ synced: totalCustomers, message: `Synced ${totalCustomers} customers from revenue records` });
               }
             }
           } else if (rrError) {
