@@ -64,15 +64,52 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
   // Helper: find the next available ISO date after the current booking ends
   function getNextAvailDate(vehicleId) {
-    const ranges = ((bookedDates[vehicleId] || []).slice().sort(function(a, b) {
+    const ranges = ((bookedDates[vehicleId] || []).filter(function(r) {
+      return r && r.from && r.to;
+    }).slice().sort(function(a, b) {
       return a.from < b.from ? -1 : 1;
     }));
+    if (!ranges.length) return null;
+
+    var merged = [];
     for (var i = 0; i < ranges.length; i++) {
-      if (ranges[i].from <= today && today <= ranges[i].to) {
-        const d = new Date(ranges[i].to + "T00:00:00");
+      var prev = merged[merged.length - 1];
+      var cur = ranges[i];
+      if (!prev) {
+        merged.push({ from: cur.from, to: cur.to });
+        continue;
+      }
+      var prevEnd = new Date(prev.to + "T00:00:00");
+      prevEnd.setDate(prevEnd.getDate() + 1);
+      var prevEndISO = prevEnd.toISOString().slice(0, 10);
+      if (cur.from <= prevEndISO) {
+        if (cur.to > prev.to) prev.to = cur.to;
+      } else {
+        merged.push({ from: cur.from, to: cur.to });
+      }
+    }
+
+    for (var j = 0; j < merged.length; j++) {
+      if (merged[j].from <= today && today <= merged[j].to) {
+        const d = new Date(merged[j].to + "T00:00:00");
         d.setDate(d.getDate() + 1);
         return d.toISOString().slice(0, 10);
       }
+    }
+
+    for (var k = 0; k < merged.length; k++) {
+      if (merged[k].from > today) {
+        const d2 = new Date(merged[k].to + "T00:00:00");
+        d2.setDate(d2.getDate() + 1);
+        return d2.toISOString().slice(0, 10);
+      }
+    }
+
+    var latestExpired = merged[merged.length - 1];
+    if (latestExpired) {
+      const d3 = new Date(latestExpired.to + "T00:00:00");
+      d3.setDate(d3.getDate() + 1);
+      return d3.toISOString().slice(0, 10);
     }
     return null;
   }
@@ -163,4 +200,3 @@ async function loadFleetStatus() {
 }
 
 loadFleetStatus();
-
