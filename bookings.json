@@ -379,13 +379,14 @@
       "returnDate": "2026-04-17",
       "returnTime": "",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "manual_e91fa1d0e987",
       "amountPaid": 242.55,
       "notes": "STRIPE - vip",
       "createdAt": "2026-04-13T22:26:53.600Z",
       "activatedAt": "2026-04-13T22:30:08.200Z",
-      "updatedAt": "2026-04-13T22:30:08.200Z"
+      "updatedAt": "2026-04-17T04:00:16.472Z",
+      "completedAt": "2026-04-17T04:00:16.472Z"
     },
     {
       "bookingId": "backfill-0642327f3d536207",
