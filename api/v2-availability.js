@@ -79,7 +79,7 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
         // Supabase stores times as "HH:MM:SS" (24-hour); convert them to "H:MM AM/PM"
         // for hasDateTimeOverlap which uses parseDateTimeMs from _availability.js.
         let conflicts = rows || [];
-        if ((fromTime || toTime) && conflicts.length > 0) {
+        if (fromTime && toTime && conflicts.length > 0) {
           // Build ranges array from Supabase rows and run the datetime overlap check.
           const sbRanges = conflicts.map((r) => ({
             from:     r.pickup_date,
@@ -104,9 +104,9 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
     }
   }
 
-  // Fallback: booked-dates.json (time-aware when fromTime/toTime are provided)
+  // Fallback: booked-dates.json (time-aware when both fromTime and toTime are provided)
   const ranges = (fallback[vehicleId] || []);
-  const available = (fromTime || toTime)
+  const available = (fromTime && toTime)
     ? !hasDateTimeOverlap(ranges, from, to, fromTime, toTime)
     : !hasOverlap(ranges, from, to);
   return { available, conflicts: available ? [] : ranges.filter((r) => from <= r.to && r.from <= to), source: "booked-dates-json" };
