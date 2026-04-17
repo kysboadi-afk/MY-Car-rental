@@ -44,8 +44,9 @@ mock.module("./_supabase.js", {
           _data:    rows,
           _filters: [],
           select()           { return this; },
-          eq(col, val)       { this._filters.push({ type: "eq", col, val }); return this; },
-          is(col, val)       { this._filters.push({ type: "is", col, val }); return this; },
+          eq(col, val)       { this._filters.push({ type: "eq",    col, val }); return this; },
+          is(col, val)       { this._filters.push({ type: "is",    col, val }); return this; },
+          ilike(col, val)    { this._filters.push({ type: "ilike", col, val }); return this; },
           not()              { return this; },
           like()             { return this; },
           in()               { return this; },
@@ -53,8 +54,9 @@ mock.module("./_supabase.js", {
           maybeSingle() {
             const row = (this._data || []).find((r) => {
               return this._filters.every((f) => {
-                if (f.type === "eq") return String(r[f.col] ?? "") === String(f.val ?? "");
-                if (f.type === "is") return (r[f.col] ?? null) === f.val;
+                if (f.type === "eq")    return String(r[f.col] ?? "") === String(f.val ?? "");
+                if (f.type === "is")    return (r[f.col] ?? null) === f.val;
+                if (f.type === "ilike") return String(r[f.col] ?? "").toLowerCase() === String(f.val ?? "").toLowerCase();
                 return true;
               });
             }) || null;

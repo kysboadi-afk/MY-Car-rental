@@ -127,10 +127,15 @@ export default async function handler(req, res) {
 
   try {
     // ── Step 1: Fetch the PaymentIntent from Stripe ───────────────────────────
+    // Expand latest_charge.balance_transaction so we can populate stripe_fee
+    // and stripe_net on the revenue record immediately, without a separate
+    // reconcile run.
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
     let pi;
     try {
-      pi = await stripe.paymentIntents.retrieve(pi_id);
+      pi = await stripe.paymentIntents.retrieve(pi_id, {
+        expand: ["latest_charge.balance_transaction"],
+      });
     } catch (stripeErr) {
       console.error(`stripe-replay: Stripe retrieve failed for ${pi_id}:`, stripeErr.message);
       return res.status(404).json({
@@ -138,6 +143,22 @@ export default async function handler(req, res) {
         status: "error",
         reason: `Stripe retrieve failed: ${stripeErr.message}`,
       });
+    }
+
+    // Extract Stripe fee data from the expanded balance_transaction.
+    // bt may be null when the charge hasn't settled yet (e.g. very recent payment).
+    const charge    = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+    const bt        = charge && typeof charge.balance_transaction === "object" && charge.balance_transaction
+                        ? charge.balance_transaction
+                        : null;
+    const stripeFee = bt ? bt.fee / 100 : null;
+    const stripeNet = bt ? bt.net / 100 : null;
+
+    if (bt === null) {
+      console.warn(
+        `stripe-replay: PI ${pi_id} has no balance_transaction — stripe_fee/stripe_net ` +
+        `will remain null until the next reconcile run`
+      );
     }
 
     const meta        = pi.metadata || {};
@@ -209,12 +230,15 @@ export default async function handler(req, res) {
         pickup_date:    pickupDate,
         return_date:    returnDate,
         amount_received: pi.amount_received,
+        stripe_fee:     stripeFee,
+        stripe_net:     stripeNet,
         status:         "would_process",
         steps:          {
           saveWebhookBookingRecord:        "would_run",
           blockBookedDates:                "would_run",
           markVehicleUnavailable:          "would_run",
           sendWebhookNotificationEmails:   "would_run",
+          patchStripeFee:                  bt ? "would_run" : "would_skip: no balance_transaction",
         },
       });
     }
@@ -234,6 +258,45 @@ export default async function handler(req, res) {
       steps.saveWebhookBookingRecord = `error: ${bookingErr.message}`;
       console.error(`stripe-replay: step 1 saveWebhookBookingRecord error:`, bookingErr);
       // Non-fatal — continue to remaining steps so dates/emails still fire.
+    }
+
+    // 5a-ii. Patch stripe_fee / stripe_net on the just-created revenue record.
+    // autoCreateRevenueRecord always sets these to null for Stripe bookings because
+    // the balance_transaction is not available in the booking pipeline.  Since we
+    // expanded it above, we can write the correct values immediately so Revenue,
+    // Dashboard, and Analytics reflect accurate fee data without waiting for a
+    // separate reconcile run.
+    if (stripeFee !== null && stripeNet !== null) {
+      try {
+        const { data: rev } = await sb
+          .from("revenue_records")
+          .select("id, stripe_fee")
+          .eq("payment_intent_id", pi_id)
+          .maybeSingle();
+        if (rev && rev.stripe_fee == null) {
+          const { error: feeErr } = await sb
+            .from("revenue_records")
+            .update({ stripe_fee: stripeFee, stripe_net: stripeNet, updated_at: new Date().toISOString() })
+            .eq("id", rev.id);
+          if (feeErr) {
+            steps.patchStripeFee = `error: ${feeErr.message}`;
+            console.error(`stripe-replay: patchStripeFee error:`, feeErr.message);
+          } else {
+            steps.patchStripeFee = "ok";
+            console.log(`stripe-replay: patched stripe_fee=${stripeFee} stripe_net=${stripeNet} on revenue record ${rev.id}`);
+          }
+        } else if (!rev) {
+          steps.patchStripeFee = "skipped: revenue record not found";
+          console.warn(`stripe-replay: patchStripeFee — revenue record for PI ${pi_id} not found (booking may have failed)`);
+        } else {
+          steps.patchStripeFee = "skipped: stripe_fee already set";
+        }
+      } catch (patchErr) {
+        steps.patchStripeFee = `error: ${patchErr.message}`;
+        console.error(`stripe-replay: patchStripeFee threw:`, patchErr.message);
+      }
+    } else {
+      steps.patchStripeFee = "skipped: no balance_transaction";
     }
 
     // 5b. Block the booked dates in booked-dates.json.
@@ -278,6 +341,8 @@ export default async function handler(req, res) {
       pi_id,
       payment_type: paymentType,
       vehicle_id:   vehicleId,
+      stripe_fee:   stripeFee,
+      stripe_net:   stripeNet,
       status:       "processed",
       steps,
     });
