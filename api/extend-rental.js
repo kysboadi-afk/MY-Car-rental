@@ -123,9 +123,23 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── Enforce return_time = pickup_time ───────────────────────────────────
+    // The system rule is that a rental's return time must always equal its
+    // pickup time so windows are clean and predictable.  Any return_time
+    // supplied by the caller is ignored and replaced with the booking's
+    // pickup_time.  If the booking has no pickupTime (legacy data), we fall
+    // back to its existing returnTime so the comparison below still works.
+    const resolvedReturnTime = activeBooking.pickupTime || activeBooking.returnTime || "";
+    if (newReturnTime && newReturnTime !== resolvedReturnTime) {
+      console.warn(
+        `extend-rental: new_return_time "${newReturnTime}" overridden with ` +
+        `pickup_time "${resolvedReturnTime}" for active booking of ${vehicleId}`
+      );
+    }
+
     // ── Validate new return date is after current return date ───────────────
     const currentReturnMs = parseDateTimeMs(activeBooking.returnDate, activeBooking.returnTime || "");
-    const newReturnMs     = parseDateTimeMs(newReturnDate, newReturnTime || "");
+    const newReturnMs     = parseDateTimeMs(newReturnDate, resolvedReturnTime);
 
     if (isNaN(newReturnMs)) {
       return res.status(400).json({ error: "Invalid new return date/time." });
@@ -134,7 +148,7 @@ export default async function handler(req, res) {
     if (newReturnMs <= currentReturnMs) {
       return res.status(400).json({
         error: "New return date/time must be after your current return date/time " +
-               `(${activeBooking.returnDate}${activeBooking.returnTime ? " " + activeBooking.returnTime : ""}).`,
+               `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
       });
     }
 
@@ -235,7 +249,7 @@ export default async function handler(req, res) {
         renter_phone:        activeBooking.phone || "",
         extension_label:     extensionLabel,
         new_return_date:     newReturnDate,
-        new_return_time:     newReturnTime || "",
+        new_return_time:     resolvedReturnTime,
       },
     });
 
@@ -250,7 +264,7 @@ export default async function handler(req, res) {
             label:           extensionLabel,
             price:           extensionAmount,
             newReturnDate,
-            newReturnTime:   newReturnTime || "",
+            newReturnTime:   resolvedReturnTime,
             paymentIntentId: pi.id,
             createdAt:       new Date().toISOString(),
           },
@@ -268,7 +282,7 @@ export default async function handler(req, res) {
       extensionAmount: extensionAmount.toFixed(2),
       extensionLabel,
       newReturnDate,
-      newReturnTime:   newReturnTime || "",
+      newReturnTime:   resolvedReturnTime,
       vehicleName:     vehicleData.name,
       renterName:      activeBooking.name || "",
     });
