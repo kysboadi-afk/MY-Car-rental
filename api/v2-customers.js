@@ -47,6 +47,60 @@ function computeCustomerTier({ totalProfit, totalBookings, riskFlag, flagged, ba
   return "standard";
 }
 
+function customerIdentityKey(c) {
+  const phone = c?.phone ? normalizePhone(String(c.phone).trim()) : null;
+  if (phone) return `phone:${phone}`;
+  const email = c?.email ? String(c.email).trim().toLowerCase() : null;
+  if (email) return `email:${email}`;
+  const name = c?.name ? String(c.name).trim().toLowerCase() : null;
+  if (name) return `name:${name}`;
+  if (c?.id) return `id:${c.id}`;
+  return `unknown:${String(c?.phone || "")}|${String(c?.email || "").toLowerCase()}|${String(c?.name || "").toLowerCase()}|${String(c?.created_at || "")}|${String(c?.updated_at || "")}`;
+}
+
+function customerSortTimestamp(c) {
+  const updated = Date.parse(c?.updated_at || "");
+  if (Number.isFinite(updated)) return updated;
+  const created = Date.parse(c?.created_at || "");
+  if (Number.isFinite(created)) return created;
+  return 0;
+}
+
+function pickCanonicalCustomer(a, b) {
+  const ta = customerSortTimestamp(a);
+  const tb = customerSortTimestamp(b);
+  if (tb > ta) return b;
+  if (ta > tb) return a;
+  const aScore = (a?.phone ? 4 : 0) + (a?.email ? 2 : 0) + (a?.name ? 1 : 0);
+  const bScore = (b?.phone ? 4 : 0) + (b?.email ? 2 : 0) + (b?.name ? 1 : 0);
+  return bScore > aScore ? b : a;
+}
+
+function dedupeCustomersForList(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = customerIdentityKey(row);
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? pickCanonicalCustomer(existing, row) : row);
+  }
+  return [...byKey.values()];
+}
+
+async function findMostRecentCustomerByEmail(sb, email) {
+  // Prefer the latest non-null timestamps so we update the canonical current row
+  // when legacy duplicate email rows exist.
+  const { data, error } = await sb.from("customers")
+    .select("id, updated_at, created_at")
+    .eq("email", email)
+    .order("updated_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(1);
+  if (error) return { existing: null, error };
+  const existing = Array.isArray(data) && data.length > 0 ? data[0] : null;
+  return { existing, error: null };
+}
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const GITHUB_REPO     = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const CUSTOMERS_FILE  = "customers.json";
@@ -134,7 +188,7 @@ export default async function handler(req, res) {
             q = q.or(`name.ilike.%${body.search}%,phone.ilike.%${body.search}%,email.ilike.%${body.search}%`);
           }
           const { data, error } = await q;
-          if (!error) return res.status(200).json({ customers: data || [] });
+          if (!error) return res.status(200).json({ customers: dedupeCustomersForList(data || []) });
           console.error("v2-customers list error:", error.message);
         } catch (qErr) {
           console.error("v2-customers list query error:", qErr);
@@ -490,8 +544,11 @@ export default async function handler(req, res) {
                     // Look up by email regardless of phone — a customer with phone+email
                     // already exists from the phone upsert; the .is("phone", null) filter
                     // was causing false negatives that produced duplicate rows.
-                    const { data: existing } = await sb.from("customers")
-                      .select("id").eq("email", emailKey).maybeSingle();
+                    const { existing, error: existingErr } = await findMostRecentCustomerByEmail(sb, emailKey);
+                    if (existingErr) {
+                      console.error("v2-customers sync email-lookup error:", existingErr.message);
+                      continue;
+                    }
                     if (existing) {
                       const { error } = await sb.from("customers").update(cleanRecord).eq("id", existing.id);
                       if (error) { console.error("v2-customers sync email-update error:", error.message); }
@@ -666,9 +723,8 @@ export default async function handler(req, res) {
               // name matching (ilike) to catch case variations.
               let existing = null;
               if (record.email) {
-                const { data: existByEmail } = await sb.from("customers")
-                  .select("id").eq("email", record.email).maybeSingle();
-                existing = existByEmail || null;
+                const { existing: existingByEmail, error: emailErr } = await findMostRecentCustomerByEmail(sb, record.email);
+                if (!emailErr) existing = existingByEmail;
               }
               if (!existing) {
                 // Use .limit(1) rather than .maybeSingle() so we don't get an

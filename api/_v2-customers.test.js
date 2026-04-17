@@ -212,6 +212,12 @@ async function runSync() {
   return res;
 }
 
+async function runList(body = {}) {
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-secret", action: "list", ...body }), res);
+  return res;
+}
+
 /** Parse the aggregation log line emitted by the sync handler. */
 function parseAggLog() {
   const line = logLines.find((l) => l.includes("v2-customers sync aggregation"));
@@ -452,6 +458,66 @@ test("F) determinism: running sync twice produces identical totals", async () =>
   assert.equal(agg1.stripe_net_total, agg2.stripe_net_total, "stripe_net_total idempotent");
   assert.equal(agg1.net_total,        agg2.net_total,        "net_total idempotent");
   assert.equal(agg1.row_count,        agg2.row_count,        "row_count idempotent");
+});
+
+test("F) determinism: sync does not create more rows when duplicate-email customer rows already exist", async () => {
+  resetState();
+  rrRows = [
+    { customer_phone: null, customer_name: "Brandon Bookhart", customer_email: "brandon.bookhart@gmail.com",
+      gross_amount: 462.55, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid",
+      pickup_date: "2026-04-10", return_date: "2026-04-11", vehicle_id: "camry" },
+  ];
+  customersDb = [
+    { id: "cust-1", name: "Brandon Bookhart", email: "brandon.bookhart@gmail.com", phone: null, updated_at: "2026-04-12T00:00:00Z" },
+    { id: "cust-2", name: "Brandon.bookhart", email: "brandon.bookhart@gmail.com", phone: null, updated_at: "2026-04-11T00:00:00Z" },
+  ];
+
+  const before = customersDb.length;
+  const res1 = await runSync();
+  const res2 = await runSync();
+
+  assert.equal(res1._status, 200);
+  assert.equal(res2._status, 200);
+  assert.equal(customersDb.length, before, "repeated sync must not insert extra duplicate customer rows");
+});
+
+test("list: returns deduped customers for duplicate email/phone identities", async () => {
+  resetState();
+  rrRows = [];
+  customersDb = [
+    {
+      id: "cust-a",
+      name: "Brandon Bookhart",
+      email: "brandon.bookhart@gmail.com",
+      phone: null,
+      total_spent: 462.55,
+      updated_at: "2026-04-13T00:00:00Z",
+    },
+    {
+      id: "cust-b",
+      name: "Brandon.bookhart",
+      email: "BRANDON.BOOKHART@gmail.com",
+      phone: null,
+      total_spent: 462.55,
+      updated_at: "2026-04-12T00:00:00Z",
+    },
+    {
+      id: "cust-c",
+      name: "David",
+      email: "david@example.com",
+      phone: "+13463814616",
+      total_spent: 1201.73,
+      updated_at: "2026-04-11T00:00:00Z",
+    },
+  ];
+
+  const res = await runList();
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body.customers));
+  assert.equal(res._body.customers.length, 2, "duplicate identity rows should collapse in list response");
+  assert.ok(res._body.customers.some((c) => c.id === "cust-a"), "latest duplicate row should be kept");
+  assert.ok(res._body.customers.some((c) => c.id === "cust-c"));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
