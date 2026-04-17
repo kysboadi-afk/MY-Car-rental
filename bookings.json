@@ -148,7 +148,8 @@
         "late_grace_expired": "2026-04-14T01:00:19.118Z",
         "late_fee_pending": "2026-04-14T01:00:19.118Z",
         "post_thank_you": "2026-04-14T04:15:22.515Z",
-        "retention_1d": "2026-04-15T04:15:20.928Z"
+        "retention_1d": "2026-04-15T04:15:20.928Z",
+        "retention_3d": "2026-04-17T04:15:20.075Z"
       },
       "lateFeeApplied": 50,
       "completedAt": "2026-04-14T04:00:23.611Z"
@@ -358,7 +359,8 @@
         "active_15min": "2026-04-16T23:45:18.023Z",
         "late_at_return": "2026-04-17T00:00:17.596Z",
         "late_grace_expired": "2026-04-17T01:00:21.558Z",
-        "late_fee_pending": "2026-04-17T01:00:21.559Z"
+        "late_fee_pending": "2026-04-17T01:00:21.559Z",
+        "post_thank_you": "2026-04-17T04:15:20.075Z"
       },
       "createdAt": "2026-04-13T19:24:58.614Z",
       "source": "admin_v2",
