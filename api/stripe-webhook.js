@@ -1061,7 +1061,7 @@ export default async function handler(req, res) {
     try {
       await saveWebhookBookingRecord(paymentIntent);
     } catch (bookingErr) {
-      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr.message);
+      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
     }
 
     // Block the booked dates and mark the vehicle unavailable.
