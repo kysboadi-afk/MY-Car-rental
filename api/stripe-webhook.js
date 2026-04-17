@@ -258,7 +258,7 @@ async function saveWebhookBookingRecord(paymentIntent) {
 
   if (!vehicle_id || !pickup_date || !return_date) {
     console.warn(
-      `stripe-webhook: skipping persistBooking for PI ${paymentIntent.id} — missing metadata` +
+      `stripe-webhook: skipping saveWebhookBookingRecord for PI ${paymentIntent.id} — missing metadata` +
       ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`
     );
     return;
@@ -1056,7 +1056,7 @@ export default async function handler(req, res) {
       logWebhookRouting(paymentIntent, `${paymentType} — processing with generic booking path`);
     }
 
-    // Persist booking FIRST so slow/non-critical side effects cannot prevent
+    // Persist booking first so slow/non-critical side effects cannot prevent
     // core booking + revenue writes from happening.
     try {
       await saveWebhookBookingRecord(paymentIntent);
@@ -1097,6 +1097,18 @@ export default async function handler(req, res) {
 
   return res.status(200).json({ received: true });
 }
+
+// ── Named exports for stripe-replay.js ───────────────────────────────────────
+// These allow the replay endpoint to call the exact same pipeline steps as the
+// webhook's generic handler (full_payment / reservation_deposit path) without
+// duplicating any logic. Each export is a self-contained async function with no
+// shared mutable state — safe to call from any module.
+export {
+  saveWebhookBookingRecord,
+  blockBookedDates,
+  markVehicleUnavailable,
+  sendWebhookNotificationEmails,
+};
 
 // ── Slingshot deposit-paid notification email to customer ──────────────────
 
