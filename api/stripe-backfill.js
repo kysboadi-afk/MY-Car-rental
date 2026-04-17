@@ -6,17 +6,26 @@
 // that were never persisted as bookings (e.g. due to browser crashes before
 // success.html completed, or pre-webhook deployments) are backfilled correctly.
 //
-// Design principles:
+// Routing follows the SAME rules as stripe-webhook.js — a PI is processed here
+// if and only if the webhook would have created/persisted a new booking for it:
+//
+//   PROCESSED (creates/upserts booking via persistBooking):
+//     - full_payment            — standard full rental payment
+//     - reservation_deposit     — Camry deposit-only; booking saved as reserved_unpaid
+//     - slingshot_security_deposit — Slingshot deposit-only; saved as reserved_unpaid
+//     - unrecognised / missing payment_type with complete metadata (safe fallback)
+//
+//   SKIPPED (webhook mutates an existing booking, not a new one):
+//     - rental_extension        — updates existing booking's return date; own revenue row
+//     - balance_payment         — updates existing booking to booked_paid; no new booking
+//     - slingshot_balance_payment — finalises existing slingshot booking; no new booking
+//     - PIs without vehicle_id / pickup_date / return_date in metadata
+//
+// Other design principles:
 //   • Uses payment_intent_id as the idempotency key — skips PIs already present
 //     in revenue_records (via the existing autoCreateRevenueRecord dedup guard).
 //   • Never inserts revenue without a booking — all writes go through persistBooking.
 //   • Does NOT send emails, SMS, or fire any side-effects — backfill only.
-//   • Skips payment types that are not standalone bookings:
-//       - rental_extension (extensions already have their own records)
-//       - reservation_deposit / slingshot_security_deposit (handled separately by
-//         the balance-completion webhook; incomplete bookings left intentionally)
-//       - slingshot_balance_payment (balance completions — not a new booking)
-//       - PIs without vehicle_id / pickup_date / return_date in metadata (no booking)
 //   • Supports dry_run mode — returns what would be processed without writing anything.
 //
 // POST /api/stripe-backfill
@@ -46,9 +55,12 @@ import { persistBooking } from "./_booking-pipeline.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // Payment types that should NOT be backfilled as new bookings.
+// These match the payment types handled by specialized branches in stripe-webhook.js
+// that mutate an existing booking rather than creating a new one.
 const SKIP_PAYMENT_TYPES = new Set([
-  "rental_extension",           // extension — already creates its own revenue row via webhook
-  "slingshot_balance_payment",  // balance completion — not a standalone booking
+  "rental_extension",           // updates existing booking's return date; own revenue row per extension
+  "balance_payment",            // updates existing reserved_unpaid booking to booked_paid; no new booking
+  "slingshot_balance_payment",  // finalises existing slingshot booking; no new booking
 ]);
 
 // Payment types that represent deposit-only (partial) bookings where the renter
@@ -113,18 +125,20 @@ async function fetchExistingPiIds(sb, piIds) {
 /**
  * Determine whether a PaymentIntent should be skipped and why.
  * Returns null when the PI should be processed, or a reason string when skipping.
+ * Mirrors the routing decisions in stripe-webhook.js handler.
  */
 function skipReason(pi) {
   const meta = pi.metadata || {};
   const paymentType = meta.payment_type || "";
 
-  // Skip explicitly unsupported payment types
+  // Skip payment types that mutate an existing booking (webhook has specialized
+  // handlers for these that update rather than create a booking record).
   if (SKIP_PAYMENT_TYPES.has(paymentType)) {
-    return `payment_type=${paymentType}`;
+    return `payment_type=${paymentType} is handled by webhook specialized branch (not a new booking)`;
   }
 
-  // Skip PIs with no booking-relevant metadata
-  if (!meta.vehicle_id) return "no vehicle_id in metadata";
+  // Skip PIs with no booking-relevant metadata — cannot create a booking without these.
+  if (!meta.vehicle_id)  return "no vehicle_id in metadata";
   if (!meta.pickup_date) return "no pickup_date in metadata";
   if (!meta.return_date) return "no return_date in metadata";
 
@@ -273,9 +287,23 @@ export default async function handler(req, res) {
     let errors    = 0;
 
     for (const pi of paymentIntents) {
+      const paymentType = (pi.metadata || {}).payment_type || "";
+      const vehicleId   = (pi.metadata || {}).vehicle_id   || "<missing>";
+      const bookingId   = (pi.metadata || {}).booking_id   || "<missing>";
+
+      // Log every PI received — mirrors webhook's logPaymentIntentReceived.
+      console.log(
+        `stripe-backfill: processing PI ${pi.id}` +
+        ` payment_type=${paymentType || "unspecified"}` +
+        ` vehicle_id=${vehicleId}` +
+        ` booking_id=${bookingId}` +
+        ` amount=${pi.amount_received}`
+      );
+
       // Skip if already recorded
       if (existingPiIds.has(pi.id)) {
-        details.push({ pi: pi.id, status: "skipped", reason: "already in revenue_records" });
+        console.log(`stripe-backfill: skipping PI ${pi.id} — already in revenue_records`);
+        details.push({ pi: pi.id, payment_type: paymentType, status: "skipped", reason: "already in revenue_records" });
         skipped++;
         continue;
       }
@@ -283,7 +311,8 @@ export default async function handler(req, res) {
       // Skip unsupported payment types or missing metadata
       const reason = skipReason(pi);
       if (reason) {
-        details.push({ pi: pi.id, status: "skipped", reason });
+        console.log(`stripe-backfill: skipping PI ${pi.id} — ${reason}`);
+        details.push({ pi: pi.id, payment_type: paymentType, status: "skipped", reason });
         skipped++;
         continue;
       }
@@ -293,13 +322,14 @@ export default async function handler(req, res) {
       // Dry run — record what would be done without writing
       if (dry_run) {
         details.push({
-          pi:         pi.id,
-          vehicle_id: opts.vehicleId,
-          booking_id: opts.bookingId,
-          status:     "would_process",
-          amount:     opts.amountPaid,
-          pickup:     opts.pickupDate,
-          return:     opts.returnDate,
+          pi:             pi.id,
+          payment_type:   paymentType,
+          vehicle_id:     opts.vehicleId,
+          booking_id:     opts.bookingId,
+          status:         "would_process",
+          amount:         opts.amountPaid,
+          pickup:         opts.pickupDate,
+          return:         opts.returnDate,
           booking_status: opts.status,
         });
         processed++;
@@ -312,29 +342,32 @@ export default async function handler(req, res) {
 
         if (result.ok) {
           details.push({
-            pi:         pi.id,
-            vehicle_id: opts.vehicleId,
-            booking_id: result.bookingId,
-            status:     "processed",
+            pi:             pi.id,
+            payment_type:   paymentType,
+            vehicle_id:     opts.vehicleId,
+            booking_id:     result.bookingId,
+            status:         "processed",
             booking_status: opts.status,
           });
           processed++;
           console.log(`stripe-backfill: processed PI ${pi.id} → booking ${result.bookingId} (${opts.vehicleId})`);
         } else {
           details.push({
-            pi:         pi.id,
-            vehicle_id: opts.vehicleId,
-            status:     "error",
-            reason:     result.errors.join("; "),
+            pi:           pi.id,
+            payment_type: paymentType,
+            vehicle_id:   opts.vehicleId,
+            status:       "error",
+            reason:       result.errors.join("; "),
           });
           errors++;
           console.error(`stripe-backfill: pipeline failed for PI ${pi.id}: ${result.errors.join("; ")}`);
         }
       } catch (pipelineErr) {
         details.push({
-          pi:     pi.id,
-          status: "error",
-          reason: pipelineErr.message,
+          pi:           pi.id,
+          payment_type: paymentType,
+          status:       "error",
+          reason:       pipelineErr.message,
         });
         errors++;
         console.error(`stripe-backfill: unexpected error for PI ${pi.id}: ${pipelineErr.message}`);
