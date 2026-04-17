@@ -236,7 +236,7 @@ export default async function handler(req, res) {
           blockBookedDates:                "would_run",
           markVehicleUnavailable:          "would_run",
           sendWebhookNotificationEmails:   "would_run",
-          patchStripeFee:                  bt ? "would_run" : "would_skip: no balance_transaction",
+          patchStripeFee:                  bt ? "would_run (fallback only)" : "would_skip: no balance_transaction",
         },
       });
     }
@@ -247,9 +247,15 @@ export default async function handler(req, res) {
     const steps = {};
 
     // 5a. Persist booking + revenue record (idempotent via upsert semantics).
+    // When balance_transaction is available, pass stripe_fee/stripe_net directly
+    // so the revenue record is created with accurate fee data on the first write,
+    // rather than relying entirely on the patchStripeFee fallback step below.
     console.log(`stripe-replay: step 1 — saveWebhookBookingRecord for PI ${pi_id}`);
+    const feeFields = (stripeFee !== null && stripeNet !== null)
+      ? { stripeFee, stripeNet }
+      : {};
     try {
-      await saveWebhookBookingRecord(pi);
+      await saveWebhookBookingRecord(pi, feeFields);
       steps.saveWebhookBookingRecord = "ok";
       console.log(`stripe-replay: step 1 succeeded`);
     } catch (bookingErr) {
@@ -258,12 +264,12 @@ export default async function handler(req, res) {
       // Non-fatal — continue to remaining steps so dates/emails still fire.
     }
 
-    // 5a-ii. Patch stripe_fee / stripe_net on the just-created revenue record.
-    // autoCreateRevenueRecord always sets these to null for Stripe bookings because
-    // the balance_transaction is not available in the booking pipeline.  Since we
-    // expanded it above, we can write the correct values immediately so Revenue,
-    // Dashboard, and Analytics reflect accurate fee data without waiting for a
-    // separate reconcile run.
+    // 5a-ii. Fallback: patch stripe_fee / stripe_net on the revenue record.
+    // This only has an effect when the primary path above did not already write
+    // the fee data (e.g. if saveWebhookBookingRecord failed or the pipeline
+    // silently dropped the extra fields).  Under normal operation the revenue
+    // record will already have stripe_fee set, and this step will report
+    // "skipped: stripe_fee already set".
     if (stripeFee !== null && stripeNet !== null) {
       try {
         const { data: rev } = await sb
@@ -281,13 +287,14 @@ export default async function handler(req, res) {
             console.error(`stripe-replay: patchStripeFee error:`, feeErr.message);
           } else {
             steps.patchStripeFee = "ok";
-            console.log(`stripe-replay: patched stripe_fee=${stripeFee} stripe_net=${stripeNet} on revenue record ${rev.id}`);
+            console.log(`stripe-replay: patchStripeFee (fallback) — wrote stripe_fee=${stripeFee} stripe_net=${stripeNet} on record ${rev.id}`);
           }
         } else if (!rev) {
           steps.patchStripeFee = "skipped: revenue record not found";
           console.warn(`stripe-replay: patchStripeFee — revenue record for PI ${pi_id} not found (booking may have failed)`);
         } else {
           steps.patchStripeFee = "skipped: stripe_fee already set";
+          console.log(`stripe-replay: patchStripeFee — fee already populated by primary path (record ${rev.id})`);
         }
       } catch (patchErr) {
         steps.patchStripeFee = `error: ${patchErr.message}`;

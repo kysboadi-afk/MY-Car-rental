@@ -267,7 +267,7 @@ async function resolveCustomerIdFromSupabase(phone, email) {
  *
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
-async function saveWebhookBookingRecord(paymentIntent) {
+async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   const meta = paymentIntent.metadata || {};
   const {
     booking_id,
@@ -321,6 +321,9 @@ async function saveWebhookBookingRecord(paymentIntent) {
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
+    // Any additional fields supplied by the caller (e.g. stripeFee, stripeNet from
+    // stripe-replay when balance_transaction is already expanded at call time).
+    ...extraFields,
   });
 
   if (!result.ok) {

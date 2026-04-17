@@ -131,10 +131,12 @@ export async function autoCreateRevenueRecord(booking) {
       is_no_show:          false,
       is_cancelled:        false,
       override_by_admin:   false,
-      // Stripe fee data: cash bookings have no fee; Stripe bookings get
-      // populated later by stripe-reconcile.js which expands balance_transaction.
-      stripe_fee: isCash ? 0 : null,
-      stripe_net: isCash ? gross : null,
+      // Stripe fee data: cash bookings have no fee; Stripe bookings use the
+      // caller-provided fee data if available (e.g. a replay that already expanded
+      // balance_transaction and forwarded the values via booking.stripeFee/stripeNet),
+      // otherwise leave null so stripe-reconcile.js can fill them in later.
+      stripe_fee: isCash ? 0 : (booking.stripeFee != null ? Number(booking.stripeFee) : null),
+      stripe_net: isCash ? gross : (booking.stripeNet != null ? Number(booking.stripeNet) : null),
     };
 
     const { error } = await sb.from("revenue_records").insert(record);
