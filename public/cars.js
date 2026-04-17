@@ -72,44 +72,44 @@ function applyFleetStatus(fleetStatus, bookedDates) {
     if (!ranges.length) return null;
 
     var merged = [];
-    for (var i = 0; i < ranges.length; i++) {
-      var prev = merged[merged.length - 1];
-      var cur = ranges[i];
-      if (!prev) {
-        merged.push({ from: cur.from, to: cur.to });
+    for (var rangeIndex = 0; rangeIndex < ranges.length; rangeIndex++) {
+      var previousRange = merged[merged.length - 1];
+      var currentRange = ranges[rangeIndex];
+      if (!previousRange) {
+        merged.push({ from: currentRange.from, to: currentRange.to });
         continue;
       }
-      var prevEnd = new Date(prev.to + "T00:00:00");
-      prevEnd.setDate(prevEnd.getDate() + 1);
-      var prevEndISO = prevEnd.toISOString().slice(0, 10);
-      if (cur.from <= prevEndISO) {
-        if (cur.to > prev.to) prev.to = cur.to;
+      var previousRangeEndPlusOne = new Date(previousRange.to + "T00:00:00");
+      previousRangeEndPlusOne.setDate(previousRangeEndPlusOne.getDate() + 1);
+      var previousRangeEndPlusOneISO = previousRangeEndPlusOne.toISOString().slice(0, 10);
+      if (currentRange.from <= previousRangeEndPlusOneISO) {
+        if (currentRange.to > previousRange.to) previousRange.to = currentRange.to;
       } else {
-        merged.push({ from: cur.from, to: cur.to });
+        merged.push({ from: currentRange.from, to: currentRange.to });
       }
     }
 
-    for (var j = 0; j < merged.length; j++) {
-      if (merged[j].from <= today && today <= merged[j].to) {
-        const d = new Date(merged[j].to + "T00:00:00");
-        d.setDate(d.getDate() + 1);
-        return d.toISOString().slice(0, 10);
+    for (var mergedIndex = 0; mergedIndex < merged.length; mergedIndex++) {
+      if (merged[mergedIndex].from <= today && today <= merged[mergedIndex].to) {
+        const nextAvailableDate = new Date(merged[mergedIndex].to + "T00:00:00");
+        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+        return nextAvailableDate.toISOString().slice(0, 10);
       }
     }
 
-    for (var k = 0; k < merged.length; k++) {
-      if (merged[k].from > today) {
-        const d2 = new Date(merged[k].to + "T00:00:00");
-        d2.setDate(d2.getDate() + 1);
-        return d2.toISOString().slice(0, 10);
+    for (var upcomingIndex = 0; upcomingIndex < merged.length; upcomingIndex++) {
+      if (merged[upcomingIndex].from > today) {
+        const nextAvailableDate = new Date(merged[upcomingIndex].to + "T00:00:00");
+        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+        return nextAvailableDate.toISOString().slice(0, 10);
       }
     }
 
     var latestExpired = merged[merged.length - 1];
     if (latestExpired) {
-      const d3 = new Date(latestExpired.to + "T00:00:00");
-      d3.setDate(d3.getDate() + 1);
-      return d3.toISOString().slice(0, 10);
+      const nextAvailableDate = new Date(latestExpired.to + "T00:00:00");
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+      return nextAvailableDate.toISOString().slice(0, 10);
     }
     return null;
   }
