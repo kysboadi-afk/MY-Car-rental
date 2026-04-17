@@ -482,14 +482,16 @@ export default async function handler(req, res) {
                 }
               }
 
-              // ── 2. Email-only records via individual lookup ───────────────
               if (!schemaError) {
                 for (const record of emailFallbacks) {
                   // Strip the internal routing key before writing to the DB
                   const { _emailKey: emailKey, ...cleanRecord } = record;
                   try {
+                    // Look up by email regardless of phone — a customer with phone+email
+                    // already exists from the phone upsert; the .is("phone", null) filter
+                    // was causing false negatives that produced duplicate rows.
                     const { data: existing } = await sb.from("customers")
-                      .select("id").eq("email", emailKey).is("phone", null).maybeSingle();
+                      .select("id").eq("email", emailKey).maybeSingle();
                     if (existing) {
                       const { error } = await sb.from("customers").update(cleanRecord).eq("id", existing.id);
                       if (error) { console.error("v2-customers sync email-update error:", error.message); }
@@ -507,8 +509,22 @@ export default async function handler(req, res) {
               if (!schemaError) {
                 for (const record of nameFallbacks) {
                   try {
-                    const { data: existing } = await sb.from("customers")
-                      .select("id").eq("name", record.name).is("phone", null).maybeSingle();
+                    // Try email first (if present), then fall back to case-insensitive
+                    // name matching.  Removing the phone IS NULL guard prevents misses
+                    // when the customer already exists with a phone.
+                    let existing = null;
+                    if (record.email) {
+                      const { data: existByEmail } = await sb.from("customers")
+                        .select("id").eq("email", record.email).maybeSingle();
+                      existing = existByEmail || null;
+                    }
+                    if (!existing) {
+                      // Use .limit(1) rather than .maybeSingle() so we don't get an
+                      // error when there happen to be multiple case-variant rows.
+                      const { data: nameRows } = await sb.from("customers")
+                        .select("id").ilike("name", record.name).limit(1);
+                      existing = Array.isArray(nameRows) && nameRows.length > 0 ? nameRows[0] : null;
+                    }
                     if (existing) {
                       const { error } = await sb.from("customers").update(record).eq("id", existing.id);
                       if (error) { console.error("v2-customers sync name-update error:", error.message); }
@@ -645,8 +661,22 @@ export default async function handler(req, res) {
         if (!schemaError) {
           for (const record of nameFallbacks) {
             try {
-              const { data: existing } = await sb.from("customers")
-                .select("id").eq("name", record.name).is("phone", null).maybeSingle();
+              // Email-first lookup prevents creating a new row for a customer who
+              // already exists (with any phone state). Fall back to case-insensitive
+              // name matching (ilike) to catch case variations.
+              let existing = null;
+              if (record.email) {
+                const { data: existByEmail } = await sb.from("customers")
+                  .select("id").eq("email", record.email).maybeSingle();
+                existing = existByEmail || null;
+              }
+              if (!existing) {
+                // Use .limit(1) rather than .maybeSingle() so we don't get an
+                // error when there happen to be multiple case-variant rows.
+                const { data: nameRows } = await sb.from("customers")
+                  .select("id").ilike("name", record.name).limit(1);
+                existing = Array.isArray(nameRows) && nameRows.length > 0 ? nameRows[0] : null;
+              }
               if (existing) {
                 const { error } = await sb.from("customers").update(record).eq("id", existing.id);
                 if (error) { console.error("v2-customers sync name-update error:", error.message); continue; }

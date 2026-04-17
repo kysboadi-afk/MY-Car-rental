@@ -37,6 +37,20 @@ const stepCalls = {
   sendWebhookNotificationEmails: [],
 };
 
+// Tracks the extraFields argument passed to saveWebhookBookingRecord calls
+const saveBookingExtraCalls = [];
+
+// Tracks Supabase revenue_records.update() calls made by the patchStripeFee step
+const revenueUpdates = [];
+
+// When non-null, the patchStripeFee revenue-record lookup returns this value
+// (simulating a revenue record that was just created with null stripe_fee).
+let supabaseRevRecord = null;
+
+// Counter used to distinguish the idempotency check (1st maybeSingle on
+// revenue_records) from the patchStripeFee lookup (2nd call).
+let rrCallCount = 0;
+
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 mock.module("stripe", {
   defaultExport: class FakeStripe {
@@ -59,12 +73,29 @@ mock.module("./_supabase.js", {
         const builder = {
           select() { return builder; },
           eq()     { return builder; },
+          is()     { return builder; },
+          update(updates) {
+            if (table === "revenue_records") {
+              return {
+                eq: async (_col, _id) => {
+                  revenueUpdates.push(updates);
+                  return { error: null };
+                },
+              };
+            }
+            return { eq: async () => ({ error: null }) };
+          },
           maybeSingle() {
             if (table === "revenue_records") {
-              return Promise.resolve({
-                data:  piAlreadyRecorded ? { id: "rev-existing" } : null,
-                error: null,
-              });
+              // First call = idempotency check; second call = patchStripeFee lookup.
+              rrCallCount++;
+              if (rrCallCount === 1) {
+                return Promise.resolve({
+                  data:  piAlreadyRecorded ? { id: "rev-existing" } : null,
+                  error: null,
+                });
+              }
+              return Promise.resolve({ data: supabaseRevRecord, error: null });
             }
             return Promise.resolve({ data: null, error: null });
           },
@@ -79,8 +110,9 @@ mock.module("./_supabase.js", {
 // This avoids pulling in the entire webhook's transitive dependency tree.
 mock.module("./stripe-webhook.js", {
   namedExports: {
-    saveWebhookBookingRecord: async (pi) => {
+    saveWebhookBookingRecord: async (pi, extraFields = {}) => {
       stepCalls.saveWebhookBookingRecord.push(pi.id);
+      saveBookingExtraCalls.push({ piId: pi.id, extraFields });
       if (saveBookingThrows) throw new Error("saveWebhookBookingRecord failed");
     },
     blockBookedDates: async (vehicleId, from, to) => {
@@ -100,7 +132,10 @@ mock.module("./stripe-webhook.js", {
 const { default: handler } = await import("./stripe-replay.js");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function makePi(id, paymentType, metaOverrides = {}) {
+function makePi(id, paymentType, metaOverrides = {}, withBalanceTx = false) {
+  const bt = withBalanceTx
+    ? { fee: 930, net: 27070 }   // $9.30 fee, $270.70 net (on $300 gross)
+    : null;
   return {
     id,
     status:          "succeeded",
@@ -109,6 +144,7 @@ function makePi(id, paymentType, metaOverrides = {}) {
     customer:        null,
     payment_method:  null,
     receipt_email:   null,
+    latest_charge:   bt ? { id: "ch_test", balance_transaction: bt } : null,
     metadata: {
       vehicle_id:   "camry",
       pickup_date:  "2026-08-01",
@@ -145,6 +181,10 @@ function reset() {
   stripePiFixture   = null;
   piAlreadyRecorded = false;
   saveBookingThrows = false;
+  supabaseRevRecord = null;
+  rrCallCount       = 0;
+  revenueUpdates.length         = 0;
+  saveBookingExtraCalls.length  = 0;
   stepCalls.saveWebhookBookingRecord.length      = 0;
   stepCalls.blockBookedDates.length              = 0;
   stepCalls.markVehicleUnavailable.length        = 0;
@@ -365,4 +405,131 @@ test("replay: reservation_deposit is processed (reserved_unpaid booking — not 
   assert.equal(res._body.status,       "processed");
   assert.equal(res._body.payment_type, "reservation_deposit");
   assert.equal(stepCalls.saveWebhookBookingRecord.length, 1, "saveWebhookBookingRecord must be called");
+});
+
+test("replay: PI with balance_transaction — patchStripeFee fallback writes fee when stripe_fee is null after creation", async () => {
+  reset();
+  // PI has an expanded balance_transaction: fee=$9.30, net=$270.70
+  stripePiFixture = makePi("pi_fee_1", "full_payment", {}, /* withBalanceTx */ true);
+  // Simulate that the revenue record was created with stripe_fee still null
+  // (e.g. pipeline dropped extraFields) — patchStripeFee fallback must write it.
+  supabaseRevRecord = { id: "rev-fee-1", stripe_fee: null };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_fee_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.status, "processed");
+
+  // stripe_fee and stripe_net must appear in the response
+  assert.equal(res._body.stripe_fee,  9.30, "stripe_fee must be fee/100");
+  assert.equal(res._body.stripe_net, 270.70, "stripe_net must be net/100");
+
+  // patchStripeFee fallback step must have run and succeeded
+  assert.equal(res._body.steps.patchStripeFee, "ok", `patchStripeFee must be ok; got: ${res._body.steps.patchStripeFee}`);
+
+  // The Supabase update must have been called with the correct values
+  assert.equal(revenueUpdates.length, 1, "exactly one revenue_records.update() call expected");
+  assert.equal(revenueUpdates[0].stripe_fee,  9.30);
+  assert.equal(revenueUpdates[0].stripe_net, 270.70);
+});
+
+test("replay: PI with balance_transaction but no revenue record logs warning and skips patch", async () => {
+  reset();
+  stripePiFixture = makePi("pi_fee_2", "full_payment", {}, /* withBalanceTx */ true);
+  supabaseRevRecord = null; // revenue record not found (booking creation may have failed)
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_fee_2" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.steps.patchStripeFee, "skipped: revenue record not found");
+  assert.equal(revenueUpdates.length, 0, "no update must be issued when revenue record is absent");
+});
+
+test("replay: PI without balance_transaction marks patchStripeFee as skipped", async () => {
+  reset();
+  // PI has no balance_transaction (latest_charge is null)
+  stripePiFixture = makePi("pi_no_bt_1", "full_payment");
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_no_bt_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.stripe_fee, null);
+  assert.equal(res._body.stripe_net, null);
+  assert.equal(res._body.steps.patchStripeFee, "skipped: no balance_transaction");
+  assert.equal(revenueUpdates.length, 0, "no Supabase update must happen without balance_transaction");
+});
+
+test("replay: dry_run includes patchStripeFee step preview (fallback label)", async () => {
+  reset();
+  stripePiFixture = makePi("pi_dry_bt_1", "full_payment", {}, /* withBalanceTx */ true);
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_dry_bt_1", dry_run: true }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.status, "would_process");
+  assert.equal(res._body.steps.patchStripeFee, "would_run (fallback only)");
+  assert.equal(revenueUpdates.length, 0, "dry_run must not update revenue records");
+});
+
+test("replay: PI with balance_transaction passes stripeFee/stripeNet to saveWebhookBookingRecord (primary path)", async () => {
+  reset();
+  stripePiFixture = makePi("pi_fee_primary_1", "full_payment", {}, /* withBalanceTx */ true);
+  // Simulate revenue record was created with stripe_fee already set (primary path worked)
+  supabaseRevRecord = { id: "rev-primary-1", stripe_fee: 9.30 };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_fee_primary_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.status, "processed");
+
+  // saveWebhookBookingRecord must have been called with fee fields as second argument
+  assert.equal(saveBookingExtraCalls.length, 1, "saveWebhookBookingRecord must be called once");
+  const { extraFields } = saveBookingExtraCalls[0];
+  assert.equal(extraFields.stripeFee, 9.30,   "stripeFee must be passed as extraFields.stripeFee");
+  assert.equal(extraFields.stripeNet, 270.70, "stripeNet must be passed as extraFields.stripeNet");
+
+  // patchStripeFee must be skipped because the primary path already set stripe_fee
+  assert.equal(res._body.steps.patchStripeFee, "skipped: stripe_fee already set");
+  assert.equal(revenueUpdates.length, 0, "no update call needed when primary path succeeded");
+});
+
+test("replay: PI with balance_transaction — patchStripeFee runs as fallback when stripe_fee still null", async () => {
+  reset();
+  stripePiFixture = makePi("pi_fee_fallback_1", "full_payment", {}, /* withBalanceTx */ true);
+  // Simulate revenue record exists but stripe_fee wasn't written by primary path
+  supabaseRevRecord = { id: "rev-fallback-1", stripe_fee: null };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_fee_fallback_1" }), res);
+
+  assert.equal(res._status, 200);
+
+  // Fee fields must still be passed to saveWebhookBookingRecord
+  assert.equal(saveBookingExtraCalls.length, 1);
+  assert.equal(saveBookingExtraCalls[0].extraFields.stripeFee, 9.30);
+
+  // Fallback must have fired and updated the record
+  assert.equal(res._body.steps.patchStripeFee, "ok", `patchStripeFee fallback must be ok; got: ${res._body.steps.patchStripeFee}`);
+  assert.equal(revenueUpdates.length, 1, "patchStripeFee fallback must issue one update");
+  assert.equal(revenueUpdates[0].stripe_fee, 9.30);
+  assert.equal(revenueUpdates[0].stripe_net, 270.70);
+});
+
+test("replay: PI without balance_transaction calls saveWebhookBookingRecord without fee extraFields", async () => {
+  reset();
+  stripePiFixture = makePi("pi_no_fee_1", "full_payment"); // no balance_transaction
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_no_fee_1" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(saveBookingExtraCalls.length, 1);
+  // extraFields must be empty — no fee data to forward
+  assert.deepEqual(saveBookingExtraCalls[0].extraFields, {});
+  assert.equal(res._body.steps.patchStripeFee, "skipped: no balance_transaction");
 });

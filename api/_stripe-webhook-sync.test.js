@@ -26,6 +26,8 @@ process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json
 const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [] };
+let bookedDatesStore = {};
+let fleetStatusStore = {};
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 mock.module("stripe", {
@@ -171,11 +173,48 @@ mock.module("./_supabase.js", {
 });
 
 // GitHub API stub (for blockBookedDates / markVehicleUnavailable inside webhook)
-global.fetch = async (url) => {
+global.fetch = async (url, options = {}) => {
   try {
     const parsed = new URL(typeof url === "string" ? url : String(url));
     if (parsed.hostname === "api.github.com") {
-      return { ok: true, json: async () => ({ content: btoa("{}"), sha: "sha1" }) };
+      const method = (options.method || "GET").toUpperCase();
+      const isBookedDates = parsed.pathname.endsWith("/contents/booked-dates.json");
+      const isFleetStatus = parsed.pathname.endsWith("/contents/fleet-status.json");
+      if (!isBookedDates && !isFleetStatus) return { ok: false };
+
+      if (method === "GET") {
+        const data = isBookedDates ? bookedDatesStore : fleetStatusStore;
+        return {
+          ok: true,
+          json: async () => ({
+            content: Buffer.from(JSON.stringify(data)).toString("base64"),
+            sha: "sha1",
+          }),
+        };
+      }
+
+      if (method === "PUT") {
+        let decoded = {};
+        try {
+          const body = JSON.parse(String(options.body || "{}"));
+          const rawContent = String(body.content || "").trim();
+          const decodedText = rawContent
+            ? Buffer.from(rawContent, "base64").toString("utf-8")
+            : "{}";
+          decoded = JSON.parse(decodedText || "{}");
+        } catch {
+          decoded = {};
+        }
+        if (isBookedDates) bookedDatesStore = decoded;
+        if (isFleetStatus) fleetStatusStore = decoded;
+        return {
+          ok: true,
+          json: async () => ({ content: "", sha: "sha2" }),
+          text: async () => "",
+        };
+      }
+
+      return { ok: false };
     }
   } catch { /* fall through */ }
   return { ok: false };
@@ -186,6 +225,8 @@ const { default: handler } = await import("./stripe-webhook.js");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function resetStore() {
   for (const k of Object.keys(bookingsStore)) delete bookingsStore[k];
+  bookedDatesStore = {};
+  fleetStatusStore = {};
 }
 function resetCalls() {
   automationCalls.revenue.length = 0;
@@ -519,6 +560,46 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
   const upsert = automationCalls.booking.find((b) => b.bookingId === origBookingId);
   assert.ok(upsert, "autoUpsertBooking must be called for the original booking");
   assert.equal(upsert.amountPaid, 220, "upserted booking must have combined amountPaid = 220");
+});
+
+test("webhook rental_extension: booked-dates.json range is extended to the new return date", async () => {
+  resetStore(); resetCalls();
+  const origBookingId = "bk-ext-booked-dates";
+  bookingsStore["camry"] = [{
+    bookingId:  origBookingId,
+    vehicleId:  "camry",
+    name:       "Booked Dates Renter",
+    phone:      "+13105550001",
+    pickupDate: "2026-12-10",
+    returnDate: "2026-12-12",
+    returnTime: "3:00 PM",
+    status:     "active_rental",
+    amountPaid: 110,
+    extensionPendingPayment: {
+      newReturnDate: "2026-12-14",
+      newReturnTime: "3:00 PM",
+      label:         "+2 days",
+      price:         110,
+    },
+  }];
+  bookedDatesStore = {
+    camry: [{ from: "2026-12-10", to: "2026-12-12" }],
+  };
+
+  const event = piSucceededEvent({
+    payment_type:        "rental_extension",
+    vehicle_id:          "camry",
+    original_booking_id: origBookingId,
+  }, 11000);
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  assert.deepEqual(
+    bookedDatesStore.camry,
+    [{ from: "2026-12-10", to: "2026-12-14" }],
+    "booked-dates.json must be extended to the new return date so public availability stays in sync"
+  );
 });
 
 

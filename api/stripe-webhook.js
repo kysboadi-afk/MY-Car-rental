@@ -94,11 +94,40 @@ async function blockBookedDates(vehicleId, from, to) {
   await updateJsonFileWithRetry({
     load:  loadBookedDates,
     apply: (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      // Skip if this exact range is already recorded (idempotency guard)
-      if (!hasOverlap(data[vehicleId], from, to)) {
-        data[vehicleId].push({ from, to });
+      if (!Array.isArray(data[vehicleId])) {
+        if (data[vehicleId] != null) {
+          console.warn(`stripe-webhook: booked-dates entry for ${vehicleId} is not an array; resetting`);
+        }
+        data[vehicleId] = [];
       }
+      const originalCount = data[vehicleId].length;
+      const existing = data[vehicleId].filter((r) => r && r.from && r.to);
+      if (existing.length !== originalCount) {
+        console.warn(
+          `stripe-webhook: dropped ${originalCount - existing.length} malformed booked-dates entries for ${vehicleId}`
+        );
+      }
+
+      // Merge with any overlapping ranges so extension replays (same pickup date,
+      // later return date) replace the old window instead of being skipped.
+      let mergedFrom = from;
+      let mergedTo   = to;
+      const kept = [];
+
+      for (const range of existing) {
+        // ISO dates (YYYY-MM-DD) compare correctly with lexicographic operators.
+        const overlaps = mergedFrom <= range.to && range.from <= mergedTo;
+        if (overlaps) {
+          if (range.from < mergedFrom) mergedFrom = range.from;
+          if (range.to > mergedTo)     mergedTo   = range.to;
+        } else {
+          kept.push(range);
+        }
+      }
+
+      kept.push({ from: mergedFrom, to: mergedTo });
+      kept.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+      data[vehicleId] = kept;
     },
     save:    saveBookedDates,
     message: `Block dates for ${vehicleId}: ${from} to ${to} (webhook)`,
@@ -238,7 +267,7 @@ async function resolveCustomerIdFromSupabase(phone, email) {
  *
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
-async function saveWebhookBookingRecord(paymentIntent) {
+async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   const meta = paymentIntent.metadata || {};
   const {
     booking_id,
@@ -292,6 +321,9 @@ async function saveWebhookBookingRecord(paymentIntent) {
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
+    // Any additional fields supplied by the caller (e.g. stripeFee, stripeNet from
+    // stripe-replay when balance_transaction is already expanded at call time).
+    ...extraFields,
   });
 
   if (!result.ok) {
