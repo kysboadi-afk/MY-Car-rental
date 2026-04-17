@@ -257,7 +257,10 @@ async function saveWebhookBookingRecord(paymentIntent) {
   } = meta;
 
   if (!vehicle_id || !pickup_date || !return_date) {
-    console.log("stripe-webhook: skipping booking record — missing vehicle/dates in metadata");
+    console.warn(
+      `stripe-webhook: skipping persistBooking for PI ${paymentIntent.id} — missing metadata` +
+      ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`
+    );
     return;
   }
 
@@ -474,6 +477,39 @@ function getRawBody(req) {
   });
 }
 
+function logPaymentIntentReceived(event, paymentIntent) {
+  const meta = paymentIntent.metadata || {};
+  // booking_id = new-booking PI flows; original_booking_id = extension/balance
+  // flows that mutate an existing booking. We log whichever identifier is present.
+  const bookingRef = meta.booking_id || meta.original_booking_id || "<missing>";
+  console.log(
+    `stripe-webhook: received payment_intent.succeeded` +
+    ` event=${event.id || "unknown_event"}` +
+    ` pi=${paymentIntent.id}` +
+    ` payment_type=${meta.payment_type || "unspecified"}` +
+    ` vehicle_id=${meta.vehicle_id || "<missing>"}` +
+    ` pickup_date=${meta.pickup_date || "<missing>"}` +
+    ` return_date=${meta.return_date || "<missing>"}` +
+    ` booking_id=${bookingRef}`
+  );
+}
+
+function logWebhookSkip(paymentIntent, reason) {
+  const meta = paymentIntent.metadata || {};
+  console.log(
+    `stripe-webhook: skipped branch for PI ${paymentIntent.id}` +
+    ` payment_type=${meta.payment_type || "unspecified"} reason=${reason}`
+  );
+}
+
+function logWebhookRouting(paymentIntent, reason) {
+  const meta = paymentIntent.metadata || {};
+  console.log(
+    `stripe-webhook: routing PI ${paymentIntent.id}` +
+    ` payment_type=${meta.payment_type || "unspecified"} reason=${reason}`
+  );
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
@@ -500,9 +536,11 @@ export default async function handler(req, res) {
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
+    const paymentType = (paymentIntent.metadata || {}).payment_type || "";
+    logPaymentIntentReceived(event, paymentIntent);
 
     // Handle rental extension payment confirmations.
-    if ((paymentIntent.metadata || {}).payment_type === "rental_extension") {
+    if (paymentType === "rental_extension") {
       const {
         vehicle_id,
         original_booking_id,
@@ -758,12 +796,17 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error("stripe-webhook: extension confirmation error:", err);
         }
+      } else {
+        logWebhookSkip(
+          paymentIntent,
+          `rental_extension missing required metadata vehicle_id=${vehicle_id || "<missing>"} original_booking_id=${original_booking_id || "<missing>"}`
+        );
       }
       return res.status(200).json({ received: true });
     }
 
     // Skip balance payments — dates were already blocked when the deposit was paid.
-    if ((paymentIntent.metadata || {}).payment_type === "balance_payment") {
+    if (paymentType === "balance_payment") {
       console.log(
         `stripe-webhook: balance_payment for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );
@@ -792,6 +835,11 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error("stripe-webhook: updateBooking (balance) error:", err);
         }
+      } else {
+        logWebhookSkip(
+          paymentIntent,
+          `balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} original_payment_intent_id=${originalPiId || "<missing>"}`
+        );
       }
       return res.status(200).json({ received: true });
     }
@@ -802,7 +850,7 @@ export default async function handler(req, res) {
     //   2. Save the booking record with payment_status = "deposit_paid".
     //   3. Generate a unique payment_link_token and store it in the booking.
     //   4. Send email + SMS to the customer with the completion link.
-    if ((paymentIntent.metadata || {}).payment_type === "slingshot_security_deposit") {
+    if (paymentType === "slingshot_security_deposit") {
       const meta = paymentIntent.metadata || {};
       const {
         vehicle_id, pickup_date, return_date,
@@ -930,7 +978,7 @@ export default async function handler(req, res) {
 
     // ── Slingshot balance completion payment ─────────────────────────────────
     // When a renter pays the remaining rental balance via the complete-booking page.
-    if ((paymentIntent.metadata || {}).payment_type === "slingshot_balance_payment") {
+    if (paymentType === "slingshot_balance_payment") {
       const meta = paymentIntent.metadata || {};
       const { vehicle_id, payment_link_token, renter_name, email, renter_phone } = meta;
 
@@ -988,6 +1036,11 @@ export default async function handler(req, res) {
         } catch (err) {
           console.error("stripe-webhook: slingshot balance booking update error:", err);
         }
+      } else {
+        logWebhookSkip(
+          paymentIntent,
+          `slingshot_balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} payment_link_token=${payment_link_token || "<missing>"}`
+        );
       }
 
       return res.status(200).json({ received: true });
@@ -995,10 +1048,21 @@ export default async function handler(req, res) {
 
     const { vehicle_id, pickup_date, return_date } = paymentIntent.metadata || {};
 
-    console.log(
-      `stripe-webhook: payment_intent.succeeded — vehicle=${vehicle_id} ` +
-      `pickup=${pickup_date} return=${return_date} pi=${paymentIntent.id}`
-    );
+    if (!paymentType) {
+      logWebhookRouting(paymentIntent, "payment_type missing — processing with generic booking path");
+    } else if (paymentType !== "full_payment" && paymentType !== "reservation_deposit") {
+      logWebhookRouting(paymentIntent, `unexpected payment_type=${paymentType} — processing with generic booking path`);
+    } else {
+      logWebhookRouting(paymentIntent, `${paymentType} — processing with generic booking path`);
+    }
+
+    // Persist booking FIRST so slow/non-critical side effects cannot prevent
+    // core booking + revenue writes from happening.
+    try {
+      await saveWebhookBookingRecord(paymentIntent);
+    } catch (bookingErr) {
+      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr.message);
+    }
 
     // Block the booked dates and mark the vehicle unavailable.
     if (vehicle_id && pickup_date && return_date) {
@@ -1012,6 +1076,11 @@ export default async function handler(req, res) {
       } catch (err) {
         console.error("stripe-webhook: markVehicleUnavailable error:", err);
       }
+    } else {
+      logWebhookSkip(
+        paymentIntent,
+        `calendar/fleet updates skipped — missing metadata vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`
+      );
     }
 
     // Send server-side backup notification emails to the owner and customer.
@@ -1023,16 +1092,6 @@ export default async function handler(req, res) {
       await sendWebhookNotificationEmails(paymentIntent);
     } catch (emailErr) {
       console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
-    }
-
-    // Save a booking record from PI metadata — fallback for when success.html
-    // never completes (lost sessionStorage, browser closed, 3DS redirect).
-    // appendBooking() is idempotent (deduplicates on paymentIntentId), so a
-    // double-save with the browser-side record is always safe.
-    try {
-      await saveWebhookBookingRecord(paymentIntent);
-    } catch (bookingErr) {
-      console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr.message);
     }
   }
 
