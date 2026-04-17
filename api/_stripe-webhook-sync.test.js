@@ -26,8 +26,8 @@ process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json
 const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [] };
-let githubBookedDatesStore = {};
-let githubFleetStatusStore = {};
+let bookedDatesStore = {};
+let fleetStatusStore = {};
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 mock.module("stripe", {
@@ -183,7 +183,7 @@ global.fetch = async (url, options = {}) => {
       if (!isBookedDates && !isFleetStatus) return { ok: false };
 
       if (method === "GET") {
-        const data = isBookedDates ? githubBookedDatesStore : githubFleetStatusStore;
+        const data = isBookedDates ? bookedDatesStore : fleetStatusStore;
         return {
           ok: true,
           json: async () => ({
@@ -197,14 +197,16 @@ global.fetch = async (url, options = {}) => {
         let decoded = {};
         try {
           const body = JSON.parse(String(options.body || "{}"));
-          decoded = JSON.parse(
-            Buffer.from(String(body.content || ""), "base64").toString("utf-8") || "{}"
-          );
+          const rawContent = String(body.content || "").trim();
+          const decodedText = rawContent
+            ? Buffer.from(rawContent, "base64").toString("utf-8")
+            : "{}";
+          decoded = JSON.parse(decodedText || "{}");
         } catch {
           decoded = {};
         }
-        if (isBookedDates) githubBookedDatesStore = decoded;
-        if (isFleetStatus) githubFleetStatusStore = decoded;
+        if (isBookedDates) bookedDatesStore = decoded;
+        if (isFleetStatus) fleetStatusStore = decoded;
         return {
           ok: true,
           json: async () => ({ content: "", sha: "sha2" }),
@@ -223,8 +225,8 @@ const { default: handler } = await import("./stripe-webhook.js");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function resetStore() {
   for (const k of Object.keys(bookingsStore)) delete bookingsStore[k];
-  githubBookedDatesStore = {};
-  githubFleetStatusStore = {};
+  bookedDatesStore = {};
+  fleetStatusStore = {};
 }
 function resetCalls() {
   automationCalls.revenue.length = 0;
@@ -580,7 +582,7 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
       price:         110,
     },
   }];
-  githubBookedDatesStore = {
+  bookedDatesStore = {
     camry: [{ from: "2026-12-10", to: "2026-12-12" }],
   };
 
@@ -594,7 +596,7 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
   assert.equal(res._status, 200);
 
   assert.deepEqual(
-    githubBookedDatesStore.camry,
+    bookedDatesStore.camry,
     [{ from: "2026-12-10", to: "2026-12-14" }],
     "booked-dates.json must be extended to the new return date so public availability stays in sync"
   );

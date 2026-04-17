@@ -94,8 +94,19 @@ async function blockBookedDates(vehicleId, from, to) {
   await updateJsonFileWithRetry({
     load:  loadBookedDates,
     apply: (data) => {
-      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+      if (!Array.isArray(data[vehicleId])) {
+        if (data[vehicleId] != null) {
+          console.warn(`stripe-webhook: booked-dates entry for ${vehicleId} is not an array; resetting`);
+        }
+        data[vehicleId] = [];
+      }
+      const originalCount = data[vehicleId].length;
       const existing = data[vehicleId].filter((r) => r && r.from && r.to);
+      if (existing.length !== originalCount) {
+        console.warn(
+          `stripe-webhook: dropped ${originalCount - existing.length} malformed booked-dates entries for ${vehicleId}`
+        );
+      }
 
       // Merge with any overlapping ranges so extension replays (same pickup date,
       // later return date) replace the old window instead of being skipped.
@@ -104,7 +115,9 @@ async function blockBookedDates(vehicleId, from, to) {
       const kept = [];
 
       for (const range of existing) {
-        if (hasOverlap([range], mergedFrom, mergedTo)) {
+        // ISO dates (YYYY-MM-DD) compare correctly with lexicographic operators.
+        const overlaps = mergedFrom <= range.to && range.from <= mergedTo;
+        if (overlaps) {
           if (range.from < mergedFrom) mergedFrom = range.from;
           if (range.to > mergedTo)     mergedTo   = range.to;
         } else {
@@ -113,13 +126,7 @@ async function blockBookedDates(vehicleId, from, to) {
       }
 
       kept.push({ from: mergedFrom, to: mergedTo });
-      kept.sort((a, b) => {
-        if (a.from < b.from) return -1;
-        if (a.from > b.from) return 1;
-        if (a.to < b.to) return -1;
-        if (a.to > b.to) return 1;
-        return 0;
-      });
+      kept.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
       data[vehicleId] = kept;
     },
     save:    saveBookedDates,
