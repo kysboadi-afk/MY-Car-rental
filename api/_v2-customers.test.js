@@ -66,8 +66,8 @@ mock.module("./_supabase.js", {
           },
           then(resolve) {
             // When used as a Promise (e.g. .limit(1) without .maybeSingle()),
-            // apply ilike/eq filters and return a data array.
-            const filtered = (rows || []).filter((r) => {
+            // apply filters to _data (the current filtered slice) and return an array.
+            const filtered = (this._data || []).filter((r) => {
               return this._filters.every((f) => {
                 if (f.type === "eq")    return String(r[f.col] ?? "") === String(f.val ?? "");
                 if (f.type === "is")    return (r[f.col] ?? null) === f.val;

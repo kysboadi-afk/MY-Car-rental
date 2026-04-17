@@ -147,10 +147,8 @@ export default async function handler(req, res) {
 
     // Extract Stripe fee data from the expanded balance_transaction.
     // bt may be null when the charge hasn't settled yet (e.g. very recent payment).
-    const charge    = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
-    const bt        = charge && typeof charge.balance_transaction === "object" && charge.balance_transaction
-                        ? charge.balance_transaction
-                        : null;
+    const charge    = pi.latest_charge ?? null;
+    const bt        = (typeof charge === "object" && charge) ? (charge.balance_transaction ?? null) : null;
     const stripeFee = bt ? bt.fee / 100 : null;
     const stripeNet = bt ? bt.net / 100 : null;
 
