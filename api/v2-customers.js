@@ -519,9 +519,11 @@ export default async function handler(req, res) {
                       existing = existByEmail || null;
                     }
                     if (!existing) {
-                      const { data: existByName } = await sb.from("customers")
-                        .select("id").ilike("name", record.name).maybeSingle();
-                      existing = existByName || null;
+                      // Use .limit(1) rather than .maybeSingle() so we don't get an
+                      // error when there happen to be multiple case-variant rows.
+                      const { data: nameRows } = await sb.from("customers")
+                        .select("id").ilike("name", record.name).limit(1);
+                      existing = Array.isArray(nameRows) && nameRows.length > 0 ? nameRows[0] : null;
                     }
                     if (existing) {
                       const { error } = await sb.from("customers").update(record).eq("id", existing.id);
@@ -669,9 +671,11 @@ export default async function handler(req, res) {
                 existing = existByEmail || null;
               }
               if (!existing) {
-                const { data: existByName } = await sb.from("customers")
-                  .select("id").ilike("name", record.name).maybeSingle();
-                existing = existByName || null;
+                // Use .limit(1) rather than .maybeSingle() so we don't get an
+                // error when there happen to be multiple case-variant rows.
+                const { data: nameRows } = await sb.from("customers")
+                  .select("id").ilike("name", record.name).limit(1);
+                existing = Array.isArray(nameRows) && nameRows.length > 0 ? nameRows[0] : null;
               }
               if (existing) {
                 const { error } = await sb.from("customers").update(record).eq("id", existing.id);

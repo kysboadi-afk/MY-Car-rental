@@ -157,7 +157,7 @@ export default async function handler(req, res) {
     if (bt === null) {
       console.warn(
         `stripe-replay: PI ${pi_id} has no balance_transaction — stripe_fee/stripe_net ` +
-        `will remain null until the next reconcile run`
+        `will remain null until a stripe-reconcile run (POST /api/stripe-reconcile { action:"reconcile" })`
       );
     }
 

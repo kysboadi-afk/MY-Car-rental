@@ -51,6 +51,7 @@ mock.module("./_supabase.js", {
           like()             { return this; },
           in()               { return this; },
           order()            { return this; },
+          limit()            { return this; },
           maybeSingle() {
             const row = (this._data || []).find((r) => {
               return this._filters.every((f) => {
@@ -64,7 +65,17 @@ mock.module("./_supabase.js", {
             return this;
           },
           then(resolve) {
-            return Promise.resolve({ data: this._data, error: null }).then(resolve);
+            // When used as a Promise (e.g. .limit(1) without .maybeSingle()),
+            // apply ilike/eq filters and return a data array.
+            const filtered = (rows || []).filter((r) => {
+              return this._filters.every((f) => {
+                if (f.type === "eq")    return String(r[f.col] ?? "") === String(f.val ?? "");
+                if (f.type === "is")    return (r[f.col] ?? null) === f.val;
+                if (f.type === "ilike") return String(r[f.col] ?? "").toLowerCase() === String(f.val ?? "").toLowerCase();
+                return true;
+              });
+            });
+            return Promise.resolve({ data: filtered, error: null }).then(resolve);
           },
         };
         return q;
