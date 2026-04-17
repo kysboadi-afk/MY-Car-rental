@@ -451,6 +451,31 @@
       "activatedAt": "2026-04-14T03:30:24.135Z",
       "updatedAt": "2026-04-14T03:45:23.378Z",
       "completedAt": "2026-04-14T03:45:23.378Z"
+    },
+    {
+      "bookingId": "bk-1f2b23efbc5a",
+      "name": "Brandon Bookhart",
+      "phone": "+15303285561",
+      "email": "brandon.bookhart@gmail.com",
+      "vehicleId": "camry2013",
+      "vehicleName": "Camry 2013 SE",
+      "pickupDate": "2026-04-18",
+      "pickupTime": "",
+      "returnDate": "2026-04-20",
+      "returnTime": "",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "booked_paid",
+      "amountPaid": 121.28,
+      "totalPrice": 121.28,
+      "paymentIntentId": "pi_3TNCvXPo7fICjrtZ2xH6l1cj",
+      "paymentLink": "",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-17T18:51:42.639Z",
+      "source": "stripe_webhook",
+      "stripeCustomerId": "cus_UKU6OFbaET2wdh",
+      "stripePaymentMethodId": "pm_1TNCvmPo7fICjrtZkmaIf9LI"
     }
   ]
 }
