@@ -94,11 +94,33 @@ async function blockBookedDates(vehicleId, from, to) {
   await updateJsonFileWithRetry({
     load:  loadBookedDates,
     apply: (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      // Skip if this exact range is already recorded (idempotency guard)
-      if (!hasOverlap(data[vehicleId], from, to)) {
-        data[vehicleId].push({ from, to });
+      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+      const existing = data[vehicleId].filter((r) => r && r.from && r.to);
+
+      // Merge with any overlapping ranges so extension replays (same pickup date,
+      // later return date) replace the old window instead of being skipped.
+      let mergedFrom = from;
+      let mergedTo   = to;
+      const kept = [];
+
+      for (const range of existing) {
+        if (hasOverlap([range], mergedFrom, mergedTo)) {
+          if (range.from < mergedFrom) mergedFrom = range.from;
+          if (range.to > mergedTo)     mergedTo   = range.to;
+        } else {
+          kept.push(range);
+        }
       }
+
+      kept.push({ from: mergedFrom, to: mergedTo });
+      kept.sort((a, b) => {
+        if (a.from < b.from) return -1;
+        if (a.from > b.from) return 1;
+        if (a.to < b.to) return -1;
+        if (a.to > b.to) return 1;
+        return 0;
+      });
+      data[vehicleId] = kept;
     },
     save:    saveBookedDates,
     message: `Block dates for ${vehicleId}: ${from} to ${to} (webhook)`,
