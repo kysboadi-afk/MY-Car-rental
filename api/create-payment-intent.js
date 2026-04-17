@@ -9,7 +9,7 @@ import crypto from "crypto";
 import Stripe from "stripe";
 import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
 import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
-import { isDatesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
+import { isDatesAndTimesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -48,6 +48,13 @@ export default async function handler(req, res) {
 
     const isSlingshotVehicle = vehicleData.isSlingshot;
 
+    // Pickup time is required for all vehicles — it anchors the rental window and
+    // is enforced as the return time for economy cars (return_time = pickup_time).
+    const trimmedPickupTime = pickupTime ? String(pickupTime).trim() : "";
+    if (!trimmedPickupTime) {
+      return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
+    }
+
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (isSlingshotVehicle) {
       if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
@@ -80,16 +87,22 @@ export default async function handler(req, res) {
     // For Slingshot: auto-assign the first available unit — customers book a
     // generic "Slingshot" and we give them whichever unit is free.
     // For economy cars: check only the specific requested vehicle.
+    // Both checks are time-aware: a booking from 9 AM to 9 AM does not block
+    // a subsequent booking starting at 9 AM on the same return date.
     let assignedVehicleId = vehicleId;
     if (isSlingshotVehicle) {
-      const unit = await findAvailableSlingshotUnit(pickup, returnDate);
+      // Compute the Slingshot return time from pickup time + duration so the
+      // overlap check is precise at the hour level.
+      const trimmedReturnTime = returnTime ? String(returnTime).trim() : "";
+      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, trimmedReturnTime || trimmedPickupTime);
       if (!unit) {
         return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
       }
       assignedVehicleId = unit;
     } else {
-      // Check availability — reject if the requested dates overlap an existing booking
-      const available = await isDatesAvailable(vehicleId, pickup, returnDate);
+      // For economy cars the return time always equals the pickup time.
+      // Use the same time for both bounds so the check is symmetric.
+      const available = await isDatesAndTimesAvailable(vehicleId, pickup, returnDate, trimmedPickupTime, trimmedPickupTime);
       if (!available) {
         return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
       }

@@ -1892,10 +1892,13 @@ function updatePayBtn() {
                           (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
   const phoneVal = document.getElementById("phone").value.trim();
-  // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
+  // Hourly-tier vehicles need pickup + duration + pickup time;
+  // other vehicles need pickup + return date + pickup time.
+  // Pickup time is required for all vehicles: it anchors the rental window and
+  // is used as the return time (return_time = pickup_time) for overlap prevention.
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration
-    : pickup.value && returnDate.value;
+    ? pickup.value && currentSlingshotDuration && pickupTime.value
+    : pickup.value && returnDate.value && pickupTime.value;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
@@ -2169,7 +2172,9 @@ stripeBtn.addEventListener("click", async () => {
         email: email,
         phone: phone,
         pickup: pickup.value,
+        pickupTime: pickupTime.value,
         returnDate: returnDate.value,
+        returnTime: returnTime.value,
         protectionPlan: insuranceCoverageChoice === "no",
         // For Economy cars: pass the selected tier so the server uses the correct flat rate.
         ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),

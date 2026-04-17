@@ -152,27 +152,50 @@ function captureButtonKeys() {
 }
 
 function getNextAvailDate(vehicleId, bookedDates) {
-  const today  = todayISO();
-  const ranges = (bookedDates[vehicleId] || []).slice().sort((a, b) => a.from < b.from ? -1 : 1);
-  // 1. Preferred: find a range that actually covers today
+  const today = todayISO();
+  const ranges = (bookedDates[vehicleId] || [])
+    .filter(r => r && r.from && r.to)
+    .slice()
+    .sort((a, b) => a.from < b.from ? -1 : 1);
+  if (!ranges.length) return null;
+
+  const merged = [];
   for (const r of ranges) {
+    const prev = merged[merged.length - 1];
+    if (!prev) {
+      merged.push({ from: r.from, to: r.to });
+      continue;
+    }
+    const prevEnd = new Date(prev.to + "T00:00:00");
+    prevEnd.setDate(prevEnd.getDate() + 1); // treat back-to-back ranges as continuous
+    const prevEndISO = prevEnd.toISOString().slice(0, 10);
+    if (r.from <= prevEndISO) {
+      if (r.to > prev.to) prev.to = r.to;
+    } else {
+      merged.push({ from: r.from, to: r.to });
+    }
+  }
+
+  // 1) If currently inside a merged block, next available is after its end.
+  for (const r of merged) {
     if (r.from <= today && today <= r.to) {
       const d = new Date(r.to + "T00:00:00");
       d.setDate(d.getDate() + 1);
       return d.toISOString().slice(0, 10);
     }
   }
-  // 2. Fallback: vehicle is marked unavailable but the recorded range already
-  //    expired (e.g. a rental was extended but booked-dates.json wasn't updated yet).
-  //    Find the most recently-ended range whose end date is in the recent past
-  //    (within 60 days). Treat day-after-end as "next available" so the badge
-  //    shows a date rather than nothing.
-  let latestExpired = null;
-  for (const r of ranges) {
-    if (r.to < today) {
-      if (!latestExpired || r.to > latestExpired.to) latestExpired = r;
-    }
+
+  // 2) If currently before an upcoming merged block while fleet says unavailable,
+  //    show availability after that upcoming reserved block.
+  const upcoming = merged.find(r => r.from > today);
+  if (upcoming) {
+    const d = new Date(upcoming.to + "T00:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
   }
+
+  // 3) Fallback for stale status with only past ranges.
+  const latestExpired = merged[merged.length - 1];
   if (latestExpired) {
     const d = new Date(latestExpired.to + "T00:00:00");
     d.setDate(d.getDate() + 1);

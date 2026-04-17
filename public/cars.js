@@ -64,15 +64,52 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
   // Helper: find the next available ISO date after the current booking ends
   function getNextAvailDate(vehicleId) {
-    const ranges = ((bookedDates[vehicleId] || []).slice().sort(function(a, b) {
+    const ranges = ((bookedDates[vehicleId] || []).filter(function(r) {
+      return r && r.from && r.to;
+    }).slice().sort(function(a, b) {
       return a.from < b.from ? -1 : 1;
     }));
-    for (var i = 0; i < ranges.length; i++) {
-      if (ranges[i].from <= today && today <= ranges[i].to) {
-        const d = new Date(ranges[i].to + "T00:00:00");
-        d.setDate(d.getDate() + 1);
-        return d.toISOString().slice(0, 10);
+    if (!ranges.length) return null;
+
+    var merged = [];
+    for (var rangeIndex = 0; rangeIndex < ranges.length; rangeIndex++) {
+      var previousRange = merged[merged.length - 1];
+      var currentRange = ranges[rangeIndex];
+      if (!previousRange) {
+        merged.push({ from: currentRange.from, to: currentRange.to });
+        continue;
       }
+      var previousRangeEndPlusOne = new Date(previousRange.to + "T00:00:00");
+      previousRangeEndPlusOne.setDate(previousRangeEndPlusOne.getDate() + 1);
+      var previousRangeEndPlusOneISO = previousRangeEndPlusOne.toISOString().slice(0, 10);
+      if (currentRange.from <= previousRangeEndPlusOneISO) {
+        if (currentRange.to > previousRange.to) previousRange.to = currentRange.to;
+      } else {
+        merged.push({ from: currentRange.from, to: currentRange.to });
+      }
+    }
+
+    for (var mergedIndex = 0; mergedIndex < merged.length; mergedIndex++) {
+      if (merged[mergedIndex].from <= today && today <= merged[mergedIndex].to) {
+        const nextAvailableDate = new Date(merged[mergedIndex].to + "T00:00:00");
+        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+        return nextAvailableDate.toISOString().slice(0, 10);
+      }
+    }
+
+    for (var upcomingIndex = 0; upcomingIndex < merged.length; upcomingIndex++) {
+      if (merged[upcomingIndex].from > today) {
+        const nextAvailableDate = new Date(merged[upcomingIndex].to + "T00:00:00");
+        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+        return nextAvailableDate.toISOString().slice(0, 10);
+      }
+    }
+
+    var latestExpired = merged[merged.length - 1];
+    if (latestExpired) {
+      const nextAvailableDate = new Date(latestExpired.to + "T00:00:00");
+      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
+      return nextAvailableDate.toISOString().slice(0, 10);
     }
     return null;
   }
@@ -163,4 +200,3 @@ async function loadFleetStatus() {
 }
 
 loadFleetStatus();
-

@@ -44,8 +44,11 @@ const FLEET_STATUS_PATH  = "fleet-status.json";
 /**
  * Read booked-dates.json from GitHub and block the given date range.
  * Mirrors the same logic used by send-reservation-email.js.
+ * Time fields (fromTime, toTime) are stored alongside the date range so that
+ * time-aware overlap checks (hasDateTimeOverlap) work correctly for same-day
+ * back-to-back bookings and same-day return/pickup windows.
  */
-async function blockBookedDates(vehicleId, from, to) {
+async function blockBookedDates(vehicleId, from, to, fromTime = "", toTime = "") {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
     console.warn("stripe-webhook: GITHUB_TOKEN not set — skipping date blocking");
@@ -110,27 +113,48 @@ async function blockBookedDates(vehicleId, from, to) {
 
       // Merge with any overlapping ranges so extension replays (same pickup date,
       // later return date) replace the old window instead of being skipped.
-      let mergedFrom = from;
-      let mergedTo   = to;
+      // Times from the incoming range are carried through: if the incoming range
+      // starts earlier than an existing one, its fromTime wins; if it ends later,
+      // its toTime wins. When ranges share a boundary date the time from the
+      // earlier/later extreme is preserved.
+      let mergedFrom     = from;
+      let mergedTo       = to;
+      let mergedFromTime = fromTime || "";
+      let mergedToTime   = toTime   || "";
       const kept = [];
 
       for (const range of existing) {
         // ISO dates (YYYY-MM-DD) compare correctly with lexicographic operators.
         const overlaps = mergedFrom <= range.to && range.from <= mergedTo;
         if (overlaps) {
-          if (range.from < mergedFrom) mergedFrom = range.from;
-          if (range.to > mergedTo)     mergedTo   = range.to;
+          if (range.from < mergedFrom) {
+            mergedFrom     = range.from;
+            mergedFromTime = range.fromTime || "";
+          } else if (range.from === mergedFrom && !mergedFromTime) {
+            mergedFromTime = range.fromTime || "";
+          }
+          if (range.to > mergedTo) {
+            mergedTo     = range.to;
+            mergedToTime = range.toTime || "";
+          } else if (range.to === mergedTo && !mergedToTime) {
+            mergedToTime = range.toTime || "";
+          }
         } else {
           kept.push(range);
         }
       }
 
-      kept.push({ from: mergedFrom, to: mergedTo });
+      // Build the merged entry — only include time fields when they are non-empty
+      // so legacy readers that don't understand time fields are unaffected.
+      const entry = { from: mergedFrom, to: mergedTo };
+      if (mergedFromTime) entry.fromTime = mergedFromTime;
+      if (mergedToTime)   entry.toTime   = mergedToTime;
+      kept.push(entry);
       kept.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
       data[vehicleId] = kept;
     },
     save:    saveBookedDates,
-    message: `Block dates for ${vehicleId}: ${from} to ${to} (webhook)`,
+    message: `Block dates for ${vehicleId}: ${from}${fromTime ? " " + fromTime : ""} to ${to}${toTime ? " " + toTime : ""} (webhook)`,
   });
 }
 
@@ -604,7 +628,20 @@ export default async function handler(req, res) {
 
             if (ext) {
               const updatedReturnDate = ext.newReturnDate || booking.returnDate;
-              const updatedReturnTime = ext.newReturnTime || booking.returnTime;
+
+              // Enforce the system rule: return_time must always equal pickup_time
+              // so rental windows are clean and predictable.  Any return_time that
+              // differs from pickup_time (e.g. a stale ext.newReturnTime or an
+              // arbitrary value supplied by the renter) is overridden here.
+              const bookingPickupTime = booking.pickupTime || "";
+              const proposedReturnTime = ext.newReturnTime || new_return_time || "";
+              if (proposedReturnTime && bookingPickupTime && proposedReturnTime !== bookingPickupTime) {
+                console.warn(
+                  `stripe-webhook: rental_extension return_time "${proposedReturnTime}" overridden ` +
+                  `with pickup_time "${bookingPickupTime}" for booking ${original_booking_id}`
+                );
+              }
+              const updatedReturnTime = bookingPickupTime;
               const oldReturnDate     = booking.returnDate;
               const pickupDate        = booking.pickupDate;
               const newExtensionCount = (booking.extensionCount || 0) + 1;
@@ -707,9 +744,10 @@ export default async function handler(req, res) {
               }
 
               // Update booked-dates.json: replace old range with the extended range.
+              // Pass pickup_time as both fromTime and toTime since return_time = pickup_time.
               if (pickupDate && updatedReturnDate) {
                 try {
-                  await blockBookedDates(vehicle_id, pickupDate, updatedReturnDate);
+                  await blockBookedDates(vehicle_id, pickupDate, updatedReturnDate, booking.pickupTime || "", booking.pickupTime || "");
                   console.log(`stripe-webhook: booked-dates.json updated for extension ${vehicle_id}: ${pickupDate} → ${updatedReturnDate}`);
                 } catch (bdErr) {
                   console.error("stripe-webhook: booked-dates.json extension update failed (non-fatal):", bdErr.message);
@@ -886,6 +924,7 @@ export default async function handler(req, res) {
       const meta = paymentIntent.metadata || {};
       const {
         vehicle_id, pickup_date, return_date,
+        pickup_time, return_time,
         renter_name, renter_phone, email,
         rental_price, security_deposit, remaining_balance,
         full_rental_amount, rental_duration,
@@ -898,7 +937,7 @@ export default async function handler(req, res) {
       // Block dates so the vehicle shows as reserved
       if (vehicle_id && pickup_date && return_date) {
         try {
-          await blockBookedDates(vehicle_id, pickup_date, return_date);
+          await blockBookedDates(vehicle_id, pickup_date, return_date, pickup_time || "", return_time || "");
         } catch (err) {
           console.error("stripe-webhook: blockBookedDates (slingshot deposit) error:", err);
         }
@@ -1078,7 +1117,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true });
     }
 
-    const { vehicle_id, pickup_date, return_date } = paymentIntent.metadata || {};
+    const { vehicle_id, pickup_date, return_date, pickup_time: meta_pickup_time, return_time: meta_return_time } = paymentIntent.metadata || {};
 
     if (!paymentType) {
       logWebhookRouting(paymentIntent, "payment_type missing — processing with generic booking path");
@@ -1099,7 +1138,7 @@ export default async function handler(req, res) {
     // Block the booked dates and mark the vehicle unavailable.
     if (vehicle_id && pickup_date && return_date) {
       try {
-        await blockBookedDates(vehicle_id, pickup_date, return_date);
+        await blockBookedDates(vehicle_id, pickup_date, return_date, meta_pickup_time || "", meta_return_time || "");
       } catch (err) {
         console.error("stripe-webhook: blockBookedDates error:", err);
       }
