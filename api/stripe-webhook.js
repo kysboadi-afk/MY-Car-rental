@@ -533,7 +533,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   const ownerHtml = hasFullDocs
     ? `
     <h2>💰 Payment Confirmed – New Booking</h2>
-    <p>A new rental has been confirmed and paid. The signed rental agreement${storedDocs && storedDocs.id_base64 ? ", renter's ID," : ""} and booking details are attached below.</p>
+    <p>A new rental has been confirmed and paid. The following documents are attached: ${attachments.map(a => a.filename).join(", ")}.</p>
     <table style="border-collapse:collapse;width:100%;margin-top:16px">
       <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
       <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>

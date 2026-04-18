@@ -2338,10 +2338,7 @@ stripeBtn.addEventListener("click", async () => {
                   insuranceCoverageChoice,
                 }),
               }),
-              new Promise(function(resolve) { setTimeout(resolve, 5000); }),
-            ]);
-          } catch (docsErr) {
-            console.warn("store-booking-docs (Apple Pay): non-critical upload failed:", docsErr);
+              new Promise(resolve => setTimeout(resolve, 5000)),
           }
         }
 
@@ -2496,7 +2493,7 @@ stripeBtn.addEventListener("click", async () => {
                 insuranceCoverageChoice,
               }),
             }),
-            new Promise(function(resolve) { setTimeout(resolve, 5000); }),
+            new Promise(resolve => setTimeout(resolve, 5000)),
           ]);
         } catch (docsErr) {
           console.warn("store-booking-docs: non-critical upload failed:", docsErr);
