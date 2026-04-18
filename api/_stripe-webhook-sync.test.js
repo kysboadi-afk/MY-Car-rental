@@ -127,6 +127,13 @@ mock.module("./_sms-templates.js", {
   },
 });
 
+mock.module("./_rental-agreement-pdf.js", {
+  namedExports: {
+    generateRentalAgreementPdf: async () => Buffer.from("pdf-stub"),
+    dppTierLiabilityCap: (tier) => tier === "basic" ? "$2,500" : tier === "premium" ? "$500" : "$1,000",
+  },
+});
+
 // Supabase stub (for the new getSupabaseAdmin import in stripe-webhook.js)
 const supabaseDirectUpdates = [];
 // Pre-populated by tests that need a revenue_record to already exist

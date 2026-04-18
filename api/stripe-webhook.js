@@ -26,7 +26,8 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
-import { CARS } from "./_pricing.js";
+import { CARS, computeRentalDays } from "./_pricing.js";
+import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -390,16 +391,20 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 
   const meta = paymentIntent.metadata || {};
   const {
+    booking_id,
     renter_name,
     renter_phone,
     vehicle_id,
     vehicle_name,
     pickup_date,
     return_date,
+    pickup_time,
+    return_time,
     email,
     payment_type,
     full_rental_amount,
     balance_at_pickup,
+    protection_plan_tier,
   } = meta;
 
   const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
@@ -419,9 +424,133 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     },
   });
 
+  // ── Retrieve pre-stored booking docs (signature, ID, insurance) ───────────
+  // These are saved by the booking page (car.js → store-booking-docs.js)
+  // before the Stripe payment is confirmed so the webhook can send the owner
+  // the full email regardless of what happens in the customer's browser.
+  let storedDocs = null;
+  if (booking_id) {
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        const { data: docsRow } = await sb
+          .from("pending_booking_docs")
+          .select("*")
+          .eq("booking_id", booking_id)
+          .eq("email_sent", false)
+          .maybeSingle();
+        storedDocs = docsRow || null;
+      }
+    } catch (docsErr) {
+      console.warn("stripe-webhook: could not retrieve pending_booking_docs (non-fatal):", docsErr.message);
+    }
+  }
+
+  // ── Build attachments from stored docs ────────────────────────────────────
+  const attachments = [];
+
+  // Generate rental agreement PDF if signature is available.
+  if (storedDocs && storedDocs.signature) {
+    try {
+      const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
+      const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
+      const hasProtectionPlan = !!protection_plan_tier;
+
+      const pdfBody = {
+        vehicleId:   vehicle_id  || "",
+        car:         vehicle_name || vehicleInfo.name || vehicle_id || "",
+        vehicleMake:  vehicleInfo.make  || null,
+        vehicleModel: vehicleInfo.model || null,
+        vehicleYear:  vehicleInfo.year  || null,
+        vehicleVin:   vehicleInfo.vin   || null,
+        vehicleColor: vehicleInfo.color || null,
+        name:         renter_name || "",
+        email:        email       || "",
+        phone:        renter_phone || "",
+        pickup:       pickup_date  || "",
+        pickupTime:   pickup_time  || "",
+        returnDate:   return_date  || "",
+        returnTime:   return_time  || "",
+        total:        full_rental_amount || amountDollars,
+        deposit:      vehicleInfo.deposit || 0,
+        days:         rentalDays,
+        protectionPlan:     hasProtectionPlan,
+        protectionPlanTier: protection_plan_tier || null,
+        signature:          storedDocs.signature,
+        fullRentalCost:     full_rental_amount || null,
+        balanceAtPickup:    balance_at_pickup  || null,
+        insuranceCoverageChoice: storedDocs.insurance_coverage_choice ||
+          (hasProtectionPlan ? "no" : "yes"),
+      };
+
+      const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+      const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+      const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
+      attachments.push({
+        filename:    `rental-agreement-${safeName}-${safeDate}.pdf`,
+        content:     pdfBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`stripe-webhook: rental agreement PDF generated for PI ${paymentIntent.id}`);
+    } catch (pdfErr) {
+      console.error("stripe-webhook: PDF generation failed (non-fatal):", pdfErr.message);
+    }
+  }
+
+  // Attach renter's ID photo if available.
+  if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.id_filename,
+        content:     Buffer.from(storedDocs.id_base64, "base64"),
+        contentType: storedDocs.id_mimetype || "application/octet-stream",
+      });
+    } catch (idErr) {
+      console.error("stripe-webhook: ID attachment failed (non-fatal):", idErr.message);
+    }
+  }
+
+  // Attach insurance document if available.
+  if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.insurance_filename,
+        content:     Buffer.from(storedDocs.insurance_base64, "base64"),
+        contentType: storedDocs.insurance_mimetype || "application/octet-stream",
+      });
+    } catch (insErr) {
+      console.error("stripe-webhook: insurance attachment failed (non-fatal):", insErr.message);
+    }
+  }
+
+  const hasFullDocs = attachments.length > 0;
+
   // ── Owner notification ────────────────────────────────────────────────────
-  const ownerSubject = `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)} (Server Backup)`;
-  const ownerHtml = `
+  const ownerSubject = hasFullDocs
+    ? `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)}`
+    : `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)} (Server Backup)`;
+
+  const ownerHtml = hasFullDocs
+    ? `
+    <h2>💰 Payment Confirmed – New Booking</h2>
+    <p>A new rental has been confirmed and paid. The signed rental agreement${storedDocs && storedDocs.id_base64 ? ", renter's ID," : ""} and booking details are attached below.</p>
+    <table style="border-collapse:collapse;width:100%;margin-top:16px">
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_name || "Not provided")}</td></tr>
+      ${renter_phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_phone)}</td></tr>` : ""}
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email || "Not provided")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
+      <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
+      ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
+      ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
+    </table>
+    <p style="margin-top:16px">📎 <strong>Attachments:</strong> ${attachments.map(a => a.filename).join(", ")}</p>
+    <p>Dates have been automatically blocked on the booking calendar.</p>
+    `
+    : `
     <h2>💰 Payment Confirmed – New Booking (Server-Side Backup Notification)</h2>
     <p><strong>⚠️ This is an automatic server-side backup email.</strong> It fires whenever a payment succeeds on Stripe, regardless of what happened in the customer's browser. If you already received a separate "Payment Confirmed" email with the signed rental agreement, this duplicate can be ignored.</p>
     <table style="border-collapse:collapse;width:100%;margin-top:16px">
@@ -439,19 +568,23 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     </table>
     <p style="margin-top:16px">⚠️ <strong>Action required:</strong> The signed rental agreement, renter's ID, and insurance documents are only attached to the full confirmation email sent from the customer's browser. If that email did not arrive, please contact the customer directly at ${esc(email || "the email above")} to collect a signed agreement.</p>
     <p>Dates have been automatically blocked on the booking calendar.</p>
-  `;
+    `;
 
   try {
     await transporter.sendMail({
-      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
-      to:      OWNER_EMAIL,
+      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
-      subject: ownerSubject,
-      text:    [
-        "Payment Confirmed – New Booking (Server-Side Backup Notification)",
+      subject:     ownerSubject,
+      attachments: attachments,
+      text: [
+        hasFullDocs
+          ? "Payment Confirmed – New Booking"
+          : "Payment Confirmed – New Booking (Server-Side Backup Notification)",
         "",
-        "NOTE: This is a server-side backup email. It fires on every confirmed Stripe payment.",
-        "If you already received a full confirmation with the signed agreement, this can be ignored.",
+        hasFullDocs
+          ? `Attachments: ${attachments.map(a => a.filename).join(", ")}`
+          : "NOTE: This is a server-side backup email. If you already received a full confirmation with the signed agreement, this can be ignored.",
         "",
         `Stripe Payment ID  : ${paymentIntent.id}`,
         `Vehicle            : ${vehicle_name || vehicle_id || "N/A"}`,
@@ -466,9 +599,24 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       ].filter(Boolean).join("\n"),
       html: ownerHtml,
     });
-    console.log(`stripe-webhook: backup owner email sent for PI ${paymentIntent.id}`);
+    console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
-    console.error("stripe-webhook: backup owner email failed:", emailErr.message);
+    console.error("stripe-webhook: owner email failed:", emailErr.message);
+  }
+
+  // ── Mark docs as sent so the browser-side email skips the owner copy ──────
+  if (storedDocs && booking_id) {
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        await sb
+          .from("pending_booking_docs")
+          .update({ email_sent: true })
+          .eq("booking_id", booking_id);
+      }
+    } catch (markErr) {
+      console.warn("stripe-webhook: could not mark docs email_sent (non-fatal):", markErr.message);
+    }
   }
 
   // ── Customer confirmation ─────────────────────────────────────────────────
@@ -514,9 +662,9 @@ async function sendWebhookNotificationEmails(paymentIntent) {
         ].filter(Boolean).join("\n"),
         html: customerHtml,
       });
-      console.log(`stripe-webhook: backup customer email sent to ${email} for PI ${paymentIntent.id}`);
+      console.log(`stripe-webhook: customer email sent to ${email} for PI ${paymentIntent.id}`);
     } catch (custErr) {
-      console.error("stripe-webhook: backup customer email failed:", custErr.message);
+      console.error("stripe-webhook: customer email failed:", custErr.message);
     }
   }
 }
