@@ -2193,7 +2193,7 @@ stripeBtn.addEventListener("click", async () => {
       throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
     }
 
-    const { clientSecret, publishableKey } = data;
+    const { clientSecret, publishableKey, bookingId: pendingBookingId } = data;
     if (!clientSecret) {
       throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
     }
@@ -2260,6 +2260,7 @@ stripeBtn.addEventListener("click", async () => {
       paymentReq.on("paymentmethod", async (ev) => {
         const prBookingPayload = {
           vehicleId,
+          bookingId: pendingBookingId || null,
           car: carData.name,
           vehicleMake: carData.make || null,
           vehicleModel: carData.model || null,
@@ -2313,6 +2314,31 @@ stripeBtn.addEventListener("click", async () => {
             });
           } catch (idbErr) {
             console.warn("Could not save ID to IndexedDB:", idbErr);
+          }
+        }
+
+        // Upload booking docs server-side so the Stripe webhook can send the
+        // owner the full email (agreement PDF + ID + insurance) reliably,
+        // even if the customer's browser does not reach success.html.
+        if (pendingBookingId) {
+          try {
+            await Promise.race([
+              fetch(API_BASE + "/api/store-booking-docs", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  bookingId: pendingBookingId,
+                  signature: agreementSignature || null,
+                  idBase64: idBase64 || null,
+                  idFileName: idFileName || null,
+                  idMimeType: idMimeType || null,
+                  insuranceBase64: insuranceBase64 || null,
+                  insuranceFileName: insuranceFileName || null,
+                  insuranceMimeType: insuranceMimeType || null,
+                  insuranceCoverageChoice,
+                }),
+              }),
+              new Promise(resolve => setTimeout(resolve, 5000)),
           }
         }
 
@@ -2393,6 +2419,7 @@ stripeBtn.addEventListener("click", async () => {
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
       const bookingPayload = {
         vehicleId,
+        bookingId: pendingBookingId || null,
         car: carData.name,
         vehicleMake: carData.make || null,
         vehicleModel: carData.model || null,
@@ -2443,6 +2470,34 @@ stripeBtn.addEventListener("click", async () => {
           } catch (idbErr) { db.close(); }
         };
         idbReq.onerror = () => {};
+      }
+
+      // Upload booking docs server-side so the Stripe webhook can send the
+      // owner the full email (agreement PDF + ID + insurance) reliably,
+      // even if the customer's browser does not reach success.html.
+      if (pendingBookingId) {
+        try {
+          await Promise.race([
+            fetch(API_BASE + "/api/store-booking-docs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bookingId: pendingBookingId,
+                signature: agreementSignature || null,
+                idBase64: idBase64 || null,
+                idFileName: idFileName || null,
+                idMimeType: idMimeType || null,
+                insuranceBase64: insuranceBase64 || null,
+                insuranceFileName: insuranceFileName || null,
+                insuranceMimeType: insuranceMimeType || null,
+                insuranceCoverageChoice,
+              }),
+            }),
+            new Promise(resolve => setTimeout(resolve, 5000)),
+          ]);
+        } catch (docsErr) {
+          console.warn("store-booking-docs: non-critical upload failed:", docsErr);
+        }
       }
 
       const { error } = await stripe.confirmPayment({
