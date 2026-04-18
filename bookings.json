@@ -102,7 +102,8 @@
         "late_grace_expired": "2026-04-14T12:30:34.084Z",
         "late_fee_pending": "2026-04-14T12:30:34.084Z",
         "post_thank_you": "2026-04-14T15:45:30.792Z",
-        "retention_1d": "2026-04-16T04:00:17.891Z"
+        "retention_1d": "2026-04-16T04:00:17.891Z",
+        "retention_3d": "2026-04-18T04:00:25.794Z"
       },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
@@ -360,7 +361,8 @@
         "late_at_return": "2026-04-17T00:00:17.596Z",
         "late_grace_expired": "2026-04-17T01:00:21.558Z",
         "late_fee_pending": "2026-04-17T01:00:21.559Z",
-        "post_thank_you": "2026-04-17T04:15:20.075Z"
+        "post_thank_you": "2026-04-17T04:15:20.075Z",
+        "retention_1d": "2026-04-18T04:00:25.794Z"
       },
       "createdAt": "2026-04-13T19:24:58.614Z",
       "source": "admin_v2",
