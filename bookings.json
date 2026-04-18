@@ -473,7 +473,9 @@
       "paymentLink": "",
       "paymentMethod": "stripe",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "active_mid": "2026-04-18T23:45:47.782Z"
+      },
       "createdAt": "2026-04-17T18:51:42.639Z",
       "source": "stripe_webhook",
       "stripeCustomerId": "cus_UKU6OFbaET2wdh",
