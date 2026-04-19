@@ -197,6 +197,16 @@ test("processAutoCompletions: does not touch bookings that are 3.9 hours overdue
   assert.equal(updatedBookings.length, 0, "3.9 hours overdue — still below 4h threshold");
 });
 
+test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
+  reset();
+  const now = new Date("2026-03-22T04:30:00"); // before 10:00:00 return
+  const allBookings = { camry: [makeBooking({ returnTime: "10:00:00" })] };
+
+  await processAutoCompletions(allBookings, now);
+
+  assert.equal(updatedBookings.length, 0, "HH:MM:SS return times must not default to midnight");
+});
+
 test("processAutoCompletions: auto-completes booking that is 4+ hours past return time", async () => {
   reset();
   const now = new Date("2026-03-22T14:05:00"); // 4h5m past 10:00 AM return
