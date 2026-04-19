@@ -493,7 +493,52 @@ This usually means a Stripe payment was partially recorded without a complete bo
 When the admin says booking counts are wrong (e.g. "Brandon shows 4 but has 3", "David shows 3 but has 4"):
 1. Call \`recount_customer_counts\` — this recounts from the bookings table strictly by customer_id and fixes any wrong counts. No confirmation needed.
 2. After it returns, confirm what changed: "Updated X customer(s) — [name]: [old] → [new]."
-3. If counts are still wrong after recount, it likely means some bookings don't have customer_id set. In that case, also run \`sync\` on the customers endpoint (via create_manual_booking for the specific booking, linking it to the customer) then recount again.`;
+3. If counts are still wrong after recount, it likely means some bookings don't have customer_id set. In that case, also run \`sync\` on the customers endpoint (via create_manual_booking for the specific booking, linking it to the customer) then recount again.
+
+## Automated Background Systems
+
+The following jobs run automatically without any admin or AI action required:
+
+**Scheduled Reminders** (every 15 minutes — `/api/scheduled-reminders`):
+- SMS reminders for unpaid bookings: 24h and 1h before pickup
+- Active rental alerts: mid-rental check-in, 1h before return, 15 min before return
+- Late warnings to renter: 30-min grace warning, at return time, after grace period expires
+- **Late fee approval requests** to the owner (email + SMS with ✅ Approve and ❌ Decline buttons) once a rental is overdue past the grace period — one request per booking
+- Post-rental thank-you SMS immediately on completion; retention sequence at Day 1, 3, 7, 14, 30
+- Auto-activation: transitions \`booked_paid\` → \`active_rental\` when pickup time arrives
+- Auto-completion: transitions \`active_rental\` → \`completed_rental\` when return time passes
+- Stripe reconciliation check: detects PaymentIntents not yet in revenue_records and alerts the owner by email + SMS
+
+**AI Auto-Loop** (every 10 minutes — `/api/admin-ai-auto`):
+- Computes fleet insights and detects operational problems
+- When \`AUTO_MODE=true\` env var is set, executes low-risk fleet actions automatically
+
+## Late Fee Flow — Automatic vs. Manual
+
+**Automatic (triggered by scheduled-reminders when a rental is overdue):**
+1. Once the grace period expires, the system SMS-notifies the renter of the assessed late fee.
+2. The system emails and texts the **owner** with ✅ Approve and ❌ Decline buttons.
+3. If the owner approves (clicks the emailed link), the fee is immediately charged to the customer's saved Stripe card via \`/api/approve-late-fee\`.
+4. If declined, no charge is made. The approval link expires in 24 hours.
+5. This happens once per booking — the approval request is **not** re-sent on subsequent cron ticks.
+
+**Manual (use the AI assistant):**
+- Use \`charge_customer_fee\` with \`charge_type: "late_fee"\` to **immediately charge** the customer's saved card without going through the email approval flow.
+- Use this when the owner wants to skip the approval email, or needs to charge a different amount than the predefined fee.
+- **Prerequisite**: the customer must have saved a card during Stripe Checkout. Bookings completed before April 7 2026 may not have a saved payment method — collect payment manually in that case.
+- If the system already sent an approval email and the admin confirms it verbally, use \`charge_customer_fee\` immediately without re-sending the approval.
+
+## Booking Documents — ID, Signature & Insurance
+
+Before the customer confirms payment, the booking form stores their documents in Supabase (\`pending_booking_docs\` table):
+- **Digital signature** (signed rental agreement)
+- **Government-issued ID** (photo upload, base64)
+- **Insurance document** (photo/PDF upload, if provided)
+- **Insurance coverage choice** (Option A: renter's own insurance / Option B: Damage Protection Plan)
+
+The Stripe webhook retrieves these documents from \`pending_booking_docs\` and attaches them to the **owner's booking confirmation email** — so the owner always receives a complete record with all documents even if the browser fails to call the email endpoint directly. Once the owner email is sent, \`email_sent\` is set to \`true\` so the email is never sent twice.
+
+When \`resend_booking_confirmation\` is used, the owner email is resent but **without the signed PDF** — the rental agreement PDF is generated in the customer's browser at payment time and is not stored server-side. The rental agreement terms remain available at https://www.slytrans.com/rental-agreement.html, which the renter agreed to during booking.`;
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();
