@@ -217,12 +217,13 @@ async function markVehicleAvailable(vehicleId) {
  */
 function parseBookingDateTime(date, time) {
   if (!date) return new Date(NaN);
-  const datePart = String(date).split("T")[0];
+  const normalizedDate = date instanceof Date ? date.toISOString() : String(date).trim();
+  const datePart = normalizedDate.split("T")[0];
   const base = new Date(datePart + "T00:00:00"); // midnight local
   if (time) {
     const t = time.trim();
     // "3:00 PM", "3:00:00 PM", or "3:00PM" format
-    const ampmMatch = t.match(/^(0?[1-9]|1[0-2]):([0-5]\d)(?::([0-5]\d))?\s*(AM|PM)$/i);
+    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
     if (ampmMatch) {
       let hours = parseInt(ampmMatch[1], 10);
       const mins = parseInt(ampmMatch[2], 10);
@@ -234,7 +235,7 @@ function parseBookingDateTime(date, time) {
       return base;
     }
     // "15:00" or "15:00:00" format
-    const h24Match = t.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+    const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (h24Match) {
       base.setHours(
         parseInt(h24Match[1], 10),
