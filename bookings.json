@@ -474,7 +474,8 @@
       "paymentMethod": "stripe",
       "notes": "",
       "smsSentAt": {
-        "active_mid": "2026-04-18T23:45:47.782Z"
+        "active_mid": "2026-04-18T23:45:47.782Z",
+        "active_1h": "2026-04-19T23:00:05.728Z"
       },
       "createdAt": "2026-04-17T18:51:42.639Z",
       "source": "stripe_webhook",
