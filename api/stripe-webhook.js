@@ -30,6 +30,7 @@ import { CARS, computeRentalDays } from "./_pricing.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -782,9 +783,16 @@ export default async function handler(req, res) {
 
               foundBooking = true;
               const cur = list[idx];
+              const normalizedCurrentReturnTime = normalizeClockTime(cur.returnTime);
+              const resolvedReturnTime = normalizedCurrentReturnTime || DEFAULT_RETURN_TIME;
+              const shouldPersistReturnTime = !cur.returnTime || cur.returnTime !== resolvedReturnTime;
 
               if (cur.returnDate === new_return_date) {
                 alreadyApplied = true;
+                if (shouldPersistReturnTime) {
+                  cur.returnTime = resolvedReturnTime;
+                  updatedBooking = { ...cur };
+                }
                 return;
               }
 
@@ -795,11 +803,11 @@ export default async function handler(req, res) {
 
               oldReturnDate = cur.returnDate || "";
 
-              const pickupTime = cur.pickupTime || "";
-              if (new_return_time && pickupTime && new_return_time !== pickupTime) {
+              const metadataReturnTime = normalizeClockTime(new_return_time);
+              if (metadataReturnTime && metadataReturnTime !== resolvedReturnTime) {
                 console.warn(
-                  `stripe-webhook: rental_extension return_time "${new_return_time}" overridden ` +
-                  `with pickup_time "${pickupTime}" for booking ${original_booking_id}`
+                  `stripe-webhook: rental_extension return_time "${metadataReturnTime}" ignored ` +
+                  `for booking ${original_booking_id}; preserving "${resolvedReturnTime}"`
                 );
               }
 
@@ -826,7 +834,7 @@ export default async function handler(req, res) {
 
               cur.amountPaid = Math.round(((cur.amountPaid || 0) + extensionAmountDollars) * 100) / 100;
               cur.returnDate = new_return_date;
-              cur.returnTime = pickupTime;
+              cur.returnTime = resolvedReturnTime;
               cur.extensionPendingPayment = null;
               cur.extensionCount = (cur.extensionCount || 0) + 1;
               cur.payments = updatedPayments;

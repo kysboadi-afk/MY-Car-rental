@@ -4,7 +4,7 @@
 // extend their rental via the "Extend Rental" form.
 //
 // POST /api/extend-rental
-// Body: { vehicleId, email, phone, newReturnDate, newReturnTime }
+// Body: { vehicleId, email, phone, newReturnDate }
 //
 // Returns: { clientSecret, publishableKey, extensionAmount, extensionLabel,
 //            newReturnDate, newReturnTime, vehicleName, renterName }
@@ -19,33 +19,10 @@ import Stripe from "stripe";
 import { getVehicleById } from "./_vehicles.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
+import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-
-/**
- * Parse a date+optional time into Unix ms.
- * Supports "H:MM AM/PM", "HH:MM", and falls back to midnight.
- */
-function parseDateTimeMs(date, time) {
-  if (!date) return NaN;
-  const base = new Date(date + "T00:00:00");
-  if (time && typeof time === "string") {
-    const t = time.trim();
-    const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (ampm) {
-      let h = parseInt(ampm[1], 10);
-      const m = parseInt(ampm[2], 10);
-      const p = ampm[3].toUpperCase();
-      if (p === "PM" && h !== 12) h += 12;
-      if (p === "AM" && h === 12) h = 0;
-      base.setHours(h, m, 0, 0);
-    } else {
-      const h24 = t.match(/^(\d{1,2}):(\d{2})$/);
-      if (h24) base.setHours(parseInt(h24[1], 10), parseInt(h24[2], 10), 0, 0);
-    }
-  }
-  return base.getTime();
-}
 
 export default async function handler(req, res) {
   // CORS — allow requests from the production frontend only
@@ -67,7 +44,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error." });
   }
 
-  const { vehicleId, email, phone, newReturnDate, newReturnTime } = req.body || {};
+  const { vehicleId, email, phone, newReturnDate } = req.body || {};
 
   // ── Input validation ────────────────────────────────────────────────────────
   const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -98,7 +75,6 @@ export default async function handler(req, res) {
     const normalizedPhone = trimmedPhone ? normalizePhone(trimmedPhone) : null;
 
     let activeBooking = null;
-    let activeIdx = -1;
 
     for (let i = 0; i < vehicleBookings.length; i++) {
       const b = vehicleBookings[i];
@@ -111,7 +87,6 @@ export default async function handler(req, res) {
 
       if (emailMatch || phoneMatch) {
         activeBooking = b;
-        activeIdx = i;
         break;
       }
     }
@@ -123,22 +98,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // ── Enforce return_time = pickup_time ───────────────────────────────────
-    // The system rule is that a rental's return time must always equal its
-    // pickup time so windows are clean and predictable.  Any return_time
-    // supplied by the caller is ignored and replaced with the booking's
-    // pickup_time.  If the booking has no pickupTime (legacy data), we fall
-    // back to its existing returnTime so the comparison below still works.
-    const resolvedReturnTime = activeBooking.pickupTime || activeBooking.returnTime || "";
-    if (newReturnTime && newReturnTime !== resolvedReturnTime) {
-      console.warn(
-        `extend-rental: new_return_time "${newReturnTime}" overridden with ` +
-        `pickup_time "${resolvedReturnTime}" for active booking of ${vehicleId}`
-      );
-    }
+    // Keep extension return_time fixed to the booking's existing return_time.
+    // Legacy bookings without a return_time are normalized to the system
+    // default so every booking has a valid HH:MM return time.
+    const existingReturnTime = normalizeClockTime(activeBooking.returnTime);
+    const resolvedReturnTime = existingReturnTime || DEFAULT_RETURN_TIME;
+    const needsReturnTimePersist = !activeBooking.returnTime || activeBooking.returnTime !== resolvedReturnTime;
 
     // ── Validate new return date is after current return date ───────────────
-    const currentReturnMs = parseDateTimeMs(activeBooking.returnDate, activeBooking.returnTime || "");
+    const currentReturnMs = parseDateTimeMs(activeBooking.returnDate, resolvedReturnTime);
     const newReturnMs     = parseDateTimeMs(newReturnDate, resolvedReturnTime);
 
     if (isNaN(newReturnMs)) {
@@ -147,19 +115,33 @@ export default async function handler(req, res) {
 
     if (newReturnMs <= currentReturnMs) {
       return res.status(400).json({
-        error: "New return date/time must be after your current return date/time " +
-               `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
+         error: "New return date/time must be after your current return date/time " +
+                `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
       });
     }
 
     // ── Check for conflicts with future bookings ────────────────────────────
+    // Use the same overlap helper as the booking flow so extension conflict
+    // checks honor the same time parsing and buffer behavior.
+    const extensionRange = [{
+      from: activeBooking.pickupDate || activeBooking.returnDate || newReturnDate,
+      to: newReturnDate,
+      fromTime: activeBooking.pickupTime || "",
+      toTime: resolvedReturnTime,
+    }];
+
     for (const b of vehicleBookings) {
       if (b === activeBooking) continue;
       if (b.status === "cancelled" || b.status === "completed_rental") continue;
 
-      // Conflict: a future booking's pickup is at or before our new return
-      const futurePickupMs = parseDateTimeMs(b.pickupDate, b.pickupTime || "");
-      if (!isNaN(futurePickupMs) && futurePickupMs < newReturnMs) {
+      const hasConflict = hasDateTimeOverlap(
+        extensionRange,
+        b.pickupDate,
+        b.returnDate || b.pickupDate,
+        b.pickupTime || "",
+        b.returnTime || ""
+      );
+      if (hasConflict) {
         const fmtDate = new Date(b.pickupDate + "T00:00:00")
           .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
         return res.status(409).json({
@@ -260,6 +242,7 @@ export default async function handler(req, res) {
     if (bookingId) {
       try {
         await updateBooking(vehicleId, bookingId, {
+          ...(needsReturnTimePersist ? { returnTime: resolvedReturnTime } : {}),
           extensionPendingPayment: {
             label:           extensionLabel,
             price:           extensionAmount,

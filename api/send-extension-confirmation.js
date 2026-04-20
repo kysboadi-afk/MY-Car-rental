@@ -22,11 +22,12 @@
 //   GITHUB_TOKEN, GITHUB_REPO          (for bookings.json read/write)
 
 import Stripe from "stripe";
-import { loadBookings, saveBookings, updateBooking } from "./_bookings.js";
+import { loadBookings, saveBookings } from "./_bookings.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -126,7 +127,6 @@ export default async function handler(req, res) {
       renter_email,
       extension_label,
       new_return_date,
-      new_return_time,
     } = meta;
 
     if (!vehicle_id || !original_booking_id) {
@@ -150,12 +150,12 @@ export default async function handler(req, res) {
         try {
           const sb = getSupabaseAdmin();
           if (sb) {
-            const pgTime = parseTime12h(new_return_time || "");
+            const pgTime = parseTime12h(DEFAULT_RETURN_TIME);
             const { error: sbDirectErr } = await sb
               .from("bookings")
               .update({
                 return_date: new_return_date,
-                ...(pgTime ? { return_time: pgTime } : {}),
+                ...(pgTime ? { return_time: pgTime } : { return_time: "10:00:00" }),
                 updated_at:  new Date().toISOString(),
               })
               .eq("booking_ref", original_booking_id);
@@ -183,7 +183,7 @@ export default async function handler(req, res) {
             paymentIntent:      pi,
             booking:            syntheticBooking,
             updatedReturnDate:  new_return_date,
-            updatedReturnTime:  new_return_time || "",
+            updatedReturnTime:  DEFAULT_RETURN_TIME,
             extensionLabel:     extension_label || "",
             vehicleId:          vehicle_id,
             renterEmail:        renter_email,
@@ -213,9 +213,11 @@ export default async function handler(req, res) {
     // ── Resolve extension data ─────────────────────────────────────────────
     // Prefer data stored in extensionPendingPayment (most complete); fall back
     // to PI metadata for the new return date and label.
+    const normalizedBookingReturnTime = normalizeClockTime(booking.returnTime);
+    const resolvedReturnTime = normalizedBookingReturnTime || DEFAULT_RETURN_TIME;
     const ext = booking.extensionPendingPayment || (new_return_date ? {
       newReturnDate: new_return_date,
-      newReturnTime: new_return_time || "",
+      newReturnTime: resolvedReturnTime,
       label:         extension_label || "",
     } : null);
 
@@ -225,7 +227,7 @@ export default async function handler(req, res) {
     }
 
     const updatedReturnDate = ext.newReturnDate || booking.returnDate;
-    const updatedReturnTime = ext.newReturnTime || booking.returnTime || "";
+    const updatedReturnTime = resolvedReturnTime;
     const oldReturnDate     = booking.returnDate;
     const resolvedLabel     = ext.label || extension_label || "";
 
@@ -233,6 +235,7 @@ export default async function handler(req, res) {
     // The Stripe webhook also does this, so guard against overwriting a newer
     // value by only updating if the return date hasn't changed yet.
     const needsReturnDateUpdate = updatedReturnDate && updatedReturnDate !== booking.returnDate;
+    const needsReturnTimePersist = !booking.returnTime || booking.returnTime !== updatedReturnTime;
     const newExtensionCount     = (booking.extensionCount || 0) + (needsReturnDateUpdate ? 1 : 0);
 
     try {
@@ -247,10 +250,12 @@ export default async function handler(req, res) {
           );
           if (i === -1) return;
           const cur = data[vehicle_id][i];
-          if (needsReturnDateUpdate) {
-            cur.returnDate     = updatedReturnDate;
-            cur.returnTime     = updatedReturnTime;
-            cur.extensionCount = newExtensionCount;
+          if (needsReturnDateUpdate || needsReturnTimePersist) {
+            if (needsReturnDateUpdate) {
+              cur.returnDate = updatedReturnDate;
+              cur.extensionCount = newExtensionCount;
+            }
+            cur.returnTime = updatedReturnTime;
             // Clear late-return and end-of-rental SMS markers so they re-fire
             // for the new return date. Without this, stale markers block the
             // late-fee and return-reminder automation after an extension.
@@ -279,10 +284,12 @@ export default async function handler(req, res) {
     try {
       const updatedBooking = {
         ...booking,
-        ...(needsReturnDateUpdate ? {
-          returnDate:     updatedReturnDate,
-          returnTime:     updatedReturnTime,
-          extensionCount: newExtensionCount,
+        ...(needsReturnDateUpdate || needsReturnTimePersist ? {
+          ...(needsReturnDateUpdate ? {
+            returnDate: updatedReturnDate,
+            extensionCount: newExtensionCount,
+          } : {}),
+          returnTime: updatedReturnTime,
         } : {}),
         extensionPendingPayment: null,
         extensionEmailSent:      true,

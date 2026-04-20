@@ -612,7 +612,7 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
 
   assert.deepEqual(
     bookedDatesStore.camry,
-    [{ from: "2026-12-10", to: "2026-12-14" }],
+    [{ from: "2026-12-10", to: "2026-12-14", toTime: "15:00" }],
     "booked-dates.json must be extended to the new return date so public availability stays in sync"
   );
 });
@@ -678,7 +678,7 @@ test("webhook rental_extension: idempotency guard skips re-application when retu
   assert.equal(automationCalls.blocked.length, 0, "idempotent retry must not create blocked dates");
 });
 
-test("webhook rental_extension: returnTime is forced to pickupTime and invalid status is rejected", async () => {
+test("webhook rental_extension: returnTime is preserved from existing booking and invalid status is rejected", async () => {
   resetStore(); resetCalls();
   const bookingId = "bk-ext-time-rule";
   bookingsStore["slingshot"] = [{
@@ -706,7 +706,7 @@ test("webhook rental_extension: returnTime is forced to pickupTime and invalid s
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
   const updated = bookingsStore.slingshot.find((b) => b.bookingId === bookingId);
-  assert.equal(updated.returnTime, "3:00 PM", "returnTime must remain equal to pickupTime");
+  assert.equal(updated.returnTime, "15:00", "returnTime must preserve existing booking return time in HH:MM format");
 
   // Invalid status branch
   resetCalls();

@@ -2105,10 +2105,6 @@
           <input type="date" id="re-return-date" class="form-input" style="font-size:13px;">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">New Return Time (optional)</label>
-          <input type="text" id="re-return-time" class="form-input" placeholder="e.g. 11:30 AM" style="font-size:13px;">
-        </div>
-        <div>
           <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Extension Label (optional)</label>
           <input type="text" id="re-ext-label" class="form-input" placeholder="e.g. +3 days" style="font-size:13px;">
         </div>
@@ -3718,7 +3714,6 @@ function openResendExtensionModal(bookingId, vehicleId, _btn) {
   document.getElementById('re-booking-id').value  = bookingId;
   document.getElementById('re-vehicle-id').value  = vehicleId;
   document.getElementById('re-return-date').value = (b && b.returnDate) || '';
-  document.getElementById('re-return-time').value = (b && b.returnTime) || '';
   document.getElementById('re-ext-label').value   = '';
   document.getElementById('re-amount').value      = '';
   closeModal('booking-detail-modal');
@@ -3729,7 +3724,6 @@ function submitResendExtension(btn) {
   const bookingId  = document.getElementById('re-booking-id').value;
   const vehicleId  = document.getElementById('re-vehicle-id').value;
   const returnDate = (document.getElementById('re-return-date').value || '').trim();
-  const returnTime = (document.getElementById('re-return-time').value || '').trim();
   const extLabel   = (document.getElementById('re-ext-label').value  || '').trim();
   const amount     = (document.getElementById('re-amount').value     || '').trim();
 
@@ -3756,7 +3750,6 @@ function submitResendExtension(btn) {
     renter_phone:        b.phone || '',
     extension_label:     extLabel,
     new_return_date:     returnDate,
-    new_return_time:     returnTime,
     amount:              amount ? Number(amount) : undefined,
   })
     .then(() => {
