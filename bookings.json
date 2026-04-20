@@ -478,14 +478,17 @@
         "active_1h": "2026-04-19T23:00:05.728Z",
         "late_warning_30min": "2026-04-19T23:30:33.720Z",
         "active_15min": "2026-04-19T23:45:33.764Z",
-        "late_at_return": "2026-04-20T00:00:33.922Z"
+        "late_at_return": "2026-04-20T00:00:33.922Z",
+        "late_grace_expired": "2026-04-20T01:00:35.981Z",
+        "late_fee_pending": "2026-04-20T01:00:35.981Z"
       },
       "createdAt": "2026-04-17T18:51:42.639Z",
       "source": "stripe_webhook",
       "stripeCustomerId": "cus_UKU6OFbaET2wdh",
       "stripePaymentMethodId": "pm_1TNCvmPo7fICjrtZkmaIf9LI",
       "updatedAt": "2026-04-17T18:52:32.295Z",
-      "activatedAt": "2026-04-17T18:52:32.295Z"
+      "activatedAt": "2026-04-17T18:52:32.295Z",
+      "lateFeeApplied": 50
     }
   ]
 }
