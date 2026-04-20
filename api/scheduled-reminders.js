@@ -67,11 +67,13 @@ const GRACE_PERIODS = {
   camry2013:  60,
 };
 
-// ─── Late fee amounts ($) per vehicle type ────────────────────────────────────
+// ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
+// Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
+// return datetime vs. expected return datetime (HH:MM 24-hour).
 const LATE_FEE_AMOUNTS = {
-  slingshot:  100,  // $100/hour after 30-min grace
-  camry:      50,   // $50 flat after 2h; full day after 4–6h (simplified to $50 here)
-  camry2013:  50,
+  slingshot:  100,  // $100/hour (rounded up, min 1 h)
+  camry:       50,  // $50/hour  (rounded up, min 1 h)
+  camry2013:   50,  // $50/hour  (rounded up, min 1 h)
 };
 
 // ─── Auto-completion threshold ────────────────────────────────────────────────
@@ -550,7 +552,13 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         !alreadySent(booking, "late_fee_pending") &&
         !booking.lateFeeApplied
       ) {
-        const feeAmount = LATE_FEE_AMOUNTS[vehicleId] || 50;
+        // Calculate fee based on actual hours overdue:
+        //   expected = returnDt (new Date(`${returnDate}T${returnTime}:00`))
+        //   actual   = now
+        //   lateHours = (actual - expected) / (1000 * 60 * 60)  [rounded up, min 1]
+        const hourlyRate = LATE_FEE_AMOUNTS[vehicleId] || 50;
+        const lateHours  = Math.max(1, Math.ceil(minsOverdue / 60));
+        const feeAmount  = Math.round(lateHours * hourlyRate);
         const feeVars = { ...v, late_fee: String(feeAmount) };
         // 1. Notify customer that a late fee has been assessed
         const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
