@@ -465,7 +465,7 @@
       "pickupDate": "2026-04-18",
       "pickupTime": "",
       "returnDate": "2026-04-20",
-      "returnTime": "",
+      "returnTime": "7:00AM",
       "location": "1200 S Figueroa St, Los Angeles, CA 90015",
       "status": "completed_rental",
       "amountPaid": 121.28,
@@ -488,7 +488,7 @@
       "source": "stripe_webhook",
       "stripeCustomerId": "cus_UKU6OFbaET2wdh",
       "stripePaymentMethodId": "pm_1TNCvmPo7fICjrtZkmaIf9LI",
-      "updatedAt": "2026-04-20T04:00:32.510Z",
+      "updatedAt": "2026-04-20T07:56:28.318Z",
       "activatedAt": "2026-04-17T18:52:32.295Z",
       "lateFeeApplied": 50,
       "completedAt": "2026-04-20T04:00:32.510Z"
