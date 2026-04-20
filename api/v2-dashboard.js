@@ -37,8 +37,8 @@ function bookingRevenue(booking) {
 }
 
 function parseReturnDateTime(returnDate, returnTime) {
-  if (!returnDate || !returnTime) return null;
-  const normalizedTime = normalizeClockTime(returnTime);
+  if (!returnDate) return null;
+  const normalizedTime = normalizeClockTime(returnTime || "10:00");
   if (!normalizedTime) return null;
   const returnDateTime = new Date(`${returnDate}T${normalizedTime}:00`);
   return Number.isNaN(returnDateTime.getTime()) ? null : returnDateTime;
@@ -101,24 +101,36 @@ export default async function handler(req, res) {
 
     // Non-financial KPIs (always from bookings.json)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
-    const kpiActiveRentalStatuses = new Set(["active_rental", "overdue"]);
     const now = new Date();
     const today = now.toISOString().split("T")[0];
+    const isOverdue = (booking) => {
+      if (booking.status === "overdue") return true;
+      if (booking.status !== "active_rental") return false;
+      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      return returnDateTime ? now >= returnDateTime : false;
+    };
+    const isActive = (booking) => {
+      if (booking.status !== "active_rental") return false;
+      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      return returnDateTime ? now < returnDateTime : true;
+    };
+
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
     let returnsTodayCount = 0;
+    const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      if (kpiActiveRentalStatuses.has(booking.status)) activeBookings++;
+      const bookingIsActive = isActive(booking);
+      const bookingIsOverdue = isOverdue(booking);
+      if (bookingIsActive || bookingIsOverdue) {
+        activeBookings++;
+        activeOrOverdueBookings.push(booking);
+      }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
-      if (booking.status === "active_rental" && booking.returnDate) {
-        const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
-        if (returnDateTime && now >= returnDateTime) {
-          overdueCount++;
-        }
-        if (booking.returnDate === today && (!returnDateTime || now < returnDateTime)) {
-          returnsTodayCount++;
-        }
+      if (bookingIsOverdue) overdueCount++;
+      if (booking.status === "active_rental" && booking.returnDate === today && bookingIsActive) {
+        returnsTodayCount++;
       }
     }
 
@@ -303,8 +315,7 @@ export default async function handler(req, res) {
     // Vehicles available
     const vehicleList = Object.values(filteredVehicles);
     const unavailableVehicleIds = new Set(
-      allBookings
-        .filter((b) => kpiActiveRentalStatuses.has(b.status))
+      activeOrOverdueBookings
         .map((b) => b.vehicleId)
     );
     const availableVehicles = vehicleList.filter(
