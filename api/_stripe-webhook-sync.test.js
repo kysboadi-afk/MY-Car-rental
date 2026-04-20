@@ -28,6 +28,10 @@ const bookingsStore = {};                     // in-memory bookings.json
 const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], activated: [] };
 let bookedDatesStore = {};
 let fleetStatusStore = {};
+const supabaseBookingsStore = {};
+const sentEmails = [];
+let skipSupabaseUpsertPi = null;
+let skipSupabaseUpsertCount = 0;
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 mock.module("stripe", {
@@ -45,7 +49,11 @@ mock.module("stripe", {
 
 mock.module("nodemailer", {
   defaultExport: {
-    createTransport: () => ({ sendMail: async () => {} }),
+    createTransport: () => ({
+      sendMail: async (payload) => {
+        sentEmails.push(payload);
+      },
+    }),
   },
 });
 
@@ -82,7 +90,26 @@ mock.module("./_booking-automation.js", {
   namedExports: {
     autoCreateRevenueRecord:    async (b)         => { automationCalls.revenue.push({ ...b }); },
     autoUpsertCustomer:         async (b, s)       => { automationCalls.customer.push({ ...b, countStats: s }); },
-    autoUpsertBooking:          async (b)          => { automationCalls.booking.push({ ...b }); },
+    autoUpsertBooking:          async (b)          => {
+      automationCalls.booking.push({ ...b });
+      if (skipSupabaseUpsertPi && b?.paymentIntentId === skipSupabaseUpsertPi && skipSupabaseUpsertCount > 0) {
+        // Intentionally skip writing to the fake Supabase store for the first N
+        // attempts so webhook tests can verify retry + idempotency behavior.
+        skipSupabaseUpsertCount -= 1;
+        return;
+      }
+      if (b?.bookingId || b?.paymentIntentId) {
+        const key = b.bookingId || b.paymentIntentId;
+        supabaseBookingsStore[key] = {
+          id: `sb_${key}`,
+          booking_ref: b.bookingId || null,
+          payment_intent_id: b.paymentIntentId || null,
+          status: b.status || null,
+          return_date: b.returnDate || null,
+          total_price: b.totalPrice || b.amountPaid || 0,
+        };
+      }
+    },
     autoCreateBlockedDate:      async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
     autoActivateIfPickupArrived: async (b)         => { automationCalls.activated.push({ ...b }); return false; },
     parseTime12h: (timeStr) => {
@@ -166,9 +193,23 @@ mock.module("./_supabase.js", {
           maybeSingle() {
             if (table === "revenue_records" && _eqFilters.booking_id) {
               const stored = supabaseRevenueStore[_eqFilters.booking_id] || null;
-              return Promise.resolve({ data: stored });
+              return Promise.resolve({ data: stored, error: null });
             }
-            return Promise.resolve({ data: null });
+            if (table === "bookings") {
+              if (_eqFilters.booking_ref) {
+                const found = Object.values(supabaseBookingsStore).find(
+                  (r) => r.booking_ref === _eqFilters.booking_ref
+                ) || null;
+                return Promise.resolve({ data: found, error: null });
+              }
+              if (_eqFilters.payment_intent_id) {
+                const found = Object.values(supabaseBookingsStore).find(
+                  (r) => r.payment_intent_id === _eqFilters.payment_intent_id
+                ) || null;
+                return Promise.resolve({ data: found, error: null });
+              }
+            }
+            return Promise.resolve({ data: null, error: null });
           },
           // Allow extra eq() chains in select paths
           then(resolve) { return Promise.resolve({ data: null, error: null }).then(resolve); },
@@ -232,6 +273,7 @@ const { default: handler } = await import("./stripe-webhook.js");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function resetStore() {
   for (const k of Object.keys(bookingsStore)) delete bookingsStore[k];
+  for (const k of Object.keys(supabaseBookingsStore)) delete supabaseBookingsStore[k];
   bookedDatesStore = {};
   fleetStatusStore = {};
 }
@@ -242,6 +284,9 @@ function resetCalls() {
   automationCalls.blocked.length = 0;
   automationCalls.activated.length = 0;
   supabaseDirectUpdates.length = 0;
+  sentEmails.length = 0;
+  skipSupabaseUpsertPi = null;
+  skipSupabaseUpsertCount = 0;
   for (const k of Object.keys(supabaseRevenueStore)) delete supabaseRevenueStore[k];
 }
 
@@ -331,6 +376,63 @@ test("webhook new booking: PREFLIGHT — all four sync helpers fire on new payme
   assert.ok(automationCalls.customer.length > 0, "autoUpsertCustomer must fire");
   assert.ok(automationCalls.booking.length  > 0, "autoUpsertBooking must fire");
   assert.ok(automationCalls.blocked.length  > 0, "autoCreateBlockedDate must fire");
+});
+
+test("webhook new booking: retries persistence checks and still creates only one booking", async () => {
+  resetStore(); resetCalls();
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-09-05", return_date: "2026-09-06",
+    renter_name: "Retry User", renter_phone: "+13105554444",
+    email: "retry@example.com", payment_type: "full_payment",
+  });
+  event.data.object.id = "pi_retry_booking";
+  try {
+    skipSupabaseUpsertPi = "pi_retry_booking";
+    skipSupabaseUpsertCount = 2;
+
+    const res = makeRes();
+    await handler(makeWebhookReq(event), res);
+    assert.equal(res._status, 200);
+
+    const persisted = Object.values(supabaseBookingsStore).find(
+      (r) => r.payment_intent_id === "pi_retry_booking"
+    );
+    assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
+    assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
+
+    const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
+    assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
+  } finally {
+    skipSupabaseUpsertPi = null;
+    skipSupabaseUpsertCount = 0;
+  }
+});
+
+test("webhook new booking: sends alert when required metadata is missing", async () => {
+  resetStore(); resetCalls();
+  process.env.SMTP_HOST = "smtp.test.local";
+  process.env.SMTP_USER = "alerts@test.local";
+  process.env.SMTP_PASS = "secret";
+  process.env.SMTP_PORT = "587";
+
+  const event = piSucceededEvent({
+    vehicle_name: "Camry 2012",
+    pickup_date: "2026-09-08",
+    return_date: "2026-09-10",
+    renter_name: "Missing Metadata",
+    email: "missing@example.com",
+    payment_type: "full_payment",
+  });
+  event.data.object.id = "pi_missing_meta_alert";
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const alert = sentEmails.find((mail) =>
+    String(mail?.subject || "").includes("Booking persistence failed")
+  );
+  assert.ok(alert, "missing metadata must trigger booking persistence alert email");
 });
 
 // ─── 2. balance_payment: status sync to Supabase ─────────────────────────────

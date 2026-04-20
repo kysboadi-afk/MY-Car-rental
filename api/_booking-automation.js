@@ -349,30 +349,33 @@ function safeIso(value) {
  *
  * @param {object} booking  - booking record from bookings.json / admin forms
  */
-export async function autoUpsertBooking(booking) {
+export async function autoUpsertBooking(booking, opts = {}) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
   if (!booking.bookingId) return;
+  const strict = !!opts.strict;
 
   try {
     // Resolve customer_id — prefer phone lookup; fall back to email.
     let customerId = null;
     if (booking.phone) {
       const phone = String(booking.phone).trim();
-      const { data: cust } = await sb
+      const { data: cust, error: custErr } = await sb
         .from("customers")
         .select("id")
         .eq("phone", phone)
         .maybeSingle();
+      if (custErr) throw new Error(`customer phone lookup failed: ${custErr.message}`);
       customerId = cust?.id ?? null;
     }
     if (!customerId && booking.email) {
       const email = String(booking.email).trim().toLowerCase();
-      const { data: cust } = await sb
+      const { data: cust, error: custErr } = await sb
         .from("customers")
         .select("id")
         .eq("email", email)
         .maybeSingle();
+      if (custErr) throw new Error(`customer email lookup failed: ${custErr.message}`);
       customerId = cust?.id ?? null;
     }
 
@@ -416,11 +419,12 @@ export async function autoUpsertBooking(booking) {
     };
 
     // Check whether the booking already exists in Supabase (primary: booking_ref)
-    const { data: byRef } = await sb
+    const { data: byRef, error: byRefErr } = await sb
       .from("bookings")
       .select("id, status, return_date, total_price")
       .eq("booking_ref", booking.bookingId)
       .maybeSingle();
+    if (byRefErr) throw new Error(`booking_ref lookup failed: ${byRefErr.message}`);
     let existing = byRef;
     let fixBookingRef = false;
 
@@ -429,11 +433,12 @@ export async function autoUpsertBooking(booking) {
     // the column was populated, or where the initial autoUpsertBooking failed).
     // Using UPDATE instead of INSERT avoids the date-conflict check trigger.
     if (!existing && booking.paymentIntentId) {
-      const { data: byPi } = await sb
+      const { data: byPi, error: byPiErr } = await sb
         .from("bookings")
         .select("id, status, return_date, total_price, booking_ref")
         .eq("payment_intent_id", booking.paymentIntentId)
         .maybeSingle();
+      if (byPiErr) throw new Error(`payment_intent lookup failed: ${byPiErr.message}`);
       if (byPi) {
         existing = byPi;
         fixBookingRef = !byPi.booking_ref; // repair null booking_ref in the update
@@ -449,7 +454,9 @@ export async function autoUpsertBooking(booking) {
         .update(patchRecord)
         .eq("id", existing.id);
       if (error) {
-        console.error("_booking-automation autoUpsertBooking update error (non-fatal):", error.message);
+        const msg = `_booking-automation autoUpsertBooking update error${strict ? "" : " (non-fatal)"}: ${error.message}`;
+        console.error(msg);
+        if (strict) throw new Error(msg);
       } else {
         // Audit log: record fields that actually changed
         const auditChanges = [];
@@ -466,7 +473,9 @@ export async function autoUpsertBooking(booking) {
         .from("bookings")
         .insert({ ...record, booking_ref: booking.bookingId });
       if (error) {
-        console.error("_booking-automation autoUpsertBooking insert error (non-fatal):", error.message);
+        const msg = `_booking-automation autoUpsertBooking insert error${strict ? "" : " (non-fatal)"}: ${error.message}`;
+        console.error(msg);
+        if (strict) throw new Error(msg);
       } else {
         console.log(`_booking-automation: synced booking ${booking.bookingId} → Supabase bookings table`);
         // Audit log: initial insert
@@ -474,7 +483,9 @@ export async function autoUpsertBooking(booking) {
       }
     }
   } catch (err) {
-    console.error("_booking-automation autoUpsertBooking error (non-fatal):", err.message);
+    const msg = `_booking-automation autoUpsertBooking error${strict ? "" : " (non-fatal)"}: ${err.message}`;
+    console.error(msg);
+    if (strict) throw new Error(msg);
   }
 }
 
