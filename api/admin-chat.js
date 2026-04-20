@@ -828,14 +828,29 @@ export default async function handler(req, res) {
 
     let completion;
     try {
-      completion = await client.chat.completions.create({
-        model,
-        messages,
-        tools: TOOL_DEFINITIONS,
-        tool_choice: "auto",
-      }, { timeout: roundTimeout });
+      completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          messages,
+          tools: TOOL_DEFINITIONS,
+          tool_choice: "auto",
+        }, { timeout: roundTimeout }),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`OpenAI round timed out after ${roundTimeout} ms`)),
+            roundTimeout
+          )
+        ),
+      ]);
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
+      if (/(timed out|timeout)/i.test(err?.message || "")) {
+        return res.status(200).json({
+          reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
+          tool_calls: toolCallsMade,
+          messages:   messages.slice(1),
+        });
+      }
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });
     }
 
