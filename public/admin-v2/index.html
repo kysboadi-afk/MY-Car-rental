@@ -2243,7 +2243,12 @@ function aiCompactHistory(history, maxMessages) {
     .filter((m) => m && validRoles.has(m.role))
     .map((m) => ({
       role: m.role,
-      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
+      content:
+        typeof m.content === 'string'
+          ? m.content
+          : m.content == null
+            ? ''
+            : JSON.stringify(m.content),
       ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
       ...(m.name ? { name: m.name } : {}),
     }));

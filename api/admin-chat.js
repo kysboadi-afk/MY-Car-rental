@@ -24,7 +24,14 @@ import { executeAction } from "./_admin-actions.js";
 import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
-const OPENAI_TIMEOUT_ERROR_PREFIX = "OPENAI_ROUND_TIMEOUT:";
+
+class OpenAiRoundTimeoutError extends Error {
+  constructor(ms) {
+    super(`OpenAI round timed out after ${ms} ms`);
+    this.name = "OpenAiRoundTimeoutError";
+    this.isTimeout = true;
+  }
+}
 
 const SYSTEM_PROMPT_BASE = `You are the SLY Rides AI Business Assistant — an intelligent operations manager for a Los Angeles car rental company.
 
@@ -839,14 +846,14 @@ export default async function handler(req, res) {
         }),
         new Promise((_resolve, reject) => {
           openAiTimeoutId = setTimeout(
-            () => reject(new Error(`${OPENAI_TIMEOUT_ERROR_PREFIX}${roundTimeout}`)),
+            () => reject(new OpenAiRoundTimeoutError(roundTimeout)),
             roundTimeout
           );
         }),
       ]);
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
-      if ((err?.message || "").startsWith(OPENAI_TIMEOUT_ERROR_PREFIX)) {
+      if (err?.isTimeout === true || err?.name === "OpenAiRoundTimeoutError") {
         return res.status(200).json({
           reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
           tool_calls: toolCallsMade,
