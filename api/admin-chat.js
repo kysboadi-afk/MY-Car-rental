@@ -611,6 +611,74 @@ function isConfirmation(text) {
 }
 
 /**
+ * Normalize client conversation history and enforce valid tool-call sequencing:
+ * - preserve assistant.tool_calls in OpenAI shape
+ * - never pass a role="tool" message unless its tool_call_id was introduced by
+ *   a preceding assistant tool_calls entry in the same history
+ */
+function normalizeClientMessages(input) {
+  if (!Array.isArray(input)) return [];
+  const validRoles = new Set(["user", "assistant", "tool", "system"]);
+  const out = [];
+  const openToolCalls = new Set();
+
+  const toText = (value) => {
+    if (typeof value === "string") return value;
+    if (value == null) return "";
+    try { return JSON.stringify(value); } catch { return ""; }
+  };
+
+  for (const m of input) {
+    if (!m || !validRoles.has(m.role)) continue;
+
+    if (m.role === "assistant") {
+      const next = { role: "assistant", content: toText(m.content) };
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length) {
+        const calls = m.tool_calls.map((tc) => {
+          const id = typeof tc?.id === "string" ? tc.id : "";
+          const name = typeof tc?.function?.name === "string" ? tc.function.name : "";
+          if (!id || !name) return null;
+          return {
+            id,
+            type: "function",
+            function: {
+              name,
+              arguments: toText(tc?.function?.arguments || "{}"),
+            },
+          };
+        }).filter(Boolean);
+        if (calls.length) {
+          next.tool_calls = calls;
+          calls.forEach((tc) => openToolCalls.add(tc.id));
+        }
+      }
+      out.push(next);
+      continue;
+    }
+
+    if (m.role === "tool") {
+      const toolCallId = typeof m.tool_call_id === "string" ? m.tool_call_id : "";
+      if (!toolCallId || !openToolCalls.has(toolCallId)) continue;
+      out.push({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: toText(m.content),
+      });
+      openToolCalls.delete(toolCallId);
+      continue;
+    }
+
+    out.push({
+      role: m.role,
+      content: toText(m.content),
+      ...(m.name ? { name: m.name } : {}),
+    });
+  }
+
+  return out;
+}
+
+/**
  * Build a human-readable success/failure reply for a confirmed tool execution.
  */
 function formatConfirmedReply(toolName, args, result) {
@@ -714,22 +782,27 @@ export default async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { secret, messages: clientMessages, auto_mode: autoMode = false } = body;
+  const { secret, messages: clientMessagesRaw, auto_mode: autoMode = false } = body;
 
   if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  if (!Array.isArray(clientMessages) || clientMessages.length === 0) {
+  if (!Array.isArray(clientMessagesRaw) || clientMessagesRaw.length === 0) {
     return res.status(400).json({ error: "messages array is required" });
   }
 
   // Validate message structure
   const validRoles = new Set(["user", "assistant", "tool", "system"]);
-  for (const m of clientMessages) {
+  for (const m of clientMessagesRaw) {
     if (!m || !validRoles.has(m.role)) {
       return res.status(400).json({ error: `Invalid message role: ${m?.role}` });
     }
+  }
+
+  const clientMessages = normalizeClientMessages(clientMessagesRaw);
+  if (clientMessages.length === 0) {
+    return res.status(400).json({ error: "messages array is required" });
   }
 
   // Per-round timeout budget.

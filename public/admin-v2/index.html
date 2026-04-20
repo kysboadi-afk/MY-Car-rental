@@ -2241,19 +2241,63 @@ function aiCompactHistory(history, maxMessages) {
   const validRoles = new Set(['user', 'assistant', 'tool', 'system']);
   const normalized = history
     .filter((m) => m && validRoles.has(m.role))
-    .map((m) => ({
-      role: m.role,
-      content:
-        typeof m.content === 'string'
-          ? m.content
-          : m.content == null
-            ? ''
-            : JSON.stringify(m.content),
-      ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
-      ...(m.name ? { name: m.name } : {}),
-    }));
-  if (normalized.length <= maxMessages) return normalized;
-  const slice = normalized.slice(normalized.length - maxMessages);
+    .map((m) => {
+      const base = {
+        role: m.role,
+        content:
+          typeof m.content === 'string'
+            ? m.content
+            : m.content == null
+              ? ''
+              : JSON.stringify(m.content),
+        ...(m.tool_call_id ? { tool_call_id: m.tool_call_id } : {}),
+        ...(m.name ? { name: m.name } : {}),
+      };
+      if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length) {
+        const calls = m.tool_calls
+          .map((tc) => {
+            const id = typeof tc?.id === 'string' ? tc.id : '';
+            const name = typeof tc?.function?.name === 'string' ? tc.function.name : '';
+            if (!id || !name) return null;
+            let args = tc.function.arguments;
+            if (typeof args !== 'string') {
+              try {
+                args = JSON.stringify(args ?? {});
+              } catch (_) {
+                args = '{}';
+              }
+            }
+            return { id, type: 'function', function: { name, arguments: args } };
+          })
+          .filter(Boolean);
+        if (calls.length) base.tool_calls = calls;
+      }
+      return base;
+    });
+
+  // Keep only valid assistant/tool sequences so we never send orphan tool messages.
+  const sequenced = [];
+  const openToolCalls = new Set();
+  normalized.forEach((m) => {
+    if (m.role === 'assistant') {
+      sequenced.push(m);
+      if (Array.isArray(m.tool_calls)) {
+        m.tool_calls.forEach((tc) => {
+          if (tc?.id) openToolCalls.add(tc.id);
+        });
+      }
+      return;
+    }
+    if (m.role === 'tool') {
+      if (!m.tool_call_id || !openToolCalls.has(m.tool_call_id)) return;
+      sequenced.push(m);
+      openToolCalls.delete(m.tool_call_id);
+      return;
+    }
+    sequenced.push(m);
+  });
+  if (sequenced.length <= maxMessages) return sequenced;
+  const slice = sequenced.slice(sequenced.length - maxMessages);
   const firstUserIdx = slice.findIndex((m) => m.role === 'user');
   return firstUserIdx >= 0 ? slice.slice(firstUserIdx) : slice;
 }
