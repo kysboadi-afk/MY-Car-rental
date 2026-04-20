@@ -1498,7 +1498,6 @@ function initExtendRentalForm() {
   var extEmail      = document.getElementById("extEmail");
   var extPhone      = document.getElementById("extPhone");
   var extNewReturn  = document.getElementById("extNewReturn");
-  var extReturnTime = document.getElementById("extNewReturnTime");
   var extSubmitBtn  = document.getElementById("extSubmitBtn");
   var extPayHint    = document.getElementById("extPayHint");
   var extPriceDisplay = document.getElementById("extPriceDisplay");
@@ -1583,10 +1582,6 @@ function initExtendRentalForm() {
       updatePriceEstimate();
     });
   }
-  if (extReturnTime) {
-    extReturnTime.addEventListener("change", updateExtBtn);
-  }
-
   updateExtBtn();
 
   if (extSubmitBtn) {
@@ -1598,21 +1593,6 @@ async function launchExtendRentalPayment() {
   var extEmail      = document.getElementById("extEmail").value.trim();
   var extPhone      = (document.getElementById("extPhone") || {}).value || "";
   var newReturnDate = document.getElementById("extNewReturn").value;
-  var newReturnTime = document.getElementById("extNewReturnTime") ? document.getElementById("extNewReturnTime").value : "";
-
-  // Convert native time input (HH:MM) to 12-hour format for readability in emails/SMS
-  function to12Hour(hhmm) {
-    if (!hhmm) return "";
-    var parts = hhmm.match(/^(\d{1,2}):(\d{2})$/);
-    if (!parts) return hhmm;
-    var h = parseInt(parts[1], 10);
-    var m = parts[2];
-    var period = h >= 12 ? "PM" : "AM";
-    if (h === 0) h = 12;
-    else if (h > 12) h -= 12;
-    return h + ":" + m + " " + period;
-  }
-  var newReturnTime12 = to12Hour(newReturnTime);
 
   var submitBtn = document.getElementById("extSubmitBtn");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
@@ -1626,7 +1606,6 @@ async function launchExtendRentalPayment() {
         email:         extEmail,
         phone:         extPhone.trim(),
         newReturnDate,
-        newReturnTime: newReturnTime12,
       }),
     });
     var data = await resp.json();

@@ -19,7 +19,6 @@
 //   "renter_phone":        "3463814616",        (optional)
 //   "extension_label":     "+3 days",
 //   "new_return_date":     "2026-04-14",
-//   "new_return_time":     "11:30 AM",          (optional)
 //   "amount":              165,                 (optional, dollars — shown in email)
 //   "payment_intent_id":   "pi_xxx",            (optional — shown in agreement)
 // }
@@ -30,6 +29,7 @@ import { loadBookings, updateBooking } from "./_bookings.js";
 import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -57,7 +57,6 @@ export default async function handler(req, res) {
     renter_phone,
     extension_label,
     new_return_date,
-    new_return_time,
     amount,
     payment_intent_id,
   } = req.body || {};
@@ -122,18 +121,22 @@ export default async function handler(req, res) {
     const oldReturnDate = booking ? booking.returnDate : "";
     const needsReturnDateUpdate = new_return_date && new_return_date !== (booking ? booking.returnDate : "");
     const newExtensionCount = (booking ? (booking.extensionCount || 0) : 0) + (needsReturnDateUpdate ? 1 : 0);
+    const existingReturnTime = normalizeClockTime(booking ? booking.returnTime : "");
+    const resolvedReturnTime = existingReturnTime || DEFAULT_RETURN_TIME;
+    const needsReturnTimePersist = !!booking && (!booking.returnTime || booking.returnTime !== resolvedReturnTime);
+    const needsBookingUpdate = needsReturnDateUpdate || needsReturnTimePersist;
 
     // ── Update booking record (bookings.json + Supabase) ──────────────────
     // This is what makes the admin dashboard and AI assistant see the new
     // return date immediately without waiting for the Stripe webhook.
-    if (booking) {
+    if (booking && needsBookingUpdate) {
       try {
         await updateBooking(vehicle_id, original_booking_id, {
           ...(needsReturnDateUpdate ? {
             returnDate:     new_return_date,
-            returnTime:     new_return_time || booking.returnTime || "",
+            returnTime:     resolvedReturnTime,
             extensionCount: newExtensionCount,
-          } : {}),
+          } : { returnTime: resolvedReturnTime }),
         });
       } catch (updateErr) {
         console.warn("admin-resend-extension: bookings.json update failed (non-fatal):", updateErr.message);
@@ -144,9 +147,9 @@ export default async function handler(req, res) {
           ...booking,
           ...(needsReturnDateUpdate ? {
             returnDate:     new_return_date,
-            returnTime:     new_return_time || booking.returnTime || "",
+            returnTime:     resolvedReturnTime,
             extensionCount: newExtensionCount,
-          } : {}),
+          } : { returnTime: resolvedReturnTime }),
         };
         await autoUpsertBooking(updatedBooking);
       } catch (syncErr) {
@@ -158,12 +161,12 @@ export default async function handler(req, res) {
       try {
         const sb = getSupabaseAdmin();
         if (sb) {
-          const pgTime = parseTime12h(new_return_time || "");
+          const pgTime = parseTime12h(DEFAULT_RETURN_TIME);
           const { error: sbDirectErr } = await sb
             .from("bookings")
             .update({
               return_date: new_return_date,
-              ...(pgTime ? { return_time: pgTime } : {}),
+              return_time: pgTime,
               updated_at:  new Date().toISOString(),
             })
             .eq("booking_ref", original_booking_id);
@@ -183,7 +186,7 @@ export default async function handler(req, res) {
       paymentIntent:      syntheticPi,
       booking:            bookingRecord,
       updatedReturnDate:  new_return_date,
-      updatedReturnTime:  new_return_time || "",
+      updatedReturnTime:  resolvedReturnTime,
       extensionLabel:     extension_label || "",
       vehicleId:          vehicle_id,
       renterEmail:        renter_email,

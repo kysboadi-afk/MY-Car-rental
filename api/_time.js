@@ -1,3 +1,5 @@
+export const DEFAULT_RETURN_TIME = "10:00";
+
 export function normalizeClockTime(rawTime) {
   const val = rawTime ? String(rawTime).trim() : "";
   if (!val) return "";
