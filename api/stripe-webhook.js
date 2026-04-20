@@ -450,7 +450,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   let supabaseExists = false;
   let jsonExists = false;
   const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     result = await persistBooking(persistPayload);
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
     jsonExists = await bookingExistsInJson(vehicle_id, persistPayload.bookingId, paymentIntent.id);

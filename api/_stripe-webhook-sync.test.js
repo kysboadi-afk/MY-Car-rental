@@ -93,6 +93,8 @@ mock.module("./_booking-automation.js", {
     autoUpsertBooking:          async (b)          => {
       automationCalls.booking.push({ ...b });
       if (skipSupabaseUpsertPi && b?.paymentIntentId === skipSupabaseUpsertPi && skipSupabaseUpsertCount > 0) {
+        // Intentionally skip writing to the fake Supabase store for the first N
+        // attempts so webhook tests can verify retry + idempotency behavior.
         skipSupabaseUpsertCount -= 1;
         return;
       }
@@ -385,21 +387,26 @@ test("webhook new booking: retries persistence checks and still creates only one
     email: "retry@example.com", payment_type: "full_payment",
   });
   event.data.object.id = "pi_retry_booking";
-  skipSupabaseUpsertPi = "pi_retry_booking";
-  skipSupabaseUpsertCount = 2;
+  try {
+    skipSupabaseUpsertPi = "pi_retry_booking";
+    skipSupabaseUpsertCount = 2;
 
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
+    const res = makeRes();
+    await handler(makeWebhookReq(event), res);
+    assert.equal(res._status, 200);
 
-  const persisted = Object.values(supabaseBookingsStore).find(
-    (r) => r.payment_intent_id === "pi_retry_booking"
-  );
-  assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
-  assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
+    const persisted = Object.values(supabaseBookingsStore).find(
+      (r) => r.payment_intent_id === "pi_retry_booking"
+    );
+    assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
+    assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
 
-  const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
-  assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
+    const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
+    assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
+  } finally {
+    skipSupabaseUpsertPi = null;
+    skipSupabaseUpsertCount = 0;
+  }
 });
 
 test("webhook new booking: sends alert when required metadata is missing", async () => {
