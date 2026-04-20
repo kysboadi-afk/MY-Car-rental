@@ -28,6 +28,8 @@ export function deriveReturnTime(pickupDate, pickupTime, returnTime, durationHou
   if (!normalizedPickupTime) return "";
 
   const hours = Number(durationHours);
+  // Fallback behavior: when duration is not usable (or date missing), keep
+  // return_time aligned to pickup_time so booking windows still stay anchored.
   if (!pickupDate || !Number.isFinite(hours) || hours <= 0) {
     return normalizedPickupTime;
   }

@@ -2018,7 +2018,7 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
-  if (!pickupTime.value) { alert("Pickup time is required."); return; }
+  if (!pickupTime.value) { alert(window.slyI18n.t("booking.alertPickupTime")); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
