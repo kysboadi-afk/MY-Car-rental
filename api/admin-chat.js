@@ -25,6 +25,14 @@ import { TOOL_DEFINITIONS } from "../lib/tools.js";
 
 const MAX_TOOL_ROUNDS = 6; // prevent infinite tool-call loops
 
+class OpenAiRoundTimeoutError extends Error {
+  constructor(ms) {
+    super(`OpenAI round timed out after ${ms} ms`);
+    this.name = "OpenAiRoundTimeoutError";
+    this.isTimeout = true;
+  }
+}
+
 const SYSTEM_PROMPT_BASE = `You are the SLY Rides AI Business Assistant — an intelligent operations manager for a Los Angeles car rental company.
 
 You have access to real-time business data through tools. Use them to answer admin questions accurately. Never fabricate data — always use tools to fetch real information.
@@ -827,16 +835,34 @@ export default async function handler(req, res) {
     const roundTimeout = Math.min(remaining, MAX_ROUND_TIMEOUT);
 
     let completion;
+    let openAiTimeoutId;
     try {
-      completion = await client.chat.completions.create({
-        model,
-        messages,
-        tools: TOOL_DEFINITIONS,
-        tool_choice: "auto",
-      }, { timeout: roundTimeout });
+      completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          messages,
+          tools: TOOL_DEFINITIONS,
+          tool_choice: "auto",
+        }),
+        new Promise((_resolve, reject) => {
+          openAiTimeoutId = setTimeout(
+            () => reject(new OpenAiRoundTimeoutError(roundTimeout)),
+            roundTimeout
+          );
+        }),
+      ]);
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
+      if (err?.isTimeout === true || err?.name === "OpenAiRoundTimeoutError") {
+        return res.status(200).json({
+          reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
+          tool_calls: toolCallsMade,
+          messages:   messages.slice(1),
+        });
+      }
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });
+    } finally {
+      if (openAiTimeoutId) clearTimeout(openAiTimeoutId);
     }
 
     const choice = completion.choices[0];
