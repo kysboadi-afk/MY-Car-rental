@@ -23,6 +23,7 @@ import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const DEFAULT_RETURN_TIME = "10:00";
 
 // Used only as a fallback when revenue_records is unavailable or empty.
 function bookingRevenue(booking) {
@@ -38,7 +39,7 @@ function bookingRevenue(booking) {
 
 function parseReturnDateTime(returnDate, returnTime) {
   if (!returnDate) return null;
-  const normalizedTime = normalizeClockTime(returnTime || "10:00");
+  const normalizedTime = normalizeClockTime(returnTime || DEFAULT_RETURN_TIME);
   if (!normalizedTime) return null;
   const returnDateTime = new Date(`${returnDate}T${normalizedTime}:00`);
   return Number.isNaN(returnDateTime.getTime()) ? null : returnDateTime;
@@ -103,26 +104,19 @@ export default async function handler(req, res) {
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
     const now = new Date();
     const today = now.toISOString().split("T")[0];
-    const isOverdue = (booking) => {
-      if (booking.status === "overdue") return true;
-      if (booking.status !== "active_rental") return false;
-      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
-      return returnDateTime ? now >= returnDateTime : false;
-    };
-    const isActive = (booking) => {
-      if (booking.status !== "active_rental") return false;
-      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
-      return returnDateTime ? now < returnDateTime : true;
-    };
-
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
     let returnsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      const bookingIsActive = isActive(booking);
-      const bookingIsOverdue = isOverdue(booking);
+      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      const bookingIsOverdue = booking.status === "overdue"
+        || (booking.status === "active_rental" && !!returnDateTime && now >= returnDateTime);
+      // Keep active_rental visible in KPIs when return datetime is missing/invalid;
+      // this avoids dropping currently-rented vehicles due to incomplete time data.
+      const bookingIsActive = booking.status === "active_rental"
+        && (!returnDateTime || now < returnDateTime);
       if (bookingIsActive || bookingIsOverdue) {
         activeBookings++;
         activeOrOverdueBookings.push(booking);
