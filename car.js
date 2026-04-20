@@ -1003,7 +1003,6 @@ document.getElementById("cancelSignBtn").addEventListener("click", function () {
 
 // Promote return pickers to module scope so applySlingshotDuration() can update them
 let returnPicker = null;
-let returnTimePicker = null;
 
 // ----- Slingshot: auto-compute return date/time from pickup + duration -----
 function applySlingshotDuration() {
@@ -1022,35 +1021,18 @@ function applySlingshotDuration() {
     } else {
       returnDate.value = "";
     }
-    if (returnTimePicker) {
-      returnTimePicker.clear();
-    } else {
-      returnTime.value = "";
-    }
+    returnTime.value = "";
     updatePayBtn();
     return;
   }
 
-  // Normalize pickupTime.value to "HH:MM" regardless of Flatpickr's "h:i K" format
-  let timeStr = "";
-  const rawTime = pickupTime.value;
-  if (rawTime) {
-    const nativeTest = new Date("1970-01-01T" + rawTime);
-    if (!isNaN(nativeTest)) {
-      // Already HH:MM (native input or Flatpickr with 24-hr format)
-      timeStr = rawTime.slice(0, 5);
-    } else {
-      // Flatpickr "h:i K" — e.g. "2:30 PM"
-      const m = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-      if (m) {
-        let h = parseInt(m[1], 10);
-        const mins = m[2];
-        const period = m[3].toUpperCase();
-        if (period === "PM" && h !== 12) h += 12;
-        if (period === "AM" && h === 12) h = 0;
-        timeStr = String(h).padStart(2, "0") + ":" + mins;
-      }
-    }
+  // Normalize pickupTime.value to "HH:MM" regardless of its format.
+  // pickupTime is now a <select> returning values like "08:00 AM".
+  let timeStr = timeSlotToHH(pickupTime.value);
+  if (!timeStr) {
+    // Fallback: try parsing as native HH:MM
+    const nativeTest = new Date("1970-01-01T" + pickupTime.value);
+    if (!isNaN(nativeTest)) timeStr = pickupTime.value.slice(0, 5);
   }
 
   // Build pickup moment and add duration
@@ -1076,12 +1058,8 @@ function applySlingshotDuration() {
     returnDate.value = retDateStr;
   }
 
-  // Update return time (via Flatpickr API if available, otherwise direct)
-  if (returnTimePicker) {
-    returnTimePicker.setDate(returnMoment, true);
-  } else {
-    returnTime.value = retTimeStr;
-  }
+  // returnTime is always set directly (no Flatpickr for returnTime)
+  returnTime.value = retTimeStr;
 
   // Show the return section so the renter can see their auto-computed return time
   const retSection = document.getElementById("returnDateSection");
