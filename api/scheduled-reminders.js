@@ -811,6 +811,17 @@ export async function processAutoCompletions(allBookings, now) {
 
 
 /**
+ * Returns true when all new-mismatch PIs have been handled (either auto-repaired
+ * or intentionally skipped because they are non-new-booking payment types).
+ */
+function areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, nonNewBookingTypes) {
+  if (failedPIIds.length > 0) return false;
+  return newMismatches.every(
+    (pi) => repairedPIIds.includes(pi.id) || nonNewBookingTypes.has((pi.metadata || {}).payment_type || "")
+  );
+}
+
+/**
  * Reconciliation check — runs once per cron tick.
  *
  * Fetches the last 24 h of succeeded Stripe PaymentIntents and compares them
@@ -975,7 +986,7 @@ async function runReconciliation() {
       </tr>`;
     }).join("\n");
 
-    const allRepaired = failedPIIds.length === 0 && newMismatches.every((pi) => repairedPIIds.includes(pi.id) || NON_NEW_BOOKING_TYPES.has((pi.metadata || {}).payment_type || ""));
+    const allRepaired = areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, NON_NEW_BOOKING_TYPES);
     const subject = allRepaired
       ? `[SLY RIDES] ✅ ${repairedPIIds.length} Payment(s) Auto-Processed`
       : `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Detected – ${repairedPIIds.length} Auto-Processed`;
@@ -1037,8 +1048,12 @@ async function runReconciliation() {
     // SMS alert (brief — only when manual intervention is needed)
     if (failedPIIds.length > 0 && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
       try {
-        const piSummary = failedPIIds.slice(0, 3).join(", ");
-        const smsText = `[SLY RIDES] ⚠️ ${failedPIIds.length} payment(s) could not be auto-processed: ${piSummary}${failedPIIds.length > 3 ? ` +${failedPIIds.length - 3} more` : ""}. Check email.`;
+        const failedSummary = newMismatches
+          .filter((pi) => failedPIIds.includes(pi.id))
+          .slice(0, 3)
+          .map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`)
+          .join(", ");
+        const smsText = `[SLY RIDES] ⚠️ ${failedPIIds.length} payment(s) could not be auto-processed: ${failedSummary}${failedPIIds.length > 3 ? ` +${failedPIIds.length - 3} more` : ""}. Check email.`;
         await sendSms(OWNER_PHONE, smsText);
       } catch (smsErr) {
         console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
