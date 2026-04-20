@@ -92,7 +92,9 @@
     <input type="date" id="pickup">
 
     <label for="pickupTime" data-i18n="booking.pickupTime">Pickup Time</label>
-    <input type="time" id="pickupTime" required>
+    <select id="pickupTime" required>
+      <option value="">— Select a pickup time —</option>
+    </select>
 
     <!-- Slingshot hourly duration selector (shown for Slingshot only, populated by car.js) -->
     <div id="slingshotDurationSection" style="display:none">

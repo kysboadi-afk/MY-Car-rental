@@ -84,15 +84,22 @@ export function parseDateTimeMs(date, time) {
 }
 
 /**
+ * Number of hours the car is unavailable after a return before a new pickup
+ * can begin.  Applied to the end boundary of every time-aware booked range so
+ * that back-to-back same-day rentals respect the preparation window.
+ */
+const BOOKING_BUFFER_HOURS = 2;
+
+/**
  * Returns true if the datetime range [fromDate+fromTime, toDate+toTime] overlaps
  * any range in the array.  Ranges in the array may carry optional `fromTime`/`toTime`
  * fields alongside the mandatory `from`/`to` date strings.
  *
- * Overlap condition (strict):
- *   rangeStart < newEnd  AND  rangeEnd > newStart
+ * Overlap condition (strict, with buffer on existing end):
+ *   rangeStart < newEnd  AND  rangeEndWithBuffer > newStart
  *
- * This correctly handles back-to-back bookings where one ends at 5 PM and the
- * next starts at 6 PM on the same day — they do NOT overlap.
+ * When a range has `toTime`, BOOKING_BUFFER_HOURS is added to its end boundary so
+ * that the car is given preparation time before the next booking can start.
  *
  * When no time is given for a return date the entire day is treated as occupied,
  * so the end boundary is midnight of the NEXT day (exclusive), matching the SQL
@@ -116,9 +123,14 @@ export function hasDateTimeOverlap(ranges, fromDate, toDate, fromTime, toTime) {
 
   return ranges.some((r) => {
     const rStart = parseDateTimeMs(r.from, r.fromTime);
-    const rEnd   = r.toTime
+    const rEndRaw = r.toTime
       ? parseDateTimeMs(r.to, r.toTime)
       : (() => { const d = new Date(parseDateTimeMs(r.to)); d.setDate(d.getDate() + 1); return d.getTime(); })();
+    // Apply preparation buffer only to time-aware entries.  For legacy date-only
+    // entries the day-boundary already provides a conservative block.
+    const rEnd = r.toTime
+      ? rEndRaw + BOOKING_BUFFER_HOURS * 60 * 60 * 1000
+      : rEndRaw;
     // Strict overlap: one starts before the other ends
     return rStart < newEnd && rEnd > newStart;
   });

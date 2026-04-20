@@ -56,10 +56,10 @@ test("parseDateTimeMs: returns NaN for missing date", () => {
 
 // ── Back-to-back bookings (no overlap) ──────────────────────────────────────
 
-test("hasDateTimeOverlap: back-to-back same day — no overlap", () => {
-  // Existing: 9 AM – 5 PM; New: 6 PM – 11 PM
+test("hasDateTimeOverlap: back-to-back same day — 1-hour gap blocked by 2-hour buffer", () => {
+  // Car returns at 5 PM; buffer end = 7 PM. New booking at 6 PM starts before 7 PM → blocked.
   const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "5:00 PM" }];
-  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "6:00 PM", "11:00 PM"), false);
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "6:00 PM", "11:00 PM"), true);
 });
 
 test("hasDateTimeOverlap: new booking ends exactly when existing starts — no overlap", () => {
@@ -67,9 +67,10 @@ test("hasDateTimeOverlap: new booking ends exactly when existing starts — no o
   assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "9:00 AM", "3:00 PM"), false);
 });
 
-test("hasDateTimeOverlap: new booking starts exactly when existing ends — no overlap", () => {
+test("hasDateTimeOverlap: new booking starts exactly when existing ends — blocked by 2-hour buffer", () => {
+  // Car returns at 3 PM; buffer end = 5 PM. New booking at 3 PM starts before 5 PM → blocked.
   const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "3:00 PM" }];
-  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "3:00 PM", "9:00 PM"), false);
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "3:00 PM", "9:00 PM"), true);
 });
 
 // ── Actual overlaps ──────────────────────────────────────────────────────────
@@ -118,6 +119,32 @@ test("hasDateTimeOverlap: multi-day with times — return and pickup overlap —
   // Existing: March 1-7, returns at 3 PM. New: starts March 7 at 10 AM (before 3 PM return)
   const ranges = [{ from: "2026-03-01", to: "2026-03-07", fromTime: "10:00 AM", toTime: "3:00 PM" }];
   assert.equal(hasDateTimeOverlap(ranges, "2026-03-07", "2026-03-14", "10:00 AM", "10:00 AM"), true);
+});
+
+// ── 2-hour buffer behaviour ───────────────────────────────────────────────────
+
+test("hasDateTimeOverlap: new booking starts exactly 2 hours after return — not blocked", () => {
+  // Car returns 3 PM; buffer end = 5 PM. New pickup at 5 PM is allowed.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "3:00 PM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "5:00 PM", "9:00 PM"), false);
+});
+
+test("hasDateTimeOverlap: new booking starts 2+ hours after return (same day) — no overlap", () => {
+  // Car returns 5 PM; buffer end = 7 PM. New pickup at 7 PM is exactly the boundary — allowed.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "5:00 PM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "7:00 PM", "11:00 PM"), false);
+});
+
+test("hasDateTimeOverlap: new booking starts within 2-hour buffer — blocked", () => {
+  // Car returns 10 AM; buffer end = 12 PM. New pickup at 11 AM is within buffer → blocked.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "8:00 AM", toTime: "10:00 AM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "11:00 AM", "5:00 PM"), true);
+});
+
+test("hasDateTimeOverlap: buffer does NOT apply to date-only ranges — adjacent days allowed", () => {
+  // Legacy date-only range ends March 7; new starts March 8 → no overlap (no buffer added).
+  const ranges = [{ from: "2026-03-01", to: "2026-03-07" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-08", "2026-03-14"), false);
 });
 
 // ── Empty / edge cases ────────────────────────────────────────────────────────

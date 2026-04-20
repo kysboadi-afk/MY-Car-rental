@@ -1091,12 +1091,120 @@ function applySlingshotDuration() {
   updatePayBtn();
 }
 
+// Fixed time slots available for booking (displayed as options in the pickup time select).
+const TIME_SLOTS = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM"];
+// Minimum buffer (hours) between a car's return and the next available pickup slot.
+const PICKUP_BUFFER_HOURS = 2;
+
+// Module-level cache of booked ranges used by updatePickupTimeSlots().
+// Populated (and refreshed) each time initDatePickers() fetches from the API.
+let bookedRangesCache = [];
+let allUnitRangesCache = []; // one array of raw ranges per Slingshot unit
+
+// Parse any supported time string ("HH:MM" or "h:MM AM/PM") combined with a
+// YYYY-MM-DD date into a Unix-millisecond timestamp.  Returns NaN on failure.
+function parseAnyTimeToMs(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return NaN;
+  const ampm = String(timeStr).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const h24  = String(timeStr).match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  let h, m;
+  if (ampm) {
+    h = parseInt(ampm[1], 10);
+    m = parseInt(ampm[2], 10);
+    const p = ampm[3].toUpperCase();
+    if (p === "PM" && h !== 12) h += 12;
+    if (p === "AM" && h === 12) h = 0;
+  } else if (h24) {
+    h = parseInt(h24[1], 10);
+    m = parseInt(h24[2], 10);
+  } else {
+    return NaN;
+  }
+  return new Date(dateStr + "T" + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00").getTime();
+}
+
+// Convert a "h:MM AM/PM" time slot string to "HH:MM" for native <input type="time">.
+function timeSlotToHH(slot) {
+  const m = String(slot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return "";
+  let h = parseInt(m[1], 10);
+  const mins = m[2];
+  const p = m[3].toUpperCase();
+  if (p === "PM" && h !== 12) h += 12;
+  if (p === "AM" && h === 12) h = 0;
+  return String(h).padStart(2, "0") + ":" + mins;
+}
+
+// Returns true when the given slot on dateStr is blocked by an existing booking
+// (i.e. the car hasn't been returned + buffered yet when this slot starts).
+function isSlotBlocked(dateStr, slot, ranges) {
+  const slotMs = parseAnyTimeToMs(dateStr, slot);
+  if (isNaN(slotMs)) return false;
+  for (const r of ranges) {
+    if (r.to !== dateStr) continue; // only bookings returning on this date matter
+    if (!r.toTime) {
+      // Legacy entry without a return time: conservatively block the whole day.
+      return true;
+    }
+    const returnMs = parseAnyTimeToMs(r.to, r.toTime);
+    if (isNaN(returnMs)) continue;
+    if (returnMs + PICKUP_BUFFER_HOURS * 3600000 > slotMs) return true;
+  }
+  return false;
+}
+
+// Populate the #pickupTime <select> with TIME_SLOTS, disabling any slot that
+// falls within PICKUP_BUFFER_HOURS of an existing booking's return on that date.
+// Auto-selects the first available slot and syncs returnTime.
+function updatePickupTimeSlots(selectedDate) {
+  pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
+  if (!selectedDate) { updatePayBtn(); return; }
+
+  const isSlingshot = vehicleId.startsWith("slingshot");
+
+  TIME_SLOTS.forEach(function(slot) {
+    const opt = document.createElement("option");
+    opt.value = slot;
+    opt.textContent = slot;
+
+    if (isSlingshot) {
+      // Slot is available for Slingshot when at least one unit is free.
+      // Disable only when EVERY unit is blocked.
+      const allBlocked = allUnitRangesCache.every(function(unitRanges) {
+        return isSlotBlocked(selectedDate, slot, unitRanges);
+      });
+      opt.disabled = allBlocked;
+    } else {
+      opt.disabled = isSlotBlocked(selectedDate, slot, bookedRangesCache);
+    }
+
+    pickupTime.appendChild(opt);
+  });
+
+  // Auto-select the first non-disabled slot
+  const firstAvail = pickupTime.querySelector("option:not([disabled]):not([value=''])");
+  if (firstAvail) {
+    firstAvail.selected = true;
+    returnTime.value = timeSlotToHH(firstAvail.value);
+  } else {
+    returnTime.value = "";
+  }
+
+  if (carData.hourlyTiers) {
+    applySlingshotDuration();
+  } else {
+    updateTotal();
+  }
+  updatePayBtn();
+}
+
 // Flag set to true inside initDatePickers() once Flatpickr takes over.
 // Flatpickr already fires native change events after its own onChange, so
 // the native listeners below must skip when Flatpickr is active to avoid
 // calling updateTotal() / applySlingshotDuration() twice on every selection.
+// pickupTime is now a <select> and is handled by its own dedicated listener below.
 let flatpickrActive = false;
-[pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
+[pickup, returnDate, returnTime].forEach(function(inp) {
   inp.addEventListener("change", function() {
     if (flatpickrActive) return; // Flatpickr's own onChange handles this
     if (carData.hourlyTiers) {
@@ -1107,7 +1215,20 @@ let flatpickrActive = false;
   });
 });
 
-// ----- Date Pickers (Flatpickr) -----
+// Dedicated change listener for the pickupTime <select>.
+// Syncs returnTime, updates the booking total/duration, and re-validates the pay button.
+pickupTime.addEventListener("change", function() {
+  const slot = this.value;
+  returnTime.value = slot ? timeSlotToHH(slot) : "";
+  if (carData.hourlyTiers) {
+    applySlingshotDuration();
+  } else {
+    updateTotal();
+  }
+  updatePayBtn();
+});
+
+  // ----- Date Pickers (Flatpickr) -----
 async function initDatePickers() {
   if (typeof flatpickr === "undefined") return; // fallback to native inputs
 
@@ -1132,26 +1253,33 @@ async function initDatePickers() {
       const data = await resp.json();
       if (isSlingshot) {
         // Collect each unit's ranges; missing unit = no bookings (empty array).
+        // Keep raw ranges (with fromTime/toTime) for the time-slot buffer check.
         allUnitRanges = SLINGSHOT_IDS.map(function(id) {
           return (data[id] || []).map(function(r) {
             return {
+              // Exclusive end: the return date itself is NOT blocked in the
+              // calendar — time slots on that day handle granularity.
               from: new Date(r.from + "T00:00:00").getTime(),
-              to:   new Date(r.to   + "T23:59:59").getTime(),
+              to:   new Date(r.to   + "T00:00:00").getTime(),
             };
           });
         });
+        // Store raw ranges per unit for the time-slot availability check.
+        allUnitRangesCache = SLINGSHOT_IDS.map(function(id) { return data[id] || []; });
       } else {
         bookedRanges = data[vehicleId] || [];
+        bookedRangesCache = bookedRanges;
       }
     }
   } catch (e) { console.error("Failed to load booked dates:", e); }
 
   // Pre-compile range boundaries to millisecond timestamps once so the
   // disable callback never allocates new Date objects per calendar cell.
+  // End date is exclusive: the return date is not blocked in the calendar.
   const compiledRanges = bookedRanges.map(function(r) {
     return {
       from: new Date(r.from + "T00:00:00").getTime(),
-      to: new Date(r.to + "T23:59:59").getTime()
+      to:   new Date(r.to   + "T00:00:00").getTime()
     };
   });
 
@@ -1159,11 +1287,12 @@ async function initDatePickers() {
     const t = date.getTime();
     if (isSlingshot) {
       // Date is blocked only when EVERY Slingshot unit is booked on that day.
+      // Uses exclusive end so the return date itself can accept new pickups.
       return allUnitRanges.every(function(unitRanges) {
-        return unitRanges.some(function(r) { return t >= r.from && t <= r.to; });
+        return unitRanges.some(function(r) { return t >= r.from && t < r.to; });
       });
     }
-    return compiledRanges.some(function(r) { return t >= r.from && t <= r.to; });
+    return compiledRanges.some(function(r) { return t >= r.from && t < r.to; });
   }
 
   const pickupPicker = flatpickr(pickup, {
@@ -1179,11 +1308,11 @@ async function initDatePickers() {
           if (returnPicker) returnPicker.set("minDate", selectedDates[0]);
         }
       }
-      if (carData.hourlyTiers) {
-        applySlingshotDuration();
-      } else {
-        updateTotal();
-      }
+      // Populate/refresh time slots for the newly selected pickup date.
+      const dateStr = selectedDates[0]
+        ? selectedDates[0].toISOString().slice(0, 10)
+        : "";
+      updatePickupTimeSlots(dateStr);
     }
   });
 
@@ -1195,33 +1324,8 @@ async function initDatePickers() {
     }
   });
 
-  flatpickr(pickupTime, {
-    enableTime: true,
-    noCalendar: true,
-    dateFormat: "h:i K",
-    onChange: function(selectedDates, timeStr) {
-      if (carData.hourlyTiers) {
-        applySlingshotDuration();
-      } else {
-        if (returnTimePicker) {
-          if (timeStr) {
-            returnTimePicker.setDate(timeStr, true, "h:i K");
-          } else {
-            returnTimePicker.clear();
-          }
-        } else {
-          returnTime.value = timeStr || "";
-        }
-      }
-    }
-  });
-
-  returnTimePicker = flatpickr(returnTime, {
-    enableTime: true,
-    noCalendar: true,
-    dateFormat: "h:i K",
-    clickOpens: false
-  });
+  // pickupTime is now a <select> — no Flatpickr needed.
+  // returnTime mirrors pickupTime and is set programmatically; no Flatpickr needed.
 
   // Flatpickr is now fully active; native change listeners will defer to it.
   flatpickrActive = true;
@@ -1656,8 +1760,13 @@ function restoreFailedBooking() {
     // Helper: set a date/time input respecting Flatpickr when active.
     // For native <input type="time"> fallback, converts "h:i K" (e.g. "2:30 PM")
     // to "HH:MM" which is the format the native input requires.
+    // For <select> elements (pickupTime), just sets the value directly.
     function fpSet(input, value) {
       if (!value || !input) return;
+      if (input.tagName === "SELECT") {
+        input.value = value;
+        return;
+      }
       if (flatpickrActive && input._flatpickr) {
         input._flatpickr.setDate(value, true);
       } else {
@@ -1686,7 +1795,11 @@ function restoreFailedBooking() {
 
     // Restore dates / times
     fpSet(pickup, data.pickup);
+    // Populate time slots for the restored pickup date before restoring the selected time.
+    if (data.pickup) updatePickupTimeSlots(data.pickup.slice(0, 10));
     fpSet(pickupTime, data.pickupTime);
+    // Sync returnTime to match restored pickupTime
+    if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime);
     if (!carData.hourlyTiers) {
       fpSet(returnDate, data.returnDate);
     }
@@ -1822,6 +1935,7 @@ window.addEventListener("pageshow", function(e) {
   document.getElementById("phone").value = "";
   pickup.value = "";
   returnDate.value = "";
+  pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
   pickupTime.value = "";
   returnTime.value = "";
   idUpload.value = "";
