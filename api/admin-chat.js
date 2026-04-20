@@ -827,6 +827,7 @@ export default async function handler(req, res) {
     const roundTimeout = Math.min(remaining, MAX_ROUND_TIMEOUT);
 
     let completion;
+    let openAiTimeoutId;
     try {
       completion = await Promise.race([
         client.chat.completions.create({
@@ -835,12 +836,12 @@ export default async function handler(req, res) {
           tools: TOOL_DEFINITIONS,
           tool_choice: "auto",
         }, { timeout: roundTimeout }),
-        new Promise((_, reject) =>
-          setTimeout(
+        new Promise((_resolve, reject) => {
+          openAiTimeoutId = setTimeout(
             () => reject(new Error(`OpenAI round timed out after ${roundTimeout} ms`)),
             roundTimeout
-          )
-        ),
+          );
+        }),
       ]);
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
@@ -852,6 +853,8 @@ export default async function handler(req, res) {
         });
       }
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });
+    } finally {
+      if (openAiTimeoutId) clearTimeout(openAiTimeoutId);
     }
 
     const choice = completion.choices[0];
