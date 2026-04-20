@@ -42,6 +42,7 @@ const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
+const MAX_ALERT_SMS_LENGTH = 900;
 
 /**
  * Read booked-dates.json from GitHub and block the given date range.
@@ -340,7 +341,7 @@ async function sendBookingPersistenceAlert(paymentIntent, reason, details = {}) 
 
   if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && process.env.OWNER_PHONE) {
     try {
-      await sendSms(normalizePhone(process.env.OWNER_PHONE), alertText.slice(0, 900));
+      await sendSms(normalizePhone(process.env.OWNER_PHONE), alertText.slice(0, MAX_ALERT_SMS_LENGTH));
     } catch (smsErr) {
       console.error("stripe-webhook: booking persistence SMS alert failed:", smsErr.message);
     }
@@ -449,7 +450,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   let result = null;
   let supabaseExists = false;
   let jsonExists = false;
-  const maxAttempts = 3;
+  const envAttempts = parseInt(process.env.WEBHOOK_BOOKING_RETRY_ATTEMPTS || "", 10);
+  const maxAttempts = Number.isFinite(envAttempts) && envAttempts > 0 ? envAttempts : 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     result = await persistBooking(persistPayload);
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
