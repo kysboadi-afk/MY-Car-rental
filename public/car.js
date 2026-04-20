@@ -2181,7 +2181,9 @@ stripeBtn.addEventListener("click", async () => {
         email: email,
         phone: phone,
         pickup: pickup.value,
+        pickupTime: pickupTime.value,
         returnDate: returnDate.value,
+        returnTime: returnTime.value,
         protectionPlan: insuranceCoverageChoice === "no",
         // For Economy cars: pass the selected tier so the server uses the correct flat rate.
         ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
