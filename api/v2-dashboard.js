@@ -101,6 +101,7 @@ export default async function handler(req, res) {
 
     // Non-financial KPIs (always from bookings.json)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
+    const kpiActiveRentalStatuses = new Set(["active_rental", "overdue"]);
     const now = new Date();
     const today = now.toISOString().split("T")[0];
     let activeBookings   = 0;
@@ -108,7 +109,7 @@ export default async function handler(req, res) {
     let overdueCount     = 0;
     let returnsTodayCount = 0;
     for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status)) activeBookings++;
+      if (kpiActiveRentalStatuses.has(booking.status)) activeBookings++;
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (booking.status === "active_rental" && booking.returnDate) {
         const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
@@ -300,8 +301,15 @@ export default async function handler(req, res) {
     }
 
     // Vehicles available
-    const vehicleList       = Object.values(filteredVehicles);
-    const availableVehicles = vehicleList.filter((v) => v.status === "active").length;
+    const vehicleList = Object.values(filteredVehicles);
+    const unavailableVehicleIds = new Set(
+      allBookings
+        .filter((b) => kpiActiveRentalStatuses.has(b.status))
+        .map((b) => b.vehicleId)
+    );
+    const availableVehicles = vehicleList.filter(
+      (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
+    ).length;
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
