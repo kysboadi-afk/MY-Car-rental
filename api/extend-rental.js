@@ -124,9 +124,9 @@ export default async function handler(req, res) {
     // Use the same overlap helper as the booking flow so extension conflict
     // checks honor the same time parsing and buffer behavior.
     const extensionRange = [{
-      from: activeBooking.pickupDate || activeBooking.returnDate || newReturnDate,
+      from: activeBooking.returnDate || newReturnDate,
       to: newReturnDate,
-      fromTime: activeBooking.pickupTime || "",
+      fromTime: resolvedReturnTime,
       toTime: resolvedReturnTime,
     }];
 

@@ -155,7 +155,7 @@ export default async function handler(req, res) {
               .from("bookings")
               .update({
                 return_date: new_return_date,
-                ...(pgTime ? { return_time: pgTime } : { return_time: "10:00:00" }),
+                return_time: pgTime,
                 updated_at:  new Date().toISOString(),
               })
               .eq("booking_ref", original_booking_id);
