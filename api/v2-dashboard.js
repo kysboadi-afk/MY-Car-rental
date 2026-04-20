@@ -305,7 +305,6 @@ export default async function handler(req, res) {
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
-    const now  = new Date();
     const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     for (const [vehicleId, stats] of Object.entries(vehicleStats)) {
