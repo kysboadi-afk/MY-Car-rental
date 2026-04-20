@@ -3350,11 +3350,37 @@ async function saveNewVehicle() {
 
 // ── Bookings ───────────────────────────────────────────────────────────────
 
+function bookingReturnDateTime(b) {
+  if (!b || !b.returnDate || !b.returnTime) return null;
+  const time = String(b.returnTime).trim();
+  const ampmMatch = time.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = ampmMatch[2];
+    const period = ampmMatch[3].toUpperCase();
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    const hhmm = String(hour).padStart(2, '0') + ':' + minute;
+    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const h24Match = time.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (h24Match) {
+    const hhmm = String(parseInt(h24Match[1], 10)).padStart(2, '0') + ':' + h24Match[2];
+    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  return null;
+}
+
 /** Compute derived operational status for a booking (overdue / extended / flagged / base status). */
-function bookingDerivedStatus(b, today) {
-  if (!today) today = new Date().toISOString().split('T')[0];
+function bookingDerivedStatus(b, now) {
+  if (!(now instanceof Date)) now = new Date();
   if (b.flagged) return 'flagged';
-  if (b.status === 'active_rental' && b.returnDate && b.returnDate < today) return 'overdue';
+  if (b.status === 'active_rental') {
+    const returnDateTime = bookingReturnDateTime(b);
+    if (returnDateTime && now >= returnDateTime) return 'overdue';
+  }
   // "Extended" = active rental whose returnDate differs from the original createdAt-implied range
   // We use updatedAt vs createdAt as a proxy: if updated more than 1 hour after creation, treat as possibly extended
   // A simpler heuristic: if status is active_rental and return date is in future but updated recently, mark extended
@@ -3375,7 +3401,7 @@ function bookingRowColor(b, derived) {
 
 /** Return a status badge including overdue / extended / flagged derived states. */
 function bookingStatusBadge(b, derived) {
-  if (!derived) derived = bookingDerivedStatus(b, new Date().toISOString().split('T')[0]);
+  if (!derived) derived = bookingDerivedStatus(b, new Date());
   const map = {
     reserved_unpaid:   ['badge-orange', 'Pending'],
     booked_paid:       ['badge-green',  'Confirmed'],
@@ -3445,12 +3471,12 @@ function applyBookingFilters() {
   const rFilter  = document.getElementById('booking-filter-risk')?.value || '';
   const pfFilter = document.getElementById('booking-filter-profit')?.value || '';
   const search   = (document.getElementById('booking-search').value || '').toLowerCase();
-  const today    = new Date().toISOString().split('T')[0];
+  const now      = new Date();
 
   let filtered = allBookings.filter((b) => {
     if (vFilter && b.vehicleId !== vFilter) return false;
     // Derived status: overdue / extended / flagged overlay
-    const derived = bookingDerivedStatus(b, today);
+    const derived = bookingDerivedStatus(b, now);
     if (sFilter) {
       if (sFilter === 'overdue'   && derived !== 'overdue')   return false;
       if (sFilter === 'extended'  && derived !== 'extended')  return false;
@@ -3479,7 +3505,7 @@ function applyBookingFilters() {
   document.getElementById('bookings-empty').style.display = 'none';
 
   document.getElementById('bookings-tbody').innerHTML = filtered.map((b) => {
-    const derived = bookingDerivedStatus(b, today);
+    const derived = bookingDerivedStatus(b, now);
     const rowColor = bookingRowColor(b, derived);
     const tier = computeBookingCustomerTier(b);
     const tierBadge = {
@@ -3547,8 +3573,7 @@ function applyBookingFilters() {
 function viewBooking(bookingId, vehicleId) {
   const b = allBookings.find((x) => x.bookingId === bookingId);
   if (!b) return;
-  const today   = new Date().toISOString().split('T')[0];
-  const derived = bookingDerivedStatus(b, today);
+  const derived = bookingDerivedStatus(b, new Date());
   const tier    = computeBookingCustomerTier(b);
   const tierBadge = {
     vip:          '<span class="badge badge-blue">⭐ VIP</span>',
@@ -4367,15 +4392,21 @@ function renderActionRequired(data) {
   const kpis     = data.kpis || {};
   const bookings = data.recentBookings || [];
 
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
   // returnsTodayCount and overdueCount from server-side KPI cover ALL active bookings (not just recent 10)
-  const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => {
+    if (b.status !== 'active_rental' || b.returnDate !== today) return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !returnDateTime || now < returnDateTime;
+  }).length;
   const overdue  = kpis.overdueCount != null ? kpis.overdueCount : bookings.filter((b) => {
-    if (b.status !== 'active_rental' || !b.returnDate) return false;
-    return b.returnDate < today;
+    if (b.status !== 'active_rental') return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !!returnDateTime && now >= returnDateTime;
   }).length;
   const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
 

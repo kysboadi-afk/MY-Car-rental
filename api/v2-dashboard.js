@@ -18,6 +18,7 @@ import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { loadBookings } from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
+import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -33,6 +34,14 @@ function bookingRevenue(booking) {
     return computed || 0;
   }
   return 0;
+}
+
+function parseReturnDateTime(returnDate, returnTime) {
+  if (!returnDate || !returnTime) return null;
+  const normalizedTime = normalizeClockTime(returnTime);
+  if (!normalizedTime) return null;
+  const returnDateTime = new Date(`${returnDate}T${normalizedTime}:00`);
+  return Number.isNaN(returnDateTime.getTime()) ? null : returnDateTime;
 }
 
 export default async function handler(req, res) {
@@ -92,7 +101,8 @@ export default async function handler(req, res) {
 
     // Non-financial KPIs (always from bookings.json)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
-    const today = new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const today = now.toISOString().split("T")[0];
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
@@ -101,8 +111,13 @@ export default async function handler(req, res) {
       if (activeStatuses.has(booking.status)) activeBookings++;
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (booking.status === "active_rental" && booking.returnDate) {
-        if (booking.returnDate < today) overdueCount++;
-        if (booking.returnDate === today) returnsTodayCount++;
+        const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+        if (returnDateTime && now >= returnDateTime) {
+          overdueCount++;
+        }
+        if (booking.returnDate === today && (!returnDateTime || now < returnDateTime)) {
+          returnsTodayCount++;
+        }
       }
     }
 

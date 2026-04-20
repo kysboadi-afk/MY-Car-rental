@@ -3761,21 +3761,50 @@ document.addEventListener('keydown', (e) => {
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Action Required helpers (called from renderDashboard) ─────────────────
+function bookingReturnDateTime(b) {
+  if (!b || !b.returnDate || !b.returnTime) return null;
+  const time = String(b.returnTime).trim();
+  const ampmMatch = time.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = ampmMatch[2];
+    const period = ampmMatch[3].toUpperCase();
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    const hhmm = String(hour).padStart(2, '0') + ':' + minute;
+    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const h24Match = time.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (h24Match) {
+    const hhmm = String(parseInt(h24Match[1], 10)).padStart(2, '0') + ':' + h24Match[2];
+    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  return null;
+}
+
 function renderActionRequired(data) {
   // Use dashboard KPIs for accurate pending count; recentBookings for day-of context
   const kpis     = data.kpis || {};
   const bookings = data.recentBookings || [];
 
-  const today = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
   // For day-of counts, use recentBookings as a best-effort approximation
   const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
-  const returns  = bookings.filter((b) => b.returnDate === today && b.status === 'active_rental').length;
+  const returns  = bookings.filter((b) => {
+    if (b.status !== 'active_rental' || b.returnDate !== today) return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !returnDateTime || now < returnDateTime;
+  }).length;
   const overdue  = bookings.filter((b) => {
-    if (b.status !== 'active_rental' || !b.returnDate) return false;
-    return b.returnDate < today;
+    if (b.status !== 'active_rental') return false;
+    const returnDateTime = bookingReturnDateTime(b);
+    return !!returnDateTime && now >= returnDateTime;
   }).length;
 
   const setTile = (id, count, urgency) => {
