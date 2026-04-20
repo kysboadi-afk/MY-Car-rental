@@ -3037,6 +3037,8 @@ async function toolResendBookingConfirmation({ bookingId }) {
       const vehicleInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : {};
       const rentalDays  = (pickupDate && returnDate) ? computeRentalDays(pickupDate, returnDate) : 0;
       const hasProtectionPlan = !!(storedDocs.protection_plan_tier || booking.protectionPlanTier);
+      // storedDocs.protection_plan_tier is the authoritative source (captured at booking time);
+      // booking.protectionPlanTier is a fallback for older records that predated pending_booking_docs.
       const protectionPlanTier = storedDocs.protection_plan_tier || booking.protectionPlanTier || null;
 
       const pdfBody = {
@@ -3138,7 +3140,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
         </table>
         ${hasAttachments
           ? `<p style="margin-top:12px;color:green">✅ <strong>Documents attached:</strong> ${esc(attachmentList)}</p>`
-          : `<p style="margin-top:12px;color:#c07000">⚠️ <strong>No documents on file.</strong> The signed rental agreement, renter ID, and insurance were not found in the system for this booking. ${isWebsitePayment ? 'The renter agreed to the rental terms at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> during booking.' : 'Please collect documents directly from the renter.'}</p>`
+          : `<p style="margin-top:12px;color:#c07000">⚠️ <strong>No documents on file.</strong> The signed rental agreement, renter ID, and insurance were not found in Supabase for this booking. This is normal for older bookings or cash/manual bookings created before document storage was introduced. ${isWebsitePayment ? 'The renter agreed to the rental terms at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> during booking.' : 'Please collect documents directly from the renter.'}</p>`
         }
         <p style="margin-top:16px">The customer's confirmation email was also resent.</p>
       `,
