@@ -932,11 +932,13 @@ function applySlingshotDuration() {
     return;
   }
 
-  // Normalize pickupTime.value to "HH:MM" regardless of its format.
-  // pickupTime is now a <select> returning values like "08:00 AM".
+  // pickupTime is a <select> whose option values are stored as HH:MM (24-hour).
+  // The AM/PM display label is separate from the value sent here.
+  // timeSlotToHH handles legacy AM/PM values that may be present in memory;
+  // the fallback treats a valid HH:MM string directly.
   let timeStr = timeSlotToHH(pickupTime.value);
   if (!timeStr) {
-    // Fallback: try parsing as native HH:MM
+    // Fallback: value is already HH:MM
     const nativeTest = new Date("1970-01-01T" + pickupTime.value);
     if (!isNaN(nativeTest)) timeStr = pickupTime.value.slice(0, 5);
   }
