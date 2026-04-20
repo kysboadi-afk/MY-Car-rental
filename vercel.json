@@ -1,4 +1,7 @@
 {
+  "github": {
+    "enabled": false
+  },
   "functions": {
     "api/admin-chat.js":                    { "maxDuration": 60 },
     "api/stripe-reconcile.js":              { "maxDuration": 60 },

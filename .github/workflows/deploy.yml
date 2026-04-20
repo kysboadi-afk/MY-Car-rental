@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to GitHub Pages and Vercel
 
 on:
   push:
@@ -16,7 +16,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # ── Gate ─────────────────────────────────────────────────────────────
+  # This job targets the "production" environment.
+  # Configure required reviewers in GitHub Settings → Environments →
+  # production to prevent any deployment from proceeding without
+  # explicit owner approval.
+  approve:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Deployment approved
+        run: echo "Deployment approved. Proceeding to deploy."
+
+  # ── GitHub Pages ──────────────────────────────────────────────────────
+  deploy-pages:
+    needs: approve
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -36,3 +51,17 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # ── Vercel ────────────────────────────────────────────────────────────
+  deploy-vercel:
+    needs: approve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        run: npx vercel --prod --yes --cwd . --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
