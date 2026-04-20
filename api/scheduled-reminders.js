@@ -70,6 +70,10 @@ const GRACE_PERIODS = {
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
 // Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
 // return datetime vs. expected return datetime (HH:MM 24-hour).
+// The grace period gates when the fee is *assessed*, but the hourly count
+// starts from the scheduled return time (not from grace expiry).  The minimum
+// charge is always 1 hour, so a renter who is 1–59 minutes late is charged
+// the same as one who is exactly 1 hour late.
 const LATE_FEE_AMOUNTS = {
   slingshot:  100,  // $100/hour (rounded up, min 1 h)
   camry:       50,  // $50/hour  (rounded up, min 1 h)

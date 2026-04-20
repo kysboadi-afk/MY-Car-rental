@@ -65,6 +65,8 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
       // (regardless of return date), it is unavailable.  This ensures an overdue
       // booking that has not yet been auto-completed still blocks new bookings even
       // after returnDateTime + buffer has technically passed.
+      // Note: a composite index on (vehicle_id, status) in the bookings table is
+      // recommended so this single-row lookup stays fast as the table grows.
       const { data: activeRentals, error: activeRentalError } = await sb
         .from("bookings")
         .select("booking_ref, return_date, return_time")
