@@ -61,6 +61,22 @@ async function fetchGitHubBookedDates() {
 async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime) {
   if (sb) {
     try {
+      // Active rental override: if the vehicle has ANY active_rental booking
+      // (regardless of return date), it is unavailable.  This ensures an overdue
+      // booking that has not yet been auto-completed still blocks new bookings even
+      // after returnDateTime + buffer has technically passed.
+      // Note: a composite index on (vehicle_id, status) in the bookings table is
+      // recommended so this single-row lookup stays fast as the table grows.
+      const { data: activeRentals, error: activeRentalError } = await sb
+        .from("bookings")
+        .select("booking_ref, return_date, return_time")
+        .eq("vehicle_id", vehicleId)
+        .eq("status", "active_rental")
+        .limit(1);
+      if (!activeRentalError && activeRentals && activeRentals.length > 0) {
+        return { available: false, conflicts: activeRentals, source: "supabase" };
+      }
+
       // Query Supabase bookings for any active booking that overlaps [from, to].
       // Overlap condition: pickup_date <= to AND return_date >= from
       const { data: rows, error } = await sb

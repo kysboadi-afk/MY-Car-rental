@@ -915,7 +915,7 @@ export default async function handler(req, res) {
                 updatedBooking.pickupDate,
                 updatedBooking.returnDate,
                 updatedBooking.pickupTime || "",
-                updatedBooking.pickupTime || "",
+                updatedBooking.returnTime || updatedBooking.pickupTime || "",
               );
             } catch (bdErr) {
               console.error("stripe-webhook: booked-dates.json extension update failed (non-fatal):", bdErr.message);

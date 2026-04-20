@@ -22,6 +22,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
+import { normalizeClockTime, deriveReturnTime } from "./_time.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -502,7 +503,14 @@ export default async function handler(req, res) {
   // Parse body first so the booking can always be persisted, even when SMTP
   // credentials are missing.  A misconfigured email server must never cause a
   // paid booking to be silently lost.
-  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+
+  const pickupTime = normalizeClockTime(rawPickupTime);
+  if (!pickupTime) {
+    return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
+  }
+  const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
+  const bookingBody = { ...req.body, pickupTime, returnTime };
 
   // Guard: fail fast if SMTP credentials are missing — but persist the booking
   // first so a paid booking is never lost due to email misconfiguration.
@@ -515,7 +523,7 @@ export default async function handler(req, res) {
     const isBalancePaymentReq = paymentType === "balance_payment";
     if (isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
       try {
-        await persistBooking(buildBookingRecord(req.body));
+        await persistBooking(buildBookingRecord(bookingBody));
         console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
       } catch (pipelineErr) {
         console.error("[send-reservation-email] SMTP missing and early booking persist also failed:", pipelineErr.message);
@@ -634,7 +642,7 @@ export default async function handler(req, res) {
       const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
       const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
       agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
-      agreementPdfBuffer = await generateRentalAgreementPdf(req.body, customerIp, cardLast4);
+      agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       attachments.push({
         filename: agreementPdfFilename,
         content: agreementPdfBuffer,
@@ -786,7 +794,7 @@ export default async function handler(req, res) {
     let persistedBooking = null;
     if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
-      const pipelineResult = await persistBooking(buildBookingRecord(req.body, balancePayUrl || ""));
+      const pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
       persistedBooking = pipelineResult.booking;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);

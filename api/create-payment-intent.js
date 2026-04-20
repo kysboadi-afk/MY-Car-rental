@@ -11,6 +11,7 @@ import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_
 import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { isDatesAndTimesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
+import { normalizeClockTime, deriveReturnTime } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -50,7 +51,7 @@ export default async function handler(req, res) {
 
     // Pickup time is required for all vehicles — it anchors the rental window and
     // is enforced as the return time for economy cars (return_time = pickup_time).
-    const trimmedPickupTime = pickupTime ? String(pickupTime).trim() : "";
+    const trimmedPickupTime = normalizeClockTime(pickupTime);
     if (!trimmedPickupTime) {
       return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
     }
@@ -83,6 +84,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid dates" });
     }
 
+    const trimmedReturnTime = normalizeClockTime(returnTime);
+    const derivedReturnTime = isSlingshotVehicle
+      ? deriveReturnTime(pickup, trimmedPickupTime, trimmedReturnTime, slingshotDuration)
+      : trimmedPickupTime;
+
     // ── Availability check ──────────────────────────────────────────────────
     // For Slingshot: auto-assign the first available unit — customers book a
     // generic "Slingshot" and we give them whichever unit is free.
@@ -93,8 +99,7 @@ export default async function handler(req, res) {
     if (isSlingshotVehicle) {
       // Compute the Slingshot return time from pickup time + duration so the
       // overlap check is precise at the hour level.
-      const trimmedReturnTime = returnTime ? String(returnTime).trim() : "";
-      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, trimmedReturnTime || trimmedPickupTime);
+      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, derivedReturnTime);
       if (!unit) {
         return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
       }
@@ -239,8 +244,8 @@ export default async function handler(req, res) {
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        pickup_time:  pickupTime  ? String(pickupTime).trim()  : "",
-        return_time:  returnTime  ? String(returnTime).trim()  : "",
+        pickup_time:  trimmedPickupTime,
+        return_time:  derivedReturnTime,
         email,
         ...(isSlingshotVehicle ? {
           rental_duration: Number(slingshotDuration) >= 48
