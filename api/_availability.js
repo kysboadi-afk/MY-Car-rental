@@ -5,6 +5,7 @@
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 const FLEET_STATUS_PATH = "fleet-status.json";
+const BLOCKED_DATE_OVERRIDE_VEHICLES = new Set(["camry2013"]);
 
 /**
  * Fetch and decode a JSON file from the GitHub Contents API.
@@ -142,6 +143,9 @@ export function hasDateTimeOverlap(ranges, fromDate, toDate, fromTime, toTime) {
  * so that transient issues do not permanently block payments.
  */
 export async function isDatesAvailable(vehicleId, from, to) {
+  // Explicit operational override: Camry 2013 is temporarily allowed to accept
+  // bookings regardless of blocked-date ranges.
+  if (BLOCKED_DATE_OVERRIDE_VEHICLES.has(vehicleId)) return true;
   try {
     const data = await fetchBookedDates();
     if (!data) return true; // can't verify — allow through
@@ -172,6 +176,9 @@ export async function isDatesAvailable(vehicleId, from, to) {
  * @returns {Promise<boolean>} true when available
  */
 export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, toTime) {
+  // Explicit operational override: Camry 2013 is temporarily allowed to accept
+  // bookings regardless of blocked-date ranges.
+  if (BLOCKED_DATE_OVERRIDE_VEHICLES.has(vehicleId)) return true;
   try {
     const data = await fetchBookedDates();
     if (!data) return true; // can't verify — allow through

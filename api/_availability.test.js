@@ -3,7 +3,13 @@
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDateTimeMs, hasDateTimeOverlap, hasOverlap } from "./_availability.js";
+import {
+  parseDateTimeMs,
+  hasDateTimeOverlap,
+  hasOverlap,
+  isDatesAndTimesAvailable,
+  isDatesAvailable,
+} from "./_availability.js";
 
 // ─── parseDateTimeMs ─────────────────────────────────────────────────────────
 
@@ -163,4 +169,58 @@ test("hasOverlap: completely non-overlapping ranges — false", () => {
 test("hasOverlap: ranges touch at endpoint — overlap", () => {
   const ranges = [{ from: "2026-03-01", to: "2026-03-07" }];
   assert.equal(hasOverlap(ranges, "2026-03-07", "2026-03-14"), true);
+});
+
+test("isDatesAvailable: camry2013 ignores blocked ranges (override enabled)", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: Buffer.from(JSON.stringify({
+        camry2013: [{ from: "2026-04-20", to: "2026-04-30" }],
+      })).toString("base64"),
+    }),
+  });
+  try {
+    const available = await isDatesAvailable("camry2013", "2026-04-20", "2026-04-22");
+    assert.equal(available, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("isDatesAndTimesAvailable: non-override vehicles still honor blocked ranges", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: Buffer.from(JSON.stringify({
+        camry: [{ from: "2026-04-20", to: "2026-04-30", fromTime: "9:00 AM", toTime: "10:00 AM" }],
+      })).toString("base64"),
+    }),
+  });
+  try {
+    const available = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(available, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("isDatesAndTimesAvailable: camry2013 ignores blocked ranges with times (override enabled)", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: Buffer.from(JSON.stringify({
+        camry2013: [{ from: "2026-04-20", to: "2026-04-30", fromTime: "9:00 AM", toTime: "10:00 AM" }],
+      })).toString("base64"),
+    }),
+  });
+  try {
+    const available = await isDatesAndTimesAvailable("camry2013", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(available, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
