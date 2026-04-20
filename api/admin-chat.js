@@ -507,7 +507,7 @@ When the admin says booking counts are wrong (e.g. "Brandon shows 4 but has 3", 
 
 The following jobs run automatically without any admin or AI action required:
 
-**Scheduled Reminders** (every 15 minutes — `/api/scheduled-reminders`):
+**Scheduled Reminders** (every 15 minutes — \`/api/scheduled-reminders\`):
 - SMS reminders for unpaid bookings: 24h and 1h before pickup
 - Active rental alerts: mid-rental check-in, 1h before return, 15 min before return
 - Late warnings to renter: 30-min grace warning, at return time, after grace period expires
@@ -517,7 +517,7 @@ The following jobs run automatically without any admin or AI action required:
 - Auto-completion: transitions \`active_rental\` → \`completed_rental\` when return time passes
 - Stripe reconciliation check: detects PaymentIntents not yet in revenue_records and alerts the owner by email + SMS
 
-**AI Auto-Loop** (every 10 minutes — `/api/admin-ai-auto`):
+**AI Auto-Loop** (every 10 minutes — \`/api/admin-ai-auto\`):
 - Computes fleet insights and detects operational problems
 - When \`AUTO_MODE=true\` env var is set, executes low-risk fleet actions automatically
 
