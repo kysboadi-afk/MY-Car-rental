@@ -106,6 +106,19 @@ test("CORS header is NOT set for unknown origin", async () => {
   assert.equal(res._headers["Access-Control-Allow-Origin"], undefined);
 });
 
+test("returns 400 when pickupTime is missing", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", { ...VALID_BODY, pickupTime: "   " });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.match(res._body?.error || "", /pickup time is required/i);
+  assert.equal(mockSendMail.mock.callCount(), 0, "sendMail should not be called when pickupTime is missing");
+});
+
 test("valid POST sends owner email containing renter name", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;

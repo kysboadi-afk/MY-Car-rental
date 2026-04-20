@@ -14,6 +14,40 @@ import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
+function normalizeClockTime(rawTime) {
+  const val = rawTime ? String(rawTime).trim() : "";
+  if (!val) return "";
+
+  const twentyFour = val.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (twentyFour) {
+    return `${String(Number(twentyFour[1])).padStart(2, "0")}:${twentyFour[2]}`;
+  }
+
+  const twelveHour = val.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hour = Number(twelveHour[1]);
+    const mins = twelveHour[2];
+    const period = twelveHour[3].toUpperCase();
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, "0")}:${mins}`;
+  }
+
+  return "";
+}
+
+function deriveSlingshotReturnTime(pickupDate, pickupTime, durationHours) {
+  const normalizedPickupTime = normalizeClockTime(pickupTime);
+  const hours = Number(durationHours);
+  if (!pickupDate || !normalizedPickupTime || !Number.isFinite(hours) || hours <= 0) {
+    return "";
+  }
+  const pickupMoment = new Date(`${pickupDate}T${normalizedPickupTime}:00`);
+  if (Number.isNaN(pickupMoment.getTime())) return "";
+  const returnMoment = new Date(pickupMoment.getTime() + (hours * 60 * 60 * 1000));
+  return `${String(returnMoment.getHours()).padStart(2, "0")}:${String(returnMoment.getMinutes()).padStart(2, "0")}`;
+}
+
 export default async function handler(req, res) {
   // CORS — allow requests from the production frontend
   const origin = req.headers.origin;
@@ -50,7 +84,7 @@ export default async function handler(req, res) {
 
     // Pickup time is required for all vehicles — it anchors the rental window and
     // is enforced as the return time for economy cars (return_time = pickup_time).
-    const trimmedPickupTime = pickupTime ? String(pickupTime).trim() : "";
+    const trimmedPickupTime = normalizeClockTime(pickupTime);
     if (!trimmedPickupTime) {
       return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
     }
@@ -83,6 +117,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid dates" });
     }
 
+    const trimmedReturnTime = normalizeClockTime(returnTime);
+    const derivedReturnTime = isSlingshotVehicle
+      ? (trimmedReturnTime || deriveSlingshotReturnTime(pickup, trimmedPickupTime, slingshotDuration) || trimmedPickupTime)
+      : trimmedPickupTime;
+
     // ── Availability check ──────────────────────────────────────────────────
     // For Slingshot: auto-assign the first available unit — customers book a
     // generic "Slingshot" and we give them whichever unit is free.
@@ -93,8 +132,7 @@ export default async function handler(req, res) {
     if (isSlingshotVehicle) {
       // Compute the Slingshot return time from pickup time + duration so the
       // overlap check is precise at the hour level.
-      const trimmedReturnTime = returnTime ? String(returnTime).trim() : "";
-      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, trimmedReturnTime || trimmedPickupTime);
+      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, derivedReturnTime);
       if (!unit) {
         return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
       }
@@ -239,8 +277,8 @@ export default async function handler(req, res) {
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        pickup_time:  pickupTime  ? String(pickupTime).trim()  : "",
-        return_time:  returnTime  ? String(returnTime).trim()  : "",
+         pickup_time:  trimmedPickupTime,
+         return_time:  derivedReturnTime,
         email,
         ...(isSlingshotVehicle ? {
           rental_duration: Number(slingshotDuration) >= 48

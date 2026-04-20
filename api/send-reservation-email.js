@@ -196,6 +196,46 @@ function esc(str) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeClockTime(rawTime) {
+  const val = rawTime ? String(rawTime).trim() : "";
+  if (!val) return "";
+
+  const twentyFour = val.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+  if (twentyFour) {
+    return `${String(Number(twentyFour[1])).padStart(2, "0")}:${twentyFour[2]}`;
+  }
+
+  const twelveHour = val.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hour = Number(twelveHour[1]);
+    const mins = twelveHour[2];
+    const period = twelveHour[3].toUpperCase();
+    if (period === "PM" && hour !== 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, "0")}:${mins}`;
+  }
+
+  return "";
+}
+
+function deriveReturnTime(pickupDate, pickupTime, returnTime, slingshotDuration) {
+  const normalizedReturnTime = normalizeClockTime(returnTime);
+  if (normalizedReturnTime) return normalizedReturnTime;
+
+  const normalizedPickupTime = normalizeClockTime(pickupTime);
+  if (!normalizedPickupTime) return "";
+
+  const durationHours = Number(slingshotDuration);
+  if (!pickupDate || !Number.isFinite(durationHours) || durationHours <= 0) {
+    return normalizedPickupTime;
+  }
+
+  const pickupMoment = new Date(`${pickupDate}T${normalizedPickupTime}:00`);
+  if (Number.isNaN(pickupMoment.getTime())) return normalizedPickupTime;
+  const returnMoment = new Date(pickupMoment.getTime() + (durationHours * 60 * 60 * 1000));
+  return `${String(returnMoment.getHours()).padStart(2, "0")}:${String(returnMoment.getMinutes()).padStart(2, "0")}`;
+}
+
 /**
  * Build a self-contained HTML document representing the signed rental agreement.
  * This is generated server-side from the verified booking data so it can be
@@ -502,7 +542,14 @@ export default async function handler(req, res) {
   // Parse body first so the booking can always be persisted, even when SMTP
   // credentials are missing.  A misconfigured email server must never cause a
   // paid booking to be silently lost.
-  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+
+  const pickupTime = normalizeClockTime(rawPickupTime);
+  if (!pickupTime) {
+    return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
+  }
+  const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
+  const bookingBody = { ...req.body, pickupTime, returnTime };
 
   // Guard: fail fast if SMTP credentials are missing — but persist the booking
   // first so a paid booking is never lost due to email misconfiguration.
@@ -515,7 +562,7 @@ export default async function handler(req, res) {
     const isBalancePaymentReq = paymentType === "balance_payment";
     if (isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
       try {
-        await persistBooking(buildBookingRecord(req.body));
+        await persistBooking(buildBookingRecord(bookingBody));
         console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
       } catch (pipelineErr) {
         console.error("[send-reservation-email] SMTP missing and early booking persist also failed:", pipelineErr.message);
@@ -634,7 +681,7 @@ export default async function handler(req, res) {
       const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
       const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
       agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
-      agreementPdfBuffer = await generateRentalAgreementPdf(req.body, customerIp, cardLast4);
+      agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       attachments.push({
         filename: agreementPdfFilename,
         content: agreementPdfBuffer,
@@ -786,7 +833,7 @@ export default async function handler(req, res) {
     let persistedBooking = null;
     if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
-      const pipelineResult = await persistBooking(buildBookingRecord(req.body, balancePayUrl || ""));
+      const pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
       persistedBooking = pipelineResult.booking;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);

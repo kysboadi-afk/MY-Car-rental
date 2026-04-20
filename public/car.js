@@ -922,9 +922,23 @@ function applySlingshotDuration() {
 
   const dateStr = pickup.value; // "YYYY-MM-DD"
   if (!dateStr) { updatePayBtn(); return; }
+  if (!pickupTime.value) {
+    if (returnPicker) {
+      returnPicker.clear();
+    } else {
+      returnDate.value = "";
+    }
+    if (returnTimePicker) {
+      returnTimePicker.clear();
+    } else {
+      returnTime.value = "";
+    }
+    updatePayBtn();
+    return;
+  }
 
   // Normalize pickupTime.value to "HH:MM" regardless of Flatpickr's "h:i K" format
-  let timeStr = "12:00"; // default noon if no time selected
+  let timeStr = "";
   const rawTime = pickupTime.value;
   if (rawTime) {
     const nativeTest = new Date("1970-01-01T" + rawTime);
@@ -1095,7 +1109,15 @@ async function initDatePickers() {
       if (carData.hourlyTiers) {
         applySlingshotDuration();
       } else {
-        if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
+        if (returnTimePicker) {
+          if (timeStr) {
+            returnTimePicker.setDate(timeStr, true, "h:i K");
+          } else {
+            returnTimePicker.clear();
+          }
+        } else {
+          returnTime.value = timeStr || "";
+        }
       }
     }
   });
@@ -1795,10 +1817,12 @@ function updatePayBtn() {
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
                           (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
-  // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
+  // Hourly-tier vehicles need pickup + duration + pickup time;
+  // other vehicles need pickup + return date + pickup time.
+  // Pickup time is required for all vehicles.
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration
-    : pickup.value && returnDate.value;
+    ? pickup.value && currentSlingshotDuration && pickupTime.value
+    : pickup.value && returnDate.value && pickupTime.value;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
@@ -1994,6 +2018,7 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
+  if (!pickupTime.value) { alert("Pickup time is required."); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
@@ -2446,4 +2471,3 @@ stripeBtn.addEventListener("click", async () => {
     stripeBtn.click();
   });
 }());
-
