@@ -588,9 +588,27 @@
     }
     .ai-msg.assistant .ai-msg-bubble {
       background: var(--bg); color: var(--text); border-bottom-left-radius: 4px;
-      border: 1px solid var(--border);
+      border: 1px solid var(--border); white-space: normal;
     }
     .ai-msg.error .ai-msg-bubble { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+    /* Markdown rendering inside AI assistant bubbles */
+    .ai-msg.assistant .ai-msg-bubble strong { font-weight: 700; }
+    .ai-msg.assistant .ai-msg-bubble em { font-style: italic; }
+    .ai-md-h1 { font-size: 15px; font-weight: 700; margin: 10px 0 4px; }
+    .ai-md-h2 { font-size: 14px; font-weight: 700; margin: 8px 0 4px; }
+    .ai-md-h3 { font-size: 13px; font-weight: 700; margin: 6px 0 2px; }
+    .ai-md-h4 { font-size: 13px; font-weight: 600; margin: 4px 0 2px; }
+    .ai-md-li { padding-left: 16px; margin: 2px 0; }
+    .ai-md-hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .ai-inline-code {
+      background: #f1f5f9; color: #0f172a; padding: 1px 4px;
+      border-radius: 3px; font-size: 11.5px; font-family: monospace;
+    }
+    .ai-code-block {
+      background: #1e293b; color: #e2e8f0; padding: 10px 12px;
+      border-radius: 8px; font-size: 12px; font-family: monospace;
+      overflow-x: auto; margin: 6px 0; white-space: pre; display: block;
+    }
     .ai-tool-pill {
       display: inline-flex; align-items: center; gap: 4px;
       background: #eff6ff; color: var(--primary); border: 1px solid #bfdbfe;
@@ -4198,6 +4216,53 @@ function esc(str) {
   return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * Convert a markdown string to safe HTML for AI assistant bubbles.
+ * HTML is escaped first (security), then markdown patterns are transformed.
+ */
+function renderMarkdown(str) {
+  // Step 1: HTML-escape to prevent XSS
+  let s = String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Step 2: Fenced code blocks (``` ... ```) — must come before inline code
+  s = s.replace(/```(?:[^\n`]*)?\n?([\s\S]*?)```/g, (_, code) =>
+    `<code class="ai-code-block">${code.trim()}</code>`
+  );
+
+  // Step 3: Inline code (`code`)
+  s = s.replace(/`([^`\n]+)`/g, '<code class="ai-inline-code">$1</code>');
+
+  // Step 4: Bold (**text** or __text__)
+  s = s.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_\n]+?)__/g, '<strong>$1</strong>');
+
+  // Step 5: Italic (*text*) — after bold to avoid consuming double-asterisks
+  s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+
+  // Step 6: Headers
+  s = s.replace(/^#{4,6} (.+)$/gm, '<div class="ai-md-h4">$1</div>');
+  s = s.replace(/^### (.+)$/gm, '<div class="ai-md-h3">$1</div>');
+  s = s.replace(/^## (.+)$/gm, '<div class="ai-md-h2">$1</div>');
+  s = s.replace(/^# (.+)$/gm, '<div class="ai-md-h1">$1</div>');
+
+  // Step 7: Bullet list items (- item or * item)
+  s = s.replace(/^[ \t]*[*\-] (.+)$/gm, '<div class="ai-md-li">• $1</div>');
+
+  // Step 8: Numbered list items (1. item)
+  s = s.replace(/^[ \t]*(\d+)\. (.+)$/gm, '<div class="ai-md-li">$1. $2</div>');
+
+  // Step 9: Horizontal rules (--- or ***)
+  s = s.replace(/^[-*_]{3,}$/gm, '<hr class="ai-md-hr">');
+
+  // Step 10: Newlines → <br> (preserves paragraph spacing)
+  s = s.replace(/\n/g, '<br>');
+
+  return s;
+}
+
 function formatMoney(n) {
   const num = Number(n) || 0;
   return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -5935,13 +6000,14 @@ function aiAppendMessage(role, content, toolCalls) {
   wrap.className = `ai-msg ${role === 'user' ? 'user' : role === 'error' ? 'error assistant' : 'assistant'}`;
 
   const initial = role === 'user' ? 'A' : '✦';
+  const bubbleContent = role === 'assistant' ? renderMarkdown(content) : esc(content);
   wrap.innerHTML = `
     <div class="ai-msg-avatar">${initial}</div>
     <div>
       ${toolCalls && toolCalls.length ? `<div class="ai-tools-row">${toolCalls.map((t) =>
         `<span class="ai-tool-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-2-2a1 1 0 010-1.4l8-8a1 1 0 011.4 0l2 2z"/></svg>${esc(t)}</span>`
       ).join('')}</div>` : ''}
-      <div class="ai-msg-bubble">${esc(content)}</div>
+      <div class="ai-msg-bubble">${bubbleContent}</div>
     </div>`;
 
   container.appendChild(wrap);
