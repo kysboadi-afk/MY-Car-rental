@@ -334,14 +334,17 @@ async function sendBookingPersistenceAlert(paymentIntent, reason, details = {}) 
     `Pickup: ${details.pickup_date || "<missing>"}`,
     `Return: ${details.return_date || "<missing>"}`,
     `Attempts: ${details.attempts || 0}`,
-    `Webhook Event: ${details.event_id || "<unknown>"}`,
   ];
   const alertText = alertLines.join("\n");
   console.error(alertText);
 
   if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && process.env.OWNER_PHONE) {
     try {
-      await sendSms(normalizePhone(process.env.OWNER_PHONE), alertText.slice(0, MAX_ALERT_SMS_LENGTH));
+      const ownerPhone = String(process.env.OWNER_PHONE || "").trim();
+      if (!ownerPhone || !/\d/.test(ownerPhone)) {
+        throw new Error("OWNER_PHONE has no digits");
+      }
+      await sendSms(normalizePhone(ownerPhone), alertText.slice(0, MAX_ALERT_SMS_LENGTH));
     } catch (smsErr) {
       console.error("stripe-webhook: booking persistence SMS alert failed:", smsErr.message);
     }
