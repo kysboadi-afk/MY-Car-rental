@@ -143,6 +143,8 @@ export function hasDateTimeOverlap(ranges, fromDate, toDate, fromTime, toTime) {
  * so that transient issues do not permanently block payments.
  */
 export async function isDatesAvailable(vehicleId, from, to) {
+  // Explicit operational override: Camry 2013 is temporarily allowed to accept
+  // bookings regardless of blocked-date ranges.
   if (BLOCKED_DATE_OVERRIDE_VEHICLES.has(vehicleId)) return true;
   try {
     const data = await fetchBookedDates();
@@ -174,6 +176,8 @@ export async function isDatesAvailable(vehicleId, from, to) {
  * @returns {Promise<boolean>} true when available
  */
 export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, toTime) {
+  // Explicit operational override: Camry 2013 is temporarily allowed to accept
+  // bookings regardless of blocked-date ranges.
   if (BLOCKED_DATE_OVERRIDE_VEHICLES.has(vehicleId)) return true;
   try {
     const data = await fetchBookedDates();

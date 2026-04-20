@@ -31,7 +31,7 @@ const BOOKED_DATES_PATH = "booked-dates.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // Statuses that mean the vehicle is actually occupied / unavailable
 const ACTIVE_STATUSES = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
-const BLOCKED_DATE_OVERRIDE_VEHICLES = ["camry2013"];
+const BLOCKED_DATE_OVERRIDE_VEHICLES = new Set(["camry2013"]);
 
 /**
  * Merge date ranges for a vehicle without adding duplicates.
@@ -150,9 +150,7 @@ export default async function handler(req, res) {
 
   // Explicit operational override: Camry 2013 must remain bookable even when
   // blocked-date ranges exist in either GitHub JSON or Supabase.
-  for (const vehicleId of BLOCKED_DATE_OVERRIDE_VEHICLES) {
-    map[vehicleId] = [];
-  }
+  for (const vehicleId of BLOCKED_DATE_OVERRIDE_VEHICLES) map[vehicleId] = [];
 
   return res.status(200).json(map);
 }

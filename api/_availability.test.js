@@ -206,3 +206,21 @@ test("isDatesAndTimesAvailable: non-override vehicles still honor blocked ranges
     globalThis.fetch = originalFetch;
   }
 });
+
+test("isDatesAndTimesAvailable: camry2013 ignores blocked ranges with times (override enabled)", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      content: Buffer.from(JSON.stringify({
+        camry2013: [{ from: "2026-04-20", to: "2026-04-30", fromTime: "9:00 AM", toTime: "10:00 AM" }],
+      })).toString("base64"),
+    }),
+  });
+  try {
+    const available = await isDatesAndTimesAvailable("camry2013", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(available, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
