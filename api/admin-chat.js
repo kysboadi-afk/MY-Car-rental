@@ -546,7 +546,7 @@ Before the customer confirms payment, the booking form stores their documents in
 
 The Stripe webhook retrieves these documents from \`pending_booking_docs\` and attaches them to the **owner's booking confirmation email** — so the owner always receives a complete record with all documents even if the browser fails to call the email endpoint directly. Once the owner email is sent, \`email_sent\` is set to \`true\` so the email is never sent twice.
 
-When \`resend_booking_confirmation\` is used, the owner email is resent but **without the signed PDF** — the rental agreement PDF is generated in the customer's browser at payment time and is not stored server-side. The rental agreement terms remain available at https://www.slytrans.com/rental-agreement.html, which the renter agreed to during booking.`;
+When \`resend_booking_confirmation\` is used, the system looks up the booking's stored documents in \`pending_booking_docs\` (regardless of \`email_sent\` status) and, if found, generates a fresh rental agreement PDF from the stored signature and attaches the renter's ID and insurance documents to the owner email — so the owner receives a complete resend with all documents. If no stored documents are found for the booking, the email is sent without attachments and a note is included.`;
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();

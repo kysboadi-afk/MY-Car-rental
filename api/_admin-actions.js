@@ -13,7 +13,8 @@
 import { loadBookings, saveBookings, updateBooking } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
-import { computeAmount, computeRentalDays, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
+import { computeAmount, computeRentalDays, CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
+import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import {
   loadPricingSettings,
   computeBreakdownLinesFromSettings,
@@ -2965,8 +2966,9 @@ async function toolCreateManualBooking({
 
 /**
  * Re-send a booking confirmation email to the renter and owner.
- * Used when the browser-side email failed (e.g. "We couldn't send your confirmation")
- * or when a booking was added manually via admin.
+ * Fetches stored docs (signature, ID, insurance) from pending_booking_docs in
+ * Supabase, generates the rental agreement PDF when a signature is on file,
+ * and attaches all documents to the owner email.
  */
 async function toolResendBookingConfirmation({ bookingId }) {
   if (!bookingId) throw new Error("bookingId is required");
@@ -2985,6 +2987,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
     name, email, phone, vehicleName, vehicleId,
     pickupDate, pickupTime, returnDate, returnTime,
     amountPaid, totalPrice, status, paymentIntentId,
+    notes, source,
   } = booking;
 
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -2999,24 +3002,128 @@ async function toolResendBookingConfirmation({ bookingId }) {
   });
 
   const displayTotal = amountPaid != null ? `$${Number(amountPaid).toFixed(2)}` : (totalPrice != null ? `$${Number(totalPrice).toFixed(2)}` : "N/A");
-  const pickupDisplay  = [pickupDate,  pickupTime ].filter(Boolean).join(" at ");
-  const returnDisplay  = [returnDate,  returnTime ].filter(Boolean).join(" at ");
+  const pickupDisplay  = [pickupDate, pickupTime].filter(Boolean).join(" at ");
+  const returnDisplay  = [returnDate, returnTime].filter(Boolean).join(" at ");
   const firstName = (name || "there").split(" ")[0];
 
   // Determine whether this was a website (Stripe) payment or cash/manual.
   const isWebsitePayment = typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_");
   const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
 
+  // ── Retrieve stored docs (signature, ID, insurance) from Supabase ────────
+  // For resends we fetch regardless of email_sent status.
+  let storedDocs = null;
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb) {
+      const { data: docsRow } = await sb
+        .from("pending_booking_docs")
+        .select("*")
+        .eq("booking_id", bookingId)
+        .maybeSingle();
+      storedDocs = docsRow || null;
+    }
+  } catch (docsErr) {
+    console.warn("toolResendBookingConfirmation: could not retrieve pending_booking_docs (non-fatal):", docsErr.message);
+  }
+
+  // ── Build attachments ────────────────────────────────────────────────────
+  const attachments = [];
+
+  // Generate rental agreement PDF from stored signature + booking data.
+  let agreementPdfFilename = null;
+  if (storedDocs && storedDocs.signature) {
+    try {
+      const vehicleInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : {};
+      const rentalDays  = (pickupDate && returnDate) ? computeRentalDays(pickupDate, returnDate) : 0;
+      const hasProtectionPlan = !!(storedDocs.protection_plan_tier || booking.protectionPlanTier);
+      // storedDocs.protection_plan_tier is the authoritative source (captured at booking time);
+      // booking.protectionPlanTier is a fallback for older records that predated pending_booking_docs.
+      const protectionPlanTier = storedDocs.protection_plan_tier || booking.protectionPlanTier || null;
+
+      const pdfBody = {
+        vehicleId:   vehicleId   || "",
+        car:         vehicleName || (vehicleInfo.name) || vehicleId || "",
+        vehicleMake:  vehicleInfo.make  || null,
+        vehicleModel: vehicleInfo.model || null,
+        vehicleYear:  vehicleInfo.year  || null,
+        vehicleVin:   vehicleInfo.vin   || null,
+        vehicleColor: vehicleInfo.color || null,
+        name:         name      || "",
+        email:        email     || "",
+        phone:        phone     || "",
+        pickup:       pickupDate || "",
+        pickupTime:   pickupTime || "",
+        returnDate:   returnDate || "",
+        returnTime:   returnTime || "",
+        total:        amountPaid != null ? String(amountPaid) : (totalPrice != null ? String(totalPrice) : ""),
+        deposit:      vehicleInfo.deposit || 0,
+        days:         rentalDays,
+        protectionPlan:          hasProtectionPlan,
+        protectionPlanTier:      protectionPlanTier,
+        signature:               storedDocs.signature,
+        fullRentalCost:          booking.fullRentalCost  || null,
+        balanceAtPickup:         booking.balanceAtPickup || null,
+        insuranceCoverageChoice: storedDocs.insurance_coverage_choice ||
+          (hasProtectionPlan ? "no" : "yes"),
+      };
+
+      const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+      const safeName  = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
+      const safeDate  = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+      agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
+      attachments.push({
+        filename:    agreementPdfFilename,
+        content:     pdfBuffer,
+        contentType: "application/pdf",
+      });
+      console.log(`toolResendBookingConfirmation: rental agreement PDF generated for booking ${bookingId}`);
+    } catch (pdfErr) {
+      console.error("toolResendBookingConfirmation: PDF generation failed (non-fatal):", pdfErr.message);
+    }
+  }
+
+  // Attach renter's ID photo if available.
+  if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.id_filename,
+        content:     Buffer.from(storedDocs.id_base64, "base64"),
+        contentType: storedDocs.id_mimetype || "application/octet-stream",
+      });
+    } catch (idErr) {
+      console.error("toolResendBookingConfirmation: ID attachment failed (non-fatal):", idErr.message);
+    }
+  }
+
+  // Attach insurance document if available.
+  if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
+    try {
+      attachments.push({
+        filename:    storedDocs.insurance_filename,
+        content:     Buffer.from(storedDocs.insurance_base64, "base64"),
+        contentType: storedDocs.insurance_mimetype || "application/octet-stream",
+      });
+    } catch (insErr) {
+      console.error("toolResendBookingConfirmation: insurance attachment failed (non-fatal):", insErr.message);
+    }
+  }
+
+  const hasAttachments = attachments.length > 0;
+  const attachmentList = attachments.map(a => a.filename).join(", ");
+
   // ── Owner notification ────────────────────────────────────────────────────
   try {
     await transporter.sendMail({
-      from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
-      to:      OWNER_EMAIL,
+      from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+      to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
-      subject: `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
+      subject:     `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
+      attachments,
       html: `
         <h2>💰 Booking Confirmed — Admin Resend</h2>
-        <p>This is a manually re-sent confirmation. The original confirmation email was not received by the customer or owner.</p>
+        <p>This is a manually re-sent confirmation for booking <strong>${esc(bookingId)}</strong>.</p>
+        ${hasAttachments ? `<p>📎 <strong>Attachments:</strong> ${esc(attachmentList)}</p>` : ""}
         <table style="border-collapse:collapse;width:100%">
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
@@ -3029,9 +3136,13 @@ async function toolResendBookingConfirmation({ bookingId }) {
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(status || "booked_paid")}</td></tr>
+          ${notes ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(notes)}</td></tr>` : ""}
         </table>
-        ${isWebsitePayment ? `<p style="margin-top:12px;color:#c07000">⚠️ <strong>Note:</strong> The original signed rental agreement PDF is only generated in the customer's browser at payment time. Since this is a resend, the PDF is not attached. The customer's rental agreement terms are available at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> — the renter agreed to these during booking.</p>` : ""}
-        <p style="margin-top:16px">Dates have been blocked on the booking calendar. The customer's confirmation email was also resent.</p>
+        ${hasAttachments
+          ? `<p style="margin-top:12px;color:green">✅ <strong>Documents attached:</strong> ${esc(attachmentList)}</p>`
+          : `<p style="margin-top:12px;color:#c07000">⚠️ <strong>No documents on file.</strong> The signed rental agreement, renter ID, and insurance were not found in Supabase for this booking. This is normal for older bookings or cash/manual bookings created before document storage was introduced. ${isWebsitePayment ? 'The renter agreed to the rental terms at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> during booking.' : 'Please collect documents directly from the renter.'}</p>`
+        }
+        <p style="margin-top:16px">The customer's confirmation email was also resent.</p>
       `,
       text: [
         "Booking Confirmed — Admin Resend",
@@ -3046,7 +3157,8 @@ async function toolResendBookingConfirmation({ bookingId }) {
         `Return         : ${returnDisplay || "N/A"}`,
         `Total          : ${displayTotal}`,
         `Status         : ${status || "booked_paid"}`,
-        isWebsitePayment ? "\nNote: The signed rental agreement PDF is only generated in the customer's browser. The renter agreed to the rental terms at slytrans.com/rental-agreement.html during booking." : "",
+        notes  ? `Notes          : ${notes}` : "",
+        hasAttachments ? `Attachments    : ${attachmentList}` : "No stored documents found for this booking.",
       ].filter(Boolean).join("\n"),
     });
   } catch (ownerErr) {
@@ -3110,9 +3222,10 @@ async function toolResendBookingConfirmation({ bookingId }) {
     ownerNotified:    true,
     customerEmail:    email || null,
     customerSent,
+    attachments:      hasAttachments ? attachmentList : null,
     message: customerSent
-      ? `✅ Rental agreement confirmation emails sent to owner and ${email}.`
-      : `✅ Owner notification sent. No customer email — no email address on this booking.`,
+      ? `✅ Confirmation emails sent to owner and ${email}.${hasAttachments ? ` Documents attached: ${attachmentList}.` : " No stored documents found for this booking."}`
+      : `✅ Owner notification sent. No customer email — no email address on this booking.${hasAttachments ? ` Documents attached: ${attachmentList}.` : ""}`,
   };
 }
 
