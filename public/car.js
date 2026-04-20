@@ -1039,17 +1039,25 @@ function isSlotBlocked(dateStr, slot, ranges) {
 
 // Populate the #pickupTime <select> with TIME_SLOTS, disabling any slot that
 // falls within PICKUP_BUFFER_HOURS of an existing booking's return on that date.
-// Auto-selects the first available slot and syncs returnTime.
+// Option values are HH:MM (24-hour) for consistent backend transport; labels
+// remain AM/PM for display.  Auto-selects the first available slot and syncs returnTime.
 function updatePickupTimeSlots(selectedDate) {
   pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
-  if (!selectedDate) { updatePayBtn(); return; }
+  const noTimesMsg = document.getElementById("noTimesMsg");
+  if (!selectedDate) {
+    if (noTimesMsg) noTimesMsg.style.display = "none";
+    updatePayBtn();
+    return;
+  }
 
   const isSlingshot = vehicleId.startsWith("slingshot");
 
   TIME_SLOTS.forEach(function(slot) {
     const opt = document.createElement("option");
-    opt.value = slot;
-    opt.textContent = slot;
+    // Store the value as HH:MM (24-hour) so the backend always receives a
+    // consistent format regardless of AM/PM display label.
+    opt.value = timeSlotToHH(slot);
+    opt.textContent = slot; // AM/PM label for the user
 
     if (isSlingshot) {
       // Slot is available for Slingshot when at least one unit is free.
@@ -1065,13 +1073,16 @@ function updatePickupTimeSlots(selectedDate) {
     pickupTime.appendChild(opt);
   });
 
-  // Auto-select the first non-disabled slot
+  // Auto-select the first non-disabled slot, or show "no times" warning.
   const firstAvail = pickupTime.querySelector("option:not([disabled]):not([value=''])");
   if (firstAvail) {
     firstAvail.selected = true;
-    returnTime.value = timeSlotToHH(firstAvail.value);
+    // Value is already HH:MM — assign directly without conversion.
+    returnTime.value = firstAvail.value;
+    if (noTimesMsg) noTimesMsg.style.display = "none";
   } else {
     returnTime.value = "";
+    if (noTimesMsg) noTimesMsg.style.display = "";
   }
 
   if (carData.hourlyTiers) {
@@ -1100,10 +1111,10 @@ let flatpickrActive = false;
 });
 
 // Dedicated change listener for the pickupTime <select>.
-// Syncs returnTime, updates the booking total/duration, and re-validates the pay button.
+// Values are already HH:MM so returnTime is assigned directly.
 pickupTime.addEventListener("change", function() {
-  const slot = this.value;
-  returnTime.value = slot ? timeSlotToHH(slot) : "";
+  const slot = this.value; // HH:MM
+  returnTime.value = slot || "";
   if (carData.hourlyTiers) {
     applySlingshotDuration();
   } else {
@@ -1681,7 +1692,8 @@ function restoreFailedBooking() {
     if (data.pickup) updatePickupTimeSlots(data.pickup.slice(0, 10));
     fpSet(pickupTime, data.pickupTime);
     // Sync returnTime to match restored pickupTime
-    if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime);
+    // pickupTime.value is HH:MM; if legacy stored value is AM/PM, convert it.
+    if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime) || data.pickupTime;
     if (!carData.hourlyTiers) {
       fpSet(returnDate, data.returnDate);
     }
