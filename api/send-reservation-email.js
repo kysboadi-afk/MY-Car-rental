@@ -443,6 +443,118 @@ async function fetchCardLast4(paymentIntentId) {
   }
 }
 
+function parseSlingshotDurationHours(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim().toLowerCase();
+  if (!text) return null;
+  const n = parseFloat(text);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (text.includes("day")) return Math.round(n * 24);
+  return Math.round(n);
+}
+
+function isNullOrEmptyString(v) {
+  return v == null || (typeof v === "string" && !v.trim());
+}
+
+function inferInsuranceCoverageChoice(insuranceStatus, tier) {
+  if (insuranceStatus === "own_insurance_provided") return "yes";
+  if (insuranceStatus === "no_insurance_no_dpp" || insuranceStatus === "no_insurance_dpp") return "no";
+  return tier ? "no" : "";
+}
+
+const RECOVERABLE_BOOKING_FIELDS = [
+  "vehicleId",
+  "bookingId",
+  "car",
+  "name",
+  "phone",
+  "email",
+  "pickup",
+  "pickupTime",
+  "returnDate",
+  "returnTime",
+  "total",
+  "fullRentalCost",
+  "balanceAtPickup",
+  "paymentType",
+  "paymentStatus",
+  "paymentIntentId",
+  "protectionPlanTier",
+  "protectionPlan",
+  "insuranceCoverageChoice",
+  "slingshotDuration",
+];
+
+/**
+ * Recover a minimal booking payload from Stripe PaymentIntent metadata.
+ * Used when success.html lost sessionStorage but still has paymentIntentId.
+ *
+ * @param {string} paymentIntentId
+ * @returns {Promise<object|null>}
+ */
+async function hydrateBookingBodyFromPaymentIntent(paymentIntentId) {
+  if (!paymentIntentId || !process.env.STRIPE_SECRET_KEY) return null;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (pi.status !== "succeeded") {
+      console.warn(`hydrateBookingBodyFromPaymentIntent: PI ${paymentIntentId} is not succeeded (status=${pi.status})`);
+      return null;
+    }
+
+    const meta = pi.metadata || {};
+    const vehicleId = meta.vehicle_id || "";
+    const pickup = meta.pickup_date || "";
+    const returnDate = meta.return_date || "";
+    const pickupTime = normalizeClockTime(meta.pickup_time);
+    const parsedDuration = parseSlingshotDurationHours(meta.rental_duration || "");
+    const metaReturnTime = normalizeClockTime(meta.return_time);
+    const returnTime = deriveReturnTime(pickup, pickupTime, metaReturnTime, parsedDuration);
+
+    if (!vehicleId || !pickup || !returnDate || !pickupTime) {
+      console.warn(
+        `hydrateBookingBodyFromPaymentIntent: missing metadata for PI ${paymentIntentId}` +
+        ` vehicle_id=${vehicleId || "<missing>"} pickup_date=${pickup || "<missing>"}` +
+        ` return_date=${returnDate || "<missing>"} pickup_time=${pickupTime || "<missing>"}`
+      );
+      return null;
+    }
+
+    const amountDollars = Number((Number(pi.amount_received || pi.amount || 0) / 100).toFixed(2));
+    const paymentType = meta.payment_type || "full_payment";
+    const tier = meta.protection_plan_tier || "";
+    const insuranceStatus = String(meta.insurance_status || "").toLowerCase();
+    const inferredInsuranceChoice = inferInsuranceCoverageChoice(insuranceStatus, tier);
+
+    return {
+      vehicleId,
+      bookingId: meta.booking_id || "",
+      car: meta.vehicle_name || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+      name: meta.renter_name || "",
+      phone: meta.renter_phone || "",
+      email: meta.email || "",
+      pickup,
+      pickupTime,
+      returnDate,
+      returnTime,
+      total: amountDollars ? amountDollars.toFixed(2) : "0.00",
+      fullRentalCost: meta.full_rental_amount || "",
+      balanceAtPickup: meta.balance_at_pickup || meta.remaining_balance || "",
+      paymentType,
+      paymentStatus: "confirmed",
+      paymentIntentId,
+      protectionPlanTier: tier || undefined,
+      protectionPlan: !!tier,
+      insuranceCoverageChoice: inferredInsuranceChoice || undefined,
+      slingshotDuration: parsedDuration || undefined,
+    };
+  } catch (err) {
+    console.warn(`hydrateBookingBodyFromPaymentIntent: failed for PI ${paymentIntentId}:`, err.message);
+    return null;
+  }
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || "587"),
@@ -503,14 +615,42 @@ export default async function handler(req, res) {
   // Parse body first so the booking can always be persisted, even when SMTP
   // credentials are missing.  A misconfigured email server must never cause a
   // paid booking to be silently lost.
-  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+  const requestBody = (req.body && typeof req.body === "object" && !Array.isArray(req.body))
+    ? { ...req.body }
+    : {};
+  const requestPaymentIntentId = typeof requestBody.paymentIntentId === "string"
+    ? requestBody.paymentIntentId.trim()
+    : "";
+  const requestPickupTime = normalizeClockTime(requestBody.pickupTime);
+  // Recovery mode is inferred when success.html can provide paymentIntentId but
+  // lost the form payload in sessionStorage (so pickupTime is absent).
+  const usedRecoveryPath = !requestPickupTime && !!requestPaymentIntentId;
+  let hydratedBody = { ...requestBody };
+
+  // Recovery path: if success.html lost sessionStorage, it can still call this
+  // endpoint with only paymentIntentId. Hydrate required fields from Stripe metadata.
+  if (usedRecoveryPath) {
+    const recovered = await hydrateBookingBodyFromPaymentIntent(requestPaymentIntentId);
+    if (recovered) {
+      for (const key of RECOVERABLE_BOOKING_FIELDS) {
+        const value = recovered[key];
+        if (isNullOrEmptyString(hydratedBody[key])) hydratedBody[key] = value;
+      }
+    }
+  }
+
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = hydratedBody;
 
   const pickupTime = normalizeClockTime(rawPickupTime);
   if (!pickupTime) {
-    return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
+    return res.status(400).json({
+      error: usedRecoveryPath
+        ? "Unable to process booking confirmation automatically. Please contact support with your payment confirmation."
+        : "Pickup time is required. Please select a pickup time before proceeding.",
+    });
   }
   const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
-  const bookingBody = { ...req.body, pickupTime, returnTime };
+  const bookingBody = { ...hydratedBody, pickupTime, returnTime };
 
   // Guard: fail fast if SMTP credentials are missing — but persist the booking
   // first so a paid booking is never lost due to email misconfiguration.

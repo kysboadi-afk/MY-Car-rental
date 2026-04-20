@@ -449,7 +449,17 @@
       // Proceed with sending the confirmation email after payment is verified.
       function proceedWithConfirmation() {
         var raw = sessionStorage.getItem("slyRidesBooking");
-        if (!raw) { enableHomeBtn(); return; }
+        if (!raw) {
+          if (confirmedPaymentIntentId) {
+            sendEmail({
+              paymentIntentId: confirmedPaymentIntentId,
+              paymentStatus: "confirmed",
+            });
+          } else {
+            enableHomeBtn();
+          }
+          return;
+        }
         sessionStorage.removeItem("slyRidesBooking");
         var data;
         try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
