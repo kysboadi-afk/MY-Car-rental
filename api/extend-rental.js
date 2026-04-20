@@ -115,8 +115,8 @@ export default async function handler(req, res) {
 
     if (newReturnMs <= currentReturnMs) {
       return res.status(400).json({
-         error: "New return date/time must be after your current return date/time " +
-                `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
+        error: "New return date/time must be after your current return date/time " +
+               `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
       });
     }
 
