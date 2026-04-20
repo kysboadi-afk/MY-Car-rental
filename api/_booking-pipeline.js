@@ -196,7 +196,7 @@ export async function persistBooking(opts) {
 
     // Step B: upsert booking row (links to customer_id)
     const bookingResult = await runStep(traceId, "upsert_booking", () =>
-      autoUpsertBooking(booking)
+      autoUpsertBooking(booking, { strict: true })
     );
     if (!bookingResult.ok) {
       errors.push(`upsert_booking: ${bookingResult.error}`);

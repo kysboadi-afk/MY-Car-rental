@@ -279,6 +279,97 @@ async function resolveCustomerIdFromSupabase(phone, email) {
   return null;
 }
 
+async function bookingExistsInSupabase(bookingId, paymentIntentId) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return false;
+  if (!bookingId && !paymentIntentId) return false;
+  try {
+    if (bookingId) {
+      const { data, error } = await sb
+        .from("bookings")
+        .select("id")
+        .eq("booking_ref", bookingId)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.id) return true;
+    }
+    if (paymentIntentId) {
+      const { data, error } = await sb
+        .from("bookings")
+        .select("id")
+        .eq("payment_intent_id", paymentIntentId)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.id) return true;
+    }
+  } catch (err) {
+    console.error("stripe-webhook: bookingExistsInSupabase lookup error:", err.message);
+  }
+  return false;
+}
+
+async function bookingExistsInJson(vehicleId, bookingId, paymentIntentId) {
+  if (!vehicleId) return false;
+  try {
+    const { data } = await loadBookings();
+    const list = Array.isArray(data?.[vehicleId]) ? data[vehicleId] : [];
+    return list.some((b) =>
+      (bookingId && b.bookingId === bookingId) ||
+      (paymentIntentId && b.paymentIntentId === paymentIntentId)
+    );
+  } catch (err) {
+    console.error("stripe-webhook: bookingExistsInJson lookup error:", err.message);
+    return false;
+  }
+}
+
+async function sendBookingPersistenceAlert(paymentIntent, reason, details = {}) {
+  const alertLines = [
+    "🚨 Stripe webhook booking persistence failure",
+    `PaymentIntent: ${paymentIntent?.id || "<missing>"}`,
+    `Reason: ${reason || "unknown"}`,
+    `Vehicle: ${details.vehicle_id || "<missing>"}`,
+    `Booking ID: ${details.booking_id || "<missing>"}`,
+    `Pickup: ${details.pickup_date || "<missing>"}`,
+    `Return: ${details.return_date || "<missing>"}`,
+    `Attempts: ${details.attempts || 0}`,
+    `Webhook Event: ${details.event_id || "<unknown>"}`,
+  ];
+  const alertText = alertLines.join("\n");
+  console.error(alertText);
+
+  if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && process.env.OWNER_PHONE) {
+    try {
+      await sendSms(normalizePhone(process.env.OWNER_PHONE), alertText.slice(0, 900));
+    } catch (smsErr) {
+      console.error("stripe-webhook: booking persistence SMS alert failed:", smsErr.message);
+    }
+  }
+
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "587"),
+      secure: process.env.SMTP_PORT === "465",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+    await transporter.sendMail({
+      from: `"Sly Transportation Alerts" <${process.env.SMTP_USER}>`,
+      to: OWNER_EMAIL,
+      subject: `🚨 Booking persistence failed for ${paymentIntent?.id || "unknown PI"}`,
+      text: alertText,
+      html: `<pre style="font-family:monospace;white-space:pre-wrap">${esc(alertText)}</pre>`,
+    });
+  } catch (mailErr) {
+    console.error("stripe-webhook: booking persistence email alert failed:", mailErr.message);
+  }
+}
+
 /**
  * Save a booking record to bookings.json and Supabase from PaymentIntent metadata,
  * routing through the centralised booking pipeline (persistBooking) so every step
@@ -312,11 +403,17 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   } = meta;
 
   if (!vehicle_id || !pickup_date || !return_date) {
-    console.warn(
-      `stripe-webhook: skipping saveWebhookBookingRecord for PI ${paymentIntent.id} — missing metadata` +
-      ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`
-    );
-    return;
+    const reason =
+      `stripe-webhook: saveWebhookBookingRecord metadata missing for PI ${paymentIntent.id}` +
+      ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`;
+    await sendBookingPersistenceAlert(paymentIntent, reason, {
+      booking_id,
+      vehicle_id,
+      pickup_date,
+      return_date,
+      attempts: 0,
+    });
+    throw new Error(reason);
   }
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
@@ -325,7 +422,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
   // Route through the centralised booking pipeline — same as manual bookings.
   // This ensures the correct order: customer upsert → booking upsert → revenue record → blocked_dates.
-  const result = await persistBooking({
+  const persistPayload = {
     bookingId:             booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
     name:                  renter_name || "",
     phone:                 renter_phone ? normalizePhone(renter_phone) : "",
@@ -343,29 +440,56 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentIntentId:       paymentIntent.id,
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
-    // Extra fields passed through into the booking record
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
-    // Any additional fields supplied by the caller (e.g. stripeFee, stripeNet from
-    // stripe-replay when balance_transaction is already expanded at call time).
     ...extraFields,
-  });
+  };
 
-  if (!result.ok) {
+  let result = null;
+  let supabaseExists = false;
+  let jsonExists = false;
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    result = await persistBooking(persistPayload);
+    supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
+    jsonExists = await bookingExistsInJson(vehicle_id, persistPayload.bookingId, paymentIntent.id);
+
+    if (supabaseExists && jsonExists) {
+      if (!result.ok) {
+        console.warn(
+          `stripe-webhook: PI ${paymentIntent.id} persisted after recovery attempt ${attempt}; initial errors: ${result.errors.join("; ")}`
+        );
+      } else {
+        console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${persistPayload.bookingId}`);
+      }
+      break;
+    }
+
     console.error(
-      `stripe-webhook: booking pipeline failed for PI ${paymentIntent.id} — errors: ${result.errors.join("; ")}`
+      `stripe-webhook: booking persistence verification failed for PI ${paymentIntent.id} attempt=${attempt} ` +
+      `supabaseExists=${supabaseExists} jsonExists=${jsonExists} errors=${(result.errors || []).join("; ")}`
     );
-    // Log alert — operator should investigate Supabase connectivity or schema issues.
-    // We do NOT silently continue: the booking may be missing from the admin portal.
-  } else {
-    console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${result.bookingId}`);
+  }
+
+  if (!supabaseExists || !jsonExists) {
+    const failureReason =
+      `stripe-webhook: booking persistence guarantee failed for PI ${paymentIntent.id} ` +
+      `(supabaseExists=${supabaseExists} jsonExists=${jsonExists})`;
+    await sendBookingPersistenceAlert(paymentIntent, failureReason, {
+      booking_id: persistPayload.bookingId,
+      vehicle_id,
+      pickup_date,
+      return_date,
+      attempts: maxAttempts,
+    });
+    throw new Error(failureReason);
   }
 
   // If the booking is fully paid and the pickup time has already arrived
   // (e.g. same-day rental), immediately transition to active_rental without
   // waiting for the next 15-minute cron cycle.
-  if (result.booking.status === "booked_paid") {
+  if (result?.booking?.status === "booked_paid") {
     try {
       await autoActivateIfPickupArrived(result.booking);
     } catch (err) {
