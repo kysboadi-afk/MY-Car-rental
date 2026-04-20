@@ -87,10 +87,30 @@ export async function autoCreateRevenueRecord(booking) {
     if (recordType !== "extension") {
       const { data: existingByBooking } = await sb
         .from("revenue_records")
-        .select("id")
+        .select("id, payment_intent_id")
         .eq("booking_id", booking.bookingId)
         .maybeSingle();
-      if (existingByBooking) return;
+      if (existingByBooking) {
+        // If the existing record is missing payment_intent_id but we now have one,
+        // patch it so reconciliation checks can match it by PI ID.
+        if (!existingByBooking.payment_intent_id && piId) {
+          const { error: patchErr } = await sb
+            .from("revenue_records")
+            .update({ payment_intent_id: piId, updated_at: new Date().toISOString() })
+            .eq("id", existingByBooking.id);
+          if (patchErr) {
+            console.error(
+              "_booking-automation autoCreateRevenueRecord: patch payment_intent_id error (non-fatal):",
+              patchErr.message
+            );
+          } else {
+            console.log(
+              `_booking-automation: patched payment_intent_id=${piId} onto existing revenue record for booking ${booking.bookingId}`
+            );
+          }
+        }
+        return;
+      }
     }
 
     if (piId) {

@@ -59,6 +59,12 @@ import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import Stripe from "stripe";
+import {
+  saveWebhookBookingRecord,
+  blockBookedDates,
+  markVehicleUnavailable,
+  sendWebhookNotificationEmails,
+} from "./stripe-webhook.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
 const GRACE_PERIODS = {
@@ -805,6 +811,17 @@ export async function processAutoCompletions(allBookings, now) {
 
 
 /**
+ * Returns true when all new-mismatch PIs have been handled (either auto-repaired
+ * or intentionally skipped because they are non-new-booking payment types).
+ */
+function areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, nonNewBookingTypes) {
+  if (failedPIIds.length > 0) return false;
+  return newMismatches.every(
+    (pi) => repairedPIIds.includes(pi.id) || nonNewBookingTypes.has((pi.metadata || {}).payment_type || "")
+  );
+}
+
+/**
  * Reconciliation check — runs once per cron tick.
  *
  * Fetches the last 24 h of succeeded Stripe PaymentIntents and compares them
@@ -891,21 +908,88 @@ async function runReconciliation() {
 
     console.warn(`scheduled-reminders reconciliation: ${newMismatches.length} PI(s) missing from revenue_records`, newMismatches.map((pi) => pi.id));
 
+    // ── Auto-repair: replay full booking pipeline for each unmatched PI ──────
+    // Uses the same pipeline as the Stripe webhook (stripe-webhook.js) so every
+    // step fires: customer upsert → booking upsert → revenue record → blocked
+    // dates → fleet-status update → owner + customer notification emails.
+    // All steps are idempotent — safe to call even if a partial record already exists.
+    //
+    // Payment types that mutate an existing booking (rental_extension,
+    // balance_payment, slingshot_balance_payment) are excluded — they must be
+    // reviewed manually if they appear here.
+    const NON_NEW_BOOKING_TYPES = new Set([
+      "rental_extension",
+      "balance_payment",
+      "slingshot_balance_payment",
+    ]);
+
+    const repairedPIIds = [];
+    const failedPIIds   = [];
+
+    for (const pi of newMismatches) {
+      const paymentType = (pi.metadata || {}).payment_type || "";
+      if (NON_NEW_BOOKING_TYPES.has(paymentType)) {
+        console.warn(
+          `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`
+        );
+        continue;
+      }
+
+      try {
+        // 1. Persist booking + revenue record (idempotent)
+        await saveWebhookBookingRecord(pi);
+
+        // 2. Block calendar dates and mark vehicle unavailable
+        const meta = pi.metadata || {};
+        if (meta.vehicle_id && meta.pickup_date && meta.return_date) {
+          await blockBookedDates(
+            meta.vehicle_id,
+            meta.pickup_date,
+            meta.return_date,
+            meta.pickup_time  || "",
+            meta.return_time  || ""
+          );
+          await markVehicleUnavailable(meta.vehicle_id);
+        }
+
+        // 3. Send owner + customer notification emails
+        //    sendWebhookNotificationEmails checks the email_sent flag on
+        //    pending_booking_docs so the owner is never emailed twice.
+        await sendWebhookNotificationEmails(pi);
+
+        repairedPIIds.push(pi.id);
+        console.log(`scheduled-reminders reconciliation: auto-repaired PI ${pi.id} (${paymentType || "full_payment"})`);
+      } catch (repairErr) {
+        failedPIIds.push(pi.id);
+        console.error(
+          `scheduled-reminders reconciliation: auto-repair failed for PI ${pi.id}:`,
+          repairErr.message
+        );
+      }
+    }
+
     const escStr = (s) => String(s || "")
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
     const rows = newMismatches.map((pi) => {
-      const meta = pi.metadata || {};
+      const meta      = pi.metadata || {};
+      const repaired  = repairedPIIds.includes(pi.id);
+      const failed    = failedPIIds.includes(pi.id);
+      const status    = repaired ? "✅ Auto-processed" : (failed ? "❌ Repair failed" : "⚠️ Skipped (manual)");
       return `<tr>
         <td style="padding:6px;border:1px solid #ddd">${escStr(pi.id)}</td>
         <td style="padding:6px;border:1px solid #ddd">$${(pi.amount / 100).toFixed(2)}</td>
         <td style="padding:6px;border:1px solid #ddd">${escStr(meta.original_booking_id || meta.booking_id || "—")}</td>
         <td style="padding:6px;border:1px solid #ddd">${escStr(meta.payment_type || "—")}</td>
         <td style="padding:6px;border:1px solid #ddd">${new Date(pi.created * 1000).toISOString()}</td>
+        <td style="padding:6px;border:1px solid #ddd">${status}</td>
       </tr>`;
     }).join("\n");
 
-    const subject = `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Not Reconciled`;
+    const allRepaired = areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, NON_NEW_BOOKING_TYPES);
+    const subject = allRepaired
+      ? `[SLY RIDES] ✅ ${repairedPIIds.length} Payment(s) Auto-Processed`
+      : `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Detected – ${repairedPIIds.length} Auto-Processed`;
 
     // Email alert
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
@@ -921,8 +1005,8 @@ async function runReconciliation() {
           to:      OWNER_EMAIL,
           subject,
           html: `
-            <h2>⚠️ Payment Reconciliation Alert</h2>
-            <p>${newMismatches.length} Stripe PaymentIntent(s) succeeded in the last 24 hours but have <strong>no matching revenue record</strong> in the database.</p>
+            <h2>${allRepaired ? "✅ Payments Auto-Processed" : "⚠️ Payment Recovery Summary"}</h2>
+            <p>${newMismatches.length} Stripe PaymentIntent(s) were detected without matching revenue records. The system automatically ran the booking pipeline for each one${repairedPIIds.length > 0 ? " — a separate booking confirmation email has been sent for each successfully processed payment" : ""}.</p>
             <table style="border-collapse:collapse;width:100%;margin:16px 0">
               <thead>
                 <tr style="background:#f5f5f5">
@@ -931,20 +1015,29 @@ async function runReconciliation() {
                   <th style="padding:8px;border:1px solid #ddd;text-align:left">Booking ID</th>
                   <th style="padding:8px;border:1px solid #ddd;text-align:left">Type</th>
                   <th style="padding:8px;border:1px solid #ddd;text-align:left">Created</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Status</th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
             </table>
-            <p>Please review these payments in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>
+            ${failedPIIds.length > 0 ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>` : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`}
             <p><strong>Sly Transportation Services LLC 🚗</strong></p>
           `,
           text: [
             subject,
             "",
-            `${newMismatches.length} Stripe PaymentIntent(s) are missing from revenue_records:`,
-            ...newMismatches.map((pi) => `  ${pi.id}  $${(pi.amount / 100).toFixed(2)}`),
+            allRepaired
+              ? `${repairedPIIds.length} payment(s) were auto-processed successfully.`
+              : `${repairedPIIds.length}/${newMismatches.length} payment(s) were auto-processed. ${failedPIIds.length} failed.`,
             "",
-            "Review at: https://dashboard.stripe.com/payments",
+            ...newMismatches.map((pi) => {
+              const repaired = repairedPIIds.includes(pi.id);
+              const failed   = failedPIIds.includes(pi.id);
+              const st       = repaired ? "[PROCESSED]" : (failed ? "[FAILED]" : "[SKIPPED]");
+              return `  ${st} ${pi.id}  $${(pi.amount / 100).toFixed(2)}`;
+            }),
+            "",
+            "Admin Panel: https://www.slytrans.com/admin-v2/",
           ].join("\n"),
         });
       } catch (emailErr) {
@@ -952,11 +1045,15 @@ async function runReconciliation() {
       }
     }
 
-    // SMS alert (brief)
-    if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+    // SMS alert (brief — only when manual intervention is needed)
+    if (failedPIIds.length > 0 && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
       try {
-        const piSummary = newMismatches.slice(0, 3).map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`).join(", ");
-        const smsText = `[SLY RIDES] ⚠️ ${newMismatches.length} payment(s) not reconciled: ${piSummary}${newMismatches.length > 3 ? ` +${newMismatches.length - 3} more` : ""}. Check email.`;
+        const failedSummary = newMismatches
+          .filter((pi) => failedPIIds.includes(pi.id))
+          .slice(0, 3)
+          .map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`)
+          .join(", ");
+        const smsText = `[SLY RIDES] ⚠️ ${failedPIIds.length} payment(s) could not be auto-processed: ${failedSummary}${failedPIIds.length > 3 ? ` +${failedPIIds.length - 3} more` : ""}. Check email.`;
         await sendSms(OWNER_PHONE, smsText);
       } catch (smsErr) {
         console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);

@@ -98,6 +98,18 @@ mock.module("./_sms-templates.js", {
   },
 });
 
+// Stub the stripe-webhook pipeline functions that scheduled-reminders now imports
+// for its auto-repair path.  Tests in this file only exercise processAutoCompletions
+// which never calls these functions, so plain no-ops are sufficient.
+mock.module("./stripe-webhook.js", {
+  namedExports: {
+    saveWebhookBookingRecord:    async () => {},
+    blockBookedDates:            async () => {},
+    markVehicleUnavailable:      async () => {},
+    sendWebhookNotificationEmails: async () => {},
+  },
+});
+
 // GitHub API stubs (for booked-dates and fleet-status reads/writes)
 global.fetch = async (url, opts) => {
   try {
