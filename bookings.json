@@ -330,7 +330,8 @@
         "late_fee_pending": "2026-04-12T01:00:37.295Z",
         "post_thank_you": "2026-04-12T04:15:52.796Z",
         "retention_1d": "2026-04-13T04:15:32.546Z",
-        "retention_3d": "2026-04-16T18:15:17.426Z"
+        "retention_3d": "2026-04-16T18:15:17.426Z",
+        "retention_7d": "2026-04-20T18:15:44.688Z"
       },
       "lateFeeApplied": 50,
       "completedAt": "2026-04-13T18:10:24.369Z"
