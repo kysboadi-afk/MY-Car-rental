@@ -10,7 +10,7 @@
 //   loadBookings() / loadVehicles() helpers provide fallback when Supabase
 //   is not configured or a table does not yet exist.
 
-import { loadBookings, saveBookings, updateBooking } from "./_bookings.js";
+import { loadBookings, saveBookings, updateBooking, isNetworkError } from "./_bookings.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { computeAmount, computeRentalDays, CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
@@ -37,6 +37,7 @@ import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCre
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
+import { persistBooking } from "./_booking-pipeline.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -2906,13 +2907,18 @@ async function toolCreateManualBooking({
 
   const isWebsitePayment = resolvedPaymentIntentId.startsWith("pi_");
 
-  const booking = {
-    bookingId:       randomBytes(8).toString("hex"),
+  // 1. Block calendar dates (booked-dates.json)
+  await blockBookedDatesForManualBooking(vehicleId, pickupDate, returnDate);
+
+  // 2. Persist booking through the unified pipeline (Supabase + bookings.json).
+  const generatedBookingId = randomBytes(8).toString("hex");
+  const result = await persistBooking({
+    bookingId:       generatedBookingId,
+    vehicleId,
+    vehicleName:     MANUAL_BOOKING_VEHICLES[vehicleId],
     name:            name.trim(),
     phone:           typeof phone === "string" ? phone.trim() : "",
     email:           typeof email === "string" ? email.trim() : "",
-    vehicleId,
-    vehicleName:     MANUAL_BOOKING_VEHICLES[vehicleId],
     pickupDate,
     pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
     returnDate,
@@ -2925,43 +2931,22 @@ async function toolCreateManualBooking({
                        : 0,
     notes:           typeof notes === "string" ? notes.trim().slice(0, 500)
                        : (isWebsitePayment ? "Website payment — confirmation email not received" : ""),
-    createdAt:       new Date().toISOString(),
-  };
-
-  // 1. Block calendar dates (booked-dates.json)
-  await blockBookedDatesForManualBooking(vehicleId, pickupDate, returnDate);
-
-  // 2. Save booking to bookings.json
-  await updateJsonFileWithRetry({
-    load:    loadBookings,
-    apply:   (data) => {
-      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
-      if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
-        data[vehicleId].push(booking);
-      }
-    },
-    save:    saveBookings,
-    message: `Add manual booking for ${vehicleId}: ${booking.name} (${booking.bookingId}) via admin AI`,
+    paymentMethod:   isWebsitePayment ? "stripe" : "cash",
+    source:          "admin_ai",
   });
-
-  // 3. Sync to Supabase (non-fatal — all helpers are idempotent)
-  await autoCreateRevenueRecord(booking);
-  await autoUpsertCustomer(booking, false);
-  await autoUpsertBooking(booking);
-  await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
 
   return {
     success:          true,
-    bookingId:        booking.bookingId,
-    vehicle:          booking.vehicleName,
-    renter:           booking.name,
+    bookingId:        result.bookingId,
+    vehicle:          result.booking.vehicleName,
+    renter:           result.booking.name,
     pickupDate,
     returnDate,
-    amountPaid:       booking.amountPaid,
+    amountPaid:       result.booking.amountPaid,
     paymentIntentId:  resolvedPaymentIntentId,
     isWebsitePayment,
-    notes:            booking.notes || null,
-    message:          `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${booking.vehicleName}. Use resend_booking_confirmation(bookingId: "${booking.bookingId}") to send the confirmation email.`,
+    notes:            result.booking.notes || null,
+    message:          `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${result.booking.vehicleName}. Use resend_booking_confirmation(bookingId: "${result.bookingId}") to send the confirmation email.`,
   };
 }
 
@@ -2975,12 +2960,61 @@ async function toolResendBookingConfirmation({ bookingId }) {
   if (!bookingId) throw new Error("bookingId is required");
 
   // ── Find the booking ─────────────────────────────────────────────────────
-  const { data: bookingsData } = await loadBookings();
+  // Primary: Supabase bookings table. JSON fallback only on network error.
   let booking = null;
-  for (const list of Object.values(bookingsData)) {
-    if (!Array.isArray(list)) continue;
-    const found = list.find(b => b.bookingId === bookingId);
-    if (found) { booking = found; break; }
+  const sb = getSupabaseAdmin();
+  if (sb) {
+    try {
+      const { data: row, error: sbErr } = await sb
+        .from("bookings")
+        .select(`
+          booking_ref, vehicle_id, status, pickup_date, return_date,
+          pickup_time, return_time, deposit_paid, total_price,
+          payment_intent_id, payment_method, notes, created_at,
+          customers ( name, phone, email )
+        `)
+        .eq("booking_ref", bookingId)
+        .maybeSingle();
+      if (sbErr) throw sbErr; // query error → propagate, do NOT fallback
+      if (row) {
+        booking = {
+          bookingId:       row.booking_ref || bookingId,
+          vehicleId:       row.vehicle_id,
+          vehicleName:     (CARS[row.vehicle_id] || {}).name || row.vehicle_id,
+          name:            row.customers?.name  || "",
+          email:           row.customers?.email || "",
+          phone:           row.customers?.phone || "",
+          pickupDate:      row.pickup_date  || "",
+          pickupTime:      row.pickup_time  || "",
+          returnDate:      row.return_date  || "",
+          returnTime:      row.return_time  || "",
+          amountPaid:      Number(row.deposit_paid || 0),
+          totalPrice:      Number(row.total_price  || 0),
+          status:          DB_TO_APP_STATUS[row.status] || row.status,
+          paymentIntentId: row.payment_intent_id || "",
+          paymentMethod:   row.payment_method    || "",
+          notes:           row.notes || "",
+          source:          "supabase",
+        };
+      }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        console.error("[FALLBACK] Supabase unreachable in toolResendBookingConfirmation, using bookings.json:", err.message);
+        // fall through to JSON lookup below
+      } else {
+        throw err; // non-network Supabase error → propagate
+      }
+    }
+  }
+
+  if (!booking) {
+    // JSON fallback (also handles Supabase network error or not configured)
+    const { data: bookingsData } = await loadBookings();
+    for (const list of Object.values(bookingsData)) {
+      if (!Array.isArray(list)) continue;
+      const found = list.find(b => b.bookingId === bookingId);
+      if (found) { booking = found; break; }
+    }
   }
   if (!booking) throw new Error(`No booking found with bookingId "${bookingId}"`);
 

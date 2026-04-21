@@ -16,13 +16,28 @@
 
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
-import { loadBookings } from "./_bookings.js";
+import { loadBookings, isNetworkError } from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const VEHICLE_NAMES    = {
+  slingshot:  "Slingshot R",
+  slingshot2: "Slingshot R (Unit 2)",
+  slingshot3: "Slingshot R (Unit 3)",
+  camry:      "Camry 2012",
+  camry2013:  "Camry 2013 SE",
+};
+const DB_TO_APP_STATUS = {
+  pending:   "reserved_unpaid",
+  approved:  "booked_paid",
+  active:    "active_rental",
+  completed: "completed_rental",
+  cancelled: "cancelled_rental",
+};
 const DEFAULT_RETURN_TIME = "10:00";
 
 // Used only as a fallback when revenue_records is unavailable or empty.
@@ -80,10 +95,54 @@ export default async function handler(req, res) {
       return loadExpenses();
     }
 
-    const [{ data: vehicles }, { data: expenses }, { data: bookingsData }] = await Promise.all([
+    // Load bookings for non-financial KPIs.
+    // Primary: Supabase bookings table. Fallback: bookings.json — only on network
+    // error (Supabase unreachable). Empty result sets are valid and are NOT
+    // grounds for fallback.
+    async function fetchBookingsKpis() {
+      if (sb) {
+        try {
+          const { data: rows, error } = await sb
+            .from("bookings")
+            .select(`
+              booking_ref, vehicle_id, status,
+              pickup_date, return_date, pickup_time, return_time,
+              deposit_paid, created_at,
+              customers ( name )
+            `)
+            .in("vehicle_id", ALLOWED_VEHICLES)
+            .order("created_at", { ascending: false });
+          if (error) throw error; // query error → propagate, do NOT fallback
+          return (rows || []).map((r) => ({
+            bookingId:   r.booking_ref || String(r.id),
+            vehicleId:   r.vehicle_id,
+            vehicleName: VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+            name:        r.customers?.name || "",
+            status:      DB_TO_APP_STATUS[r.status] || r.status,
+            pickupDate:  r.pickup_date  || "",
+            returnDate:  r.return_date  || "",
+            returnTime:  r.return_time  || "",
+            amountPaid:  Number(r.deposit_paid || 0),
+            createdAt:   r.created_at,
+          }));
+        } catch (err) {
+          if (isNetworkError(err)) {
+            console.error("[FALLBACK] Supabase unreachable in v2-dashboard, using bookings.json:", err.message);
+            const { data } = await loadBookings();
+            return Object.values(data).flat();
+          }
+          throw err; // non-network Supabase errors propagate
+        }
+      }
+      // Supabase not configured — use bookings.json directly
+      const { data } = await loadBookings();
+      return Object.values(data).flat();
+    }
+
+    const [{ data: vehicles }, { data: expenses }, allBookingsRaw] = await Promise.all([
       loadVehicles(),
       fetchExpenses(),
-      loadBookings(),
+      fetchBookingsKpis(),
     ]);
 
     // Filter vehicles by scope: "car" → exclude slingshots; "slingshot" → only slingshots
@@ -97,10 +156,10 @@ export default async function handler(req, res) {
     const filteredVehicleIds = new Set(Object.keys(filteredVehicles));
 
     // All bookings limited to scoped vehicles (used for non-financial KPIs)
-    const allBookings = Object.values(bookingsData).flat()
+    const allBookings = allBookingsRaw
       .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
-    // Non-financial KPIs (always from bookings.json)
+    // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
     const now = new Date();
     const today = now.toISOString().split("T")[0];
@@ -245,9 +304,10 @@ export default async function handler(req, res) {
         vNet          = vr.net;
         vBookingCount = vr.count;
       } else {
-        // Fallback from bookings.json
-        const vBookings = (bookingsData[vehicleId] || [])
-          .filter((b) => paidStatusesFallback.has(b.status));
+        // Fallback from bookings data
+        const vBookings = allBookings.filter(
+          (b) => b.vehicleId === vehicleId && paidStatusesFallback.has(b.status)
+        );
         vGross        = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
         vNet          = vGross; // Assume zero fees when no Stripe data available
         vBookingCount = vBookings.length;
@@ -383,27 +443,29 @@ export default async function handler(req, res) {
       : null;
     console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
 
-    return res.status(200).json({
-      kpis: {
-        totalRevenue:    Math.round(totalRevenue    * 100) / 100,
-        totalExpenses:   Math.round(totalExpenses   * 100) / 100,
-        netRevenue:      Math.round(netRevenue      * 100) / 100,
-        netProfit:       Math.round(netProfit       * 100) / 100,
-        totalStripeFees: Math.round(totalStripeFees * 100) / 100,
-        operationalROI,
-        reconciledCount,
-        activeBookings,
-        availableVehicles,
-        pendingApprovals,
-        overdueCount,
-        returnsTodayCount,
-      },
-      revenueChart,
-      bookingsPerVehicle,
-      vehicleStats,
-      alerts,
-      recentBookings,
-    });
+    return res.status(200)
+      .setHeader("Cache-Control", "no-store")
+      .json({
+        kpis: {
+          totalRevenue:    Math.round(totalRevenue    * 100) / 100,
+          totalExpenses:   Math.round(totalExpenses   * 100) / 100,
+          netRevenue:      Math.round(netRevenue      * 100) / 100,
+          netProfit:       Math.round(netProfit       * 100) / 100,
+          totalStripeFees: Math.round(totalStripeFees * 100) / 100,
+          operationalROI,
+          reconciledCount,
+          activeBookings,
+          availableVehicles,
+          pendingApprovals,
+          overdueCount,
+          returnsTodayCount,
+        },
+        revenueChart,
+        bookingsPerVehicle,
+        vehicleStats,
+        alerts,
+        recentBookings,
+      });
   } catch (err) {
     console.error("v2-dashboard error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

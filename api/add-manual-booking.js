@@ -23,11 +23,10 @@
 // }
 
 import crypto from "crypto";
-import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
+import { persistBooking } from "./_booking-pipeline.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -145,52 +144,33 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "pickupDate must not be after returnDate" });
   }
 
-  const booking = {
-    bookingId:       crypto.randomBytes(8).toString("hex"),
-    name:            name.trim(),
-    phone:           typeof phone === "string" ? phone.trim() : "",
-    email:           typeof email === "string" ? email.trim() : "",
-    vehicleId,
-    vehicleName:     VEHICLE_NAMES[vehicleId],
-    pickupDate,
-    pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
-    returnDate,
-    returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
-    location:        "",
-    status:          "booked_paid",
-    paymentIntentId: "manual_" + crypto.randomBytes(6).toString("hex"),
-    amountPaid:      typeof amountPaid === "number" && amountPaid > 0
-                       ? Math.round(amountPaid * 100) / 100
-                       : 0,
-    notes:           typeof notes === "string" ? notes.trim().slice(0, 500) : "",
-    createdAt:       new Date().toISOString(),
-  };
-
   try {
     // 1. Block the dates in booked-dates.json first so the calendar reflects the
     //    reservation before the booking record is persisted.
     await blockBookedDates(vehicleId, pickupDate, returnDate);
 
-    // 2. Save the booking record to bookings.json with retry + idempotency guard.
-    await updateJsonFileWithRetry({
-      load:    loadBookings,
-      apply:   (data) => {
-        if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
-        // Idempotent: don't add if bookingId already present (safe on retry)
-        if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
-          data[vehicleId].push(booking);
-        }
-      },
-      save:    saveBookings,
-      message: `Add manual booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`,
+    // 2. Persist booking through the unified pipeline (Supabase + bookings.json).
+    const { booking } = await persistBooking({
+      bookingId:       crypto.randomBytes(8).toString("hex"),
+      vehicleId,
+      vehicleName:     VEHICLE_NAMES[vehicleId],
+      name:            name.trim(),
+      phone:           typeof phone === "string" ? phone.trim() : "",
+      email:           typeof email === "string" ? email.trim() : "",
+      pickupDate,
+      pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
+      returnDate,
+      returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
+      location:        "",
+      status:          "booked_paid",
+      paymentIntentId: "manual_" + crypto.randomBytes(6).toString("hex"),
+      amountPaid:      typeof amountPaid === "number" && amountPaid > 0
+                         ? Math.round(amountPaid * 100) / 100
+                         : 0,
+      notes:           typeof notes === "string" ? notes.trim().slice(0, 500) : "",
+      paymentMethod:   "cash",
+      source:          "admin_manual",
     });
-
-    // Auto-sync to Supabase so admin Revenue Tracker, Customer Management,
-    // and Bookings table are all populated immediately without any manual step.
-    await autoCreateRevenueRecord(booking);
-    await autoUpsertCustomer(booking, false);
-    await autoUpsertBooking(booking);
-    await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
 
     return res.status(200).json({ success: true, booking });
   } catch (err) {

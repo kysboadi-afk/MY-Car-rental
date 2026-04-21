@@ -210,6 +210,31 @@ export async function markReminderSent(vehicleId, id, reminderKey) {
 }
 
 /**
+ * Returns true when an error indicates a network-level failure (Supabase is
+ * unreachable), as opposed to a query-logic or schema error.
+ *
+ * Used to gate bookings.json fallback behaviour: only fall back to JSON when
+ * Supabase cannot be reached.  Callers must NEVER fall back for:
+ *   - Empty result sets (data = [])
+ *   - Query/schema errors (bad filter, missing column, etc.)
+ *   - Application errors thrown after a successful Supabase response
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+export function isNetworkError(err) {
+  if (!err) return false;
+  const code = err.code ? String(err.code) : "";
+  const msg  = err.message ? String(err.message).toLowerCase() : "";
+  return (
+    code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ENOTFOUND" ||
+    msg.includes("fetch failed") ||
+    msg.includes("network") ||
+    msg.includes("connection")
+  );
+}
+
+/**
  * Normalize a phone number to E.164 format (+1XXXXXXXXXX for US numbers).
  * Already-E.164 numbers are returned unchanged.
  * Non-US / malformed numbers are returned as-is for TextMagic to handle.

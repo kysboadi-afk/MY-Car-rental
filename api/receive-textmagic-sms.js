@@ -357,6 +357,10 @@ export default async function handler(req, res) {
 
   let allBookings, data, sha;
   try {
+    // TODO (Phase 3 — pending Supabase schema): migrate primary booking read to
+    // Supabase once extendPending and extensionPendingPayment fields are added to
+    // the bookings table. These fields are required by handleExtend and
+    // handleExtendSelection and are currently stored only in bookings.json.
     const loaded = await loadBookings();
     allBookings = loaded.data;
     data = loaded.data;
