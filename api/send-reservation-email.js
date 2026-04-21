@@ -443,6 +443,18 @@ async function fetchCardLast4(paymentIntentId) {
   }
 }
 
+async function fetchPaymentIntentStatus(paymentIntentId) {
+  if (!paymentIntentId || !process.env.STRIPE_SECRET_KEY) return null;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    return pi?.status || null;
+  } catch (err) {
+    console.warn(`fetchPaymentIntentStatus: failed for PI ${paymentIntentId}:`, err.message);
+    return null;
+  }
+}
+
 function parseSlingshotDurationHours(raw) {
   if (raw == null) return null;
   const text = String(raw).trim().toLowerCase();
@@ -602,6 +614,48 @@ function buildBookingRecord(fields, paymentLink = "") {
   };
 }
 
+async function verifyBookingAndRevenueForEmail(bookingRef, paymentIntentId, opts = {}) {
+  const requireRevenuePaymentIntentMatch = opts.requireRevenuePaymentIntentMatch !== false;
+  const sb = getSupabaseAdmin();
+  if (!bookingRef || !paymentIntentId) {
+    return { ok: false, reason: "missing booking ref or payment intent id" };
+  }
+  if (!sb) {
+    // Supabase is unavailable in some local/test environments; skip strict DB
+    // verification there, but keep strict checks when Supabase is configured.
+    return { ok: true, skipped: true };
+  }
+
+  const bookingQuery = sb
+      .from("bookings")
+      .select("booking_ref,payment_intent_id")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+  const revenueQuery = sb
+      .from("revenue_records")
+      .select("booking_id,payment_intent_id")
+      .eq("booking_id", bookingRef)
+      .maybeSingle();
+  if (requireRevenuePaymentIntentMatch) {
+    bookingQuery.eq("payment_intent_id", paymentIntentId);
+    revenueQuery.eq("payment_intent_id", paymentIntentId);
+  }
+
+  const [{ data: bookingRow, error: bookingErr }, { data: revenueRow, error: revenueErr }] = await Promise.all([
+    bookingQuery,
+    revenueQuery,
+  ]);
+
+  if (bookingErr || !bookingRow) {
+    return { ok: false, reason: bookingErr?.message || "booking record not found in Supabase" };
+  }
+  if (revenueErr || !revenueRow) {
+    return { ok: false, reason: revenueErr?.message || "revenue record not found in Supabase" };
+  }
+
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -640,6 +694,7 @@ export default async function handler(req, res) {
   }
 
   const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = hydratedBody;
+  const normalizedPaymentStatus = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
 
   const pickupTime = normalizeClockTime(rawPickupTime);
   if (!pickupTime) {
@@ -659,7 +714,7 @@ export default async function handler(req, res) {
   // the field otherwise — an absent value here is always a confirmed payment.
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
-    const isConfirmedPayment  = !paymentStatus || paymentStatus === "confirmed";
+    const isConfirmedPayment  = normalizedPaymentStatus === "confirmed";
     const isBalancePaymentReq = paymentType === "balance_payment";
     if (isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
       try {
@@ -697,8 +752,23 @@ export default async function handler(req, res) {
       </table>`
     : null;
 
-  // isConfirmed: true for successful payments (default), false for failed/cancelled
-  const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
+  if (normalizedPaymentStatus !== "confirmed") {
+    console.log(`[send-reservation-email] skipping email send: paymentStatus=${normalizedPaymentStatus}`);
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "payment_not_confirmed" });
+  }
+  const normalizedPaymentIntentId = typeof paymentIntentId === "string" ? paymentIntentId.trim() : "";
+  if (!normalizedPaymentIntentId) {
+    console.warn("[send-reservation-email] skipping email send: missing payment_intent_id");
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "missing_payment_intent_id" });
+  }
+  const paymentIntentStatus = await fetchPaymentIntentStatus(normalizedPaymentIntentId);
+  if (paymentIntentStatus !== "succeeded") {
+    console.warn(`[send-reservation-email] skipping email send: PI ${normalizedPaymentIntentId} status=${paymentIntentStatus || "unknown"}`);
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "payment_not_succeeded" });
+  }
+
+  // Emails and attachments are sent only for succeeded Stripe payments.
+  const isConfirmed = true;
 
   // isBalancePayment: true when the renter is paying the remaining balance after
   // having already paid the $50 reservation deposit.
@@ -735,21 +805,15 @@ export default async function handler(req, res) {
     : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
   const ownerSubject = isBalancePayment
     ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
-    : (isConfirmed
-        ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
-        : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`);
-  const statusLabel  = isConfirmed ? "✅ CONFIRMED" : "❌ FAILED";
-  const statusColor  = isConfirmed ? "green" : "red";
+    : `💰 Payment Confirmed – New Booking: ${esc(car)}`;
+  const statusLabel  = "✅ CONFIRMED";
+  const statusColor  = "green";
   const introText    = isBalancePayment
     ? "The renter has paid the remaining balance online. The booking is now fully paid."
-    : (isConfirmed
-        ? "A customer has completed payment. Their rental details are below."
-        : "A customer attempted payment but it did not go through. Details below.");
+    : "A customer has completed payment. Their rental details are below.";
   const footerText   = isBalancePayment
     ? "The remaining balance has been received. The booking is now fully paid — no further action required."
-    : (isConfirmed
-        ? "Payment has been received. Please contact the customer to confirm rental details."
-        : "NOTE: Payment was NOT completed. The customer may retry or need assistance.");
+    : "Payment has been received. Please contact the customer to confirm rental details.";
 
   try {
     // Fetch card last4 from Stripe when a PaymentIntent ID was provided.
@@ -933,14 +997,53 @@ export default async function handler(req, res) {
     // saved.  The pipeline logs every step (start, DB attempt, DB result) so
     // there are NO silent failures.
     let persistedBooking = null;
+    let persistedBookingId = bookingId || null;
+    let pipelineResult = null;
+    let attemptedBookingPersistence = false;
     if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
+      attemptedBookingPersistence = true;
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
-      const pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
+      pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
       persistedBooking = pipelineResult.booking;
+      persistedBookingId = pipelineResult.bookingId || persistedBookingId;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);
       } else {
         console.log(`[send-reservation-email] booking_persisted bookingId=${pipelineResult.bookingId} supabaseOk=${pipelineResult.supabaseOk}`);
+      }
+    }
+
+    if (!isBalancePayment && vehicleId) {
+      // Emails are allowed only after a non-balance booking attempt actually ran
+      // persistence and produced a verified booking + revenue record.
+      const persistenceIssues = [];
+      if (!attemptedBookingPersistence) persistenceIssues.push("booking_persistence_not_attempted");
+      if (!pipelineResult?.ok) persistenceIssues.push("booking_pipeline_failed");
+      if (!pipelineResult?.supabaseOk) persistenceIssues.push("booking_pipeline_supabase_not_ok");
+      if (!persistedBookingId) persistenceIssues.push("missing_booking_id");
+      if (persistenceIssues.length > 0) {
+        console.warn(`[send-reservation-email] skipping email send: ${persistenceIssues.join(", ")}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: persistenceIssues[0] });
+      }
+      const verification = await verifyBookingAndRevenueForEmail(persistedBookingId, normalizedPaymentIntentId);
+      if (!verification.ok) {
+        console.warn(`[send-reservation-email] skipping email send: ${verification.reason}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "booking_or_revenue_not_verified" });
+      }
+    } else if (isBalancePayment && vehicleId) {
+      // Balance payments are tied to an existing booking created at deposit time.
+      // Verify booking/revenue existence by booking_ref while still requiring a
+      // succeeded PaymentIntent for this balance payment attempt.
+      if (!bookingId) {
+        console.warn("[send-reservation-email] skipping email send: missing booking_id for balance payment verification");
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "missing_booking_id_for_balance_payment" });
+      }
+      const verification = await verifyBookingAndRevenueForEmail(bookingId, normalizedPaymentIntentId, {
+        requireRevenuePaymentIntentMatch: false,
+      });
+      if (!verification.ok) {
+        console.warn(`[send-reservation-email] skipping email send: ${verification.reason}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "booking_or_revenue_not_verified" });
       }
     }
 

@@ -2489,23 +2489,8 @@ stripeBtn.addEventListener("click", async () => {
       });
 
       if (error) {
-        // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
         // Keep booking data in sessionStorage with paymentFailed:true so the form
         // can be pre-filled automatically when the renter returns to try again.
-        fetch(API_BASE + "/api/send-reservation-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...bookingPayload,
-            paymentStatus: "failed",
-            idBase64,
-            idFileName,
-            idMimeType,
-            insuranceBase64,
-            insuranceFileName,
-            insuranceMimeType,
-          }),
-        }).catch(function (err) { console.error("Failed to notify owner of payment failure:", err); });
         sessionStorage.setItem("slyRidesBooking", JSON.stringify({
           ...bookingPayload,
           paymentFailed: true,

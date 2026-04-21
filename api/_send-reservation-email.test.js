@@ -13,6 +13,7 @@ process.env.SMTP_HOST = "smtp.test.invalid";
 process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
+process.env.STRIPE_SECRET_KEY = "sk_test_mock";
 
 // ─── Nodemailer mock ────────────────────────────────────────────────────────
 // Must be registered before the handler module is imported so the
@@ -24,6 +25,17 @@ const mockSendMail = mock.fn(async (opts) => { sentMails.push(opts); });
 mock.module("nodemailer", {
   defaultExport: {
     createTransport: () => ({ sendMail: mockSendMail }),
+  },
+});
+
+mock.module("stripe", {
+  defaultExport: class StripeMock {
+    paymentIntents = {
+      retrieve: async () => ({
+        status: "succeeded",
+        payment_method: { card: { last4: "4242" } },
+      }),
+    };
   },
 });
 
@@ -64,6 +76,8 @@ const VALID_BODY = {
   email: "jane@example.com",
   phone: "555-1234",
   total: "200",
+  paymentStatus: "confirmed",
+  paymentIntentId: "pi_test_123",
   pricePerDay: 50,
   deposit: 0,
   days: 4,
@@ -110,7 +124,7 @@ test("returns 400 when pickupTime is missing", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
-  const req = makeReq("POST", { ...VALID_BODY, pickupTime: "   " });
+  const req = makeReq("POST", { ...VALID_BODY, pickupTime: "   ", paymentIntentId: "" });
   const res = makeRes();
   await handler(req, res);
 
@@ -555,7 +569,7 @@ test("returns 500 when SMTP credentials are not configured", async () => {
 
 // ─── paymentStatus tests ───────────────────────────────────────────────────
 
-test("paymentStatus:failed — owner email is sent with FAILED label in subject and body", async () => {
+test("paymentStatus:failed — no owner email is sent", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -564,11 +578,9 @@ test("paymentStatus:failed — owner email is sent with FAILED label in subject 
   await handler(req, res);
 
   assert.equal(res._status, 200);
-  const ownerMail = sentMails[0];
-  assert.ok(ownerMail, "Owner email should have been sent");
-  assert.ok(ownerMail.subject.includes("Payment Failed"), "Subject should indicate payment failed");
-  assert.ok(ownerMail.html.includes("FAILED"), "HTML body should show FAILED status");
-  assert.ok(ownerMail.text.includes("FAILED"), "Plain-text body should show FAILED status");
+  assert.equal(mockSendMail.mock.callCount(), 0, "No email should be sent for failed payment attempts");
+  assert.equal(res._body?.emailSkipped, true);
+  assert.equal(res._body?.reason, "payment_not_confirmed");
 });
 
 test("paymentStatus:failed — customer confirmation email is NOT sent", async () => {
@@ -579,7 +591,7 @@ test("paymentStatus:failed — customer confirmation email is NOT sent", async (
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(mockSendMail.mock.callCount(), 1, "Only the owner email should be sent for a failed payment");
+  assert.equal(mockSendMail.mock.callCount(), 0, "No email should be sent for a failed payment");
 });
 
 test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
@@ -852,6 +864,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
 // A booking payload that simulates the final balance payment after a $50 deposit.
 const BALANCE_PAYMENT_BODY = {
   vehicleId:          "camry",
+  bookingId:          "booking-balance-test-1",
   car:                "Camry 2012",
   name:               "Jane Doe",
   email:              "jane@example.com",
@@ -864,6 +877,8 @@ const BALANCE_PAYMENT_BODY = {
   days:               4,
   protectionPlan:     false,
   paymentType:        "balance_payment",
+  paymentStatus:      "confirmed",
+  paymentIntentId:    "pi_balance_test_123",
   depositAlreadyPaid: "50.00",
   fullRentalTotal:    "219.03",
 };
@@ -951,8 +966,10 @@ const DEPOSIT_BOOKING_BODY = {
   returnDate:     "2026-05-05",
   returnTime:     "09:00",
   total:          "50",           // deposit amount charged
+  paymentStatus:  "confirmed",
   days:           4,
   protectionPlan: false,
+  paymentIntentId: "pi_deposit_test_123",
   fullRentalCost: "200",          // signals this is a deposit payment
   balanceAtPickup: "150",
 };
@@ -1030,9 +1047,11 @@ const SLINGSHOT_BODY = {
   email:                 "john@example.com",
   phone:                 "555-9876",
   total:                 "275.50",
+  paymentStatus:         "confirmed",
   deposit:               150,
   days:                  1,
   slingshotDuration:     6,
+  paymentIntentId:       "pi_slingshot_test_123",
   insuranceCoverageChoice: "yes",
   protectionPlan:        false,
   signature:             "John Smith",
