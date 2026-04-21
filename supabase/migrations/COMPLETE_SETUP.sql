@@ -402,6 +402,9 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS customers_phone_idx ON customers (phone)
   WHERE phone IS NOT NULL AND phone != '';
 CREATE INDEX IF NOT EXISTS customers_email_idx  ON customers (email)  WHERE email  IS NOT NULL AND email  != '';
+CREATE UNIQUE INDEX IF NOT EXISTS unique_customer_email_lower
+  ON public.customers (LOWER(email))
+  WHERE email IS NOT NULL AND btrim(email) <> '';
 CREATE INDEX IF NOT EXISTS customers_banned_idx ON customers (banned);
 
 DROP TRIGGER IF EXISTS customers_updated_at ON customers;

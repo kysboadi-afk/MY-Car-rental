@@ -32,6 +32,21 @@ function formatSupabaseError(err) {
   return parts.length > 0 ? parts.join(" | ") : JSON.stringify(err);
 }
 
+function normalizeEmail(email) {
+  if (typeof email !== "string") return null;
+  const normalized = email.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizeCustomerName(name) {
+  if (typeof name !== "string") return "Unknown";
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (!trimmed) return "Unknown";
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
 /**
  * Appends one or more rows to the booking_audit_log table.
  * Non-fatal — errors are logged and never propagate to the caller.
@@ -146,9 +161,9 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
       customer_id:         booking.customerId        || null,
-      customer_name:       booking.name  || null,
+      customer_name:       normalizeCustomerName(booking.name),
       customer_phone:      booking.phone || null,
-      customer_email:      booking.email || null,
+      customer_email:      normalizeEmail(booking.email),
       pickup_date:         booking.pickupDate  || null,
       return_date:         booking.returnDate  || null,
       gross_amount:        gross,
@@ -217,17 +232,17 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
   if (!sb) return;
 
   const hasPhone = !!booking.phone;
-  const hasEmail = !!booking.email && typeof booking.email === "string" && booking.email.trim().length > 0;
+  const email = normalizeEmail(booking.email);
+  const hasEmail = !!email;
 
   // Need at least one of phone or email to key the customer record.
   if (!hasPhone && !hasEmail) return;
 
   try {
     const phone = hasPhone ? normalizePhone(String(booking.phone).trim()) : null;
-    const email = hasEmail ? booking.email.trim().toLowerCase() : null;
 
     const record = {
-      name:       booking.name || "Unknown",
+      name:       normalizeCustomerName(booking.name),
       phone,
       email,
       updated_at: new Date().toISOString(),
@@ -235,24 +250,23 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
 
     // ── Look up existing customer (email first; fall back to phone) ──────────
     let existing = null;
-    let lookupKey = null; // "email" | "phone"
 
     if (email) {
       const { data } = await sb
         .from("customers")
-        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .select("id, phone, total_bookings, total_spent, first_booking_date, no_show_count")
         .eq("email", email)
         .maybeSingle();
-      if (data) { existing = data; lookupKey = "email"; }
+      if (data) { existing = data; }
     }
 
     if (!existing && phone) {
       const { data } = await sb
         .from("customers")
-        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .select("id, phone, total_bookings, total_spent, first_booking_date, no_show_count")
         .eq("phone", phone)
         .maybeSingle();
-      if (data) { existing = data; lookupKey = "phone"; }
+      if (data) { existing = data; }
     }
 
     /**
@@ -303,9 +317,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
       if (isNoShow) {
         updates.no_show_count = (existing.no_show_count || 0) + 1;
       }
-      const filter = lookupKey === "email" ? { email } : { phone };
-      const col    = lookupKey === "email" ? "email" : "phone";
-      await sb.from("customers").update(updates).eq(col, filter[col]);
+      await sb.from("customers").update(updates).eq("id", existing.id);
     } else {
       let totalBookings = 0, totalSpent = 0, firstDate = booking.pickupDate || null, lastDate = booking.pickupDate || null;
       if (countStats) {
@@ -386,9 +398,20 @@ export async function autoUpsertBooking(booking, opts = {}) {
   const strict = !!opts.strict;
 
   try {
-    // Resolve customer_id — prefer phone lookup; fall back to email.
+    // Resolve customer_id — prefer email lookup; fall back to phone only when
+    // email is missing.
     let customerId = null;
-    if (booking.phone) {
+    const normalizedEmail = normalizeEmail(booking.email);
+    if (normalizedEmail) {
+      const { data: emailMatch, error: custErr } = await sb
+        .from("customers")
+        .select("id")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+      if (custErr) throw new Error(`customer email lookup failed: ${custErr.message}`);
+      customerId = emailMatch?.id ?? null;
+    }
+    if (!customerId && !normalizedEmail && booking.phone) {
       const phone = String(booking.phone).trim();
       const { data: cust, error: custErr } = await sb
         .from("customers")
@@ -398,17 +421,6 @@ export async function autoUpsertBooking(booking, opts = {}) {
       if (custErr) throw new Error(`customer phone lookup failed: ${custErr.message}`);
       customerId = cust?.id ?? null;
     }
-    if (!customerId && booking.email) {
-      const email = String(booking.email).trim().toLowerCase();
-      const { data: cust, error: custErr } = await sb
-        .from("customers")
-        .select("id")
-        .eq("email", email)
-        .maybeSingle();
-      if (custErr) throw new Error(`customer email lookup failed: ${custErr.message}`);
-      customerId = cust?.id ?? null;
-    }
-
     const status = BOOKING_STATUS_MAP[booking.status] || booking.status || "pending";
     const amountPaid  = Number(booking.amountPaid  || 0);
     // Prefer an explicit totalPrice field if provided; fall back to amountPaid so
@@ -439,7 +451,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
       payment_intent_id:         booking.paymentIntentId   || null,
       stripe_customer_id:        booking.stripeCustomerId       || null,
       stripe_payment_method_id:  booking.stripePaymentMethodId  || null,
-      customer_email:            booking.email                  || null,
+      customer_email:            normalizedEmail                || null,
       // Mirror the JS-side auto-stamps so the Supabase row is consistent with
       // the bookings.json record.  The DB trigger on_booking_status_timestamps
       // will also stamp these automatically, but passing the JS value ensures
