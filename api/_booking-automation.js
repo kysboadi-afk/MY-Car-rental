@@ -5,7 +5,8 @@
 // (v2-bookings.js, add-manual-booking.js).
 //
 // All helpers are:
-//   • Non-fatal  — errors are logged but never propagate to the caller.
+//   • Non-fatal by default — errors are logged and do not propagate unless
+//     opts.strict=true is explicitly passed by the caller.
 //   • Idempotent — safe to call multiple times for the same booking.
 //   • Silent     — return immediately when Supabase is not configured.
 //
@@ -19,6 +20,17 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
+
+function formatSupabaseError(err) {
+  if (!err) return "Unknown Supabase error";
+  if (typeof err === "string") return err;
+  const parts = [];
+  if (err.message) parts.push(`message=${err.message}`);
+  if (err.code) parts.push(`code=${err.code}`);
+  if (err.details) parts.push(`details=${err.details}`);
+  if (err.hint) parts.push(`hint=${err.hint}`);
+  return parts.length > 0 ? parts.join(" | ") : JSON.stringify(err);
+}
 
 /**
  * Appends one or more rows to the booking_audit_log table.
@@ -66,9 +78,14 @@ export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
  *   paymentIntentId  = extension PaymentIntent ID (stored in payment_intent_id)
  *   customerId       = customers.id (looked up by caller)
  */
-export async function autoCreateRevenueRecord(booking) {
+export async function autoCreateRevenueRecord(booking, opts = {}) {
+  const strict = !!opts.strict;
+  const requireStripeFee = !!opts.requireStripeFee;
   const sb = getSupabaseAdmin();
-  if (!sb) return;
+  if (!sb) {
+    if (strict) throw new Error("Supabase admin client unavailable");
+    return;
+  }
 
   try {
     // Resolve the Stripe PaymentIntent ID.
@@ -84,48 +101,41 @@ export async function autoCreateRevenueRecord(booking) {
     // • Rental records: check booking_id (fast path), then payment_intent_id.
     // • Extension records: multiple rows share the same booking_id, so skip the
     //   booking_id check and rely solely on payment_intent_id for dedup.
+    let existingRecord = null;
+
     if (recordType !== "extension") {
-      const { data: existingByBooking } = await sb
+      const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
         .select("id, payment_intent_id")
         .eq("booking_id", booking.bookingId)
         .maybeSingle();
-      if (existingByBooking) {
-        // If the existing record is missing payment_intent_id but we now have one,
-        // patch it so reconciliation checks can match it by PI ID.
-        if (!existingByBooking.payment_intent_id && piId) {
-          const { error: patchErr } = await sb
-            .from("revenue_records")
-            .update({ payment_intent_id: piId, updated_at: new Date().toISOString() })
-            .eq("id", existingByBooking.id);
-          if (patchErr) {
-            console.error(
-              "_booking-automation autoCreateRevenueRecord: patch payment_intent_id error (non-fatal):",
-              patchErr.message
-            );
-          } else {
-            console.log(
-              `_booking-automation: patched payment_intent_id=${piId} onto existing revenue record for booking ${booking.bookingId}`
-            );
-          }
-        }
-        return;
+      if (existingByBookingErr) {
+        throw new Error(`revenue_records booking_id lookup failed: ${formatSupabaseError(existingByBookingErr)}`);
       }
+      existingRecord = existingByBooking || null;
     }
 
-    if (piId) {
-      const { data: existingByPI } = await sb
+    if (!existingRecord && piId) {
+      const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
         .select("id")
         .eq("payment_intent_id", piId)
         .maybeSingle();
-      if (existingByPI) return;
+      if (existingByPIErr) {
+        throw new Error(`revenue_records payment_intent_id lookup failed: ${formatSupabaseError(existingByPIErr)}`);
+      }
+      existingRecord = existingByPI || null;
     }
 
     // For cash/non-Stripe payments: pre-fill fee=0, net=gross so analytics
     // are accurate immediately without needing a Stripe reconciliation pass.
     const isCash = ["cash", "zelle", "venmo", "manual", "external"].includes(booking.paymentMethod);
     const gross  = Number(booking.amountPaid || 0);
+
+    const stripeFee = isCash ? 0 : (booking.stripeFee != null ? Number(booking.stripeFee) : null);
+    if (!isCash && requireStripeFee && stripeFee == null) {
+      throw new Error(`missing stripeFee for booking ${booking.bookingId || "<missing>"} paymentIntentId=${piId || "<missing>"}`);
+    }
 
     const record = {
       booking_id:          booking.bookingId,
@@ -155,18 +165,38 @@ export async function autoCreateRevenueRecord(booking) {
       // caller-provided fee data if available (e.g. a replay that already expanded
       // balance_transaction and forwarded the values via booking.stripeFee/stripeNet),
       // otherwise leave null so stripe-reconcile.js can fill them in later.
-      stripe_fee: isCash ? 0 : (booking.stripeFee != null ? Number(booking.stripeFee) : null),
+      stripe_fee: stripeFee,
       stripe_net: isCash ? gross : (booking.stripeNet != null ? Number(booking.stripeNet) : null),
     };
 
-    const { error } = await sb.from("revenue_records").insert(record);
-    if (error) {
-      console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", error.message);
+    if (existingRecord?.id) {
+      const updatePayload = {
+        gross_amount:      record.gross_amount,
+        stripe_fee:        record.stripe_fee,
+        stripe_net:        record.stripe_net,
+        payment_intent_id: record.payment_intent_id,
+        customer_id:       record.customer_id,
+        updated_at:        new Date().toISOString(),
+      };
+      const { error } = await sb
+        .from("revenue_records")
+        .update(updatePayload)
+        .eq("id", existingRecord.id);
+      if (error) {
+        throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+      }
+      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${booking.bookingId}`);
     } else {
+      const { error } = await sb.from("revenue_records").insert(record);
+      if (error) {
+        throw new Error(`revenue_records insert failed: ${formatSupabaseError(error)}`);
+      }
       console.log(`_booking-automation: created ${recordType} revenue record for booking ${booking.bookingId}`);
     }
   } catch (err) {
-    console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", err.message);
+    const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;
+    console.error(msg);
+    if (strict) throw new Error(msg);
   }
 }
 

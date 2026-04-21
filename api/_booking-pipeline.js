@@ -12,9 +12,8 @@
 //   • DB write happens BEFORE confirmation emails are sent so that a failed
 //     persist is surfaced immediately and the customer is never emailed about a
 //     booking that was not saved.
-//   • All Supabase helpers remain non-fatal individually (errors are logged) but
-//     the pipeline returns { ok, bookingId, errors } so callers can decide
-//     whether to abort the email flow when Supabase is unavailable.
+//   • Core persistence is strict: customer upsert + booking upsert + revenue
+//     upsert must all succeed, otherwise persistBooking throws.
 //   • Idempotent — safe to call multiple times for the same booking because all
 //     underlying helpers use upsert / insert-if-not-exists semantics.
 //   • No silent failures — every error is logged with enough context to debug.
@@ -51,6 +50,17 @@ function pipelineLog(level, traceId, event, detail = {}) {
   }
 }
 
+function formatError(err) {
+  if (!err) return "unknown error";
+  if (typeof err === "string") return err;
+  const parts = [];
+  if (err.message) parts.push(`message=${err.message}`);
+  if (err.code) parts.push(`code=${err.code}`);
+  if (err.details) parts.push(`details=${err.details}`);
+  if (err.hint) parts.push(`hint=${err.hint}`);
+  return parts.length > 0 ? parts.join(" | ") : JSON.stringify(err);
+}
+
 /**
  * Wraps a Supabase step with logging so every attempt and outcome is visible.
  *
@@ -66,8 +76,9 @@ async function runStep(traceId, stepName, fn) {
     pipelineLog("info", traceId, "db_step_success", { step: stepName });
     return { ok: true, error: null };
   } catch (err) {
-    pipelineLog("error", traceId, "db_step_error", { step: stepName, error: err.message });
-    return { ok: false, error: err.message };
+    const formatted = formatError(err);
+    pipelineLog("error", traceId, "db_step_error", { step: stepName, error: formatted });
+    return { ok: false, error: formatted };
   }
 }
 
@@ -108,6 +119,7 @@ function isSupabaseConfigured() {
  * @param {string}  [opts.stripeCustomerId]
  * @param {string}  [opts.stripePaymentMethodId]
  * @param {string}  [opts.protectionPlanTier]
+ * @param {boolean} [opts.requireStripeFee] - when true, Stripe bookings fail if fee data is missing
  * @param {object}  [opts.*]             - any extra fields are passed through into the booking record
  *
  * @returns {Promise<{
@@ -130,7 +142,8 @@ export async function persistBooking(opts) {
     source:      opts.source || "unknown",
   });
 
-  const errors = [];
+  const warnings = [];
+  const fatalErrors = [];
 
   // ── 2. Build booking record ───────────────────────────────────────────────
   const bookingId = opts.bookingId || crypto.randomBytes(16).toString("hex");
@@ -167,6 +180,7 @@ export async function persistBooking(opts) {
     "vehicleId","vehicleName","name","phone","email","pickupDate","pickupTime",
     "returnDate","returnTime","amountPaid","totalPrice","paymentMethod",
     "paymentIntentId","paymentLink","status","notes","source","location","bookingId",
+    "requireStripeFee",
   ]);
   for (const [key, val] of Object.entries(opts)) {
     if (!STANDARD_OPTS.has(key) && val !== undefined) {
@@ -177,9 +191,11 @@ export async function persistBooking(opts) {
   // ── 3. Supabase persistence (BEFORE emails) ───────────────────────────────
   const sbConfigured = isSupabaseConfigured();
   if (!sbConfigured) {
-    pipelineLog("warn", traceId, "supabase_not_configured", {
-      message: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping Supabase sync",
+    const msg = "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — aborting booking persistence";
+    pipelineLog("error", traceId, "supabase_not_configured", {
+      message: msg,
     });
+    throw new Error(msg);
   }
 
   let supabaseOk = true;
@@ -190,7 +206,7 @@ export async function persistBooking(opts) {
       autoUpsertCustomer(booking, false)
     );
     if (!custResult.ok) {
-      errors.push(`upsert_customer: ${custResult.error}`);
+      fatalErrors.push(`upsert_customer: ${custResult.error}`);
       supabaseOk = false;
     }
 
@@ -199,17 +215,17 @@ export async function persistBooking(opts) {
       autoUpsertBooking(booking, { strict: true })
     );
     if (!bookingResult.ok) {
-      errors.push(`upsert_booking: ${bookingResult.error}`);
+      fatalErrors.push(`upsert_booking: ${bookingResult.error}`);
       supabaseOk = false;
     }
 
     // Step C: revenue record
     const revResult = await runStep(traceId, "create_revenue_record", () =>
-      autoCreateRevenueRecord(booking)
+      autoCreateRevenueRecord(booking, { strict: true, requireStripeFee: !!opts.requireStripeFee })
     );
     if (!revResult.ok) {
-      errors.push(`create_revenue_record: ${revResult.error}`);
-      // Non-fatal for availability — continue
+      fatalErrors.push(`create_revenue_record: ${revResult.error}`);
+      supabaseOk = false;
     }
 
     // Step D: blocked_dates entry
@@ -218,10 +234,21 @@ export async function persistBooking(opts) {
         autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking")
       );
       if (!blockResult.ok) {
-        errors.push(`create_blocked_date: ${blockResult.error}`);
-        // Non-fatal for core booking persistence
+        warnings.push(`create_blocked_date: ${blockResult.error}`);
+        // Non-fatal for core booking + revenue persistence
       }
     }
+  }
+
+  if (fatalErrors.length > 0) {
+    pipelineLog("error", traceId, "booking_persist_result", {
+      bookingId,
+      ok: false,
+      supabaseOk: false,
+      errorCount: fatalErrors.length,
+      errors: fatalErrors,
+    });
+    throw new Error(`booking persistence failed: ${fatalErrors.join("; ")}`);
   }
 
   // ── 4. bookings.json persistence ─────────────────────────────────────────
@@ -230,21 +257,19 @@ export async function persistBooking(opts) {
     await appendBooking(booking);
     pipelineLog("info", traceId, "json_save_success", { bookingId });
   } catch (err) {
-    pipelineLog("error", traceId, "json_save_error", { bookingId, error: err.message });
-    errors.push(`json_save: ${err.message}`);
-    // JSON save failure is non-fatal when Supabase succeeded; the Supabase row
-    // is the authoritative source of truth.  Log and continue.
+    const jsonErr = formatError(err);
+    pipelineLog("error", traceId, "json_save_error", { bookingId, error: jsonErr });
+    throw new Error(`json_save: ${jsonErr}`);
   }
 
   // ── 5. Final status ───────────────────────────────────────────────────────
-  const ok = errors.length === 0 || supabaseOk; // ok as long as Supabase saved
-  pipelineLog(ok ? "info" : "error", traceId, "booking_persist_result", {
+  pipelineLog("info", traceId, "booking_persist_result", {
     bookingId,
-    ok,
+    ok: true,
     supabaseOk,
-    errorCount: errors.length,
-    errors: errors.length > 0 ? errors : undefined,
+    warningCount: warnings.length,
+    warnings: warnings.length > 0 ? warnings : undefined,
   });
 
-  return { ok, bookingId, booking, supabaseOk, errors };
+  return { ok: true, bookingId, booking, supabaseOk, errors: warnings };
 }
