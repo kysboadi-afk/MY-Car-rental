@@ -634,7 +634,7 @@ CREATE TABLE IF NOT EXISTS bookings (
 );
 
 DO $$ BEGIN ALTER TABLE bookings ADD CONSTRAINT bookings_status_check
-  CHECK (status IN ('pending','approved','active','completed','cancelled'));
+  CHECK (status IN ('pending','active','overdue','completed'));
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE bookings ADD CONSTRAINT bookings_payment_status_check
