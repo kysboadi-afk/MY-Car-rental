@@ -3513,11 +3513,12 @@ function loadBookings() {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
     .then((data) => {
       const rawBookings = data.bookings || [];
-      // Filter to car vehicles only (exclude slingshot bookings — managed in slingshot admin)
-      const carVehicleIds = new Set(Object.keys(allVehicles));
-      allBookings = carVehicleIds.size > 0
-        ? rawBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId))
-        : rawBookings;
+      // Exclude slingshot bookings — those are managed in the slingshot admin.
+      // Use a hardcoded exclusion list instead of relying on allVehicles (which is
+      // only populated after visiting the Vehicles page) to avoid silently hiding
+      // valid car bookings when allVehicles hasn't been loaded yet.
+      const SLINGSHOT_IDS = new Set(['slingshot', 'slingshot2', 'slingshot3']);
+      allBookings = rawBookings.filter((b) => !b.vehicleId || !SLINGSHOT_IDS.has(b.vehicleId));
       renderBookings();
     })
     .catch((err) => {
