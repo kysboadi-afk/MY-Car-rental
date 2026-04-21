@@ -971,10 +971,10 @@ export default async function handler(req, res) {
     const paymentIntent = event.data.object;
     const paymentType = (paymentIntent.metadata || {}).payment_type || "";
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
-    const isTestMode = stripeSecretKey.startsWith("sk_test_");
+    const isTestMode = event.livemode === false;
     logPaymentIntentReceived(event, paymentIntent);
     if (isTestMode) {
-      console.log(`stripe-webhook: TEST MODE → do NOT create bookings or block dates (PI ${paymentIntent.id})`);
+      console.log(`stripe-webhook: TEST MODE (livemode=false) → do NOT create bookings or block dates (PI ${paymentIntent.id})`);
       return res.status(200).json({ received: true, testMode: true });
     }
 
@@ -1183,7 +1183,7 @@ export default async function handler(req, res) {
           // Update Supabase blocked_dates availability.
           if (updatedBooking.pickupDate && updatedBooking.returnDate) {
             try {
-              await autoCreateBlockedDate(vehicle_id, updatedBooking.pickupDate, updatedBooking.returnDate, "booking");
+              await autoCreateBlockedDate(vehicle_id, updatedBooking.pickupDate, updatedBooking.returnDate, "booking", original_booking_id || null);
             } catch (sbBlockErr) {
               console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
             }

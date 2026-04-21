@@ -2029,7 +2029,7 @@ async function toolRecordExtensionPayment({
   // ── 4. Update blocked dates ────────────────────────────────────────────────
   if (foundBooking.pickupDate && newReturnDate) {
     try {
-      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking");
+      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking", bookingId || null);
     } catch (bdErr) {
       console.warn("toolRecordExtensionPayment: blocked_dates update error (non-fatal):", bdErr.message);
     }

@@ -348,9 +348,10 @@ function makeRes() {
   };
 }
 
-function piSucceededEvent(meta, amountCents = 35000) {
+function piSucceededEvent(meta, amountCents = 35000, livemode = true) {
   return {
     type: "payment_intent.succeeded",
+    livemode,
     data: {
       object: {
         id:       "pi_test_" + Math.random().toString(36).slice(2),
@@ -380,27 +381,20 @@ test("webhook new booking: PREFLIGHT — autoUpsertBooking is called", async () 
   );
 });
 
-test("webhook test mode: skips booking persistence and availability changes", async () => {
+test("webhook test mode: skips booking persistence and availability changes (livemode=false)", async () => {
   resetStore(); resetCalls();
-  const savedKey = process.env.STRIPE_SECRET_KEY;
-  process.env.STRIPE_SECRET_KEY = "sk_test_fake";
-  try {
-    const event = piSucceededEvent({
-      vehicle_id: "camry", vehicle_name: "Camry 2012",
-      pickup_date: "2026-08-01", return_date: "2026-08-02",
-      renter_name: "Test User", renter_phone: "+13105551111",
-      email: "test@example.com", payment_type: "full_payment",
-    });
-    const res = makeRes();
-    await handler(makeWebhookReq(event), res);
-    assert.equal(res._status, 200);
-    assert.equal(automationCalls.booking.length, 0, "test mode must not create bookings");
-    assert.equal(automationCalls.blocked.length, 0, "test mode must not create blocked dates");
-    assert.equal(Object.keys(bookedDatesStore).length, 0, "test mode must not update booked-dates");
-    assert.equal(Object.keys(fleetStatusStore).length, 0, "test mode must not update fleet status");
-  } finally {
-    process.env.STRIPE_SECRET_KEY = savedKey;
-  }
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-08-01", return_date: "2026-08-02",
+    renter_name: "Test User", renter_phone: "+13105551111",
+    email: "test@example.com", payment_type: "full_payment",
+  }, 35000, false /* livemode=false */);
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { received: true, testMode: true }, "livemode=false must short-circuit as test mode");
+  assert.equal(automationCalls.booking.length, 0, "livemode=false must not create bookings");
+  assert.equal(automationCalls.blocked.length, 0, "livemode=false must not create blocked dates");
 });
 
 test("webhook new booking: PREFLIGHT — autoCreateBlockedDate is called", async () => {
