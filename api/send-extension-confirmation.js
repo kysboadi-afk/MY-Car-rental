@@ -135,6 +135,9 @@ export default async function handler(req, res) {
     }
 
     // ── Load booking ───────────────────────────────────────────────────────
+    // TODO (Phase 3 — pending Supabase schema): migrate to Supabase primary once
+    // extensionPendingPayment is stored in the bookings table. The field is
+    // currently written to bookings.json only and is required below.
     const { data: allBookings } = await loadBookings();
     const vehicleBookings = allBookings[vehicle_id] || [];
     const idx = vehicleBookings.findIndex(

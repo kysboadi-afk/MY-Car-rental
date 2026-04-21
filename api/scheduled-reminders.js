@@ -1094,6 +1094,10 @@ export default async function handler(req, res) {
 
   let allBookings;
   try {
+    // TODO (Phase 3 — pending Supabase schema for smsSentAt): migrate primary
+    // booking read to Supabase once a smsSentAt column is added to the bookings
+    // table. Until then, bookings.json remains authoritative for smsSentAt
+    // deduplication markers used by all processAuto* and reminder functions.
     const loaded = await loadBookings();
     allBookings = loaded.data;
   } catch (err) {

@@ -36,6 +36,7 @@ import {
   autoCreateBlockedDate,
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
@@ -891,61 +892,35 @@ export default async function handler(req, res) {
 
       const parsedAmount = typeof amountPaid === "number" ? amountPaid : parseFloat(amountPaid) || 0;
       const parsedTotal  = typeof totalPrice === "number" ? totalPrice  : parseFloat(totalPrice)  || 0;
+      const bookingId    = crypto.randomBytes(8).toString("hex");
 
-      // Build the booking record once; bookingId is stable across retries for idempotency
-      const booking = {
-        bookingId:      crypto.randomBytes(8).toString("hex"),
+      // Persist booking through the unified pipeline (Supabase + bookings.json).
+      // bookingId is stable across retries for idempotency.
+      const result = await persistBooking({
+        bookingId,
+        vehicleId,
+        vehicleName:    VEHICLE_NAMES[vehicleId] || vehicleId,
         name:           name.trim().slice(0, 100),
         phone:          typeof phone === "string" ? phone.trim().slice(0, 20) : "",
         email:          typeof email === "string" ? email.trim().slice(0, 100) : "",
-        vehicleId,
-        vehicleName:    VEHICLE_NAMES[vehicleId] || vehicleId,
         pickupDate,
         pickupTime:     typeof pickupTime === "string" ? pickupTime.trim() : "",
         returnDate,
         returnTime:     typeof returnTime === "string" ? returnTime.trim() : "",
-        amountPaid:       Math.round(parsedAmount * 100) / 100,
-        totalPrice:       Math.round((parsedTotal || parsedAmount) * 100) / 100,
-        paymentMethod:    typeof paymentMethod    === "string" ? paymentMethod.trim()    : "cash",
-        paymentIntentId:  typeof paymentIntentId  === "string" ? paymentIntentId.trim()  : "",
-        status:           parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
-        notes:            typeof notes === "string" ? notes.trim().slice(0, 500) : "",
-        smsSentAt:      {},
-        createdAt:      new Date().toISOString(),
+        amountPaid:     Math.round(parsedAmount * 100) / 100,
+        totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
+        paymentMethod:  typeof paymentMethod    === "string" ? paymentMethod.trim()    : "cash",
+        paymentIntentId: typeof paymentIntentId  === "string" ? paymentIntentId.trim()  : "",
+        status:         parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
+        notes:          typeof notes === "string" ? notes.trim().slice(0, 500) : "",
         source:         "admin_v2",
-      };
-
-      // Save with retry; apply is idempotent — skips if bookingId already present
-      await updateJsonFileWithRetry({
-        load:    loadBookings,
-        apply:   (data) => {
-          if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
-          if (!data[vehicleId].some((b) => b.bookingId === booking.bookingId)) {
-            data[vehicleId].push(booking);
-          }
-        },
-        save:    saveBookings,
-        message: `v2: Manual booking ${booking.bookingId} for ${vehicleId} (${name.trim()})`,
       });
 
       await blockBookedDates(vehicleId, pickupDate, returnDate).catch((err) => {
         console.warn("v2-bookings: blockBookedDates failed (non-fatal):", err.message);
       });
 
-      // ── Booking automation for new paid bookings ─────────────────────────
-      // For manual bookings created directly as "booked_paid", create the revenue
-      // record immediately and sync to the Supabase bookings / blocked_dates tables.
-      // Stats are not yet incremented — they increment when the booking reaches
-      // "completed_rental".
-      if (booking.status === "booked_paid") {
-        await autoCreateRevenueRecord(booking);
-        await autoUpsertCustomer(booking, false);
-      }
-      // Always sync new bookings to Supabase (includes pending/reserved bookings)
-      await autoUpsertBooking(booking);
-      await autoCreateBlockedDate(vehicleId, pickupDate, returnDate, "booking");
-
-      return res.status(200).json({ success: true, booking });
+      return res.status(200).json({ success: true, booking: result.booking });
     }
 
     if (action === "resend_confirmation") {

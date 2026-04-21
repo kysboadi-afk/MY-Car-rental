@@ -77,6 +77,34 @@ mock.module("./_error-helpers.js", {
   },
 });
 
+// Mock _booking-pipeline.js so persistBooking stores the booking in the
+// in-memory bookingsStore and populates automationCalls without hitting
+// real Supabase or GitHub.  add-manual-booking always creates as booked_paid
+// so all four automation calls are expected.
+mock.module("./_booking-pipeline.js", {
+  namedExports: {
+    persistBooking: async (opts) => {
+      const booking = { smsSentAt: {}, createdAt: new Date().toISOString(), ...opts };
+      automationCalls.revenue.push({ ...booking });
+      automationCalls.customer.push({ ...booking, countStats: false });
+      automationCalls.booking.push({ ...booking });
+      if (opts.pickupDate && opts.returnDate) {
+        automationCalls.blocked.push({
+          vehicleId: opts.vehicleId,
+          start:     opts.pickupDate,
+          end:       opts.returnDate,
+          reason:    "booking",
+        });
+      }
+      if (!Array.isArray(bookingsStore[opts.vehicleId])) bookingsStore[opts.vehicleId] = [];
+      if (!bookingsStore[opts.vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+        bookingsStore[opts.vehicleId].push(booking);
+      }
+      return { ok: true, bookingId: booking.bookingId, booking, supabaseOk: true, errors: [] };
+    },
+  },
+});
+
 // Stub GitHub API calls for date blocking
 global.fetch = async (url) => {
   try {

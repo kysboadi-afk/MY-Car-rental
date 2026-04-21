@@ -36,7 +36,7 @@
 import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { sendSms } from "./_textmagic.js";
-import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 
@@ -157,16 +157,67 @@ export default async function handler(req, res) {
       });
     }
 
-    // ── 2. Load bookings for dedup + driver info ─────────────────────────────
-    const { data: allBookingsRaw } = await loadBookings();
-
-    // Build vehicle → active booking map
+    // ── 2. Load active bookings for dedup + driver info ──────────────────────
+    // Primary: Supabase (status = 'active'). Fallback: bookings.json — only on
+    // network error. Empty Supabase results are valid (no active bookings).
+    const overdueVehicleIds = [...new Set(overdueAppts.map((a) => a.vehicle_id))];
     const activeBookingByVehicle = {};
-    for (const [vid, bookings] of Object.entries(allBookingsRaw || {})) {
-      const active = Array.isArray(bookings)
-        ? bookings.find((b) => b.status === "active_rental")
-        : null;
-      if (active) activeBookingByVehicle[vid] = active;
+    let usedSupabase = false;
+    try {
+      const { data: activeRows, error: activeErr } = await sb
+        .from("bookings")
+        .select("booking_ref, vehicle_id, customers ( name, phone )")
+        .eq("status", "active")
+        .in("vehicle_id", overdueVehicleIds);
+      if (activeErr) throw activeErr; // query error → propagate, do NOT fallback
+      usedSupabase = true;
+      for (const r of (activeRows || [])) {
+        activeBookingByVehicle[r.vehicle_id] = {
+          bookingId:   r.booking_ref || null,
+          vehicleId:   r.vehicle_id,
+          vehicleName: r.vehicle_id, // overlaid from JSON below when available
+          name:        r.customers?.name  || "",
+          phone:       r.customers?.phone || "",
+          smsSentAt:   {},            // overlaid from JSON below for deduplication
+        };
+      }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        console.error("[FALLBACK] Supabase unreachable in missed-maintenance, using bookings.json:", err.message);
+        const { data: allBookingsRaw } = await loadBookings();
+        for (const [vid, bookings] of Object.entries(allBookingsRaw || {})) {
+          const active = Array.isArray(bookings)
+            ? bookings.find((b) => b.status === "active_rental")
+            : null;
+          if (active) activeBookingByVehicle[vid] = active;
+        }
+      } else {
+        throw err; // non-network Supabase error → propagate
+      }
+    }
+
+    // When Supabase was used, overlay smsSentAt + vehicleName from bookings.json
+    // for deduplication (smsSentAt is written to JSON and not yet in Supabase).
+    if (usedSupabase && Object.keys(activeBookingByVehicle).length > 0) {
+      try {
+        const { data: jsonData } = await loadBookings();
+        for (const [vid, bookingObj] of Object.entries(activeBookingByVehicle)) {
+          const jsonBookings = jsonData[vid];
+          if (!Array.isArray(jsonBookings)) continue;
+          const jsonActive = jsonBookings.find(
+            (b) => b.status === "active_rental" &&
+              (!bookingObj.bookingId || b.bookingId === bookingObj.bookingId || b.paymentIntentId === bookingObj.bookingId)
+          );
+          if (jsonActive?.smsSentAt) {
+            activeBookingByVehicle[vid].smsSentAt = jsonActive.smsSentAt;
+          }
+          if (jsonActive?.vehicleName) {
+            activeBookingByVehicle[vid].vehicleName = jsonActive.vehicleName;
+          }
+        }
+      } catch (jsonErr) {
+        console.warn("missed-maintenance: could not load smsSentAt from bookings.json (non-fatal):", jsonErr.message);
+      }
     }
 
     // ── 3. Evaluate each overdue appointment ─────────────────────────────────
