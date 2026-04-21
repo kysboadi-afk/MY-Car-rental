@@ -2139,6 +2139,10 @@ const VEHICLE_NAMES = {
   camry2013:  'Camry 2013 SE',
 };
 
+// Vehicle IDs that belong to the slingshot admin — excluded from the car Bookings UI.
+// Must stay in sync with the slingshot IDs in api/v2-bookings.js (ALLOWED_VEHICLES).
+const SLINGSHOT_VEHICLE_IDS = new Set(['slingshot', 'slingshot2', 'slingshot3']);
+
 // Hard-coded local fallback images — used when the API/DB doesn't provide a cover URL
 // or when the stored URL fails to load. Root-relative so they work from any page depth.
 const VEHICLE_IMAGES_LOCAL = {
@@ -3514,11 +3518,7 @@ function loadBookings() {
     .then((data) => {
       const rawBookings = data.bookings || [];
       // Exclude slingshot bookings — those are managed in the slingshot admin.
-      // Use a hardcoded exclusion list instead of relying on allVehicles (which is
-      // only populated after visiting the Vehicles page) to avoid silently hiding
-      // valid car bookings when allVehicles hasn't been loaded yet.
-      const SLINGSHOT_IDS = new Set(['slingshot', 'slingshot2', 'slingshot3']);
-      allBookings = rawBookings.filter((b) => !b.vehicleId || !SLINGSHOT_IDS.has(b.vehicleId));
+      allBookings = rawBookings.filter((b) => !b.vehicleId || !SLINGSHOT_VEHICLE_IDS.has(b.vehicleId));
       renderBookings();
     })
     .catch((err) => {
