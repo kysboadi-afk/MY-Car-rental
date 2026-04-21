@@ -514,7 +514,10 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentIntentId:       paymentIntent.id,
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
-    requireStripeFee:      true,
+    // Only require a Stripe fee when we actually received fee data from the
+    // balance_transaction lookup.  If fee resolution failed (transient Stripe
+    // API error) we persist without it and let stripe-reconcile.js backfill.
+    requireStripeFee:      extraFields.stripeFee != null,
     strictPersistence:     true,
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
@@ -560,7 +563,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     console.error(
       `stripe-webhook: booking persistence verification failed for PI ${paymentIntent.id} attempt=${attempt} ` +
       `supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists} ` +
-      `errors=${(result.errors || []).join("; ")}${lastPersistError ? ` lastPersistError=${lastPersistError.message}` : ""}`
+      `errors=${(result.errors || []).join("; ")}`,
+      lastPersistError || ""
     );
   }
 
@@ -601,12 +605,16 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
 async function sendWebhookNotificationEmails(paymentIntent) {
+  const meta = paymentIntent.metadata || {};
+  const diagBookingId = meta.booking_id || paymentIntent.id || "unknown";
+  console.log(`stripe-webhook: OWNER EMAIL TRIGGERED for booking_id: ${diagBookingId} pi_id: ${paymentIntent.id}`);
+  console.log(`stripe-webhook: SMTP config — host=${process.env.SMTP_HOST || "(not set)"} user=${process.env.SMTP_USER || "(not set)"} pass=${process.env.SMTP_PASS ? "(set)" : "(not set)"}`);
+  console.log(`stripe-webhook: OWNER_EMAIL resolves to: ${OWNER_EMAIL}`);
+
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.warn("stripe-webhook: SMTP not configured — skipping fallback email");
     return;
   }
-
-  const meta = paymentIntent.metadata || {};
   const {
     booking_id,
     renter_name,
@@ -651,8 +659,16 @@ async function sendWebhookNotificationEmails(paymentIntent) {
           .from("pending_booking_docs")
           .select("*")
           .eq("booking_id", booking_id)
-          .eq("email_sent", false)
           .maybeSingle();
+      // Note: the query intentionally omits .eq("email_sent", false) so that a
+      // row where email_sent=true can be detected and used for the dedup early-
+      // return below.  A single round-trip is cheaper than two separate queries.
+        if (docsRow?.email_sent === true) {
+          // Owner email was already sent (e.g. from a previous webhook attempt on a
+          // Stripe retry).  Skip to prevent duplicate owner notifications.
+          console.log(`stripe-webhook: owner email already sent for booking_id ${booking_id} — skipping duplicate`);
+          return;
+        }
         storedDocs = docsRow || null;
       }
     } catch (docsErr) {
@@ -738,6 +754,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   }
 
   const hasFullDocs = attachments.length > 0;
+  console.log(`stripe-webhook: attachments built for booking_id ${booking_id}: count=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
   const insuranceStatusMeta = String(meta.insurance_status || "").toLowerCase();
   const hasProtectionPlan = !!(
     protection_plan_tier ||
@@ -779,6 +796,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   });
 
   // ── Owner notification ────────────────────────────────────────────────────
+  console.log(`stripe-webhook: entering owner email send block — to=${OWNER_EMAIL} booking_id=${booking_id || paymentIntent.id}`);
   const ownerEmail = buildUnifiedConfirmationEmail({
     audience:           "owner",
     bookingId:          booking_id || paymentIntent.id,
@@ -804,6 +822,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     ],
   });
 
+  let ownerEmailSent = false;
   try {
     await transporter.sendMail({
       from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
@@ -814,13 +833,15 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       text:        ownerEmail.text,
       html:        ownerEmail.html,
     });
+    ownerEmailSent = true;
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
-    console.error("stripe-webhook: owner email failed:", emailErr.message);
+    console.error("stripe-webhook: owner email failed:", emailErr);
   }
 
   // ── Mark docs as sent so the browser-side email skips the owner copy ──────
-  if (storedDocs && booking_id) {
+  // Only mark email_sent=true when the send actually succeeded.
+  if (ownerEmailSent && storedDocs && booking_id) {
     try {
       const sb = getSupabaseAdmin();
       if (sb) {
@@ -832,6 +853,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     } catch (markErr) {
       console.warn("stripe-webhook: could not mark docs email_sent (non-fatal):", markErr.message);
     }
+  } else if (!ownerEmailSent && storedDocs && booking_id) {
+    console.warn(`stripe-webhook: email_sent NOT marked for booking_id ${booking_id} because owner email send failed`);
   }
 
   // ── Customer confirmation ─────────────────────────────────────────────────
@@ -1477,15 +1500,31 @@ export default async function handler(req, res) {
 
     // Persist booking first so slow/non-critical side effects cannot prevent
     // core booking + revenue writes from happening.
+    //
+    // Fee resolution and booking persistence are intentionally decoupled:
+    // a transient Stripe API failure for the balance_transaction lookup must
+    // not prevent the booking from being saved or the owner email from firing.
+    // stripe-reconcile.js will backfill the stripe_fee later.
+    let feeFields = null;
     try {
-      const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-      await saveWebhookBookingRecord(paymentIntent, feeFields);
+      feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+    } catch (feeErr) {
+      console.error(
+        `stripe-webhook: resolveStripeFeeFields failed for PI ${paymentIntent.id}` +
+        ` — booking will be persisted without stripe_fee (backfilled by reconcile):`,
+        feeErr
+      );
+    }
+
+    let persistenceFailed = false;
+    try {
+      await saveWebhookBookingRecord(paymentIntent, feeFields || {});
     } catch (bookingErr) {
+      persistenceFailed = true;
+      // Log the full error (including stack) so the cause is visible in Vercel logs.
       console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
-      return res.status(500).json({
-        received: false,
-        error: `booking persistence failed for ${paymentIntent.id}`,
-      });
+      // Do NOT return 500 here — fall through to the email block below so the
+      // owner is still notified.  We return 500 at the end so Stripe retries.
     }
 
     // Block the booked dates and mark the vehicle unavailable.
@@ -1516,6 +1555,15 @@ export default async function handler(req, res) {
       await sendWebhookNotificationEmails(paymentIntent);
     } catch (emailErr) {
       console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
+    }
+
+    // Return 500 AFTER email so Stripe retries the webhook for persistence,
+    // but the owner notification has already been dispatched.
+    if (persistenceFailed) {
+      return res.status(500).json({
+        received: false,
+        error: `booking persistence failed for ${paymentIntent.id} — check server logs for db_atomic_error or db_step_error entries`,
+      });
     }
   }
 

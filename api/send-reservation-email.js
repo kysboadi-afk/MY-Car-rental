@@ -815,6 +815,7 @@ export default async function handler(req, res) {
     if (webhookAlreadySentOwnerEmail) {
       console.log(`[send-reservation-email] webhook already sent owner email for booking ${bookingId} — skipping duplicate owner email`);
     } else {
+    console.log(`[send-reservation-email] entering owner email block — to=${OWNER_EMAIL} SMTP_HOST=${process.env.SMTP_HOST || "(not set)"} booking=${bookingId || "(no id)"} attachments=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
     const ownerEmailOpts = {
       from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,

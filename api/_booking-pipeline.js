@@ -151,9 +151,18 @@ async function upsertBookingAndRevenueAtomic(traceId, booking) {
   const payload = buildAtomicPayload(booking);
   const { data, error } = await sb.rpc("upsert_booking_revenue_atomic", payload);
   if (error) {
+    // Log the full raw error so every Supabase field (code, details, hint) is
+    // visible in Vercel logs — critical for diagnosing FK failures, constraint
+    // violations, and transaction rollbacks.
     pipelineLog("error", traceId, "db_atomic_error", {
       step: "upsert_booking_revenue_atomic",
       error: formatError(error),
+      errorRaw: {
+        message: error.message || null,
+        code:    error.code    || null,
+        details: error.details || null,
+        hint:    error.hint    || null,
+      },
       payload,
     });
     throw new Error(`upsert_booking_revenue_atomic failed: ${formatError(error)}`);
@@ -307,22 +316,41 @@ export async function persistBooking(opts) {
 
   if (sbConfigured) {
     const canUseAtomicRpc = typeof getSupabaseAdmin()?.rpc === "function";
+    let atomicSucceeded = false;
+
     if (strictPersistence && canUseAtomicRpc) {
+      pipelineLog("info", traceId, "atomic_rpc_attempt", {
+        step: "upsert_booking_revenue_atomic",
+        bookingId,
+        vehicleId: booking.vehicleId || null,
+        paymentIntentId: booking.paymentIntentId || null,
+        stripeFee: booking.stripeFee != null ? booking.stripeFee : null,
+      });
       const atomicResult = await runStep(traceId, "upsert_booking_revenue_atomic", () =>
         upsertBookingAndRevenueAtomic(traceId, booking)
       , buildAtomicPayload(booking));
-      if (!atomicResult.ok) {
-        const err = `upsert_booking_revenue_atomic: ${atomicResult.error}`;
-        errors.push(err);
-        fatalErrors.push(err);
-        supabaseOk = false;
+      if (atomicResult.ok) {
+        atomicSucceeded = true;
+      } else {
+        pipelineLog("warn", traceId, "atomic_rpc_failed_falling_back_to_legacy", {
+          step: "upsert_booking_revenue_atomic",
+          error: atomicResult.error,
+          message: "Atomic RPC failed — retrying via individual legacy steps before marking as fatal",
+        });
+        // Do NOT push to fatalErrors here — the legacy fallback below determines
+        // the final outcome.  Only if legacy also fails do we propagate the error.
       }
-    } else {
+    }
+
+    if (!atomicSucceeded) {
+      // Runs when: (a) !strictPersistence || !canUseAtomicRpc (normal legacy path), or
+      //            (b) strictPersistence + canUseAtomicRpc but atomic failed (fallback).
       if (strictPersistence && !canUseAtomicRpc) {
         pipelineLog("warn", traceId, "atomic_rpc_unavailable_fallback", {
           message: "Supabase client has no rpc() method; falling back to non-atomic strict path",
         });
       }
+
       // Step A: upsert customer (must come first so customer_id is available for booking)
       const custResult = await runStep(traceId, "upsert_customer", () =>
         autoUpsertCustomer(booking, false)
