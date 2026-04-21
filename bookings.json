@@ -175,6 +175,31 @@
       "activatedAt": "2026-04-11T21:45:48.268Z",
       "updatedAt": "2026-04-14T04:00:23.611Z",
       "completedAt": "2026-04-14T04:00:23.611Z"
+    },
+    {
+      "bookingId": "bk-f4652c788320",
+      "name": "Rosalinda Ortuno",
+      "phone": "+19493022978",
+      "email": "ortunorosa@yahoo.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-21",
+      "pickupTime": "08:00",
+      "returnDate": "2026-04-22",
+      "returnTime": "08:00",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "booked_paid",
+      "amountPaid": 60.64,
+      "totalPrice": 60.64,
+      "paymentIntentId": "pi_3TOToHPo7fICjrtZ2EboKAIk",
+      "paymentLink": "",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-21T02:15:44.514Z",
+      "source": "stripe_webhook",
+      "stripeCustomerId": "cus_UNEGEs2gKalhff",
+      "stripePaymentMethodId": "pm_1TOToQPo7fICjrtZ3Yf5bPqi"
     }
   ],
   "camry2013": [
