@@ -36,6 +36,10 @@ import {
   autoCreateBlockedDate,
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { CARS, computeRentalDays } from "./_pricing.js";
+import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
+import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
+import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
@@ -969,60 +973,212 @@ export default async function handler(req, res) {
         auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
       });
 
-      const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
       const ownerEmail = process.env.OWNER_EMAIL || process.env.SMTP_USER;
       const { name, email, phone, vehicleName, vehicleId: bVid,
               pickupDate, pickupTime, returnDate, returnTime,
-              amountPaid, totalPrice, status } = booking;
-      const displayTotal = `$${Number(amountPaid ?? totalPrice ?? 0).toFixed(2)}`;
-      const pickupDisplay = [pickupDate, pickupTime].filter(Boolean).join(" at ");
-      const returnDisplay = [returnDate, returnTime].filter(Boolean).join(" at ");
+              amountPaid, totalPrice, status, paymentIntentId } = booking;
       const firstName = (name || "there").split(" ")[0];
+
+      // Retrieve stored docs for attachments (if available).
+      let storedDocs = null;
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          const { data: docsRow } = await sb
+            .from("pending_booking_docs")
+            .select("*")
+            .eq("booking_id", bookingId)
+            .maybeSingle();
+          storedDocs = docsRow || null;
+        }
+      } catch (docsErr) {
+        console.warn("v2-bookings resend_confirmation: pending_booking_docs read failed (non-fatal):", docsErr.message);
+      }
+
+      const attachments = [];
+      if (storedDocs && storedDocs.signature) {
+        try {
+          const vehicleInfo = (bVid && CARS[bVid]) ? CARS[bVid] : {};
+          const hasProtectionPlan = !!(storedDocs.protection_plan_tier || booking.protectionPlanTier || booking.protectionPlan);
+          const protectionPlanTier = storedDocs.protection_plan_tier || booking.protectionPlanTier || null;
+          const pdfBody = {
+            vehicleId:   bVid || "",
+            car:         vehicleName || vehicleInfo.name || bVid || "",
+            vehicleMake: vehicleInfo.make || null,
+            vehicleModel: vehicleInfo.model || null,
+            vehicleYear: vehicleInfo.year || null,
+            vehicleVin:  vehicleInfo.vin || null,
+            vehicleColor: vehicleInfo.color || null,
+            name:        name || "",
+            email:       email || "",
+            phone:       phone || "",
+            pickup:      pickupDate || "",
+            pickupTime:  pickupTime || "",
+            returnDate:  returnDate || "",
+            returnTime:  returnTime || "",
+            total:       amountPaid != null ? String(amountPaid) : (totalPrice != null ? String(totalPrice) : ""),
+            deposit:     vehicleInfo.deposit || 0,
+            days:        (pickupDate && returnDate) ? computeRentalDays(pickupDate, returnDate) : 0,
+            protectionPlan:          hasProtectionPlan,
+            protectionPlanTier:      protectionPlanTier,
+            signature:               storedDocs.signature,
+            fullRentalCost:          booking.fullRentalCost || null,
+            balanceAtPickup:         booking.balanceAtPickup || null,
+            insuranceCoverageChoice: storedDocs.insurance_coverage_choice || (hasProtectionPlan ? "no" : null),
+          };
+          const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+          const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
+          const safeDate = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+          attachments.push({
+            filename: `rental-agreement-${safeName}-${safeDate}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          });
+        } catch (pdfErr) {
+          console.warn("v2-bookings resend_confirmation: PDF generation failed (non-fatal):", pdfErr.message);
+        }
+      }
+      if (storedDocs && storedDocs.id_base64 && storedDocs.id_filename) {
+        try {
+          attachments.push({
+            filename: storedDocs.id_filename,
+            content: Buffer.from(storedDocs.id_base64, "base64"),
+            contentType: storedDocs.id_mimetype || "application/octet-stream",
+          });
+        } catch (idErr) {
+          console.warn("v2-bookings resend_confirmation: ID attachment failed (non-fatal):", idErr.message);
+        }
+      }
+      if (storedDocs && storedDocs.insurance_base64 && storedDocs.insurance_filename) {
+        try {
+          attachments.push({
+            filename: storedDocs.insurance_filename,
+            content: Buffer.from(storedDocs.insurance_base64, "base64"),
+            contentType: storedDocs.insurance_mimetype || "application/octet-stream",
+          });
+        } catch (insErr) {
+          console.warn("v2-bookings resend_confirmation: insurance attachment failed (non-fatal):", insErr.message);
+        }
+      }
+
+      const hasProtectionPlan = !!(storedDocs?.protection_plan_tier || booking.protectionPlanTier || booking.protectionPlan);
+      const protectionPlanTier = storedDocs?.protection_plan_tier || booking.protectionPlanTier || null;
+      let breakdownLines = null;
+      try {
+        const isHourly = !!(bVid && CARS[bVid] && CARS[bVid].hourlyTiers);
+        if (!isHourly && bVid && pickupDate && returnDate) {
+          const pricingSettings = await loadPricingSettings();
+          breakdownLines = computeBreakdownLinesFromSettings(
+            bVid,
+            pickupDate,
+            returnDate,
+            pricingSettings,
+            hasProtectionPlan,
+            protectionPlanTier
+          );
+        }
+      } catch (err) {
+        console.warn("v2-bookings resend_confirmation: pricing breakdown generation failed (non-fatal):", err.message);
+      }
+
+      const insuranceStatus = storedDocs?.insurance_coverage_choice === "no"
+        ? "No personal insurance provided (Damage Protection Plan or renter liability applies)"
+        : (storedDocs?.insurance_coverage_choice === "yes"
+            ? (storedDocs?.insurance_filename ? "Own insurance provided (document attached)" : "Own insurance selected (proof not uploaded)")
+            : (hasProtectionPlan
+                ? `Protection plan selected (${protectionPlanTier || "tier not specified"})`
+                : "Not selected / No protection plan"));
+
+      const missingItemNotes = buildDocumentNotes({
+        idUploaded:        !!storedDocs?.id_base64,
+        signatureUploaded: !!storedDocs?.signature,
+        insuranceUploaded: !!storedDocs?.insurance_base64,
+        insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
+      });
+      const additionalNotes = [
+        ...(booking.notes ? [`Booking notes: ${booking.notes}`] : []),
+        ...(attachments.length ? [`Attachments: ${attachments.map(a => a.filename).join(", ")}`] : []),
+      ];
+
+      const isWebsitePayment = isWebsitePaymentMethod(paymentIntentId);
+      const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
+      const ownerTemplate = buildUnifiedConfirmationEmail({
+        audience:           "owner",
+        bookingId,
+        vehicleName,
+        vehicleId:          bVid,
+        vehicleMake:        CARS[bVid]?.make || null,
+        vehicleModel:       CARS[bVid]?.model || null,
+        vehicleYear:        CARS[bVid]?.year || null,
+        vehicleVin:         CARS[bVid]?.vin || null,
+        vehicleColor:       CARS[bVid]?.color || null,
+        renterName:         name,
+        renterEmail:        email,
+        renterPhone:        phone,
+        pickupDate,
+        pickupTime,
+        returnDate,
+        returnTime,
+        amountPaid,
+        totalPrice,
+        fullRentalCost:     booking.fullRentalCost || null,
+        balanceAtPickup:    booking.balanceAtPickup || null,
+        status:             status || "booked_paid",
+        paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
+        insuranceStatus,
+        pricingBreakdownLines: breakdownLines || [],
+        missingItemNotes: [...missingItemNotes, ...additionalNotes],
+      });
 
       // Owner email
       await transporter.sendMail({
         from:    `"SLY RIDES Bookings" <${process.env.SMTP_USER}>`,
         to:      ownerEmail,
         ...(email ? { replyTo: email } : {}),
-        subject: `💰 Booking Confirmed (Resent) — ${esc(vehicleName || bVid || "")}`,
-        html: `<h2>💰 Booking Confirmed — Admin Resend</h2>
-          <p>This confirmation was re-sent from the admin panel.</p>
-          <table style="border-collapse:collapse;width:100%">
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Booking ID</b></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Status</b></td><td style="padding:8px;border:1px solid #ddd;color:green"><b>✅ CONFIRMED</b></td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Vehicle</b></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || bVid || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Renter</b></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "N/A")}</td></tr>
-            ${phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><b>Phone</b></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>` : ""}
-            ${email ? `<tr><td style="padding:8px;border:1px solid #ddd"><b>Email</b></td><td style="padding:8px;border:1px solid #ddd">${esc(email)}</td></tr>` : ""}
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Pickup</b></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Return</b></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Total</b></td><td style="padding:8px;border:1px solid #ddd"><b>${esc(displayTotal)}</b></td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><b>Booking Status</b></td><td style="padding:8px;border:1px solid #ddd">${esc(status || "booked_paid")}</td></tr>
-          </table>`,
-        text: `Booking Confirmed (Resent)\nBooking ID: ${bookingId}\nVehicle: ${vehicleName || bVid}\nRenter: ${name}\nPickup: ${pickupDisplay}\nReturn: ${returnDisplay}\nTotal: ${displayTotal}`,
+        subject: ownerTemplate.subject,
+        attachments,
+        html: ownerTemplate.html,
+        text: ownerTemplate.text,
       });
 
       // Customer email
       let customerSent = false;
       if (email) {
+        const customerTemplate = buildUnifiedConfirmationEmail({
+          audience:           "customer",
+          bookingId,
+          vehicleName,
+          vehicleId:          bVid,
+          vehicleMake:        CARS[bVid]?.make || null,
+          vehicleModel:       CARS[bVid]?.model || null,
+          vehicleYear:        CARS[bVid]?.year || null,
+          vehicleVin:         CARS[bVid]?.vin || null,
+          vehicleColor:       CARS[bVid]?.color || null,
+          renterName:         name,
+          renterEmail:        email,
+          renterPhone:        phone,
+          pickupDate,
+          pickupTime,
+          returnDate,
+          returnTime,
+          amountPaid,
+          totalPrice,
+          fullRentalCost:     booking.fullRentalCost || null,
+          balanceAtPickup:    booking.balanceAtPickup || null,
+          status:             status || "booked_paid",
+          paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
+          insuranceStatus,
+          pricingBreakdownLines: breakdownLines || [],
+          missingItemNotes: [...missingItemNotes, ...additionalNotes],
+          firstName,
+        });
         try {
           await transporter.sendMail({
             from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
             to:      email,
-            subject: "✅ Your Booking is Confirmed — Sly Transportation Services LLC",
-            html: `<h2>✅ Payment Confirmed — Sly Transportation Services LLC</h2>
-              <p>Hi ${esc(firstName)}, your payment has been received and your booking is confirmed!</p>
-              <table style="border-collapse:collapse;width:100%;margin-top:12px">
-                <tr><td style="padding:8px;border:1px solid #ddd"><b>Status</b></td><td style="padding:8px;border:1px solid #ddd;color:green"><b>✅ CONFIRMED</b></td></tr>
-                <tr><td style="padding:8px;border:1px solid #ddd"><b>Vehicle</b></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || bVid || "N/A")}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #ddd"><b>Pickup</b></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #ddd"><b>Return</b></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #ddd"><b>Total Charged</b></td><td style="padding:8px;border:1px solid #ddd"><b>${esc(displayTotal)}</b></td></tr>
-              </table>
-              <p style="margin-top:16px">We will be in touch shortly to confirm your rental pick-up details.</p>
-              <p>Questions? Email <a href="mailto:${esc(ownerEmail)}">${esc(ownerEmail)}</a> or call (213) 916-6606.</p>
-              <p><b>Sly Transportation Services LLC 🚗</b></p>`,
-            text: `Hi ${firstName}, your booking is confirmed!\nVehicle: ${vehicleName || bVid}\nPickup: ${pickupDisplay}\nReturn: ${returnDisplay}\nTotal: ${displayTotal}\n\nQuestions? Contact us at ${ownerEmail} or (213) 916-6606.\n\nSly Transportation Services LLC`,
+            subject: customerTemplate.subject,
+            html: customerTemplate.html,
+            text: customerTemplate.text,
           });
           customerSent = true;
         } catch (custErr) {
@@ -1035,7 +1191,9 @@ export default async function handler(req, res) {
         ownerNotified: true,
         customerEmail: email || null,
         customerSent,
-        note: customerSent ? "Confirmation sent to owner and customer." : "Confirmation sent to owner. No customer email on file — customer not notified.",
+        note: customerSent
+          ? "Confirmation sent to owner and customer with standardized template."
+          : "Confirmation sent to owner with standardized template. No customer email on file — customer not notified.",
       });
     }
 
