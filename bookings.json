@@ -507,11 +507,13 @@
       "returnDate": "2026-04-22",
       "returnTime": "14:00",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "paymentIntentId": "pi_3TOOVvPo7fICjrtZ19MsJPKV",
       "amountPaid": 121.28,
       "notes": "Website payment — automatic creation of booking.",
-      "createdAt": "2026-04-20T23:46:10.003Z"
+      "createdAt": "2026-04-20T23:46:10.003Z",
+      "activatedAt": "2026-04-21T00:00:00.347Z",
+      "updatedAt": "2026-04-21T00:00:00.347Z"
     }
   ]
 }
