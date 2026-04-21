@@ -601,12 +601,16 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
  * @param {object} paymentIntent - Stripe PaymentIntent object
  */
 async function sendWebhookNotificationEmails(paymentIntent) {
+  const meta = paymentIntent.metadata || {};
+  const _diagBookingId = meta.booking_id || paymentIntent.id || "unknown";
+  console.log(`stripe-webhook: OWNER EMAIL TRIGGERED for booking_id: ${_diagBookingId} pi_id: ${paymentIntent.id}`);
+  console.log(`stripe-webhook: SMTP config — host=${process.env.SMTP_HOST || "(not set)"} user=${process.env.SMTP_USER || "(not set)"} pass=${process.env.SMTP_PASS ? "(set)" : "(not set)"}`);
+  console.log(`stripe-webhook: OWNER_EMAIL resolves to: ${OWNER_EMAIL}`);
+
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     console.warn("stripe-webhook: SMTP not configured — skipping fallback email");
     return;
   }
-
-  const meta = paymentIntent.metadata || {};
   const {
     booking_id,
     renter_name,
@@ -738,6 +742,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   }
 
   const hasFullDocs = attachments.length > 0;
+  console.log(`stripe-webhook: attachments built for booking_id ${booking_id}: count=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
   const insuranceStatusMeta = String(meta.insurance_status || "").toLowerCase();
   const hasProtectionPlan = !!(
     protection_plan_tier ||
@@ -779,6 +784,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   });
 
   // ── Owner notification ────────────────────────────────────────────────────
+  console.log(`stripe-webhook: entering owner email send block — to=${OWNER_EMAIL} booking_id=${booking_id || paymentIntent.id}`);
   const ownerEmail = buildUnifiedConfirmationEmail({
     audience:           "owner",
     bookingId:          booking_id || paymentIntent.id,
@@ -804,6 +810,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     ],
   });
 
+  let ownerEmailSent = false;
   try {
     await transporter.sendMail({
       from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
@@ -814,13 +821,15 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       text:        ownerEmail.text,
       html:        ownerEmail.html,
     });
+    ownerEmailSent = true;
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
-    console.error("stripe-webhook: owner email failed:", emailErr.message);
+    console.error("stripe-webhook: owner email failed:", emailErr);
   }
 
   // ── Mark docs as sent so the browser-side email skips the owner copy ──────
-  if (storedDocs && booking_id) {
+  // Only mark email_sent=true when the send actually succeeded.
+  if (ownerEmailSent && storedDocs && booking_id) {
     try {
       const sb = getSupabaseAdmin();
       if (sb) {
@@ -832,6 +841,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     } catch (markErr) {
       console.warn("stripe-webhook: could not mark docs email_sent (non-fatal):", markErr.message);
     }
+  } else if (!ownerEmailSent && storedDocs && booking_id) {
+    console.warn(`stripe-webhook: email_sent NOT marked for booking_id ${booking_id} because owner email send failed`);
   }
 
   // ── Customer confirmation ─────────────────────────────────────────────────
