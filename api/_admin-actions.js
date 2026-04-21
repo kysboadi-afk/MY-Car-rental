@@ -2994,7 +2994,6 @@ async function toolResendBookingConfirmation({ bookingId }) {
           paymentIntentId: row.payment_intent_id || "",
           paymentMethod:   row.payment_method    || "",
           notes:           row.notes || "",
-          source:          "supabase",
         };
       }
     } catch (err) {

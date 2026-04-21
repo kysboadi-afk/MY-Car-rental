@@ -22,7 +22,7 @@ import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
