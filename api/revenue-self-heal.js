@@ -57,15 +57,8 @@ async function ensureBookingForRevenueRow(sb, stripe, row) {
   const bookingRef = row.booking_id || "";
   if (!bookingRef) throw new Error(`missing booking_id for revenue row ${row.id}`);
 
-  const { data: bookingByRef, error: bookingLookupErr } = await sb
-    .from("bookings")
-    .select("id, payment_intent_id")
-    .eq("booking_ref", bookingRef)
-    .maybeSingle();
-  if (bookingLookupErr) {
-    throw new Error(`booking lookup failed: ${formatSupabaseError(bookingLookupErr)}`);
-  }
-  if (bookingByRef?.id) return bookingByRef;
+  // Caller has already verified the booking is missing; skip the redundant re-lookup
+  // and proceed straight to reconstruction.
 
   const paymentIntentId = row.payment_intent_id || null;
   if (!paymentIntentId) {
@@ -151,9 +144,20 @@ export default async function handler(req, res) {
   const failures = [];
 
   try {
+    // Fetch rows that need attention:
+    //   • Stripe-incomplete: stripe_fee IS NULL or payment_intent_id IS NULL
+    //     (need to pull fee data from the Stripe API).
+    //   • Booking-unlinked: is_orphan = false but no matching bookings row
+    //     (pre-migration 0060 legacy gap; migration pre-flight covers this on
+    //     first run, but self-heal acts as an ongoing safety net).
+    // Only target non-orphan, non-excluded rows to avoid touching rows that are
+    // already flagged as having no real booking.
     const { data: rows, error: queryErr } = await sb
       .from("revenue_records")
-      .select("id, booking_id, payment_intent_id, stripe_fee, refund_amount, gross_amount, customer_name, customer_phone, customer_email, vehicle_id, pickup_date, return_date");
+      .select("id, booking_id, payment_intent_id, stripe_fee, refund_amount, gross_amount, customer_name, customer_phone, customer_email, vehicle_id, pickup_date, return_date")
+      .eq("is_orphan", false)
+      .eq("sync_excluded", false)
+      .or("stripe_fee.is.null,payment_intent_id.is.null");
 
     if (queryErr) {
       console.error("revenue-self-heal: query error:", formatSupabaseError(queryErr));

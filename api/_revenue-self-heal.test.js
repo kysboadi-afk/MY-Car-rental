@@ -34,12 +34,21 @@ mock.module("./_supabase.js", {
         let updatePayload = null;
         let filterCol = null;
         let filterVal = null;
-        let selected = false;
+        let isInitialQuery = false; // set by .or() → the initial revenue_records list query
         return {
-          select() { selected = true; return this; },
+          select() { return this; },
+          or() {
+            // .or() is only called on the initial "fetch all needing repair" query
+            isInitialQuery = true;
+            return this;
+          },
           then(resolve, reject) {
-            if (table === "revenue_records" && selected && !filterCol) {
-              return Promise.resolve({ data: revenueRows, error: null }).then(resolve, reject);
+            if (table === "revenue_records" && isInitialQuery) {
+              // Simulate the filtered query: stripe_fee IS NULL OR payment_intent_id IS NULL
+              const data = revenueRows.filter(
+                (r) => r.stripe_fee == null || !r.payment_intent_id
+              );
+              return Promise.resolve({ data, error: null }).then(resolve, reject);
             }
             return Promise.resolve({ data: [], error: null }).then(resolve, reject);
           },
