@@ -103,12 +103,34 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
   }
 
   try {
+    const bookingRef = String(booking.bookingId || "").trim();
+    if (!bookingRef) {
+      throw new Error("missing bookingId for revenue record");
+    }
+
+    // Application-level guard: verify the booking row exists before writing revenue.
+    // This complements (rather than duplicates) the DB trigger added in migration 0060:
+    // the JS check runs before the INSERT/UPDATE reaches the DB, providing a cleaner
+    // error message and a traceable log line in the pipeline trace.  The trigger acts
+    // as the hard backstop if this check is ever bypassed (e.g., direct SQL writes).
+    const { data: bookingRow, error: bookingLookupErr } = await sb
+      .from("bookings")
+      .select("id")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+    if (bookingLookupErr) {
+      throw new Error(`bookings lookup failed: ${formatSupabaseError(bookingLookupErr)}`);
+    }
+    if (!bookingRow?.id) {
+      throw new Error(`missing booking for revenue booking_id=${bookingRef}`);
+    }
+
     // Resolve the Stripe PaymentIntent ID.
     // • Rental records:   booking.paymentIntentId or bookingId if it starts with "pi_".
     // • Extension records: booking.paymentIntentId holds the extension PI;
     //                      bookingId is the original booking ref (not a PI).
     const piId = booking.paymentIntentId ||
-      (String(booking.bookingId || "").startsWith("pi_") ? booking.bookingId : null);
+      (bookingRef.startsWith("pi_") ? bookingRef : null);
 
     const recordType = booking.type || "rental";
 
@@ -122,7 +144,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
         .select("id, payment_intent_id")
-        .eq("booking_id", booking.bookingId)
+        .eq("booking_id", bookingRef)
         .maybeSingle();
       if (existingByBookingErr) {
         throw new Error(`revenue_records booking_id lookup failed: ${formatSupabaseError(existingByBookingErr)}`);
@@ -149,11 +171,11 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
     const stripeFee = isCash ? 0 : (booking.stripeFee != null ? Number(booking.stripeFee) : null);
     if (!isCash && requireStripeFee && stripeFee == null) {
-      throw new Error(`missing stripeFee for booking ${booking.bookingId || "<missing>"} paymentIntentId=${piId || "<missing>"}`);
+      throw new Error(`missing stripeFee for booking ${bookingRef || "<missing>"} paymentIntentId=${piId || "<missing>"}`);
     }
 
     const record = {
-      booking_id:          booking.bookingId,
+      booking_id:          bookingRef,
       // original_booking_id is only set for manual extensions (v2-revenue.js)
       // which use a synthetic booking_id (e.g. "ext-…").  Stripe-paid extensions
       // use the original booking_id directly and leave this field null.
@@ -200,13 +222,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       if (error) {
         throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
       }
-      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${booking.bookingId}`);
+      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${bookingRef}`);
     } else {
       const { error } = await sb.from("revenue_records").insert(record);
       if (error) {
         throw new Error(`revenue_records insert failed: ${formatSupabaseError(error)}`);
       }
-      console.log(`_booking-automation: created ${recordType} revenue record for booking ${booking.bookingId}`);
+      console.log(`_booking-automation: created ${recordType} revenue record for booking ${bookingRef}`);
     }
   } catch (err) {
     const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;
