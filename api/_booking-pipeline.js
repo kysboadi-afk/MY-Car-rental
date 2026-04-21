@@ -26,6 +26,7 @@ import {
   autoUpsertCustomer,
   autoUpsertBooking,
   autoCreateBlockedDate,
+  parseTime12h,
 } from "./_booking-automation.js";
 
 /**
@@ -69,17 +70,107 @@ function formatError(err) {
  * @param {Function} fn       - async function to execute
  * @returns {{ ok: boolean, error: string|null }}
  */
-async function runStep(traceId, stepName, fn) {
-  pipelineLog("info", traceId, "db_step_start", { step: stepName });
+async function runStep(traceId, stepName, fn, payload = null) {
+  pipelineLog("info", traceId, "db_step_start", { step: stepName, ...(payload ? { payload } : {}) });
   try {
     await fn();
     pipelineLog("info", traceId, "db_step_success", { step: stepName });
     return { ok: true, error: null };
   } catch (err) {
     const formatted = formatError(err);
-    pipelineLog("error", traceId, "db_step_error", { step: stepName, error: formatted });
+    pipelineLog("error", traceId, "db_step_error", {
+      step: stepName,
+      error: formatted,
+      ...(payload ? { payload } : {}),
+    });
     return { ok: false, error: formatted };
   }
+}
+
+const BOOKING_STATUS_MAP = {
+  reserved_unpaid:  "pending",
+  booked_paid:      "approved",
+  active_rental:    "active",
+  completed_rental: "completed",
+  cancelled_rental: "cancelled",
+};
+
+function normalizeEmail(email) {
+  if (!email || typeof email !== "string") return null;
+  const value = email.trim().toLowerCase();
+  return value || null;
+}
+
+function buildAtomicPayload(booking) {
+  const amountPaid = Number(booking.amountPaid || 0);
+  const totalPrice = Number(booking.totalPrice || amountPaid);
+  const remainingBalance = Math.max(0, totalPrice - amountPaid);
+  const paymentStatus = amountPaid > 0 ? (remainingBalance > 0 ? "partial" : "paid") : "unpaid";
+
+  return {
+    p_customer_name: booking.name || "Unknown",
+    p_customer_phone: booking.phone ? String(booking.phone).trim() : null,
+    p_customer_email: normalizeEmail(booking.email),
+    p_booking_ref: booking.bookingId,
+    p_vehicle_id: booking.vehicleId || null,
+    p_pickup_date: booking.pickupDate || null,
+    p_return_date: booking.returnDate || null,
+    p_pickup_time: parseTime12h(booking.pickupTime || ""),
+    p_return_time: parseTime12h(booking.returnTime || ""),
+    p_status: BOOKING_STATUS_MAP[booking.status] || booking.status || "pending",
+    p_total_price: totalPrice,
+    p_deposit_paid: amountPaid,
+    p_remaining_balance: remainingBalance,
+    p_payment_status: paymentStatus,
+    p_notes: booking.notes || null,
+    p_payment_method: booking.paymentMethod || null,
+    p_payment_intent_id: booking.paymentIntentId || null,
+    p_stripe_customer_id: booking.stripeCustomerId || null,
+    p_stripe_payment_method_id: booking.stripePaymentMethodId || null,
+    p_booking_customer_email: normalizeEmail(booking.email),
+    p_activated_at: booking.activatedAt || null,
+    p_completed_at: booking.completedAt || null,
+    p_revenue_vehicle_id: booking.vehicleId || null,
+    p_revenue_customer_name: booking.name || null,
+    p_revenue_customer_phone: booking.phone || null,
+    p_revenue_customer_email: normalizeEmail(booking.email),
+    p_revenue_pickup_date: booking.pickupDate || null,
+    p_revenue_return_date: booking.returnDate || null,
+    p_gross_amount: amountPaid,
+    p_stripe_fee: booking.stripeFee != null ? Number(booking.stripeFee) : null,
+    p_payment_intent_id_revenue: booking.paymentIntentId || null,
+    p_refund_amount: Number(booking.refundAmount || 0),
+    p_revenue_payment_method: booking.paymentMethod || "stripe",
+    p_revenue_notes: booking.notes || null,
+  };
+}
+
+async function upsertBookingAndRevenueAtomic(traceId, booking) {
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Supabase admin client unavailable");
+  const payload = buildAtomicPayload(booking);
+  const { data, error } = await sb.rpc("upsert_booking_revenue_atomic", payload);
+  if (error) {
+    pipelineLog("error", traceId, "db_atomic_error", {
+      step: "upsert_booking_revenue_atomic",
+      error: formatError(error),
+      payload,
+    });
+    throw new Error(`upsert_booking_revenue_atomic failed: ${formatError(error)}`);
+  }
+  if (!data?.revenue_complete) {
+    pipelineLog("error", traceId, "db_atomic_incomplete", {
+      step: "upsert_booking_revenue_atomic",
+      payload,
+      result: data || null,
+    });
+    throw new Error("upsert_booking_revenue_atomic returned incomplete revenue data");
+  }
+  pipelineLog("info", traceId, "db_atomic_success", {
+    step: "upsert_booking_revenue_atomic",
+    bookingRef: booking.bookingId,
+    customerId: data?.customer_id || null,
+  });
 }
 
 /**
@@ -191,6 +282,15 @@ export async function persistBooking(opts) {
     }
   }
 
+  if (opts.requireStripeFee) {
+    if (!booking.paymentIntentId) {
+      throw new Error(`missing paymentIntentId for booking ${bookingId}`);
+    }
+    if (booking.stripeFee == null || !Number.isFinite(Number(booking.stripeFee))) {
+      throw new Error(`missing stripeFee for booking ${bookingId} paymentIntentId=${booking.paymentIntentId}`);
+    }
+  }
+
   // ── 3. Supabase persistence (BEFORE emails) ───────────────────────────────
   const sbConfigured = isSupabaseConfigured();
   if (!sbConfigured) {
@@ -206,40 +306,68 @@ export async function persistBooking(opts) {
   let supabaseOk = true;
 
   if (sbConfigured) {
-    // Step A: upsert customer (must come first so customer_id is available for booking)
-    const custResult = await runStep(traceId, "upsert_customer", () =>
-      autoUpsertCustomer(booking, false)
-    );
-    if (!custResult.ok) {
-      const err = `upsert_customer: ${custResult.error}`;
-      errors.push(err);
-      if (strictPersistence) fatalErrors.push(err);
-      supabaseOk = false;
-    }
+    const canUseAtomicRpc = typeof getSupabaseAdmin()?.rpc === "function";
+    if (strictPersistence && canUseAtomicRpc) {
+      const atomicResult = await runStep(traceId, "upsert_booking_revenue_atomic", () =>
+        upsertBookingAndRevenueAtomic(traceId, booking)
+      , buildAtomicPayload(booking));
+      if (!atomicResult.ok) {
+        const err = `upsert_booking_revenue_atomic: ${atomicResult.error}`;
+        errors.push(err);
+        fatalErrors.push(err);
+        supabaseOk = false;
+      }
+    } else {
+      if (strictPersistence && !canUseAtomicRpc) {
+        pipelineLog("warn", traceId, "atomic_rpc_unavailable_fallback", {
+          message: "Supabase client has no rpc() method; falling back to non-atomic strict path",
+        });
+      }
+      // Step A: upsert customer (must come first so customer_id is available for booking)
+      const custResult = await runStep(traceId, "upsert_customer", () =>
+        autoUpsertCustomer(booking, false)
+      , { email: booking.email || null, phone: booking.phone || null, name: booking.name || null });
+      if (!custResult.ok) {
+        const err = `upsert_customer: ${custResult.error}`;
+        errors.push(err);
+        if (strictPersistence) fatalErrors.push(err);
+        supabaseOk = false;
+      }
 
-    // Step B: upsert booking row (links to customer_id)
-    const bookingResult = await runStep(traceId, "upsert_booking", () =>
-      autoUpsertBooking(booking, { strict: true })
-    );
-    if (!bookingResult.ok) {
-      const err = `upsert_booking: ${bookingResult.error}`;
-      errors.push(err);
-      if (strictPersistence) fatalErrors.push(err);
-      supabaseOk = false;
-    }
+      // Step B: upsert booking row (links to customer_id)
+      const bookingResult = await runStep(traceId, "upsert_booking", () =>
+        autoUpsertBooking(booking, { strict: true })
+      , {
+        bookingId: booking.bookingId,
+        paymentIntentId: booking.paymentIntentId || null,
+        vehicleId: booking.vehicleId || null,
+      });
+      if (!bookingResult.ok) {
+        const err = `upsert_booking: ${bookingResult.error}`;
+        errors.push(err);
+        if (strictPersistence) fatalErrors.push(err);
+        supabaseOk = false;
+      }
 
-    // Step C: revenue record
-    const revResult = await runStep(traceId, "create_revenue_record", () =>
-      autoCreateRevenueRecord(booking, {
-        strict: strictPersistence,
-        requireStripeFee: !!opts.requireStripeFee,
-      })
-    );
-    if (!revResult.ok) {
-      const err = `create_revenue_record: ${revResult.error}`;
-      errors.push(err);
-      if (strictPersistence) fatalErrors.push(err);
-      supabaseOk = false;
+      // Step C: revenue record
+      const revResult = await runStep(traceId, "create_revenue_record", () =>
+        autoCreateRevenueRecord(booking, {
+          strict: strictPersistence,
+          requireStripeFee: !!opts.requireStripeFee,
+        })
+      , {
+        bookingId: booking.bookingId,
+        paymentIntentId: booking.paymentIntentId || null,
+        grossAmount: booking.amountPaid || 0,
+        stripeFee: booking.stripeFee ?? null,
+        refundAmount: booking.refundAmount ?? 0,
+      });
+      if (!revResult.ok) {
+        const err = `create_revenue_record: ${revResult.error}`;
+        errors.push(err);
+        if (strictPersistence) fatalErrors.push(err);
+        supabaseOk = false;
+      }
     }
 
     // Step D: blocked_dates entry

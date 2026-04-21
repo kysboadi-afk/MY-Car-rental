@@ -233,26 +233,26 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
       updated_at: new Date().toISOString(),
     };
 
-    // ── Look up existing customer (phone first; fall back to email) ──────────
+    // ── Look up existing customer (email first; fall back to phone) ──────────
     let existing = null;
-    let lookupKey = null; // "phone" | "email"
+    let lookupKey = null; // "email" | "phone"
 
-    if (phone) {
-      const { data } = await sb
-        .from("customers")
-        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
-        .eq("phone", phone)
-        .maybeSingle();
-      if (data) { existing = data; lookupKey = "phone"; }
-    }
-
-    if (!existing && email) {
+    if (email) {
       const { data } = await sb
         .from("customers")
         .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
         .eq("email", email)
         .maybeSingle();
       if (data) { existing = data; lookupKey = "email"; }
+    }
+
+    if (!existing && phone) {
+      const { data } = await sb
+        .from("customers")
+        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .eq("phone", phone)
+        .maybeSingle();
+      if (data) { existing = data; lookupKey = "phone"; }
     }
 
     /**

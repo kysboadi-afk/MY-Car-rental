@@ -1095,6 +1095,7 @@ export default async function handler(req, res) {
 
           // Create a new extension revenue record (type='extension').
           try {
+            const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
             const extCustomerId = await resolveCustomerIdFromSupabase(
               updatedBooking.phone || "",
               updatedBooking.email || renter_email || "",
@@ -1113,9 +1114,24 @@ export default async function handler(req, res) {
               amountPaid:      extensionAmountDollars,
               paymentMethod:   "stripe",
               type:            "extension",
+              ...feeFields,
+            }, {
+              strict: true,
+              requireStripeFee: true,
             });
+            const extensionRevenueComplete = await revenueRecordCompleteInSupabase(
+              original_booking_id,
+              paymentIntent.id
+            );
+            if (!extensionRevenueComplete) {
+              throw new Error(`extension revenue verification failed for PI ${paymentIntent.id}`);
+            }
           } catch (revErr) {
-            console.error("stripe-webhook: extension revenue record error (non-fatal):", revErr.message);
+            console.error("stripe-webhook: extension revenue record error:", revErr.message);
+            return res.status(500).json({
+              received: false,
+              error: `extension revenue persistence failed for ${paymentIntent.id}`,
+            });
           }
 
           // Update public booked-dates.json availability.
@@ -1318,7 +1334,10 @@ export default async function handler(req, res) {
         console.log(`stripe-webhook: slingshot deposit pipeline succeeded (PI ${paymentIntent.id}) bookingId=${slingshotDepositResult.bookingId}`);
       } catch (err) {
         console.error(`stripe-webhook: slingshot deposit pipeline failed for PI ${paymentIntent.id}:`, err.message);
-        slingshotDepositResult = null;
+        return res.status(500).json({
+          received: false,
+          error: `slingshot deposit persistence failed for ${paymentIntent.id}`,
+        });
       }
 
       // Build the completion link
@@ -1463,6 +1482,10 @@ export default async function handler(req, res) {
       await saveWebhookBookingRecord(paymentIntent, feeFields);
     } catch (bookingErr) {
       console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
+      return res.status(500).json({
+        received: false,
+        error: `booking persistence failed for ${paymentIntent.id}`,
+      });
     }
 
     // Block the booked dates and mark the vehicle unavailable.
