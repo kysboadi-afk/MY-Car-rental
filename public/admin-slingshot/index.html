@@ -666,8 +666,8 @@
 <!-- Preview Site Modal (full-screen iframe) -->
 <div id="preview-modal-overlay">
   <div id="preview-topbar">
-    <span>🌐 Preview: <strong>www.slytrans.com</strong></span>
-    <a href="https://www.slytrans.com" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
+    <span>🌐 <span id="preview-mode-label">Live Preview</span>: <strong>www.slytrans.com</strong></span>
+    <a id="preview-open-link" href="https://www.slytrans.com" target="_blank" rel="noopener noreferrer">Open in new tab ↗</a>
     <button id="preview-close-btn" onclick="closePreviewModal()">✕ Close</button>
   </div>
   <iframe id="preview-iframe" src="" title="Renter Preview"></iframe>
@@ -829,9 +829,13 @@
       </button>
       <div class="topbar-page-title" id="page-title">Dashboard</div>
       <div class="topbar-actions">
-        <button class="btn btn-secondary btn-sm" onclick="openPreviewModal()" title="Preview website as a renter">
+        <button class="btn btn-secondary btn-sm" onclick="openPreviewModal('live')" title="Open live booking site">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          Preview Site
+          Open Live Site
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="openPreviewModal('test')" title="Open test booking site with availability override">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Open Test Site
         </button>
         <button class="btn btn-secondary btn-sm" onclick="refreshCurrentPage()" title="Refresh">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -3688,11 +3692,18 @@ function statusBadge(status) {
 }
 
 // ── Preview Site Modal ─────────────────────────────────────────────────────
-function openPreviewModal() {
+function openPreviewModal(mode) {
   const iframe = document.getElementById('preview-iframe');
-  if (!iframe.src || iframe.src === window.location.href) {
-    iframe.src = 'https://www.slytrans.com';
-  }
+  const isTestMode = mode === 'test';
+  const liveUrl = 'https://www.slytrans.com';
+  const previewUrl = isTestMode
+    ? `${liveUrl}/car.html?vehicle=slingshot&admin_override=true&test_mode=true`
+    : `${liveUrl}/car.html?vehicle=slingshot`;
+  iframe.src = previewUrl;
+  const openLink = document.getElementById('preview-open-link');
+  if (openLink) openLink.href = previewUrl;
+  const modeLabel = document.getElementById('preview-mode-label');
+  if (modeLabel) modeLabel.textContent = isTestMode ? 'Test Preview' : 'Live Preview';
   document.getElementById('preview-modal-overlay').classList.add('open');
 }
 
