@@ -137,7 +137,7 @@ async function unblockBookedDates(vehicleId, from, to) {
     load:    loadBookedDates,
     apply:   (data) => {
       if (!Array.isArray(data[vehicleId])) return;
-      data[vehicleId] = data[vehicleId].filter((r) => !(r.from === from && r.to === to));
+      data[vehicleId] = data[vehicleId].filter((r) => !(r.from <= to && r.to >= from));
     },
     save:    saveBookedDates,
     message: `Unblock dates for ${vehicleId}: ${from} to ${to}`,

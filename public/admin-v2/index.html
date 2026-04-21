@@ -5984,30 +5984,41 @@ function loadBlockedDates() {
   if (list)    list.style.display = 'none';
   if (empty)   empty.style.display = 'none';
 
-  fetch(API_BASE + '/api/booked-dates')
+  fetch(API_BASE + '/api/blocked-dates')
     .then((r) => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then((data) => {
       if (loading) loading.style.display = 'none';
-      const entries = [];
-      Object.keys(data).forEach((vid) => {
-        (data[vid] || []).forEach((range) => entries.push({ vehicleId: vid, from: range.from, to: range.to }));
-      });
+      const entries = Array.isArray(data?.blockedDates)
+        ? data.blockedDates.map((row) => ({
+            id: row.id,
+            numericId: Number.parseInt(String(row.id), 10),
+            vehicleId: row.vehicle_id,
+            from: row.start_date,
+            to: row.end_date,
+            reason: row.reason || '',
+          }))
+        : [];
       if (!entries.length) {
         if (empty) empty.style.display = '';
         return;
       }
-      entries.sort((a, b) => a.from.localeCompare(b.from));
+      entries.sort((a, b) => (a.from || '').localeCompare(b.from || ''));
       if (list) {
         list.style.display = '';
         list.innerHTML = `
           <table style="width:100%;" class="table-wrap">
-            <thead><tr><th>Vehicle</th><th>From</th><th>To</th></tr></thead>
+            <thead><tr><th>ID</th><th>Vehicle</th><th>From</th><th>To</th><th>Reason</th><th>Action</th></tr></thead>
             <tbody>
               ${entries.map((e) => `
                 <tr>
+                  <td>${esc(String(e.id || ''))}</td>
                   <td>${esc(VEHICLE_NAMES[e.vehicleId] || e.vehicleId)}</td>
                   <td>${esc(e.from)}</td>
                   <td>${esc(e.to)}</td>
+                  <td>${esc(e.reason || '')}</td>
+                  <td>${Number.isInteger(e.numericId) && e.numericId > 0
+                    ? `<button class="btn btn-danger btn-sm" onclick="deleteBlockedDate(${e.numericId})">Delete</button>`
+                    : '<span style="color:#888">N/A</span>'}</td>
                 </tr>`).join('')}
             </tbody>
           </table>`;
@@ -6017,6 +6028,29 @@ function loadBlockedDates() {
       showToast('Error loading blocked dates: ' + err.message, 'error');
       if (loading) loading.innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
     });
+}
+
+function deleteBlockedDate(id) {
+  if (!Number.isInteger(id) || id <= 0) {
+    showToast('Invalid blocked-date ID.', 'error');
+    return;
+  }
+  if (!confirm('Delete blocked date #' + id + '?')) return;
+
+  fetch(API_BASE + '/api/blocked-dates?id=' + encodeURIComponent(String(id)) + '&secret=' + encodeURIComponent(adminSecret), {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  })
+    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        showToast('Error: ' + (data.error || 'Unknown error'), 'error');
+      } else {
+        showToast('✅ Blocked date deleted.', 'success');
+        loadBlockedDates();
+      }
+    })
+    .catch((err) => showToast('Network error: ' + err.message, 'error'));
 }
 
 function blockDates() {
@@ -6073,7 +6107,7 @@ function unblockDates() {
       if (!ok) {
         showToast('Error: ' + (data.error || 'Unknown error'), 'error');
       } else if (data.removed === 0) {
-        showToast('No matching blocked range found for those exact dates.', 'info');
+        showToast('No overlapping blocked ranges found for those dates.', 'info');
       } else {
         showToast('✅ Dates unblocked. Those dates are now available for booking.', 'success');
         loadBlockedDates();

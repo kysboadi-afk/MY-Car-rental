@@ -970,7 +970,12 @@ export default async function handler(req, res) {
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
     const paymentType = (paymentIntent.metadata || {}).payment_type || "";
+    const isTestMode = process.env.STRIPE_SECRET_KEY.startsWith("sk_test_");
     logPaymentIntentReceived(event, paymentIntent);
+    if (isTestMode) {
+      console.log(`stripe-webhook: TEST MODE → do NOT create bookings or block dates (PI ${paymentIntent.id})`);
+      return res.status(200).json({ received: true, testMode: true });
+    }
 
     // Handle rental extension payment confirmations.
     if (paymentType === "rental_extension") {

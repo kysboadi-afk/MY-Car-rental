@@ -676,6 +676,10 @@ export default async function handler(req, res) {
     ? requestBody.paymentIntentId.trim()
     : "";
   const requestPickupTime = normalizeClockTime(requestBody.pickupTime);
+  const isTestMode = !!process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_test_");
+  if (isTestMode) {
+    console.log("[send-reservation-email] TEST MODE → do NOT create bookings, block dates, or update availability");
+  }
   // Recovery mode is inferred when success.html can provide paymentIntentId but
   // lost the form payload in sessionStorage (so pickupTime is absent).
   const usedRecoveryPath = !requestPickupTime && !!requestPaymentIntentId;
@@ -716,7 +720,7 @@ export default async function handler(req, res) {
     console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
     const isConfirmedPayment  = normalizedPaymentStatus === "confirmed";
     const isBalancePaymentReq = paymentType === "balance_payment";
-    if (isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
+    if (!isTestMode && isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
       try {
         await persistBooking(buildBookingRecord(bookingBody));
         console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
@@ -1000,7 +1004,7 @@ export default async function handler(req, res) {
     let persistedBookingId = bookingId || null;
     let pipelineResult = null;
     let attemptedBookingPersistence = false;
-    if (isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
+    if (!isTestMode && isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
       attemptedBookingPersistence = true;
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
       pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
@@ -1013,7 +1017,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!isBalancePayment && vehicleId) {
+    if (!isTestMode && !isBalancePayment && vehicleId) {
       // Emails are allowed only after a non-balance booking attempt actually ran
       // persistence and produced a verified booking + revenue record.
       const persistenceIssues = [];
@@ -1144,7 +1148,7 @@ export default async function handler(req, res) {
     // Vercel terminates the serverless function as soon as res.json() is called,
     // so any async work scheduled after that is not guaranteed to run.
     // Failures are non-fatal (emails already sent) and only logged.
-    if (isConfirmed && !isBalancePayment && vehicleId && pickup && returnDate) {
+    if (!isTestMode && isConfirmed && !isBalancePayment && vehicleId && pickup && returnDate) {
       try {
         await blockBookedDates(vehicleId, pickup, returnDate);
       } catch (err) {
