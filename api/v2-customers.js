@@ -109,7 +109,7 @@ async function findMostRecentCustomerByEmail(sb, email) {
   // when legacy duplicate email rows exist.
   const { data, error } = await sb.from("customers")
     .select("id, updated_at, created_at")
-    .ilike("email", normalizedEmail)
+    .eq("email", normalizedEmail)
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(1);

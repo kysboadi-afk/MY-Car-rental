@@ -39,9 +39,9 @@ function normalizeEmail(email) {
 }
 
 function normalizeCustomerName(name) {
-  if (typeof name !== "string") return "Unknown";
+  if (typeof name !== "string") return null;
   const trimmed = name.trim().replace(/\s+/g, " ");
-  if (!trimmed) return "Unknown";
+  if (!trimmed) return null;
   return trimmed
     .toLowerCase()
     .replace(/\b([a-z])/g, (m) => m.toUpperCase());
@@ -161,7 +161,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       payment_intent_id:   piId || null,
       vehicle_id:          booking.vehicleId,
       customer_id:         booking.customerId        || null,
-      customer_name:       normalizeCustomerName(booking.name),
+      customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
       customer_email:      normalizeEmail(booking.email),
       pickup_date:         booking.pickupDate  || null,
@@ -242,7 +242,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
     const phone = hasPhone ? normalizePhone(String(booking.phone).trim()) : null;
 
     const record = {
-      name:       normalizeCustomerName(booking.name),
+      name:       normalizeCustomerName(booking.name) || "Unknown",
       phone,
       email,
       updated_at: new Date().toISOString(),
@@ -254,7 +254,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
     if (email) {
       const { data } = await sb
         .from("customers")
-        .select("id, phone, total_bookings, total_spent, first_booking_date, no_show_count")
+        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
         .eq("email", email)
         .maybeSingle();
       if (data) { existing = data; }

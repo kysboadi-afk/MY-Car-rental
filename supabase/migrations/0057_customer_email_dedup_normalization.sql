@@ -143,7 +143,7 @@ WHERE c.id = r.id
 
 -- Enforce case-insensitive uniqueness forever.
 CREATE UNIQUE INDEX IF NOT EXISTS unique_customer_email_lower
-ON public.customers (LOWER(email))
+ON public.customers (LOWER(btrim(email)))
 WHERE email IS NOT NULL AND btrim(email) <> '';
 
 COMMIT;

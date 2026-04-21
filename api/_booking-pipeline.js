@@ -102,9 +102,9 @@ function normalizeEmail(email) {
 }
 
 function normalizeCustomerName(name) {
-  if (typeof name !== "string") return "";
+  if (typeof name !== "string") return null;
   const trimmed = name.trim().replace(/\s+/g, " ");
-  if (!trimmed) return "";
+  if (!trimmed) return null;
   return trimmed
     .toLowerCase()
     .replace(/\b([a-z])/g, (m) => m.toUpperCase());
@@ -262,7 +262,7 @@ export async function persistBooking(opts) {
 
   const booking = {
     bookingId,
-    name:            normalizeCustomerName(opts.name),
+    name:            normalizeCustomerName(opts.name) || "",
     phone:           opts.phone           || "",
     email:           normalizeEmail(opts.email) || "",
     vehicleId:       opts.vehicleId,
