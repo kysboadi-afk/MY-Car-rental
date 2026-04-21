@@ -488,6 +488,23 @@ test("F) determinism: sync does not create more rows when duplicate-email custom
   assert.equal(customersDb.length, before, "repeated sync must not insert extra duplicate customer rows");
 });
 
+test("F) determinism: sync matches legacy mixed-case email rows without creating duplicates", async () => {
+  resetState();
+  rrRows = [
+    { customer_phone: null, customer_name: "Case Legacy", customer_email: "legacy@example.com",
+      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid",
+      pickup_date: "2026-04-15", return_date: "2026-04-16", vehicle_id: "camry" },
+  ];
+  customersDb = [
+    { id: "cust-legacy", name: "Case Legacy", email: "LEGACY@EXAMPLE.COM", phone: null, updated_at: "2026-04-10T00:00:00Z" },
+  ];
+
+  const res = await runSync();
+  assert.equal(res._status, 200);
+  assert.equal(customersDb.length, 1, "sync should update legacy mixed-case email row instead of inserting a duplicate");
+});
+
 test("list: returns deduped customers for duplicate email/phone identities", async () => {
   resetState();
   rrRows = [];
