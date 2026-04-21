@@ -29,6 +29,7 @@ const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], a
 let bookedDatesStore = {};
 let fleetStatusStore = {};
 const supabaseBookingsStore = {};
+const stripePiStore = {};
 const sentEmails = [];
 let skipSupabaseUpsertPi = null;
 let skipSupabaseUpsertCount = 0;
@@ -37,10 +38,34 @@ let skipSupabaseUpsertCount = 0;
 mock.module("stripe", {
   defaultExport: class FakeStripe {
     constructor() {}
+    paymentIntents = {
+      retrieve: async (id, opts = {}) => {
+        const src = stripePiStore[id] || { id, amount: 0, metadata: {} };
+        const shouldExpandBt = Array.isArray(opts.expand) &&
+          opts.expand.includes("latest_charge.balance_transaction");
+        if (!shouldExpandBt) return { ...src };
+        const grossCents = Number(src.amount || 0);
+        const feeCents = Math.round(grossCents * 0.029 + 30);
+        return {
+          ...src,
+          latest_charge: {
+            id: `ch_${id}`,
+            balance_transaction: {
+              id: `txn_${id}`,
+              fee: feeCents,
+              net: Math.max(0, grossCents - feeCents),
+            },
+          },
+        };
+      },
+    };
     get webhooks() {
       return {
         constructEvent: (_body, _sig, _secret) => {
-          return JSON.parse(_body.toString());
+          const event = JSON.parse(_body.toString());
+          const pi = event?.data?.object;
+          if (pi?.id) stripePiStore[pi.id] = { ...pi };
+          return event;
         },
       };
     }
@@ -88,7 +113,17 @@ mock.module("./_bookings.js", {
 
 mock.module("./_booking-automation.js", {
   namedExports: {
-    autoCreateRevenueRecord:    async (b)         => { automationCalls.revenue.push({ ...b }); },
+    autoCreateRevenueRecord:    async (b)         => {
+      automationCalls.revenue.push({ ...b });
+      const key = b.bookingId || b.paymentIntentId;
+      if (!key) return;
+      supabaseRevenueStore[key] = {
+        id: `rr_${key}`,
+        payment_intent_id: b.paymentIntentId || null,
+        gross_amount: b.amountPaid ?? null,
+        stripe_fee: b.stripeFee ?? null,
+      };
+    },
     autoUpsertCustomer:         async (b, s)       => { automationCalls.customer.push({ ...b, countStats: s }); },
     autoUpsertBooking:          async (b)          => {
       automationCalls.booking.push({ ...b });
@@ -274,6 +309,7 @@ const { default: handler } = await import("./stripe-webhook.js");
 function resetStore() {
   for (const k of Object.keys(bookingsStore)) delete bookingsStore[k];
   for (const k of Object.keys(supabaseBookingsStore)) delete supabaseBookingsStore[k];
+  for (const k of Object.keys(stripePiStore)) delete stripePiStore[k];
   bookedDatesStore = {};
   fleetStatusStore = {};
 }

@@ -256,6 +256,17 @@ function resolveBookingStatus(paymentType) {
     : "booked_paid";
 }
 
+function formatSupabaseError(err) {
+  if (!err) return "unknown Supabase error";
+  if (typeof err === "string") return err;
+  const parts = [];
+  if (err.message) parts.push(`message=${err.message}`);
+  if (err.code) parts.push(`code=${err.code}`);
+  if (err.details) parts.push(`details=${err.details}`);
+  if (err.hint) parts.push(`hint=${err.hint}`);
+  return parts.length > 0 ? parts.join(" | ") : JSON.stringify(err);
+}
+
 /**
  * Looks up a customer's UUID in the Supabase customers table by phone then email.
  * Returns null if not found or if Supabase is unavailable.
@@ -306,9 +317,66 @@ async function bookingExistsInSupabase(bookingId, paymentIntentId) {
       if (data?.id) return true;
     }
   } catch (err) {
-    console.error("stripe-webhook: bookingExistsInSupabase lookup error:", err.message);
+    console.error("stripe-webhook: bookingExistsInSupabase lookup error:", formatSupabaseError(err));
   }
   return false;
+}
+
+async function revenueRecordCompleteInSupabase(bookingId, paymentIntentId) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return false;
+  if (!bookingId && !paymentIntentId) return false;
+  try {
+    let row = null;
+    if (paymentIntentId) {
+      const { data, error } = await sb
+        .from("revenue_records")
+        .select("id, gross_amount, stripe_fee, payment_intent_id")
+        .eq("payment_intent_id", paymentIntentId)
+        .maybeSingle();
+      if (error) throw error;
+      row = data || null;
+    }
+    if (!row && bookingId) {
+      const { data, error } = await sb
+        .from("revenue_records")
+        .select("id, gross_amount, stripe_fee, payment_intent_id")
+        .eq("booking_id", bookingId)
+        .maybeSingle();
+      if (error) throw error;
+      row = data || null;
+    }
+    if (!row) return false;
+    return row.gross_amount != null &&
+      row.stripe_fee != null &&
+      !!row.payment_intent_id;
+  } catch (err) {
+    console.error("stripe-webhook: revenueRecordCompleteInSupabase lookup error:", formatSupabaseError(err));
+    return false;
+  }
+}
+
+async function resolveStripeFeeFields(stripe, paymentIntent) {
+  const piId = paymentIntent?.id;
+  if (!piId) throw new Error("missing paymentIntent.id for stripe fee lookup");
+
+  const expanded = await stripe.paymentIntents.retrieve(piId, {
+    expand: ["latest_charge.balance_transaction"],
+  });
+  const charge = expanded?.latest_charge;
+  const bt = charge && typeof charge === "object" ? charge.balance_transaction : null;
+  if (!bt || typeof bt !== "object") {
+    throw new Error(`missing latest_charge.balance_transaction for PI ${piId}`);
+  }
+  const stripeFee = bt.fee != null ? Number(bt.fee) / 100 : null;
+  const stripeNet = bt.net != null ? Number(bt.net) / 100 : null;
+  if (!Number.isFinite(stripeFee) || stripeFee < 0) {
+    throw new Error(`invalid stripe fee for PI ${piId}`);
+  }
+  return {
+    stripeFee: Math.round(stripeFee * 100) / 100,
+    stripeNet: Number.isFinite(stripeNet) ? (Math.round(stripeNet * 100) / 100) : null,
+  };
 }
 
 async function bookingExistsInJson(vehicleId, bookingId, paymentIntentId) {
@@ -446,6 +514,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentIntentId:       paymentIntent.id,
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
+    requireStripeFee:      true,
+    strictPersistence:     true,
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
@@ -455,14 +525,28 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   let result = null;
   let supabaseExists = false;
   let jsonExists = false;
+  let revenueComplete = false;
+  let lastPersistError = null;
   const envAttempts = parseInt(process.env.WEBHOOK_BOOKING_RETRY_ATTEMPTS || "", 10);
   const maxAttempts = Number.isFinite(envAttempts) && envAttempts > 0 ? envAttempts : 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    result = await persistBooking(persistPayload);
+    try {
+      result = await persistBooking(persistPayload);
+      lastPersistError = null;
+    } catch (err) {
+      lastPersistError = err;
+      result = {
+        ok: false,
+        bookingId: persistPayload.bookingId,
+        booking: persistPayload,
+        errors: [err.message],
+      };
+    }
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
+    revenueComplete = await revenueRecordCompleteInSupabase(persistPayload.bookingId, paymentIntent.id);
     jsonExists = await bookingExistsInJson(vehicle_id, persistPayload.bookingId, paymentIntent.id);
 
-    if (supabaseExists && jsonExists) {
+    if (supabaseExists && jsonExists && revenueComplete) {
       if (!result.ok) {
         console.warn(
           `stripe-webhook: PI ${paymentIntent.id} persisted after recovery attempt ${attempt}; initial errors: ${result.errors.join("; ")}`
@@ -475,14 +559,15 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
     console.error(
       `stripe-webhook: booking persistence verification failed for PI ${paymentIntent.id} attempt=${attempt} ` +
-      `supabaseExists=${supabaseExists} jsonExists=${jsonExists} errors=${(result.errors || []).join("; ")}`
+      `supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists} ` +
+      `errors=${(result.errors || []).join("; ")}${lastPersistError ? ` lastPersistError=${lastPersistError.message}` : ""}`
     );
   }
 
-  if (!supabaseExists || !jsonExists) {
+  if (!supabaseExists || !jsonExists || !revenueComplete) {
     const failureReason =
       `stripe-webhook: booking persistence guarantee failed for PI ${paymentIntent.id} ` +
-      `(supabaseExists=${supabaseExists} jsonExists=${jsonExists})`;
+      `(supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists})`;
     await sendBookingPersistenceAlert(paymentIntent, failureReason, {
       booking_id: persistPayload.bookingId,
       vehicle_id,
@@ -490,7 +575,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       return_date,
       attempts: maxAttempts,
     });
-    throw new Error(failureReason);
+    throw new Error(`${failureReason}${lastPersistError ? ` lastPersistError=${lastPersistError.message}` : ""}`);
   }
 
   // If the booking is fully paid and the pickup time has already arrived
@@ -1192,45 +1277,48 @@ export default async function handler(req, res) {
       // correct order (customer → booking → revenue record → blocked_dates).
       // Extra slingshot-specific fields are passed through into the booking record.
       const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
-      const slingshotDepositResult = await persistBooking({
-        bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
-        name:                     renter_name || "",
-        phone:                    renter_phone ? normalizePhone(renter_phone) : "",
-        email:                    email || "",
-        vehicleId:                vehicle_id,
-        vehicleName:              meta.vehicle_name || vehicle_id,
-        pickupDate:               pickup_date,
-        pickupTime:               meta.pickup_time || "",
-        returnDate:               return_date,
-        returnTime:               meta.return_time || "",
-        location:                 DEFAULT_LOCATION,
-        status:                   "reserved_unpaid",
-        amountPaid,
-        totalPrice:               Number(full_rental_amount || 0) || amountPaid,
-        paymentIntentId:          paymentIntent.id,
-        paymentMethod:            "stripe",
-        source:                   "stripe_webhook",
-        // Extra slingshot-specific fields passed through into the booking record
-        paymentStatus:            "deposit_paid",
-        slingshot_payment_status: "deposit_paid",
-        bookingStatus:            "reserved",
-        slingshot_booking_status: "reserved",
-        rentalPrice:              Number(rental_price || 0),
-        securityDeposit:          Number(security_deposit || 0),
-        remainingBalance:         Number(remaining_balance || rental_price || 0),
-        fullRentalAmount:         Number(full_rental_amount || 0),
-        rentalDuration:           rental_duration || "",
-        paymentLinkToken,
-        stripeCustomerId:         paymentIntent.customer          || null,
-        stripePaymentMethodId:    paymentIntent.payment_method    || null,
-      });
-
-      if (!slingshotDepositResult.ok) {
-        console.error(
-          `stripe-webhook: slingshot deposit pipeline failed for PI ${paymentIntent.id} — errors: ${slingshotDepositResult.errors.join("; ")}`
-        );
-      } else {
+      let slingshotDepositResult = null;
+      try {
+        const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+        slingshotDepositResult = await persistBooking({
+          bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
+          name:                     renter_name || "",
+          phone:                    renter_phone ? normalizePhone(renter_phone) : "",
+          email:                    email || "",
+          vehicleId:                vehicle_id,
+          vehicleName:              meta.vehicle_name || vehicle_id,
+          pickupDate:               pickup_date,
+          pickupTime:               meta.pickup_time || "",
+          returnDate:               return_date,
+          returnTime:               meta.return_time || "",
+          location:                 DEFAULT_LOCATION,
+          status:                   "reserved_unpaid",
+          amountPaid,
+          totalPrice:               Number(full_rental_amount || 0) || amountPaid,
+          paymentIntentId:          paymentIntent.id,
+          paymentMethod:            "stripe",
+          source:                   "stripe_webhook",
+          requireStripeFee:         true,
+          strictPersistence:        true,
+          // Extra slingshot-specific fields passed through into the booking record
+          paymentStatus:            "deposit_paid",
+          slingshot_payment_status: "deposit_paid",
+          bookingStatus:            "reserved",
+          slingshot_booking_status: "reserved",
+          rentalPrice:              Number(rental_price || 0),
+          securityDeposit:          Number(security_deposit || 0),
+          remainingBalance:         Number(remaining_balance || rental_price || 0),
+          fullRentalAmount:         Number(full_rental_amount || 0),
+          rentalDuration:           rental_duration || "",
+          paymentLinkToken,
+          stripeCustomerId:         paymentIntent.customer          || null,
+          stripePaymentMethodId:    paymentIntent.payment_method    || null,
+          ...feeFields,
+        });
         console.log(`stripe-webhook: slingshot deposit pipeline succeeded (PI ${paymentIntent.id}) bookingId=${slingshotDepositResult.bookingId}`);
+      } catch (err) {
+        console.error(`stripe-webhook: slingshot deposit pipeline failed for PI ${paymentIntent.id}:`, err.message);
+        slingshotDepositResult = null;
       }
 
       // Build the completion link
@@ -1371,7 +1459,8 @@ export default async function handler(req, res) {
     // Persist booking first so slow/non-critical side effects cannot prevent
     // core booking + revenue writes from happening.
     try {
-      await saveWebhookBookingRecord(paymentIntent);
+      const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+      await saveWebhookBookingRecord(paymentIntent, feeFields);
     } catch (bookingErr) {
       console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
     }
