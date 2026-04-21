@@ -206,6 +206,29 @@
       "stripePaymentMethodId": "pm_1TOToQPo7fICjrtZ3Yf5bPqi",
       "activatedAt": "2026-04-21T08:00:41.399Z",
       "updatedAt": "2026-04-21T08:00:41.399Z"
+    },
+    {
+      "bookingId": "7fd93c8fd1fb5981a8fdc28888a77e5d",
+      "name": "Sylvester Boadi",
+      "phone": "12139166606",
+      "email": "slyservices@supports-info.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-21",
+      "pickupTime": "08:00",
+      "returnDate": "2026-04-25",
+      "returnTime": "08:00",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "reserved_unpaid",
+      "amountPaid": 374.85,
+      "totalPrice": 374.85,
+      "paymentIntentId": "pi_3TOhDrPo7fICjrtZ2lcYnAtA",
+      "paymentLink": "https://www.slytrans.com/balance.html?v=camry&p=2026-04-21&r=2026-04-25&pp=1&n=Sylvester%20Boadi&e=slyservices%40supports-info.com&ph=12139166606&pt=08%3A00&rt=08%3A00&car=Camry%202012",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-21T16:33:03.489Z",
+      "source": "public_booking"
     }
   ],
   "camry2013": [
