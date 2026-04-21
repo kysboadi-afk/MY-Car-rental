@@ -120,6 +120,7 @@ function isSupabaseConfigured() {
  * @param {string}  [opts.stripePaymentMethodId]
  * @param {string}  [opts.protectionPlanTier]
  * @param {boolean} [opts.requireStripeFee] - when true, Stripe bookings fail if fee data is missing
+ * @param {boolean} [opts.strictPersistence] - when true, throw on core persistence failure
  * @param {object}  [opts.*]             - any extra fields are passed through into the booking record
  *
  * @returns {Promise<{
@@ -132,6 +133,7 @@ function isSupabaseConfigured() {
  */
 export async function persistBooking(opts) {
   const traceId = crypto.randomBytes(6).toString("hex");
+  const strictPersistence = !!opts.strictPersistence;
 
   // ── 1. Log booking start ──────────────────────────────────────────────────
   pipelineLog("info", traceId, "booking_start", {
@@ -142,6 +144,7 @@ export async function persistBooking(opts) {
     source:      opts.source || "unknown",
   });
 
+  const errors = [];
   const warnings = [];
   const fatalErrors = [];
 
@@ -180,7 +183,7 @@ export async function persistBooking(opts) {
     "vehicleId","vehicleName","name","phone","email","pickupDate","pickupTime",
     "returnDate","returnTime","amountPaid","totalPrice","paymentMethod",
     "paymentIntentId","paymentLink","status","notes","source","location","bookingId",
-    "requireStripeFee",
+    "requireStripeFee","strictPersistence",
   ]);
   for (const [key, val] of Object.entries(opts)) {
     if (!STANDARD_OPTS.has(key) && val !== undefined) {
@@ -191,11 +194,13 @@ export async function persistBooking(opts) {
   // ── 3. Supabase persistence (BEFORE emails) ───────────────────────────────
   const sbConfigured = isSupabaseConfigured();
   if (!sbConfigured) {
-    const msg = "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — aborting booking persistence";
-    pipelineLog("error", traceId, "supabase_not_configured", {
+    const msg = strictPersistence
+      ? "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — aborting booking persistence"
+      : "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set — skipping Supabase sync";
+    pipelineLog(strictPersistence ? "error" : "warn", traceId, "supabase_not_configured", {
       message: msg,
     });
-    throw new Error(msg);
+    if (strictPersistence) throw new Error(msg);
   }
 
   let supabaseOk = true;
@@ -206,7 +211,9 @@ export async function persistBooking(opts) {
       autoUpsertCustomer(booking, false)
     );
     if (!custResult.ok) {
-      fatalErrors.push(`upsert_customer: ${custResult.error}`);
+      const err = `upsert_customer: ${custResult.error}`;
+      errors.push(err);
+      if (strictPersistence) fatalErrors.push(err);
       supabaseOk = false;
     }
 
@@ -215,16 +222,23 @@ export async function persistBooking(opts) {
       autoUpsertBooking(booking, { strict: true })
     );
     if (!bookingResult.ok) {
-      fatalErrors.push(`upsert_booking: ${bookingResult.error}`);
+      const err = `upsert_booking: ${bookingResult.error}`;
+      errors.push(err);
+      if (strictPersistence) fatalErrors.push(err);
       supabaseOk = false;
     }
 
     // Step C: revenue record
     const revResult = await runStep(traceId, "create_revenue_record", () =>
-      autoCreateRevenueRecord(booking, { strict: true, requireStripeFee: !!opts.requireStripeFee })
+      autoCreateRevenueRecord(booking, {
+        strict: strictPersistence,
+        requireStripeFee: !!opts.requireStripeFee,
+      })
     );
     if (!revResult.ok) {
-      fatalErrors.push(`create_revenue_record: ${revResult.error}`);
+      const err = `create_revenue_record: ${revResult.error}`;
+      errors.push(err);
+      if (strictPersistence) fatalErrors.push(err);
       supabaseOk = false;
     }
 
@@ -234,13 +248,15 @@ export async function persistBooking(opts) {
         autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking")
       );
       if (!blockResult.ok) {
-        warnings.push(`create_blocked_date: ${blockResult.error}`);
+        const warn = `create_blocked_date: ${blockResult.error}`;
+        warnings.push(warn);
+        errors.push(warn);
         // Non-fatal for core booking + revenue persistence
       }
     }
   }
 
-  if (fatalErrors.length > 0) {
+  if (strictPersistence && fatalErrors.length > 0) {
     pipelineLog("error", traceId, "booking_persist_result", {
       bookingId,
       ok: false,
@@ -259,17 +275,22 @@ export async function persistBooking(opts) {
   } catch (err) {
     const jsonErr = formatError(err);
     pipelineLog("error", traceId, "json_save_error", { bookingId, error: jsonErr });
-    throw new Error(`json_save: ${jsonErr}`);
+    const jsonMsg = `json_save: ${jsonErr}`;
+    errors.push(jsonMsg);
+    if (strictPersistence) throw new Error(jsonMsg);
   }
 
   // ── 5. Final status ───────────────────────────────────────────────────────
-  pipelineLog("info", traceId, "booking_persist_result", {
+  const ok = strictPersistence ? errors.length === 0 : (errors.length === 0 || supabaseOk);
+  pipelineLog(ok ? "info" : "error", traceId, "booking_persist_result", {
     bookingId,
-    ok: true,
+    ok,
     supabaseOk,
+    errorCount: errors.length,
+    errors: errors.length > 0 ? errors : undefined,
     warningCount: warnings.length,
     warnings: warnings.length > 0 ? warnings : undefined,
   });
 
-  return { ok: true, bookingId, booking, supabaseOk, errors: warnings };
+  return { ok, bookingId, booking, supabaseOk, errors };
 }

@@ -515,6 +515,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
     requireStripeFee:      true,
+    strictPersistence:     true,
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
@@ -1298,6 +1299,7 @@ export default async function handler(req, res) {
           paymentMethod:            "stripe",
           source:                   "stripe_webhook",
           requireStripeFee:         true,
+          strictPersistence:        true,
           // Extra slingshot-specific fields passed through into the booking record
           paymentStatus:            "deposit_paid",
           slingshot_payment_status: "deposit_paid",
