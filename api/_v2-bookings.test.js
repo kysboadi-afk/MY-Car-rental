@@ -44,7 +44,7 @@ function makeReq(body, origin = "https://www.slytrans.com") {
 // bookings.json in-memory store keyed by vehicleId
 const bookingsStore = {};
 // Automation call recorder
-const automationCalls = { revenue: [], customer: [], booking: [], blocked: [] };
+const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], releaseBlocked: [] };
 // SMS calls
 const smsCalls = [];
 // Supabase mock — not used by these tests (automation is mocked out)
@@ -79,10 +79,11 @@ mock.module("./_github-retry.js", {
 
 mock.module("./_booking-automation.js", {
   namedExports: {
-    autoCreateRevenueRecord: async (b) => { automationCalls.revenue.push({ ...b }); },
-    autoUpsertCustomer:      async (b, s) => { automationCalls.customer.push({ ...b, countStats: s }); },
-    autoUpsertBooking:       async (b) => { automationCalls.booking.push({ ...b }); },
-    autoCreateBlockedDate:   async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
+    autoCreateRevenueRecord:        async (b) => { automationCalls.revenue.push({ ...b }); },
+    autoUpsertCustomer:             async (b, s) => { automationCalls.customer.push({ ...b, countStats: s }); },
+    autoUpsertBooking:              async (b) => { automationCalls.booking.push({ ...b }); },
+    autoCreateBlockedDate:          async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
+    autoReleaseBlockedDateOnReturn: async (vid, ref) => { automationCalls.releaseBlocked.push({ vehicleId: vid, bookingRef: ref }); },
     parseTime12h:            (t) => {
       if (!t) return null;
       const m = String(t).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
@@ -231,6 +232,7 @@ function resetCalls() {
   automationCalls.customer.length = 0;
   automationCalls.booking.length = 0;
   automationCalls.blocked.length = 0;
+  automationCalls.releaseBlocked.length = 0;
   smsCalls.length = 0;
 }
 
@@ -624,11 +626,20 @@ test("lifecycle: complete booking (active_rental → completed_rental) increment
   assert.ok(statsCall, "autoUpsertCustomer must be called with countStats=true on completion");
 });
 
-test("lifecycle: completing a booking auto-sets completedAt", async () => {
+test("lifecycle: completing a booking auto-sets completedAt and actualReturnTime", async () => {
   resetStore(); resetCalls();
   const r1 = makeRes();
   await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
   const { bookingId } = r1._body.booking;
+
+  // Must first activate before completing
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
 
   const r2 = makeRes();
   await handler(makeReq({
@@ -640,6 +651,7 @@ test("lifecycle: completing a booking auto-sets completedAt", async () => {
   }), r2);
   assert.equal(r2._status, 200);
   assert.ok(r2._body.booking.completedAt, "completedAt must be set automatically on completion");
+  assert.ok(r2._body.booking.actualReturnTime, "actualReturnTime must be set automatically on completion");
 });
 
 test("lifecycle: activating a booking auto-sets activatedAt", async () => {
@@ -680,6 +692,16 @@ test("lifecycle: completing a booking removes its date range from booked-dates.j
   await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
   const { bookingId } = r1._body.booking;
   githubPuts.length = 0; // clear setup calls
+
+  // Activate first (required by the safety guard)
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
+  githubPuts.length = 0; // clear activation calls
 
   await handler(makeReq({
     secret:    "test-admin-secret",
@@ -730,6 +752,59 @@ test("lifecycle: cancelling a booking removes its date range from booked-dates.j
 // ═══════════════════════════════════════════════════════════════════════════════
 // 9. PAYMENT FIELD COMPUTATION (via autoUpsertBooking args)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Safety guard + return flow ──────────────────────────────────────────────
+
+test("returned: completing a non-active booking returns 409", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+  // Booking is currently booked_paid — should NOT be completable without activating first
+
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), r2);
+  assert.equal(r2._status, 409, `Expected 409 when completing non-active booking, got ${r2._status}: ${JSON.stringify(r2._body)}`);
+  assert.ok(r2._body.error.includes("active"), "Error must mention active status requirement");
+});
+
+test("returned: completing an active booking calls autoReleaseBlockedDateOnReturn", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+
+  // Activate
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
+  resetCalls();
+
+  // Complete (Return)
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), r2);
+  assert.equal(r2._status, 200, `Expected 200 on return, got ${r2._status}: ${JSON.stringify(r2._body)}`);
+  assert.ok(
+    automationCalls.releaseBlocked.some((c) => c.vehicleId === "camry" && c.bookingRef === bookingId),
+    "autoReleaseBlockedDateOnReturn must be called with vehicleId and bookingId on completion"
+  );
+});
 
 test("payment: amountPaid=0, totalPrice=200 → Supabase sync has unpaid status", async () => {
   resetStore(); resetCalls();

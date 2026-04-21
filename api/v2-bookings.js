@@ -34,6 +34,7 @@ import {
   autoUpsertCustomer,
   autoUpsertBooking,
   autoCreateBlockedDate,
+  autoReleaseBlockedDateOnReturn,
   parseTime12h,
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -439,7 +440,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -450,9 +451,24 @@ export default async function handler(req, res) {
       if (safeUpdates.status === "active_rental" && !safeUpdates.activatedAt) {
         safeUpdates.activatedAt = safeUpdates.updatedAt;
       }
-      // Auto-stamp completedAt when an admin marks the rental as finished
-      if (safeUpdates.status === "completed_rental" && !safeUpdates.completedAt) {
-        safeUpdates.completedAt = safeUpdates.updatedAt;
+      // Auto-stamp completedAt and actualReturnTime when an admin marks the rental as returned.
+      // Safety guard: only allow this transition when the booking is currently active.
+      if (safeUpdates.status === "completed_rental") {
+        const currentBooking = !sbOnlyRow
+          ? (checkData[vehicleId] || []).find((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
+          : null;
+        const currentStatus = currentBooking?.status || (sbOnlyRow ? DB_TO_APP_STATUS[sbOnlyRow.status] : null);
+        if (currentStatus && currentStatus !== "active_rental") {
+          return res.status(409).json({
+            error: `Cannot mark as returned: booking must be active (current status: ${currentStatus})`,
+          });
+        }
+        if (!safeUpdates.completedAt) {
+          safeUpdates.completedAt = safeUpdates.updatedAt;
+        }
+        if (!safeUpdates.actualReturnTime) {
+          safeUpdates.actualReturnTime = safeUpdates.updatedAt;
+        }
       }
 
       // ── Supabase direct update (primary path when configured) ──────────────
@@ -476,6 +492,7 @@ export default async function handler(req, res) {
               updated_at: safeUpdates.updatedAt,
               ...(safeUpdates.activatedAt ? { activated_at: safeUpdates.activatedAt } : {}),
               ...(safeUpdates.completedAt ? { completed_at: safeUpdates.completedAt } : {}),
+              ...(safeUpdates.actualReturnTime ? { actual_return_time: safeUpdates.actualReturnTime } : {}),
               ...(safeUpdates.notes !== undefined  ? { notes: safeUpdates.notes } : {}),
               ...(safeUpdates.returnDate !== undefined ? { return_date: safeUpdates.returnDate } : {}),
               ...(safeUpdates.returnTime !== undefined ? { return_time: parseTime12h(safeUpdates.returnTime) } : {}),
@@ -792,6 +809,27 @@ export default async function handler(req, res) {
         } catch (tripErr) {
           console.error("v2-bookings: trip recording failed (non-fatal):", tripErr.message);
         }
+
+        // ── Release blocked_dates row + structured return log ─────────────
+        // Trim the Supabase blocked_dates range to end today so that
+        // /api/booked-dates reflects the actual occupancy period after an
+        // early return (original end_date stays unchanged only when the vehicle
+        // was returned on time or late).
+        try {
+          await autoReleaseBlockedDateOnReturn(
+            updatedBooking.vehicleId,
+            updatedBooking.bookingId || null
+          );
+        } catch (releaseErr) {
+          console.error("v2-bookings: autoReleaseBlockedDateOnReturn failed (non-fatal):", releaseErr.message);
+        }
+
+        console.log("[BOOKING_RETURNED]", {
+          booking_ref:       updatedBooking.bookingId,
+          vehicle_id:        updatedBooking.vehicleId,
+          actual_return_time: safeUpdates.actualReturnTime,
+          original_return:   updatedBooking.returnDate,
+        });
       } else if (updatedBooking) {
         // Sync any other status change (cancelled, reserved_unpaid, etc.)
         // Also re-sync when returnDate/returnTime were edited so Supabase and
