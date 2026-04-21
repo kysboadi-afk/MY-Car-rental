@@ -3697,8 +3697,8 @@ function openPreviewModal(mode) {
   const isTestMode = mode === 'test';
   const liveUrl = 'https://www.slytrans.com';
   const previewUrl = isTestMode
-    ? `${liveUrl}/car.html?vehicle=camry&admin_override=true&test_mode=true`
-    : `${liveUrl}/car.html?vehicle=camry`;
+    ? `${liveUrl}/car.html?vehicle=slingshot&admin_override=true&test_mode=true`
+    : `${liveUrl}/car.html?vehicle=slingshot`;
   iframe.src = previewUrl;
   const openLink = document.getElementById('preview-open-link');
   if (openLink) openLink.href = previewUrl;
