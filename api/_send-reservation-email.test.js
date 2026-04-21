@@ -13,7 +13,7 @@ process.env.SMTP_HOST = "smtp.test.invalid";
 process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
-process.env.STRIPE_SECRET_KEY = "sk_test_mock";
+process.env.STRIPE_SECRET_KEY = "sk_live_mock";
 
 // ─── Nodemailer mock ────────────────────────────────────────────────────────
 // Must be registered before the handler module is imported so the
@@ -611,6 +611,30 @@ test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
   globalThis.fetch = originalFetch;
 
   assert.equal(fetchCalls.length, 0, "GitHub API should not be called for a failed payment (neither blockBookedDates nor markVehicleUnavailable)");
+});
+
+test("test mode — booking persistence and availability updates are skipped", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  const savedStripeKey = process.env.STRIPE_SECRET_KEY;
+  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
+  process.env.GITHUB_TOKEN = "test-token";
+  process.env.STRIPE_SECRET_KEY = "sk_test_mock";
+
+  try {
+    const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+    const res = makeRes();
+    await handler(req, res);
+    assert.equal(res._status, 200);
+    assert.equal(fetchCalls.length, 0, "Test mode must not update bookings.json, booked-dates.json, or fleet-status.json");
+  } finally {
+    delete process.env.GITHUB_TOKEN;
+    process.env.STRIPE_SECRET_KEY = savedStripeKey;
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("customer email failure returns 200 — owner already received the booking alert", async () => {

@@ -50,6 +50,10 @@
     {
       "path": "/api/revenue-self-heal",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cleanup-blocked-dates",
+      "schedule": "0 2 * * *"
     }
   ]
 }

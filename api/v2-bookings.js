@@ -137,7 +137,7 @@ async function unblockBookedDates(vehicleId, from, to) {
     load:    loadBookedDates,
     apply:   (data) => {
       if (!Array.isArray(data[vehicleId])) return;
-      data[vehicleId] = data[vehicleId].filter((r) => !(r.from === from && r.to === to));
+      data[vehicleId] = data[vehicleId].filter((r) => !(r.from <= to && r.to >= from));
     },
     save:    saveBookedDates,
     message: `Unblock dates for ${vehicleId}: ${from} to ${to}`,
@@ -623,7 +623,8 @@ export default async function handler(req, res) {
           updatedBooking.vehicleId,
           updatedBooking.pickupDate,
           updatedBooking.returnDate,
-          "booking"
+          "booking",
+          updatedBooking.bookingId || null
         );
         // Send booking confirmation SMS when status transitions to booked_paid
         if (newStatus === "booked_paid" && updatedBooking.phone &&
@@ -803,7 +804,8 @@ export default async function handler(req, res) {
             updatedBooking.vehicleId,
             updatedBooking.pickupDate,
             updatedBooking.returnDate,
-            "booking"
+            "booking",
+            updatedBooking.bookingId || null
           );
           await blockBookedDates(updatedBooking.vehicleId, updatedBooking.pickupDate, updatedBooking.returnDate).catch((err) => {
             console.warn("v2-bookings: blockBookedDates on returnDate update failed (non-fatal):", err.message);

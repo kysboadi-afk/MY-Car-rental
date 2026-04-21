@@ -14,8 +14,8 @@
 //     "to":        "YYYY-MM-DD"
 //   }
 //
-// The endpoint removes every stored range whose [from, to] exactly matches the
-// requested range.  It does NOT perform partial overlap removal.
+// The endpoint removes every stored range whose [from, to] overlaps the
+// requested range.
 
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -112,11 +112,11 @@ export default async function handler(req, res) {
     let removed = 0;
     await updateJsonFileWithRetry({
       load:    loadBookedDates,
-      // apply is idempotent: filter removes exact matches; if already gone, it's a no-op
+      // apply is idempotent: filter removes overlaps; if already gone, it's a no-op
       apply:   (data) => {
         const before = (data[vehicleId] || []).length;
         data[vehicleId] = (data[vehicleId] || []).filter(
-          (r) => !(r.from === from && r.to === to)
+          (r) => !(r.from <= to && r.to >= from)
         );
         removed = before - data[vehicleId].length;
       },
@@ -136,8 +136,8 @@ export default async function handler(req, res) {
             .from("blocked_dates")
             .delete()
             .eq("vehicle_id", vehicleId)
-            .eq("start_date", from)
-            .eq("end_date", to);
+            .lte("start_date", to)
+            .gte("end_date", from);
           if (sbErr) {
             console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
           }

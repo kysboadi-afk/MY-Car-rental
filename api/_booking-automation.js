@@ -557,21 +557,30 @@ export async function autoUpsertBooking(booking, opts = {}) {
  * Inserts a blocked_dates row for a booking period.
  * Skipped silently when Supabase is not configured.
  *
- * @param {string} vehicleId  - vehicle_id text key
- * @param {string} startDate  - YYYY-MM-DD
- * @param {string} endDate    - YYYY-MM-DD
- * @param {string} reason     - 'booking' | 'maintenance' | 'manual'
+ * @param {string} vehicleId   - vehicle_id text key
+ * @param {string} startDate   - YYYY-MM-DD
+ * @param {string} endDate     - YYYY-MM-DD
+ * @param {string} reason      - 'booking' | 'maintenance' | 'manual'
+ * @param {string} [bookingRef] - optional booking_ref foreign key (for 'booking' reason)
  */
-export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking") {
+export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking", bookingRef = null) {
+  if (!vehicleId || !startDate || !endDate) {
+    throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
+  }
+  if (new Date(startDate) > new Date(endDate)) {
+    throw new Error("Invalid date range: startDate must be on or before endDate");
+  }
   const sb = getSupabaseAdmin();
   if (!sb) return;
-  if (!vehicleId || !startDate || !endDate) return;
+
+  const row = { vehicle_id: vehicleId, start_date: startDate, end_date: endDate, reason };
+  if (bookingRef) row.booking_ref = bookingRef;
 
   try {
     const { error } = await sb
       .from("blocked_dates")
       .upsert(
-        { vehicle_id: vehicleId, start_date: startDate, end_date: endDate, reason },
+        row,
         { onConflict: "vehicle_id,start_date,end_date,reason", ignoreDuplicates: true }
       );
     if (error) {

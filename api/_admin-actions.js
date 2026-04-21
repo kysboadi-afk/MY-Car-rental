@@ -2029,7 +2029,7 @@ async function toolRecordExtensionPayment({
   // ── 4. Update blocked dates ────────────────────────────────────────────────
   if (foundBooking.pickupDate && newReturnDate) {
     try {
-      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking");
+      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking", bookingId || null);
     } catch (bdErr) {
       console.warn("toolRecordExtensionPayment: blocked_dates update error (non-fatal):", bdErr.message);
     }
@@ -2458,7 +2458,7 @@ async function toolOpenDates({ vehicleId, from, to }) {
     load:  loadBD,
     apply: (data) => {
       const before = (data[vehicleId] || []).length;
-      data[vehicleId] = (data[vehicleId] || []).filter((r) => !(r.from === from && r.to === to));
+      data[vehicleId] = (data[vehicleId] || []).filter((r) => !(r.from <= to && r.to >= from));
       removed = before - data[vehicleId].length;
     },
     save:    saveBD,
@@ -2469,7 +2469,12 @@ async function toolOpenDates({ vehicleId, from, to }) {
     try {
       const sb = getSupabaseAdmin();
       if (sb) {
-        await sb.from("blocked_dates").delete().eq("vehicle_id", vehicleId).eq("start_date", from).eq("end_date", to);
+        await sb
+          .from("blocked_dates")
+          .delete()
+          .eq("vehicle_id", vehicleId)
+          .lte("start_date", to)
+          .gte("end_date", from);
       }
     } catch (sbErr) { console.warn("toolOpenDates: Supabase sync failed (non-fatal):", sbErr.message); }
   }

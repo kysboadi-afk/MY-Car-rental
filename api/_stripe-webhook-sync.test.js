@@ -20,7 +20,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 // ─── Environment setup ────────────────────────────────────────────────────────
-process.env.STRIPE_SECRET_KEY     = "sk_test_fake";
+process.env.STRIPE_SECRET_KEY     = "sk_live_fake";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
 
 // ─── Mutable state ────────────────────────────────────────────────────────────
@@ -348,9 +348,10 @@ function makeRes() {
   };
 }
 
-function piSucceededEvent(meta, amountCents = 35000) {
+function piSucceededEvent(meta, amountCents = 35000, livemode = true) {
   return {
     type: "payment_intent.succeeded",
+    livemode,
     data: {
       object: {
         id:       "pi_test_" + Math.random().toString(36).slice(2),
@@ -378,6 +379,22 @@ test("webhook new booking: PREFLIGHT — autoUpsertBooking is called", async () 
     automationCalls.booking.length > 0,
     "PREFLIGHT FAIL: autoUpsertBooking must be called in saveWebhookBookingRecord to sync the Supabase bookings table"
   );
+});
+
+test("webhook test mode: skips booking persistence and availability changes (livemode=false)", async () => {
+  resetStore(); resetCalls();
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-08-01", return_date: "2026-08-02",
+    renter_name: "Test User", renter_phone: "+13105551111",
+    email: "test@example.com", payment_type: "full_payment",
+  }, 35000, false /* livemode=false */);
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { received: true, testMode: true }, "livemode=false must short-circuit as test mode");
+  assert.equal(automationCalls.booking.length, 0, "livemode=false must not create bookings");
+  assert.equal(automationCalls.blocked.length, 0, "livemode=false must not create blocked dates");
 });
 
 test("webhook new booking: PREFLIGHT — autoCreateBlockedDate is called", async () => {
