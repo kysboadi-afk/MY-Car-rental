@@ -102,18 +102,25 @@ function dedupeCustomersForList(rows) {
   return [...byKey.values()];
 }
 
+// TODO(customer-email-dedup): Remove legacy multi-row scan and return to limit(1)
+// after migration 0058 has been applied in production and duplicate email rows are gone.
+const MAX_LEGACY_EMAIL_MATCH_ROWS = 25;
+
 async function findMostRecentCustomerByEmail(sb, email) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) return { existing: null, error: null };
   // Match by LOWER(email) semantics so legacy mixed-case rows are still found.
+  // PostgREST filters cannot directly target LOWER(btrim(email)) here, so we query
+  // case-insensitively and keep only exact normalized matches in-process.
   // Prefer the latest non-null timestamps so we update the canonical current row
   // when legacy duplicate email rows exist.
+  // Limit is intentionally >1 while legacy duplicate rows are being cleaned up.
   const { data, error } = await sb.from("customers")
     .select("id, email, updated_at, created_at")
     .ilike("email", normalizedEmail)
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
-    .limit(25);
+    .limit(MAX_LEGACY_EMAIL_MATCH_ROWS);
   if (error) return { existing: null, error };
   const exact = (Array.isArray(data) ? data : []).filter((row) => normalizeEmail(row?.email) === normalizedEmail);
   const existing = exact.length > 0 ? exact[0] : null;
