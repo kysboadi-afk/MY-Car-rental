@@ -514,7 +514,10 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentIntentId:       paymentIntent.id,
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
-    requireStripeFee:      true,
+    // Only require a Stripe fee when we actually received fee data from the
+    // balance_transaction lookup.  If fee resolution failed (transient Stripe
+    // API error) we persist without it and let stripe-reconcile.js backfill.
+    requireStripeFee:      extraFields.stripeFee != null,
     strictPersistence:     true,
     stripeCustomerId:      paymentIntent.customer          || null,
     stripePaymentMethodId: paymentIntent.payment_method    || null,
@@ -560,7 +563,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     console.error(
       `stripe-webhook: booking persistence verification failed for PI ${paymentIntent.id} attempt=${attempt} ` +
       `supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists} ` +
-      `errors=${(result.errors || []).join("; ")}${lastPersistError ? ` lastPersistError=${lastPersistError.message}` : ""}`
+      `errors=${(result.errors || []).join("; ")}`,
+      lastPersistError || ""
     );
   }
 
@@ -655,8 +659,13 @@ async function sendWebhookNotificationEmails(paymentIntent) {
           .from("pending_booking_docs")
           .select("*")
           .eq("booking_id", booking_id)
-          .eq("email_sent", false)
           .maybeSingle();
+        if (docsRow?.email_sent === true) {
+          // Owner email was already sent (e.g. from a previous webhook attempt on a
+          // Stripe retry).  Skip to prevent duplicate owner notifications.
+          console.log(`stripe-webhook: owner email already sent for booking_id ${booking_id} — skipping duplicate`);
+          return;
+        }
         storedDocs = docsRow || null;
       }
     } catch (docsErr) {
@@ -1488,15 +1497,31 @@ export default async function handler(req, res) {
 
     // Persist booking first so slow/non-critical side effects cannot prevent
     // core booking + revenue writes from happening.
+    //
+    // Fee resolution and booking persistence are intentionally decoupled:
+    // a transient Stripe API failure for the balance_transaction lookup must
+    // not prevent the booking from being saved or the owner email from firing.
+    // stripe-reconcile.js will backfill the stripe_fee later.
+    let feeFields = null;
     try {
-      const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-      await saveWebhookBookingRecord(paymentIntent, feeFields);
+      feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+    } catch (feeErr) {
+      console.error(
+        `stripe-webhook: resolveStripeFeeFields failed for PI ${paymentIntent.id}` +
+        ` — booking will be persisted without stripe_fee (backfilled by reconcile):`,
+        feeErr.message
+      );
+    }
+
+    let persistenceFailed = false;
+    try {
+      await saveWebhookBookingRecord(paymentIntent, feeFields || {});
     } catch (bookingErr) {
+      persistenceFailed = true;
+      // Log the full error (including stack) so the cause is visible in Vercel logs.
       console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
-      return res.status(500).json({
-        received: false,
-        error: `booking persistence failed for ${paymentIntent.id}`,
-      });
+      // Do NOT return 500 here — fall through to the email block below so the
+      // owner is still notified.  We return 500 at the end so Stripe retries.
     }
 
     // Block the booked dates and mark the vehicle unavailable.
@@ -1527,6 +1552,15 @@ export default async function handler(req, res) {
       await sendWebhookNotificationEmails(paymentIntent);
     } catch (emailErr) {
       console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
+    }
+
+    // Return 500 AFTER email so Stripe retries the webhook for persistence,
+    // but the owner notification has already been dispatched.
+    if (persistenceFailed) {
+      return res.status(500).json({
+        received: false,
+        error: `booking persistence failed for ${paymentIntent.id}`,
+      });
     }
   }
 
