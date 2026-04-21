@@ -105,16 +105,18 @@ function dedupeCustomersForList(rows) {
 async function findMostRecentCustomerByEmail(sb, email) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) return { existing: null, error: null };
+  // Match by LOWER(email) semantics so legacy mixed-case rows are still found.
   // Prefer the latest non-null timestamps so we update the canonical current row
   // when legacy duplicate email rows exist.
   const { data, error } = await sb.from("customers")
-    .select("id, updated_at, created_at")
-    .eq("email", normalizedEmail)
+    .select("id, email, updated_at, created_at")
+    .ilike("email", normalizedEmail)
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
-    .limit(1);
+    .limit(25);
   if (error) return { existing: null, error };
-  const existing = Array.isArray(data) && data.length > 0 ? data[0] : null;
+  const exact = (Array.isArray(data) ? data : []).filter((row) => normalizeEmail(row?.email) === normalizedEmail);
+  const existing = exact.length > 0 ? exact[0] : null;
   return { existing, error: null };
 }
 
