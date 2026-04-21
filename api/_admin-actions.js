@@ -36,6 +36,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
+import { buildUnifiedConfirmationEmail } from "./_booking-confirmation-template.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -3001,9 +3002,6 @@ async function toolResendBookingConfirmation({ bookingId }) {
     auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
 
-  const displayTotal = amountPaid != null ? `$${Number(amountPaid).toFixed(2)}` : (totalPrice != null ? `$${Number(totalPrice).toFixed(2)}` : "N/A");
-  const pickupDisplay  = [pickupDate, pickupTime].filter(Boolean).join(" at ");
-  const returnDisplay  = [returnDate, returnTime].filter(Boolean).join(" at ");
   const firstName = (name || "there").split(" ")[0];
 
   // Determine whether this was a website (Stripe) payment or cash/manual.
@@ -3111,6 +3109,74 @@ async function toolResendBookingConfirmation({ bookingId }) {
 
   const hasAttachments = attachments.length > 0;
   const attachmentList = attachments.map(a => a.filename).join(", ");
+  const hasProtectionPlan = !!(storedDocs?.protection_plan_tier || booking.protectionPlanTier || booking.protectionPlan);
+  const protectionPlanTier = storedDocs?.protection_plan_tier || booking.protectionPlanTier || null;
+
+  let breakdownLines = null;
+  try {
+    const isHourly = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
+    if (!isHourly && vehicleId && pickupDate && returnDate) {
+      const pricingSettings = await loadPricingSettings();
+      breakdownLines = computeBreakdownLinesFromSettings(
+        vehicleId,
+        pickupDate,
+        returnDate,
+        pricingSettings,
+        hasProtectionPlan,
+        protectionPlanTier
+      );
+    }
+  } catch (err) {
+    console.warn("toolResendBookingConfirmation: pricing breakdown generation failed (non-fatal):", err.message);
+  }
+
+  const insuranceStatus = storedDocs?.insurance_coverage_choice === "no"
+    ? "No personal insurance provided (Damage Protection Plan or renter liability applies)"
+    : (storedDocs?.insurance_coverage_choice === "yes"
+        ? (storedDocs?.insurance_filename ? "Own insurance provided (document attached)" : "Own insurance selected (proof not uploaded)")
+        : (hasProtectionPlan
+            ? `Protection plan selected (${protectionPlanTier || "tier not specified"})`
+            : "Not selected / No protection plan"));
+
+  const missingItemNotes = [];
+  if (!storedDocs || !storedDocs.id_base64 || !storedDocs.signature || !storedDocs.insurance_base64) {
+    missingItemNotes.push("Documents not uploaded yet");
+  }
+  if (!storedDocs?.id_base64) missingItemNotes.push("Renter ID not uploaded");
+  if (!storedDocs?.signature) missingItemNotes.push("Signed rental agreement not available");
+  if (!storedDocs?.insurance_base64 && storedDocs?.insurance_coverage_choice === "yes") {
+    missingItemNotes.push("Insurance selected but proof not uploaded");
+  }
+  if (notes) missingItemNotes.push(`Booking notes: ${notes}`);
+  if (hasAttachments) missingItemNotes.push(`Attachments: ${attachmentList}`);
+
+  const ownerTemplate = buildUnifiedConfirmationEmail({
+    audience:           "owner",
+    bookingId,
+    vehicleName,
+    vehicleId,
+    vehicleMake:        CARS[vehicleId]?.make || null,
+    vehicleModel:       CARS[vehicleId]?.model || null,
+    vehicleYear:        CARS[vehicleId]?.year || null,
+    vehicleVin:         CARS[vehicleId]?.vin || null,
+    vehicleColor:       CARS[vehicleId]?.color || null,
+    renterName:         name,
+    renterEmail:        email,
+    renterPhone:        phone,
+    pickupDate,
+    pickupTime,
+    returnDate,
+    returnTime,
+    amountPaid,
+    totalPrice,
+    fullRentalCost:     booking.fullRentalCost || null,
+    balanceAtPickup:    booking.balanceAtPickup || null,
+    status:             status || "booked_paid",
+    paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
+    insuranceStatus,
+    pricingBreakdownLines: breakdownLines || [],
+    missingItemNotes,
+  });
 
   // ── Owner notification ────────────────────────────────────────────────────
   try {
@@ -3118,48 +3184,10 @@ async function toolResendBookingConfirmation({ bookingId }) {
       from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
-      subject:     `💰 Booking Confirmed (Admin Resend) — ${vehicleName || vehicleId || ""}`,
+      subject:     ownerTemplate.subject,
       attachments,
-      html: `
-        <h2>💰 Booking Confirmed — Admin Resend</h2>
-        <p>This is a manually re-sent confirmation for booking <strong>${esc(bookingId)}</strong>.</p>
-        ${hasAttachments ? `<p>📎 <strong>Attachments:</strong> ${esc(attachmentList)}</p>` : ""}
-        <table style="border-collapse:collapse;width:100%">
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(bookingId)}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Method</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentMethodLabel)}${isWebsitePayment ? ` <span style="color:#888;font-size:0.9em">(${esc(paymentIntentId)})</span>` : ""}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || vehicleId || "N/A")}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(name || "Not provided")}</td></tr>
-          ${phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(phone)}</td></tr>` : ""}
-          ${email ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email)}</td></tr>` : ""}
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking Status</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(status || "booked_paid")}</td></tr>
-          ${notes ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Notes</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(notes)}</td></tr>` : ""}
-        </table>
-        ${hasAttachments
-          ? `<p style="margin-top:12px;color:green">✅ <strong>Documents attached:</strong> ${esc(attachmentList)}</p>`
-          : `<p style="margin-top:12px;color:#c07000">⚠️ <strong>No documents on file.</strong> The signed rental agreement, renter ID, and insurance were not found in Supabase for this booking. This is normal for older bookings or cash/manual bookings created before document storage was introduced. ${isWebsitePayment ? 'The renter agreed to the rental terms at <a href="https://www.slytrans.com/rental-agreement.html">slytrans.com/rental-agreement.html</a> during booking.' : 'Please collect documents directly from the renter.'}</p>`
-        }
-        <p style="margin-top:16px">The customer's confirmation email was also resent.</p>
-      `,
-      text: [
-        "Booking Confirmed — Admin Resend",
-        "",
-        `Booking ID     : ${bookingId}`,
-        `Payment Method : ${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
-        `Vehicle        : ${vehicleName || vehicleId || "N/A"}`,
-        `Renter         : ${name || "Not provided"}`,
-        phone  ? `Phone          : ${phone}`  : "",
-        email  ? `Email          : ${email}`  : "",
-        `Pickup         : ${pickupDisplay || "N/A"}`,
-        `Return         : ${returnDisplay || "N/A"}`,
-        `Total          : ${displayTotal}`,
-        `Status         : ${status || "booked_paid"}`,
-        notes  ? `Notes          : ${notes}` : "",
-        hasAttachments ? `Attachments    : ${attachmentList}` : "No stored documents found for this booking.",
-      ].filter(Boolean).join("\n"),
+      html: ownerTemplate.html,
+      text: ownerTemplate.text,
     });
   } catch (ownerErr) {
     throw new Error(`Owner notification email failed: ${ownerErr.message}`);
@@ -3168,44 +3196,41 @@ async function toolResendBookingConfirmation({ bookingId }) {
   // ── Customer confirmation ─────────────────────────────────────────────────
   let customerSent = false;
   if (email) {
+    const customerTemplate = buildUnifiedConfirmationEmail({
+      audience:           "customer",
+      bookingId,
+      vehicleName,
+      vehicleId,
+      vehicleMake:        CARS[vehicleId]?.make || null,
+      vehicleModel:       CARS[vehicleId]?.model || null,
+      vehicleYear:        CARS[vehicleId]?.year || null,
+      vehicleVin:         CARS[vehicleId]?.vin || null,
+      vehicleColor:       CARS[vehicleId]?.color || null,
+      renterName:         name,
+      renterEmail:        email,
+      renterPhone:        phone,
+      pickupDate,
+      pickupTime,
+      returnDate,
+      returnTime,
+      amountPaid,
+      totalPrice,
+      fullRentalCost:     booking.fullRentalCost || null,
+      balanceAtPickup:    booking.balanceAtPickup || null,
+      status:             status || "booked_paid",
+      paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
+      insuranceStatus,
+      pricingBreakdownLines: breakdownLines || [],
+      missingItemNotes,
+      firstName,
+    });
     try {
       await transporter.sendMail({
         from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
         to:      email,
-        subject: "✅ Rental Agreement Confirmation — Sly Transportation Services LLC",
-        html: `
-          <h2>✅ Booking Confirmed — Sly Transportation Services LLC</h2>
-          <p>Hi ${esc(firstName)}, your payment has been received and your booking is confirmed!</p>
-          <table style="border-collapse:collapse;width:100%;margin-top:12px">
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || vehicleId || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDisplay || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDisplay || "N/A")}</td></tr>
-            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(displayTotal)}</strong></td></tr>
-          </table>
-          <p style="margin-top:16px">You agreed to the <a href="https://www.slytrans.com/rental-agreement.html">Rental Agreement Terms &amp; Conditions</a> during booking — you can review them at any time at that link.</p>
-          <p>We will be in touch shortly to confirm your rental pick-up details.</p>
-          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
-          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
-        `,
-        text: [
-          "Booking Confirmed — Sly Transportation Services LLC",
-          "",
-          `Hi ${firstName}, your payment has been received and your booking is confirmed!`,
-          "",
-          `Vehicle : ${vehicleName || vehicleId || "N/A"}`,
-          `Pickup  : ${pickupDisplay || "N/A"}`,
-          `Return  : ${returnDisplay || "N/A"}`,
-          `Total   : ${displayTotal}`,
-          "",
-          "You agreed to the Rental Agreement Terms & Conditions during booking.",
-          "You can review them at: https://www.slytrans.com/rental-agreement.html",
-          "",
-          "We will be in touch shortly to confirm your rental pick-up details.",
-          `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
-          "",
-          "Sly Transportation Services LLC",
-        ].join("\n"),
+        subject: customerTemplate.subject,
+        html:    customerTemplate.html,
+        text:    customerTemplate.text,
       });
       customerSent = true;
     } catch (custErr) {

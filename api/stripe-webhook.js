@@ -27,10 +27,12 @@ import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
+import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
+import { buildUnifiedConfirmationEmail } from "./_booking-confirmation-template.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -539,10 +541,6 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 
   const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
   const isDepositMode = payment_type === "reservation_deposit";
-  const totalLabel    = isDepositMode ? "Booking Deposit Charged" : "Total Charged";
-  const totalDisplay  = isDepositMode
-    ? `$${amountDollars} (non-refundable deposit — balance due at pickup)`
-    : `$${amountDollars}`;
 
   const transporter = nodemailer.createTransport({
     host:   process.env.SMTP_HOST,
@@ -654,80 +652,80 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   }
 
   const hasFullDocs = attachments.length > 0;
+  const hasProtectionPlan = !!protection_plan_tier;
+
+  let breakdownLines = null;
+  try {
+    const isHourly = !!(vehicle_id && CARS[vehicle_id] && CARS[vehicle_id].hourlyTiers);
+    if (!isHourly && vehicle_id && pickup_date && return_date) {
+      const pricingSettings = await loadPricingSettings();
+      breakdownLines = computeBreakdownLinesFromSettings(
+        vehicle_id,
+        pickup_date,
+        return_date,
+        pricingSettings,
+        hasProtectionPlan,
+        protection_plan_tier || null
+      );
+    }
+  } catch (err) {
+    console.warn("stripe-webhook: pricing breakdown generation failed (non-fatal):", err.message);
+  }
+
+  const insuranceStatus = storedDocs?.insurance_coverage_choice === "no"
+    ? "No personal insurance provided (Damage Protection Plan or renter liability applies)"
+    : (storedDocs?.insurance_coverage_choice === "yes"
+        ? (storedDocs?.insurance_filename ? "Own insurance provided (document attached)" : "Own insurance selected (proof not uploaded)")
+        : (hasProtectionPlan
+            ? `Protection plan selected (${protection_plan_tier || "tier not specified"})`
+            : "Not selected / No protection plan"));
+
+  const missingItemNotes = [];
+  if (!storedDocs || !storedDocs.id_base64 || !storedDocs.signature || !storedDocs.insurance_base64) {
+    missingItemNotes.push("Documents not uploaded yet");
+  }
+  if (!storedDocs?.id_base64) missingItemNotes.push("Renter ID not uploaded");
+  if (!storedDocs?.signature) missingItemNotes.push("Signed rental agreement not available");
+  if (!storedDocs?.insurance_base64 && storedDocs?.insurance_coverage_choice === "yes") {
+    missingItemNotes.push("Insurance selected but proof not uploaded");
+  }
 
   // ── Owner notification ────────────────────────────────────────────────────
-  const ownerSubject = hasFullDocs
-    ? `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)}`
-    : `💰 Payment Confirmed – New Booking: ${esc(vehicle_name || vehicle_id)} (Server Backup)`;
-
-  const ownerHtml = hasFullDocs
-    ? `
-    <h2>💰 Payment Confirmed – New Booking</h2>
-    <p>A new rental has been confirmed and paid. The following documents are attached: ${attachments.map(a => a.filename).join(", ")}.</p>
-    <table style="border-collapse:collapse;width:100%;margin-top:16px">
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_name || "Not provided")}</td></tr>
-      ${renter_phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_phone)}</td></tr>` : ""}
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email || "Not provided")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
-      ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
-      ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
-    </table>
-    <p style="margin-top:16px">📎 <strong>Attachments:</strong> ${attachments.map(a => a.filename).join(", ")}</p>
-    <p>Dates have been automatically blocked on the booking calendar.</p>
-    `
-    : `
-    <h2>💰 Payment Confirmed – New Booking (Server-Side Backup Notification)</h2>
-    <p><strong>⚠️ This is an automatic server-side backup email.</strong> It fires whenever a payment succeeds on Stripe, regardless of what happened in the customer's browser. If you already received a separate "Payment Confirmed" email with the signed rental agreement, this duplicate can be ignored.</p>
-    <table style="border-collapse:collapse;width:100%;margin-top:16px">
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntent.id)}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter Name</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_name || "Not provided")}</td></tr>
-      ${renter_phone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renter_phone)}</td></tr>` : ""}
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(email || "Not provided")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
-      ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
-      ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
-    </table>
-    <p style="margin-top:16px">⚠️ <strong>Action required:</strong> The signed rental agreement, renter's ID, and insurance documents are only attached to the full confirmation email sent from the customer's browser. If that email did not arrive, please contact the customer directly at ${esc(email || "the email above")} to collect a signed agreement.</p>
-    <p>Dates have been automatically blocked on the booking calendar.</p>
-    `;
+  const ownerEmail = buildUnifiedConfirmationEmail({
+    audience:           "owner",
+    bookingId:          booking_id || paymentIntent.id,
+    vehicleName:        vehicle_name,
+    vehicleId:          vehicle_id,
+    renterName:         renter_name,
+    renterEmail:        email,
+    renterPhone:        renter_phone,
+    pickupDate:         pickup_date,
+    pickupTime:         pickup_time,
+    returnDate:         return_date,
+    returnTime:         return_time,
+    amountPaid:         Number(amountDollars),
+    totalPrice:         Number(full_rental_amount || amountDollars),
+    fullRentalCost:     full_rental_amount || null,
+    balanceAtPickup:    balance_at_pickup || null,
+    paymentMethodLabel: isDepositMode ? "Website (Stripe) — Reservation deposit" : "Website (Stripe)",
+    insuranceStatus,
+    pricingBreakdownLines: breakdownLines || [],
+    missingItemNotes: [
+      ...(hasFullDocs ? [] : ["Documents not uploaded yet"]),
+      ...missingItemNotes,
+      ...(attachments.length ? [`Attachments: ${attachments.map(a => a.filename).join(", ")}`] : []),
+    ],
+  });
 
   try {
     await transporter.sendMail({
       from:        `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to:          OWNER_EMAIL,
       ...(email ? { replyTo: email } : {}),
-      subject:     ownerSubject,
+      subject:     ownerEmail.subject,
       attachments: attachments,
-      text: [
-        hasFullDocs
-          ? "Payment Confirmed – New Booking"
-          : "Payment Confirmed – New Booking (Server-Side Backup Notification)",
-        "",
-        hasFullDocs
-          ? `Attachments: ${attachments.map(a => a.filename).join(", ")}`
-          : "NOTE: This is a server-side backup email. If you already received a full confirmation with the signed agreement, this can be ignored.",
-        "",
-        `Stripe Payment ID  : ${paymentIntent.id}`,
-        `Vehicle            : ${vehicle_name || vehicle_id || "N/A"}`,
-        `Renter Name        : ${renter_name || "Not provided"}`,
-        renter_phone ? `Phone              : ${renter_phone}` : "",
-        `Customer Email     : ${email || "Not provided"}`,
-        `Pickup Date        : ${pickup_date || "N/A"}`,
-        `Return Date        : ${return_date || "N/A"}`,
-        `${totalLabel.padEnd(19)}: ${totalDisplay}`,
-        isDepositMode && full_rental_amount ? `Full Rental Cost   : $${full_rental_amount}` : "",
-        isDepositMode && balance_at_pickup  ? `Balance at Pickup  : $${balance_at_pickup}` : "",
-      ].filter(Boolean).join("\n"),
-      html: ownerHtml,
+      text:        ownerEmail.text,
+      html:        ownerEmail.html,
     });
     console.log(`stripe-webhook: owner email sent for PI ${paymentIntent.id} (hasFullDocs=${hasFullDocs})`);
   } catch (emailErr) {
@@ -751,46 +749,35 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 
   // ── Customer confirmation ─────────────────────────────────────────────────
   if (email) {
-    const customerSubject = "Your Booking is Confirmed – Sly Transportation Services LLC";
-    const customerHtml = `
-      <h2>✅ Payment Confirmed – Sly Transportation Services LLC</h2>
-      <p>Hi ${esc(renter_name ? renter_name.split(" ")[0] : "there")}, your payment has been received and your booking is confirmed!</p>
-      <table style="border-collapse:collapse;width:100%;margin-top:12px">
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicle_name || vehicle_id || "N/A")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickup_date || "N/A")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(return_date || "N/A")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalDisplay)}</strong></td></tr>
-        ${isDepositMode && full_rental_amount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(full_rental_amount)}</td></tr>` : ""}
-        ${isDepositMode && balance_at_pickup  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balance_at_pickup)}</strong></td></tr>` : ""}
-      </table>
-      <p style="margin-top:16px">We will be in touch shortly to confirm your rental pick-up details.</p>
-      <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
-      <p><strong>Sly Transportation Services LLC 🚗</strong></p>
-    `;
+    const customerEmail = buildUnifiedConfirmationEmail({
+      audience:           "customer",
+      bookingId:          booking_id || paymentIntent.id,
+      vehicleName:        vehicle_name,
+      vehicleId:          vehicle_id,
+      renterName:         renter_name,
+      renterEmail:        email,
+      renterPhone:        renter_phone,
+      pickupDate:         pickup_date,
+      pickupTime:         pickup_time,
+      returnDate:         return_date,
+      returnTime:         return_time,
+      amountPaid:         Number(amountDollars),
+      totalPrice:         Number(full_rental_amount || amountDollars),
+      fullRentalCost:     full_rental_amount || null,
+      balanceAtPickup:    balance_at_pickup || null,
+      paymentMethodLabel: isDepositMode ? "Website (Stripe) — Reservation deposit" : "Website (Stripe)",
+      insuranceStatus,
+      pricingBreakdownLines: breakdownLines || [],
+      missingItemNotes,
+      firstName: renter_name ? renter_name.split(" ")[0] : "there",
+    });
     try {
       await transporter.sendMail({
         from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
         to:      email,
-        subject: customerSubject,
-        text:    [
-          "Payment Confirmed – Sly Transportation Services LLC",
-          "",
-          `Hi ${renter_name ? renter_name.split(" ")[0] : "there"}, your payment has been received and your booking is confirmed!`,
-          "",
-          `Vehicle            : ${vehicle_name || vehicle_id || "N/A"}`,
-          `Pickup Date        : ${pickup_date || "N/A"}`,
-          `Return Date        : ${return_date || "N/A"}`,
-          `${totalLabel.padEnd(19)}: ${totalDisplay}`,
-          isDepositMode && full_rental_amount ? `Full Rental Cost   : $${full_rental_amount}` : "",
-          isDepositMode && balance_at_pickup  ? `Balance at Pickup  : $${balance_at_pickup}` : "",
-          "",
-          "We will be in touch shortly to confirm your rental pick-up details.",
-          `If you have any questions contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
-          "",
-          "Sly Transportation Services LLC",
-        ].filter(Boolean).join("\n"),
-        html: customerHtml,
+        subject: customerEmail.subject,
+        text:    customerEmail.text,
+        html:    customerEmail.html,
       });
       console.log(`stripe-webhook: customer email sent to ${email} for PI ${paymentIntent.id}`);
     } catch (custErr) {
