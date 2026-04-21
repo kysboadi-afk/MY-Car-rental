@@ -125,19 +125,29 @@ export default async function handler(req, res) {
     });
 
     // Also remove from Supabase blocked_dates so both stores stay consistent.
-    // Delete ALL matching rows regardless of reason (manual or booking-based) so
-    // that an admin unblock fully clears the date range from both stores.
+    // Booking-generated ranges are protected from manual unblocks.
     // Non-fatal — a Supabase failure must not block the GitHub remove from succeeding.
+    let locked = 0;
     if (removed > 0) {
       try {
         const sb = getSupabaseAdmin();
         if (sb) {
+          const { count: lockedCount, error: countErr } = await sb
+            .from("blocked_dates")
+            .select("id", { head: true, count: "exact" })
+            .eq("vehicle_id", vehicleId)
+            .lte("start_date", to)
+            .gte("end_date", from)
+            .eq("reason", "booking");
+          if (!countErr) locked = Number(lockedCount || 0);
+
           const { error: sbErr } = await sb
             .from("blocked_dates")
             .delete()
             .eq("vehicle_id", vehicleId)
             .lte("start_date", to)
-            .gte("end_date", from);
+            .gte("end_date", from)
+            .or("reason.is.null,reason.neq.booking");
           if (sbErr) {
             console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
           }
@@ -147,7 +157,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ success: true, removed });
+    return res.status(200).json({ success: true, removed, locked });
   } catch (err) {
     console.error("open-dates endpoint error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

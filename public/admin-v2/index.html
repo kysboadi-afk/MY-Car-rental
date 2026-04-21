@@ -2139,6 +2139,19 @@ const VEHICLE_NAMES = {
   camry2013:  'Camry 2013 SE',
 };
 
+const VEHICLE_LABELS = {
+  ...VEHICLE_NAMES,
+  // Legacy/DB compatibility aliases so admin UI never shows raw vehicle_id.
+  camry2012: 'Camry 2012',
+  'Camry 2012': 'Camry 2012',
+  'Camry 2013 SE': 'Camry 2013 SE',
+};
+
+function getVehicleLabel(id) {
+  const key = String(id || '').trim();
+  return VEHICLE_NAMES_DYNAMIC[key] || VEHICLE_LABELS[key] || key;
+}
+
 // Vehicle IDs that belong to the slingshot admin — excluded from the car Bookings UI.
 // Must stay in sync with the slingshot IDs in api/v2-bookings.js (ALLOWED_VEHICLES).
 const SLINGSHOT_VEHICLE_IDS = new Set(['slingshot', 'slingshot2', 'slingshot3']);
@@ -2693,7 +2706,7 @@ function renderDashboard(data) {
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
-          <div style="font-size:11px;color:var(--text-sub);">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId)} · ${esc(b.pickupDate || '')}</div>
+          <div style="font-size:11px;color:var(--text-sub);">${esc(getVehicleLabel(b.vehicleId))} · ${esc(b.pickupDate || '')}</div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:13px;font-weight:700;">$${formatMoney(b.amountPaid)}</div>
@@ -2804,7 +2817,7 @@ function renderVehicles(vehicles, stats) {
 function showVehicleProfile(vehicleId) {
   navigate('vehicle-profile');
   const v = allVehicles[vehicleId] || {};
-  document.getElementById('page-title').textContent = v.vehicle_name || VEHICLE_NAMES_DYNAMIC[vehicleId] || VEHICLE_NAMES[vehicleId] || vehicleId;
+  document.getElementById('page-title').textContent = v.vehicle_name || getVehicleLabel(vehicleId);
 
   // Load fresh stats
   apiPost('/api/v2-dashboard', { secret: adminSecret, scope: 'car' })
@@ -3597,7 +3610,7 @@ function applyBookingFilters() {
         <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
         ${b.flagged ? '<span class="badge badge-danger" style="margin-top:3px;">🚩 Flagged</span>' : ''}
       </td>
-      <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+      <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
       <td>
         <div>${esc(b.pickupDate || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
@@ -3653,7 +3666,7 @@ function viewBooking(bookingId, vehicleId) {
   document.getElementById('booking-detail-content').innerHTML = `
     <div class="detail-grid">
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Customer</div><div style="font-weight:600;">${esc(b.name || '–')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(getVehicleLabel(b.vehicleId) || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}${b.phone ? ` <a href="tel:${esc(b.phone)}" style="color:var(--primary);text-decoration:none;">📞</a>` : ''}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}${b.email ? ` <a href="mailto:${esc(b.email)}" style="color:var(--primary);text-decoration:none;">✉️</a>` : ''}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
@@ -3894,7 +3907,7 @@ function loadRawBookings() {
             <div style="font-weight:600;">${esc(b.name || '–')}</div>
             <div style="font-size:11px;color:var(--text-sub);">${esc(b.phone || b.email || '')}</div>
           </td>
-          <td>${esc(VEHICLE_NAMES_DYNAMIC[b.vehicleId] || VEHICLE_NAMES[b.vehicleId] || b.vehicleId || '–')}</td>
+          <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
           <td>${esc(b.pickupDate || '–')}${b.pickupTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.pickupTime)+'</span>' : ''}</td>
           <td>${esc(b.returnDate || '–')}${b.returnTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.returnTime)+'</span>' : ''}</td>
           <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
@@ -4077,7 +4090,7 @@ function applyExpenseFilters() {
   document.getElementById('expenses-tbody').innerHTML = filtered.map((e) => `
     <tr>
       <td>${esc(e.date || '–')}</td>
-      <td>${esc(VEHICLE_NAMES_DYNAMIC[e.vehicle_id] || VEHICLE_NAMES[e.vehicle_id] || e.vehicle_id || '–')}</td>
+      <td>${esc(getVehicleLabel(e.vehicle_id) || '–')}</td>
       <td><span class="badge badge-gray">${esc(e.category || '–')}</span></td>
       <td style="font-weight:600;">$${formatMoney(e.amount || 0)}</td>
       <td style="color:var(--text-sub);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(e.notes || '–')}</td>
@@ -4668,7 +4681,7 @@ function applyRevenueFilters() {
     const netAfterFees = (norm.amount_net - Number(r.refund_amount || 0)).toFixed(2);
     return `<tr>
       <td>${esc(r.customer_name || '–')}</td>
-      <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
+      <td>${esc(getVehicleLabel(r.vehicle_id) || '–')}</td>
       <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
       <td>$${formatMoney(r.gross_amount  || 0)}</td>
       <td style="color:var(--danger);font-size:12px;">${stripeFee}</td>
@@ -5962,8 +5975,8 @@ function updateFleetVehicleStatus(vehicleId, available, inputEl) {
           label.textContent = available ? '● Available for booking' : '● Unavailable (hidden from renters)';
           label.style.color = available ? 'var(--success)' : 'var(--danger)';
         }
-        showToast(
-          (VEHICLE_NAMES[vehicleId] || vehicleId) + ' marked as ' + (available ? 'Available' : 'Unavailable') + '.',
+          showToast(
+          getVehicleLabel(vehicleId) + ' marked as ' + (available ? 'Available' : 'Unavailable') + '.',
           'success'
         );
       }
@@ -5973,6 +5986,25 @@ function updateFleetVehicleStatus(vehicleId, available, inputEl) {
       if (inputEl) { inputEl.checked = !available; }
     })
     .finally(() => { if (inputEl) inputEl.disabled = false; });
+}
+
+function getBlockedDateActionCell(entry) {
+  if (entry.reason === 'booking') {
+    return '<span style="color:#888">Locked</span>';
+  }
+  if (!Number.isInteger(entry.numericId) || entry.numericId <= 0) {
+    return '<span style="color:#888">N/A</span>';
+  }
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-secondary btn-sm"
+      data-vehicle-id="${esc(entry.vehicleId || '')}"
+      data-from="${esc(entry.from || '')}"
+      data-to="${esc(entry.to || '')}"
+      onclick="unblockBlockedDateRange(this.dataset.vehicleId, this.dataset.from, this.dataset.to)">
+      Unblock
+    </button>
+    <button class="btn btn-danger btn-sm" onclick="deleteBlockedDate(${entry.numericId})">Delete</button>
+  </div>`;
 }
 
 // ── Block / Unblock Dates ─────────────────────────────────────────────────
@@ -6012,13 +6044,11 @@ function loadBlockedDates() {
               ${entries.map((e) => `
                 <tr>
                   <td>${esc(String(e.id || ''))}</td>
-                  <td>${esc(VEHICLE_NAMES[e.vehicleId] || e.vehicleId)}</td>
+                  <td>${esc(getVehicleLabel(e.vehicleId))}</td>
                   <td>${esc(e.from)}</td>
                   <td>${esc(e.to)}</td>
                   <td>${esc(e.reason || '')}</td>
-                  <td>${Number.isInteger(e.numericId) && e.numericId > 0
-                    ? `<button class="btn btn-danger btn-sm" onclick="deleteBlockedDate(${e.numericId})">Delete</button>`
-                    : '<span style="color:#888">N/A</span>'}</td>
+                  <td>${getBlockedDateActionCell(e)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>`;
@@ -6092,10 +6122,22 @@ function unblockDates() {
   if (!vehicleId) { showToast('Please select a vehicle.', 'error'); return; }
   if (!from)      { showToast('Please select a start date.', 'error'); return; }
   if (!to)        { showToast('Please select an end date.', 'error'); return; }
-  if (!confirm('Unblock ' + esc(from) + ' → ' + esc(to) + ' for ' + esc(VEHICLE_NAMES[vehicleId] || vehicleId) + '?')) return;
-
   const btn = document.getElementById('bd-unblock-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Unblocking…'; }
+  unblockBlockedDateRange(vehicleId, from, to, btn, '🔓 Unblock Dates');
+}
+
+function unblockBlockedDateRange(vehicleId, from, to, btn, resetText = 'Unblock') {
+  if (!vehicleId || !from || !to) {
+    showToast('Missing unblock range details.', 'error');
+    return;
+  }
+  if (!confirm('Unblock ' + esc(from) + ' → ' + esc(to) + ' for ' + esc(getVehicleLabel(vehicleId)) + '?')) return;
+
+  const hasBtn = !!btn;
+  if (hasBtn) {
+    btn.disabled = true;
+    btn.textContent = 'Unblocking…';
+  }
 
   fetch(API_BASE + '/api/open-dates', {
     method:  'POST',
@@ -6107,14 +6149,24 @@ function unblockDates() {
       if (!ok) {
         showToast('Error: ' + (data.error || 'Unknown error'), 'error');
       } else if (data.removed === 0) {
-        showToast('No overlapping blocked ranges found for those dates.', 'info');
+        if (data.locked > 0) {
+          showToast('Matched range is booking-generated and cannot be manually unblocked.', 'info');
+        } else {
+          showToast('No overlapping blocked ranges found for those dates.', 'info');
+        }
       } else {
-        showToast('✅ Dates unblocked. Those dates are now available for booking.', 'success');
+        const suffix = data.locked > 0 ? ' Booking-generated ranges remained locked.' : '';
+        showToast('✅ Dates unblocked. Those dates are now available for booking.' + suffix, 'success');
         loadBlockedDates();
       }
     })
     .catch((err) => showToast('Network error: ' + err.message, 'error'))
-    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = '🔓 Unblock Dates'; } });
+    .finally(() => {
+      if (hasBtn) {
+        btn.disabled = false;
+        btn.textContent = resetText;
+      }
+    });
 }
 
 // ── AI Assistant ────────────────────────────────────────────────────────────
