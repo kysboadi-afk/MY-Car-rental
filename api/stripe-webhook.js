@@ -970,7 +970,6 @@ export default async function handler(req, res) {
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
     const paymentType = (paymentIntent.metadata || {}).payment_type || "";
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
     const isTestMode = event.livemode === false;
     logPaymentIntentReceived(event, paymentIntent);
     if (isTestMode) {
