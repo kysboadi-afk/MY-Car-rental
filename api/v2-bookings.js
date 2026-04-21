@@ -454,10 +454,15 @@ export default async function handler(req, res) {
       // Auto-stamp completedAt and actualReturnTime when an admin marks the rental as returned.
       // Safety guard: only allow this transition when the booking is currently active.
       if (safeUpdates.status === "completed_rental") {
-        const currentBooking = !sbOnlyRow
-          ? (checkData[vehicleId] || []).find((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
-          : null;
-        const currentStatus = currentBooking?.status || (sbOnlyRow ? DB_TO_APP_STATUS[sbOnlyRow.status] : null);
+        let currentStatus = null;
+        if (sbOnlyRow) {
+          currentStatus = DB_TO_APP_STATUS[sbOnlyRow.status] || null;
+        } else {
+          const currentBooking = (checkData[vehicleId] || []).find(
+            (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+          );
+          currentStatus = currentBooking?.status || null;
+        }
         if (currentStatus && currentStatus !== "active_rental") {
           return res.status(409).json({
             error: `Cannot mark as returned: booking must be active (current status: ${currentStatus})`,
