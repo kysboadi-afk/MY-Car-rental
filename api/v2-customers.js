@@ -104,7 +104,12 @@ function dedupeCustomersForList(rows) {
 
 // TODO(customer-email-dedup): Remove legacy multi-row scan and return to limit(1)
 // after migration 0058 has been applied in production and duplicate email rows are gone.
-const MAX_LEGACY_EMAIL_MATCH_ROWS = 25;
+// This is intentionally high enough to cover legacy duplicate clusters while still bounded.
+const MAX_LEGACY_EMAIL_MATCH_ROWS = 250;
+
+function escapeLikePattern(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 
 async function findMostRecentCustomerByEmail(sb, email) {
   const normalizedEmail = normalizeEmail(email);
@@ -117,7 +122,7 @@ async function findMostRecentCustomerByEmail(sb, email) {
   // Limit is intentionally >1 while legacy duplicate rows are being cleaned up.
   const { data, error } = await sb.from("customers")
     .select("id, email, updated_at, created_at")
-    .ilike("email", normalizedEmail)
+    .ilike("email", escapeLikePattern(normalizedEmail))
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(MAX_LEGACY_EMAIL_MATCH_ROWS);
