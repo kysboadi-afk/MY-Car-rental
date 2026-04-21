@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { persistBooking } from "./_booking-pipeline.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -32,7 +33,96 @@ async function resolveStripeFinancials(stripe, paymentIntentId) {
   return {
     grossAmount: Math.round(grossAmount * 100) / 100,
     stripeFee: Math.round(stripeFee * 100) / 100,
+    paymentIntent: pi,
   };
+}
+
+function normalizeEmail(email) {
+  if (typeof email !== "string") return "";
+  return email.trim().toLowerCase();
+}
+
+function normalizePhone(phone) {
+  if (typeof phone !== "string") return "";
+  return phone.trim();
+}
+
+function resolveBookingStatus(paymentType) {
+  return (paymentType === "reservation_deposit" || paymentType === "slingshot_security_deposit")
+    ? "reserved_unpaid"
+    : "booked_paid";
+}
+
+async function ensureBookingForRevenueRow(sb, stripe, row) {
+  const bookingRef = row.booking_id || "";
+  if (!bookingRef) throw new Error(`missing booking_id for revenue row ${row.id}`);
+
+  const { data: bookingByRef, error: bookingLookupErr } = await sb
+    .from("bookings")
+    .select("id, payment_intent_id")
+    .eq("booking_ref", bookingRef)
+    .maybeSingle();
+  if (bookingLookupErr) {
+    throw new Error(`booking lookup failed: ${formatSupabaseError(bookingLookupErr)}`);
+  }
+  if (bookingByRef?.id) return bookingByRef;
+
+  const paymentIntentId = row.payment_intent_id || null;
+  if (!paymentIntentId) {
+    throw new Error(`missing payment_intent_id for missing booking_id=${bookingRef}`);
+  }
+
+  const stripeFields = await resolveStripeFinancials(stripe, paymentIntentId);
+  const pi = stripeFields.paymentIntent;
+  const meta = pi?.metadata || {};
+  const amountPaid = stripeFields.grossAmount;
+  const fullRentalAmount = Number.parseFloat(meta.full_rental_amount || "");
+  const totalPrice = Number.isFinite(fullRentalAmount) && fullRentalAmount > 0
+    ? Math.round(fullRentalAmount * 100) / 100
+    : Math.max(amountPaid, Number(row.gross_amount || 0));
+
+  const persistResult = await persistBooking({
+    bookingId: bookingRef,
+    name: meta.renter_name || row.customer_name || "Unknown",
+    phone: normalizePhone(meta.renter_phone || row.customer_phone || ""),
+    email: normalizeEmail(meta.email || row.customer_email || ""),
+    vehicleId: meta.vehicle_id || row.vehicle_id || null,
+    vehicleName: meta.vehicle_name || meta.vehicle_id || row.vehicle_id || "unknown",
+    pickupDate: meta.pickup_date || row.pickup_date || null,
+    pickupTime: meta.pickup_time || "",
+    returnDate: meta.return_date || row.return_date || null,
+    returnTime: meta.return_time || "",
+    status: resolveBookingStatus(meta.payment_type || ""),
+    amountPaid,
+    totalPrice,
+    paymentIntentId,
+    paymentMethod: "stripe",
+    source: "revenue_self_heal",
+    strictPersistence: true,
+    stripeCustomerId: pi?.customer || null,
+    stripePaymentMethodId: pi?.payment_method || null,
+    stripeFee: stripeFields.stripeFee,
+    requireStripeFee: true,
+    ...(meta.protection_plan_tier ? { protectionPlanTier: meta.protection_plan_tier } : {}),
+  });
+
+  if (!persistResult?.ok) {
+    throw new Error(`booking reconstruction failed for booking_id=${bookingRef}`);
+  }
+
+  const { data: rebuiltBooking, error: rebuiltLookupErr } = await sb
+    .from("bookings")
+    .select("id, payment_intent_id")
+    .eq("booking_ref", bookingRef)
+    .maybeSingle();
+  if (rebuiltLookupErr) {
+    throw new Error(`booking verify failed: ${formatSupabaseError(rebuiltLookupErr)}`);
+  }
+  if (!rebuiltBooking?.id) {
+    throw new Error(`booking still missing after reconstruction for booking_id=${bookingRef}`);
+  }
+
+  return rebuiltBooking;
 }
 
 export default async function handler(req, res) {
@@ -63,8 +153,7 @@ export default async function handler(req, res) {
   try {
     const { data: rows, error: queryErr } = await sb
       .from("revenue_records")
-      .select("id, booking_id, payment_intent_id, stripe_fee, refund_amount")
-      .or("stripe_fee.is.null,payment_intent_id.is.null");
+      .select("id, booking_id, payment_intent_id, stripe_fee, refund_amount, gross_amount, customer_name, customer_phone, customer_email, vehicle_id, pickup_date, return_date");
 
     if (queryErr) {
       console.error("revenue-self-heal: query error:", formatSupabaseError(queryErr));
@@ -72,7 +161,6 @@ export default async function handler(req, res) {
     }
 
     for (const row of rows || []) {
-      scanned += 1;
       const payloadContext = {
         revenue_id: row.id,
         booking_id: row.booking_id,
@@ -80,17 +168,28 @@ export default async function handler(req, res) {
       };
 
       try {
-        const { data: booking, error: bookingErr } = await sb
+        if (!row.booking_id) {
+          scanned += 1;
+          throw new Error(`missing booking_id for revenue row ${row.id}`);
+        }
+
+        const { data: bookingByRef, error: bookingLookupErr } = await sb
           .from("bookings")
           .select("id, payment_intent_id")
           .eq("booking_ref", row.booking_id)
           .maybeSingle();
-        if (bookingErr) {
-          throw new Error(`booking lookup failed: ${formatSupabaseError(bookingErr)}`);
+        if (bookingLookupErr) {
+          throw new Error(`booking lookup failed: ${formatSupabaseError(bookingLookupErr)}`);
         }
-        if (!booking?.id) {
-          throw new Error(`missing booking for booking_id=${row.booking_id}`);
-        }
+
+        const bookingMissing = !bookingByRef?.id;
+        const revenueIncomplete = row.stripe_fee == null || !row.payment_intent_id;
+        if (!bookingMissing && !revenueIncomplete) continue;
+
+        scanned += 1;
+        const booking = bookingMissing
+          ? await ensureBookingForRevenueRow(sb, stripe, row)
+          : bookingByRef;
 
         const paymentIntentId = row.payment_intent_id || booking.payment_intent_id || null;
         if (!paymentIntentId) {

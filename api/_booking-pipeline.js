@@ -387,23 +387,36 @@ export async function persistBooking(opts) {
       }
 
       // Step C: revenue record
-      const revResult = await runStep(traceId, "create_revenue_record", () =>
-        autoCreateRevenueRecord(booking, {
-          strict: strictPersistence,
-          requireStripeFee: !!opts.requireStripeFee,
-        })
-      , {
-        bookingId: booking.bookingId,
-        paymentIntentId: booking.paymentIntentId || null,
-        grossAmount: booking.amountPaid || 0,
-        stripeFee: booking.stripeFee ?? null,
-        refundAmount: booking.refundAmount ?? 0,
-      });
-      if (!revResult.ok) {
-        const err = `create_revenue_record: ${revResult.error}`;
+      // Safety guard: never write revenue when the booking row failed to persist.
+      if (!bookingResult.ok) {
+        const err = "create_revenue_record: skipped because upsert_booking failed";
+        pipelineLog("error", traceId, "db_step_skipped", {
+          step: "create_revenue_record",
+          reason: "upsert_booking_failed",
+          bookingId: booking.bookingId,
+        });
         errors.push(err);
         if (strictPersistence) fatalErrors.push(err);
         supabaseOk = false;
+      } else {
+        const revResult = await runStep(traceId, "create_revenue_record", () =>
+          autoCreateRevenueRecord(booking, {
+            strict: strictPersistence,
+            requireStripeFee: !!opts.requireStripeFee,
+          })
+        , {
+          bookingId: booking.bookingId,
+          paymentIntentId: booking.paymentIntentId || null,
+          grossAmount: booking.amountPaid || 0,
+          stripeFee: booking.stripeFee ?? null,
+          refundAmount: booking.refundAmount ?? 0,
+        });
+        if (!revResult.ok) {
+          const err = `create_revenue_record: ${revResult.error}`;
+          errors.push(err);
+          if (strictPersistence) fatalErrors.push(err);
+          supabaseOk = false;
+        }
       }
     }
 

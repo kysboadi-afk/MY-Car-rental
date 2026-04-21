@@ -5,6 +5,7 @@ process.env.STRIPE_SECRET_KEY = "sk_test_fake";
 
 const revenueRows = [];
 const bookingsByRef = {};
+const persistCalls = [];
 
 mock.module("stripe", {
   defaultExport: class FakeStripe {
@@ -33,12 +34,14 @@ mock.module("./_supabase.js", {
         let updatePayload = null;
         let filterCol = null;
         let filterVal = null;
+        let selected = false;
         return {
-          select() { return this; },
-          or() {
-            if (table !== "revenue_records") return Promise.resolve({ data: [], error: null });
-            const data = revenueRows.filter((r) => r.stripe_fee == null || !r.payment_intent_id);
-            return Promise.resolve({ data, error: null });
+          select() { selected = true; return this; },
+          then(resolve, reject) {
+            if (table === "revenue_records" && selected && !filterCol) {
+              return Promise.resolve({ data: revenueRows, error: null }).then(resolve, reject);
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
           },
           eq(col, val) {
             filterCol = col;
@@ -70,6 +73,19 @@ mock.module("./_supabase.js", {
   },
 });
 
+mock.module("./_booking-pipeline.js", {
+  namedExports: {
+    persistBooking: async (payload) => {
+      persistCalls.push(payload);
+      bookingsByRef[payload.bookingId] = {
+        id: `rebuilt_${payload.bookingId}`,
+        payment_intent_id: payload.paymentIntentId || null,
+      };
+      return { ok: true, bookingId: payload.bookingId, booking: payload, supabaseOk: true, errors: [] };
+    },
+  },
+});
+
 const { default: handler } = await import("./revenue-self-heal.js");
 
 function makeRes() {
@@ -86,6 +102,7 @@ function makeRes() {
 
 test("revenue-self-heal repairs incomplete revenue row", async () => {
   revenueRows.length = 0;
+  persistCalls.length = 0;
   revenueRows.push({
     id: "rr_1",
     booking_id: "bk-1",
@@ -101,18 +118,27 @@ test("revenue-self-heal repairs incomplete revenue row", async () => {
   assert.equal(res._status, 200);
   assert.equal(res._body.failed, 0);
   assert.equal(res._body.repaired, 1);
+  assert.equal(persistCalls.length, 0);
   assert.equal(revenueRows[0].stripe_fee, 12);
   assert.equal(revenueRows[0].payment_intent_id, "pi_1");
 });
 
-test("revenue-self-heal reports failure when booking is missing", async () => {
+test("revenue-self-heal reconstructs missing booking from revenue + Stripe data", async () => {
   revenueRows.length = 0;
+  persistCalls.length = 0;
   revenueRows.push({
     id: "rr_missing_booking",
     booking_id: "bk-missing",
     payment_intent_id: "pi_missing",
     stripe_fee: null,
     refund_amount: 0,
+    gross_amount: 350,
+    vehicle_id: "camry",
+    pickup_date: "2026-04-01",
+    return_date: "2026-04-05",
+    customer_name: "Rosa Ortuno",
+    customer_phone: "+15551234567",
+    customer_email: "rosa@example.com",
   });
   delete bookingsByRef["bk-missing"];
 
@@ -120,6 +146,8 @@ test("revenue-self-heal reports failure when booking is missing", async () => {
   await handler({ method: "GET", headers: {} }, res);
 
   assert.equal(res._status, 200);
-  assert.equal(res._body.failed, 1);
-  assert.equal(res._body.repaired, 0);
+  assert.equal(res._body.failed, 0);
+  assert.equal(res._body.repaired, 1);
+  assert.equal(persistCalls.length, 1);
+  assert.equal(bookingsByRef["bk-missing"]?.id, "rebuilt_bk-missing");
 });
