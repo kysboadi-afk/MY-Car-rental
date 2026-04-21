@@ -3688,7 +3688,7 @@ function viewBooking(bookingId, vehicleId) {
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid #f9a82533;">
             <span style="color:var(--text-sub);">${p.appliedAt ? new Date(p.appliedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '–'}</span>
             <strong style="color:#b45309;">+$${formatMoney(p.amount || 0)}</strong>
-            ${p.paymentIntentId ? `<span style="color:var(--text-sub);font-size:10px;font-family:monospace;">${esc(p.paymentIntentId.slice(0,24))}…</span>` : ''}
+            ${p.paymentIntentId ? `<span style="color:var(--text-sub);font-size:10px;font-family:monospace;">${esc(p.paymentIntentId.length > 24 ? p.paymentIntentId.slice(0,24) + '…' : p.paymentIntentId)}</span>` : ''}
           </div>
         `).join('')}
       ` : '<div style="font-size:12px;color:var(--text-sub);">No extension payment records stored yet.</div>'}

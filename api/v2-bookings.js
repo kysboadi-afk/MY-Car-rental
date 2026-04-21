@@ -466,10 +466,10 @@ export default async function handler(req, res) {
       // only bookings stay consistent with the updated dates.
       let sbUpdateSuccess = false;
       const sbInstance = getSupabaseAdmin();
-      const hasDateUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
-      if (sbInstance && (safeUpdates.status || hasDateUpdate)) {
+      const hasReturnUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
+      if (sbInstance && (safeUpdates.status || hasReturnUpdate)) {
         const dbStatus = safeUpdates.status ? APP_TO_DB_STATUS[safeUpdates.status] : null;
-        if (dbStatus || hasDateUpdate) {
+        if (dbStatus || hasReturnUpdate) {
           try {
             const sbPayload = {
               ...(dbStatus ? { status: dbStatus } : {}),
