@@ -553,6 +553,12 @@ export default async function handler(req, res) {
           payment.metadata_booking_id ||
           ("stripe-" + payment.payment_intent_id);
 
+        // Mark as orphan when booking_id is a synthetic "stripe-<pi>" key — no real
+        // booking row was found in either bookings.json or Stripe metadata.
+        // Real "bk-…" refs from metadata or bookings.json are left as is_orphan=false
+        // so the DB trigger enforces they have a matching bookings row.
+        const isOrphanAutoCreate = newBookingId.startsWith("stripe-");
+
         if (dryRun) {
           results.preview.push({
             status:     "will_create",
@@ -562,6 +568,7 @@ export default async function handler(req, res) {
             fee:        payment.stripe_fee,
             net:        payment.stripe_net,
             email:      payment.customer_email,
+            is_orphan:  isOrphanAutoCreate,
           });
           results.created++;
           continue;
@@ -590,6 +597,10 @@ export default async function handler(req, res) {
           is_cancelled:      false,
           override_by_admin: false,
           sync_excluded:     false,
+          // Synthetic booking_id (no matching booking found) → flag as orphan so it
+          // is excluded from financial reporting and passes the booking_ref integrity
+          // trigger added by migration 0060.
+          is_orphan:         isOrphanAutoCreate,
           created_at:        new Date().toISOString(),
           updated_at:        new Date().toISOString(),
         };

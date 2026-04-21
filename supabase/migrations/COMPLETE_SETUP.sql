@@ -282,6 +282,7 @@ CREATE TABLE IF NOT EXISTS revenue_records (
   stripe_net         numeric(10,2) DEFAULT NULL,
   stripe_charge_id   text          DEFAULT NULL,
   sync_excluded      boolean       NOT NULL DEFAULT false,
+  is_orphan          boolean       NOT NULL DEFAULT false,
   created_at         timestamptz   NOT NULL DEFAULT now(),
   updated_at         timestamptz   NOT NULL DEFAULT now()
 );
@@ -296,6 +297,7 @@ CREATE INDEX IF NOT EXISTS revenue_records_payment_status_idx       ON revenue_r
 CREATE INDEX IF NOT EXISTS revenue_records_pickup_date_idx          ON revenue_records (pickup_date);
 CREATE INDEX IF NOT EXISTS revenue_records_stripe_charge_id_idx     ON revenue_records (stripe_charge_id) WHERE stripe_charge_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS revenue_records_sync_excluded_idx        ON revenue_records (sync_excluded) WHERE sync_excluded = true;
+CREATE INDEX IF NOT EXISTS revenue_records_is_orphan_idx            ON revenue_records (is_orphan)     WHERE is_orphan = true;
 CREATE INDEX IF NOT EXISTS revenue_records_created_at_idx           ON revenue_records (created_at DESC);
 
 -- booking_id uniqueness: one rental per booking; extensions share the booking_id
@@ -328,6 +330,32 @@ DROP TRIGGER IF EXISTS revenue_records_updated_at ON revenue_records;
 CREATE TRIGGER revenue_records_updated_at
   BEFORE UPDATE ON revenue_records
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Booking-ref integrity trigger (migration 0060)
+-- Every non-orphan, non-excluded revenue record must reference a real booking.
+CREATE OR REPLACE FUNCTION public.check_revenue_booking_ref()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.is_orphan = true   THEN RETURN NEW; END IF;
+  IF NEW.sync_excluded = true THEN RETURN NEW; END IF;
+  IF NEW.booking_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM bookings WHERE booking_ref = NEW.booking_id
+  ) THEN
+    RAISE EXCEPTION
+      'revenue_records integrity violation: booking_id=''%'' has no matching row in bookings.booking_ref. '
+      'Set is_orphan = true for intentional orphan records (e.g. stripe-reconcile auto-creates).',
+      COALESCE(NEW.booking_id, '<null>');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS revenue_records_booking_ref_check ON revenue_records;
+CREATE TRIGGER revenue_records_booking_ref_check
+  BEFORE INSERT OR UPDATE ON revenue_records
+  FOR EACH ROW EXECUTE FUNCTION public.check_revenue_booking_ref();
 
 -- ── Seed real paid bookings ───────────────────────────────────────────────────
 INSERT INTO revenue_records (
