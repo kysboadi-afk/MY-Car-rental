@@ -83,6 +83,18 @@ mock.module("./_booking-automation.js", {
     autoUpsertCustomer:      async (b, s) => { automationCalls.customer.push({ ...b, countStats: s }); },
     autoUpsertBooking:       async (b) => { automationCalls.booking.push({ ...b }); },
     autoCreateBlockedDate:   async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
+    parseTime12h:            (t) => {
+      if (!t) return null;
+      const m = String(t).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+      if (!m) return null;
+      let h = parseInt(m[1], 10);
+      const mn = parseInt(m[2], 10);
+      const s2 = m[3] ? parseInt(m[3], 10) : 0;
+      const ap = (m[4] || "").toUpperCase();
+      if (ap === "PM" && h !== 12) h += 12;
+      if (ap === "AM" && h === 12) h = 0;
+      return `${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}:${String(s2).padStart(2,"0")}`;
+    },
   },
 });
 

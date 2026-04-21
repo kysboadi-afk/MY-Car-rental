@@ -3449,12 +3449,9 @@ function bookingDerivedStatus(b, now) {
   if (b.status === 'active_rental') {
     const returnDateTime = bookingReturnDateTime(b);
     if (returnDateTime && now >= returnDateTime) return 'overdue';
+    if (b.extensionCount > 0) return 'extended';
+    return 'active_rental';
   }
-  // "Extended" = active rental whose returnDate differs from the original createdAt-implied range
-  // We use updatedAt vs createdAt as a proxy: if updated more than 1 hour after creation, treat as possibly extended
-  // A simpler heuristic: if status is active_rental and return date is in future but updated recently, mark extended
-  // We'll rely on the presence of a flagged extension by checking if returnDate was changed (approximated by updatedAt)
-  if (b.status === 'active_rental') return 'active_rental';
   return b.status;
 }
 
@@ -3603,6 +3600,7 @@ function applyBookingFilters() {
       <td>
         <div>${esc(b.pickupDate || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
+        ${b.extensionCount > 0 ? `<span class="badge badge-orange" style="font-size:10px;margin-top:3px;">🔄 ×${b.extensionCount}</span>` : ''}
       </td>
       <td>
         <div style="font-weight:700;">${gross}</div>
@@ -3681,6 +3679,21 @@ function viewBooking(bookingId, vehicleId) {
       ${b.custBookings ? `<div style="font-size:12px;color:var(--text-sub);">Total Bookings: ${b.custBookings}</div>` : ''}
     </div>
     ${b.notes ? `<div style="margin-top:12px;"><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Notes</div><div>${esc(b.notes)}</div></div>` : ''}
+    ${b.extensionCount > 0 ? `
+    <div style="margin-top:12px;padding:12px;background:#fffbeb;border-radius:8px;border:1px solid #f9a825;">
+      <div style="font-size:12px;font-weight:600;color:#b45309;text-transform:uppercase;margin-bottom:8px;">🔄 Extended ×${b.extensionCount}</div>
+      ${Array.isArray(b.payments) && b.payments.some(p => p && p.type === 'rental_extension') ? `
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;text-transform:uppercase;">Extension Payments</div>
+        ${b.payments.filter(p => p && p.type === 'rental_extension').map(p => `
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid #f9a82533;">
+            <span style="color:var(--text-sub);">${p.appliedAt ? new Date(p.appliedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '–'}</span>
+            <strong style="color:#b45309;">+$${formatMoney(p.amount || 0)}</strong>
+            ${p.paymentIntentId ? `<span style="color:var(--text-sub);font-size:10px;font-family:monospace;">${esc(p.paymentIntentId.slice(0,24))}…</span>` : ''}
+          </div>
+        `).join('')}
+      ` : '<div style="font-size:12px;color:var(--text-sub);">No extension payment records stored yet.</div>'}
+    </div>
+    ` : ''}
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;font-weight:600;color:var(--text-sub);text-transform:uppercase;margin-bottom:10px;">Correct Return Date / Extension</div>
       <div class="detail-sub-grid">
@@ -3710,7 +3723,7 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','active_rental',this);closeModal('booking-detail-modal')">Mark Active</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
-    ${(b.status === 'active_rental' || derived === 'overdue') ? `
+    ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
       <button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
