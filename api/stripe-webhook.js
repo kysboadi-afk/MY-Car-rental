@@ -970,7 +970,8 @@ export default async function handler(req, res) {
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
     const paymentType = (paymentIntent.metadata || {}).payment_type || "";
-    const isTestMode = process.env.STRIPE_SECRET_KEY.startsWith("sk_test_");
+    const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "";
+    const isTestMode = stripeSecretKey.startsWith("sk_test_");
     logPaymentIntentReceived(event, paymentIntent);
     if (isTestMode) {
       console.log(`stripe-webhook: TEST MODE → do NOT create bookings or block dates (PI ${paymentIntent.id})`);

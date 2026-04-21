@@ -564,10 +564,10 @@ export async function autoUpsertBooking(booking, opts = {}) {
  */
 export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking") {
   if (!vehicleId || !startDate || !endDate) {
-    throw new Error("Invalid block data");
+    throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
   }
   if (new Date(startDate) > new Date(endDate)) {
-    throw new Error("Invalid date range");
+    throw new Error("Invalid date range: startDate must be on or before endDate");
   }
   const sb = getSupabaseAdmin();
   if (!sb) return;
