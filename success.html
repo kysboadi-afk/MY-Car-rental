@@ -464,6 +464,7 @@
         var data;
         try { data = JSON.parse(raw); } catch (e) { enableHomeBtn(); return; }
         if (confirmedPaymentIntentId) { data.paymentIntentId = confirmedPaymentIntentId; }
+        data.paymentStatus = "confirmed";
         // Meta Pixel — track successful purchase
         if (typeof fbq === "function" && data.total != null) {
           var purchaseValue = parseFloat(String(data.total).replace(/[^0-9.]/g, ""));

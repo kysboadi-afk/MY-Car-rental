@@ -76,6 +76,7 @@ const VALID_BODY = {
   email: "jane@example.com",
   phone: "555-1234",
   total: "200",
+  paymentStatus: "confirmed",
   paymentIntentId: "pi_test_123",
   pricePerDay: 50,
   deposit: 0,
@@ -863,6 +864,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
 // A booking payload that simulates the final balance payment after a $50 deposit.
 const BALANCE_PAYMENT_BODY = {
   vehicleId:          "camry",
+  bookingId:          "booking-balance-test-1",
   car:                "Camry 2012",
   name:               "Jane Doe",
   email:              "jane@example.com",
@@ -875,6 +877,7 @@ const BALANCE_PAYMENT_BODY = {
   days:               4,
   protectionPlan:     false,
   paymentType:        "balance_payment",
+  paymentStatus:      "confirmed",
   paymentIntentId:    "pi_balance_test_123",
   depositAlreadyPaid: "50.00",
   fullRentalTotal:    "219.03",
@@ -963,6 +966,7 @@ const DEPOSIT_BOOKING_BODY = {
   returnDate:     "2026-05-05",
   returnTime:     "09:00",
   total:          "50",           // deposit amount charged
+  paymentStatus:  "confirmed",
   days:           4,
   protectionPlan: false,
   paymentIntentId: "pi_deposit_test_123",
@@ -1043,6 +1047,7 @@ const SLINGSHOT_BODY = {
   email:                 "john@example.com",
   phone:                 "555-9876",
   total:                 "275.50",
+  paymentStatus:         "confirmed",
   deposit:               150,
   days:                  1,
   slingshotDuration:     6,
