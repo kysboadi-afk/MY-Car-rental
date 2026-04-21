@@ -196,7 +196,9 @@
       "paymentLink": "",
       "paymentMethod": "stripe",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "pickup_2h": "2026-04-21T06:00:14.193Z"
+      },
       "createdAt": "2026-04-21T02:15:44.514Z",
       "source": "stripe_webhook",
       "stripeCustomerId": "cus_UNEGEs2gKalhff",
