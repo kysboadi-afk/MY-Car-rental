@@ -101,6 +101,15 @@ function normalizeEmail(email) {
   return value || null;
 }
 
+function normalizeCustomerName(name) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
 function buildAtomicPayload(booking) {
   const amountPaid = Number(booking.amountPaid || 0);
   const totalPrice = Number(booking.totalPrice || amountPaid);
@@ -253,9 +262,9 @@ export async function persistBooking(opts) {
 
   const booking = {
     bookingId,
-    name:            opts.name            || "",
+    name:            normalizeCustomerName(opts.name) || "",
     phone:           opts.phone           || "",
-    email:           opts.email           || "",
+    email:           normalizeEmail(opts.email) || "",
     vehicleId:       opts.vehicleId,
     vehicleName:     opts.vehicleName     || opts.vehicleId,
     pickupDate:      opts.pickupDate      || "",

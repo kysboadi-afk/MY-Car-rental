@@ -7,7 +7,7 @@
 // Actions:
 //   list    — { secret, action:"list", banned?, flagged?, search? }
 //   get     — { secret, action:"get", id }
-//   upsert  — { secret, action:"upsert", phone, name, email?, ...fields } (create or update by phone)
+//   upsert  — { secret, action:"upsert", name, email?, phone?, ...fields } (email-first; phone fallback)
 //   update  — { secret, action:"update", id, updates:{flagged?, banned?, flag_reason?, ban_reason?, notes?} }
 //   sync    — { secret, action:"sync" } — build/refresh customer table from bookings.json
 //
@@ -47,10 +47,25 @@ function computeCustomerTier({ totalProfit, totalBookings, riskFlag, flagged, ba
   return "standard";
 }
 
+function normalizeEmail(email) {
+  if (typeof email !== "string") return null;
+  const normalized = email.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizeCustomerName(name) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
 function customerIdentityKey(c) {
   const phone = c?.phone ? normalizePhone(String(c.phone).trim()) : null;
   if (phone) return `phone:${phone}`;
-  const email = c?.email ? String(c.email).trim().toLowerCase() : null;
+  const email = normalizeEmail(c?.email);
   if (email) return `email:${email}`;
   const name = c?.name ? String(c.name).trim().toLowerCase() : null;
   if (name) return `name:${name}`;
@@ -88,11 +103,13 @@ function dedupeCustomersForList(rows) {
 }
 
 async function findMostRecentCustomerByEmail(sb, email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return { existing: null, error: null };
   // Prefer the latest non-null timestamps so we update the canonical current row
   // when legacy duplicate email rows exist.
   const { data, error } = await sb.from("customers")
     .select("id, updated_at, created_at")
-    .eq("email", email)
+    .eq("email", normalizedEmail)
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(1);
@@ -229,28 +246,52 @@ export default async function handler(req, res) {
     if (action === "upsert") {
       const { name, phone, email } = body;
       if (!name) return res.status(400).json({ error: "name is required" });
-      if (!phone || !String(phone).trim()) return res.status(400).json({ error: "phone is required for upsert" });
+      if ((!phone || !String(phone).trim()) && !normalizeEmail(email)) {
+        return res.status(400).json({ error: "email or phone is required for upsert" });
+      }
 
       const record = {
-        name: String(name).trim(),
-        phone:      normalizePhone(String(phone).trim()),
-        email:      email ? String(email).trim() : null,
+        name: normalizeCustomerName(String(name)) || "Unknown",
+        phone: phone ? normalizePhone(String(phone).trim()) : null,
+        email: normalizeEmail(email),
         notes:      body.notes || null,
         updated_at: new Date().toISOString(),
       };
 
       if (sb) {
         try {
-          const { error: upsertErr } = await sb.from("customers")
-            .upsert(record, { onConflict: "phone", ignoreDuplicates: false });
-          if (upsertErr) {
-            if (!isSchemaError(upsertErr)) throw upsertErr;
-            console.warn("v2-customers upsert: customers table missing, falling back to GitHub");
+          if (record.email) {
+            const { existing, error: existingErr } = await findMostRecentCustomerByEmail(sb, record.email);
+            if (existingErr) throw existingErr;
+            if (existing) {
+              const { error: updateErr } = await sb.from("customers")
+                .update(record)
+                .eq("id", existing.id);
+              if (!updateErr) {
+                const { data: fresh } = await sb.from("customers").select("*").eq("id", existing.id).maybeSingle();
+                return res.status(200).json({ customer: fresh || { ...record, id: existing.id } });
+              }
+              if (!isSchemaError(updateErr)) throw updateErr;
+            } else {
+              const { error: insertErr } = await sb.from("customers").insert(record);
+              if (!insertErr) {
+                const { existing: fresh } = await findMostRecentCustomerByEmail(sb, record.email);
+                return res.status(200).json({ customer: fresh ? { ...record, id: fresh.id } : record });
+              }
+              if (!isSchemaError(insertErr)) throw insertErr;
+            }
           } else {
-            const { data, error: fetchErr } = await sb.from("customers")
-              .select("*").eq("phone", record.phone).single();
-            if (!fetchErr) return res.status(200).json({ customer: data });
-            if (!isSchemaError(fetchErr)) throw fetchErr;
+            const { error: upsertErr } = await sb.from("customers")
+              .upsert(record, { onConflict: "phone", ignoreDuplicates: false });
+            if (upsertErr) {
+              if (!isSchemaError(upsertErr)) throw upsertErr;
+              console.warn("v2-customers upsert: customers table missing, falling back to GitHub");
+            } else {
+              const { data, error: fetchErr } = await sb.from("customers")
+                .select("*").eq("phone", record.phone).single();
+              if (!fetchErr) return res.status(200).json({ customer: data });
+              if (!isSchemaError(fetchErr)) throw fetchErr;
+            }
           }
         } catch (sbErr) {
           if (!isSchemaError(sbErr)) throw sbErr;
@@ -262,7 +303,9 @@ export default async function handler(req, res) {
       await updateJsonFileWithRetry({
         load:    loadCustomersFromGitHub,
         apply:   (data) => {
-          const idx = data.findIndex((c) => c.phone === record.phone);
+          const idx = record.email
+            ? data.findIndex((c) => normalizeEmail(c.email) === record.email)
+            : data.findIndex((c) => c.phone === record.phone);
           if (idx !== -1) {
             Object.assign(data[idx], record);
             upserted = data[idx];
@@ -285,6 +328,15 @@ export default async function handler(req, res) {
       const updates = { updated_at: new Date().toISOString() };
       for (const f of allowed) {
         if (Object.prototype.hasOwnProperty.call(body.updates || {}, f)) updates[f] = (body.updates)[f];
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "email")) {
+        updates.email = normalizeEmail(updates.email);
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "name")) {
+        updates.name = normalizeCustomerName(updates.name) || "Unknown";
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, "full_name")) {
+        updates.full_name = normalizeCustomerName(updates.full_name) || updates.full_name;
       }
       if (updates.risk_flag !== undefined && updates.risk_flag !== null &&
           !["low","medium","high"].includes(updates.risk_flag)) {
@@ -327,28 +379,28 @@ export default async function handler(req, res) {
             .eq("payment_status", "paid");
 
           if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
-            // Group revenue records by the best available identity key, in priority order:
-            //   1. Normalized phone (E.164) — most reliable deduplication key
-            //   2. Normalized email (lowercase + trim) — for phone-less records
-            //   3. Normalized name (lowercase + trim) — last-resort fallback
-            // This ensures no revenue row is silently dropped.
-            const byKey = {};
-            for (const r of rrData) {
-              const normPhone = r.customer_phone ? normalizePhone(r.customer_phone) : null;
-              const normEmail = r.customer_email ? r.customer_email.toLowerCase().trim() : null;
-              const normName  = r.customer_name  ? r.customer_name.toLowerCase().trim()  : null;
+              // Group revenue records by the best available identity key, in priority order:
+              //   1. Normalized email (primary identity key)
+              //   2. Normalized phone (fallback only when email is missing)
+              //   3. Normalized name (last-resort fallback)
+              // This ensures no revenue row is silently dropped.
+              const byKey = {};
+              for (const r of rrData) {
+                const normPhone = r.customer_phone ? normalizePhone(r.customer_phone) : null;
+                const normEmail = normalizeEmail(r.customer_email);
+                const normName  = r.customer_name  ? r.customer_name.toLowerCase().trim()  : null;
 
-              let key;
-              let keyType;
-              if (normPhone) {
-                key = normPhone;
-                keyType = "phone";
-              } else if (normEmail) {
-                key = `email:${normEmail}`;
-                keyType = "email";
-              } else if (normName) {
-                key = `name:${normName}`;
-                keyType = "name";
+                let key;
+                let keyType;
+                if (normEmail) {
+                  key = `email:${normEmail}`;
+                  keyType = "email";
+                } else if (normPhone) {
+                  key = normPhone;
+                  keyType = "phone";
+                } else if (normName) {
+                  key = `name:${normName}`;
+                  keyType = "name";
               } else {
                 continue; // no identity at all — truly unattributable
               }
@@ -358,7 +410,7 @@ export default async function handler(req, res) {
                   keyType,
                   phone: normPhone,
                   email: normEmail,
-                  name:  r.customer_name || "Unknown",
+                  name:  normalizeCustomerName(r.customer_name) || "Unknown",
                   records: [],
                 };
               }
@@ -368,7 +420,7 @@ export default async function handler(req, res) {
               if (normPhone && !byKey[key].phone) byKey[key].phone = normPhone;
               if (normEmail && !byKey[key].email) byKey[key].email = normEmail;
               if (r.customer_name && (!byKey[key].name || byKey[key].name === "Unknown"))
-                byKey[key].name = r.customer_name;
+                byKey[key].name = normalizeCustomerName(r.customer_name) || byKey[key].name;
               byKey[key].records.push(r);
             }
 
@@ -395,8 +447,8 @@ export default async function handler(req, res) {
 
             // ── Build per-customer financial records ──────────────────────
             // Separate into three buckets for different upsert strategies:
-            //   phoneUpserts   — have a phone, upserted via onConflict:"phone"
-            //   emailFallbacks — phone-less but have email, looked up by email
+            //   phoneUpserts   — no email, but have a phone (phone fallback)
+            //   emailFallbacks — email-keyed records (primary)
             //   nameFallbacks  — no phone, no email, looked up by name+null-phone
             const phoneUpserts   = [];
             const emailFallbacks = [];
@@ -482,10 +534,10 @@ export default async function handler(req, res) {
                 updated_at:                  new Date().toISOString(),
               };
 
-              if (cust.phone) {
+              if (cust.email) {
+                emailFallbacks.push({ ...record, phone: cust.phone || null, _emailKey: cust.email });
+              } else if (cust.phone) {
                 phoneUpserts.push({ ...record, phone: cust.phone });
-              } else if (cust.email) {
-                emailFallbacks.push({ ...record, phone: null, _emailKey: cust.email });
               } else {
                 nameFallbacks.push({ ...record, phone: null });
               }
@@ -553,7 +605,7 @@ export default async function handler(req, res) {
                       const { error } = await sb.from("customers").update(cleanRecord).eq("id", existing.id);
                       if (error) { console.error("v2-customers sync email-update error:", error.message); }
                     } else {
-                      const { error } = await sb.from("customers").insert({ ...cleanRecord, phone: null });
+                      const { error } = await sb.from("customers").insert(cleanRecord);
                       if (error) { console.error("v2-customers sync email-insert error:", error.message); }
                     }
                   } catch (emailErr) {
@@ -650,24 +702,28 @@ export default async function handler(req, res) {
       const { data: bookingsData } = await loadBookings();
       const allBookingsList = Object.values(bookingsData).flat();
 
-      // Group bookings by phone or name
+      // Group bookings by email (primary), then phone fallback, then name.
       const byKey = {};
       for (const b of allBookingsList) {
         const rawPhone = (b.phone || "").trim();
         const phone    = rawPhone ? normalizePhone(rawPhone) : "";
-        const name     = (b.name  || "").trim();
-        if (!phone && !name) continue;
-        const key = phone || `name:${name.toLowerCase()}`;
-        if (!byKey[key]) byKey[key] = { name, phone: phone || null, email: b.email || null, bookings: [] };
-        if (b.name)  byKey[key].name  = b.name;
-        if (b.email) byKey[key].email = b.email;
+        const email    = normalizeEmail(b.email);
+        const normName = normalizeCustomerName(b.name);
+        if (!email && !phone && !normName) continue;
+        const name     = normName || "Unknown";
+        const key = email ? `email:${email}` : (phone || `name:${name.toLowerCase()}`);
+        if (!byKey[key]) byKey[key] = { name, phone: phone || null, email: email || null, bookings: [] };
+        if (b.name)  byKey[key].name  = normalizeCustomerName(b.name) || byKey[key].name;
+        if (email) byKey[key].email = email;
+        if (!byKey[key].phone && phone) byKey[key].phone = phone;
         byKey[key].bookings.push(b);
       }
 
       const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
 
-      const phoneUpserts  = [];
-      const nameFallbacks = [];
+      const phoneUpserts   = [];
+      const emailFallbacks = [];
+      const nameFallbacks  = [];
 
       for (const [, c] of Object.entries(byKey)) {
         const paidBookings   = c.bookings.filter((b) => paidStatuses.has(b.status));
@@ -676,8 +732,8 @@ export default async function handler(req, res) {
         const spent = paidBookings.reduce((s, b) => s + (Number(b.amountPaid || 0)), 0);
         const totalRentalDays = paidBookings.reduce((s, b) => s + computeRentalDays(b.pickupDate, b.returnDate), 0);
         const record = {
-          name:                        c.name  || "Unknown",
-          email:                       c.email || null,
+          name:                        normalizeCustomerName(c.name) || "Unknown",
+          email:                       normalizeEmail(c.email),
           total_bookings:              paidBookings.length,
           total_spent:                 Math.round(spent * 100) / 100,
           total_gross_revenue:         Math.round(spent * 100) / 100,
@@ -693,7 +749,9 @@ export default async function handler(req, res) {
           last_booking_date:           pickupDates[pickupDates.length - 1] || null,
           updated_at:         new Date().toISOString(),
         };
-        if (c.phone) {
+        if (record.email) {
+          emailFallbacks.push({ ...record, phone: c.phone || null, _emailKey: record.email });
+        } else if (c.phone) {
           phoneUpserts.push({ ...record, phone: c.phone });
         } else {
           nameFallbacks.push(record);
@@ -712,6 +770,29 @@ export default async function handler(req, res) {
             schemaError = true;
           } else {
             synced += phoneUpserts.length;
+          }
+        }
+
+        if (!schemaError) {
+          for (const record of emailFallbacks) {
+            const { _emailKey: emailKey, ...cleanRecord } = record;
+            try {
+              const { existing, error: emailErr } = await findMostRecentCustomerByEmail(sb, emailKey);
+              if (emailErr) {
+                console.error("v2-customers sync email-lookup error:", emailErr.message);
+                continue;
+              }
+              if (existing) {
+                const { error } = await sb.from("customers").update(cleanRecord).eq("id", existing.id);
+                if (error) { console.error("v2-customers sync email-update error:", error.message); continue; }
+              } else {
+                const { error } = await sb.from("customers").insert(cleanRecord);
+                if (error) { console.error("v2-customers sync email-insert error:", error.message); continue; }
+              }
+              synced++;
+            } catch (emailLookupErr) {
+              console.error("v2-customers sync email-fallback error:", emailLookupErr.message);
+            }
           }
         }
 
@@ -751,16 +832,22 @@ export default async function handler(req, res) {
       }
 
       // GitHub fallback for sync
-      const allRecords = [...phoneUpserts, ...nameFallbacks.map((r) => ({ ...r, phone: null }))];
+      const allRecords = [
+        ...phoneUpserts,
+        ...emailFallbacks.map(({ _emailKey, ...r }) => r),
+        ...nameFallbacks.map((r) => ({ ...r, phone: null })),
+      ];
       let synced = 0;
       await updateJsonFileWithRetry({
         load:    loadCustomersFromGitHub,
         apply:   (data) => {
           synced = 0;
           for (const r of allRecords) {
-            const idx = r.phone
-              ? data.findIndex((c) => c.phone === r.phone)
-              : data.findIndex((c) => c.name === r.name && !c.phone);
+            const idx = r.email
+              ? data.findIndex((c) => normalizeEmail(c.email) === r.email)
+              : (r.phone
+                ? data.findIndex((c) => c.phone === r.phone)
+                : data.findIndex((c) => c.name === r.name && !c.phone));
             if (idx !== -1) {
               Object.assign(data[idx], r);
             } else {

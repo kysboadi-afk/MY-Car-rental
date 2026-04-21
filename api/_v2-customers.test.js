@@ -218,6 +218,12 @@ async function runList(body = {}) {
   return res;
 }
 
+async function runUpsert(body = {}) {
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-secret", action: "upsert", ...body }), res);
+  return res;
+}
+
 /** Parse the aggregation log line emitted by the sync handler. */
 function parseAggLog() {
   const line = logLines.find((l) => l.includes("v2-customers sync aggregation"));
@@ -518,6 +524,22 @@ test("list: returns deduped customers for duplicate email/phone identities", asy
   assert.equal(res._body.customers.length, 2, "duplicate identity rows should collapse in list response");
   assert.ok(res._body.customers.some((c) => c.id === "cust-a"), "latest duplicate row should be kept");
   assert.ok(res._body.customers.some((c) => c.id === "cust-c"));
+});
+
+test("upsert: normalizes email to lowercase and name to title case", async () => {
+  resetState();
+  rrRows = [];
+
+  const res = await runUpsert({
+    name: "  bRaNDoN   bOoKhArT ",
+    email: "  BRANDON.BOOKHART@GMAIL.COM ",
+    phone: "",
+  });
+
+  assert.equal(res._status, 200);
+  assert.equal(customersDb.length, 1);
+  assert.equal(customersDb[0].email, "brandon.bookhart@gmail.com");
+  assert.equal(customersDb[0].name, "Brandon Bookhart");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

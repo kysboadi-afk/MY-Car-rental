@@ -268,7 +268,8 @@ function formatSupabaseError(err) {
 }
 
 /**
- * Looks up a customer's UUID in the Supabase customers table by phone then email.
+ * Looks up a customer's UUID in the Supabase customers table by email first,
+ * with phone fallback only when email is missing.
  * Returns null if not found or if Supabase is unavailable.
  *
  * @param {string} [phone] - normalised phone number
@@ -279,12 +280,13 @@ async function resolveCustomerIdFromSupabase(phone, email) {
   const sb = getSupabaseAdmin();
   if (!sb) return null;
   try {
-    if (phone && phone.trim()) {
-      const { data } = await sb.from("customers").select("id").eq("phone", phone.trim()).maybeSingle();
+    if (email && email.trim()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data } = await sb.from("customers").select("id").eq("email", normalizedEmail).maybeSingle();
       if (data?.id) return data.id;
     }
-    if (email && email.trim()) {
-      const { data } = await sb.from("customers").select("id").eq("email", email.trim().toLowerCase()).maybeSingle();
+    if ((!email || !email.trim()) && phone && phone.trim()) {
+      const { data } = await sb.from("customers").select("id").eq("phone", phone.trim()).maybeSingle();
       if (data?.id) return data.id;
     }
   } catch {
