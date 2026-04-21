@@ -606,8 +606,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
  */
 async function sendWebhookNotificationEmails(paymentIntent) {
   const meta = paymentIntent.metadata || {};
-  const _diagBookingId = meta.booking_id || paymentIntent.id || "unknown";
-  console.log(`stripe-webhook: OWNER EMAIL TRIGGERED for booking_id: ${_diagBookingId} pi_id: ${paymentIntent.id}`);
+  const diagBookingId = meta.booking_id || paymentIntent.id || "unknown";
+  console.log(`stripe-webhook: OWNER EMAIL TRIGGERED for booking_id: ${diagBookingId} pi_id: ${paymentIntent.id}`);
   console.log(`stripe-webhook: SMTP config — host=${process.env.SMTP_HOST || "(not set)"} user=${process.env.SMTP_USER || "(not set)"} pass=${process.env.SMTP_PASS ? "(set)" : "(not set)"}`);
   console.log(`stripe-webhook: OWNER_EMAIL resolves to: ${OWNER_EMAIL}`);
 
@@ -660,6 +660,9 @@ async function sendWebhookNotificationEmails(paymentIntent) {
           .select("*")
           .eq("booking_id", booking_id)
           .maybeSingle();
+      // Note: the query intentionally omits .eq("email_sent", false) so that a
+      // row where email_sent=true can be detected and used for the dedup early-
+      // return below.  A single round-trip is cheaper than two separate queries.
         if (docsRow?.email_sent === true) {
           // Owner email was already sent (e.g. from a previous webhook attempt on a
           // Stripe retry).  Skip to prevent duplicate owner notifications.
@@ -1509,7 +1512,7 @@ export default async function handler(req, res) {
       console.error(
         `stripe-webhook: resolveStripeFeeFields failed for PI ${paymentIntent.id}` +
         ` — booking will be persisted without stripe_fee (backfilled by reconcile):`,
-        feeErr.message
+        feeErr
       );
     }
 
@@ -1559,7 +1562,7 @@ export default async function handler(req, res) {
     if (persistenceFailed) {
       return res.status(500).json({
         received: false,
-        error: `booking persistence failed for ${paymentIntent.id}`,
+        error: `booking persistence failed for ${paymentIntent.id} — check server logs for db_atomic_error or db_step_error entries`,
       });
     }
   }
