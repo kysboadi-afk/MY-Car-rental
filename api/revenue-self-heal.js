@@ -1,3 +1,14 @@
+// api/revenue-self-heal.js
+// Self-healing endpoint for revenue_records integrity.
+//
+// Dual purpose:
+//   1. Repair incomplete Stripe fee / payment_intent_id data by expanding the
+//      balance_transaction on the associated Stripe PaymentIntent.
+//   2. Reconstruct missing booking rows (orphan revenue records) from the
+//      revenue row's stored fields + Stripe PaymentIntent metadata, then
+//      re-verify the revenue record is fully linked.
+//
+// Both repairs are idempotent — safe to call repeatedly.
 import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";

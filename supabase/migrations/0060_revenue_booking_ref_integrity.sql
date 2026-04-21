@@ -65,7 +65,10 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Guard: booking_id must have a matching booking_ref in the bookings table.
+  -- Guard: booking_id must be non-null AND have a matching booking_ref.
+  -- NULL booking_id is rejected explicitly here for a clear error message;
+  -- `NOT EXISTS` with a NULL arg would also evaluate as true (matching nothing)
+  -- but the explicit check makes intent readable.
   IF NEW.booking_id IS NULL OR NOT EXISTS (
     SELECT 1 FROM bookings WHERE booking_ref = NEW.booking_id
   ) THEN

@@ -108,6 +108,11 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       throw new Error("missing bookingId for revenue record");
     }
 
+    // Application-level guard: verify the booking row exists before writing revenue.
+    // This complements (rather than duplicates) the DB trigger added in migration 0060:
+    // the JS check runs before the INSERT/UPDATE reaches the DB, providing a cleaner
+    // error message and a traceable log line in the pipeline trace.  The trigger acts
+    // as the hard backstop if this check is ever bypassed (e.g., direct SQL writes).
     const { data: bookingRow, error: bookingLookupErr } = await sb
       .from("bookings")
       .select("id")
