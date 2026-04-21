@@ -13,7 +13,8 @@
     "api/v2-mileage.js":                    { "maxDuration": 20 },
     "api/send-extension-confirmation.js":   { "maxDuration": 25 },
     "api/admin-resend-extension.js":        { "maxDuration": 25 },
-    "api/v2-customers.js":                  { "maxDuration": 25 }
+    "api/v2-customers.js":                  { "maxDuration": 25 },
+    "api/revenue-self-heal.js":             { "maxDuration": 60 }
   },
   "headers": [
     {
@@ -45,6 +46,10 @@
     {
       "path": "/api/missed-maintenance",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/revenue-self-heal",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

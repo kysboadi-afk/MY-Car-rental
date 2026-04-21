@@ -463,7 +463,7 @@ test("webhook new booking: sends alert when required metadata is missing", async
   event.data.object.id = "pi_missing_meta_alert";
   const res = makeRes();
   await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
+  assert.equal(res._status, 500);
 
   const alert = sentEmails.find((mail) =>
     String(mail?.subject || "").includes("Booking persistence failed")
