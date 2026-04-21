@@ -36,7 +36,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
-import { buildUnifiedConfirmationEmail } from "./_booking-confirmation-template.js";
+import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -3005,7 +3005,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
   const firstName = (name || "there").split(" ")[0];
 
   // Determine whether this was a website (Stripe) payment or cash/manual.
-  const isWebsitePayment = typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_");
+  const isWebsitePayment = isWebsitePaymentMethod(paymentIntentId);
   const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
 
   // ── Retrieve stored docs (signature, ID, insurance) from Supabase ────────
@@ -3138,17 +3138,16 @@ async function toolResendBookingConfirmation({ bookingId }) {
             ? `Protection plan selected (${protectionPlanTier || "tier not specified"})`
             : "Not selected / No protection plan"));
 
-  const missingItemNotes = [];
-  if (!storedDocs || !storedDocs.id_base64 || !storedDocs.signature || !storedDocs.insurance_base64) {
-    missingItemNotes.push("Documents not uploaded yet");
-  }
-  if (!storedDocs?.id_base64) missingItemNotes.push("Renter ID not uploaded");
-  if (!storedDocs?.signature) missingItemNotes.push("Signed rental agreement not available");
-  if (!storedDocs?.insurance_base64 && storedDocs?.insurance_coverage_choice === "yes") {
-    missingItemNotes.push("Insurance selected but proof not uploaded");
-  }
-  if (notes) missingItemNotes.push(`Booking notes: ${notes}`);
-  if (hasAttachments) missingItemNotes.push(`Attachments: ${attachmentList}`);
+  const missingItemNotes = buildDocumentNotes({
+    idUploaded:        !!storedDocs?.id_base64,
+    signatureUploaded: !!storedDocs?.signature,
+    insuranceUploaded: !!storedDocs?.insurance_base64,
+    insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
+  });
+  const additionalNotes = [
+    ...(notes ? [`Booking notes: ${notes}`] : []),
+    ...(hasAttachments ? [`Attachments: ${attachmentList}`] : []),
+  ];
 
   const ownerTemplate = buildUnifiedConfirmationEmail({
     audience:           "owner",
@@ -3175,7 +3174,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
     paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
     insuranceStatus,
     pricingBreakdownLines: breakdownLines || [],
-    missingItemNotes,
+    missingItemNotes: [...missingItemNotes, ...additionalNotes],
   });
 
   // ── Owner notification ────────────────────────────────────────────────────
@@ -3221,7 +3220,7 @@ async function toolResendBookingConfirmation({ bookingId }) {
       paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
       insuranceStatus,
       pricingBreakdownLines: breakdownLines || [],
-      missingItemNotes,
+      missingItemNotes: [...missingItemNotes, ...additionalNotes],
       firstName,
     });
     try {

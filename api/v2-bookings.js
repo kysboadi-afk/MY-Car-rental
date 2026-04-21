@@ -39,7 +39,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
-import { buildUnifiedConfirmationEmail } from "./_booking-confirmation-template.js";
+import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
@@ -1024,7 +1024,7 @@ export default async function handler(req, res) {
             signature:               storedDocs.signature,
             fullRentalCost:          booking.fullRentalCost || null,
             balanceAtPickup:         booking.balanceAtPickup || null,
-            insuranceCoverageChoice: storedDocs.insurance_coverage_choice || (hasProtectionPlan ? "no" : "yes"),
+            insuranceCoverageChoice: storedDocs.insurance_coverage_choice || (hasProtectionPlan ? "no" : null),
           };
           const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
           const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
@@ -1089,18 +1089,18 @@ export default async function handler(req, res) {
                 ? `Protection plan selected (${protectionPlanTier || "tier not specified"})`
                 : "Not selected / No protection plan"));
 
-      const missingItemNotes = [];
-      if (!storedDocs || !storedDocs.id_base64 || !storedDocs.signature || !storedDocs.insurance_base64) {
-        missingItemNotes.push("Documents not uploaded yet");
-      }
-      if (!storedDocs?.id_base64) missingItemNotes.push("Renter ID not uploaded");
-      if (!storedDocs?.signature) missingItemNotes.push("Signed rental agreement not available");
-      if (!storedDocs?.insurance_base64 && storedDocs?.insurance_coverage_choice === "yes") {
-        missingItemNotes.push("Insurance selected but proof not uploaded");
-      }
-      if (attachments.length) missingItemNotes.push(`Attachments: ${attachments.map(a => a.filename).join(", ")}`);
+      const missingItemNotes = buildDocumentNotes({
+        idUploaded:        !!storedDocs?.id_base64,
+        signatureUploaded: !!storedDocs?.signature,
+        insuranceUploaded: !!storedDocs?.insurance_base64,
+        insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
+      });
+      const additionalNotes = [
+        ...(booking.notes ? [`Booking notes: ${booking.notes}`] : []),
+        ...(attachments.length ? [`Attachments: ${attachments.map(a => a.filename).join(", ")}`] : []),
+      ];
 
-      const isWebsitePayment = typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_");
+      const isWebsitePayment = isWebsitePaymentMethod(paymentIntentId);
       const paymentMethodLabel = isWebsitePayment ? "Website (Stripe)" : "Cash / Manual";
       const ownerTemplate = buildUnifiedConfirmationEmail({
         audience:           "owner",
@@ -1127,7 +1127,7 @@ export default async function handler(req, res) {
         paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
         insuranceStatus,
         pricingBreakdownLines: breakdownLines || [],
-        missingItemNotes,
+        missingItemNotes: [...missingItemNotes, ...additionalNotes],
       });
 
       // Owner email
@@ -1169,7 +1169,7 @@ export default async function handler(req, res) {
           paymentMethodLabel: `${paymentMethodLabel}${isWebsitePayment ? ` (${paymentIntentId})` : ""}`,
           insuranceStatus,
           pricingBreakdownLines: breakdownLines || [],
-          missingItemNotes,
+          missingItemNotes: [...missingItemNotes, ...additionalNotes],
           firstName,
         });
         try {

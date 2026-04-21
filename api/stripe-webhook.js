@@ -32,7 +32,7 @@ import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
-import { buildUnifiedConfirmationEmail } from "./_booking-confirmation-template.js";
+import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-confirmation-template.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -539,7 +539,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     protection_plan_tier,
   } = meta;
 
-  const amountDollars = paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A";
+  const amountNumber = paymentIntent.amount ? (paymentIntent.amount / 100) : NaN;
+  const amountDollars = Number.isFinite(amountNumber) ? amountNumber.toFixed(2) : "N/A";
   const isDepositMode = payment_type === "reservation_deposit";
 
   const transporter = nodemailer.createTransport({
@@ -652,7 +653,12 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   }
 
   const hasFullDocs = attachments.length > 0;
-  const hasProtectionPlan = !!protection_plan_tier;
+  const insuranceStatusMeta = String(meta.insurance_status || "").toLowerCase();
+  const hasProtectionPlan = !!(
+    protection_plan_tier ||
+    meta.protection_plan === "true" ||
+    insuranceStatusMeta === "no_insurance_dpp"
+  );
 
   let breakdownLines = null;
   try {
@@ -680,15 +686,12 @@ async function sendWebhookNotificationEmails(paymentIntent) {
             ? `Protection plan selected (${protection_plan_tier || "tier not specified"})`
             : "Not selected / No protection plan"));
 
-  const missingItemNotes = [];
-  if (!storedDocs || !storedDocs.id_base64 || !storedDocs.signature || !storedDocs.insurance_base64) {
-    missingItemNotes.push("Documents not uploaded yet");
-  }
-  if (!storedDocs?.id_base64) missingItemNotes.push("Renter ID not uploaded");
-  if (!storedDocs?.signature) missingItemNotes.push("Signed rental agreement not available");
-  if (!storedDocs?.insurance_base64 && storedDocs?.insurance_coverage_choice === "yes") {
-    missingItemNotes.push("Insurance selected but proof not uploaded");
-  }
+  const missingItemNotes = buildDocumentNotes({
+    idUploaded:        !!storedDocs?.id_base64,
+    signatureUploaded: !!storedDocs?.signature,
+    insuranceUploaded: !!storedDocs?.insurance_base64,
+    insuranceExpected: storedDocs?.insurance_coverage_choice === "yes",
+  });
 
   // ── Owner notification ────────────────────────────────────────────────────
   const ownerEmail = buildUnifiedConfirmationEmail({
@@ -703,15 +706,14 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     pickupTime:         pickup_time,
     returnDate:         return_date,
     returnTime:         return_time,
-    amountPaid:         Number(amountDollars),
-    totalPrice:         Number(full_rental_amount || amountDollars),
+    amountPaid:         amountNumber,
+    totalPrice:         Number(full_rental_amount || amountNumber),
     fullRentalCost:     full_rental_amount || null,
     balanceAtPickup:    balance_at_pickup || null,
     paymentMethodLabel: isDepositMode ? "Website (Stripe) — Reservation deposit" : "Website (Stripe)",
     insuranceStatus,
     pricingBreakdownLines: breakdownLines || [],
     missingItemNotes: [
-      ...(hasFullDocs ? [] : ["Documents not uploaded yet"]),
       ...missingItemNotes,
       ...(attachments.length ? [`Attachments: ${attachments.map(a => a.filename).join(", ")}`] : []),
     ],
@@ -761,8 +763,8 @@ async function sendWebhookNotificationEmails(paymentIntent) {
       pickupTime:         pickup_time,
       returnDate:         return_date,
       returnTime:         return_time,
-      amountPaid:         Number(amountDollars),
-      totalPrice:         Number(full_rental_amount || amountDollars),
+      amountPaid:         amountNumber,
+      totalPrice:         Number(full_rental_amount || amountNumber),
       fullRentalCost:     full_rental_amount || null,
       balanceAtPickup:    balance_at_pickup || null,
       paymentMethodLabel: isDepositMode ? "Website (Stripe) — Reservation deposit" : "Website (Stripe)",

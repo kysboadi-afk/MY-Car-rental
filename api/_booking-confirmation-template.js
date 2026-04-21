@@ -16,6 +16,10 @@ function money(value, fallback = "N/A") {
   return `$${n.toFixed(2)}`;
 }
 
+export function isWebsitePaymentMethod(paymentIntentId) {
+  return typeof paymentIntentId === "string" && paymentIntentId.startsWith("pi_");
+}
+
 function buildFallbackBreakdownLines({
   vehicleId,
   pickupDate,
@@ -48,6 +52,21 @@ function buildFallbackBreakdownLines({
     lines.push(`Full Rental Cost: ${money(fullRentalCost)}`);
   }
   return lines;
+}
+
+export function buildDocumentNotes({
+  idUploaded,
+  signatureUploaded,
+  insuranceUploaded,
+  insuranceExpected = false,
+}) {
+  const allMissing = !idUploaded && !signatureUploaded && !insuranceUploaded;
+  if (allMissing) return ["Documents not uploaded yet"];
+  const missing = [];
+  if (!idUploaded) missing.push("Renter ID not uploaded");
+  if (!signatureUploaded) missing.push("Signed rental agreement not available");
+  if (insuranceExpected && !insuranceUploaded) missing.push("Insurance selected but proof not uploaded");
+  return missing;
 }
 
 export function buildUnifiedConfirmationEmail({
