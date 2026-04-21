@@ -34,6 +34,7 @@ import {
   autoUpsertCustomer,
   autoUpsertBooking,
   autoCreateBlockedDate,
+  parseTime12h,
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -460,18 +461,24 @@ export default async function handler(req, res) {
       // the GitHub bookings.json write is temporarily blocked by a SHA conflict.
       // This is intentionally done BEFORE the bookings.json write so that, if
       // GitHub fails after all retries, we can fall back to the Supabase result.
+      // Also fires when returnDate/returnTime are being changed (e.g. admin
+      // correcting a return date or processing a manual extension) so Supabase-
+      // only bookings stay consistent with the updated dates.
       let sbUpdateSuccess = false;
       const sbInstance = getSupabaseAdmin();
-      if (sbInstance && safeUpdates.status) {
-        const dbStatus = APP_TO_DB_STATUS[safeUpdates.status];
-        if (dbStatus) {
+      const hasReturnUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
+      if (sbInstance && (safeUpdates.status || hasReturnUpdate)) {
+        const dbStatus = safeUpdates.status ? APP_TO_DB_STATUS[safeUpdates.status] : null;
+        if (dbStatus || hasReturnUpdate) {
           try {
             const sbPayload = {
-              status:     dbStatus,
+              ...(dbStatus ? { status: dbStatus } : {}),
               updated_at: safeUpdates.updatedAt,
               ...(safeUpdates.activatedAt ? { activated_at: safeUpdates.activatedAt } : {}),
               ...(safeUpdates.completedAt ? { completed_at: safeUpdates.completedAt } : {}),
               ...(safeUpdates.notes !== undefined  ? { notes: safeUpdates.notes } : {}),
+              ...(safeUpdates.returnDate !== undefined ? { return_date: safeUpdates.returnDate } : {}),
+              ...(safeUpdates.returnTime !== undefined ? { return_time: parseTime12h(safeUpdates.returnTime) } : {}),
             };
 
             // If we already located the Supabase row during validation (Supabase-only
@@ -583,7 +590,7 @@ export default async function handler(req, res) {
       if (sbOnlyRow) {
         if (!sbUpdateSuccess) {
           // The Supabase update failed and there is no bookings.json to fall back on.
-          return res.status(500).json({ error: "Failed to update booking status in database" });
+          return res.status(500).json({ error: "Failed to update booking in database" });
         }
         updatedBooking = {
           bookingId,
