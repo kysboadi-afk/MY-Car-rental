@@ -559,6 +559,13 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       } else {
         console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${persistPayload.bookingId}`);
       }
+      console.log("[BOOKING_CREATED]", {
+        booking_ref: persistPayload.bookingId,
+        payment_intent_id: paymentIntent.id,
+        vehicle_id,
+        start: pickup_date,
+        end: return_date,
+      });
       break;
     }
 

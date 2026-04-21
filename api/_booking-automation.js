@@ -18,6 +18,7 @@
 //   writeAuditLog            — appends rows to booking_audit_log
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
 
@@ -564,7 +565,8 @@ export async function autoUpsertBooking(booking, opts = {}) {
  * @param {string} [bookingRef] - optional booking_ref foreign key (for 'booking' reason)
  */
 export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking", bookingRef = null) {
-  if (!vehicleId || !startDate || !endDate) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !startDate || !endDate) {
     throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
   }
   if (new Date(startDate) > new Date(endDate)) {
@@ -573,7 +575,7 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
   const sb = getSupabaseAdmin();
   if (!sb) return;
 
-  const row = { vehicle_id: vehicleId, start_date: startDate, end_date: endDate, reason };
+  const row = { vehicle_id: normalizedVehicleId, start_date: startDate, end_date: endDate, reason };
   if (bookingRef) row.booking_ref = bookingRef;
 
   try {
@@ -585,6 +587,13 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
       );
     if (error) {
       console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", error.message);
+    } else {
+      console.log("[BLOCKED_DATE_CREATED]", {
+        vehicle_id: normalizedVehicleId,
+        start: startDate,
+        end: endDate,
+        booking_ref: bookingRef || null,
+      });
     }
   } catch (err) {
     console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", err.message);

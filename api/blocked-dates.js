@@ -58,6 +58,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "id must be a positive integer." });
   }
 
+  const { data: existing, error: findErr } = await sb
+    .from("blocked_dates")
+    .select("id, reason")
+    .eq("id", id)
+    .maybeSingle();
+  if (findErr) return res.status(500).json({ error: findErr.message });
+  if (!existing) return res.status(404).json({ error: "Blocked date not found." });
+  if (existing.reason === "booking") {
+    return res.status(409).json({ error: "Booking-generated blocked dates cannot be deleted manually." });
+  }
+
   const { error } = await sb
     .from("blocked_dates")
     .delete()
