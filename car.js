@@ -125,10 +125,14 @@ const PROTECTION_PLAN_BASIC    = 15;   // Basic: $15/day
 const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
 const PROTECTION_PLAN_PREMIUM  = 50;   // Premium: $50/day
 
+const pageParams = new URLSearchParams(window.location.search);
+const ADMIN_OVERRIDE = /^(true|1)$/i.test(pageParams.get("admin_override") || "");
+const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
+const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
+
 // ----- Helpers -----
 function getVehicleFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("vehicle");
+  return pageParams.get("vehicle");
 }
 
 // i18n helper — translates a key using lang.js if available, else returns fallback.
@@ -254,6 +258,17 @@ document.getElementById("carPrice").textContent = (carData.hourlyTiers)
   : (carData.weekly)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+if (IS_TEST_MODE_OVERRIDE) {
+  const bookingSection = document.querySelector(".booking");
+  if (bookingSection) {
+    const testModeBanner = document.createElement("div");
+    testModeBanner.id = "testModeBanner";
+    testModeBanner.textContent = "TEST MODE – availability override active";
+    testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
+    bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
+  }
+}
 
 // Hide the nav bar entirely for slingshot booking pages (slingshot has its own landing page)
 if (vehicleId.startsWith("slingshot")) {
@@ -1155,7 +1170,9 @@ function updatePickupTimeSlots(selectedDate) {
     opt.value = timeSlotToHH(slot);
     opt.textContent = slot; // AM/PM label for the user
 
-    if (isSlingshot) {
+    if (IS_TEST_MODE_OVERRIDE) {
+      opt.disabled = false;
+    } else if (isSlingshot) {
       // Slot is available for Slingshot when at least one unit is free.
       // Disable only when EVERY unit is blocked.
       const allBlocked = allUnitRangesCache.every(function(unitRanges) {
@@ -1275,6 +1292,7 @@ async function initDatePickers() {
   });
 
   function isBooked(date) {
+    if (IS_TEST_MODE_OVERRIDE) return false;
     const t = date.getTime();
     if (isSlingshot) {
       // Date is blocked only when EVERY Slingshot unit is booked on that day.
@@ -1336,6 +1354,7 @@ initDatePickers();
 // unavailable; the "next available" date is the earliest return date across all
 // currently-booked units.
 (async function checkFleetStatus() {
+  if (IS_TEST_MODE_OVERRIDE) return;
   try {
     const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
     const isSlingshot = vehicleId.startsWith("slingshot");
@@ -2290,6 +2309,8 @@ stripeBtn.addEventListener("click", async () => {
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
         paymentMode,
+        adminOverride: ADMIN_OVERRIDE,
+        testMode: TEST_MODE,
       })
     });
 

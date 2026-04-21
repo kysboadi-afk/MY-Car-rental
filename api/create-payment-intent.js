@@ -39,7 +39,10 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice, pickupTime, returnTime } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, adminOverride, testMode } = req.body;
+    const adminOverrideEnabled = adminOverride === true || /^(true|1)$/i.test(String(adminOverride || ""));
+    const testModeEnabled = testMode === true || /^(true|1)$/i.test(String(testMode || ""));
+    const testAvailabilityOverride = adminOverrideEnabled && testModeEnabled;
 
     // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -96,26 +99,28 @@ export default async function handler(req, res) {
     // Both checks are time-aware: a booking from 9 AM to 9 AM does not block
     // a subsequent booking starting at 9 AM on the same return date.
     let assignedVehicleId = vehicleId;
-    if (isSlingshotVehicle) {
-      // Compute the Slingshot return time from pickup time + duration so the
-      // overlap check is precise at the hour level.
-      const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, derivedReturnTime);
-      if (!unit) {
-        return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
-      }
-      assignedVehicleId = unit;
-    } else {
-      // For economy cars the return time always equals the pickup time.
-      // Use the same time for both bounds so the check is symmetric.
-      const available = await isDatesAndTimesAvailable(vehicleId, pickup, returnDate, trimmedPickupTime, trimmedPickupTime);
-      if (!available) {
-        return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
-      }
+    if (!testAvailabilityOverride) {
+      if (isSlingshotVehicle) {
+        // Compute the Slingshot return time from pickup time + duration so the
+        // overlap check is precise at the hour level.
+        const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, derivedReturnTime);
+        if (!unit) {
+          return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
+        }
+        assignedVehicleId = unit;
+      } else {
+        // For economy cars the return time always equals the pickup time.
+        // Use the same time for both bounds so the check is symmetric.
+        const available = await isDatesAndTimesAvailable(vehicleId, pickup, returnDate, trimmedPickupTime, trimmedPickupTime);
+        if (!available) {
+          return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
+        }
 
-      // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
-      const vehicleAvailable = await isVehicleAvailable(vehicleId);
-      if (!vehicleAvailable) {
-        return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
+        // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
+        const vehicleAvailable = await isVehicleAvailable(vehicleId);
+        if (!vehicleAvailable) {
+          return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
+        }
       }
     }
 
