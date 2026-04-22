@@ -12,6 +12,7 @@
 //
 // available_at is computed from the latest active booking return datetime in
 // America/Los_Angeles for vehicles currently marked unavailable.
+// When no active booking applies, available_at is explicitly null.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -20,6 +21,8 @@ const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALL_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
+// Keep aligned with booked-dates/v2 availability "active" statuses so vehicles
+// blocked by active reservations still surface next availability consistently.
 const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
 
 const DEFAULT_STATUS = {
