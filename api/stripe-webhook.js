@@ -1162,8 +1162,10 @@ export default async function handler(req, res) {
                 alreadyApplied = true;
                 if (shouldPersistReturnTime) {
                   cur.returnTime = resolvedReturnTime;
-                  updatedBooking = { ...cur };
                 }
+                // Always capture a snapshot so the alreadyApplied branch can
+                // attempt idempotent revenue recovery when needed.
+                updatedBooking = { ...cur };
                 return;
               }
 
@@ -1246,6 +1248,48 @@ export default async function handler(req, res) {
             console.log(
               `stripe-webhook: rental_extension already applied for booking ${bookingRef} return_date=${new_return_date}`
             );
+            // Extension date was already updated on a prior delivery.
+            // Attempt idempotent revenue record creation in case it was missed —
+            // e.g. the first delivery updated the booking but returned 500 before
+            // writing the revenue record, so the next Stripe retry lands here.
+            // autoCreateRevenueRecord deduplicates on payment_intent_id so this
+            // is a no-op when the record already exists.
+            try {
+              let recoveryFeeFields = { stripeFee: null, stripeNet: null };
+              try {
+                recoveryFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+              } catch (feeErr) {
+                console.warn(
+                  `stripe-webhook: alreadyApplied extension fee lookup failed (non-fatal): ${feeErr.message}`
+                );
+              }
+              const extCustomerId = await resolveCustomerIdFromSupabase(
+                updatedBooking.phone || "",
+                updatedBooking.email || renter_email || "",
+              );
+              await autoCreateRevenueRecord({
+                bookingId:       bookingRef,
+                paymentIntentId: paymentIntent.id,
+                vehicleId:       vehicle_id,
+                customerId:      extCustomerId,
+                name:            updatedBooking.name || renter_name || "",
+                phone:           updatedBooking.phone || "",
+                email:           updatedBooking.email || renter_email || "",
+                pickupDate:      updatedBooking.pickupDate || "",
+                returnDate:      updatedBooking.returnDate || new_return_date || "",
+                amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
+                paymentMethod:   "stripe",
+                type:            "extension",
+                ...recoveryFeeFields,
+              }, {
+                strict:           false,   // non-fatal — booking date is already consistent
+                requireStripeFee: false,   // reconcile will fill in fees if missing
+              });
+            } catch (recoveryErr) {
+              console.warn(
+                `stripe-webhook: alreadyApplied extension revenue recovery failed (non-fatal): ${recoveryErr.message}`
+              );
+            }
             return res.status(200).json({ received: true });
           }
 
