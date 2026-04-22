@@ -262,15 +262,16 @@ export default async function handler(req, res) {
             }
           } catch (_e) { /* non-fatal */ }
 
+          const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
           const bookings = (rows || []).map((r) => {
             const bookingRef = r.booking_ref || String(r.id);
             const rr = revenueByBookingId[bookingRef] || null;
             const totalPrice = Number(r.total_price || 0);
-            const gross      = rr ? Number(rr.gross_amount || 0) : totalPrice;
-            const stripeFee  = rr && rr.stripe_fee != null ? Number(rr.stripe_fee) : null;
+            const gross      = round2(rr ? Number(rr.gross_amount || 0) : totalPrice);
+            const stripeFee  = rr && rr.stripe_fee != null ? round2(rr.stripe_fee) : null;
             const amountNet  = rr && rr.stripe_net != null
-              ? Number(rr.stripe_net)
-              : (stripeFee != null ? gross - stripeFee : null);
+              ? round2(rr.stripe_net)
+              : (stripeFee != null ? round2(gross - stripeFee) : null);
             const cust = r.customers || {};
             return {
               bookingId:       bookingRef,
