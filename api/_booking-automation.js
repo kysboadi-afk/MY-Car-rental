@@ -14,8 +14,9 @@
 //   autoCreateRevenueRecord  — writes to legacy revenue_records table
 //   autoUpsertCustomer       — upserts customer row (keyed by phone; falls back to email)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
-//   autoCreateBlockedDate    — inserts a blocked_dates row for a booking
-//   writeAuditLog            — appends rows to booking_audit_log
+//   autoCreateBlockedDate        — inserts a blocked_dates row for a booking
+//   autoReleaseBlockedDateOnReturn — trims blocked_dates end_date on vehicle return
+//   writeAuditLog                — appends rows to booking_audit_log
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
@@ -597,6 +598,89 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
     }
   } catch (err) {
     console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Trims or closes out a booking's blocked_dates entry when the vehicle is returned.
+ *
+ * If the vehicle is returned before the original end_date (early return), the
+ * blocked range is shortened to end on today so that subsequent date merges
+ * in /api/booked-dates reflect the actual occupancy period rather than the
+ * originally scheduled one.  When the return is on-time or late the row is
+ * left unchanged (it is already in the past or today).
+ *
+ * Logs [BLOCKED_DATE_UPDATED_AFTER_RETURN] in all cases.
+ * Non-fatal — errors are logged and never propagate to the caller.
+ *
+ * @param {string} vehicleId  - vehicle_id text key
+ * @param {string} bookingRef - booking_ref that owns the blocked_dates row
+ */
+export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !bookingRef) {
+    console.warn("_booking-automation autoReleaseBlockedDateOnReturn: missing vehicleId or bookingRef — skipped");
+    return;
+  }
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const { data: rows, error: findErr } = await sb
+      .from("blocked_dates")
+      .select("id, start_date, end_date")
+      .eq("vehicle_id", normalizedVehicleId)
+      .eq("booking_ref", bookingRef);
+
+    if (findErr) {
+      console.error("_booking-automation autoReleaseBlockedDateOnReturn find error (non-fatal):", findErr.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+        vehicle_id:  normalizedVehicleId,
+        booking_ref: bookingRef,
+        action:      "no_row_found",
+      });
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayDate = new Date(today);
+
+    for (const row of rows) {
+      if (todayDate < new Date(row.end_date)) {
+        // Early return: shrink the blocked range to end today.
+        const { error: updateErr } = await sb
+          .from("blocked_dates")
+          .update({ end_date: today })
+          .eq("id", row.id);
+
+        if (updateErr) {
+          console.error("_booking-automation autoReleaseBlockedDateOnReturn update error (non-fatal):", updateErr.message);
+        } else {
+          console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+            vehicle_id:   normalizedVehicleId,
+            booking_ref:  bookingRef,
+            original_end: row.end_date,
+            updated_end:  today,
+            action:       "trimmed_early_return",
+          });
+        }
+      } else {
+        // On-time or late return — existing end_date is correct, nothing to update.
+        console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+          vehicle_id:   normalizedVehicleId,
+          booking_ref:  bookingRef,
+          original_end: row.end_date,
+          actual_return: today,
+          action:        "on_time_or_late_no_change",
+        });
+      }
+    }
+  } catch (err) {
+    console.error("_booking-automation autoReleaseBlockedDateOnReturn error (non-fatal):", err.message);
   }
 }
 
