@@ -1036,10 +1036,12 @@ export default async function handler(req, res) {
                 return;
               }
 
-              if (cur.status !== "active_rental" && cur.status !== "reserved") {
+              const isActiveRental = cur.status === "active_rental" || cur.status === "active";
+              if (!isActiveRental && cur.status !== "reserved") {
                 invalidStatus = cur.status || "<missing>";
                 return;
               }
+              if (cur.status === "active") cur.status = "active_rental";
 
               oldReturnDate = cur.returnDate || "";
 

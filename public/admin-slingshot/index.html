@@ -3127,11 +3127,15 @@ function loadBookings() {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
     .then((data) => {
       const rawBookings = data.bookings || [];
+      const normalizedBookings = rawBookings.map((b) => ({
+        ...b,
+        status: b && b.status === 'active' ? 'active_rental' : b.status,
+      }));
       // Filter to car vehicles only (exclude slingshot bookings — managed in slingshot admin)
       const carVehicleIds = new Set(Object.keys(allVehicles));
       allBookings = carVehicleIds.size > 0
-        ? rawBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId))
-        : rawBookings;
+        ? normalizedBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId))
+        : normalizedBookings;
       renderBookings();
     })
     .catch((err) => {
