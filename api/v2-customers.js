@@ -402,6 +402,11 @@ export default async function handler(req, res) {
           }
 
           const { data: rrData, error: rrError } = rrResult;
+          // revenue_reporting_base already excludes sync_excluded and is_orphan rows via its
+          // WHERE clause (migration 0053), so those fields are not present in its SELECT list.
+          // The filter below is therefore a no-op for the primary path (both fields undefined →
+          // !undefined = true, all rows pass) and a meaningful guard for the fallback path where
+          // revenue_records_effective returns the raw columns.
           const rrRows = (rrData || []).filter((r) => !r.sync_excluded && !r.is_orphan);
 
           if (!rrError && Array.isArray(rrRows) && rrRows.length > 0) {

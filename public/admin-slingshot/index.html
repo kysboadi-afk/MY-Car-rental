@@ -4278,7 +4278,9 @@ function banCustomer(id, banned) {
 /**
  * Recompute all customer financial totals from the canonical revenue source
  * (revenue_reporting_base / revenue_records_effective).  Non-blocking: fires
- * in the background and shows a toast on completion.
+ * in the background and shows a toast on completion.  Called automatically
+ * after every Stripe reconcile, dedup, or orphan-cleanup so customer KPIs
+ * always stay in sync with the revenue dashboard.
  *
  * @param {object} [opts]
  * @param {boolean} [opts.silent=false] - Suppress the "in progress" toast.
