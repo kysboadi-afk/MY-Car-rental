@@ -581,12 +581,15 @@ export default async function handler(req, res) {
         // so the DB trigger enforces they have a matching bookings row.
         const isOrphanAutoCreate = newBookingId.startsWith("stripe-");
 
+        // Derive the record type: extension PIs always produce a separate 'extension' row.
+        const newRecordType = payment.payment_type === "rental_extension" ? "extension" : "rental";
+
         if (dryRun) {
           results.preview.push({
             status:     "will_create",
             pi_id:      payment.payment_intent_id,
             booking_id: newBookingId,
-            type:       payment.payment_type === "rental_extension" ? "extension" : "rental",
+            type:       newRecordType,
             gross:      payment.amount_gross,
             fee:        payment.stripe_fee,
             net:        payment.stripe_net,
@@ -610,7 +613,7 @@ export default async function handler(req, res) {
           gross_amount:      payment.amount_gross,
           deposit_amount:    0,
           refund_amount:     0,
-          type:              payment.payment_type === "rental_extension" ? "extension" : "rental",
+          type:              newRecordType,
           payment_method:    "stripe",
           payment_status:    "paid",
           payment_intent_id: payment.payment_intent_id,
