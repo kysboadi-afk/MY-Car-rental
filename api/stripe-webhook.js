@@ -256,6 +256,18 @@ function resolveBookingStatus(paymentType) {
     : "booked_paid";
 }
 
+function mapVehicleId(metadata = {}) {
+  const name = String(metadata.vehicle_name || "").toLowerCase();
+
+  if (name.includes("slingshot r (2)")) return "slingshot2";
+  if (name.includes("slingshot r (3)")) return "slingshot3";
+  if (name.includes("slingshot")) return "slingshot";
+  if (name.includes("2012")) return "camry2012";
+  if (name.includes("2013")) return "camry2013";
+
+  throw new Error(`Unknown vehicle mapping for vehicle_name="${metadata.vehicle_name || ""}"`);
+}
+
 function formatSupabaseError(err) {
   if (!err) return "unknown Supabase error";
   if (typeof err === "string") return err;
@@ -466,7 +478,6 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     booking_id,
     renter_name,
     renter_phone,
-    vehicle_id,
     vehicle_name,
     pickup_date,
     return_date,
@@ -478,13 +489,33 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     protection_plan_tier,
   } = meta;
 
-  if (!vehicle_id || !pickup_date || !return_date) {
-    const reason =
-      `stripe-webhook: saveWebhookBookingRecord metadata missing for PI ${paymentIntent.id}` +
-      ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`;
+  let vehicleId = "";
+  try {
+    vehicleId = mapVehicleId(meta);
+  } catch (mapErr) {
+    const reason = `stripe-webhook: saveWebhookBookingRecord vehicle_id mapping failed for PI ${paymentIntent.id}: ${mapErr.message}`;
     await sendBookingPersistenceAlert(paymentIntent, reason, {
       booking_id,
-      vehicle_id,
+      vehicle_id: meta.vehicle_id || "",
+      vehicle_name: vehicle_name || "",
+      pickup_date,
+      return_date,
+      attempts: 0,
+    });
+    throw new Error(reason);
+  }
+
+  if (!vehicleId) {
+    throw new Error("Invalid vehicle_id mapping");
+  }
+
+  if (!pickup_date || !return_date) {
+    const reason =
+      `stripe-webhook: saveWebhookBookingRecord metadata missing for PI ${paymentIntent.id}` +
+      ` vehicle_id=${vehicleId || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`;
+    await sendBookingPersistenceAlert(paymentIntent, reason, {
+      booking_id,
+      vehicle_id: vehicleId,
       pickup_date,
       return_date,
       attempts: 0,
@@ -503,8 +534,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     name:                  renter_name || "",
     phone:                 renter_phone ? normalizePhone(renter_phone) : "",
     email:                 email || "",
-    vehicleId:             vehicle_id,
-    vehicleName:           vehicle_name || vehicle_id,
+    vehicleId,
+    vehicleName:           vehicle_name || vehicleId,
     pickupDate:            pickup_date,
     pickupTime:            pickup_time  || "",
     returnDate:            return_date,
@@ -526,6 +557,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
     ...extraFields,
   };
+  console.log("[BOOKING_DATA]", persistPayload);
 
   let result = null;
   let supabaseExists = false;
@@ -549,7 +581,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     }
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
     revenueComplete = await revenueRecordCompleteInSupabase(persistPayload.bookingId, paymentIntent.id);
-    jsonExists = await bookingExistsInJson(vehicle_id, persistPayload.bookingId, paymentIntent.id);
+    jsonExists = await bookingExistsInJson(vehicleId, persistPayload.bookingId, paymentIntent.id);
 
     if (supabaseExists && jsonExists && revenueComplete) {
       if (!result.ok) {
@@ -557,12 +589,12 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
           `stripe-webhook: PI ${paymentIntent.id} persisted after recovery attempt ${attempt}; initial errors: ${result.errors.join("; ")}`
         );
       } else {
-        console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${persistPayload.bookingId}`);
+        console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicleId}) bookingId=${persistPayload.bookingId}`);
       }
       console.log("[BOOKING_CREATED]", {
         booking_ref: persistPayload.bookingId,
         payment_intent_id: paymentIntent.id,
-        vehicle_id,
+        vehicle_id: vehicleId,
         start: pickup_date,
         end: return_date,
       });
@@ -583,7 +615,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       `(supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists})`;
     await sendBookingPersistenceAlert(paymentIntent, failureReason, {
       booking_id: persistPayload.bookingId,
-      vehicle_id,
+      vehicle_id: vehicleId,
       pickup_date,
       return_date,
       attempts: maxAttempts,
