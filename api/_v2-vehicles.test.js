@@ -236,6 +236,31 @@ test("list: returns object keyed by vehicle_id", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
+test("list: collapses camry aliases to one UI vehicle id and keeps richer row", async () => {
+  setSecret("testSecret");
+  const rows = [
+    { vehicle_id: "camry2012", data: { vehicle_id: "camry2012", status: "active" } },
+    { vehicle_id: "camry", data: { vehicle_id: "camry", vehicle_name: "Camry 2012", cover_image: "images/car1.jpg", status: "active" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ body: { secret: "testSecret", action: "list" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(Object.keys(res._body.vehicles).length, 1);
+  assert.ok(res._body.vehicles.camry);
+  assert.equal(res._body.vehicles.camry.vehicle_id, "camry");
+  assert.equal(res._body.vehicles.camry.vehicle_name, "Camry 2012");
+  assert.equal(res._body.vehicles.camry.cover_image, "/images/car1.jpg");
+  setSecret(REAL_ADMIN_SECRET);
+});
+
 test("list: falls back to GitHub when Supabase select returns an error", async () => {
   setSecret("testSecret");
   supabaseMockState.client = {
@@ -504,6 +529,29 @@ test("GET: returns array of flattened vehicle objects", async () => {
   assert.equal(res._body[0].cover_image, "/images/car2.jpg");
   // "images/car1.jpg" normalizes to "/images/car1.jpg"
   assert.equal(res._body[1].cover_image, "/images/car1.jpg");
+});
+
+test("GET: collapses camry aliases to one UI vehicle id and keeps richer row", async () => {
+  const rows = [
+    { vehicle_id: "camry2012", data: { vehicle_id: "camry2012", status: "active" } },
+    { vehicle_id: "camry", data: { vehicle_id: "camry", vehicle_name: "Camry 2012", cover_image: "images/car1.jpg", status: "active" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body));
+  assert.equal(res._body.length, 1);
+  assert.equal(res._body[0].vehicle_id, "camry");
+  assert.equal(res._body[0].vehicle_name, "Camry 2012");
+  assert.equal(res._body[0].cover_image, "/images/car1.jpg");
 });
 
 test("GET: normalizes various cover_image path formats", async () => {
