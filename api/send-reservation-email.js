@@ -709,6 +709,13 @@ export default async function handler(req, res) {
     });
   }
   const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
+  if (!returnTime) {
+    return res.status(400).json({
+      error: usedRecoveryPath
+        ? "Missing required return time. Please contact support with your payment confirmation to complete the booking."
+        : "Return time is required. Please select a return time before proceeding.",
+    });
+  }
   const bookingBody = { ...hydratedBody, pickupTime, returnTime };
 
   // Guard: fail fast if SMTP credentials are missing — but persist the booking

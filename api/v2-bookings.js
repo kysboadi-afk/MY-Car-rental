@@ -47,6 +47,7 @@ import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
+import { normalizeClockTime } from "./_time.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -921,6 +922,14 @@ export default async function handler(req, res) {
       if (returnDate < pickupDate) {
         return res.status(400).json({ error: "returnDate must not be before pickupDate" });
       }
+      const trimmedPickupTime = typeof pickupTime === "string" ? pickupTime.trim() : "";
+      if (!normalizeClockTime(trimmedPickupTime)) {
+        return res.status(400).json({ error: "pickupTime is required and must be a valid time" });
+      }
+      const trimmedReturnTime = typeof returnTime === "string" ? returnTime.trim() : "";
+      if (!normalizeClockTime(trimmedReturnTime)) {
+        return res.status(400).json({ error: "returnTime is required and must be a valid time" });
+      }
 
       // Check for overlapping bookings — uses datetime-aware comparison so that
       // back-to-back bookings on the same day (different time slots) are allowed.
@@ -934,7 +943,7 @@ export default async function handler(req, res) {
         const eTo   = existing.returnDate;
         if (eFrom && eTo) {
           const conflictRanges = [{ from: eFrom, to: eTo, fromTime: existing.pickupTime, toTime: existing.returnTime }];
-          if (hasDateTimeOverlap(conflictRanges, pickupDate, returnDate, pickupTime, returnTime)) {
+          if (hasDateTimeOverlap(conflictRanges, pickupDate, returnDate, trimmedPickupTime, trimmedReturnTime)) {
             return res.status(409).json({
               error: `Date/time conflict: vehicle already booked from ${eFrom} ${existing.pickupTime || ""} to ${eTo} ${existing.returnTime || ""} for ${existing.name}`.trim(),
             });
@@ -956,9 +965,9 @@ export default async function handler(req, res) {
         phone:          typeof phone === "string" ? phone.trim().slice(0, 20) : "",
         email:          typeof email === "string" ? email.trim().slice(0, 100) : "",
         pickupDate,
-        pickupTime:     typeof pickupTime === "string" ? pickupTime.trim() : "",
+        pickupTime:     trimmedPickupTime,
         returnDate,
-        returnTime:     typeof returnTime === "string" ? returnTime.trim() : "",
+        returnTime:     trimmedReturnTime,
         amountPaid:     Math.round(parsedAmount * 100) / 100,
         totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
         paymentMethod:  typeof paymentMethod    === "string" ? paymentMethod.trim()    : "cash",

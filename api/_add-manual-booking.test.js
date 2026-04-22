@@ -136,7 +136,9 @@ function basePayload(overrides = {}) {
     phone:       "+13105550002",
     email:       "bob@example.com",
     pickupDate:  "2026-07-01",
+    pickupTime:  "10:00 AM",
     returnDate:  "2026-07-03",
+    returnTime:  "5:00 PM",
     amountPaid:  150,
     ...overrides,
   };
@@ -165,6 +167,18 @@ test("add-manual-booking: 400 for invalid vehicleId", async () => {
 test("add-manual-booking: 400 when returnDate before pickupDate", async () => {
   const res = makeRes();
   await handler(makeReq({ ...basePayload(), pickupDate: "2026-07-10", returnDate: "2026-07-05" }), res);
+  assert.equal(res._status, 400);
+});
+
+test("add-manual-booking: 400 for missing pickupTime", async () => {
+  const res = makeRes();
+  await handler(makeReq({ ...basePayload(), pickupTime: "" }), res);
+  assert.equal(res._status, 400);
+});
+
+test("add-manual-booking: 400 for missing returnTime", async () => {
+  const res = makeRes();
+  await handler(makeReq({ ...basePayload(), returnTime: "" }), res);
   assert.equal(res._status, 400);
 });
 

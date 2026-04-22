@@ -3,6 +3,8 @@
 Copy the block below and paste it into the Supabase AI / MCP assistant to set up or
 verify the full rental-management database for SLY RIDES.
 
+Booking data quality rule: always capture and persist both `pickup_time` and `return_time` for every booking; treat missing booking times as an integrity issue that must be corrected.
+
 ---
 
 ```

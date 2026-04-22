@@ -24,6 +24,11 @@
 //     tables: {
 //       [tableName]: "ok" | "missing" | "error"
 //     }
+//   },
+//   bookingTimeAudit: {
+//     checked: boolean,
+//     missingTimeCount: number,
+//     sampleMissingRefs: string[]
 //   }
 // }
 
@@ -119,6 +124,11 @@ export default async function handler(req, res) {
     error:     null,
     tables:    {},
   };
+  const bookingTimeAudit = {
+    checked: false,
+    missingTimeCount: 0,
+    sampleMissingRefs: [],
+  };
 
   const sb = getSupabaseAdmin();
   if (!sb) {
@@ -145,8 +155,28 @@ export default async function handler(req, res) {
       for (const table of OPTIONAL_TABLES) {
         supabaseResult.tables[table] = await checkTable(sb, table);
       }
+
+      // Booking datetime integrity audit: find rows missing pickup/return time.
+      try {
+        const { data: missingRows, error: missingErr } = await sb
+          .from("bookings")
+          .select("booking_ref, pickup_time, return_time")
+          .or("pickup_time.is.null,return_time.is.null")
+          .limit(25);
+        if (!missingErr) {
+          bookingTimeAudit.checked = true;
+          const rows = missingRows || [];
+          bookingTimeAudit.missingTimeCount = rows.length;
+          bookingTimeAudit.sampleMissingRefs = rows
+            .map((r) => r.booking_ref)
+            .filter(Boolean)
+            .slice(0, 10);
+        }
+      } catch {
+        // Non-fatal diagnostic helper only.
+      }
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult });
+  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit });
 }
