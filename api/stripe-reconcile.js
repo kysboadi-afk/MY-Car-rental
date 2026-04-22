@@ -531,12 +531,19 @@ export default async function handler(req, res) {
         byPIId.get(payment.payment_intent_id) ||
         (payment.stripe_charge_id ? byChargeId.get(payment.stripe_charge_id) : null) ||
         byBookingId.get(payment.payment_intent_id) ||
-        (payment.metadata_booking_id ? byBookingId.get(payment.metadata_booking_id) : null) ||
+        // Extension PIs share booking_id with the original rental — skip the
+        // metadata_booking_id lookup to avoid falsely matching the original booking's
+        // revenue record.  Each extension gets its own separate row (Option A).
+        (payment.payment_type !== "rental_extension" && payment.metadata_booking_id
+          ? byBookingId.get(payment.metadata_booking_id)
+          : null) ||
         null;
 
       // Email+amount fallback: only used when primary keys failed and the Stripe
       // payment has a customer email to match against.
-      if (!matchedRecord && payment.customer_email) {
+      // Skipped for extension PIs — they always get their own revenue record (Option A),
+      // and the same renter could produce a false match against the original record.
+      if (!matchedRecord && payment.customer_email && payment.payment_type !== "rental_extension") {
         const key = `${payment.customer_email.toLowerCase()}:${payment.amount_gross.toFixed(2)}`;
         const candidate = byEmailAndAmount.get(key);
         if (candidate && !matchedRecordIds.has(candidate.id)) {
@@ -544,30 +551,14 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!matchedRecord) {
-        // RENTAL EXTENSION: revenue record was already created by the webhook.
-        // Do NOT auto-create a duplicate. Instead verify the record exists via
-        // the original_booking_id stored in the PI metadata, then mark as processed.
-        if (payment.payment_type === "rental_extension") {
-          // metadata_booking_id is the canonical field (set by current extend-rental.js).
-          // Fall back to metadata_original_booking_id for PIs created before this fix
-          // so historical extension payments are still recognised correctly.
-          const origBookingId = payment.metadata_booking_id || payment.metadata_original_booking_id;
-          const extRecord = origBookingId ? byBookingId.get(origBookingId) : null;
-          if (extRecord && !matchedRecordIds.has(extRecord.id)) {
-            console.log("stripe-reconcile: extension already processed via webhook", {
-              pi_id:       payment.payment_intent_id,
-              booking_id:  origBookingId,
-              record_id:   extRecord.id,
-            });
-            matchedRecord = extRecord;
-            // Fall through to the match/update logic below.
-          } else {
-            console.warn("stripe-reconcile: extension revenue record not found for PI", payment.payment_intent_id, "booking_id:", origBookingId);
-            results.skipped++;
-            continue;
-          }
-        }
+      // Extension PIs with no existing revenue record fall through to the auto-create
+      // path below, which will insert a new row with type='extension'.
+      if (!matchedRecord && payment.payment_type === "rental_extension") {
+        const origBookingId = payment.metadata_booking_id || payment.metadata_original_booking_id;
+        console.log("stripe-reconcile: extension revenue record not found — will auto-create", {
+          pi_id:      payment.payment_intent_id,
+          booking_id: origBookingId || "<missing>",
+        });
       }
 
       if (!matchedRecord) {
@@ -595,6 +586,7 @@ export default async function handler(req, res) {
             status:     "will_create",
             pi_id:      payment.payment_intent_id,
             booking_id: newBookingId,
+            type:       payment.payment_type === "rental_extension" ? "extension" : "rental",
             gross:      payment.amount_gross,
             fee:        payment.stripe_fee,
             net:        payment.stripe_net,
@@ -618,6 +610,7 @@ export default async function handler(req, res) {
           gross_amount:      payment.amount_gross,
           deposit_amount:    0,
           refund_amount:     0,
+          type:              payment.payment_type === "rental_extension" ? "extension" : "rental",
           payment_method:    "stripe",
           payment_status:    "paid",
           payment_intent_id: payment.payment_intent_id,
