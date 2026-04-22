@@ -16,6 +16,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -59,6 +60,7 @@ async function fetchGitHubBookedDates() {
  * @returns {{ available: boolean, conflicts: object[], source: string }}
  */
 async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime) {
+  const dbVehicleId = normalizeVehicleId(vehicleId);
   if (sb) {
     try {
       // Active rental override: if the vehicle has ANY active_rental booking
@@ -70,7 +72,7 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
       const { data: activeRentals, error: activeRentalError } = await sb
         .from("bookings")
         .select("booking_ref, return_date, return_time")
-        .eq("vehicle_id", vehicleId)
+        .eq("vehicle_id", dbVehicleId)
         .eq("status", "active_rental")
         .limit(1);
       if (!activeRentalError && activeRentals && activeRentals.length > 0) {
@@ -82,7 +84,7 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
       const { data: rows, error } = await sb
         .from("bookings")
         .select("booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, customer_id")
-        .eq("vehicle_id", vehicleId)
+        .eq("vehicle_id", dbVehicleId)
         .in("status", ACTIVE_STATUSES)
         .lte("pickup_date", to)
         .gte("return_date", from);

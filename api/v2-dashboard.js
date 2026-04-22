@@ -237,7 +237,7 @@ export default async function handler(req, res) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
-            const vid = r.vehicle_id || "unknown";
+            const vid = uiVehicleId(r.vehicle_id) || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
 
             const gross  = Number(r.gross_amount || 0);

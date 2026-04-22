@@ -16,6 +16,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
       const { error } = await sb
         .from("vehicles")
         .update({ rental_status: newRentalStatus, updated_at: new Date().toISOString() })
-        .eq("vehicle_id", vehicleId);
+        .eq("vehicle_id", normalizeVehicleId(vehicleId));
 
       if (!error) {
         return res.status(200).json({ success: true, vehicleId, available, rental_status: newRentalStatus });
