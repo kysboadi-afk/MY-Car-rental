@@ -169,8 +169,10 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       const nextBadge = document.createElement("span");
       nextBadge.className = "next-available-badge";
 
-      if (availableAt) {
-        const availDate    = new Date(availableAt);
+      const availDate = availableAt ? new Date(availableAt) : null;
+      const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
+
+      if (hasValidAvailableAt) {
         const availDateISO = availDate.toISOString().slice(0, 10);
         if (availDateISO === today) {
           const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
