@@ -20,9 +20,10 @@ process.env.GITHUB_TOKEN = "test-github-token";
 
 // ─── Shared mutable state ─────────────────────────────────────────────────────
 
-// rrRows is the set of rows returned by revenue_records_effective.
+// rrRows is the set of rows returned by the revenue source view used by sync.
 // null → Supabase not configured; [] → configured + empty; [...] → has data.
 let rrRows = null;
+let reportingBaseSchemaError = false;
 
 // customers db (what was upserted/inserted)
 let customersDb = [];
@@ -83,6 +84,14 @@ mock.module("./_supabase.js", {
 
       return {
         from: (table) => {
+          if (table === "revenue_reporting_base") {
+            return {
+              select: () => Promise.resolve({
+                data: reportingBaseSchemaError ? null : rrRows,
+                error: reportingBaseSchemaError ? { message: "schema: relation revenue_reporting_base does not exist" } : null,
+              }),
+            };
+          }
           if (table === "revenue_records_effective") {
             return {
               select: () => ({ eq: () => Promise.resolve({ data: rrRows, error: null }) }),
@@ -148,7 +157,7 @@ mock.module("./_bookings.js", {
 mock.module("./_error-helpers.js", {
   namedExports: {
     adminErrorMessage: (e) => String(e?.message ?? e),
-    isSchemaError:     () => false,
+    isSchemaError:     (e) => /schema|does not exist/i.test(String(e?.message ?? "")),
   },
 });
 
@@ -197,6 +206,7 @@ function makeRes() {
 
 function resetState() {
   rrRows      = null;
+  reportingBaseSchemaError = false;
   customersDb = [];
   logLines    = [];
 }
@@ -297,6 +307,16 @@ test("B) no skipped rows: all paid non-excluded rows are counted (row_count matc
       gross_amount: 300, stripe_fee: 0, stripe_net: null, refund_amount: 0,
       is_cancelled: true, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-01", return_date: "2026-04-02", vehicle_id: "camry" },
+    // sync_excluded — should NOT count
+    { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
+      gross_amount: 999, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid", sync_excluded: true,
+      pickup_date: "2026-05-01", return_date: "2026-05-02", vehicle_id: "camry" },
+    // orphan — should NOT count
+    { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
+      gross_amount: 888, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid", is_orphan: true,
+      pickup_date: "2026-06-01", return_date: "2026-06-02", vehicle_id: "camry" },
   ];
 
   const res = await runSync();
@@ -567,4 +587,23 @@ test("auth: wrong secret is rejected with 401", async () => {
   const res = makeRes();
   await handler(makeReq({ secret: "bad-secret", action: "sync" }), res);
   assert.equal(res._status, 401);
+});
+
+test("sync: falls back to revenue_records_effective when revenue_reporting_base is missing", async () => {
+  resetState();
+  reportingBaseSchemaError = true;
+  rrRows = [
+    { customer_phone: "+13105550001", customer_name: "Fallback User", customer_email: "fallback@x.com",
+      gross_amount: 250, stripe_fee: 7.5, stripe_net: 242.5, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid",
+      pickup_date: "2026-07-01", return_date: "2026-07-02", vehicle_id: "camry" },
+  ];
+
+  const res = await runSync();
+  assert.equal(res._status, 200);
+  const agg = parseAggLog();
+  assert.ok(agg);
+  assert.equal(agg.row_count, 1);
+  assert.equal(agg.gross_total, 250);
+  assert.equal(agg.net_total, 242.5);
 });

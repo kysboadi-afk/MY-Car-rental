@@ -1524,7 +1524,7 @@
             <option value="flagged">Flagged</option>
             <option value="banned">Banned</option>
           </select>
-          <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">↻ Sync from Bookings</button>
+          <button class="btn btn-secondary btn-sm" onclick="syncCustomers()">⟳ Recompute Totals</button>
           <button class="btn btn-primary btn-sm" onclick="openAddCustomerModal()">+ Add Customer</button>
         </div>
         <div class="card">
@@ -1549,7 +1549,8 @@
           </div>
           <div id="customers-empty" class="empty-state" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-            <p>No customers found. Click "Sync from Bookings" to import.</p>
+            <p>No customers found.</p>
+            <p style="font-size:12px;margin-top:6px;color:var(--text-sub);">Click <strong>⟳ Recompute Totals</strong> to compute customer KPIs from revenue records.</p>
           </div>
         </div>
       </div>
@@ -4274,15 +4275,31 @@ function banCustomer(id, banned) {
   }).catch((err) => showToast('Error: ' + err.message, 'error'));
 }
 
+/**
+ * Recompute all customer financial totals from the canonical revenue source
+ * (revenue_reporting_base / revenue_records_effective).  Non-blocking: fires
+ * in the background and shows a toast on completion.  Called automatically
+ * after every Stripe reconcile, dedup, or orphan-cleanup so customer KPIs
+ * always stay in sync with the revenue dashboard.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.silent=false] - Suppress the "in progress" toast.
+ */
+async function recomputeCustomerTotals({ silent = false } = {}) {
+  if (!silent) showToast('⟳ Recomputing customer totals…', 'info');
+  try {
+    const data = await apiPost('/api/v2-customers', { secret: adminSecret, action: 'sync' });
+    allCustomers = [];
+    if (currentPage === 'customers') loadCustomers();
+    showToast('✅ Customer totals updated.', 'success');
+    return data;
+  } catch (err) {
+    showToast('⚠️ Customer totals update failed: ' + err.message, 'error');
+  }
+}
+
 function syncCustomers() {
-  showToast('Syncing customers from bookings…', 'info');
-  apiPost('/api/v2-customers', { secret: adminSecret, action: 'sync' })
-    .then((data) => {
-      showToast(data.message || 'Sync complete.', 'success');
-      allCustomers = [];
-      loadCustomers();
-    })
-    .catch((err) => showToast('Sync error: ' + err.message, 'error'));
+  recomputeCustomerTotals();
 }
 
 function openAddCustomerModal() {
