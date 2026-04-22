@@ -1277,7 +1277,7 @@ export default async function handler(req, res) {
                 email:           updatedBooking.email || renter_email || "",
                 pickupDate:      updatedBooking.pickupDate || "",
                 returnDate:      updatedBooking.returnDate || new_return_date || "",
-                amountPaid:      Math.round((paymentIntent.amount_received || paymentIntent.amount || 0)) / 100,
+                amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                 paymentMethod:   "stripe",
                 type:            "extension",
                 ...recoveryFeeFields,
