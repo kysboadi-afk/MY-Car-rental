@@ -1139,16 +1139,16 @@
                 <input type="date" class="form-input" id="mb-pickup-date" required onchange="updateManualPrice()">
               </div>
               <div class="form-group">
-                <label class="form-label">Pickup Time</label>
-                <input type="time" class="form-input" id="mb-pickup-time">
+                <label class="form-label">Pickup Time *</label>
+                <input type="time" class="form-input" id="mb-pickup-time" required>
               </div>
               <div class="form-group">
                 <label class="form-label">Return Date *</label>
                 <input type="date" class="form-input" id="mb-return-date" required onchange="updateManualPrice()">
               </div>
               <div class="form-group">
-                <label class="form-label">Return Time</label>
-                <input type="time" class="form-input" id="mb-return-time">
+                <label class="form-label">Return Time *</label>
+                <input type="time" class="form-input" id="mb-return-time" required>
               </div>
             </div>
           </div>
@@ -1921,7 +1921,7 @@
       <div class="form-group">
         <label class="form-label">Message</label>
         <textarea class="form-textarea" id="sms-edit-message" style="min-height:160px;font-family:monospace;font-size:12px;"></textarea>
-        <div class="form-hint">Variables: {customer_name}, {vehicle}, {pickup_date}, {pickup_time}, {return_date}, {location}, {payment_link}, {booking_link}</div>
+        <div class="form-hint">Variables: {customer_name}, {vehicle}, {pickup_date}, {pickup_time}, {return_date}, {return_time}, {location}, {payment_link}, {booking_link}</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -2706,7 +2706,9 @@ function renderDashboard(data) {
       <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
-          <div style="font-size:11px;color:var(--text-sub);">${esc(getVehicleLabel(b.vehicleId))} · ${esc(b.pickupDate || '')}</div>
+          <div style="font-size:11px;color:var(--text-sub);">
+            ${esc(getVehicleLabel(b.vehicleId))} · ${esc(b.pickupDate || '')}${b.pickupTime ? ' ' + esc(b.pickupTime) : ''} → ${esc(b.returnDate || '')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}
+          </div>
         </div>
         <div style="text-align:right;">
           <div style="font-size:13px;font-weight:700;">$${formatMoney(b.amountPaid)}</div>
@@ -3612,7 +3614,7 @@ function applyBookingFilters() {
       </td>
       <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
       <td>
-        <div>${esc(b.pickupDate || '–')}</div>
+        <div>${esc(b.pickupDate || '–')}${b.pickupTime ? ' ' + esc(b.pickupTime) : ''}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
         ${b.extensionCount > 0 ? `<span class="badge badge-orange" style="font-size:10px;margin-top:3px;">🔄 ×${b.extensionCount}</span>` : ''}
       </td>
@@ -3956,6 +3958,8 @@ async function submitManualBooking(e) {
   const vehicleId  = document.getElementById('mb-vehicle').value;
   const pickupDate = document.getElementById('mb-pickup-date').value;
   const returnDate = document.getElementById('mb-return-date').value;
+  const pickupTimeRaw = document.getElementById('mb-pickup-time').value;
+  const returnTimeRaw = document.getElementById('mb-return-time').value;
   const autoText   = document.getElementById('mb-auto-price').textContent;
   const overrideAmount = parseFloat(document.getElementById('mb-amount-paid').value);
   const autoAmount = autoText !== '–' ? parseFloat(autoText.replace(/\$/g, '').replace(/,/g, '')) : 0;
@@ -3969,6 +3973,13 @@ async function submitManualBooking(e) {
     return `${hr % 12 || 12}:${mn} ${ampm}`;
   };
 
+  if (!pickupTimeRaw || !returnTimeRaw) {
+    showToast('Pickup and return times are required.', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M5 13l4 4L19 7"/></svg> Save Booking';
+    return;
+  }
+
   try {
     await apiPost('/api/v2-bookings', {
       secret:         adminSecret,
@@ -3978,9 +3989,9 @@ async function submitManualBooking(e) {
       phone:          document.getElementById('mb-phone').value.trim(),
       email:          document.getElementById('mb-email').value.trim(),
       pickupDate,
-      pickupTime:     formatTime(document.getElementById('mb-pickup-time').value),
+      pickupTime:     formatTime(pickupTimeRaw),
       returnDate,
-      returnTime:     formatTime(document.getElementById('mb-return-time').value),
+      returnTime:     formatTime(returnTimeRaw),
       amountPaid,
       totalPrice:     autoAmount || amountPaid,
       paymentMethod:  document.getElementById('mb-payment-method').value,

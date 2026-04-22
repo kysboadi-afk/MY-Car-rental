@@ -1925,8 +1925,8 @@ function updatePayBtn() {
   // other vehicles need pickup + return date + pickup time.
   // Pickup time is required for all vehicles.
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration && pickupTime.value
-    : pickup.value && returnDate.value && pickupTime.value;
+    ? pickup.value && currentSlingshotDuration && returnDate.value && pickupTime.value && returnTime.value
+    : pickup.value && returnDate.value && pickupTime.value && returnTime.value;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
@@ -2122,7 +2122,9 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
+  if (!returnDate.value) { alert(window.slyI18n.t("booking.alertReturnDate")); return; }
   if (!pickupTime.value) { alert(window.slyI18n.t("booking.alertPickupTime")); return; }
+  if (!returnTime.value) { alert(window.slyI18n.t("booking.alertReturnTime")); return; }
   const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;

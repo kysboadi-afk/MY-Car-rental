@@ -58,6 +58,10 @@ export default async function handler(req, res) {
     if (!trimmedPickupTime) {
       return res.status(400).json({ error: "Pickup time is required. Please select a pickup time before proceeding." });
     }
+    const trimmedReturnTime = normalizeClockTime(returnTime);
+    if (!trimmedReturnTime) {
+      return res.status(400).json({ error: "Return time is required. Please select a return time before proceeding." });
+    }
 
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (isSlingshotVehicle) {
@@ -87,7 +91,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid dates" });
     }
 
-    const trimmedReturnTime = normalizeClockTime(returnTime);
     const derivedReturnTime = isSlingshotVehicle
       ? deriveReturnTime(pickup, trimmedPickupTime, trimmedReturnTime, slingshotDuration)
       : trimmedPickupTime;

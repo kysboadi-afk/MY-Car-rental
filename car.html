@@ -89,7 +89,7 @@
     </div>
 
     <label for="pickup" data-i18n="booking.pickupDate">Pickup Date</label>
-    <input type="date" id="pickup">
+    <input type="date" id="pickup" required>
 
     <label for="pickupTime" data-i18n="booking.pickupTime">Pickup Time</label>
     <select id="pickupTime" required>
@@ -106,10 +106,10 @@
     <!-- Return date/time: user-selected for daily vehicles; auto-computed for Slingshot -->
     <div id="returnDateSection">
       <label for="return" data-i18n="booking.returnDate">Return Date</label>
-      <input type="date" id="return">
+      <input type="date" id="return" required>
 
       <label for="returnTime" data-i18n="booking.returnTime">Return Time <span class="field-note" id="returnTimeNote" data-i18n="booking.returnTimeSame">(same as pickup time)</span></label>
-      <input type="time" id="returnTime" readonly>
+      <input type="time" id="returnTime" readonly required>
     </div>
 
     <label for="name" data-i18n="booking.fullName">Full Name</label>

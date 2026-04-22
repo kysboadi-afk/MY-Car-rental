@@ -15,9 +15,9 @@
 //   "phone":      "2135551234",        (optional)
 //   "email":      "customer@email.com",(optional)
 //   "pickupDate": "YYYY-MM-DD",
-//   "pickupTime": "10:00 AM",          (optional)
+//   "pickupTime": "10:00 AM",          (required)
 //   "returnDate": "YYYY-MM-DD",
-//   "returnTime": "5:00 PM",           (optional)
+//   "returnTime": "5:00 PM",           (required)
 //   "amountPaid": 350,                 (optional, dollars)
 //   "notes":      "Cash payment",      (optional)
 // }
@@ -27,6 +27,7 @@ import { hasOverlap } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
+import { normalizeClockTime } from "./_time.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -143,6 +144,14 @@ export default async function handler(req, res) {
   if (pickupDate > returnDate) {
     return res.status(400).json({ error: "pickupDate must not be after returnDate" });
   }
+  const trimmedPickupTime = typeof pickupTime === "string" ? pickupTime.trim() : "";
+  if (!normalizeClockTime(trimmedPickupTime)) {
+    return res.status(400).json({ error: "pickupTime is required and must be a valid time" });
+  }
+  const trimmedReturnTime = typeof returnTime === "string" ? returnTime.trim() : "";
+  if (!normalizeClockTime(trimmedReturnTime)) {
+    return res.status(400).json({ error: "returnTime is required and must be a valid time" });
+  }
 
   try {
     // 1. Block the dates in booked-dates.json first so the calendar reflects the
@@ -158,9 +167,9 @@ export default async function handler(req, res) {
       phone:           typeof phone === "string" ? phone.trim() : "",
       email:           typeof email === "string" ? email.trim() : "",
       pickupDate,
-      pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
+      pickupTime:      trimmedPickupTime,
       returnDate,
-      returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
+      returnTime:      trimmedReturnTime,
       location:        "",
       status:          "booked_paid",
       paymentIntentId: "manual_" + crypto.randomBytes(6).toString("hex"),
