@@ -833,9 +833,64 @@ test("webhook rental_extension: idempotency guard skips re-application when retu
   assert.equal(saved.amountPaid, 220, "idempotent retry must not increment amountPaid");
   assert.equal(saved.extensionCount, 1, "idempotent retry must not increment extensionCount");
   assert.equal(automationCalls.booking.length, 0, "idempotent retry must not upsert booking");
-  assert.equal(automationCalls.revenue.length, 0, "idempotent retry must not create extension revenue");
+  assert.equal(automationCalls.revenue.length, 1, "idempotent retry must attempt extension revenue recovery (PI dedup prevents actual duplicate)");
   assert.equal(automationCalls.blocked.length, 0, "idempotent retry must not create blocked dates");
+  const rev = automationCalls.revenue[0];
+  assert.equal(rev.type, "extension", "revenue recovery must use type=extension");
+  assert.equal(rev.bookingId, bookingId, "revenue recovery must reference the original booking_id");
 });
+
+test("webhook rental_extension: alreadyApplied path recovers missing revenue record", async () => {
+  // Simulates: first delivery updated the booking date but returned 500 before writing
+  // the extension revenue record.  The Stripe retry lands in the alreadyApplied branch
+  // and must still attempt revenue creation (idempotent via payment_intent_id dedup).
+  resetStore(); resetCalls();
+  const bookingId = "bk-ext-revenue-recovery";
+  bookingsStore["camry"] = [{
+    bookingId,
+    vehicleId: "camry",
+    name: "Recovery Renter",
+    phone: "+13105559900",
+    email: "recovery@example.com",
+    pickupDate: "2026-12-10",
+    pickupTime: "3:00 PM",
+    // returnDate already matches new_return_date — booking was updated on first delivery
+    returnDate: "2026-12-17",
+    returnTime: "15:00",
+    status: "active_rental",
+    amountPaid: 330,
+    extensionCount: 1,
+  }];
+
+  const event = piSucceededEvent({
+    payment_type:    "rental_extension",
+    vehicle_id:      "camry",
+    booking_id:      bookingId,
+    new_return_date: "2026-12-17",   // same as current returnDate → alreadyApplied
+    new_return_time: "3:00 PM",
+  }, 11000);  // $110 extension
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  // Booking JSON must NOT be re-mutated.
+  const saved = bookingsStore.camry.find((b) => b.bookingId === bookingId);
+  assert.equal(saved.amountPaid,    330, "alreadyApplied must not increment amountPaid");
+  assert.equal(saved.extensionCount, 1, "alreadyApplied must not increment extensionCount");
+
+  // Side-effect helpers must NOT fire.
+  assert.equal(automationCalls.booking.length, 0, "alreadyApplied must not upsert booking");
+  assert.equal(automationCalls.blocked.length, 0, "alreadyApplied must not create blocked dates");
+
+  // Revenue creation MUST be attempted so the missing record is recovered.
+  assert.equal(automationCalls.revenue.length, 1, "alreadyApplied must attempt extension revenue creation for recovery");
+  const rev = automationCalls.revenue[0];
+  assert.equal(rev.type,      "extension", "recovered revenue record must use type=extension");
+  assert.equal(rev.bookingId, bookingId,   "recovered revenue record must reference the original booking_id");
+  assert.equal(rev.paymentIntentId, event.data.object.id, "recovered revenue record must carry the extension PI id");
+  assert.equal(rev.amountPaid, 110, "recovered revenue record must use amount_received / 100 from the PI");
+});
+
 
 test("webhook rental_extension: returnTime is preserved from existing booking and invalid status is rejected", async () => {
   resetStore(); resetCalls();
