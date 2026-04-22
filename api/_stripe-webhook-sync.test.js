@@ -459,7 +459,7 @@ test("webhook new booking: retries persistence checks and still creates only one
     assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
     assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
 
-    const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
+    const jsonRows = (bookingsStore.camry2012 || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
     assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
   } finally {
     skipSupabaseUpsertPi = null;
