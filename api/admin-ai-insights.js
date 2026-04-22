@@ -17,6 +17,7 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -148,9 +149,13 @@ async function fetchAllData() {
     }
   }
 
-  // Filter bookings to car vehicles only (exclude slingshots)
+  // Filter bookings to car vehicles only (exclude slingshots).
+  // Also normalize extended canonical IDs written by the Stripe webhook
+  // (e.g. "camry2012" → "camry") back to their vehicle-table key using uiVehicleId().
   const carVehicleIds = new Set(Object.keys(vehicles));
-  const filteredBookings = allBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
+  const filteredBookings = allBookings
+    .map((b) => ({ ...b, vehicleId: uiVehicleId(b.vehicleId) }))
+    .filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 
   return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };
 }

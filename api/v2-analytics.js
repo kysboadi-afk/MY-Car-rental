@@ -23,6 +23,7 @@ import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
@@ -164,7 +165,7 @@ export default async function handler(req, res) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
-            const vid    = r.vehicle_id || "unknown";
+            const vid    = uiVehicleId(r.vehicle_id) || "unknown";
             const gross  = Number(r.gross_amount || 0);
             const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
             const refund = Number(r.refund_amount || 0);

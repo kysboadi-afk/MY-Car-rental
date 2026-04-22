@@ -15,6 +15,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -71,7 +72,7 @@ export default async function handler(req, res) {
     const { data: tripRow, error: tripErr } = await sb
       .from("trips")
       .insert({
-        vehicle_id:    vehicleId,
+        vehicle_id:    normalizeVehicleId(vehicleId),
         booking_id:    String(bookingId),
         start_mileage: start,
         end_mileage:   end,
@@ -89,7 +90,7 @@ export default async function handler(req, res) {
     const { error: mileageErr } = await sb
       .from("vehicles")
       .update({ mileage: end, updated_at: new Date().toISOString() })
-      .eq("vehicle_id", vehicleId)
+      .eq("vehicle_id", normalizeVehicleId(vehicleId))
       .lt("mileage", end);   // only update when new value is higher
 
     if (mileageErr) {

@@ -28,6 +28,7 @@ import {
   autoCreateBlockedDate,
   parseTime12h,
 } from "./_booking-automation.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 /**
  * Structured logger for the booking pipeline.
@@ -121,7 +122,7 @@ function buildAtomicPayload(booking) {
     p_customer_phone: booking.phone ? String(booking.phone).trim() : null,
     p_customer_email: normalizeEmail(booking.email),
     p_booking_ref: booking.bookingId,
-    p_vehicle_id: booking.vehicleId || null,
+    p_vehicle_id: normalizeVehicleId(booking.vehicleId) || null,
     p_pickup_date: booking.pickupDate || null,
     p_return_date: booking.returnDate || null,
     p_pickup_time: parseTime12h(booking.pickupTime || ""),
@@ -139,7 +140,7 @@ function buildAtomicPayload(booking) {
     p_booking_customer_email: normalizeEmail(booking.email),
     p_activated_at: booking.activatedAt || null,
     p_completed_at: booking.completedAt || null,
-    p_revenue_vehicle_id: booking.vehicleId || null,
+    p_revenue_vehicle_id: normalizeVehicleId(booking.vehicleId) || null,
     p_revenue_customer_name: booking.name || null,
     p_revenue_customer_phone: booking.phone || null,
     p_revenue_customer_email: normalizeEmail(booking.email),

@@ -45,6 +45,7 @@ import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
@@ -56,6 +57,7 @@ const VEHICLE_NAMES    = {
   slingshot2: "Slingshot R (Unit 2)",
   slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
+  camry2012:  "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };
 
@@ -205,9 +207,9 @@ export default async function handler(req, res) {
           `);
 
         if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
-          q = q.eq("vehicle_id", vehicleId);
+          q = q.eq("vehicle_id", normalizeVehicleId(vehicleId));
         } else {
-          q = q.in("vehicle_id", ALLOWED_VEHICLES);
+          q = q.in("vehicle_id", ALLOWED_VEHICLES.map(normalizeVehicleId));
         }
         if (status) {
           q = q.eq("status", status);
@@ -243,8 +245,8 @@ export default async function handler(req, res) {
             const cust = r.customers || {};
             return {
               bookingId:       bookingRef,
-              vehicleId:       r.vehicle_id,
-              vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+              vehicleId:       uiVehicleId(r.vehicle_id),
+              vehicleName:     VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
               name:            cust.name  || rr?.customer_name  || "",
               phone:           cust.phone || rr?.customer_phone || "",
               email:           cust.email || rr?.customer_email || "",
@@ -415,7 +417,7 @@ export default async function handler(req, res) {
             let { data: sbCheck } = await sbVal
               .from("bookings")
               .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
-              .eq("vehicle_id", vehicleId)
+              .eq("vehicle_id", normalizeVehicleId(vehicleId))
               .eq("booking_ref", bookingId)
               .maybeSingle();
             // Fallback: try by numeric Supabase row id
@@ -425,7 +427,7 @@ export default async function handler(req, res) {
                 const { data: sbCheckById } = await sbVal
                   .from("bookings")
                   .select("id, booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, total_price, deposit_paid, notes, payment_method")
-                  .eq("vehicle_id", vehicleId)
+                  .eq("vehicle_id", normalizeVehicleId(vehicleId))
                   .eq("id", numId)
                   .maybeSingle();
                 sbCheck = sbCheckById;

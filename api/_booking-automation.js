@@ -183,7 +183,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       // use the original booking_id directly and leave this field null.
       original_booking_id: booking.originalBookingId || null,
       payment_intent_id:   piId || null,
-      vehicle_id:          booking.vehicleId,
+      vehicle_id:          normalizeVehicleId(booking.vehicleId),
       customer_id:         booking.customerId        || null,
       customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
@@ -460,7 +460,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
 
     const record = {
       customer_id:               customerId,
-      vehicle_id:                booking.vehicleId   || null,
+      vehicle_id:                normalizeVehicleId(booking.vehicleId) || null,
       pickup_date:               booking.pickupDate  || null,
       return_date:               booking.returnDate  || null,
       pickup_time:               parseTime12h(booking.pickupTime),
