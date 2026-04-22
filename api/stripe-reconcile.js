@@ -549,6 +549,9 @@ export default async function handler(req, res) {
         // Do NOT auto-create a duplicate. Instead verify the record exists via
         // the original_booking_id stored in the PI metadata, then mark as processed.
         if (payment.payment_type === "rental_extension") {
+          // metadata_original_booking_id is set by the current extend-rental.js.
+          // Fall back to metadata_booking_id for PIs created before this fix so
+          // historical extension payments are still recognised correctly.
           const origBookingId = payment.metadata_original_booking_id || payment.metadata_booking_id;
           const extRecord = origBookingId ? byBookingId.get(origBookingId) : null;
           if (extRecord && !matchedRecordIds.has(extRecord.id)) {

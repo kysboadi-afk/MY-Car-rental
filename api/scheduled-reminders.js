@@ -976,6 +976,8 @@ async function runReconciliation() {
     // (not the PI id) as booking_id, perform an extra lookup by original_booking_id.
     // This prevents extension payments that were already processed by the webhook
     // from appearing as mismatches (and showing "⚠️ Skipped (manual)" in alerts).
+    // Fall back to metadata.booking_id for PIs created before extend-rental.js was
+    // updated to include both fields, preserving backward compatibility.
     const extensionOriginalBookingIds = succeededPIs
       .filter((pi) => (pi.metadata?.payment_type) === "rental_extension")
       .map((pi) => pi.metadata?.original_booking_id || pi.metadata?.booking_id)
