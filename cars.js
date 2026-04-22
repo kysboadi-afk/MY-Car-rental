@@ -29,6 +29,10 @@ function fmtMoney(n) {
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function todayISO() { return new Date().toISOString().split("T")[0]; }
 
+function dateKeyLocal(d) {
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+
 function isBookedToday(ranges) {
   const today = todayISO();
   return (ranges || []).some(r => today >= r.from && today <= r.to);
@@ -206,6 +210,7 @@ function getNextAvailDate(vehicleId, bookedDates) {
 
 function applyFleetStatus(fleetStatus, bookedDates) {
   const i18n = window.slyI18n || { t: k => k };
+  const todayLocalKey = dateKeyLocal(new Date());
 
   document.querySelectorAll("#car-grid .car-card").forEach(card => {
     const vid = card.dataset.vehicle;
@@ -257,9 +262,8 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       nextBadge.className = "next-available-badge";
 
       if (availableAt) {
-        const availDate    = new Date(availableAt);
-        const availDateISO = availDate.toISOString().slice(0, 10);
-        if (availDateISO === todayISO()) {
+        const availDate = new Date(availableAt);
+        if (dateKeyLocal(availDate) === todayLocalKey) {
           const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
           nextBadge.textContent = `Available Today at ${timeStr}`;
         } else {
