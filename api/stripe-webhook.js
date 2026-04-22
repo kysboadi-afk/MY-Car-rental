@@ -256,6 +256,112 @@ function resolveBookingStatus(paymentType) {
     : "booked_paid";
 }
 
+// A canonical vehicle ID is all-lowercase alphanumeric, starts with a letter,
+// and is at least 2 characters long (e.g. "camry", "camry2012", "slingshot2",
+// "corolla2020").  No spaces, hyphens, or other special characters are allowed.
+// This pattern replaces a hardcoded vehicle list so that new vehicles are
+// supported automatically without code changes.
+const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
+
+/**
+ * Map Stripe PaymentIntent metadata to a canonical vehicle_id.
+ *
+ * Strategy (in priority order):
+ *  1. Derive a candidate ID from metadata.vehicle_id by lowercasing and
+ *     stripping non-alphanumeric characters.  If the result looks canonical
+ *     (matches CANONICAL_ID_PATTERN) it is used — unless the vehicle_name
+ *     produces a *more specific* ID (i.e. the name-derived ID starts with the
+ *     vehicle_id-derived ID and is longer), in which case the name-derived ID
+ *     wins.  This handles legacy sessions where vehicle_id="camry" but
+ *     vehicle_name="Camry 2012" → canonical "camry2012".
+ *  2. If step 1 fails (vehicle_id absent or non-canonical), derive the ID from
+ *     metadata.vehicle_name using generic normalization:
+ *       - lowercase
+ *       - replace non-alphanumeric chars with spaces
+ *       - split into tokens
+ *       - remove single-character tokens (strips variant designators such as
+ *         "R" in "Slingshot R" so that the result is "slingshot", not "slingshotr")
+ *       - join tokens without separator
+ *
+ * This is fully generic — no hardcoded model names.  New vehicles are handled
+ * automatically as long as Stripe metadata carries either a canonical vehicle_id
+ * or a human-readable vehicle_name following the pattern "<make> <year/variant>".
+ *
+ * Future requirement: Stripe checkout sessions should send the canonical
+ * vehicle_id directly (e.g. "camry2012", "corolla2020") so that name-based
+ * mapping is never needed.
+ *
+ * @param {object} metadata - PaymentIntent metadata
+ * @returns {string} canonical vehicle_id
+ * @throws {Error} when no mapping can be derived
+ */
+export function mapVehicleId(metadata = {}) {
+  const rawId   = String(metadata.vehicle_id   || "").trim();
+  const rawName = String(metadata.vehicle_name || "").trim();
+
+  // Normalize vehicle_id: lowercase + strip non-alphanumeric characters.
+  const normId = rawId.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Derive a candidate ID from vehicle_name using generic normalization:
+  //   1. lowercase
+  //   2. replace non-alphanumeric chars with spaces
+  //   3. split into tokens
+  //   4. skip single-letter tokens (removes "r" from "Slingshot R")
+  //   5. stop accumulating after the first numeric token (year/variant number)
+  //      so trim-level suffixes like "SE" in "Camry 2013 SE" are dropped
+  //   6. join without separator → "camry2012", "camry2013", "slingshot2", "corolla2020"
+  let nameId = "";
+  if (rawName) {
+    const allTokens = rawName.toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/);
+    const parts = [];
+    for (const t of allTokens) {
+      if (/^[a-z]$/.test(t)) continue; // skip single-letter tokens (e.g. "r")
+      parts.push(t);
+      if (/\d/.test(t)) break;         // stop after first numeric token (year)
+    }
+    if (parts.length > 0) nameId = parts.join("");
+  }
+
+  // ── Step 1: vehicle_id passthrough ──────────────────────────────────────────
+  if (normId && CANONICAL_ID_PATTERN.test(normId)) {
+    // If vehicle_name yields a more-specific ID (nameId starts with normId and
+    // is longer), use the name-derived ID instead.  This handles legacy sessions
+    // where vehicle_id="camry" but vehicle_name="Camry 2012" → "camry2012".
+    if (nameId && CANONICAL_ID_PATTERN.test(nameId) && nameId.startsWith(normId) && nameId !== normId) {
+      console.log("[VEHICLE_MAPPING]", {
+        vehicle_name: rawName, vehicle_id_raw: rawId,
+        normalized_id: normId, normalized_name: nameId,
+        mapped_vehicle_id: nameId, source: "name_override_of_prefix_id", success: true,
+      });
+      return nameId;
+    }
+    console.log("[VEHICLE_MAPPING]", {
+      vehicle_name: rawName, vehicle_id_raw: rawId,
+      normalized_id: normId, mapped_vehicle_id: normId,
+      source: "canonical_passthrough", success: true,
+    });
+    return normId;
+  }
+
+  // ── Step 2: derive from vehicle_name ────────────────────────────────────────
+  if (nameId && CANONICAL_ID_PATTERN.test(nameId)) {
+    console.log("[VEHICLE_MAPPING]", {
+      vehicle_name: rawName, vehicle_id_raw: rawId,
+      normalized_name: nameId, mapped_vehicle_id: nameId,
+      source: "name_mapping", success: true,
+    });
+    return nameId;
+  }
+
+  // ── Failure ──────────────────────────────────────────────────────────────────
+  console.error("[VEHICLE_MAPPING]", {
+    vehicle_name: rawName, vehicle_id_raw: rawId,
+    normalized_id: normId, normalized_name: nameId,
+    mapped_vehicle_id: null, success: false,
+  });
+  throw new Error(`Unknown vehicle mapping for vehicle_name="${rawName}" vehicle_id="${rawId}"`);
+}
+
 function formatSupabaseError(err) {
   if (!err) return "unknown Supabase error";
   if (typeof err === "string") return err;
@@ -466,7 +572,6 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     booking_id,
     renter_name,
     renter_phone,
-    vehicle_id,
     vehicle_name,
     pickup_date,
     return_date,
@@ -478,13 +583,33 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     protection_plan_tier,
   } = meta;
 
-  if (!vehicle_id || !pickup_date || !return_date) {
-    const reason =
-      `stripe-webhook: saveWebhookBookingRecord metadata missing for PI ${paymentIntent.id}` +
-      ` vehicle_id=${vehicle_id || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`;
+  let vehicleId = "";
+  try {
+    vehicleId = mapVehicleId(meta);
+  } catch (mapErr) {
+    const reason = `stripe-webhook: saveWebhookBookingRecord vehicle_id mapping failed for PI ${paymentIntent.id}: ${mapErr.message}`;
     await sendBookingPersistenceAlert(paymentIntent, reason, {
       booking_id,
-      vehicle_id,
+      vehicle_id: meta.vehicle_id || "",
+      vehicle_name: vehicle_name || "",
+      pickup_date,
+      return_date,
+      attempts: 0,
+    });
+    throw new Error(reason);
+  }
+
+  if (!vehicleId) {
+    throw new Error("Invalid vehicle_id mapping");
+  }
+
+  if (!pickup_date || !return_date) {
+    const reason =
+      `stripe-webhook: saveWebhookBookingRecord metadata missing for PI ${paymentIntent.id}` +
+      ` vehicle_id=${vehicleId || "<missing>"} pickup_date=${pickup_date || "<missing>"} return_date=${return_date || "<missing>"}`;
+    await sendBookingPersistenceAlert(paymentIntent, reason, {
+      booking_id,
+      vehicle_id: vehicleId,
       pickup_date,
       return_date,
       attempts: 0,
@@ -503,8 +628,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     name:                  renter_name || "",
     phone:                 renter_phone ? normalizePhone(renter_phone) : "",
     email:                 email || "",
-    vehicleId:             vehicle_id,
-    vehicleName:           vehicle_name || vehicle_id,
+    vehicleId,
+    vehicleName:           vehicle_name || vehicleId,
     pickupDate:            pickup_date,
     pickupTime:            pickup_time  || "",
     returnDate:            return_date,
@@ -526,6 +651,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     ...(protection_plan_tier ? { protectionPlanTier: protection_plan_tier } : {}),
     ...extraFields,
   };
+  console.log("[BOOKING_DATA]", persistPayload);
 
   let result = null;
   let supabaseExists = false;
@@ -549,7 +675,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     }
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
     revenueComplete = await revenueRecordCompleteInSupabase(persistPayload.bookingId, paymentIntent.id);
-    jsonExists = await bookingExistsInJson(vehicle_id, persistPayload.bookingId, paymentIntent.id);
+    jsonExists = await bookingExistsInJson(vehicleId, persistPayload.bookingId, paymentIntent.id);
 
     if (supabaseExists && jsonExists && revenueComplete) {
       if (!result.ok) {
@@ -557,12 +683,12 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
           `stripe-webhook: PI ${paymentIntent.id} persisted after recovery attempt ${attempt}; initial errors: ${result.errors.join("; ")}`
         );
       } else {
-        console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicle_id}) bookingId=${persistPayload.bookingId}`);
+        console.log(`stripe-webhook: booking pipeline succeeded for PI ${paymentIntent.id} (${vehicleId}) bookingId=${persistPayload.bookingId}`);
       }
       console.log("[BOOKING_CREATED]", {
         booking_ref: persistPayload.bookingId,
         payment_intent_id: paymentIntent.id,
-        vehicle_id,
+        vehicle_id: vehicleId,
         start: pickup_date,
         end: return_date,
       });
@@ -583,7 +709,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       `(supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists})`;
     await sendBookingPersistenceAlert(paymentIntent, failureReason, {
       booking_id: persistPayload.bookingId,
-      vehicle_id,
+      vehicle_id: vehicleId,
       pickup_date,
       return_date,
       attempts: maxAttempts,

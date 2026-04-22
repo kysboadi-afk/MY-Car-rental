@@ -429,6 +429,11 @@ test("webhook new booking: PREFLIGHT — all four sync helpers fire on new payme
   assert.ok(automationCalls.customer.length > 0, "autoUpsertCustomer must fire");
   assert.ok(automationCalls.booking.length  > 0, "autoUpsertBooking must fire");
   assert.ok(automationCalls.blocked.length  > 0, "autoCreateBlockedDate must fire");
+  assert.equal(
+    automationCalls.booking[0].vehicleId,
+    "camry2012",
+    "new booking persistence must map Camry 2012 metadata to canonical vehicle_id"
+  );
 });
 
 test("webhook new booking: retries persistence checks and still creates only one booking", async () => {
@@ -454,7 +459,7 @@ test("webhook new booking: retries persistence checks and still creates only one
     assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
     assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
 
-    const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
+    const jsonRows = (bookingsStore.camry2012 || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
     assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
   } finally {
     skipSupabaseUpsertPi = null;
@@ -470,7 +475,6 @@ test("webhook new booking: sends alert when required metadata is missing", async
   process.env.SMTP_PORT = "587";
 
   const event = piSucceededEvent({
-    vehicle_name: "Camry 2012",
     pickup_date: "2026-09-08",
     return_date: "2026-09-10",
     renter_name: "Missing Metadata",

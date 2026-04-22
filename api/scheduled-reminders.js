@@ -64,6 +64,7 @@ import {
   blockBookedDates,
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
+  mapVehicleId,
 } from "./stripe-webhook.js";
 
 // ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
@@ -220,9 +221,85 @@ async function markVehicleAvailable(vehicleId) {
   }
 }
 
+const BUSINESS_TZ = "America/Los_Angeles";
+
+/**
+ * Parse a booking date + time string interpreted in the America/Los_Angeles
+ * timezone, returning the equivalent UTC Date.
+ *
+ * This is the correct function to use for all SMS timing logic so that
+ * triggers fire at the right wall-clock time in Los Angeles regardless of
+ * what timezone the Vercel server is running in.
+ *
+ * Date: YYYY-MM-DD  |  Time: "3:00 PM", "15:00", "3:00:00 PM", or "15:00:00"
+ *
+ * @param {string} date  - YYYY-MM-DD
+ * @param {string} [time] - optional time string (defaults to midnight LA)
+ * @returns {Date} UTC Date corresponding to the given LA wall-clock time
+ */
+function parseBookingDateTimeLA(date, time) {
+  if (!date) return new Date(NaN);
+  const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
+
+  let hours = 0, mins = 0, secs = 0;
+  if (time) {
+    const t = String(time).trim();
+    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      hours = parseInt(ampmMatch[1], 10);
+      mins  = parseInt(ampmMatch[2], 10);
+      secs  = parseInt(ampmMatch[3] || "0", 10);
+      const period = ampmMatch[4].toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+    } else {
+      const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (h24Match) {
+        hours = parseInt(h24Match[1], 10);
+        mins  = parseInt(h24Match[2], 10);
+        secs  = parseInt(h24Match[3] || "0", 10);
+      }
+    }
+  }
+
+  // Build a naive ISO string representing the requested wall-clock time in LA
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(mins).padStart(2, "0");
+  const ss = String(secs).padStart(2, "0");
+  const naiveISO = `${datePart}T${hh}:${mm}:${ss}`;
+
+  // Determine the LA UTC offset at this approximate moment.
+  // We treat the naive string as UTC only to evaluate the DST offset at roughly
+  // the right boundary; a ±1-hour DST boundary error is acceptable for SMS triggers.
+  const approxUtcDate = new Date(naiveISO + "Z");
+  // Fallback constants for America/Los_Angeles when Intl formatting is unavailable:
+  //   PDT (summer) = UTC-7  → "GMT-7:00" / -420 minutes
+  //   PST (winter) = UTC-8  → "GMT-8:00" / -480 minutes
+  // We default to PDT (-7) since it covers more of the operating year.
+  const LA_FALLBACK_OFFSET_STR = "GMT-7:00"; // PDT = UTC-7
+  const LA_FALLBACK_OFFSET_MIN = -420;        // -7 h × 60 = -420 min
+  const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TZ,
+    timeZoneName: "longOffset",
+  }).formatToParts(approxUtcDate).find(p => p.type === "timeZoneName")?.value ?? LA_FALLBACK_OFFSET_STR;
+  const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
+  const sign       = offsetMatch ? offsetMatch[1] : "-";
+  const offsetMin  = offsetMatch
+    ? (sign === "+" ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
+    : LA_FALLBACK_OFFSET_MIN;
+
+  // UTC = LA_time − LA_offset  (i.e. add the absolute offset when LA is behind UTC)
+  return new Date(approxUtcDate.getTime() - offsetMin * 60 * 1000);
+}
+
 /**
  * Parse a booking's pickup/return into a JS Date.
  * Date: YYYY-MM-DD  |  Time: "3:00 PM" or "15:00"
+ *
+ * NOTE: This function interprets times as server-local (UTC on Vercel).
+ * Use parseBookingDateTimeLA for SMS trigger comparisons where LA wall-clock
+ * time is required.
+ *
  * @param {string} date  - YYYY-MM-DD
  * @param {string} [time] - optional time string
  * @returns {Date}
@@ -428,12 +505,18 @@ async function processUnpaid(allBookings, now, sentMarks) {
       if (booking.status !== "reserved_unpaid") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
 
       const minutesUntilPickup = (pickupDt - now) / 60000;
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
+
+      console.log("[SMS_TRIGGER]", {
+        booking_ref: id, vehicleId, status: "reserved_unpaid",
+        pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
+      });
 
       // 24-hour reminder (window: 24h–23h)
       if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "unpaid_24h")) {
@@ -465,12 +548,18 @@ async function processPaidBookings(allBookings, now, sentMarks) {
       if (booking.status !== "booked_paid") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
 
       const minutesUntilPickup = (pickupDt - now) / 60000;
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
+
+      console.log("[SMS_TRIGGER]", {
+        booking_ref: id, vehicleId, status: "booked_paid",
+        pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
+      });
 
       // 24-hour reminder (window: 24h–23h)
       if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
@@ -502,8 +591,10 @@ async function processActiveRentals(allBookings, now, sentMarks) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
-      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+      // Use LA-timezone datetimes so all SMS triggers fire at the correct
+      // wall-clock time in Los Angeles, not at UTC equivalents.
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
+      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
       if (isNaN(pickupDt.getTime()) || isNaN(returnDt.getTime())) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
@@ -511,6 +602,12 @@ async function processActiveRentals(allBookings, now, sentMarks) {
       const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
       const grace = GRACE_PERIODS[vehicleId] || 60;
+
+      console.log("[SMS_TRIGGER]", {
+        booking_ref: id, vehicleId, status: "active_rental",
+        return_datetime: returnDt.toISOString(),
+        minutesUntilReturn: Math.round(minutesUntilReturn),
+      });
 
       // EXTEND SMS: 6 hours before return_time (3 hours for rentals under 24 h).
       // Conditions: active_rental, actual_return_time not set.
@@ -528,7 +625,7 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         ) {
           const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
           if (sent) {
-            console.log(`[EXTEND_SMS_SENT] bookingId=${id} vehicle=${vehicleId} returnDate=${booking.returnDate} returnTime=${booking.returnTime || ""}`);
+            console.log(`[EXTEND_SMS_SENT] bookingId=${id} vehicle=${vehicleId} returnDate=${booking.returnDate} returnTime=${booking.returnTime || ""} returnDatetime=${returnDt.toISOString()}`);
             sentMarks.push({ vehicleId, id, key: "active_mid" });
           }
         }
@@ -546,7 +643,7 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         if (sent) sentMarks.push({ vehicleId, id, key: "active_15min" });
       }
 
-      // 30-min late warning (sent before return time)
+      // 30-min late warning (window: 30–15 min before return time)
       if (minutesUntilReturn <= 30 && minutesUntilReturn > 15 && !alreadySent(booking, "late_warning_30min")) {
         const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
@@ -573,7 +670,7 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         !booking.lateFeeApplied
       ) {
         // Calculate fee based on actual hours overdue:
-        //   expected = returnDt (new Date(`${returnDate}T${returnTime}:00`))
+        //   expected = returnDt (LA-timezone aware)
         //   actual   = now
         //   lateHours = (actual - expected) / (1000 * 60 * 60)  [rounded up, min 1]
         const hourlyRate = LATE_FEE_AMOUNTS[vehicleId] || 50;
@@ -946,20 +1043,35 @@ async function runReconciliation() {
       }
 
       try {
-        // 1. Persist booking + revenue record (idempotent)
+        // 1. Persist booking + revenue record (idempotent).
+        //    saveWebhookBookingRecord performs the canonical vehicle_id mapping
+        //    internally, so its result is authoritative for the vehicle key.
         await saveWebhookBookingRecord(pi);
 
-        // 2. Block calendar dates and mark vehicle unavailable
+        // 2. Block calendar dates and mark vehicle unavailable.
+        //    mapVehicleId derives the canonical ID from PI metadata so that
+        //    the GitHub JSON files always receive the correct key.
         const meta = pi.metadata || {};
-        if (meta.vehicle_id && meta.pickup_date && meta.return_date) {
-          await blockBookedDates(
-            meta.vehicle_id,
-            meta.pickup_date,
-            meta.return_date,
-            meta.pickup_time  || "",
-            meta.return_time  || ""
-          );
-          await markVehicleUnavailable(meta.vehicle_id);
+        if (meta.pickup_date && meta.return_date) {
+          let reconVehicleId = "";
+          try {
+            reconVehicleId = mapVehicleId(meta);
+          } catch (mapErr) {
+            console.warn(
+              `scheduled-reminders reconciliation: vehicle_id mapping failed for PI ${pi.id}: ${mapErr.message}` +
+              " — skipping blockBookedDates/markVehicleUnavailable"
+            );
+          }
+          if (reconVehicleId) {
+            await blockBookedDates(
+              reconVehicleId,
+              meta.pickup_date,
+              meta.return_date,
+              meta.pickup_time  || "",
+              meta.return_time  || ""
+            );
+            await markVehicleUnavailable(reconVehicleId);
+          }
         }
 
         // 3. Send owner + customer notification emails

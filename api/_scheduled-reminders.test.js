@@ -103,10 +103,11 @@ mock.module("./_sms-templates.js", {
 // which never calls these functions, so plain no-ops are sufficient.
 mock.module("./stripe-webhook.js", {
   namedExports: {
-    saveWebhookBookingRecord:    async () => {},
-    blockBookedDates:            async () => {},
-    markVehicleUnavailable:      async () => {},
+    saveWebhookBookingRecord:      async () => {},
+    blockBookedDates:              async () => {},
+    markVehicleUnavailable:        async () => {},
     sendWebhookNotificationEmails: async () => {},
+    mapVehicleId:                  (meta = {}) => meta.vehicle_id || "camry",
   },
 });
 
