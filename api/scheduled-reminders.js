@@ -508,20 +508,30 @@ async function processActiveRentals(allBookings, now, sentMarks) {
 
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
-      const totalMinutes  = (returnDt - pickupDt) / 60000;
-      const elapsedMinutes = (now - pickupDt) / 60000;
+      const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
       const grace = GRACE_PERIODS[vehicleId] || 60;
 
-      // Mid-rental: at the halfway point (±15 min window)
-      const halfwayMinutes = totalMinutes / 2;
-      if (
-        elapsedMinutes >= halfwayMinutes - 15 &&
-        elapsedMinutes < halfwayMinutes + 15 &&
-        !alreadySent(booking, "active_mid")
-      ) {
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_mid" });
+      // EXTEND SMS: 6 hours before return_time (3 hours for rentals under 24 h).
+      // Conditions: active_rental, actual_return_time not set.
+      // Guard: do not fire on the pickup calendar day when return is a different day.
+      if (!booking.actualReturnTime) {
+        const isSameDayRental = booking.pickupDate === booking.returnDate;
+        const isPickupDay     = now.toDateString() === pickupDt.toDateString();
+        const extendLeadMin   = totalMinutes < 24 * 60 ? 3 * 60 : 6 * 60;
+        const inExtendWindow  = minutesUntilReturn <= extendLeadMin && minutesUntilReturn > extendLeadMin - 15;
+
+        if (
+          inExtendWindow &&
+          !(isPickupDay && !isSameDayRental) &&
+          !alreadySent(booking, "active_mid")
+        ) {
+          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
+          if (sent) {
+            console.log(`[EXTEND_SMS_SENT] bookingId=${id} vehicle=${vehicleId} returnDate=${booking.returnDate} returnTime=${booking.returnTime || ""}`);
+            sentMarks.push({ vehicleId, id, key: "active_mid" });
+          }
+        }
       }
 
       // 1 hour before end
