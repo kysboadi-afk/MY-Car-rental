@@ -404,7 +404,7 @@ test("processActiveRentals: sends reminder exactly 2h before return_datetime", a
 
   await processActiveRentals(allBookings, now, sentMarks);
 
-  assert.equal(sentMarks.some((m) => m.key === "active_1h"), true, "2h reminder should be sent at 06:00 for 08:00 return");
+  assert.equal(sentMarks.some((m) => m.key === "active_2h"), true, "2h reminder should be sent at 06:00 for 08:00 return");
 });
 
 test("processActiveRentals: sends ending-soon exactly 30m before return_datetime", async () => {
@@ -417,7 +417,7 @@ test("processActiveRentals: sends ending-soon exactly 30m before return_datetime
 
   await processActiveRentals(allBookings, now, sentMarks);
 
-  assert.equal(sentMarks.some((m) => m.key === "late_warning_30min"), true, "ending-soon should be sent at 07:30 for 08:00 return");
+  assert.equal(sentMarks.some((m) => m.key === "ending_soon_30min"), true, "ending-soon should be sent at 07:30 for 08:00 return");
 });
 
 test("processActiveRentals: sends ended at return_datetime", async () => {

@@ -94,6 +94,10 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
+const REMINDER_OFFSET_MS = 2 * 60 * 60 * 1000;
+const ENDING_SOON_OFFSET_MS = 30 * 60 * 1000;
+const GRACE_OFFSET_MS = 60 * 60 * 1000;
+const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -249,7 +253,7 @@ function buildDateTimeLA(date, time) {
   const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
   const timePart = normalizeTimeForLAIso(time);
   const approxUtc = new Date(`${datePart}T${timePart}Z`);
-  let tzOffset = "-07:00";
+  let tzOffset = "-08:00"; // PST fallback when Intl offset extraction is unavailable
   try {
     const tzPart = new Intl.DateTimeFormat("en-US", {
       timeZone: BUSINESS_TZ,
@@ -355,6 +359,10 @@ async function safeSend(phone, body) {
  */
 function alreadySent(booking, key) {
   return !!(booking.smsSentAt && booking.smsSentAt[key]);
+}
+
+function alreadySentAny(booking, keys) {
+  return keys.some((key) => alreadySent(booking, key));
 }
 
 /**
@@ -559,10 +567,10 @@ async function processPaidBookings(allBookings, now, sentMarks) {
 
 function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
   console.log("[SMS_TRIGGER]", {
-    booking_ref: bookingRef,
-    return_datetime: returnDatetime,
-    current_time: currentTime,
-    trigger_type: triggerType,
+    booking_ref: bookingRef || "",
+    return_datetime: returnDatetime || "",
+    current_time: currentTime || "",
+    trigger_type: triggerType || "",
   });
 }
 
@@ -586,10 +594,10 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
-      const reminderAt = new Date(returnDt.getTime() - 2 * 60 * 60 * 1000);
-      const endingSoonAt = new Date(returnDt.getTime() - 30 * 60 * 1000);
-      const graceAt = new Date(returnDt.getTime() + 60 * 60 * 1000);
-      const lateFeeAt = new Date(returnDt.getTime() + 2 * 60 * 60 * 1000);
+      const reminderAt = new Date(returnDt.getTime() - REMINDER_OFFSET_MS);
+      const endingSoonAt = new Date(returnDt.getTime() - ENDING_SOON_OFFSET_MS);
+      const graceAt = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
+      const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
       const nowIso = now.toISOString();
       const returnIso = returnDt.toISOString();
 
@@ -616,17 +624,25 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       }
 
       // Reminder at return_datetime - 2 hours (15 min window for cron cadence)
-      if (now >= reminderAt && now < new Date(reminderAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "active_1h")) {
+      if (
+        now >= reminderAt &&
+        now < new Date(reminderAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySentAny(booking, ["active_2h", "active_1h"])
+      ) {
         logSmsTrigger(id, returnIso, nowIso, "reminder");
         const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_1h" });
+        if (sent) sentMarks.push({ vehicleId, id, key: "active_2h" });
       }
 
       // Ending soon at return_datetime - 30 minutes (15 min window for cron cadence)
-      if (now >= endingSoonAt && now < new Date(endingSoonAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_warning_30min")) {
+      if (
+        now >= endingSoonAt &&
+        now < new Date(endingSoonAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySentAny(booking, ["ending_soon_30min", "late_warning_30min"])
+      ) {
         logSmsTrigger(id, returnIso, nowIso, "ending_soon");
         const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
+        if (sent) sentMarks.push({ vehicleId, id, key: "ending_soon_30min" });
       }
 
       // Ended at return_datetime (0–15 min window for cron cadence)
