@@ -83,9 +83,14 @@ mock.module("./_supabase.js", {
 
       return {
         from: (table) => {
-          if (table === "revenue_reporting_base" || table === "revenue_records_effective") {
+          if (table === "revenue_reporting_base") {
             return {
               select: () => Promise.resolve({ data: rrRows, error: null }),
+            };
+          }
+          if (table === "revenue_records_effective") {
+            return {
+              select: () => ({ eq: () => Promise.resolve({ data: rrRows, error: null }) }),
             };
           }
           if (table === "customers") {
