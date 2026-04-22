@@ -61,6 +61,8 @@ const sbMock = {
   // returned booking rows (status='completed', actual_return_time set)
   returnedBookingRows: [],
   returnedBookingError: null,
+  // last value passed to .gte("actual_return_time", …) — used to assert TZ logic
+  lastActualReturnGteValue: null,
 };
 
 // Build a Supabase client stub that serves sbMock data.
@@ -77,7 +79,10 @@ function buildSbClient() {
         select()  { return this; },
         in()      { return this; },
         not()     { return this; },
-        gte()     { return this; },
+        gte(col, val) {
+          if (col === "actual_return_time") sbMock.lastActualReturnGteValue = val;
+          return this;
+        },
         lte()     { return this; },
         limit()   { return this; },
         order()   { return this; },
@@ -136,11 +141,12 @@ function resetMock() {
     { vehicle_id: "slingshot2", rental_status: "available" },
     { vehicle_id: "slingshot3", rental_status: "available" },
   ];
-  sbMock.vehiclesError      = null;
-  sbMock.activeBookingRows  = [];
-  sbMock.activeBookingError = null;
-  sbMock.returnedBookingRows  = [];
-  sbMock.returnedBookingError = null;
+  sbMock.vehiclesError             = null;
+  sbMock.activeBookingRows         = [];
+  sbMock.activeBookingError        = null;
+  sbMock.returnedBookingRows       = [];
+  sbMock.returnedBookingError      = null;
+  sbMock.lastActualReturnGteValue  = null;
   sbMock.client = buildSbClient();
 }
 
@@ -270,7 +276,7 @@ test("returned today but >2h ago: still gets available_at (start-of-day filter)"
 test("returned yesterday: no available_at (excluded by start-of-today filter)", async () => {
   resetMock();
   // Simulate Supabase correctly filtering out yesterday's return via
-  // gte(actual_return_time, startOfToday) — mock returns empty rows.
+  // gte(actual_return_time, startOfBusinessDay) — mock returns empty rows.
   sbMock.returnedBookingRows = []; // yesterday's return excluded by gte filter
   sbMock.activeBookingRows   = [];
   const res = makeRes();
@@ -278,6 +284,39 @@ test("returned yesterday: no available_at (excluded by start-of-today filter)", 
   assert.equal(res._status, 200);
   assert.equal(res._body.camry?.available_at, undefined,
     "camry returned yesterday should have no available_at");
+});
+
+// ─── 7a. Cutoff passed to Supabase is midnight in America/Los_Angeles ─────────
+
+test("gte cutoff is midnight America/Los_Angeles, not UTC midnight", async () => {
+  resetMock();
+  const res = makeRes();
+  await handler(makeReq(), res);
+  assert.equal(res._status, 200);
+
+  const cutoff = sbMock.lastActualReturnGteValue;
+  assert.ok(cutoff, "gte cutoff for actual_return_time must have been set");
+
+  const cutoffDate = new Date(cutoff);
+
+  // The cutoff must represent hour 0, minute 0 in the LA timezone
+  const BUSINESS_TZ = "America/Los_Angeles";
+  const laHour = parseInt(
+    new Intl.DateTimeFormat("en-US", { timeZone: BUSINESS_TZ, hour: "numeric", hourCycle: "h23" }).format(cutoffDate),
+    10
+  );
+  const laMin = parseInt(
+    new Intl.DateTimeFormat("en-US", { timeZone: BUSINESS_TZ, minute: "numeric" }).format(cutoffDate),
+    10
+  );
+  assert.equal(laHour, 0,  `cutoff should be hour 0 in LA, got ${laHour}`);
+  assert.equal(laMin,  0,  `cutoff should be minute 0 in LA, got ${laMin}`);
+
+  // The cutoff date in LA should equal today's date in LA
+  const laCutoffDate = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TZ }).format(cutoffDate);
+  const laTodayDate  = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TZ }).format(new Date());
+  assert.equal(laCutoffDate, laTodayDate,
+    `cutoff LA date (${laCutoffDate}) should equal today's LA date (${laTodayDate})`);
 });
 
 // ─── 8. Both active rental AND recent return → actual_return_time wins ────────

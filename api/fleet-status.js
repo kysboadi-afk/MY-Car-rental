@@ -26,6 +26,8 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALL_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 // 2-hour buffer applied after a vehicle is returned before showing it as available
 const RETURN_BUFFER_MS = 2 * 60 * 60 * 1000;
+// Business timezone — availability windows are anchored to local calendar days
+const BUSINESS_TZ = "America/Los_Angeles";
 
 const DEFAULT_STATUS = {
   slingshot:  { available: true,  rental_status: "available" },
@@ -45,10 +47,12 @@ function rentalStatusToAvailable(status) {
  * querying the bookings table.
  *
  * Priority (highest wins):
- *   1. Completed booking with actual_return_time on today's date (local calendar day):
+ *   1. Completed booking with actual_return_time on today's date (LA local day):
  *        available_at = actual_return_time + RETURN_BUFFER_MS
- *      Any car returned today — even hours ago — shows time-based availability so
- *      the fleet page can display "Available Today at [time]".
+ *      Any car returned today (America/Los_Angeles) — even hours ago — shows
+ *      time-based availability so the fleet page can display
+ *      "Available Today at [time]". The day boundary is LA-local, not UTC, so
+ *      fleet availability aligns with local rental operations.
  *   2. Active rental (status = 'active', no actual return yet):
  *        available_at = return_date + 1 day T00:00:00Z  (date-level, same as getNextAvailDate)
  *
@@ -60,11 +64,22 @@ function rentalStatusToAvailable(status) {
  */
 async function enrichWithAvailableAt(sb, result) {
   try {
-    // Use midnight UTC of the current day so any return today is included,
-    // regardless of how many hours ago it happened.
-    const todayUTC = new Date();
-    todayUTC.setUTCHours(0, 0, 0, 0);
-    const startOfTodayISO = todayUTC.toISOString();
+    // Compute midnight of the current day in the business timezone (America/Los_Angeles)
+    // so that any return recorded today (LA local time) is included, regardless of the
+    // UTC date boundary.
+    const now = new Date();
+    // Today's date in the business timezone, e.g. "2026-04-21"
+    const laDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TZ }).format(now);
+    // UTC offset for this timezone right now, e.g. "GMT-7:00" (PDT) or "GMT-8:00" (PST)
+    const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(now).find(p => p.type === "timeZoneName")?.value ?? "GMT+0:00";
+    const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
+    const sign = offsetMatch ? offsetMatch[1] : "+";
+    const hh   = offsetMatch ? offsetMatch[2].padStart(2, "0") : "00";
+    const mm   = offsetMatch ? offsetMatch[3].padStart(2, "0") : "00";
+    const startOfBusinessDayISO = new Date(`${laDateStr}T00:00:00${sign}${hh}:${mm}`).toISOString();
 
     // Run both queries in parallel for performance
     const [activeRes, returnedRes] = await Promise.all([
@@ -80,7 +95,7 @@ async function enrichWithAvailableAt(sb, result) {
         .select("vehicle_id, actual_return_time")
         .eq("status", "completed")
         .not("actual_return_time", "is", null)
-        .gte("actual_return_time", startOfTodayISO)
+        .gte("actual_return_time", startOfBusinessDayISO)
         .in("vehicle_id", ALL_VEHICLES)
         .order("actual_return_time", { ascending: false }),
     ]);
