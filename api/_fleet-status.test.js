@@ -240,23 +240,47 @@ test("returned within 2h buffer: available_at = actual_return_time + 2h", async 
     `available_at should be actual_return_time + 2h. Expected ~${new Date(expectedMs).toISOString()}, got ${availAt}`);
 });
 
-// ─── 6. Returned MORE than 2h ago → outside buffer, no available_at ──────────
+// ─── 6. Returned today but MORE than 2h ago → still yields available_at ──────
+// The old logic used gte(actual_return_time, NOW()-2h) which dropped same-day
+// returns older than 2h. The fix uses gte(actual_return_time, startOfToday).
 
-test("returned more than 2h ago: no available_at from that booking", async () => {
+test("returned today but >2h ago: still gets available_at (start-of-day filter)", async () => {
   resetMock();
-  // 3 hours ago — 1.5× the RETURN_BUFFER_MS (2h), clearly outside the buffer window.
-  // This row would be excluded by the gte(actual_return_time, twoHoursAgo) filter in
-  // production; we simulate that by leaving returnedBookingRows empty.
-  sbMock.returnedBookingRows = []; // outside buffer — Supabase gte filter would exclude it
-  sbMock.activeBookingRows   = []; // no active booking either
+  // 3 hours ago — same calendar day, but outside the old 2h window.
+  const returnedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+  sbMock.returnedBookingRows = [
+    { vehicle_id: "camry", actual_return_time: returnedAt },
+  ];
+  sbMock.activeBookingRows = [];
+  const res = makeRes();
+  await handler(makeReq(), res);
+  assert.equal(res._status, 200);
+
+  const availAt = res._body.camry?.available_at;
+  assert.ok(availAt, "camry must have available_at when returned today (even if >2h ago)");
+
+  const expectedMs = new Date(returnedAt).getTime() + 2 * 60 * 60 * 1000;
+  const actualMs   = new Date(availAt).getTime();
+  assert.ok(Math.abs(actualMs - expectedMs) < 5000,
+    `available_at should be returnedAt + 2h. Got ${availAt}, expected ~${new Date(expectedMs).toISOString()}`);
+});
+
+// ─── 7. Returned YESTERDAY → excluded by start-of-today filter, no available_at
+
+test("returned yesterday: no available_at (excluded by start-of-today filter)", async () => {
+  resetMock();
+  // Simulate Supabase correctly filtering out yesterday's return via
+  // gte(actual_return_time, startOfToday) — mock returns empty rows.
+  sbMock.returnedBookingRows = []; // yesterday's return excluded by gte filter
+  sbMock.activeBookingRows   = [];
   const res = makeRes();
   await handler(makeReq(), res);
   assert.equal(res._status, 200);
   assert.equal(res._body.camry?.available_at, undefined,
-    "camry should not have available_at when returned outside buffer");
+    "camry returned yesterday should have no available_at");
 });
 
-// ─── 7. Both active rental AND recent return → actual_return_time wins ────────
+// ─── 8. Both active rental AND recent return → actual_return_time wins ────────
 
 test("recent return overrides active rental scheduling", async () => {
   resetMock();
@@ -265,7 +289,7 @@ test("recent return overrides active rental scheduling", async () => {
   sbMock.activeBookingRows = [
     { vehicle_id: "camry", return_date: "2026-06-15" },
   ];
-  // Recent return entry (higher priority)
+  // Return entry (higher priority)
   sbMock.returnedBookingRows = [
     { vehicle_id: "camry", actual_return_time: returnedAt },
   ];
@@ -287,7 +311,7 @@ test("recent return overrides active rental scheduling", async () => {
     "available_at must NOT be based on the active rental return_date when actual_return_time is present");
 });
 
-// ─── 8. active rental on one vehicle, no impact on another ───────────────────
+// ─── 9. active rental on one vehicle, no impact on another ───────────────────
 
 test("active rental for one vehicle does not affect other vehicles", async () => {
   resetMock();

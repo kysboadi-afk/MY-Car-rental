@@ -45,8 +45,10 @@ function rentalStatusToAvailable(status) {
  * querying the bookings table.
  *
  * Priority (highest wins):
- *   1. Completed booking with actual_return_time within the last 2 h (buffer window):
+ *   1. Completed booking with actual_return_time on today's date (local calendar day):
  *        available_at = actual_return_time + RETURN_BUFFER_MS
+ *      Any car returned today — even hours ago — shows time-based availability so
+ *      the fleet page can display "Available Today at [time]".
  *   2. Active rental (status = 'active', no actual return yet):
  *        available_at = return_date + 1 day T00:00:00Z  (date-level, same as getNextAvailDate)
  *
@@ -58,7 +60,11 @@ function rentalStatusToAvailable(status) {
  */
 async function enrichWithAvailableAt(sb, result) {
   try {
-    const twoHoursAgo = new Date(Date.now() - RETURN_BUFFER_MS).toISOString();
+    // Use midnight UTC of the current day so any return today is included,
+    // regardless of how many hours ago it happened.
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const startOfTodayISO = todayUTC.toISOString();
 
     // Run both queries in parallel for performance
     const [activeRes, returnedRes] = await Promise.all([
@@ -74,7 +80,7 @@ async function enrichWithAvailableAt(sb, result) {
         .select("vehicle_id, actual_return_time")
         .eq("status", "completed")
         .not("actual_return_time", "is", null)
-        .gte("actual_return_time", twoHoursAgo)
+        .gte("actual_return_time", startOfTodayISO)
         .in("vehicle_id", ALL_VEHICLES)
         .order("actual_return_time", { ascending: false }),
     ]);
@@ -90,7 +96,7 @@ async function enrichWithAvailableAt(sb, result) {
       availableAtMap[row.vehicle_id] = nextDay.toISOString();
     }
 
-    // Higher priority: recently returned, still within 2h buffer — exact time known
+    // Higher priority: returned today — exact time known, apply 2h buffer
     for (const row of (returnedRes.data || [])) {
       if (!row.vehicle_id || !row.actual_return_time) continue;
       const availableAt = new Date(new Date(row.actual_return_time).getTime() + RETURN_BUFFER_MS);
