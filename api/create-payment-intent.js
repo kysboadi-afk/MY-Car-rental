@@ -15,6 +15,50 @@ import { normalizeClockTime, deriveReturnTime } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
+/**
+ * Derive the canonical vehicle_id to embed in Stripe PaymentIntent metadata.
+ *
+ * Mirrors the normalization logic in mapVehicleId (stripe-webhook.js):
+ *  - Tokenize vehicle_name: lowercase, strip non-alphanum, skip single-letter
+ *    tokens (e.g. "r" in "Slingshot R"), stop after the first numeric token
+ *    (year) to drop trim-level suffixes (e.g. "SE" in "Camry 2013 SE").
+ *  - If the name-derived ID is more specific than the raw vehicle_id (starts
+ *    with it AND the raw ID has no digits), use the name-derived ID.
+ *  - Otherwise use the normalised raw vehicle_id.
+ *
+ * Examples:
+ *   ("camry",     "Camry 2012")    → "camry2012"
+ *   ("camry2013", "Camry 2013 SE") → "camry2013"
+ *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
+ *
+ * @param {string} vehicleIdRaw  - internal vehicle key (e.g. "camry")
+ * @param {string} vehicleNameRaw - human-readable name (e.g. "Camry 2012")
+ * @returns {string} canonical vehicle_id
+ */
+function canonicalVehicleIdForStripe(vehicleIdRaw, vehicleNameRaw) {
+  const normId = String(vehicleIdRaw || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  let nameId = "";
+  if (vehicleNameRaw) {
+    const allTokens = String(vehicleNameRaw).toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/);
+    const parts = [];
+    for (const t of allTokens) {
+      if (/^[a-z]$/.test(t)) continue; // skip single-letter tokens (e.g. "r")
+      parts.push(t);
+      if (/\d/.test(t)) break;         // stop after first numeric token (year)
+    }
+    if (parts.length > 0) nameId = parts.join("");
+  }
+
+  // If the raw vehicle_id has no digits (bare make, e.g. "camry") and the
+  // name-derived ID starts with it and adds specificity (year), prefer nameId.
+  const idHasDigit = /\d/.test(normId);
+  if (!idHasDigit && nameId && nameId.startsWith(normId) && nameId !== normId) {
+    return nameId;
+  }
+  return normId || nameId;
+}
+
 export default async function handler(req, res) {
   // CORS — allow requests from the production frontend
   const origin = req.headers.origin;
@@ -248,7 +292,7 @@ export default async function handler(req, res) {
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: trimmedPhone,
-        vehicle_id:   assignedVehicleId,
+        vehicle_id:   canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name),
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,

@@ -306,17 +306,20 @@ export function mapVehicleId(metadata = {}) {
   //   1. lowercase
   //   2. replace non-alphanumeric chars with spaces
   //   3. split into tokens
-  //   4. filter out single-character tokens (e.g. removes "r" from "Slingshot R")
-  //   5. join without separator → "camry2012", "slingshot2", "corolla2020"
+  //   4. skip single-letter tokens (removes "r" from "Slingshot R")
+  //   5. stop accumulating after the first numeric token (year/variant number)
+  //      so trim-level suffixes like "SE" in "Camry 2013 SE" are dropped
+  //   6. join without separator → "camry2012", "camry2013", "slingshot2", "corolla2020"
   let nameId = "";
   if (rawName) {
-    const tokens = rawName
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, " ")
-      .trim()
-      .split(/\s+/)
-      .filter(t => !/^[a-z]$/.test(t)); // remove single-letter tokens (e.g. "r" in "Slingshot R")
-    if (tokens.length > 0) nameId = tokens.join("");
+    const allTokens = rawName.toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/);
+    const parts = [];
+    for (const t of allTokens) {
+      if (/^[a-z]$/.test(t)) continue; // skip single-letter tokens (e.g. "r")
+      parts.push(t);
+      if (/\d/.test(t)) break;         // stop after first numeric token (year)
+    }
+    if (parts.length > 0) nameId = parts.join("");
   }
 
   // ── Step 1: vehicle_id passthrough ──────────────────────────────────────────
