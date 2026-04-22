@@ -173,14 +173,20 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
 
       if (hasValidAvailableAt) {
-        const availDateISO = availDate.toISOString().slice(0, 10);
-        if (availDateISO === today) {
-          const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-          nextBadge.textContent = "Available Today at " + timeStr;
+        const nowMs = Date.now();
+        if (availDate.getTime() <= nowMs) {
+          // Return time is already in the past — just say "Available Today"
+          nextBadge.textContent = "Available Today";
         } else {
-          const formatted2 = availDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-          const tpl2 = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-          nextBadge.textContent = tpl2.replace("{date}", formatted2);
+          const availDateISO = availDate.toISOString().slice(0, 10);
+          const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          if (availDateISO === today) {
+            nextBadge.textContent = "Available Today at " + timeStr;
+          } else {
+            const formatted2 = availDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            const tpl2 = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
+            nextBadge.textContent = tpl2.replace("{date}", formatted2 + " at " + timeStr);
+          }
         }
       } else {
         const nextISO = getNextAvailDate(vehicleId);

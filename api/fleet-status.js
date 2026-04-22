@@ -8,15 +8,11 @@
 //   2. GitHub fleet-status.json   (legacy { vehicleId: { available: bool } } format)
 //   3. Hard-coded defaults        (all available)
 //
-// Response: { slingshot: { available, rental_status, available_at? }, camry: { … }, … }
+// Response: { slingshot: { available, rental_status, available_at }, camry: { … }, … }
 //
-// available_at (ISO timestamp) is included when the vehicle is currently
-// rented or within the 2-hour post-return buffer:
-//   • If booking has actual_return_time (early/on-time return, buffer active):
-//       available_at = actual_return_time + 2 h
-//   • Else (active rental, no return recorded yet):
-//       available_at = return_date + 1 day T00:00:00Z  (existing day-level logic)
-// Logs [AVAILABILITY_COMPUTED_WITH_TIME] for every vehicle that has timing data.
+// available_at is computed from the latest active booking return datetime in
+// America/Los_Angeles for vehicles currently marked unavailable.
+// When no active booking applies, available_at is explicitly null.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -24,17 +20,17 @@ const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALL_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
-// 2-hour buffer applied after a vehicle is returned before showing it as available
-const RETURN_BUFFER_MS = 2 * 60 * 60 * 1000;
-// Business timezone — availability windows are anchored to local calendar days
 const BUSINESS_TZ = "America/Los_Angeles";
+// Keep aligned with booked-dates/v2 availability "active" statuses so vehicles
+// blocked by active reservations still surface next availability consistently.
+const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
 
 const DEFAULT_STATUS = {
-  slingshot:  { available: true,  rental_status: "available" },
-  slingshot2: { available: true,  rental_status: "available" },
-  slingshot3: { available: true,  rental_status: "available" },
-  camry:      { available: true,  rental_status: "available" },
-  camry2013:  { available: true,  rental_status: "available" },
+  slingshot: { available: true, rental_status: "available" },
+  slingshot2: { available: true, rental_status: "available" },
+  slingshot3: { available: true, rental_status: "available" },
+  camry: { available: true, rental_status: "available" },
+  camry2013: { available: true, rental_status: "available" },
 };
 
 /** Convert Supabase rental_status → boolean available for backwards compat */
@@ -42,90 +38,145 @@ function rentalStatusToAvailable(status) {
   return status === "available";
 }
 
+function buildDateTimeLA(date, time) {
+  if (!date || !time) return new Date(NaN);
+
+  const datePart = String(date).trim().split("T")[0];
+  const rawTime = String(time).trim();
+
+  const h24 = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  const ampm = rawTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+
+  let hours = 0;
+  let mins = 0;
+  let secs = 0;
+
+  if (ampm) {
+    hours = parseInt(ampm[1], 10);
+    mins = parseInt(ampm[2], 10);
+    secs = parseInt(ampm[3] || "0", 10);
+    const period = ampm[4].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+  } else if (h24) {
+    hours = parseInt(h24[1], 10);
+    mins = parseInt(h24[2], 10);
+    secs = parseInt(h24[3] || "0", 10);
+  } else {
+    return new Date(NaN);
+  }
+
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(mins).padStart(2, "0");
+  const ss = String(secs).padStart(2, "0");
+  const naiveISO = `${datePart}T${hh}:${mm}:${ss}`;
+  const approxUtcDate = new Date(`${naiveISO}Z`);
+
+  const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TZ,
+    timeZoneName: "longOffset",
+  }).formatToParts(approxUtcDate).find((p) => p.type === "timeZoneName")?.value ?? "GMT-7:00";
+
+  const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
+  const sign = offsetMatch ? offsetMatch[1] : "-";
+  const offsetMin = offsetMatch
+    ? (sign === "+" ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
+    : -420;
+
+  return new Date(approxUtcDate.getTime() - offsetMin * 60 * 1000);
+}
+
+function formatDateTimeLA(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "longOffset",
+  }).formatToParts(date);
+
+  const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const tzOffsetStr = lookup.timeZoneName || "GMT-7:00";
+  const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
+  const offsetSign = offsetMatch ? offsetMatch[1] : "-";
+  const offsetHour = offsetMatch ? offsetMatch[2].padStart(2, "0") : "07";
+  const offsetMin = offsetMatch ? offsetMatch[3].padStart(2, "0") : "00";
+
+  return `${lookup.year}-${lookup.month}-${lookup.day}T${lookup.hour}:${lookup.minute}:${lookup.second}${offsetSign}${offsetHour}:${offsetMin}`;
+}
+
 /**
  * Enriches each entry in `result` with an `available_at` ISO timestamp by
- * querying the bookings table.
+ * querying active bookings and selecting each vehicle's latest return datetime.
  *
- * Priority (highest wins):
- *   1. Completed booking with actual_return_time on today's date (LA local day):
- *        available_at = actual_return_time + RETURN_BUFFER_MS
- *      Any car returned today (America/Los_Angeles) — even hours ago — shows
- *      time-based availability so the fleet page can display
- *      "Available Today at [time]". The day boundary is LA-local, not UTC, so
- *      fleet availability aligns with local rental operations.
- *   2. Active rental (status = 'active', no actual return yet):
- *        available_at = return_date + 1 day T00:00:00Z  (date-level, same as getNextAvailDate)
- *
- * Logs [AVAILABILITY_COMPUTED_WITH_TIME] for each vehicle that receives a value.
- * Non-fatal — silently skips on any error.
- *
- * @param {object} sb     - Supabase admin client
- * @param {object} result - per-vehicle status map (mutated in place)
+ * Rules:
+ *   - If vehicle is currently booked (available=false) and has an active booking,
+ *     available_at = latest booking return_date + return_time (LA)
+ *   - If vehicle has no active booking, available_at = null
  */
 async function enrichWithAvailableAt(sb, result) {
   try {
-    // Compute midnight of the current day in the business timezone (America/Los_Angeles)
-    // so that any return recorded today (LA local time) is included, regardless of the
-    // UTC date boundary.
-    const now = new Date();
-    // Today's date in the business timezone, e.g. "2026-04-21"
-    const laDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TZ }).format(now);
-    // UTC offset for this timezone right now, e.g. "GMT-7:00" (PDT) or "GMT-8:00" (PST)
-    const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: BUSINESS_TZ,
-      timeZoneName: "longOffset",
-    }).formatToParts(now).find(p => p.type === "timeZoneName")?.value ?? "GMT+0:00";
-    const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
-    const sign = offsetMatch ? offsetMatch[1] : "+";
-    const hh   = offsetMatch ? offsetMatch[2].padStart(2, "0") : "00";
-    const mm   = offsetMatch ? offsetMatch[3].padStart(2, "0") : "00";
-    const startOfBusinessDayISO = new Date(`${laDateStr}T00:00:00${sign}${hh}:${mm}`).toISOString();
+    const { data: activeRows, error } = await sb
+      .from("bookings")
+      .select("vehicle_id, return_date, return_time, status")
+      .in("vehicle_id", ALL_VEHICLES)
+      .in("status", ACTIVE_BOOKING_STATUSES)
+      .not("return_date", "is", null)
+      .order("return_date", { ascending: false })
+      .order("return_time", { ascending: false });
 
-    // Run both queries in parallel for performance
-    const [activeRes, returnedRes] = await Promise.all([
-      sb
-        .from("bookings")
-        .select("vehicle_id, return_date")
-        .eq("status", "active")
-        .in("vehicle_id", ALL_VEHICLES)
-        .not("return_date", "is", null)
-        .order("return_date", { ascending: true }),
-      sb
-        .from("bookings")
-        .select("vehicle_id, actual_return_time")
-        .eq("status", "completed")
-        .not("actual_return_time", "is", null)
-        .gte("actual_return_time", startOfBusinessDayISO)
-        .in("vehicle_id", ALL_VEHICLES)
-        .order("actual_return_time", { ascending: false }),
-    ]);
+    if (error) throw new Error(error.message || "bookings query failed");
 
-    const availableAtMap = {};
+    const latestByVehicle = {};
 
-    // Lower priority: active rentals — day after scheduled return date
-    for (const row of (activeRes.data || [])) {
-      if (!row.vehicle_id || !row.return_date) continue;
-      if (availableAtMap[row.vehicle_id]) continue; // keep earliest
-      const nextDay = new Date(row.return_date + "T00:00:00Z");
-      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-      availableAtMap[row.vehicle_id] = nextDay.toISOString();
-    }
+    for (const row of (activeRows || [])) {
+      if (!row?.vehicle_id || !row?.return_date) continue;
 
-    // Higher priority: returned today — exact time known, apply 2h buffer
-    for (const row of (returnedRes.data || [])) {
-      if (!row.vehicle_id || !row.actual_return_time) continue;
-      const availableAt = new Date(new Date(row.actual_return_time).getTime() + RETURN_BUFFER_MS);
-      availableAtMap[row.vehicle_id] = availableAt.toISOString();
-    }
-
-    for (const [vid, availableAt] of Object.entries(availableAtMap)) {
-      if (result[vid]) {
-        result[vid].available_at = availableAt;
-        console.log("[AVAILABILITY_COMPUTED_WITH_TIME]", {
-          vehicle_id:  vid,
-          available_at: availableAt,
+      if (!row.return_time) {
+        console.error("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
+          vehicle_id: row.vehicle_id,
+          status: row.status || null,
+          return_date: row.return_date,
         });
+        continue;
       }
+
+      const returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
+      const returnDateTimeMs = returnDateTime.getTime();
+
+      if (!Number.isFinite(returnDateTimeMs)) {
+        console.error("[AVAILABLE_AT_INVALID_RETURN_DATETIME]", {
+          vehicle_id: row.vehicle_id,
+          return_date: row.return_date,
+          return_time: row.return_time,
+        });
+        continue;
+      }
+
+      const existing = latestByVehicle[row.vehicle_id];
+      if (!existing || returnDateTimeMs > existing.returnDateTimeMs) {
+        latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime };
+      }
+    }
+
+    for (const [vehicleId, vehicleStatus] of Object.entries(result)) {
+      const latest = latestByVehicle[vehicleId];
+      if (!vehicleStatus || vehicleStatus.available !== false || !latest) {
+        if (vehicleStatus) vehicleStatus.available_at = null;
+        continue;
+      }
+
+      const returnDateTime = formatDateTimeLA(latest.returnDateTime);
+      vehicleStatus.available_at = returnDateTime;
+
+      console.log("[AVAILABLE_AT_COMPUTED]", {
+        vehicle_id: vehicleId,
+        return_datetime: returnDateTime,
+      });
     }
   } catch (err) {
     console.warn("fleet-status: available_at enrichment failed (non-fatal):", err.message);
@@ -159,7 +210,7 @@ export default async function handler(req, res) {
         for (const row of rows) {
           if (row.vehicle_id) {
             result[row.vehicle_id] = {
-              available:     rentalStatusToAvailable(row.rental_status),
+              available: rentalStatusToAvailable(row.rental_status),
               rental_status: row.rental_status || "available",
             };
           }
@@ -197,7 +248,7 @@ export default async function handler(req, res) {
           if (ALL_VEHICLES.includes(vid)) {
             const avail = typeof val.available === "boolean" ? val.available : true;
             result[vid] = {
-              available:     avail,
+              available: avail,
               rental_status: val.rental_status || (avail ? "available" : "maintenance"),
             };
           }
