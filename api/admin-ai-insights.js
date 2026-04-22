@@ -148,9 +148,24 @@ async function fetchAllData() {
     }
   }
 
-  // Filter bookings to car vehicles only (exclude slingshots)
+  // Filter bookings to car vehicles only (exclude slingshots).
+  // Also normalize extended canonical IDs written by the Stripe webhook
+  // (e.g. "camry2012" derived from vehicle_name "Camry 2012") back to their
+  // vehicle-table key (e.g. "camry") so that bookings are not silently dropped
+  // when the vehicles map uses the shorter base key.  We resolve by picking
+  // the longest vehicle key that is a prefix of the booking's vehicleId.
   const carVehicleIds = new Set(Object.keys(vehicles));
-  const filteredBookings = allBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
+  const vehicleKeysByLength = [...carVehicleIds].sort((a, b) => b.length - a.length);
+  const resolveVehicleId = (vid) => {
+    if (!vid || carVehicleIds.has(vid)) return vid;
+    for (const vkey of vehicleKeysByLength) {
+      if (vid.startsWith(vkey)) return vkey;
+    }
+    return vid;
+  };
+  const filteredBookings = allBookings
+    .map((b) => ({ ...b, vehicleId: resolveVehicleId(b.vehicleId) }))
+    .filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 
   return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };
 }
