@@ -572,7 +572,7 @@
       "vehicleName": "Camry 2013 SE",
       "pickupDate": "2026-04-20",
       "pickupTime": "14:00",
-      "returnDate": "2026-04-22",
+      "returnDate": "2026-04-23",
       "returnTime": "14:00",
       "location": "",
       "status": "active_rental",
@@ -585,14 +585,9 @@
       "smsSentAt": {
         "active_mid": "2026-04-21T13:45:39.279Z"
       },
-      "extensionPendingPayment": {
-        "label": "+1 day",
-        "price": 60.64,
-        "newReturnDate": "2026-04-23",
-        "newReturnTime": "14:00",
-        "paymentIntentId": "pi_3TP2RQPo7fICjrtZ26LarkgC",
-        "createdAt": "2026-04-22T15:11:52.628Z"
-      }
+      "extensionPendingPayment": null,
+      "extensionCount": 1,
+      "extensionEmailSent": true
     }
   ]
 }
