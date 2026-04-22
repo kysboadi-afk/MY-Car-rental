@@ -118,7 +118,7 @@ export default async function handler(req, res) {
           return (rows || []).map((r) => ({
             bookingId:   r.booking_ref || String(r.id),
             vehicleId:   uiVehicleId(r.vehicle_id),
-            vehicleName: VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+            vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
             name:        r.customers?.name || "",
             status:      DB_TO_APP_STATUS[r.status] || r.status,
             pickupDate:  r.pickup_date  || "",

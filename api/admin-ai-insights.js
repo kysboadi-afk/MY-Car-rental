@@ -17,6 +17,7 @@ import { computeInsights } from "../lib/ai/insights.js";
 import { detectProblems } from "../lib/ai/monitor.js";
 import { scoreAllBookings } from "../lib/ai/fraud.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -150,21 +151,10 @@ async function fetchAllData() {
 
   // Filter bookings to car vehicles only (exclude slingshots).
   // Also normalize extended canonical IDs written by the Stripe webhook
-  // (e.g. "camry2012" derived from vehicle_name "Camry 2012") back to their
-  // vehicle-table key (e.g. "camry") so that bookings are not silently dropped
-  // when the vehicles map uses the shorter base key.  We resolve by picking
-  // the longest vehicle key that is a prefix of the booking's vehicleId.
+  // (e.g. "camry2012" → "camry") back to their vehicle-table key using uiVehicleId().
   const carVehicleIds = new Set(Object.keys(vehicles));
-  const vehicleKeysByLength = [...carVehicleIds].sort((a, b) => b.length - a.length);
-  const resolveVehicleId = (vid) => {
-    if (!vid || carVehicleIds.has(vid)) return vid;
-    for (const vkey of vehicleKeysByLength) {
-      if (vid.startsWith(vkey)) return vkey;
-    }
-    return vid;
-  };
   const filteredBookings = allBookings
-    .map((b) => ({ ...b, vehicleId: resolveVehicleId(b.vehicleId) }))
+    .map((b) => ({ ...b, vehicleId: uiVehicleId(b.vehicleId) }))
     .filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 
   return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };

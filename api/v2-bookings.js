@@ -246,7 +246,7 @@ export default async function handler(req, res) {
             return {
               bookingId:       bookingRef,
               vehicleId:       uiVehicleId(r.vehicle_id),
-              vehicleName:     VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
+              vehicleName:     VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
               name:            cust.name  || rr?.customer_name  || "",
               phone:           cust.phone || rr?.customer_phone || "",
               email:           cust.email || rr?.customer_email || "",
