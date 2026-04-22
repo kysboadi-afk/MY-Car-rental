@@ -3754,7 +3754,6 @@ function viewBooking(bookingId, vehicleId) {
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
       ${(() => {
         const modalReturnDt = bookingReturnDateTime(b);
-        const now = new Date();
         const canExtend = b.status === 'active_rental' && modalReturnDt && now < modalReturnDt;
         console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: modalReturnDt ? modalReturnDt.toISOString() : null, canExtend, context: 'modal' });
         return canExtend

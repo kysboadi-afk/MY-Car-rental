@@ -256,83 +256,107 @@ function resolveBookingStatus(paymentType) {
     : "booked_paid";
 }
 
-// Unambiguous canonical vehicle IDs that can be used as-is without name lookup.
-// "camry" (without a year) is intentionally excluded because it is ambiguous —
-// Stripe legacy sessions send vehicle_id="camry" for both the 2012 and 2013 units,
-// so those must always fall through to the vehicle_name mapping path.
-const CANONICAL_VEHICLE_IDS = new Set([
-  "slingshot", "slingshot2", "slingshot3", "camry2012", "camry2013",
-]);
+// A canonical vehicle ID is all-lowercase alphanumeric, starts with a letter,
+// and is at least 2 characters long (e.g. "camry", "camry2012", "slingshot2",
+// "corolla2020").  No spaces, hyphens, or other special characters are allowed.
+// This pattern replaces a hardcoded vehicle list so that new vehicles are
+// supported automatically without code changes.
+const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
 
 /**
  * Map Stripe PaymentIntent metadata to a canonical vehicle_id.
  *
  * Strategy (in priority order):
- *  1. If metadata.vehicle_id is already a canonical ID, use it directly.
- *  2. Otherwise derive the canonical ID from metadata.vehicle_name after
- *     normalising: lowercase → trim whitespace → strip non-alphanumeric chars.
+ *  1. Derive a candidate ID from metadata.vehicle_id by lowercasing and
+ *     stripping non-alphanumeric characters.  If the result looks canonical
+ *     (matches CANONICAL_ID_PATTERN) it is used — unless the vehicle_name
+ *     produces a *more specific* ID (i.e. the name-derived ID starts with the
+ *     vehicle_id-derived ID and is longer), in which case the name-derived ID
+ *     wins.  This handles legacy sessions where vehicle_id="camry" but
+ *     vehicle_name="Camry 2012" → canonical "camry2012".
+ *  2. If step 1 fails (vehicle_id absent or non-canonical), derive the ID from
+ *     metadata.vehicle_name using generic normalization:
+ *       - lowercase
+ *       - replace non-alphanumeric chars with spaces
+ *       - split into tokens
+ *       - remove single-character tokens (strips variant designators such as
+ *         "R" in "Slingshot R" so that the result is "slingshot", not "slingshotr")
+ *       - join tokens without separator
  *
- * The name-based mapping is a fallback for legacy Stripe sessions that send
- * human-readable names like "Camry 2012" or "Camry-2012" instead of canonical IDs.
- * New sessions should send the canonical ID directly via metadata.vehicle_id.
+ * This is fully generic — no hardcoded model names.  New vehicles are handled
+ * automatically as long as Stripe metadata carries either a canonical vehicle_id
+ * or a human-readable vehicle_name following the pattern "<make> <year/variant>".
+ *
+ * Future requirement: Stripe checkout sessions should send the canonical
+ * vehicle_id directly (e.g. "camry2012", "corolla2020") so that name-based
+ * mapping is never needed.
  *
  * @param {object} metadata - PaymentIntent metadata
  * @returns {string} canonical vehicle_id
  * @throws {Error} when no mapping can be derived
  */
 export function mapVehicleId(metadata = {}) {
-  // Fast path: metadata already carries a canonical ID
-  if (metadata.vehicle_id && CANONICAL_VEHICLE_IDS.has(String(metadata.vehicle_id).trim())) {
-    const canonicalId = String(metadata.vehicle_id).trim();
+  const rawId   = String(metadata.vehicle_id   || "").trim();
+  const rawName = String(metadata.vehicle_name || "").trim();
+
+  // Normalize vehicle_id: lowercase + strip non-alphanumeric characters.
+  const normId = rawId.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Derive a candidate ID from vehicle_name using generic normalization:
+  //   1. lowercase
+  //   2. replace non-alphanumeric chars with spaces
+  //   3. split into tokens
+  //   4. filter out single-character tokens (e.g. removes "r" from "Slingshot R")
+  //   5. join without separator → "camry2012", "slingshot2", "corolla2020"
+  let nameId = "";
+  if (rawName) {
+    const tokens = rawName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, " ")
+      .trim()
+      .split(/\s+/)
+      .filter(t => !/^[a-z]$/.test(t)); // remove single-letter tokens (e.g. "r" in "Slingshot R")
+    if (tokens.length > 0) nameId = tokens.join("");
+  }
+
+  // ── Step 1: vehicle_id passthrough ──────────────────────────────────────────
+  if (normId && CANONICAL_ID_PATTERN.test(normId)) {
+    // If vehicle_name yields a more-specific ID (nameId starts with normId and
+    // is longer), use the name-derived ID instead.  This handles legacy sessions
+    // where vehicle_id="camry" but vehicle_name="Camry 2012" → "camry2012".
+    if (nameId && CANONICAL_ID_PATTERN.test(nameId) && nameId.startsWith(normId) && nameId !== normId) {
+      console.log("[VEHICLE_MAPPING]", {
+        vehicle_name: rawName, vehicle_id_raw: rawId,
+        normalized_id: normId, normalized_name: nameId,
+        mapped_vehicle_id: nameId, source: "name_override_of_prefix_id", success: true,
+      });
+      return nameId;
+    }
     console.log("[VEHICLE_MAPPING]", {
-      vehicle_name: metadata.vehicle_name || "",
-      vehicle_id_raw: metadata.vehicle_id,
-      mapped_vehicle_id: canonicalId,
-      source: "canonical_passthrough",
-      success: true,
+      vehicle_name: rawName, vehicle_id_raw: rawId,
+      normalized_id: normId, mapped_vehicle_id: normId,
+      source: "canonical_passthrough", success: true,
     });
-    return canonicalId;
+    return normId;
   }
 
-  // Normalise the vehicle name: lowercase, trim, collapse spaces, strip non-alphanumeric
-  const raw  = String(metadata.vehicle_name || "").trim();
-  const norm = raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-
-  let mapped = "";
-  if (norm.includes("slingshot") && (norm.includes("(2)") || norm.includes("2"))) {
-    mapped = "slingshot2";
-  } else if (norm.includes("slingshot") && (norm.includes("(3)") || norm.includes("3"))) {
-    mapped = "slingshot3";
-  } else if (norm.includes("slingshot")) {
-    mapped = "slingshot";
-  } else if (norm.includes("2012")) {
-    mapped = "camry2012";
-  } else if (norm.includes("2013")) {
-    mapped = "camry2013";
-  } else if (norm.includes("camry")) {
-    mapped = "camry";
-  }
-
-  if (mapped) {
+  // ── Step 2: derive from vehicle_name ────────────────────────────────────────
+  if (nameId && CANONICAL_ID_PATTERN.test(nameId)) {
     console.log("[VEHICLE_MAPPING]", {
-      vehicle_name: raw,
-      vehicle_id_raw: metadata.vehicle_id || "",
-      normalized_name: norm,
-      mapped_vehicle_id: mapped,
-      source: "name_mapping",
-      success: true,
+      vehicle_name: rawName, vehicle_id_raw: rawId,
+      normalized_name: nameId, mapped_vehicle_id: nameId,
+      source: "name_mapping", success: true,
     });
-    return mapped;
+    return nameId;
   }
 
+  // ── Failure ──────────────────────────────────────────────────────────────────
   console.error("[VEHICLE_MAPPING]", {
-    vehicle_name: raw,
-    vehicle_id_raw: metadata.vehicle_id || "",
-    normalized_name: norm,
-    mapped_vehicle_id: null,
-    success: false,
+    vehicle_name: rawName, vehicle_id_raw: rawId,
+    normalized_id: normId, normalized_name: nameId,
+    mapped_vehicle_id: null, success: false,
   });
-  throw new Error(`Unknown vehicle mapping for vehicle_name="${raw}" vehicle_id="${metadata.vehicle_id || ""}"`);
+  throw new Error(`Unknown vehicle mapping for vehicle_name="${rawName}" vehicle_id="${rawId}"`);
 }
 
 function formatSupabaseError(err) {
