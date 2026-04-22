@@ -387,19 +387,31 @@ export default async function handler(req, res) {
       // calls accumulate incorrect totals over time.
       if (sb) {
         try {
-          const { data: rrData, error: rrError } = await sb
-            .from("revenue_records_effective")
-            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id")
-            .eq("payment_status", "paid");
+          let rrResult = await sb
+            .from("revenue_reporting_base")
+            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id");
 
-          if (!rrError && Array.isArray(rrData) && rrData.length > 0) {
+          // Keep compatibility with older DBs that haven't applied the canonical
+          // reporting view migration yet.
+          if (rrResult.error && isSchemaError(rrResult.error)) {
+            console.warn("v2-customers sync: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
+            rrResult = await sb
+              .from("revenue_records_effective")
+              .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id, sync_excluded, is_orphan")
+              .eq("payment_status", "paid");
+          }
+
+          const { data: rrData, error: rrError } = rrResult;
+          const rrRows = (rrData || []).filter((r) => !r.sync_excluded && !r.is_orphan);
+
+          if (!rrError && Array.isArray(rrRows) && rrRows.length > 0) {
               // Group revenue records by the best available identity key, in priority order:
               //   1. Normalized email (primary identity key)
               //   2. Normalized phone (fallback only when email is missing)
               //   3. Normalized name (last-resort fallback)
               // This ensures no revenue row is silently dropped.
               const byKey = {};
-              for (const r of rrData) {
+              for (const r of rrRows) {
                 const normPhone = r.customer_phone ? normalizePhone(r.customer_phone) : null;
                 const normEmail = normalizeEmail(r.customer_email);
                 const normName  = r.customer_name  ? r.customer_name.toLowerCase().trim()  : null;
@@ -440,7 +452,7 @@ export default async function handler(req, res) {
 
             // Pre-compute total rental days per vehicle across ALL records (for expense attribution).
             const vehicleTotalDays = {};
-            for (const r of rrData) {
+            for (const r of rrRows) {
               if (!r.vehicle_id || r.is_cancelled || r.is_no_show) continue;
               vehicleTotalDays[r.vehicle_id] = (vehicleTotalDays[r.vehicle_id] || 0)
                 + computeRentalDays(r.pickup_date, r.return_date);

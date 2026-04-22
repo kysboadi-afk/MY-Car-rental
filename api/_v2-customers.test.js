@@ -20,7 +20,7 @@ process.env.GITHUB_TOKEN = "test-github-token";
 
 // ─── Shared mutable state ─────────────────────────────────────────────────────
 
-// rrRows is the set of rows returned by revenue_records_effective.
+// rrRows is the set of rows returned by the revenue source view used by sync.
 // null → Supabase not configured; [] → configured + empty; [...] → has data.
 let rrRows = null;
 
@@ -83,9 +83,9 @@ mock.module("./_supabase.js", {
 
       return {
         from: (table) => {
-          if (table === "revenue_records_effective") {
+          if (table === "revenue_reporting_base" || table === "revenue_records_effective") {
             return {
-              select: () => ({ eq: () => Promise.resolve({ data: rrRows, error: null }) }),
+              select: () => Promise.resolve({ data: rrRows, error: null }),
             };
           }
           if (table === "customers") {
@@ -297,6 +297,16 @@ test("B) no skipped rows: all paid non-excluded rows are counted (row_count matc
       gross_amount: 300, stripe_fee: 0, stripe_net: null, refund_amount: 0,
       is_cancelled: true, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-01", return_date: "2026-04-02", vehicle_id: "camry" },
+    // sync_excluded — should NOT count
+    { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
+      gross_amount: 999, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid", sync_excluded: true,
+      pickup_date: "2026-05-01", return_date: "2026-05-02", vehicle_id: "camry" },
+    // orphan — should NOT count
+    { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
+      gross_amount: 888, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      is_cancelled: false, is_no_show: false, payment_status: "paid", is_orphan: true,
+      pickup_date: "2026-06-01", return_date: "2026-06-02", vehicle_id: "camry" },
   ];
 
   const res = await runSync();
