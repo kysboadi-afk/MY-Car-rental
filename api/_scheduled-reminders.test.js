@@ -17,6 +17,7 @@ const updatedBookings = [];  // records calls to updateBooking
 const customerCalls   = [];  // records calls to autoUpsertCustomer
 const bookingCalls    = [];  // records calls to autoUpsertBooking
 const retryApplies    = [];  // records apply callbacks from updateJsonFileWithRetry
+const smsCalls        = [];  // records outbound SMS calls
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,11 @@ mock.module("./_github-retry.js", {
 
 // Mock everything else that scheduled-reminders.js imports
 mock.module("./_textmagic.js", {
-  namedExports: { sendSms: async () => {} },
+  namedExports: {
+    sendSms: async (phone, body) => {
+      smsCalls.push({ phone, body });
+    },
+  },
 });
 mock.module("./_contacts.js", {
   namedExports: { upsertContact: async () => {} },
@@ -133,7 +138,7 @@ global.fetch = async (url, opts) => {
   return { ok: false, text: async () => "not found" };
 };
 
-const { processAutoCompletions } = await import("./scheduled-reminders.js");
+const { processAutoCompletions, processActiveRentals } = await import("./scheduled-reminders.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +147,7 @@ function reset() {
   customerCalls.length   = 0;
   bookingCalls.length    = 0;
   retryApplies.length    = 0;
+  smsCalls.length        = 0;
 }
 
 /** Returns a Date that is `hoursAgo` hours before `now`. */
@@ -386,4 +392,69 @@ test("processAutoCompletions: restores fleet-status for each vehicle independent
 
   const restoreCalls = retryApplies.filter((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
   assert.equal(restoreCalls.length, 2, "Each vehicle should get its own fleet-status restore call");
+});
+
+test("processActiveRentals: sends reminder exactly 2h before return_datetime", async () => {
+  reset();
+  const now = new Date("2026-06-15T06:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "active_1h"), true, "2h reminder should be sent at 06:00 for 08:00 return");
+});
+
+test("processActiveRentals: sends ending-soon exactly 30m before return_datetime", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_warning_30min"), true, "ending-soon should be sent at 07:30 for 08:00 return");
+});
+
+test("processActiveRentals: sends ended at return_datetime", async () => {
+  reset();
+  const now = new Date("2026-06-15T08:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_at_return"), true, "ended should be sent at 08:00 for 08:00 return");
+});
+
+test("processActiveRentals: sends grace at return_datetime +1h", async () => {
+  reset();
+  const now = new Date("2026-06-15T09:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_grace_expired"), true, "grace should be sent at 09:00 for 08:00 return");
+});
+
+test("processActiveRentals: sends late fee at return_datetime +2h", async () => {
+  reset();
+  const now = new Date("2026-06-15T10:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_fee_pending"), true, "late-fee flow should start at 10:00 for 08:00 return");
 });
