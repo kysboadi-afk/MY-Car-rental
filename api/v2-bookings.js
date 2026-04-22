@@ -218,7 +218,7 @@ export default async function handler(req, res) {
         const { data: rows, error } = await q.order("created_at", { ascending: false });
 
         if (!error) {
-          // Fetch revenue_records for stripe fee data (best-effort; non-fatal)
+          // Fetch revenue_records for financial totals (best-effort; non-fatal)
           let revenueByBookingId = {};
           try {
             const bookingRefs = (rows || []).map((r) => r.booking_ref || String(r.id)).filter(Boolean);
@@ -228,9 +228,36 @@ export default async function handler(req, res) {
                 .select("booking_id, gross_amount, stripe_fee, stripe_net, payment_method, customer_name, customer_phone, customer_email")
                 .in("booking_id", bookingRefs);
               for (const rr of (rrRows || [])) {
+                if (!rr?.booking_id) continue;
                 if (!revenueByBookingId[rr.booking_id]) {
-                  revenueByBookingId[rr.booking_id] = rr;
+                  revenueByBookingId[rr.booking_id] = {
+                    gross_amount:   0,
+                    stripe_fee:     null,
+                    stripe_net:     null,
+                    payment_method: rr.payment_method || null,
+                    customer_name:  rr.customer_name  || null,
+                    customer_phone: rr.customer_phone || null,
+                    customer_email: rr.customer_email || null,
+                  };
                 }
+                const agg = revenueByBookingId[rr.booking_id];
+                const gross = Number(rr.gross_amount || 0);
+                if (Number.isFinite(gross)) agg.gross_amount += gross;
+
+                const fee = rr.stripe_fee != null ? Number(rr.stripe_fee) : null;
+                if (fee != null && Number.isFinite(fee)) {
+                  agg.stripe_fee = (agg.stripe_fee == null ? 0 : agg.stripe_fee) + fee;
+                }
+
+                const net = rr.stripe_net != null ? Number(rr.stripe_net) : null;
+                if (net != null && Number.isFinite(net)) {
+                  agg.stripe_net = (agg.stripe_net == null ? 0 : agg.stripe_net) + net;
+                }
+
+                if (!agg.payment_method && rr.payment_method) agg.payment_method = rr.payment_method;
+                if (!agg.customer_name  && rr.customer_name)  agg.customer_name  = rr.customer_name;
+                if (!agg.customer_phone && rr.customer_phone) agg.customer_phone = rr.customer_phone;
+                if (!agg.customer_email && rr.customer_email) agg.customer_email = rr.customer_email;
               }
             }
           } catch (_e) { /* non-fatal */ }
@@ -241,7 +268,9 @@ export default async function handler(req, res) {
             const totalPrice = Number(r.total_price || 0);
             const gross      = rr ? Number(rr.gross_amount || 0) : totalPrice;
             const stripeFee  = rr && rr.stripe_fee != null ? Number(rr.stripe_fee) : null;
-            const amountNet  = stripeFee != null ? gross - stripeFee : null;
+            const amountNet  = rr && rr.stripe_net != null
+              ? Number(rr.stripe_net)
+              : (stripeFee != null ? gross - stripeFee : null);
             const cust = r.customers || {};
             return {
               bookingId:       bookingRef,
