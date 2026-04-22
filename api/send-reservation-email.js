@@ -712,7 +712,7 @@ export default async function handler(req, res) {
   if (!returnTime) {
     return res.status(400).json({
       error: usedRecoveryPath
-        ? "Unable to process booking confirmation automatically. Please contact support with your payment confirmation."
+        ? "Missing required return time. Please contact support with your payment confirmation to complete the booking."
         : "Return time is required. Please select a return time before proceeding.",
     });
   }

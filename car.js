@@ -2022,9 +2022,10 @@ function updatePayBtn() {
   // other vehicles need pickup + return date + pickup time.
   // Pickup time is required for all vehicles: it anchors the rental window and
   // is used as the return time (return_time = pickup_time) for overlap prevention.
+  const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration && returnDate.value && pickupTime.value && returnTime.value
-    : pickup.value && returnDate.value && pickupTime.value && returnTime.value;
+    ? pickup.value && currentSlingshotDuration && hasTimeWindow
+    : pickup.value && hasTimeWindow;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");

@@ -1924,9 +1924,10 @@ function updatePayBtn() {
   // Hourly-tier vehicles need pickup + duration + pickup time;
   // other vehicles need pickup + return date + pickup time.
   // Pickup time is required for all vehicles.
+  const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration && returnDate.value && pickupTime.value && returnTime.value
-    : pickup.value && returnDate.value && pickupTime.value && returnTime.value;
+    ? pickup.value && currentSlingshotDuration && hasTimeWindow
+    : pickup.value && hasTimeWindow;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
