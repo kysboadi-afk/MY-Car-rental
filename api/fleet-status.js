@@ -8,7 +8,15 @@
 //   2. GitHub fleet-status.json   (legacy { vehicleId: { available: bool } } format)
 //   3. Hard-coded defaults        (all available)
 //
-// Response: { slingshot: { available, rental_status }, camry: { … }, … }
+// Response: { slingshot: { available, rental_status, available_at? }, camry: { … }, … }
+//
+// available_at (ISO timestamp) is included when the vehicle is currently
+// rented or within the 2-hour post-return buffer:
+//   • If booking has actual_return_time (early/on-time return, buffer active):
+//       available_at = actual_return_time + 2 h
+//   • Else (active rental, no return recorded yet):
+//       available_at = return_date + 1 day T00:00:00Z  (existing day-level logic)
+// Logs [AVAILABILITY_COMPUTED_WITH_TIME] for every vehicle that has timing data.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -16,6 +24,8 @@ const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALL_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+// 2-hour buffer applied after a vehicle is returned before showing it as available
+const RETURN_BUFFER_MS = 2 * 60 * 60 * 1000;
 
 const DEFAULT_STATUS = {
   slingshot:  { available: true,  rental_status: "available" },
@@ -28,6 +38,77 @@ const DEFAULT_STATUS = {
 /** Convert Supabase rental_status → boolean available for backwards compat */
 function rentalStatusToAvailable(status) {
   return status === "available";
+}
+
+/**
+ * Enriches each entry in `result` with an `available_at` ISO timestamp by
+ * querying the bookings table.
+ *
+ * Priority (highest wins):
+ *   1. Completed booking with actual_return_time within the last 2 h (buffer window):
+ *        available_at = actual_return_time + RETURN_BUFFER_MS
+ *   2. Active rental (status = 'active', no actual return yet):
+ *        available_at = return_date + 1 day T00:00:00Z  (date-level, same as getNextAvailDate)
+ *
+ * Logs [AVAILABILITY_COMPUTED_WITH_TIME] for each vehicle that receives a value.
+ * Non-fatal — silently skips on any error.
+ *
+ * @param {object} sb     - Supabase admin client
+ * @param {object} result - per-vehicle status map (mutated in place)
+ */
+async function enrichWithAvailableAt(sb, result) {
+  try {
+    const twoHoursAgo = new Date(Date.now() - RETURN_BUFFER_MS).toISOString();
+
+    // Run both queries in parallel for performance
+    const [activeRes, returnedRes] = await Promise.all([
+      sb
+        .from("bookings")
+        .select("vehicle_id, return_date")
+        .eq("status", "active")
+        .in("vehicle_id", ALL_VEHICLES)
+        .not("return_date", "is", null)
+        .order("return_date", { ascending: true }),
+      sb
+        .from("bookings")
+        .select("vehicle_id, actual_return_time")
+        .eq("status", "completed")
+        .not("actual_return_time", "is", null)
+        .gte("actual_return_time", twoHoursAgo)
+        .in("vehicle_id", ALL_VEHICLES)
+        .order("actual_return_time", { ascending: false }),
+    ]);
+
+    const availableAtMap = {};
+
+    // Lower priority: active rentals — day after scheduled return date
+    for (const row of (activeRes.data || [])) {
+      if (!row.vehicle_id || !row.return_date) continue;
+      if (availableAtMap[row.vehicle_id]) continue; // keep earliest
+      const nextDay = new Date(row.return_date + "T00:00:00Z");
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      availableAtMap[row.vehicle_id] = nextDay.toISOString();
+    }
+
+    // Higher priority: recently returned, still within 2h buffer — exact time known
+    for (const row of (returnedRes.data || [])) {
+      if (!row.vehicle_id || !row.actual_return_time) continue;
+      const availableAt = new Date(new Date(row.actual_return_time).getTime() + RETURN_BUFFER_MS);
+      availableAtMap[row.vehicle_id] = availableAt.toISOString();
+    }
+
+    for (const [vid, availableAt] of Object.entries(availableAtMap)) {
+      if (result[vid]) {
+        result[vid].available_at = availableAt;
+        console.log("[AVAILABILITY_COMPUTED_WITH_TIME]", {
+          vehicle_id:  vid,
+          available_at: availableAt,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("fleet-status: available_at enrichment failed (non-fatal):", err.message);
+  }
 }
 
 export default async function handler(req, res) {
@@ -62,6 +143,7 @@ export default async function handler(req, res) {
             };
           }
         }
+        await enrichWithAvailableAt(sb, result);
         return res.status(200).json(result);
       }
       if (error) console.warn("fleet-status: Supabase error, falling back to GitHub:", error.message);

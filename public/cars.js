@@ -160,15 +160,37 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = i18n.t("fleet.currentlyBooked");
       badge.className = "status-badge unavailable booked";
 
-      // "Next Available: [date]" badge
-      const nextISO = getNextAvailDate(vehicleId);
-      if (nextISO) {
-        const d = new Date(nextISO + "T00:00:00");
-        const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-        const nextBadge = document.createElement("span");
-        nextBadge.className = "next-available-badge";
-        const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-        nextBadge.textContent = tpl.replace("{date}", formatted);
+      // Build the "Next Available" badge, using time-aware data when present.
+      // If fleet-status returned available_at (ISO timestamp):
+      //   • Same day  → "Available Today at HH:MM"
+      //   • Future day → "Next Available: [date]" using that date
+      // Else fall back to the date-only getNextAvailDate logic (blocked_dates).
+      var availableAt = status ? status.available_at : null;
+      var nextBadge = document.createElement("span");
+      nextBadge.className = "next-available-badge";
+
+      if (availableAt) {
+        var availDate    = new Date(availableAt);
+        var availDateISO = availDate.toISOString().slice(0, 10);
+        if (availDateISO === today) {
+          var timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          nextBadge.textContent = "Available Today at " + timeStr;
+        } else {
+          var formatted2 = availDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          var tpl2 = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
+          nextBadge.textContent = tpl2.replace("{date}", formatted2);
+        }
+      } else {
+        var nextISO = getNextAvailDate(vehicleId);
+        if (nextISO) {
+          var d = new Date(nextISO + "T00:00:00");
+          var formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          var tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
+          nextBadge.textContent = tpl.replace("{date}", formatted);
+        }
+      }
+
+      if (nextBadge.textContent) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
