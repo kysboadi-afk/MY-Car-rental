@@ -78,7 +78,8 @@ export default async function handler(req, res) {
 
     for (let i = 0; i < vehicleBookings.length; i++) {
       const b = vehicleBookings[i];
-      if (b.status !== "active_rental") continue;
+      const isActive = b.status === "active_rental" || b.status === "active";
+      if (!isActive) continue;
 
       const emailMatch = trimmedEmail && b.email &&
         b.email.trim().toLowerCase() === trimmedEmail;
