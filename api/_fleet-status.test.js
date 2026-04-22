@@ -244,12 +244,9 @@ test("returned within 2h buffer: available_at = actual_return_time + 2h", async 
 
 test("returned more than 2h ago: no available_at from that booking", async () => {
   resetMock();
-  // 3 hours ago — outside the 2h buffer window
-  const returnedAt = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-  // This row should be excluded by the gte(actual_return_time, twoHoursAgo) filter.
-  // Our mock does not filter by gte, so we simulate by having the mock return []
-  // for the completed query when the row is outside the window.
-  // (In production, Supabase filters this out via .gte("actual_return_time", twoHoursAgo))
+  // 3 hours ago — 1.5× the RETURN_BUFFER_MS (2h), clearly outside the buffer window.
+  // This row would be excluded by the gte(actual_return_time, twoHoursAgo) filter in
+  // production; we simulate that by leaving returnedBookingRows empty.
   sbMock.returnedBookingRows = []; // outside buffer — Supabase gte filter would exclude it
   sbMock.activeBookingRows   = []; // no active booking either
   const res = makeRes();

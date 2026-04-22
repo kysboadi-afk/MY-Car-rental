@@ -647,9 +647,10 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
+    const todayDate = new Date(today);
 
     for (const row of rows) {
-      if (new Date(today) < new Date(row.end_date)) {
+      if (todayDate < new Date(row.end_date)) {
         // Early return: shrink the blocked range to end today.
         const { error: updateErr } = await sb
           .from("blocked_dates")
