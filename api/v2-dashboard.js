@@ -21,6 +21,7 @@ import { computeAmount } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -29,6 +30,7 @@ const VEHICLE_NAMES    = {
   slingshot2: "Slingshot R (Unit 2)",
   slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
+  camry2012:  "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };
 const DB_TO_APP_STATUS = {
@@ -110,12 +112,12 @@ export default async function handler(req, res) {
               deposit_paid, created_at,
               customers ( name )
             `)
-            .in("vehicle_id", ALLOWED_VEHICLES)
+            .in("vehicle_id", ALLOWED_VEHICLES.map(normalizeVehicleId))
             .order("created_at", { ascending: false });
           if (error) throw error; // query error → propagate, do NOT fallback
           return (rows || []).map((r) => ({
             bookingId:   r.booking_ref || String(r.id),
-            vehicleId:   r.vehicle_id,
+            vehicleId:   uiVehicleId(r.vehicle_id),
             vehicleName: VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id,
             name:        r.customers?.name || "",
             status:      DB_TO_APP_STATUS[r.status] || r.status,
