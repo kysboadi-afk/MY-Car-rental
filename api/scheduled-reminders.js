@@ -67,13 +67,6 @@ import {
   mapVehicleId,
 } from "./stripe-webhook.js";
 
-// ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
-const GRACE_PERIODS = {
-  slingshot:  30,   // 30-minute grace, then $100/hour late fee
-  camry:      60,
-  camry2013:  60,
-};
-
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
 // Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
 // return datetime vs. expected return datetime (HH:MM 24-hour).
@@ -100,6 +93,7 @@ const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
+const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -254,7 +248,19 @@ function buildDateTimeLA(date, time) {
   if (!date) return new Date(NaN);
   const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
   const timePart = normalizeTimeForLAIso(time);
-  return new Date(`${datePart}T${timePart}-07:00`);
+  const approxUtc = new Date(`${datePart}T${timePart}Z`);
+  let tzOffset = "-07:00";
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(approxUtc).find((p) => p.type === "timeZoneName")?.value || "";
+    const match = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (match) tzOffset = match[1];
+  } catch {
+    // Keep fallback offset.
+  }
+  return new Date(`${datePart}T${timePart}${tzOffset}`);
 }
 
 function parseBookingDateTimeLA(date, time) {
@@ -610,28 +616,28 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       }
 
       // Reminder at return_datetime - 2 hours (15 min window for cron cadence)
-      if (now >= reminderAt && now < new Date(reminderAt.getTime() + 15 * 60 * 1000) && !alreadySent(booking, "active_1h")) {
+      if (now >= reminderAt && now < new Date(reminderAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "active_1h")) {
         logSmsTrigger(id, returnIso, nowIso, "reminder");
         const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "active_1h" });
       }
 
       // Ending soon at return_datetime - 30 minutes (15 min window for cron cadence)
-      if (now >= endingSoonAt && now < new Date(endingSoonAt.getTime() + 15 * 60 * 1000) && !alreadySent(booking, "late_warning_30min")) {
+      if (now >= endingSoonAt && now < new Date(endingSoonAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_warning_30min")) {
         logSmsTrigger(id, returnIso, nowIso, "ending_soon");
         const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
       }
 
       // Ended at return_datetime (0–15 min window for cron cadence)
-      if (minsOverdue >= 0 && minsOverdue < 5 && !alreadySent(booking, "late_at_return")) {
+      if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_at_return")) {
         logSmsTrigger(id, returnIso, nowIso, "ended");
         const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_at_return" });
       }
 
       // Grace at return_datetime + 1 hour (15 min window for cron cadence)
-      if (now >= graceAt && now < new Date(graceAt.getTime() + 15 * 60 * 1000) && !alreadySent(booking, "late_grace_expired")) {
+      if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_grace_expired")) {
         logSmsTrigger(id, returnIso, nowIso, "grace");
         const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
