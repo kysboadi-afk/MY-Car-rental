@@ -269,18 +269,24 @@ function parseBookingDateTimeLA(date, time) {
   const naiveISO = `${datePart}T${hh}:${mm}:${ss}`;
 
   // Determine the LA UTC offset at this approximate moment.
-  // We treat the naive string as UTC only to evaluate the offset at roughly the
-  // right DST boundary; a 1-hour DST boundary error is acceptable for SMS triggers.
+  // We treat the naive string as UTC only to evaluate the DST offset at roughly
+  // the right boundary; a ±1-hour DST boundary error is acceptable for SMS triggers.
   const approxUtcDate = new Date(naiveISO + "Z");
+  // Fallback constants for America/Los_Angeles when Intl formatting is unavailable:
+  //   PDT (summer) = UTC-7  → "GMT-7:00" / -420 minutes
+  //   PST (winter) = UTC-8  → "GMT-8:00" / -480 minutes
+  // We default to PDT (-7) since it covers more of the operating year.
+  const LA_FALLBACK_OFFSET_STR = "GMT-7:00"; // PDT = UTC-7
+  const LA_FALLBACK_OFFSET_MIN = -420;        // -7 h × 60 = -420 min
   const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
     timeZone: BUSINESS_TZ,
     timeZoneName: "longOffset",
-  }).formatToParts(approxUtcDate).find(p => p.type === "timeZoneName")?.value ?? "GMT-7:00";
+  }).formatToParts(approxUtcDate).find(p => p.type === "timeZoneName")?.value ?? LA_FALLBACK_OFFSET_STR;
   const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
   const sign       = offsetMatch ? offsetMatch[1] : "-";
   const offsetMin  = offsetMatch
     ? (sign === "+" ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
-    : -420;
+    : LA_FALLBACK_OFFSET_MIN;
 
   // UTC = LA_time − LA_offset  (i.e. add the absolute offset when LA is behind UTC)
   return new Date(approxUtcDate.getTime() - offsetMin * 60 * 1000);
