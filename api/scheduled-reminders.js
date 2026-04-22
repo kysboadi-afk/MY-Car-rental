@@ -67,13 +67,6 @@ import {
   mapVehicleId,
 } from "./stripe-webhook.js";
 
-// ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
-const GRACE_PERIODS = {
-  slingshot:  30,   // 30-minute grace, then $100/hour late fee
-  camry:      60,
-  camry2013:  60,
-};
-
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
 // Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
 // return datetime vs. expected return datetime (HH:MM 24-hour).
@@ -100,6 +93,11 @@ const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
+const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
+const REMINDER_OFFSET_MS = 2 * 60 * 60 * 1000;
+const ENDING_SOON_OFFSET_MS = 30 * 60 * 1000;
+const GRACE_OFFSET_MS = 60 * 60 * 1000;
+const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -223,73 +221,54 @@ async function markVehicleAvailable(vehicleId) {
 
 const BUSINESS_TZ = "America/Los_Angeles";
 
+function normalizeTimeForLAIso(time) {
+  if (!time) return "00:00:00";
+  const t = String(time).trim();
+  const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const mins = parseInt(ampmMatch[2], 10);
+    const secs = parseInt(ampmMatch[3] || "0", 10);
+    const period = ampmMatch[4].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (h24Match) {
+    return `${String(parseInt(h24Match[1], 10)).padStart(2, "0")}:${String(parseInt(h24Match[2], 10)).padStart(2, "0")}:${String(parseInt(h24Match[3] || "0", 10)).padStart(2, "0")}`;
+  }
+  return "00:00:00";
+}
+
 /**
- * Parse a booking date + time string interpreted in the America/Los_Angeles
- * timezone, returning the equivalent UTC Date.
- *
- * This is the correct function to use for all SMS timing logic so that
- * triggers fire at the right wall-clock time in Los Angeles regardless of
- * what timezone the Vercel server is running in.
- *
- * Date: YYYY-MM-DD  |  Time: "3:00 PM", "15:00", "3:00:00 PM", or "15:00:00"
- *
- * @param {string} date  - YYYY-MM-DD
- * @param {string} [time] - optional time string (defaults to midnight LA)
- * @returns {Date} UTC Date corresponding to the given LA wall-clock time
+ * Centralized LA datetime builder for booking date+time fields.
+ * Returns an absolute Date for the provided Los Angeles wall-clock datetime.
+ * @param {string} date - YYYY-MM-DD
+ * @param {string} time - booking time (12h/24h)
+ * @returns {Date}
  */
-function parseBookingDateTimeLA(date, time) {
+function buildDateTimeLA(date, time) {
   if (!date) return new Date(NaN);
   const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
-
-  let hours = 0, mins = 0, secs = 0;
-  if (time) {
-    const t = String(time).trim();
-    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-    if (ampmMatch) {
-      hours = parseInt(ampmMatch[1], 10);
-      mins  = parseInt(ampmMatch[2], 10);
-      secs  = parseInt(ampmMatch[3] || "0", 10);
-      const period = ampmMatch[4].toUpperCase();
-      if (period === "PM" && hours !== 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
-    } else {
-      const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-      if (h24Match) {
-        hours = parseInt(h24Match[1], 10);
-        mins  = parseInt(h24Match[2], 10);
-        secs  = parseInt(h24Match[3] || "0", 10);
-      }
-    }
+  const timePart = normalizeTimeForLAIso(time);
+  const approxUtc = new Date(`${datePart}T${timePart}Z`);
+  let tzOffset = "-08:00"; // PST fallback when Intl offset extraction is unavailable
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(approxUtc).find((p) => p.type === "timeZoneName")?.value || "";
+    const match = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (match) tzOffset = match[1];
+  } catch {
+    // Keep fallback offset.
   }
+  return new Date(`${datePart}T${timePart}${tzOffset}`);
+}
 
-  // Build a naive ISO string representing the requested wall-clock time in LA
-  const hh = String(hours).padStart(2, "0");
-  const mm = String(mins).padStart(2, "0");
-  const ss = String(secs).padStart(2, "0");
-  const naiveISO = `${datePart}T${hh}:${mm}:${ss}`;
-
-  // Determine the LA UTC offset at this approximate moment.
-  // We treat the naive string as UTC only to evaluate the DST offset at roughly
-  // the right boundary; a ±1-hour DST boundary error is acceptable for SMS triggers.
-  const approxUtcDate = new Date(naiveISO + "Z");
-  // Fallback constants for America/Los_Angeles when Intl formatting is unavailable:
-  //   PDT (summer) = UTC-7  → "GMT-7:00" / -420 minutes
-  //   PST (winter) = UTC-8  → "GMT-8:00" / -480 minutes
-  // We default to PDT (-7) since it covers more of the operating year.
-  const LA_FALLBACK_OFFSET_STR = "GMT-7:00"; // PDT = UTC-7
-  const LA_FALLBACK_OFFSET_MIN = -420;        // -7 h × 60 = -420 min
-  const tzOffsetStr = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS_TZ,
-    timeZoneName: "longOffset",
-  }).formatToParts(approxUtcDate).find(p => p.type === "timeZoneName")?.value ?? LA_FALLBACK_OFFSET_STR;
-  const offsetMatch = tzOffsetStr.match(/GMT([+-])(\d+):(\d+)/);
-  const sign       = offsetMatch ? offsetMatch[1] : "-";
-  const offsetMin  = offsetMatch
-    ? (sign === "+" ? 1 : -1) * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10))
-    : LA_FALLBACK_OFFSET_MIN;
-
-  // UTC = LA_time − LA_offset  (i.e. add the absolute offset when LA is behind UTC)
-  return new Date(approxUtcDate.getTime() - offsetMin * 60 * 1000);
+function parseBookingDateTimeLA(date, time) {
+  return buildDateTimeLA(date, time);
 }
 
 /**
@@ -380,6 +359,10 @@ async function safeSend(phone, body) {
  */
 function alreadySent(booking, key) {
   return !!(booking.smsSentAt && booking.smsSentAt[key]);
+}
+
+function alreadySentAny(booking, keys) {
+  return keys.some((key) => alreadySent(booking, key));
 }
 
 /**
@@ -582,10 +565,19 @@ async function processPaidBookings(allBookings, now, sentMarks) {
   }
 }
 
+function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
+  console.log("[SMS_TRIGGER]", {
+    booking_ref: bookingRef || "",
+    return_datetime: returnDatetime || "",
+    current_time: currentTime || "",
+    trigger_type: triggerType || "",
+  });
+}
+
 /**
  * Process all active_rental bookings — mid-rental, end reminders, late fees.
  */
-async function processActiveRentals(allBookings, now, sentMarks) {
+export async function processActiveRentals(allBookings, now, sentMarks) {
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
@@ -601,13 +593,13 @@ async function processActiveRentals(allBookings, now, sentMarks) {
       const v = vars(booking);
       const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
-      const grace = GRACE_PERIODS[vehicleId] || 60;
-
-      console.log("[SMS_TRIGGER]", {
-        booking_ref: id, vehicleId, status: "active_rental",
-        return_datetime: returnDt.toISOString(),
-        minutesUntilReturn: Math.round(minutesUntilReturn),
-      });
+      const minsOverdue = -minutesUntilReturn; // positive = overdue
+      const reminderAt = new Date(returnDt.getTime() - REMINDER_OFFSET_MS);
+      const endingSoonAt = new Date(returnDt.getTime() - ENDING_SOON_OFFSET_MS);
+      const graceAt = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
+      const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
+      const nowIso = now.toISOString();
+      const returnIso = returnDt.toISOString();
 
       // EXTEND SMS: 6 hours before return_time (3 hours for rentals under 24 h).
       // Conditions: active_rental, actual_return_time not set.
@@ -631,44 +623,50 @@ async function processActiveRentals(allBookings, now, sentMarks) {
         }
       }
 
-      // 1 hour before end
-      if (minutesUntilReturn <= 60 && minutesUntilReturn > 45 && !alreadySent(booking, "active_1h")) {
+      // Reminder at return_datetime - 2 hours (15 min window for cron cadence)
+      if (
+        now >= reminderAt &&
+        now < new Date(reminderAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySentAny(booking, ["active_2h", "active_1h"])
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "reminder");
         const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_1h" });
+        if (sent) sentMarks.push({ vehicleId, id, key: "active_2h" });
       }
 
-      // 15 min before end
-      if (minutesUntilReturn <= 15 && minutesUntilReturn > 0 && !alreadySent(booking, "active_15min")) {
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_15MIN_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_15min" });
-      }
-
-      // 30-min late warning (window: 30–15 min before return time)
-      if (minutesUntilReturn <= 30 && minutesUntilReturn > 15 && !alreadySent(booking, "late_warning_30min")) {
+      // Ending soon at return_datetime - 30 minutes (15 min window for cron cadence)
+      if (
+        now >= endingSoonAt &&
+        now < new Date(endingSoonAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySentAny(booking, ["ending_soon_30min", "late_warning_30min"])
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "ending_soon");
         const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
+        if (sent) sentMarks.push({ vehicleId, id, key: "ending_soon_30min" });
       }
 
-      // At return time (window: 0–5 min past)
-      const minsOverdue = -minutesUntilReturn; // positive = overdue
-      if (minsOverdue >= 0 && minsOverdue < 5 && !alreadySent(booking, "late_at_return")) {
+      // Ended at return_datetime (0–15 min window for cron cadence)
+      if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_at_return")) {
+        logSmsTrigger(id, returnIso, nowIso, "ended");
         const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_at_return" });
       }
 
-      // After grace period expired (window: grace–grace+15 min overdue)
-      if (minsOverdue >= grace && minsOverdue < grace + 15 && !alreadySent(booking, "late_grace_expired")) {
+      // Grace at return_datetime + 1 hour (15 min window for cron cadence)
+      if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_grace_expired")) {
+        logSmsTrigger(id, returnIso, nowIso, "grace");
         const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
       }
 
-      // Late fee approval request — after grace, once per booking, no active extension
+      // Late fee at return_datetime + 2 hours, once per booking, no active extension
       if (
-        minsOverdue >= grace &&
+        now >= lateFeeAt &&
         !alreadySent(booking, "late_fee_applied") &&
         !alreadySent(booking, "late_fee_pending") &&
         !booking.lateFeeApplied
       ) {
+        logSmsTrigger(id, returnIso, nowIso, "late_fee");
         // Calculate fee based on actual hours overdue:
         //   expected = returnDt (LA-timezone aware)
         //   actual   = now

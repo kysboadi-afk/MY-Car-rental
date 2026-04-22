@@ -29,7 +29,7 @@
   "crons": [
     {
       "path": "/api/scheduled-reminders",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/admin-ai-auto",
