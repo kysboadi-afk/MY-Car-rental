@@ -165,7 +165,7 @@ export default async function handler(req, res) {
           .limit(25);
         if (!missingErr) {
           bookingTimeAudit.checked = true;
-          const rows = (missingRows || []).filter((r) => !r.pickup_time || !r.return_time);
+          const rows = missingRows || [];
           bookingTimeAudit.missingTimeCount = rows.length;
           bookingTimeAudit.sampleMissingRefs = rows
             .map((r) => r.booking_ref)
