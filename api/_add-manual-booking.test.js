@@ -176,6 +176,12 @@ test("add-manual-booking: 400 for missing pickupTime", async () => {
   assert.equal(res._status, 400);
 });
 
+test("add-manual-booking: 400 for missing returnTime", async () => {
+  const res = makeRes();
+  await handler(makeReq({ ...basePayload(), returnTime: "" }), res);
+  assert.equal(res._status, 400);
+});
+
 // ─── Supabase sync preflight validations ─────────────────────────────────────
 
 test("add-manual-booking: successful booking returns 200 with booking record", async () => {
