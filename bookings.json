@@ -103,7 +103,8 @@
         "late_fee_pending": "2026-04-14T12:30:34.084Z",
         "post_thank_you": "2026-04-14T15:45:30.792Z",
         "retention_1d": "2026-04-16T04:00:17.891Z",
-        "retention_3d": "2026-04-18T04:00:25.794Z"
+        "retention_3d": "2026-04-18T04:00:25.794Z",
+        "retention_7d": "2026-04-22T04:00:29.991Z"
       },
       "createdAt": "2026-04-07T04:24:04.966Z",
       "source": "public_booking",
