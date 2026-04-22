@@ -3645,7 +3645,14 @@ function applyBookingFilters() {
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
           ` : ''}
           ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
-            <button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>
+            ${(() => {
+              const extReturnDt = bookingReturnDateTime(b);
+              const canExtend   = b.status === 'active_rental' && extReturnDt && now < extReturnDt;
+              console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: extReturnDt ? extReturnDt.toISOString() : null, canExtend });
+              return canExtend
+                ? `<button class="btn btn-secondary btn-sm" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this)" title="Extend rental">🔄 Extend</button>`
+                : '';
+            })()}
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this)" title="Mark returned">✓ Returned</button>
           ` : ''}
           <button class="btn btn-sm ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this)" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩</button>
@@ -3745,7 +3752,15 @@ function viewBooking(bookingId, vehicleId) {
     ` : ''}
     ${(b.status === 'active_rental' || derived === 'overdue' || derived === 'extended') ? `
       <button class="btn btn-success" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','completed_rental',this);closeModal('booking-detail-modal')">✓ Mark Returned</button>
-      <button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>
+      ${(() => {
+        const modalReturnDt = bookingReturnDateTime(b);
+        const now = new Date();
+        const canExtend = b.status === 'active_rental' && modalReturnDt && now < modalReturnDt;
+        console.log('[EXTEND_BUTTON_STATE]', { bookingId: b.bookingId, vehicleId: b.vehicleId, status: b.status, derived, returnDateTime: modalReturnDt ? modalReturnDt.toISOString() : null, canExtend, context: 'modal' });
+        return canExtend
+          ? `<button class="btn btn-secondary" onclick="openResendExtensionModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',this);closeModal('booking-detail-modal')" style="background:var(--primary);color:#fff;border-color:var(--primary);">🔄 Extend Rental</button>`
+          : '';
+      })()}
       <button class="btn btn-danger" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this);closeModal('booking-detail-modal')">Cancel Booking</button>
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>

@@ -256,16 +256,83 @@ function resolveBookingStatus(paymentType) {
     : "booked_paid";
 }
 
-function mapVehicleId(metadata = {}) {
-  const name = String(metadata.vehicle_name || "").toLowerCase();
+// Unambiguous canonical vehicle IDs that can be used as-is without name lookup.
+// "camry" (without a year) is intentionally excluded because it is ambiguous —
+// Stripe legacy sessions send vehicle_id="camry" for both the 2012 and 2013 units,
+// so those must always fall through to the vehicle_name mapping path.
+const CANONICAL_VEHICLE_IDS = new Set([
+  "slingshot", "slingshot2", "slingshot3", "camry2012", "camry2013",
+]);
 
-  if (name.includes("slingshot r (2)")) return "slingshot2";
-  if (name.includes("slingshot r (3)")) return "slingshot3";
-  if (name.includes("slingshot")) return "slingshot";
-  if (name.includes("2012")) return "camry2012";
-  if (name.includes("2013")) return "camry2013";
+/**
+ * Map Stripe PaymentIntent metadata to a canonical vehicle_id.
+ *
+ * Strategy (in priority order):
+ *  1. If metadata.vehicle_id is already a canonical ID, use it directly.
+ *  2. Otherwise derive the canonical ID from metadata.vehicle_name after
+ *     normalising: lowercase → trim whitespace → strip non-alphanumeric chars.
+ *
+ * The name-based mapping is a fallback for legacy Stripe sessions that send
+ * human-readable names like "Camry 2012" or "Camry-2012" instead of canonical IDs.
+ * New sessions should send the canonical ID directly via metadata.vehicle_id.
+ *
+ * @param {object} metadata - PaymentIntent metadata
+ * @returns {string} canonical vehicle_id
+ * @throws {Error} when no mapping can be derived
+ */
+export function mapVehicleId(metadata = {}) {
+  // Fast path: metadata already carries a canonical ID
+  if (metadata.vehicle_id && CANONICAL_VEHICLE_IDS.has(String(metadata.vehicle_id).trim())) {
+    const canonicalId = String(metadata.vehicle_id).trim();
+    console.log("[VEHICLE_MAPPING]", {
+      vehicle_name: metadata.vehicle_name || "",
+      vehicle_id_raw: metadata.vehicle_id,
+      mapped_vehicle_id: canonicalId,
+      source: "canonical_passthrough",
+      success: true,
+    });
+    return canonicalId;
+  }
 
-  throw new Error(`Unknown vehicle mapping for vehicle_name="${metadata.vehicle_name || ""}"`);
+  // Normalise the vehicle name: lowercase, trim, collapse spaces, strip non-alphanumeric
+  const raw  = String(metadata.vehicle_name || "").trim();
+  const norm = raw.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+
+  let mapped = "";
+  if (norm.includes("slingshot") && (norm.includes("(2)") || norm.includes("2"))) {
+    mapped = "slingshot2";
+  } else if (norm.includes("slingshot") && (norm.includes("(3)") || norm.includes("3"))) {
+    mapped = "slingshot3";
+  } else if (norm.includes("slingshot")) {
+    mapped = "slingshot";
+  } else if (norm.includes("2012")) {
+    mapped = "camry2012";
+  } else if (norm.includes("2013")) {
+    mapped = "camry2013";
+  } else if (norm.includes("camry")) {
+    mapped = "camry";
+  }
+
+  if (mapped) {
+    console.log("[VEHICLE_MAPPING]", {
+      vehicle_name: raw,
+      vehicle_id_raw: metadata.vehicle_id || "",
+      normalized_name: norm,
+      mapped_vehicle_id: mapped,
+      source: "name_mapping",
+      success: true,
+    });
+    return mapped;
+  }
+
+  console.error("[VEHICLE_MAPPING]", {
+    vehicle_name: raw,
+    vehicle_id_raw: metadata.vehicle_id || "",
+    normalized_name: norm,
+    mapped_vehicle_id: null,
+    success: false,
+  });
+  throw new Error(`Unknown vehicle mapping for vehicle_name="${raw}" vehicle_id="${metadata.vehicle_id || ""}"`);
 }
 
 function formatSupabaseError(err) {
