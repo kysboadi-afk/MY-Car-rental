@@ -18,6 +18,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
@@ -42,6 +43,30 @@ function normalizeCoverImage(val) {
   if (val.startsWith("http://") || val.startsWith("https://") || val.startsWith("/")) return val;
   // Strip any leading "../" segments then prepend "/"
   return "/" + val.replace(/^(\.\.\/)+/, "");
+}
+
+function vehicleCompletenessScore(v = {}) {
+  let score = 0;
+  const id = String(v.vehicle_id || "").trim();
+  const name = String(v.vehicle_name || "").trim();
+  if (name) score += 1;
+  if (name && id && name.toLowerCase() !== id.toLowerCase()) score += 3;
+  if (v.cover_image) score += 2;
+  if (v.bouncie_device_id) score += 2;
+  if (Number(v.total_mileage) > 0) score += 1;
+  if (v.last_synced_at) score += 1;
+  if (Number(v.purchase_price) > 0) score += 1;
+  return score;
+}
+
+function mergeVehicleRecords(existing, candidate) {
+  if (!existing) return candidate;
+  const existingScore = vehicleCompletenessScore(existing);
+  const candidateScore = vehicleCompletenessScore(candidate);
+  const candidateWins = candidateScore >= existingScore;
+  const preferred = candidateWins ? candidate : existing;
+  const fallback = candidateWins ? existing : candidate;
+  return { ...fallback, ...preferred, vehicle_id: preferred.vehicle_id };
 }
 
 export default async function handler(req, res) {
@@ -72,35 +97,37 @@ export default async function handler(req, res) {
           throw error;
         }
 
-        const vehicles = (rows || [])
-            .filter((row) => {
-              // Only expose active vehicles publicly; treat missing status as active
-              // for backward compatibility with records created before this field existed.
-              const status = row.data?.status;
-              if (status && status !== "active") return false;
-              const type = row.data?.type || row.data?.vehicle_type || "";
-              if (scope === "cars" || scope === "car") return type !== "slingshot";
-              if (scope === "slingshot") return type === "slingshot";
-              return true;
-            })
-            .map((row) => {
-            const obj = {
-              vehicle_id: row.vehicle_id,
-              ...(row.data || {}),
-              rental_status:             row.rental_status             || null,
-              bouncie_device_id:         row.bouncie_device_id         || row.data?.bouncie_device_id || null,
-              total_mileage:             Number(row.mileage)           || 0,
-              last_synced_at:            row.last_synced_at            || null,
-              last_oil_change_mileage:   row.last_oil_change_mileage   != null ? Number(row.last_oil_change_mileage)   : null,
-              last_brake_check_mileage:  row.last_brake_check_mileage  != null ? Number(row.last_brake_check_mileage)  : null,
-              last_tire_change_mileage:  row.last_tire_change_mileage  != null ? Number(row.last_tire_change_mileage)  : null,
-              // tracked = true when a Bouncie IMEI is assigned (independent of rental status)
-              tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
-            };
-            if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
-            return obj;
-          });
-          return res.status(200).json(vehicles);
+        const vehiclesById = {};
+        for (const row of rows || []) {
+          // Only expose active vehicles publicly; treat missing status as active
+          // for backward compatibility with records created before this field existed.
+          const status = row.data?.status;
+          if (status && status !== "active") continue;
+          const type = row.data?.type || row.data?.vehicle_type || "";
+          if (scope === "cars" || scope === "car") {
+            if (type === "slingshot") continue;
+          } else if (scope === "slingshot" && type !== "slingshot") {
+            continue;
+          }
+
+          const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+          const obj = {
+            ...(row.data || {}),
+            rental_status:             row.rental_status             || null,
+            bouncie_device_id:         row.bouncie_device_id         || row.data?.bouncie_device_id || null,
+            total_mileage:             Number(row.mileage)           || 0,
+            last_synced_at:            row.last_synced_at            || null,
+            last_oil_change_mileage:   row.last_oil_change_mileage   != null ? Number(row.last_oil_change_mileage)   : null,
+            last_brake_check_mileage:  row.last_brake_check_mileage  != null ? Number(row.last_brake_check_mileage)  : null,
+            last_tire_change_mileage:  row.last_tire_change_mileage  != null ? Number(row.last_tire_change_mileage)  : null,
+            // tracked = true when a Bouncie IMEI is assigned (independent of rental status)
+            tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
+            vehicle_id: id,
+          };
+          if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
+          vehiclesById[id] = mergeVehicleRecords(vehiclesById[id], obj);
+        }
+        return res.status(200).json(Object.values(vehiclesById));
       } catch (err) {
         console.warn("v2-vehicles GET: Supabase threw, falling back to GitHub:", err.message);
       }
@@ -108,19 +135,22 @@ export default async function handler(req, res) {
     // GitHub fallback
     try {
       const { data: vehicles } = await loadVehicles();
-      const result = Object.values(vehicles)
-        .filter((v) => {
-          // Only expose active vehicles publicly; treat missing status as active.
-          if (v.status && v.status !== "active") return false;
-          const type = v.type || "";
-          if (scope === "cars" || scope === "car") return type !== "slingshot";
-          if (scope === "slingshot") return type === "slingshot";
-          return true;
-        })
-        .map((v) => {
-          if (v.cover_image) v = { ...v, cover_image: normalizeCoverImage(v.cover_image) };
-          return { ...v, tracked: !!v.bouncie_device_id };
-        });
+      const resultById = {};
+      for (const v of Object.values(vehicles)) {
+        const status = v.status;
+        if (status && status !== "active") continue;
+        const type = v.type || "";
+        if (scope === "cars" || scope === "car") {
+          if (type === "slingshot") continue;
+        } else if (scope === "slingshot" && type !== "slingshot") {
+          continue;
+        }
+        const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
+        let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
+        if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        resultById[id] = mergeVehicleRecords(resultById[id], next);
+      }
+      const result = Object.values(resultById);
       return res.status(200).json(result);
     } catch (err) {
       console.error("v2-vehicles GET GitHub fallback error:", err);
@@ -168,7 +198,8 @@ export default async function handler(req, res) {
           for (const row of rows || []) {
             const type = row.data?.type || row.data?.vehicle_type || "";
             if (!scopeFilter(type)) continue;
-            vehicles[row.vehicle_id] = {
+            const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+            const next = {
               ...(row.data || {}),
               bouncie_device_id:        row.bouncie_device_id        || row.data?.bouncie_device_id || null,
               total_mileage:            Number(row.mileage)          || 0,
@@ -177,7 +208,10 @@ export default async function handler(req, res) {
               last_brake_check_mileage: row.last_brake_check_mileage != null ? Number(row.last_brake_check_mileage) : null,
               last_tire_change_mileage: row.last_tire_change_mileage != null ? Number(row.last_tire_change_mileage) : null,
               tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
+              vehicle_id: id,
             };
+            if (next.cover_image) next.cover_image = normalizeCoverImage(next.cover_image);
+            vehicles[id] = mergeVehicleRecords(vehicles[id], next);
           }
           return res.status(200).json({ vehicles });
         }
@@ -189,7 +223,10 @@ export default async function handler(req, res) {
       const vehicles = {};
       for (const [id, v] of Object.entries(rawVehicles)) {
         if (!scopeFilter(v.type || "")) continue;
-        vehicles[id] = { ...v, tracked: !!v.bouncie_device_id };
+        const uiId = uiVehicleId(v.vehicle_id || id) || (v.vehicle_id || id);
+        let next = { ...v, vehicle_id: uiId, tracked: !!v.bouncie_device_id };
+        if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        vehicles[uiId] = mergeVehicleRecords(vehicles[uiId], next);
       }
       return res.status(200).json({ vehicles });
     }
