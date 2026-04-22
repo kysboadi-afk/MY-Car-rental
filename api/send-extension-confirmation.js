@@ -122,15 +122,19 @@ export default async function handler(req, res) {
 
     const {
       vehicle_id,
-      original_booking_id,
+      booking_id:          meta_booking_id,   // canonical booking_ref (primary)
+      original_booking_id,                    // legacy fallback for historical PIs
       renter_name,
       renter_email,
       extension_label,
       new_return_date,
     } = meta;
 
-    if (!vehicle_id || !original_booking_id) {
-      console.error("send-extension-confirmation: missing vehicle_id or original_booking_id in PI metadata", pi.id);
+    // Use canonical booking_id; fall back to original_booking_id for historical PIs.
+    const bookingRef = meta_booking_id || original_booking_id;
+
+    if (!vehicle_id || !bookingRef) {
+      console.error("send-extension-confirmation: missing vehicle_id or booking_id in PI metadata", pi.id);
       return res.status(422).json({ error: "Extension metadata is incomplete. Please contact us at (213) 916-6606." });
     }
 
@@ -141,13 +145,13 @@ export default async function handler(req, res) {
     const { data: allBookings } = await loadBookings();
     const vehicleBookings = allBookings[vehicle_id] || [];
     const idx = vehicleBookings.findIndex(
-      (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+      (b) => b.bookingId === bookingRef || b.paymentIntentId === bookingRef
     );
 
     if (idx === -1) {
       // Booking not in bookings.json — update Supabase directly so the admin
       // dashboard is kept in sync, then attempt emails using PI metadata.
-      console.warn(`send-extension-confirmation: booking ${original_booking_id} not found in bookings.json — using Supabase direct update fallback`);
+      console.warn(`send-extension-confirmation: booking ${bookingRef} not found in bookings.json — using Supabase direct update fallback`);
 
       if (new_return_date) {
         try {
@@ -161,11 +165,11 @@ export default async function handler(req, res) {
                 return_time: pgTime,
                 updated_at:  new Date().toISOString(),
               })
-              .eq("booking_ref", original_booking_id);
+              .eq("booking_ref", bookingRef);
             if (sbDirectErr) {
               console.error("send-extension-confirmation: Supabase direct update error:", sbDirectErr.message);
             } else {
-              console.log(`send-extension-confirmation: Supabase direct update succeeded for booking ${original_booking_id} → ${new_return_date}`);
+              console.log(`send-extension-confirmation: Supabase direct update succeeded for booking ${bookingRef} → ${new_return_date}`);
             }
           }
         } catch (fbErr) {
@@ -249,7 +253,7 @@ export default async function handler(req, res) {
         apply: (data) => {
           if (!Array.isArray(data[vehicle_id])) return;
           const i = data[vehicle_id].findIndex(
-            (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+            (b) => b.bookingId === bookingRef || b.paymentIntentId === bookingRef
           );
           if (i === -1) return;
           const cur = data[vehicle_id][i];
@@ -276,7 +280,7 @@ export default async function handler(req, res) {
           cur.extensionEmailSent      = true;
         },
         save:    saveBookings,
-        message: `Confirm extension for booking ${original_booking_id}`,
+        message: `Confirm extension for booking ${bookingRef}`,
       });
     } catch (updateErr) {
       // Non-fatal: still attempt to send emails even if the update fails.
@@ -313,7 +317,7 @@ export default async function handler(req, res) {
         console.error("send-extension-confirmation: booked-dates.json extension update failed (non-fatal):", bdErr.message);
       }
       try {
-        await autoCreateBlockedDate(vehicle_id, booking.pickupDate, updatedReturnDate, "booking", original_booking_id || null);
+        await autoCreateBlockedDate(vehicle_id, booking.pickupDate, updatedReturnDate, "booking", bookingRef || null);
         console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
       } catch (sbBlockErr) {
         console.error("send-extension-confirmation: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);

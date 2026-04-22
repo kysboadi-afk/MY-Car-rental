@@ -548,7 +548,7 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking called with upda
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
     vehicle_id:          "slingshot",
-    original_booking_id: origBookingId,
+    booking_id:             origBookingId,
     new_return_date:     "2026-11-02",
     new_return_time:     "3:00 PM",
   });
@@ -646,7 +646,7 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
     vehicle_id:          "camry",
-    original_booking_id: origBookingId,
+    booking_id:             origBookingId,
     new_return_date:     "2026-12-06",
     new_return_time:     "5:00 PM",
   });
@@ -692,7 +692,7 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
     vehicle_id:          "camry",
-    original_booking_id: origBookingId,
+    booking_id:             origBookingId,
     new_return_date:     "2026-12-14",
     new_return_time:     "3:00 PM",
   }, 11000);
@@ -761,7 +761,7 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
     vehicle_id:          "camry",
-    original_booking_id: origBookingId,
+    booking_id:             origBookingId,
     new_return_date:     "2026-12-14",
     new_return_time:     "3:00 PM",
   }, 11000);
@@ -787,7 +787,7 @@ test("webhook rental_extension: missing booking is logged and not mutated", asyn
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
     vehicle_id:          "camry",
-    original_booking_id: "bk-supabase-only-booking",
+    booking_id:             "bk-supabase-only-booking",
     new_return_date:     "2026-04-14",
     new_return_time:     "11:30 AM",
     extension_label:     "+3 days",
@@ -821,7 +821,7 @@ test("webhook rental_extension: idempotency guard skips re-application when retu
   const event = piSucceededEvent({
     payment_type: "rental_extension",
     vehicle_id: "camry",
-    original_booking_id: bookingId,
+    booking_id:             bookingId,
     new_return_date: "2026-12-14",
     new_return_time: "6:30 PM",
   }, 11000);
@@ -857,7 +857,7 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
   const event = piSucceededEvent({
     payment_type: "rental_extension",
     vehicle_id: "slingshot",
-    original_booking_id: bookingId,
+    booking_id:             bookingId,
     new_return_date: "2026-12-22",
     new_return_time: "11:30 AM",
   }, 30000);
@@ -882,7 +882,7 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
   const invalidEvent = piSucceededEvent({
     payment_type: "rental_extension",
     vehicle_id: "slingshot",
-    original_booking_id: "bk-ext-invalid-status",
+    booking_id:             "bk-ext-invalid-status",
     new_return_date: "2026-12-27",
     new_return_time: "3:00 PM",
   }, 30000);
