@@ -63,10 +63,10 @@ function mergeVehicleRecords(existing, candidate) {
   if (!existing) return candidate;
   const existingScore = vehicleCompletenessScore(existing);
   const candidateScore = vehicleCompletenessScore(candidate);
-  if (candidateScore >= existingScore) {
-    return { ...existing, ...candidate, vehicle_id: candidate.vehicle_id };
-  }
-  return { ...candidate, ...existing, vehicle_id: existing.vehicle_id };
+  const candidateWins = candidateScore >= existingScore;
+  const preferred = candidateWins ? candidate : existing;
+  const fallback = candidateWins ? existing : candidate;
+  return { ...fallback, ...preferred, vehicle_id: preferred.vehicle_id };
 }
 
 export default async function handler(req, res) {
@@ -150,15 +150,7 @@ export default async function handler(req, res) {
         if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
         resultById[id] = mergeVehicleRecords(resultById[id], next);
       }
-      const result = Object.values(resultById)
-        .filter((v) => {
-          // Only expose active vehicles publicly; treat missing status as active.
-          if (v.status && v.status !== "active") return false;
-          const type = v.type || "";
-          if (scope === "cars" || scope === "car") return type !== "slingshot";
-          if (scope === "slingshot") return type === "slingshot";
-          return true;
-        });
+      const result = Object.values(resultById);
       return res.status(200).json(result);
     } catch (err) {
       console.error("v2-vehicles GET GitHub fallback error:", err);
