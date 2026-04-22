@@ -223,9 +223,9 @@ export default async function handler(req, res) {
       },
       receipt_email: activeBooking.email || undefined,
       metadata: {
-        payment_type:        "rental_extension",
-        original_booking_id: activeBooking.bookingId || activeBooking.paymentIntentId || "",
-        vehicle_id:          vehicleId,
+        payment_type: "rental_extension",
+        booking_id:   activeBooking.bookingId || activeBooking.paymentIntentId || "",
+        vehicle_id:   vehicleId,
         vehicle_name:        vehicleData.name,
         renter_name:         activeBooking.name  || "",
         renter_email:        activeBooking.email || "",

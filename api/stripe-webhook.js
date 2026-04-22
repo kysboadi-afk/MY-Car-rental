@@ -1114,7 +1114,8 @@ export default async function handler(req, res) {
     if (paymentType === "rental_extension") {
       const {
         vehicle_id,
-        original_booking_id,
+        booking_id:          meta_booking_id,   // canonical booking_ref (primary, set by extend-rental.js)
+        original_booking_id,                    // legacy fallback for historical PIs
         renter_name,
         renter_email,
         extension_label,
@@ -1122,7 +1123,11 @@ export default async function handler(req, res) {
         new_return_time,
       } = paymentIntent.metadata || {};
 
-      if (vehicle_id && original_booking_id) {
+      // Use canonical booking_id; fall back to original_booking_id for PIs
+      // created before extend-rental.js was updated to emit booking_id.
+      const bookingRef = meta_booking_id || original_booking_id;
+
+      if (vehicle_id && bookingRef) {
         try {
           if (!new_return_date) {
             console.error(
@@ -1143,7 +1148,7 @@ export default async function handler(req, res) {
             apply: (freshData) => {
               const list = Array.isArray(freshData[vehicle_id]) ? freshData[vehicle_id] : [];
               const idx = list.findIndex(
-                (b) => b.bookingId === original_booking_id || b.paymentIntentId === original_booking_id
+                (b) => b.bookingId === bookingRef || b.paymentIntentId === bookingRef
               );
               if (idx === -1) return;
 
@@ -1175,7 +1180,7 @@ export default async function handler(req, res) {
               if (metadataReturnTime && metadataReturnTime !== resolvedReturnTime) {
                 console.warn(
                   `stripe-webhook: rental_extension return_time "${metadataReturnTime}" ignored ` +
-                  `for booking ${original_booking_id}; preserving "${resolvedReturnTime}"`
+                  `for booking ${bookingRef}; preserving "${resolvedReturnTime}"`
                 );
               }
 
@@ -1220,33 +1225,33 @@ export default async function handler(req, res) {
               updatedBooking = { ...cur };
             },
             save: saveBookings,
-            message: `Confirm extension for booking ${original_booking_id}`,
+            message: `Confirm extension for booking ${bookingRef}`,
           });
 
           if (!foundBooking) {
             console.error(
-              `stripe-webhook: rental_extension booking not found vehicle_id=${vehicle_id} booking_id=${original_booking_id}`
+              `stripe-webhook: rental_extension booking not found vehicle_id=${vehicle_id} booking_id=${bookingRef}`
             );
             return res.status(200).json({ received: true });
           }
 
           if (invalidStatus) {
             console.error(
-              `stripe-webhook: rental_extension invalid status for booking ${original_booking_id}: ${invalidStatus}`
+              `stripe-webhook: rental_extension invalid status for booking ${bookingRef}: ${invalidStatus}`
             );
             return res.status(200).json({ received: true });
           }
 
           if (alreadyApplied) {
             console.log(
-              `stripe-webhook: rental_extension already applied for booking ${original_booking_id} return_date=${new_return_date}`
+              `stripe-webhook: rental_extension already applied for booking ${bookingRef} return_date=${new_return_date}`
             );
             return res.status(200).json({ received: true });
           }
 
           if (!updatedBooking) {
             console.error(
-              `stripe-webhook: rental_extension update did not produce booking snapshot for ${original_booking_id}`
+              `stripe-webhook: rental_extension update did not produce booking snapshot for ${bookingRef}`
             );
             return res.status(200).json({ received: true });
           }
@@ -1267,7 +1272,7 @@ export default async function handler(req, res) {
             );
 
             await autoCreateRevenueRecord({
-              bookingId:       original_booking_id,
+              bookingId:       bookingRef,
               paymentIntentId: paymentIntent.id,
               vehicleId:       vehicle_id,
               customerId:      extCustomerId,
@@ -1285,7 +1290,7 @@ export default async function handler(req, res) {
               requireStripeFee: true,
             });
             const extensionRevenueComplete = await revenueRecordCompleteInSupabase(
-              original_booking_id,
+              bookingRef,
               paymentIntent.id
             );
             if (!extensionRevenueComplete) {
@@ -1376,7 +1381,7 @@ export default async function handler(req, res) {
       } else {
         logWebhookSkip(
           paymentIntent,
-          `rental_extension missing required metadata vehicle_id=${vehicle_id || "<missing>"} original_booking_id=${original_booking_id || "<missing>"}`
+          `rental_extension missing required metadata vehicle_id=${vehicle_id || "<missing>"} booking_id=${bookingRef || "<missing>"}`
         );
       }
       return res.status(200).json({ received: true });

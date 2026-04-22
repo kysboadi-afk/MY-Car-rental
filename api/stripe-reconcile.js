@@ -69,19 +69,24 @@ function extractFields(pi) {
     charge?.billing_details?.email ||
     null;
 
-  // booking_id stored in Stripe metadata by create-payment-intent.js
+  // booking_id stored in Stripe metadata by extend-rental.js (canonical booking_ref)
   const metadataBookingId = pi.metadata?.booking_id || null;
+  // original_booking_id is the legacy field; kept for backward compat with historical PIs
+  const metadataOriginalBookingId = pi.metadata?.original_booking_id || null;
+  const paymentType = pi.metadata?.payment_type || null;
 
   return {
-    payment_intent_id:   pi.id,
-    stripe_charge_id:    chargeId,
-    amount_gross:        amountGross,
-    stripe_fee:          stripeFee,
-    stripe_net:          stripeNet,
-    created_at_unix:     pi.created,
-    customer_email:      email,
-    status:              pi.status,
-    metadata_booking_id: metadataBookingId,
+    payment_intent_id:            pi.id,
+    stripe_charge_id:             chargeId,
+    amount_gross:                 amountGross,
+    stripe_fee:                   stripeFee,
+    stripe_net:                   stripeNet,
+    created_at_unix:              pi.created,
+    customer_email:               email,
+    status:                       pi.status,
+    metadata_booking_id:          metadataBookingId,
+    metadata_original_booking_id: metadataOriginalBookingId,
+    payment_type:                 paymentType,
   };
 }
 
@@ -536,6 +541,32 @@ export default async function handler(req, res) {
         const candidate = byEmailAndAmount.get(key);
         if (candidate && !matchedRecordIds.has(candidate.id)) {
           matchedRecord = candidate;
+        }
+      }
+
+      if (!matchedRecord) {
+        // RENTAL EXTENSION: revenue record was already created by the webhook.
+        // Do NOT auto-create a duplicate. Instead verify the record exists via
+        // the original_booking_id stored in the PI metadata, then mark as processed.
+        if (payment.payment_type === "rental_extension") {
+          // metadata_booking_id is the canonical field (set by current extend-rental.js).
+          // Fall back to metadata_original_booking_id for PIs created before this fix
+          // so historical extension payments are still recognised correctly.
+          const origBookingId = payment.metadata_booking_id || payment.metadata_original_booking_id;
+          const extRecord = origBookingId ? byBookingId.get(origBookingId) : null;
+          if (extRecord && !matchedRecordIds.has(extRecord.id)) {
+            console.log("stripe-reconcile: extension already processed via webhook", {
+              pi_id:       payment.payment_intent_id,
+              booking_id:  origBookingId,
+              record_id:   extRecord.id,
+            });
+            matchedRecord = extRecord;
+            // Fall through to the match/update logic below.
+          } else {
+            console.warn("stripe-reconcile: extension revenue record not found for PI", payment.payment_intent_id, "booking_id:", origBookingId);
+            results.skipped++;
+            continue;
+          }
         }
       }
 

@@ -972,8 +972,35 @@ async function runReconciliation() {
 
     const recordedAsBookingId = new Set((extRows || []).map((r) => r.booking_id).filter(Boolean));
 
+    // For rental_extension PIs whose revenue record stores the original booking ref
+    // (not the PI id) as booking_id, perform an extra lookup by booking_id.
+    // This prevents extension payments that were already processed by the webhook
+    // from appearing as mismatches (and showing "⚠️ Skipped (manual)" in alerts).
+    // Fall back to metadata.original_booking_id for PIs created before extend-rental.js
+    // was updated to emit booking_id, preserving backward compatibility.
+    const extensionOriginalBookingIds = succeededPIs
+      .filter((pi) => (pi.metadata?.payment_type) === "rental_extension")
+      .map((pi) => pi.metadata?.booking_id || pi.metadata?.original_booking_id)
+      .filter(Boolean);
+
+    const handledExtensionPIIds = new Set();
+    if (extensionOriginalBookingIds.length > 0) {
+      const { data: extRevenueRows } = await sb
+        .from("revenue_records")
+        .select("payment_intent_id, booking_id")
+        .in("booking_id", extensionOriginalBookingIds);
+      const processedExtPIIds = new Set(
+        (extRevenueRows || []).map((r) => r.payment_intent_id).filter(Boolean)
+      );
+      for (const pi of succeededPIs) {
+        if ((pi.metadata?.payment_type) === "rental_extension" && processedExtPIIds.has(pi.id)) {
+          handledExtensionPIIds.add(pi.id);
+        }
+      }
+    }
+
     const mismatches = succeededPIs.filter(
-      (pi) => !recordedPIIds.has(pi.id) && !recordedAsBookingId.has(pi.id)
+      (pi) => !recordedPIIds.has(pi.id) && !recordedAsBookingId.has(pi.id) && !handledExtensionPIIds.has(pi.id)
     );
 
     if (mismatches.length === 0) {

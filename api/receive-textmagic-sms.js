@@ -166,8 +166,8 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
       description: `Rental extension — ${booking.vehicleName || vehicleId} — ${label} — ${booking.name}`,
       automatic_payment_methods: { enabled: true },
       metadata: {
-        payment_type:        "rental_extension",
-        original_booking_id: booking.bookingId || booking.paymentIntentId,
+        payment_type: "rental_extension",
+        booking_id:   booking.bookingId || booking.paymentIntentId,
         vehicle_id:          vehicleId,
         vehicle_name:        booking.vehicleName || vehicleId,
         renter_name:         booking.name  || "",
