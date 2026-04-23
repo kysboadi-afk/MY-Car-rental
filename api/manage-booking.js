@@ -338,8 +338,10 @@ export default async function handler(req, res) {
       const rowPhone      = normalizeLookupPhone(row.customer_phone || "");
       const rowBookingRef = String(row.booking_ref || "").trim().toLowerCase();
       if (lookupEmail)      return rowEmail === lookupEmail;
-      if (lookupPhone)      return !!rowPhone && rowPhone === lookupPhone;
+      // Check booking ref BEFORE phone: booking refs like "bk-3bcf479ac6ec" contain
+      // digits which make lookupPhone truthy, so phone must not take priority here.
       if (lookupBookingRef) return !!rowBookingRef && rowBookingRef === lookupBookingRef;
+      if (lookupPhone)      return !!rowPhone && rowPhone === lookupPhone;
       return false;
     });
 
