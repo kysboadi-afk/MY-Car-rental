@@ -20,7 +20,7 @@ import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
 const ALLOWED_TYPES         = ["slingshot", "car", "economy", "luxury", "suv", "truck", "van", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
