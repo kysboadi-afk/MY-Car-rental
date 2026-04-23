@@ -425,7 +425,7 @@ async function resolveBookingId(rawRef) {
     return null;
   } catch (err) {
     console.warn(`stripe-webhook: resolveBookingId lookup error (non-fatal): ${err.message}`);
-    return null; // treat lookup errors the same as not-found
+    return null; // both lookup errors and not-found are treated as unresolvable for safety
   }
 }
 

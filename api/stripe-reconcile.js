@@ -588,55 +588,60 @@ export default async function handler(req, res) {
 
         if (dryRun) {
           // Fall through to generic auto-create so the preview report shows the PI.
-        } else if (origBookingId) {
-          const resolvedBookingId = await resolveBookingId(sb, origBookingId);
-          if (resolvedBookingId) {
-            const resolvedBooking =
-              bookingsByBookingId.get(origBookingId) ||
-              bookingsByPI.get(payment.payment_intent_id) ||
-              null;
-            try {
-              await autoCreateRevenueRecord({
-                bookingId:       resolvedBookingId,
-                paymentIntentId: payment.payment_intent_id,
-                vehicleId:       resolvedBooking?.vehicleId || null,
-                name:            resolvedBooking?.name || null,
-                phone:           resolvedBooking?.phone || null,
-                email:           payment.customer_email || resolvedBooking?.email || null,
-                pickupDate:      resolvedBooking?.pickupDate || null,
-                returnDate:      resolvedBooking?.returnDate || null,
-                amountPaid:      payment.amount_gross,
-                paymentMethod:   "stripe",
-                type:            "extension",
-                stripeFee:       payment.stripe_fee,
-                stripeNet:       payment.stripe_net,
-              }, { strict: false, requireStripeFee: false });
-              console.log("[RECOVERY_CREATED_EXTENSION]", payment.payment_intent_id);
-              results.created++;
-            } catch (recoveryErr) {
-              console.error(
-                "stripe-reconcile extension recovery error for PI",
-                payment.payment_intent_id, ":", recoveryErr.message
-              );
-              results.unmatched++;
-            }
-            continue; // handled — skip the generic raw-insert path
-          }
-          // Booking ref not confirmed in Supabase — never insert with unverified ref.
-          console.error("[BOOKING_RESOLVE_FAILED]", {
-            bookingRef: origBookingId,
-            paymentIntentId: payment.payment_intent_id,
-          });
-          results.unmatched++;
-          continue; // skip generic raw-insert for this extension PI
         } else {
-          // origBookingId missing — log and skip
-          console.error("[BOOKING_RESOLVE_FAILED]", {
-            bookingRef: "<missing>",
-            paymentIntentId: payment.payment_intent_id,
-          });
-          results.unmatched++;
-          continue;
+          // Guard: booking_ref must resolve against Supabase. Unresolvable refs
+          // are rejected here to prevent orphan rows that would fail the DB trigger.
+          if (!origBookingId) {
+            console.error("[BOOKING_RESOLVE_FAILED]", {
+              bookingRef:      "<missing>",
+              paymentIntentId: payment.payment_intent_id,
+            });
+            results.unmatched++;
+            continue;
+          }
+
+          const resolvedBookingId = await resolveBookingId(sb, origBookingId);
+          if (!resolvedBookingId) {
+            // Booking ref not confirmed in Supabase — never insert with unverified ref.
+            console.error("[BOOKING_RESOLVE_FAILED]", {
+              bookingRef:      origBookingId,
+              paymentIntentId: payment.payment_intent_id,
+            });
+            results.unmatched++;
+            continue; // skip generic raw-insert for this extension PI
+          }
+
+          // Use resolvedBookingId (the confirmed booking_ref) as the lookup key.
+          const resolvedBooking =
+            bookingsByBookingId.get(resolvedBookingId) ||
+            bookingsByPI.get(payment.payment_intent_id) ||
+            null;
+          try {
+            await autoCreateRevenueRecord({
+              bookingId:       resolvedBookingId,
+              paymentIntentId: payment.payment_intent_id,
+              vehicleId:       resolvedBooking?.vehicleId || null,
+              name:            resolvedBooking?.name || null,
+              phone:           resolvedBooking?.phone || null,
+              email:           payment.customer_email || resolvedBooking?.email || null,
+              pickupDate:      resolvedBooking?.pickupDate || null,
+              returnDate:      resolvedBooking?.returnDate || null,
+              amountPaid:      payment.amount_gross,
+              paymentMethod:   "stripe",
+              type:            "extension",
+              stripeFee:       payment.stripe_fee,
+              stripeNet:       payment.stripe_net,
+            }, { strict: false, requireStripeFee: false });
+            console.log("[RECOVERY_CREATED_EXTENSION]", payment.payment_intent_id);
+            results.created++;
+          } catch (recoveryErr) {
+            console.error(
+              "stripe-reconcile extension recovery error for PI",
+              payment.payment_intent_id, ":", recoveryErr.message
+            );
+            results.unmatched++;
+          }
+          continue; // handled — skip the generic raw-insert path
         }
       }
 
