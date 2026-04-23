@@ -276,7 +276,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "active_rental",
+      "status": "cancelled_rental",
       "amountPaid": 617.4,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_f21b8479ce35",
