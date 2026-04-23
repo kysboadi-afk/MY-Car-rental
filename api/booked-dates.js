@@ -30,7 +30,7 @@ const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // Statuses that mean the vehicle is actually occupied / unavailable
-const ACTIVE_STATUSES = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
 /**
  * Merge date ranges for a vehicle without adding duplicates.

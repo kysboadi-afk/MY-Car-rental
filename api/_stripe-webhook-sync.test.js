@@ -494,6 +494,57 @@ test("webhook new booking: sends alert when required metadata is missing", async
 
 // ─── 2. balance_payment: status sync to Supabase ─────────────────────────────
 
+test("webhook reservation_deposit: creates reservation_deposit revenue and syncs reserved status", async () => {
+  resetStore(); resetCalls();
+  const bookingId = "bk-res-dep-1";
+  bookingsStore["camry"] = [{
+    bookingId,
+    vehicleId: "camry",
+    vehicleName: "Camry 2012",
+    name: "Deposit Renter",
+    phone: "+13105550000",
+    email: "deposit@example.com",
+    pickupDate: "2026-10-01",
+    returnDate: "2026-10-05",
+    pickupTime: "10:00 AM",
+    returnTime: "10:00 AM",
+    status: "reserved_unpaid",
+    amountPaid: 0,
+    totalPrice: 350,
+    paymentIntentId: "pi_old_deposit",
+  }];
+  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
+
+  const event = piSucceededEvent({
+    payment_type: "reservation_deposit",
+    booking_id: bookingId,
+    vehicle_id: "camry",
+    vehicle_name: "Camry 2012",
+    pickup_date: "2026-10-01",
+    return_date: "2026-10-05",
+    pickup_time: "10:00 AM",
+    return_time: "10:00 AM",
+    renter_name: "Deposit Renter",
+    renter_phone: "+13105550000",
+    email: "deposit@example.com",
+    full_rental_amount: "350.00",
+  }, 5000);
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const rev = automationCalls.revenue.find((r) => r.type === "reservation_deposit");
+  assert.ok(rev, "reservation_deposit must create its own revenue record");
+  assert.equal(rev.bookingId, bookingId);
+  assert.equal(rev.amountPaid, 50);
+
+  const bookingSync = automationCalls.booking.find((b) => b.bookingId === bookingId);
+  assert.ok(bookingSync, "reservation_deposit must sync booking state");
+  assert.equal(bookingSync.status, "reserved");
+  assert.equal(bookingSync.paymentStatus, "partial");
+});
+
 test("webhook balance_payment: PREFLIGHT — autoUpsertBooking called after status update", async () => {
   resetStore(); resetCalls();
   // Seed an existing booking that was created from a deposit

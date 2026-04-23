@@ -136,13 +136,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
     const recordType = booking.type || "rental";
 
-    // Idempotent: skip if a record already exists for this booking.
-    // • Rental records: check booking_id (fast path), then payment_intent_id.
-    // • Extension records: multiple rows share the same booking_id, so skip the
-    //   booking_id check and rely solely on payment_intent_id for dedup.
+    // Idempotent:
+    // • Rental records are unique per booking_id (partial unique index).
+    // • All non-rental records (extension, reservation_deposit, rental_balance, etc.)
+    //   may share booking_id, so deduplicate only by payment_intent_id.
     let existingRecord = null;
 
-    if (recordType !== "extension") {
+    if (recordType === "rental") {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
         .select("id, payment_intent_id")

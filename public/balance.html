@@ -198,6 +198,8 @@
       var returnTime   = params.get("rt")  || "";
       var carName      = params.get("car") || vehicleId;
       var slingshotDur = params.get("d")   || "";
+      var bookingId    = params.get("b")   || "";
+      var originalPiId = params.get("opi") || "";
 
       // Extension mode params
       var isExtension  = params.get("ext") === "1";
@@ -340,6 +342,9 @@
           returnDate:        returnDate,
           protectionPlan:    protectionPlan,
           slingshotDuration: slingshotDur ? Number(slingshotDur) : undefined,
+          bookingId:         bookingId || undefined,
+          originalPaymentIntentId: originalPiId || undefined,
+          depositPaymentIntentId:  originalPiId || undefined,
         }),
       })
         .then(function (res) { return res.json(); })

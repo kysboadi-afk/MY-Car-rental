@@ -52,6 +52,36 @@ async function resolveBookingId(sb, rawRef) {
   }
 }
 
+async function updateBookingStatusIfNeeded(sb, bookingRef, expectedStatus, nextStatus, nextPaymentStatus = null) {
+  if (!sb || !bookingRef) return false;
+  try {
+    const { data: row, error } = await sb
+      .from("bookings")
+      .select("id, status, payment_status")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+    if (error || !row?.id) return false;
+    if (row.status !== expectedStatus) return false;
+    const patch = {
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    };
+    if (nextPaymentStatus) patch.payment_status = nextPaymentStatus;
+    const { error: upErr } = await sb
+      .from("bookings")
+      .update(patch)
+      .eq("id", row.id);
+    if (upErr) {
+      console.warn("stripe-reconcile: booking status correction failed:", upErr.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn("stripe-reconcile: booking status correction threw:", err.message);
+    return false;
+  }
+}
+
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -546,6 +576,13 @@ export default async function handler(req, res) {
     };
 
     for (const payment of succeededPayments) {
+      if (!dryRun && payment.payment_type === "reservation_deposit" && payment.metadata_booking_id) {
+        const resolvedBookingId = await resolveBookingId(sb, payment.metadata_booking_id);
+        if (resolvedBookingId) {
+          await updateBookingStatusIfNeeded(sb, resolvedBookingId, "pending", "reserved", "partial");
+        }
+      }
+
       // STEP 4: Match by payment_intent_id (primary), then charge_id,
       // then booking_id (for extensions where booking_id === PI ID),
       // then metadata.booking_id (stored by create-payment-intent.js —
@@ -643,6 +680,130 @@ export default async function handler(req, res) {
           }
           continue; // handled — skip the generic raw-insert path
         }
+      }
+
+      if (!matchedRecord && payment.payment_type === "reservation_deposit") {
+        const bookingRef = payment.metadata_booking_id;
+        if (!bookingRef) {
+          console.error("[BOOKING_RESOLVE_FAILED]", {
+            bookingRef: "<missing>",
+            paymentIntentId: payment.payment_intent_id,
+          });
+          results.unmatched++;
+          continue;
+        }
+        const resolvedBookingId = await resolveBookingId(sb, bookingRef);
+        if (!resolvedBookingId) {
+          console.error("[BOOKING_RESOLVE_FAILED]", {
+            bookingRef,
+            paymentIntentId: payment.payment_intent_id,
+          });
+          results.unmatched++;
+          continue;
+        }
+        const resolvedBooking =
+          bookingsByBookingId.get(resolvedBookingId) ||
+          bookingsByPI.get(payment.payment_intent_id) ||
+          null;
+        if (!dryRun) {
+          try {
+            await autoCreateRevenueRecord({
+              bookingId: resolvedBookingId,
+              paymentIntentId: payment.payment_intent_id,
+              vehicleId: resolvedBooking?.vehicleId || null,
+              name: resolvedBooking?.name || null,
+              phone: resolvedBooking?.phone || null,
+              email: payment.customer_email || resolvedBooking?.email || null,
+              pickupDate: resolvedBooking?.pickupDate || null,
+              returnDate: resolvedBooking?.returnDate || null,
+              amountPaid: payment.amount_gross,
+              paymentMethod: "stripe",
+              type: "reservation_deposit",
+              stripeFee: payment.stripe_fee,
+              stripeNet: payment.stripe_net,
+            }, { strict: false, requireStripeFee: false });
+            await updateBookingStatusIfNeeded(sb, resolvedBookingId, "pending", "reserved", "partial");
+            results.created++;
+          } catch (recoveryErr) {
+            console.error(
+              "stripe-reconcile reservation_deposit recovery error for PI",
+              payment.payment_intent_id, ":", recoveryErr.message
+            );
+            results.unmatched++;
+          }
+        } else {
+          results.preview.push({
+            status: "will_create",
+            pi_id: payment.payment_intent_id,
+            booking_id: resolvedBookingId,
+            type: "reservation_deposit",
+            gross: payment.amount_gross,
+            fee: payment.stripe_fee,
+            net: payment.stripe_net,
+            email: payment.customer_email,
+            is_orphan: false,
+          });
+          results.created++;
+        }
+        continue;
+      }
+
+      if (!matchedRecord && payment.payment_type === "balance_payment") {
+        const rawRef = payment.metadata_booking_id || payment.metadata_original_booking_id || null;
+        const resolvedBookingId = await resolveBookingId(sb, rawRef);
+        if (!resolvedBookingId) {
+          console.error("[BOOKING_RESOLVE_FAILED]", {
+            bookingRef: rawRef || "<missing>",
+            paymentIntentId: payment.payment_intent_id,
+          });
+          results.unmatched++;
+          continue;
+        }
+        const resolvedBooking =
+          bookingsByBookingId.get(resolvedBookingId) ||
+          bookingsByPI.get(payment.payment_intent_id) ||
+          null;
+        if (!dryRun) {
+          try {
+            await autoCreateRevenueRecord({
+              bookingId: resolvedBookingId,
+              paymentIntentId: payment.payment_intent_id,
+              vehicleId: resolvedBooking?.vehicleId || null,
+              name: resolvedBooking?.name || null,
+              phone: resolvedBooking?.phone || null,
+              email: payment.customer_email || resolvedBooking?.email || null,
+              pickupDate: resolvedBooking?.pickupDate || null,
+              returnDate: resolvedBooking?.returnDate || null,
+              amountPaid: payment.amount_gross,
+              paymentMethod: "stripe",
+              type: "rental_balance",
+              stripeFee: payment.stripe_fee,
+              stripeNet: payment.stripe_net,
+            }, { strict: false, requireStripeFee: false });
+            await updateBookingStatusIfNeeded(sb, resolvedBookingId, "reserved", "active", "paid");
+            results.created++;
+          } catch (recoveryErr) {
+            console.error(
+              "stripe-reconcile balance recovery error for PI",
+              payment.payment_intent_id, ":", recoveryErr.message
+            );
+            results.unmatched++;
+          }
+        } else {
+          results.preview.push({
+            status: "will_create",
+            pi_id: payment.payment_intent_id,
+            booking_id: resolvedBookingId,
+            type: "rental_balance",
+            gross: payment.amount_gross,
+            fee: payment.stripe_fee,
+            net: payment.stripe_net,
+            email: payment.customer_email,
+            is_orphan: false,
+          });
+          results.created++;
+        }
+        continue;
       }
 
       if (!matchedRecord) {
