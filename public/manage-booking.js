@@ -117,8 +117,11 @@
       const resp = await fetch(VEHICLES_API, { headers: { "Accept": "application/json" } });
       const data = await resp.json();
       vehicleOptions = Array.isArray(data) ? data
-        .filter((v) => v && v.id && v.name)
-        .map((v) => ({ id: v.id, name: v.name }))
+        .filter((v) => v && (v.id || v.vehicle_id) && (v.name || v.vehicle_name))
+        .map((v) => ({
+          id: v.id || v.vehicle_id,
+          name: v.name || v.vehicle_name,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name))
         : [];
     } catch (err) {
