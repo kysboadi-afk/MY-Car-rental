@@ -290,28 +290,26 @@ export default async function handler(req, res) {
     }
 
     // ── DELETE ──────────────────────────────────────────────────────────────
-    // Soft-delete: mark sync_excluded=true so the record is hidden from the
-    // revenue list but its booking_id remains in the table.  This prevents
-    // "Sync from Bookings" from recreating the record on the next run.
+    // Hard-delete from the active store so admin UI removal is immediate.
     if (action === "delete") {
       if (!body.id) return res.status(400).json({ error: "id is required" });
       if (sb) {
         const { error } = await sb.from("revenue_records")
-          .update({ sync_excluded: true, updated_at: new Date().toISOString() })
+          .delete()
           .eq("id", body.id);
         if (!error) return res.status(200).json({ success: true });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue delete: revenue_records table missing, falling back to GitHub");
       }
-      // GitHub fallback — mark sync_excluded instead of splicing
+      // GitHub fallback — hard-delete by id
       await updateJsonFileWithRetry({
         load:    loadRecordsFromGitHub,
         apply:   (data) => {
           const idx = data.findIndex((r) => r.id === body.id);
-          if (idx !== -1) data[idx] = { ...data[idx], sync_excluded: true, updated_at: new Date().toISOString() };
+          if (idx !== -1) data.splice(idx, 1);
         },
         save:    saveRecordsToGitHub,
-        message: `v2: Exclude revenue record ${body.id} from sync`,
+        message: `v2: Delete revenue record ${body.id}`,
       });
       return res.status(200).json({ success: true });
     }

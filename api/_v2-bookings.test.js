@@ -174,6 +174,7 @@ mock.module("./_sms-templates.js", {
 mock.module("./_error-helpers.js", {
   namedExports: {
     adminErrorMessage: (err) => err?.message || String(err),
+    isSchemaError:     () => false,
   },
 });
 
