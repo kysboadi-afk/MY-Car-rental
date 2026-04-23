@@ -230,13 +230,8 @@
 
   async function verifyBooking() {
     const identifier = ($verifyIdentifier.value || "").trim();
-    const vehicleId = ($verifyVehicle.value || "").trim();
     if (!identifier) {
-      setVerifyMsg("Enter the phone number or email used on your booking.", "error");
-      return;
-    }
-    if (!vehicleId) {
-      setVerifyMsg("Select the vehicle you booked to continue.", "error");
+      setVerifyMsg("Enter the phone, email, or booking ID used on your booking.", "error");
       return;
     }
 
@@ -250,7 +245,6 @@
         body: JSON.stringify({
           action: "verify",
           identifier,
-          vehicleId,
         }),
       });
       const data = await resp.json();
@@ -588,7 +582,6 @@
   // ── Bootstrap ───────────────────────────────────────────────────────────────
   (async function bootstrap() {
     await loadVehicleOptions();
-    renderVehicleOptions($verifyVehicle);
     if (activeToken) {
       $loading.style.display = "block";
       await loadBooking();
