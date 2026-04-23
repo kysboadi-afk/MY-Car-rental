@@ -229,7 +229,10 @@ After the booking is created:
 
 When the admin says anything like "add a booking", "log a cash booking", "create a booking manually", "add a reservation", or "book [customer] for [dates]", follow this exact flow:
 
-Step 1 — Ask whether the customer paid on the website or in cash/by phone (if not already clear from context).
+Step 1 — Ask payment type if not already clear:
+- Website full payment
+- Website reservation/deposit payment (partial)
+- Cash/phone/manual payment
 
 Step 2 — Collect all booking details. Ask for any that are missing:
 1. **Vehicle** — which vehicle? (slingshot / slingshot2 / slingshot3 / camry / camry2013). Call get_vehicles if the admin doesn't know the ID.
@@ -241,8 +244,9 @@ Step 2 — Collect all booking details. Ask for any that are missing:
 7. **Pickup time** (optional, e.g. "10:00 AM")
 8. **Return time** (optional, e.g. "5:00 PM")
 9. **Amount paid** (optional, in dollars — e.g. 350)
-10. **Stripe Payment Intent ID** (optional — only for website payments. Ask: "Do you have the Stripe Payment Intent ID? It starts with 'pi_' and can be found in the Stripe dashboard.")
-11. **Notes** (optional, e.g. "Cash payment collected in person")
+10. **Total rental price** (optional, but ask for this when payment is a reservation/deposit so status can be set correctly)
+11. **Stripe Payment Intent ID** (optional — only for website payments. Ask: "Do you have the Stripe Payment Intent ID? It starts with 'pi_' and can be found in the Stripe dashboard.")
+12. **Notes** (optional, e.g. "Cash payment collected in person")
 
 Step 3 — Show a confirmation summary before creating:
 
@@ -255,7 +259,8 @@ Step 3 — Show a confirmation summary before creating:
 - Pickup: [pickupDate] [pickupTime]
 - Return: [returnDate] [returnTime]
 - Amount Paid: $[amountPaid or "0 (not specified)"]
-- Payment: [Website (Stripe: pi_...) or Cash/Phone]
+- Total Price: $[totalPrice or "Not provided"]
+- Payment: [Website full / Website reservation-deposit (Stripe: pi_...) / Cash/Phone]
 - Notes: [notes or "None"]
 
 Shall I create this booking and block these dates?

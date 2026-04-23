@@ -33,11 +33,12 @@ import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION
 import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates, hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { persistBooking } from "./_booking-pipeline.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -2815,6 +2816,8 @@ const MANUAL_BOOKING_VEHICLES = {
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
+const FLEET_STATUS_PATH  = "fleet-status.json";
+const BUSINESS_TZ        = "America/Los_Angeles";
 
 /**
  * Block a date range in booked-dates.json for the given vehicle.
@@ -2873,6 +2876,147 @@ async function blockBookedDatesForManualBooking(vehicleId, from, to) {
   });
 }
 
+function normalizeCurrency(value) {
+  return typeof value === "number" && value > 0 ? Math.round(value * 100) / 100 : 0;
+}
+
+function getLANowParts() {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date()).map((part) => [part.type, part.value])
+  );
+}
+
+/**
+ * Returns today's date as YYYY-MM-DD in America/Los_Angeles.
+ * @returns {string}
+ */
+function todayIsoInLA() {
+  const map = getLANowParts();
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+/**
+ * Returns true when pickup date/time has already arrived in Los Angeles time.
+ * @param {string} pickupDate - YYYY-MM-DD
+ * @param {string} pickupTime - 12h/24h time string
+ * @returns {boolean}
+ */
+function isPickupArrivedInLA(pickupDate, pickupTime) {
+  if (!pickupDate) return false;
+  const today = todayIsoInLA();
+  if (pickupDate < today) return true;
+  if (pickupDate > today) return false;
+
+  const parsedPickupTime = parseTime12h(pickupTime || "");
+  if (!parsedPickupTime) return false;
+
+  const nowMap = getLANowParts();
+  const nowTime = `${nowMap.hour}:${nowMap.minute}:${nowMap.second}`;
+  return parsedPickupTime <= nowTime;
+}
+
+/**
+ * Maps pickup timing to fleet rental_status for public availability badges.
+ * @param {string} pickupDate - YYYY-MM-DD
+ * @param {string} pickupTime - pickup time string
+ * @returns {"reserved"|"rented"}
+ */
+function inferVehicleRentalStatusForManualBooking(pickupDate, pickupTime) {
+  return isPickupArrivedInLA(pickupDate, pickupTime) ? "rented" : "reserved";
+}
+
+/**
+ * Sync manual-booking vehicle availability status (Supabase first, GitHub fallback).
+ * @param {string} vehicleId
+ * @param {"reserved"|"rented"} rentalStatus
+ * @returns {Promise<{synced:boolean,target:string,rental_status:string,warning?:string}>}
+ */
+async function syncVehicleStatusForManualBooking(vehicleId, rentalStatus) {
+  const sb = getSupabaseAdmin();
+  const normalizedVehicle = normalizeVehicleId(vehicleId) || vehicleId;
+  const fleetStatusVehicleId = vehicleId;
+  if (sb) {
+    const { error } = await sb
+      .from("vehicles")
+      .update({ rental_status: rentalStatus, updated_at: new Date().toISOString() })
+      .eq("vehicle_id", normalizedVehicle);
+    if (!error) {
+      return { synced: true, target: "supabase", rental_status: rentalStatus };
+    }
+    console.warn("toolCreateManualBooking: Supabase vehicle status update failed, falling back to GitHub:", error.message);
+  }
+
+  if (!process.env.GITHUB_TOKEN) {
+    return {
+      synced: false,
+      target: "none",
+      rental_status: rentalStatus,
+      warning: "Vehicle status not persisted (no Supabase and no GITHUB_TOKEN).",
+    };
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
+  const ghHeaders = {
+    Authorization:          `Bearer ${token}`,
+    Accept:                 "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  async function loadFleetStatus() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
+    if (!resp.ok) {
+      if (resp.status === 404) return { data: {}, sha: null };
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub GET fleet-status.json failed: ${resp.status} ${text}`);
+    }
+    const file = await resp.json();
+    let data = {};
+    try {
+      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+      if (typeof data !== "object" || Array.isArray(data)) data = {};
+    } catch { data = {}; }
+    return { data, sha: file.sha };
+  }
+
+  async function saveFleetStatus(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method:  "PUT",
+      headers: { ...ghHeaders, "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT fleet-status.json failed: ${resp.status} ${text}`);
+    }
+  }
+
+  await updateJsonFileWithRetry({
+    load:    loadFleetStatus,
+    apply:   (data) => {
+      if (!data[fleetStatusVehicleId]) data[fleetStatusVehicleId] = {};
+      data[fleetStatusVehicleId].available = false;
+      data[fleetStatusVehicleId].rental_status = rentalStatus;
+    },
+    save:    saveFleetStatus,
+    message: `Mark ${fleetStatusVehicleId} unavailable (${rentalStatus}) after manual booking via admin AI`,
+  });
+
+  return { synced: true, target: "github", rental_status: rentalStatus };
+}
+
 /**
  * Create a manual booking for a cash or offline reservation.
  * Blocks the calendar dates, saves to bookings.json, and syncs to Supabase.
@@ -2880,7 +3024,7 @@ async function blockBookedDatesForManualBooking(vehicleId, from, to) {
 async function toolCreateManualBooking({
   vehicleId, name, phone, email,
   pickupDate, pickupTime, returnDate, returnTime,
-  amountPaid, paymentIntentId: suppliedPaymentIntentId, notes,
+  amountPaid, totalPrice, paymentIntentId: suppliedPaymentIntentId, notes,
 }) {
   if (!vehicleId || !MANUAL_BOOKING_VEHICLES[vehicleId]) {
     throw new Error(`Invalid vehicleId "${vehicleId}". Must be one of: ${Object.keys(MANUAL_BOOKING_VEHICLES).join(", ")}.`);
@@ -2911,6 +3055,20 @@ async function toolCreateManualBooking({
       : "manual_" + randomBytes(6).toString("hex");
 
   const isWebsitePayment = resolvedPaymentIntentId.startsWith("pi_");
+  const normalizedAmountPaid = normalizeCurrency(amountPaid);
+  const normalizedTotalPrice = normalizeCurrency(totalPrice);
+  if (normalizedTotalPrice > 0 && normalizedTotalPrice < normalizedAmountPaid) {
+    throw new Error("totalPrice must be greater than or equal to amountPaid when provided.");
+  }
+  const hasOutstandingBalance = normalizedTotalPrice > 0 && normalizedTotalPrice > normalizedAmountPaid;
+  const bookingStatus = normalizedAmountPaid <= 0 || hasOutstandingBalance
+    ? "reserved_unpaid"
+    : "booked_paid";
+  // Keep legacy manual-booking behavior: when totalPrice is not provided, treat
+  // the paid amount as the booking total for persistence/reporting. If both are
+  // zero, this remains a no-payment reservation placeholder.
+  const persistedTotalPrice = normalizedTotalPrice > 0 ? normalizedTotalPrice : normalizedAmountPaid;
+  const vehicleRentalStatus = inferVehicleRentalStatusForManualBooking(pickupDate, pickupTime);
 
   // 1. Block calendar dates (booked-dates.json)
   await blockBookedDatesForManualBooking(vehicleId, pickupDate, returnDate);
@@ -2929,16 +3087,36 @@ async function toolCreateManualBooking({
     returnDate,
     returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
     location:        "",
-    status:          "booked_paid",
+    status:          bookingStatus,
     paymentIntentId: resolvedPaymentIntentId,
-    amountPaid:      typeof amountPaid === "number" && amountPaid > 0
-                       ? Math.round(amountPaid * 100) / 100
-                       : 0,
+    amountPaid:      normalizedAmountPaid,
+    totalPrice:      persistedTotalPrice,
     notes:           typeof notes === "string" ? notes.trim().slice(0, 500)
                        : (isWebsitePayment ? "Website payment — confirmation email not received" : ""),
     paymentMethod:   isWebsitePayment ? "stripe" : "cash",
     source:          "admin_ai",
   });
+
+  let vehicleStatusSync = {
+    synced: false,
+    target: "unknown",
+    rental_status: vehicleRentalStatus,
+    warning: "Vehicle status sync unavailable.",
+  };
+  try {
+    vehicleStatusSync = await syncVehicleStatusForManualBooking(vehicleId, vehicleRentalStatus);
+  } catch (statusErr) {
+    console.warn("toolCreateManualBooking: vehicle status sync failed (non-fatal):", statusErr.message);
+    vehicleStatusSync = {
+      synced: false,
+      target: "error",
+      rental_status: vehicleRentalStatus,
+      warning: statusErr.message,
+    };
+  }
+  const statusSyncMsg = vehicleStatusSync?.synced
+    ? `fleet status is set to ${vehicleRentalStatus}`
+    : `fleet status sync failed (${vehicleStatusSync?.warning || "unknown error"})`;
 
   return {
     success:          true,
@@ -2948,10 +3126,13 @@ async function toolCreateManualBooking({
     pickupDate,
     returnDate,
     amountPaid:       result.booking.amountPaid,
+    totalPrice:       result.booking.totalPrice || result.booking.amountPaid,
+    status:           result.booking.status,
     paymentIntentId:  resolvedPaymentIntentId,
     isWebsitePayment,
+    vehicleStatus:    vehicleStatusSync,
     notes:            result.booking.notes || null,
-    message:          `Booking created. Dates ${pickupDate} → ${returnDate} are now blocked for ${result.booking.vehicleName}. Use resend_booking_confirmation(bookingId: "${result.bookingId}") to send the confirmation email.`,
+    message:          `Booking created (${result.booking.status}). Dates ${pickupDate} → ${returnDate} are blocked for ${result.booking.vehicleName}, and ${statusSyncMsg}. Use resend_booking_confirmation(bookingId: "${result.bookingId}") to send the confirmation email.`,
   };
 }
 
