@@ -299,7 +299,7 @@
       "returnDate": "2026-04-18",
       "returnTime": "",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "amountPaid": 50,
       "totalPrice": 50,
       "paymentIntentId": "manual_7416f1df28e7",
@@ -310,7 +310,8 @@
       "createdAt": "2026-04-23T09:53:33.932Z",
       "source": "admin_ai",
       "activatedAt": "2026-04-23T09:55:05.452Z",
-      "updatedAt": "2026-04-23T09:55:05.452Z"
+      "updatedAt": "2026-04-23T10:00:06.285Z",
+      "completedAt": "2026-04-23T10:00:06.285Z"
     },
     {
       "bookingId": "a92f60e1928858af",
