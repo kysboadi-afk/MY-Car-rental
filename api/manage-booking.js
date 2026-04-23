@@ -20,7 +20,7 @@
 
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
-import { verifyManageToken } from "./_manage-booking-token.js";
+import { createManageToken, verifyManageToken } from "./_manage-booking-token.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { hasDateTimeOverlap } from "./_availability.js";
 import { updateBooking, loadBookings } from "./_bookings.js";
@@ -44,6 +44,12 @@ const BOOKED_DATES_PATH  = "booked-dates.json";
 
 // No edits within 3 hours of pickup.
 const CUTOFF_HOURS = 3;
+
+function normalizeLookupPhone(value) {
+  const digits = String(value || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+}
 
 /**
  * Escape HTML special characters to prevent XSS in email templates.
@@ -91,7 +97,7 @@ async function fetchBookingFromSupabase(bookingRef) {
       "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
       "status, payment_status, total_price, deposit_paid, remaining_balance, " +
       "change_count, manage_token, balance_payment_link, pending_change, " +
-      "customer_id, notes, payment_intent_id, created_at"
+      "customer_name, customer_email, customer_phone, payment_intent_id, created_at"
     )
     .eq("booking_ref", bookingRef)
     .maybeSingle();
@@ -274,12 +280,103 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const { action, token } = body;
 
-  if (!token) return res.status(401).json({ error: "manage_token is required" });
   if (!action) return res.status(400).json({ error: "action is required" });
+
+  if (action === "verify") {
+    const identifier = String(body.identifier || "").trim();
+    const selectedVehicleUiId = String(body.vehicleId || "").trim();
+    if (!identifier) return res.status(400).json({ error: "Phone or email is required." });
+    if (!selectedVehicleUiId) return res.status(400).json({ error: "Vehicle selection is required." });
+
+    const sb = getSupabaseAdmin();
+    if (!sb) return res.status(503).json({ error: "Database unavailable." });
+
+    const lookupEmail = identifier.includes("@") ? identifier.toLowerCase() : "";
+    const lookupPhone = normalizeLookupPhone(identifier);
+    const baseVerifyQuery = () => sb
+      .from("bookings")
+      .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
+      .eq("status", "reserved")
+      .eq("payment_status", "partial")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    let candidates = [];
+    let lookupErr = null;
+    if (lookupEmail) {
+      const result = await baseVerifyQuery().ilike("customer_email", lookupEmail);
+      candidates = result.data || [];
+      lookupErr = result.error || null;
+    } else if (lookupPhone) {
+      const primaryPattern = `%${lookupPhone}%`;
+      const primaryResult = await baseVerifyQuery().ilike("customer_phone", primaryPattern);
+      candidates = primaryResult.data || [];
+      lookupErr = primaryResult.error || null;
+      if (!lookupErr && candidates.length === 0) {
+        const phoneTail = lookupPhone.slice(-10);
+        if (phoneTail && phoneTail !== lookupPhone) {
+          const fallbackResult = await baseVerifyQuery().ilike("customer_phone", `%${phoneTail}%`);
+          candidates = fallbackResult.data || [];
+          lookupErr = fallbackResult.error || null;
+        }
+      }
+    } else {
+      candidates = [];
+    }
+    if (lookupErr) {
+      console.error("manage-booking verify lookup error:", lookupErr.message);
+      return res.status(500).json({ error: "Could not verify booking right now." });
+    }
+
+    const matches = (candidates || []).filter((row) => {
+      const rowEmail = String(row.customer_email || "").trim().toLowerCase();
+      const rowPhone = normalizeLookupPhone(row.customer_phone || "");
+      if (lookupEmail) return rowEmail === lookupEmail;
+      if (lookupPhone) return !!rowPhone && rowPhone === lookupPhone;
+      return false;
+    });
+
+    if (!matches.length) {
+      return res.status(404).json({ error: "No reserved deposit booking was found with that phone/email." });
+    }
+
+    const selectedVehicleDbId = normalizeVehicleId(selectedVehicleUiId);
+    const selected = matches.find((row) => {
+      const rowUi = uiVehicleId(row.vehicle_id || "");
+      return rowUi === selectedVehicleUiId || row.vehicle_id === selectedVehicleDbId;
+    });
+    if (!selected) {
+      const expectedVehicles = [...new Set(matches.map((row) => uiVehicleId(row.vehicle_id || "")).filter(Boolean))];
+      return res.status(409).json({
+        error: expectedVehicles.length
+          ? `Vehicle mismatch. Please select: ${expectedVehicles.join(", ")}`
+          : "Vehicle mismatch. Please select the correct booked vehicle.",
+      });
+    }
+
+    const manageToken = createManageToken(selected.booking_ref);
+    try {
+      await sb
+        .from("bookings")
+        .update({ manage_token: manageToken, updated_at: new Date().toISOString() })
+        .eq("booking_ref", selected.booking_ref);
+    } catch (tokenErr) {
+      console.warn("manage-booking verify: failed to persist manage token (non-fatal):", tokenErr.message);
+    }
+
+    return res.status(200).json({
+      verified: true,
+      token: manageToken,
+      bookingRef: selected.booking_ref,
+      vehicleId: uiVehicleId(selected.vehicle_id || ""),
+    });
+  }
+
+  if (!token) return res.status(401).json({ error: "manage_token is required" });
 
   const bookingRef = verifyManageToken(token);
   if (!bookingRef) {
-    return res.status(401).json({ error: "Invalid or expired manage token. Please contact us to get a new link." });
+    return res.status(401).json({ error: "Invalid or expired manage token. Please verify again, or contact support if your old link no longer works." });
   }
 
   // ── action: get ─────────────────────────────────────────────────────────────
@@ -303,12 +400,62 @@ export default async function handler(req, res) {
       totalPrice:    Number(row.total_price   || 0),
       depositPaid:   Number(row.deposit_paid  || 0),
       balanceDue:    Number(row.remaining_balance || 0),
+      customerName:  row.customer_name || "",
+      customerEmail: row.customer_email || "",
+      customerPhone: row.customer_phone || "",
       changeCount:   Number(row.change_count  || 0),
       balancePaymentLink: row.balance_payment_link || null,
       lockedForEditing: isWithinCutoff(
         row.pickup_date,
         row.pickup_time ? new Date(`2000-01-01T${row.pickup_time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : null
       ),
+    });
+  }
+
+  if (action === "create_balance_payment_intent") {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
+    }
+    if (!process.env.STRIPE_PUBLISHABLE_KEY) {
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
+    }
+    const row = await fetchBookingFromSupabase(bookingRef);
+    if (!row) return res.status(404).json({ error: "Booking not found" });
+    if (row.status !== "reserved" || row.payment_status !== "partial") {
+      return res.status(409).json({ error: "This booking is not eligible for balance payment." });
+    }
+    const balanceDue = Number(row.remaining_balance || 0);
+    if (!Number.isFinite(balanceDue) || balanceDue <= 0) {
+      return res.status(409).json({ error: "No balance is due for this booking." });
+    }
+
+    const uiVehicle = uiVehicleId(row.vehicle_id || "");
+    const vehicleData = uiVehicle ? await getVehicleById(uiVehicle) : null;
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(balanceDue * 100),
+      currency: "usd",
+      receipt_email: row.customer_email || undefined,
+      description: `Sly Transportation Services LLC – ${vehicleData?.name || uiVehicle || "Rental"} Balance Payment`,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        payment_type: "rental_balance",
+        booking_id: bookingRef,
+        original_booking_id: bookingRef,
+        vehicle_id: uiVehicle || "",
+        vehicle_name: vehicleData?.name || uiVehicle || "",
+        renter_name: row.customer_name || "",
+        renter_phone: row.customer_phone || "",
+        email: row.customer_email || "",
+        pickup_date: row.pickup_date || "",
+        return_date: row.return_date || "",
+        remaining_balance: String(balanceDue),
+      },
+    });
+    return res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      balanceAmount: balanceDue,
     });
   }
 

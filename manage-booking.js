@@ -20,12 +20,19 @@
   "use strict";
 
   const API_BASE = "https://sly-rides.vercel.app/api/manage-booking";
+  const VEHICLES_API = "https://sly-rides.vercel.app/api/v2-vehicles";
+  const PAYMENT_SUCCESS_RELOAD_DELAY_MS = 2200;
 
   // ── Parse token from URL ────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
-  const TOKEN  = params.get("t") || "";
+  let activeToken  = params.get("t") || "";
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
+  const $verifyState   = document.getElementById("verify-state");
+  const $verifyIdentifier = document.getElementById("verify-identifier");
+  const $verifyVehicle = document.getElementById("verify-vehicle");
+  const $verifyMsg     = document.getElementById("verify-msg");
+  const $btnVerify     = document.getElementById("btn-verify");
   const $loading       = document.getElementById("loading-state");
   const $error         = document.getElementById("error-state");
   const $errorMsg      = document.getElementById("error-msg");
@@ -46,13 +53,24 @@
   const $stripeErr     = document.getElementById("stripe-error");
   const $dppTierRow    = document.getElementById("dpp-tier-row");
   const $newProtection = document.getElementById("new-protection");
+  const $newVehicle    = document.getElementById("new-vehicle");
+  const $payBalanceSection = document.getElementById("pay-balance-section");
+  const $btnInitBalance = document.getElementById("btn-init-balance");
+  const $balanceWrap = document.getElementById("balance-payment-wrap");
+  const $balanceStripeEl = document.getElementById("balance-stripe-element");
+  const $balanceError = document.getElementById("balance-error");
+  const $btnConfirmBalance = document.getElementById("btn-confirm-balance");
 
   // ── Booking state ───────────────────────────────────────────────────────────
   let booking = null;
   let previewData = null;
+  let vehicleOptions = [];
   let stripeInstance = null;
   let stripeElements = null;
   let stripeCardElement = null;
+  let balanceStripe = null;
+  let balanceElements = null;
+  let balancePaymentElement = null;
 
   function showError(msg) {
     $loading.style.display = "none";
@@ -62,6 +80,12 @@
 
   function setActionMsg(msg, type) {
     $actionMsg.innerHTML = msg
+      ? `<div class="${type === "success" ? "success-msg" : "error-msg"}">${msg}</div>`
+      : "";
+  }
+
+  function setVerifyMsg(msg, type) {
+    $verifyMsg.innerHTML = msg
       ? `<div class="${type === "success" ? "success-msg" : "error-msg"}">${msg}</div>`
       : "";
   }
@@ -78,10 +102,44 @@
     return `${months[parseInt(m,10)-1]} ${parseInt(day,10)}, ${y}`;
   }
 
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  async function loadVehicleOptions() {
+    if (vehicleOptions.length > 0) return vehicleOptions;
+    try {
+      const resp = await fetch(VEHICLES_API, { headers: { "Accept": "application/json" } });
+      const data = await resp.json();
+      vehicleOptions = Array.isArray(data) ? data
+        .filter((v) => v && v.id && v.name)
+        .map((v) => ({ id: v.id, name: v.name }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        : [];
+    } catch (err) {
+      console.error("manage-booking vehicles load error:", err);
+      vehicleOptions = [];
+    }
+    return vehicleOptions;
+  }
+
+  function renderVehicleOptions($select, selectedId) {
+    if (!$select) return;
+    const opts = ['<option value="">-- Select vehicle --</option>']
+      .concat(vehicleOptions.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.name)}</option>`));
+    $select.innerHTML = opts.join("");
+    if (selectedId) $select.value = selectedId;
+  }
+
   // ── Load booking ────────────────────────────────────────────────────────────
   async function loadBooking() {
-    if (!TOKEN) {
-      showError("No booking token found in the URL. Please use the link from your confirmation email.");
+    if (!activeToken) {
+      showError("Please verify your booking using your phone/email and booked vehicle.");
       return;
     }
 
@@ -89,7 +147,7 @@
       const resp = await fetch(API_BASE, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ action: "get", token: TOKEN }),
+        body:    JSON.stringify({ action: "get", token: activeToken }),
       });
       const data = await resp.json();
 
@@ -118,13 +176,8 @@
       const [label, cls] = statusMap[booking.status] || [booking.status || "–", ""];
       $status.innerHTML = `<span class="status-badge ${cls}">${label}</span>`;
 
-      if (booking.balancePaymentLink) {
-        const $payLink = document.getElementById("s-pay-link");
-        $payLink.href = booking.balancePaymentLink;
-        $payLink.style.display = "inline-block";
-      }
-
       // Pre-fill edit form with current values
+      renderVehicleOptions($newVehicle, booking.vehicleId || "");
       if (booking.pickupDate) document.getElementById("new-pickup").value  = booking.pickupDate;
       if (booking.returnDate) document.getElementById("new-return").value   = booking.returnDate;
       if (booking.pickupTime) {
@@ -143,11 +196,69 @@
         $editSection.style.display = "none";
       }
 
+      const canPayBalance = booking.status === "reserved" &&
+        booking.paymentStatus === "partial" &&
+        Number(booking.balanceDue || 0) > 0;
+      if (canPayBalance) {
+        $payBalanceSection.style.display = "block";
+        $btnInitBalance.textContent = `Pay Remaining Balance (${fmt(Number(booking.balanceDue || 0))})`;
+      } else {
+        $payBalanceSection.style.display = "none";
+      }
+
       $loading.style.display = "none";
       $main.style.display    = "block";
     } catch (err) {
       showError("Network error — please try again or call (213) 916-6606.");
       console.error("manage-booking load error:", err);
+    }
+  }
+
+  async function verifyBooking() {
+    const identifier = ($verifyIdentifier.value || "").trim();
+    const vehicleId = ($verifyVehicle.value || "").trim();
+    if (!identifier) {
+      setVerifyMsg("Enter the phone number or email used on your booking.", "error");
+      return;
+    }
+    if (!vehicleId) {
+      setVerifyMsg("Select the vehicle you booked to continue.", "error");
+      return;
+    }
+
+    $btnVerify.disabled = true;
+    $btnVerify.textContent = "Verifying…";
+    setVerifyMsg("", null);
+    try {
+      const resp = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "verify",
+          identifier,
+          vehicleId,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setVerifyMsg(data.error || "Verification failed. Please check your information and try again.", "error");
+        return;
+      }
+      if (!data.token) {
+        setVerifyMsg("Verification failed. Please try again.", "error");
+        return;
+      }
+      activeToken = data.token;
+      setVerifyMsg("Verified. Loading your booking…", "success");
+      $verifyState.style.display = "none";
+      $loading.style.display = "block";
+      await loadBooking();
+    } catch (err) {
+      setVerifyMsg("Network error. Please try again.", "error");
+      console.error("manage-booking verify error:", err);
+    } finally {
+      $btnVerify.disabled = false;
+      $btnVerify.textContent = "Verify Booking";
     }
   }
 
@@ -168,6 +279,7 @@
     const newReturnT = document.getElementById("new-return-time").value;
     const hasDpp     = $newProtection.checked;
     const dppTier    = hasDpp ? document.getElementById("new-protection-tier").value : null;
+    const newVehicleId = ($newVehicle.value || "").trim() || undefined;
 
     if (!newPickup || !newReturn) {
       setActionMsg("Please select both pickup and return dates.", "error");
@@ -188,11 +300,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action:               "check_availability",
-          token:                TOKEN,
+          token:                activeToken,
           newPickupDate:        newPickup,
           newReturnDate:        newReturn,
           newPickupTime:        newPickupT || undefined,
           newReturnTime:        newReturnT || undefined,
+          newVehicleId,
           newProtectionPlan:    hasDpp,
           newProtectionPlanTier: dppTier,
         }),
@@ -225,7 +338,7 @@
         // Show Stripe element for change fee
         $changeFeeAmt.textContent = `$${data.changeFee}`;
         $paidSection.style.display = "block";
-        await mountStripeElement(TOKEN);
+        await mountStripeElement(activeToken);
       } else {
         $feeNotice.style.display   = "none";
         $btnApply.style.display    = "block";
@@ -249,6 +362,7 @@
     const newReturnT = document.getElementById("new-return-time").value;
     const hasDpp     = $newProtection.checked;
     const dppTier    = hasDpp ? document.getElementById("new-protection-tier").value : null;
+    const newVehicleId = ($newVehicle.value || "").trim() || undefined;
 
     $btnApply.disabled     = true;
     $btnApply.textContent  = "Applying…";
@@ -260,11 +374,12 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action:               "apply_change",
-          token:                TOKEN,
+          token:                activeToken,
           newPickupDate:        newPickup,
           newReturnDate:        newReturn,
           newPickupTime:        newPickupT || undefined,
           newReturnTime:        newReturnT || undefined,
+          newVehicleId,
           newProtectionPlan:    hasDpp,
           newProtectionPlanTier: dppTier,
         }),
@@ -298,6 +413,7 @@
     const newReturnT = document.getElementById("new-return-time").value;
     const hasDpp     = $newProtection.checked;
     const dppTier    = hasDpp ? document.getElementById("new-protection-tier").value : null;
+    const newVehicleId = ($newVehicle.value || "").trim() || undefined;
 
     try {
       const resp = await fetch(API_BASE, {
@@ -310,6 +426,7 @@
           newReturnDate:        newReturn,
           newPickupTime:        newPickupT || undefined,
           newReturnTime:        newReturnT || undefined,
+          newVehicleId,
           newProtectionPlan:    hasDpp,
           newProtectionPlanTier: dppTier,
         }),
@@ -385,6 +502,87 @@
     }
   });
 
+  $btnInitBalance.addEventListener("click", async () => {
+    $btnInitBalance.disabled = true;
+    $btnInitBalance.textContent = "Loading Payment…";
+    $balanceError.style.display = "none";
+    try {
+      const resp = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create_balance_payment_intent", token: activeToken }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.clientSecret) {
+        $balanceError.textContent = data.error || "Could not initialize balance payment.";
+        $balanceError.style.display = "block";
+        return;
+      }
+      if (typeof Stripe === "undefined") { // eslint-disable-line no-undef
+        $balanceError.textContent = "Payment library failed to load. Please refresh.";
+        $balanceError.style.display = "block";
+        return;
+      }
+      balanceStripe = Stripe(data.publishableKey); // eslint-disable-line no-undef
+      balanceElements = balanceStripe.elements({ clientSecret: data.clientSecret });
+      balancePaymentElement = balanceElements.create("payment", {
+        fields: { billingDetails: { name: "never" } },
+      });
+      $balanceStripeEl.innerHTML = "";
+      balancePaymentElement.mount($balanceStripeEl);
+      $balanceWrap.style.display = "block";
+      $btnConfirmBalance.textContent = `Pay ${fmt(Number(data.balanceAmount || booking.balanceDue || 0))}`;
+    } catch (err) {
+      $balanceError.textContent = "Network error. Please try again.";
+      $balanceError.style.display = "block";
+      console.error("manage-booking balance init error:", err);
+    } finally {
+      $btnInitBalance.disabled = false;
+      $btnInitBalance.textContent = `Pay Remaining Balance (${fmt(Number(booking && booking.balanceDue ? booking.balanceDue : 0))})`;
+    }
+  });
+
+  $btnConfirmBalance.addEventListener("click", async () => {
+    if (!balanceStripe || !balanceElements) return;
+    $btnConfirmBalance.disabled = true;
+    $btnConfirmBalance.textContent = "Processing…";
+    $balanceError.style.display = "none";
+    try {
+      const result = await balanceStripe.confirmPayment({
+        elements: balanceElements,
+        redirect: "if_required",
+      });
+      if (result.error) {
+        $balanceError.textContent = result.error.message || "Payment failed. Please try again.";
+        $balanceError.style.display = "block";
+        return;
+      }
+      if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
+        setActionMsg("✅ Payment received. Updating your booking…", "success");
+        setTimeout(() => window.location.reload(), PAYMENT_SUCCESS_RELOAD_DELAY_MS);
+      }
+    } catch (err) {
+      $balanceError.textContent = "Payment failed. Please try again.";
+      $balanceError.style.display = "block";
+      console.error("manage-booking balance pay error:", err);
+    } finally {
+      $btnConfirmBalance.disabled = false;
+      $btnConfirmBalance.textContent = "Complete Payment";
+    }
+  });
+
   // ── Bootstrap ───────────────────────────────────────────────────────────────
-  loadBooking();
+  (async function bootstrap() {
+    await loadVehicleOptions();
+    renderVehicleOptions($verifyVehicle);
+    if (activeToken) {
+      $loading.style.display = "block";
+      await loadBooking();
+      return;
+    }
+    $loading.style.display = "none";
+    $verifyState.style.display = "block";
+  })();
+
+  $btnVerify.addEventListener("click", verifyBooking);
 })();

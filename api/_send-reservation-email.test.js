@@ -977,7 +977,7 @@ test("balance payment: response is 200 and two emails are sent", async () => {
   assert.equal(mockSendMail.mock.callCount(), 2, "Both owner and customer emails should be sent");
 });
 
-// ─── Deposit email includes 'Pay Balance Online' link ────────────────────────
+// ─── Deposit email should not expose direct balance links ─────────────────────
 
 const DEPOSIT_BOOKING_BODY = {
   vehicleId:      "camry",
@@ -998,7 +998,7 @@ const DEPOSIT_BOOKING_BODY = {
   balanceAtPickup: "150",
 };
 
-test("deposit confirmation email includes 'Pay Balance Online' link pointing to balance.html", async () => {
+test("deposit confirmation email does not include direct pay-balance link", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -1010,16 +1010,16 @@ test("deposit confirmation email includes 'Pay Balance Online' link pointing to 
   const customerMail = sentMails[1];
   assert.ok(customerMail, "Customer email should be sent");
   assert.ok(
-    customerMail.html.includes("balance.html"),
-    "Customer deposit email HTML should include a link to balance.html"
+    !customerMail.html.includes("balance.html"),
+    "Customer deposit email HTML should not include a direct balance.html link"
   );
   assert.ok(
-    customerMail.html.includes("Pay Balance Online"),
-    "Customer deposit email HTML should include 'Pay Balance Online' button text"
+    !customerMail.html.includes("Pay Balance Online"),
+    "Customer deposit email HTML should not include a 'Pay Balance Online' button"
   );
 });
 
-test("deposit confirmation plain-text email includes pay balance URL", async () => {
+test("deposit confirmation plain-text email does not include pay balance URL", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -1031,8 +1031,8 @@ test("deposit confirmation plain-text email includes pay balance URL", async () 
   const customerMail = sentMails[1];
   assert.ok(customerMail, "Customer email should be sent");
   assert.ok(
-    customerMail.text.includes("balance.html"),
-    "Customer deposit plain-text email should include a link to balance.html"
+    !customerMail.text.includes("balance.html"),
+    "Customer deposit plain-text email should not include a link to balance.html"
   );
 });
 
