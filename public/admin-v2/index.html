@@ -3441,6 +3441,7 @@ async function saveNewVehicle() {
 function bookingReturnDateTime(b) {
   if (!b || !b.returnDate || !b.returnTime) return null;
   const time = String(b.returnTime).trim();
+  let hhmm;
   const ampmMatch = time.match(/^(\d{1,2}):([0-5]\d)\s*(AM|PM)$/i);
   if (ampmMatch) {
     let hour = parseInt(ampmMatch[1], 10);
@@ -3448,17 +3449,28 @@ function bookingReturnDateTime(b) {
     const period = ampmMatch[3].toUpperCase();
     if (period === 'PM' && hour !== 12) hour += 12;
     if (period === 'AM' && hour === 12) hour = 0;
-    const hhmm = String(hour).padStart(2, '0') + ':' + minute;
-    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
-    return Number.isNaN(dt.getTime()) ? null : dt;
+    hhmm = String(hour).padStart(2, '0') + ':' + minute;
+  } else {
+    const h24Match = time.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (h24Match) hhmm = String(parseInt(h24Match[1], 10)).padStart(2, '0') + ':' + h24Match[2];
   }
-  const h24Match = time.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
-  if (h24Match) {
-    const hhmm = String(parseInt(h24Match[1], 10)).padStart(2, '0') + ':' + h24Match[2];
-    const dt = new Date(`${b.returnDate}T${hhmm}:00`);
+  if (!hhmm) return null;
+  // Interpret the stored LA wall-clock time as UTC momentarily to probe the
+  // correct LA offset at that calendar date (handles PDT/PST automatically).
+  const laAsUtcProbe = new Date(`${b.returnDate}T${hhmm}:00Z`);
+  if (Number.isNaN(laAsUtcProbe.getTime())) return null;
+  try {
+    const tzPart = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      timeZoneName: 'longOffset',
+    }).formatToParts(laAsUtcProbe).find((p) => p.type === 'timeZoneName')?.value || '';
+    const m = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    const offset = m ? m[1] : '-08:00';
+    const dt = new Date(`${b.returnDate}T${hhmm}:00${offset}`);
     return Number.isNaN(dt.getTime()) ? null : dt;
+  } catch {
+    return new Date(`${b.returnDate}T${hhmm}:00-08:00`);
   }
-  return null;
 }
 
 /** Compute derived operational status for a booking (overdue / extended / flagged / base status). */
@@ -4522,7 +4534,9 @@ function renderActionRequired(data) {
   const bookings = data.recentBookings || [];
 
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  // Use LA wall-clock date so pickup/return date comparisons match stored booking dates
+  // (which are always in America/Los_Angeles, not UTC).
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(now);
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;

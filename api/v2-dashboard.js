@@ -54,12 +54,35 @@ function bookingRevenue(booking) {
   return 0;
 }
 
+// Builds an absolute Date from a date+time string in America/Los_Angeles timezone.
+// Stored times are LA wall-clock values, so we must apply the correct LA UTC
+// offset (PDT = UTC-7, PST = UTC-8) rather than treating them as bare UTC.
+function buildDateTimeLA(date, time) {
+  if (!date) return null;
+  const normalizedTime = normalizeClockTime(time || DEFAULT_RETURN_TIME);
+  if (!normalizedTime) return null;
+  // Interpret the stored LA wall-clock time as UTC momentarily to probe the
+  // correct LA offset at that calendar date (handles PDT/PST automatically).
+  const laAsUtcProbe = new Date(`${date}T${normalizedTime}:00Z`);
+  if (Number.isNaN(laAsUtcProbe.getTime())) return null;
+  let offset = "-08:00"; // PST fallback
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      timeZoneName: "longOffset",
+    }).formatToParts(laAsUtcProbe).find((p) => p.type === "timeZoneName")?.value || "";
+    const m = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (m) offset = m[1];
+  } catch {
+    // keep PST fallback
+  }
+  const dt = new Date(`${date}T${normalizedTime}:00${offset}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
 function parseReturnDateTime(returnDate, returnTime) {
   if (!returnDate) return null;
-  const normalizedTime = normalizeClockTime(returnTime || DEFAULT_RETURN_TIME);
-  if (!normalizedTime) return null;
-  const returnDateTime = new Date(`${returnDate}T${normalizedTime}:00`);
-  return Number.isNaN(returnDateTime.getTime()) ? null : returnDateTime;
+  return buildDateTimeLA(returnDate, returnTime || DEFAULT_RETURN_TIME);
 }
 
 export default async function handler(req, res) {
@@ -164,7 +187,9 @@ export default async function handler(req, res) {
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
     const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
     const now = new Date();
-    const today = now.toISOString().split("T")[0];
+    // Use LA wall-clock date so "today" aligns with the stored booking dates
+    // (which are always in America/Los_Angeles, not UTC).
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
