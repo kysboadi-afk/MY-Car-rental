@@ -4,6 +4,13 @@ const VEHICLE_ID_ALIASES = {
   "Camry 2013 SE": "camry2013",
 };
 
+// Legacy raw IDs that normalize to a canonical ID.
+// These are intentionally NOT included in VEHICLE_ID_ALIASES so they do not
+// affect the DB_TO_UI_MAP reverse lookup (which would break uiVehicleId).
+const LEGACY_ID_NORMALIZE = {
+  "camry2012": "camry",
+};
+
 /**
  * Normalize incoming vehicle IDs/names into canonical IDs used for persistence.
  * @param {string} vehicleId
@@ -12,7 +19,7 @@ const VEHICLE_ID_ALIASES = {
 export function normalizeVehicleId(vehicleId) {
   const raw = String(vehicleId || "").trim();
   if (!raw) return "";
-  return VEHICLE_ID_ALIASES[raw] || raw;
+  return VEHICLE_ID_ALIASES[raw] || LEGACY_ID_NORMALIZE[raw] || raw;
 }
 
 // Reverse map: DB-canonical ID → UI/vehicles.json key (e.g. "camry" → "camry").
