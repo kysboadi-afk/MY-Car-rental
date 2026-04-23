@@ -334,6 +334,29 @@
       "smsSentAt": {},
       "createdAt": "2026-04-23T09:57:52.571Z",
       "source": "admin_ai"
+    },
+    {
+      "bookingId": "07ed4baaf6664164",
+      "name": "Anthony Johnson",
+      "phone": "2138011313",
+      "email": "cheftony90@icloud.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-23",
+      "pickupTime": "08:00",
+      "returnDate": "2026-04-30",
+      "returnTime": "08:00",
+      "location": "",
+      "status": "booked_paid",
+      "amountPaid": 617.4,
+      "totalPrice": 617.4,
+      "paymentIntentId": "manual_a32938ff3d1d",
+      "paymentLink": "",
+      "paymentMethod": "cash",
+      "notes": "Balance at pickup $567.40, reservation deposit not refundable. Payment type: reservation_deposit. Stripe Customer ID: cus_UO2eMoHJZAbXQd. Protection Plan: Standard. No emails to be sent.",
+      "smsSentAt": {},
+      "createdAt": "2026-04-23T09:59:41.239Z",
+      "source": "admin_ai"
     }
   ],
   "camry2013": [
