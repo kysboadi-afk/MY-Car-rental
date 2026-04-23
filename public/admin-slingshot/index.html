@@ -3148,6 +3148,14 @@ function renderBookings() {
   applyBookingFilters();
 }
 
+function bookingDisplayGrossAmount(b) {
+  const gross = b && b.amountGross;
+  if (gross != null && Number.isFinite(Number(gross))) return Number(gross);
+  const total = b && b.totalPrice;
+  if (total != null && Number.isFinite(Number(total))) return Number(total);
+  return Number((b && b.amountPaid) || 0);
+}
+
 function applyBookingFilters() {
   const vFilter = document.getElementById('booking-filter-vehicle').value;
   const sFilter = document.getElementById('booking-filter-status').value;
@@ -3180,7 +3188,7 @@ function applyBookingFilters() {
         <div>${esc(b.pickupDate || '–')}</div>
         <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
       </td>
-      <td style="font-weight:600;">$${formatMoney(b.amountGross != null ? b.amountGross : (b.totalPrice != null ? b.totalPrice : (b.amountPaid || 0)))}</td>
+      <td style="font-weight:600;">$${formatMoney(bookingDisplayGrossAmount(b))}</td>
       <td>${statusBadge(b.status)}</td>
       <td>
         <div class="td-actions">
@@ -3206,7 +3214,7 @@ function viewBooking(bookingId, vehicleId) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(b.returnTime || '')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Gross Amount</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountGross != null ? b.amountGross : (b.totalPrice != null ? b.totalPrice : (b.amountPaid || 0)))}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Gross Amount</div><div style="font-weight:700;font-size:16px;">$${formatMoney(bookingDisplayGrossAmount(b))}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${statusBadge(b.status)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div>${esc(b.paymentMethod || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Booking ID</div><div style="font-size:11px;font-family:monospace;">${esc(b.bookingId || '–')}</div></div>

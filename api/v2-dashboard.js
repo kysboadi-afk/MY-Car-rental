@@ -225,7 +225,8 @@ export default async function handler(req, res) {
             const vid = uiVehicleId(r.vehicle_id) || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
 
-            const gross  = Number(r.gross_amount || 0);
+            const grossRaw = Number(r.gross_amount || 0);
+            const gross  = Number.isFinite(grossRaw) ? grossRaw : 0;
             // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
             // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
             // When both are set (reconciled row): use exact Stripe values.
