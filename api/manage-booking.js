@@ -313,14 +313,16 @@ export default async function handler(req, res) {
       const result = await baseVerifyQuery().ilike("customer_email", lookupEmail);
       candidates = result.data || [];
       lookupErr = result.error || null;
+    } else if (lookupBookingRef) {
+      // Check booking ref BEFORE phone: booking IDs like "bk-3bcf479ac6ec" contain
+      // digits which would make lookupPhone truthy, causing the wrong branch to run.
+      const result = await baseVerifyQuery().eq("booking_ref", lookupBookingRef);
+      candidates = result.data || [];
+      lookupErr = result.error || null;
     } else if (lookupPhone) {
       // Fetch all eligible bookings and normalize in JS — stored phones may have
       // formatting chars (parens, dashes, spaces) that break a substring ilike match.
       const result = await baseVerifyQuery();
-      candidates = result.data || [];
-      lookupErr = result.error || null;
-    } else if (lookupBookingRef) {
-      const result = await baseVerifyQuery().eq("booking_ref", lookupBookingRef);
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else {
