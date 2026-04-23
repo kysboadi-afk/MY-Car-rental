@@ -1265,6 +1265,82 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── DELETE (hard-delete a booking record) ───────────────────────────────
+    if (action === "delete") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const sbDel = getSupabaseAdmin();
+      if (!sbDel) return res.status(500).json({ error: "Database not configured" });
+
+      // 1. Look up the booking in Supabase to get vehicleId + dates for cleanup.
+      let pickupDate, returnDate, vehicleId;
+      try {
+        const { data: row, error: lookupErr } = await sbDel
+          .from("bookings")
+          .select("vehicle_id, pickup_date, return_date")
+          .eq("booking_ref", bookingId)
+          .maybeSingle();
+        if (lookupErr) {
+          console.warn("[DELETE] Failed to fetch booking details:", lookupErr.message);
+        } else if (row) {
+          vehicleId  = uiVehicleId(row.vehicle_id);
+          pickupDate = row.pickup_date;
+          returnDate = row.return_date;
+        }
+      } catch (_e) {
+        console.warn("[DELETE] Failed to fetch booking details:", _e.message);
+      }
+
+      // 2. Delete revenue records (non-fatal).
+      try {
+        await sbDel.from("revenue_records").delete().eq("booking_id", bookingId);
+      } catch (_e) {
+        console.warn("[DELETE] Failed to delete revenue records:", _e.message);
+      }
+
+      // 3. Delete blocked_dates rows for this booking (non-fatal).
+      try {
+        await sbDel.from("blocked_dates").delete().eq("booking_ref", bookingId);
+      } catch (_e) {
+        console.warn("[DELETE] Failed to delete blocked_dates rows:", _e.message);
+      }
+
+      // 4. Delete the booking row from Supabase.
+      const { error: delErr } = await sbDel
+        .from("bookings")
+        .delete()
+        .eq("booking_ref", bookingId);
+      if (delErr) return res.status(500).json({ error: delErr.message });
+
+      // 5. Remove from bookings.json (non-fatal).
+      try {
+        const { data: bData, sha: bSha } = await loadBookings();
+        let removed = false;
+        for (const [vid, list] of Object.entries(bData)) {
+          if (!Array.isArray(list)) continue;
+          const before = list.length;
+          bData[vid] = list.filter((b) => b.bookingId !== bookingId);
+          if (bData[vid].length !== before) removed = true;
+        }
+        if (removed) {
+          await saveBookings(bData, bSha, `Delete booking ${bookingId} from bookings.json`);
+        }
+      } catch (_e) {
+        console.warn("[DELETE] Failed to update bookings.json:", _e.message);
+      }
+
+      // 6. Unblock booked-dates.json (non-fatal).
+      if (vehicleId && pickupDate && returnDate) {
+        await unblockBookedDates(vehicleId, pickupDate, returnDate).catch((e) =>
+          console.warn("[DELETE] Failed to unblock booked-dates.json:", e.message)
+        );
+      }
+
+      console.log("[BOOKING_DELETED]", { booking_ref: bookingId, vehicle_id: vehicleId });
+      return res.status(200).json({ success: true, bookingId });
+    }
+
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error("v2-bookings error:", err);
