@@ -182,7 +182,7 @@
       booking = data;
 
       // Populate summary
-      document.getElementById("s-booking-id").textContent = booking.bookingRef || "–";
+      document.getElementById("s-booking-id").textContent = booking.bookingId || "–";
       document.getElementById("s-vehicle").textContent    = booking.vehicleName || booking.vehicleId || "–";
       document.getElementById("s-pickup").textContent     = formatDate(booking.pickupDate) + (booking.pickupTime ? ` at ${booking.pickupTime}` : "");
       document.getElementById("s-return").textContent     = formatDate(booking.returnDate) + (booking.returnTime ? ` at ${booking.returnTime}` : "");
