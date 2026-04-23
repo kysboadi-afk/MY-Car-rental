@@ -1000,6 +1000,81 @@ test("list: returns Supabase rows when client is available", async () => {
   }
 });
 
+test("list: aggregates revenue rows per booking for total collected display", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-agg-1", booking_ref: "ca8ee28ffb888c41", vehicle_id: "camry2013",
+      pickup_date: "2026-04-10", return_date: "2026-04-12",
+      pickup_time: "9:00 AM",    return_time: "9:00 AM",
+      status: "booked_paid",     deposit_paid: 121.28, total_price: 121.28,
+      remaining_balance: 0,      payment_status: "paid",
+      payment_method: "stripe",  payment_intent_id: "pi_base",
+      notes: "",                 created_at: "2026-04-10T09:00:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-agg-1", name: "Brandon Bookhart", phone: "+15303285561", email: "brandon.bookhart@gmail.com" },
+    },
+  ];
+  const fakeRevenueRows = [
+    {
+      booking_id: "ca8ee28ffb888c41",
+      gross_amount: 121.28,
+      stripe_fee: 4.16,
+      stripe_net: 117.12,
+      payment_method: "stripe",
+      customer_name: "Brandon Bookhart",
+      customer_phone: "+15303285561",
+      customer_email: "brandon.bookhart@gmail.com",
+    },
+    {
+      booking_id: "ca8ee28ffb888c41",
+      gross_amount: 60.64,
+      stripe_fee: 2.06,
+      stripe_net: 58.58,
+      payment_method: "stripe",
+      customer_name: "Brandon Bookhart",
+      customer_phone: "+15303285561",
+      customer_email: "brandon.bookhart@gmail.com",
+    },
+  ];
+
+  const makeBookingsChain = (rows) => ({
+    select() { return this; },
+    eq()     { return this; },
+    in()     { return this; },
+    order()  { return Promise.resolve({ data: rows, error: null }); },
+  });
+
+  const makeRevenueChain = (rows) => ({
+    select() { return this; },
+    in()     { return this; },
+    then(resolve, reject) {
+      return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    },
+  });
+
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "bookings") return makeBookingsChain(fakeRows);
+      if (table === "revenue_records_effective") return makeRevenueChain(fakeRevenueRows);
+      return makeBookingsChain([]);
+    },
+  };
+
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].bookingId, "ca8ee28ffb888c41");
+    assert.equal(res._body.bookings[0].amountGross, 181.92);
+    assert.equal(res._body.bookings[0].stripeFee, 6.22);
+    assert.equal(res._body.bookings[0].amountNet, 175.7);
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
 test("list: falls back to bookings.json when Supabase errors", async () => {
   resetStore(); resetCalls();
   await handler(makeReq(createPayload({ amountPaid: 100 })), makeRes()); // seed one booking
