@@ -211,27 +211,12 @@ export default async function handler(req, res) {
 
     if (sb) {
       try {
-        let rrResult = await sb
-          .from("revenue_reporting_base")
-          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show");
-
-        // If the canonical view is not deployed yet (migration pending), fall back to the
-        // underlying revenue_records_effective view with the same filters applied server-side.
-        // This matches exactly what the Revenue page does for its own display.
-        if (rrResult.error && isSchemaError(rrResult.error)) {
-          console.warn("v2-dashboard: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
-          rrResult = await sb
-            .from("revenue_records_effective")
-            .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
-            .eq("payment_status", "paid");
-        }
-
-        const { data: rrRows, error: rrErr } = rrResult;
+        const { data: rrRows, error: rrErr } = await sb
+          .from("revenue_records_effective")
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
+          .eq("payment_status", "paid");
 
         if (rrErr) {
-          // At this point revenue_reporting_base was already tried (and failed with a schema
-          // error), so any remaining error here means revenue_records_effective is also
-          // unavailable — fall through to the bookings.json fallback below.
           console.error("v2-dashboard: revenue records unavailable, falling back to bookings.json:", rrErr.message);
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
@@ -240,7 +225,8 @@ export default async function handler(req, res) {
             const vid = uiVehicleId(r.vehicle_id) || "unknown";
             if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
 
-            const gross  = Number(r.gross_amount || 0);
+            const grossRaw = Number(r.gross_amount || 0);
+            const gross  = Number.isFinite(grossRaw) ? grossRaw : 0;
             // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
             // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
             // When both are set (reconciled row): use exact Stripe values.
@@ -263,7 +249,7 @@ export default async function handler(req, res) {
             rrByVehicle[vid].net   += net;
             rrByVehicle[vid].count += 1;
 
-            if (r.booking_id) rrByBookingId[r.booking_id] = gross;
+            if (r.booking_id) rrByBookingId[r.booking_id] = (rrByBookingId[r.booking_id] || 0) + gross;
           }
         }
         // If rrRows is empty (no paid records yet) we fall through to bookings.json.
