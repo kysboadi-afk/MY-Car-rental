@@ -37,7 +37,7 @@ import {
 import { computeRentalDays } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 
-const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
