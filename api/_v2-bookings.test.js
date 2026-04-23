@@ -1205,3 +1205,30 @@ test("update: Supabase direct update is attempted before bookings.json write", a
     supabaseMockState.client = null;
   }
 });
+
+test("delete: removes booking from bookings.json by bookingId", async () => {
+  resetStore(); resetCalls();
+
+  const created = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 100, totalPrice: 100 })), created);
+  const bookingId = created._body?.booking?.bookingId;
+  assert.ok(bookingId, "create should return a bookingId");
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", bookingId }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body?.success, true);
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.bookings.length, 0, "deleted booking should not remain in listing");
+});
+
+test("delete: returns 400 when bookingId is missing", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete" }), res);
+  assert.equal(res._status, 400);
+  assert.match(res._body?.error || "", /bookingId is required/);
+});
