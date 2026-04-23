@@ -358,6 +358,20 @@ test("backfill: phone falls back to customer_details.phone when renter_phone is 
   assert.equal(persistedOpts[0].phone, "+13105559999", "should use customer_details.phone when renter_phone is empty");
 });
 
+test("backfill: phone falls back to meta.customer_phone when renter_phone and customer_details are absent", async () => {
+  reset();
+  stripePiList = [makePi("pi_meta_cph_1", "full_payment", {
+    metadata: { renter_phone: "", customer_phone: "+13105550042" },
+    pi:       { customer_details: null },
+  })];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._body.processed, 1);
+  assert.equal(persistedOpts[0].phone, "+13105550042", "should use meta.customer_phone fallback");
+});
+
 test("backfill: email falls back to customer_details.email when metadata email is absent", async () => {
   reset();
   stripePiList = [makePi("pi_cd_email_1", "full_payment", {
@@ -371,6 +385,20 @@ test("backfill: email falls back to customer_details.email when metadata email i
   assert.equal(res._body.processed, 1);
   assert.equal(persistedOpts.length, 1);
   assert.equal(persistedOpts[0].email, "cd-fallback@example.com", "should use customer_details.email when metadata email is empty");
+});
+
+test("backfill: email falls back to meta.customer_email when email and customer_details are absent", async () => {
+  reset();
+  stripePiList = [makePi("pi_meta_cemail_1", "full_payment", {
+    metadata: { email: "", customer_email: "metacust@example.com" },
+    pi:       { customer_details: null },
+  })];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._body.processed, 1);
+  assert.equal(persistedOpts[0].email, "metacust@example.com", "should use meta.customer_email fallback");
 });
 
 test("backfill: email falls back to receipt_email when both metadata email and customer_details.email are absent", async () => {

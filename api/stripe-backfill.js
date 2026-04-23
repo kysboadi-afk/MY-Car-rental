@@ -182,8 +182,8 @@ function buildPersistOpts(pi) {
   return {
     bookingId:             booking_id || ("backfill-" + crypto.randomBytes(8).toString("hex")),
     name:                  renter_name  || "",
-    phone:                 renter_phone ? normalizePhone(renter_phone) : normalizePhone(pi.customer_details?.phone || ""),
-    email:                 email || pi.receipt_email || pi.customer_details?.email || "",
+    phone:                 renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || pi.customer_details?.phone || ""),
+    email:                 email || meta.customer_email || pi.receipt_email || pi.customer_details?.email || "",
     vehicleId:             vehicle_id,
     vehicleName:           vehicle_name || vehicle_id,
     pickupDate:            pickup_date,
@@ -275,7 +275,7 @@ export default async function handler(req, res) {
         let pi = null;
 
         try {
-          pi = await stripe.paymentIntents.retrieve(piId);
+          pi = await stripe.paymentIntents.retrieve(piId, { expand: ["customer"] });
         } catch (stripeErr) {
           console.error(`stripe-backfill: contacts backfill — could not fetch PI ${piId}: ${stripeErr.message}`);
           details.push({ booking_ref: row.booking_ref, pi: piId, status: "error", reason: stripeErr.message });
@@ -284,8 +284,26 @@ export default async function handler(req, res) {
         }
 
         const meta = pi.metadata || {};
-        const rawPhone = meta.renter_phone || pi.customer_details?.phone || "";
-        const rawEmail = meta.email || pi.customer_details?.email || pi.receipt_email || "";
+        // Build the widest possible fallback chain:
+        //   1. Stripe-collected customer_details (filled by the payment form)
+        //   2. Expanded Stripe Customer object (requires expand: ["customer"])
+        //   3. PI metadata keys used by create-payment-intent.js (renter_phone / email)
+        //   4. Alternative metadata keys used by other flows (customer_phone / customer_email)
+        //   5. PI receipt_email as last resort for email
+        const stripeCustomerObj = (pi.customer && typeof pi.customer === "object") ? pi.customer : null;
+        const rawPhone =
+          pi.customer_details?.phone              ||
+          stripeCustomerObj?.phone                ||
+          meta.renter_phone                       ||
+          meta.customer_phone                     ||
+          "";
+        const rawEmail =
+          pi.customer_details?.email              ||
+          stripeCustomerObj?.email                ||
+          meta.email                              ||
+          meta.customer_email                     ||
+          pi.receipt_email                        ||
+          "";
 
         const resolvedPhone = rawPhone ? normalizePhone(rawPhone) : null;
         const resolvedEmail = rawEmail ? rawEmail.trim().toLowerCase() : null;
@@ -336,12 +354,24 @@ export default async function handler(req, res) {
         (dry_run ? " [DRY RUN]" : "")
       );
 
+      // Audit: report any bookings that still have neither phone nor email.
+      // These need manual intervention (e.g., contact the customer directly).
+      const stillMissing = details.filter((d) => d.status === "no_data" || d.status === "error");
+      if (stillMissing.length > 0) {
+        console.error(
+          `[CONTACTS_BACKFILL_INCOMPLETE] ${stillMissing.length} booking(s) still missing contact data ` +
+          `after backfill — manage-booking verify will fail for these customers. ` +
+          `refs: ${stillMissing.map((d) => d.booking_ref).join(", ")}`
+        );
+      }
+
       return res.status(200).json({
         dry_run,
         candidates: candidates.length,
         updated,
-        no_data: noData,
+        no_data:      noData,
         errors,
+        still_missing: stillMissing.map((d) => ({ booking_ref: d.booking_ref, pi: d.pi, reason: d.reason })),
         details,
       });
     } catch (err) {

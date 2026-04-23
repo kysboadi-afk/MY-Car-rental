@@ -378,3 +378,163 @@ test("backfill_contacts: updates both phone and email when both are null", async
   assert.equal(supabaseUpdates[0].patch.customer_phone, "+13105550099");
   assert.equal(supabaseUpdates[0].patch.customer_email, "both@example.com");
 });
+
+// ─── Expanded Stripe Customer object fallback ─────────────────────────────────
+
+test("backfill_contacts: uses expanded customer.phone when customer_details and metadata are absent", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-10",
+    booking_ref:       "bk-expandcust",
+    payment_intent_id: "pi_expand_cust_1",
+    customer_phone:    null,
+    customer_email:    "existing@example.com",
+  }];
+  // customer is the expanded object (as returned by expand: ["customer"])
+  stripePiStore["pi_expand_cust_1"] = {
+    id:               "pi_expand_cust_1",
+    metadata:         { renter_phone: "", email: "" },
+    customer_details: null,
+    customer:         { id: "cus_123", phone: "+13105550002", email: "cust@example.com" },
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.updated, 1);
+  assert.equal(supabaseUpdates[0].patch.customer_phone, "+13105550002",
+    "should use expanded customer.phone when customer_details is absent");
+  assert.ok(!("customer_email" in supabaseUpdates[0].patch), "must not overwrite existing email");
+});
+
+test("backfill_contacts: uses expanded customer.email when other email sources are absent", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-11",
+    booking_ref:       "bk-expandcust-email",
+    payment_intent_id: "pi_expand_cust_2",
+    customer_phone:    "+13105551234",
+    customer_email:    null,
+  }];
+  stripePiStore["pi_expand_cust_2"] = {
+    id:               "pi_expand_cust_2",
+    metadata:         { renter_phone: "", email: "" },
+    customer_details: null,
+    customer:         { id: "cus_456", phone: null, email: "custobj@example.com" },
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.updated, 1);
+  assert.equal(supabaseUpdates[0].patch.customer_email, "custobj@example.com",
+    "should use expanded customer.email when other email sources are absent");
+});
+
+// ─── meta.customer_phone / meta.customer_email fallbacks ─────────────────────
+
+test("backfill_contacts: uses meta.customer_phone when renter_phone and customer_details are absent", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-12",
+    booking_ref:       "bk-metacustphone",
+    payment_intent_id: "pi_meta_cust_phone",
+    customer_phone:    null,
+    customer_email:    "x@example.com",
+  }];
+  stripePiStore["pi_meta_cust_phone"] = {
+    id:               "pi_meta_cust_phone",
+    metadata:         { renter_phone: "", customer_phone: "+13105550077" },
+    customer_details: null,
+    customer:         null,
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.updated, 1);
+  assert.equal(supabaseUpdates[0].patch.customer_phone, "+13105550077",
+    "should use meta.customer_phone as a fallback metadata key");
+});
+
+test("backfill_contacts: uses meta.customer_email when email and customer_details are absent", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-13",
+    booking_ref:       "bk-metacustemail",
+    payment_intent_id: "pi_meta_cust_email",
+    customer_phone:    "+13105559988",
+    customer_email:    null,
+  }];
+  stripePiStore["pi_meta_cust_email"] = {
+    id:               "pi_meta_cust_email",
+    metadata:         { email: "", customer_email: "metacust@example.com" },
+    customer_details: null,
+    customer:         null,
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.updated, 1);
+  assert.equal(supabaseUpdates[0].patch.customer_email, "metacust@example.com",
+    "should use meta.customer_email as a fallback metadata key");
+});
+
+// ─── still_missing audit field ────────────────────────────────────────────────
+
+test("backfill_contacts: still_missing lists bookings that had no contact data in Stripe", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-14",
+    booking_ref:       "bk-stillmissing",
+    payment_intent_id: "pi_still_missing",
+    customer_phone:    null,
+    customer_email:    null,
+  }];
+  stripePiStore["pi_still_missing"] = {
+    id:               "pi_still_missing",
+    metadata:         { renter_phone: "", email: "", customer_phone: "", customer_email: "" },
+    customer_details: null,
+    customer:         null,
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.no_data, 1);
+  assert.ok(Array.isArray(res._body.still_missing), "should include still_missing array");
+  assert.equal(res._body.still_missing.length, 1);
+  assert.equal(res._body.still_missing[0].booking_ref, "bk-stillmissing");
+});
+
+test("backfill_contacts: still_missing is empty when all bookings were repaired", async () => {
+  reset();
+  supabaseBookingRows = [{
+    id:                "sb-row-15",
+    booking_ref:       "bk-repaired",
+    payment_intent_id: "pi_repaired",
+    customer_phone:    null,
+    customer_email:    null,
+  }];
+  stripePiStore["pi_repaired"] = {
+    id:               "pi_repaired",
+    metadata:         { renter_phone: "+13105550033", email: "repaired@example.com" },
+    customer_details: null,
+    customer:         null,
+    receipt_email:    null,
+  };
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret-contacts", backfill_contacts: true }), res);
+
+  assert.equal(res._body.updated, 1);
+  assert.ok(Array.isArray(res._body.still_missing), "still_missing should always be present");
+  assert.equal(res._body.still_missing.length, 0, "still_missing should be empty when all rows were repaired");
+});
+
