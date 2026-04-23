@@ -49,6 +49,7 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
+import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -1263,6 +1264,95 @@ export default async function handler(req, res) {
           ? "Confirmation sent to owner and customer with standardized template."
           : "Confirmation sent to owner with standardized template. No customer email on file — customer not notified.",
       });
+    }
+
+    // ── RESEND_MANAGE_LINK — regenerate manage token + resend email to customer ─
+    if (action === "resend_manage_link") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const sbManage = getSupabaseAdmin();
+      if (!sbManage) return res.status(503).json({ error: "Database not configured" });
+
+      // Load the booking row
+      const { data: bkRow, error: bkErr } = await sbManage
+        .from("bookings")
+        .select("id, booking_ref, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, balance_payment_link")
+        .eq("booking_ref", bookingId)
+        .maybeSingle();
+
+      if (bkErr || !bkRow) {
+        return res.status(404).json({ error: `Booking "${bookingId}" not found` });
+      }
+
+      // Generate a new 72-hour manage token
+      const newToken = createManageToken(bookingId);
+      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(newToken)}`;
+
+      const { error: updErr } = await sbManage
+        .from("bookings")
+        .update({ manage_token: newToken, updated_at: new Date().toISOString() })
+        .eq("booking_ref", bookingId);
+
+      if (updErr) return res.status(500).json({ error: `Failed to update manage token: ${updErr.message}` });
+
+      // Optionally send email
+      if (bkRow.customer_email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host:   process.env.SMTP_HOST,
+            port:   parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_PORT === "465",
+            auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          const balanceLink = bkRow.balance_payment_link || "";
+          await transporter.sendMail({
+            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            to:      bkRow.customer_email,
+            subject: "Your Booking Management Link",
+            html: `
+              <h2>Manage Your Booking</h2>
+              <p>Here is your link to manage your reservation. It expires in 72 hours.</p>
+              <p><a href="${manageLink}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Manage Your Booking</a></p>
+              ${balanceLink ? `<p>Or <a href="${balanceLink}">pay your remaining balance here</a>.</p>` : ""}
+              <p>Questions? Call us at (213) 916-6606.</p>
+            `,
+          });
+        } catch (emailErr) {
+          console.error("v2-bookings resend_manage_link: email failed (non-fatal):", emailErr.message);
+        }
+      }
+
+      return res.status(200).json({ success: true, manageLink });
+    }
+
+    // ── OVERRIDE_BALANCE — admin manually sets a new balance payment link ─────
+    if (action === "override_balance") {
+      const { bookingId, balancePaymentLink, changeCount } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      if (!balancePaymentLink || typeof balancePaymentLink !== "string") {
+        return res.status(400).json({ error: "balancePaymentLink is required and must be a string" });
+      }
+
+      const sbOvr = getSupabaseAdmin();
+      if (!sbOvr) return res.status(503).json({ error: "Database not configured" });
+
+      const ovrPayload = {
+        balance_payment_link: balancePaymentLink.trim(),
+        updated_at: new Date().toISOString(),
+      };
+      if (typeof changeCount === "number" && changeCount >= 0) {
+        ovrPayload.change_count = changeCount;
+      }
+
+      const { error: ovrErr } = await sbOvr
+        .from("bookings")
+        .update(ovrPayload)
+        .eq("booking_ref", bookingId);
+
+      if (ovrErr) return res.status(500).json({ error: `Failed to override balance link: ${ovrErr.message}` });
+
+      return res.status(200).json({ success: true });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
