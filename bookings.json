@@ -403,7 +403,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "reserved_unpaid",
+      "status": "booked_paid",
       "amountPaid": 50,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_e561d72fec44",
@@ -412,7 +412,8 @@
       "notes": "Balance due at pickup: $567.40. Reservation deposit paid: $50. Stripe processing fees: $1.75. Net amount received: $48.25. Protection plan: standard.",
       "smsSentAt": {},
       "createdAt": "2026-04-23T10:57:28.597Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "updatedAt": "2026-04-23T10:59:34.002Z"
     }
   ],
   "camry2013": [
