@@ -403,7 +403,7 @@ export default async function handler(req, res) {
     if (!row) {
       try {
         const { data } = await loadBookings();
-        outer: for (const vehicleId of Object.keys(data)) {
+        vehicleLoop: for (const vehicleId of Object.keys(data)) {
           const match = data[vehicleId].find(
             (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
           );
@@ -425,7 +425,7 @@ export default async function handler(req, res) {
               customer_phone:    match.phone,
               change_count:      match.extensionCount || 0,
             };
-            break outer;
+            break vehicleLoop;
           }
         }
       } catch (jsonErr) {
