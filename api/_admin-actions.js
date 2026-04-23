@@ -2880,6 +2880,14 @@ function normalizeCurrency(value) {
   return typeof value === "number" && value > 0 ? Math.round(value * 100) / 100 : 0;
 }
 
+const STRIPE_AMOUNT_TOLERANCE = 0.01;
+
+function normalizeOptionalAmount(value) {
+  if (!Number.isFinite(Number(value))) return null;
+  const n = Math.round(Number(value) * 100) / 100;
+  return n >= 0 ? n : null;
+}
+
 function getLANowParts() {
   return Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
@@ -3073,17 +3081,20 @@ async function toolCreateManualBooking({
   const bookingStatus = normalizedAmountPaid <= 0 || hasOutstandingBalance
     ? "reserved_unpaid"
     : "booked_paid";
-  const normalizedStripeFee = Number.isFinite(Number(stripeFee)) && Number(stripeFee) >= 0
-    ? Math.round(Number(stripeFee) * 100) / 100
-    : null;
-  const normalizedStripeNet = Number.isFinite(Number(stripeNet)) && Number(stripeNet) >= 0
-    ? Math.round(Number(stripeNet) * 100) / 100
-    : null;
-  if (normalizedStripeFee != null && normalizedStripeFee > normalizedAmountPaid) {
+  const normalizedStripeFee = normalizeOptionalAmount(stripeFee);
+  const normalizedStripeNet = normalizeOptionalAmount(stripeNet);
+  if (normalizedStripeFee != null && normalizedAmountPaid > 0 && normalizedStripeFee > normalizedAmountPaid) {
     throw new Error("stripeFee must be less than or equal to amountPaid.");
   }
   if (normalizedStripeNet != null && normalizedStripeNet > normalizedAmountPaid) {
     throw new Error("stripeNet must be less than or equal to amountPaid.");
+  }
+  if (
+    normalizedStripeFee != null &&
+    normalizedStripeNet != null &&
+    Math.abs((normalizedStripeFee + normalizedStripeNet) - normalizedAmountPaid) > STRIPE_AMOUNT_TOLERANCE
+  ) {
+    throw new Error("stripeFee + stripeNet must equal amountPaid.");
   }
   // Keep legacy manual-booking behavior: when totalPrice is not provided, treat
   // the paid amount as the booking total for persistence/reporting. If both are
@@ -3117,6 +3128,8 @@ async function toolCreateManualBooking({
     paymentMethod:   isWebsitePayment ? "stripe" : "cash",
     stripeFee:       normalizedStripeFee,
     stripeNet:       normalizedStripeNet,
+    // AI-created manual bookings must fail fast if booking+revenue cannot be
+    // written to Supabase so dashboard/revenue never silently miss new records.
     strictPersistence: true,
     source:          "admin_ai",
   });
@@ -3142,6 +3155,9 @@ async function toolCreateManualBooking({
     ? `fleet status is set to ${vehicleRentalStatus}`
     : `fleet status sync failed (${vehicleStatusSync?.warning || "unknown error"})`;
   const shouldSendConfirmation = sendConfirmationEmail !== false;
+  const confirmationMsg = shouldSendConfirmation
+    ? ` Use resend_booking_confirmation(bookingId: "${result.bookingId}") if you want to send one.`
+    : " Email sending was intentionally skipped.";
 
   return {
     success:          true,
@@ -3158,7 +3174,7 @@ async function toolCreateManualBooking({
     vehicleStatus:    vehicleStatusSync,
     notes:            result.booking.notes || null,
     sendConfirmationEmail: shouldSendConfirmation,
-    message:          `Booking created (${result.booking.status}). Dates ${pickupDate} → ${returnDate} are blocked for ${result.booking.vehicleName}, and ${statusSyncMsg}. No email was sent automatically.${shouldSendConfirmation ? ` Use resend_booking_confirmation(bookingId: "${result.bookingId}") if you want to send one.` : " Email sending was intentionally skipped."}`,
+    message:          `Booking created (${result.booking.status}). Dates ${pickupDate} → ${returnDate} are blocked for ${result.booking.vehicleName}, and ${statusSyncMsg}. No email was sent automatically.${confirmationMsg}`,
   };
 }
 
