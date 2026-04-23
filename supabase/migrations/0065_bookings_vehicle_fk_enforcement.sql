@@ -9,7 +9,7 @@ BEGIN
     WHERE vehicle_id = 'camry'
   ) THEN
     RAISE EXCEPTION
-      'Required canonical vehicle_id "camry" is missing in public.vehicles; aborting booking vehicle_id normalization.';
+      'Required canonical vehicle_id "camry" is missing in public.vehicles; aborting migration before bookings vehicle_id FK enforcement.';
   END IF;
 END $$;
 
