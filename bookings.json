@@ -261,7 +261,9 @@
       "paymentLink": "https://www.slytrans.com/balance.html?v=camry&p=2026-04-23&r=2026-04-30&pp=1&n=Anthony%20johnson&e=cheftony90%40icloud.com&ph=2138011313&pt=08%3A00&rt=08%3A00&car=Camry%202012",
       "paymentMethod": "stripe",
       "notes": "",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+      },
       "createdAt": "2026-04-23T06:17:42.499Z",
       "source": "public_booking"
     },
@@ -361,7 +363,9 @@
       "paymentLink": "",
       "paymentMethod": "cash",
       "notes": "Balance at pickup $567.40, reservation deposit not refundable. Payment type: reservation_deposit. Stripe Customer ID: cus_UO2eMoHJZAbXQd. Protection Plan: Standard. No emails to be sent.",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+      },
       "createdAt": "2026-04-23T09:59:41.239Z",
       "source": "admin_ai",
       "activatedAt": "2026-04-23T10:00:06.285Z",
@@ -411,7 +415,9 @@
       "paymentLink": "",
       "paymentMethod": "cash",
       "notes": "Reservation deposit",
-      "smsSentAt": {},
+      "smsSentAt": {
+        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+      },
       "createdAt": "2026-04-23T11:29:16.423Z",
       "source": "admin_ai"
     },
