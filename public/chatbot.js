@@ -84,16 +84,66 @@ function getChatPricing() {
   };
 }
 
+var KNOWN_VEHICLE_META = {
+  slingshot:  { name: "Slingshot R", icon: "🔴", type: "slingshot" },
+  slingshot2: { name: "Slingshot R (Unit 2)", icon: "🔴", type: "slingshot" },
+  slingshot3: { name: "Slingshot R (Unit 3)", icon: "🔴", type: "slingshot" },
+  camry:      { name: "Camry 2012", icon: "🔵", type: "economy" },
+  camry2013:  { name: "Camry 2013 SE", icon: "🟢", type: "economy" }
+};
+
+function prettifyVehicleId(vehicleId) {
+  return String(vehicleId || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([0-9])/gi, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+}
+
+function getVehicleMeta(vehicleId) {
+  var known = KNOWN_VEHICLE_META[vehicleId];
+  if (known) return known;
+  var text = String(vehicleId || "").toLowerCase();
+  return {
+    name: prettifyVehicleId(vehicleId),
+    icon: /sling/.test(text) ? "🔴" : "🚗",
+    type: /sling/.test(text) ? "slingshot" : "other"
+  };
+}
+
+function getFleetVehicleIds() {
+  var seen = {};
+  var ids = [];
+  function add(id) {
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    ids.push(id);
+  }
+
+  Object.keys(KNOWN_VEHICLE_META).forEach(add);
+  Object.keys(slyFleetStatus || {}).sort().forEach(add);
+  Object.keys(slyBookedDates || {}).sort().forEach(add);
+
+  return ids;
+}
+
+function getSlingshotUnitCount() {
+  var count = getFleetVehicleIds().filter(function(id) { return getVehicleMeta(id).type === "slingshot"; }).length;
+  return count || 1;
+}
+
 /** Build the general pricing message for all vehicles in the given language. */
 function buildChatPricingText(lang) {
   var p = getChatPricing(), s = p.slingshot, e = p.economy;
+  var slingshotCount = getSlingshotUnitCount();
   // In Slingshot mode only show Slingshot pricing.
   if (isSlingshotMode()) {
     return buildChatSlingshotPricingText(lang);
   }
   if (lang === "es") {
     return "Aquí están nuestras tarifas actuales 🚗\n\n" +
-      "🔴 Slingshot R — Deportivo 2 plazas (2 unidades disponibles)\n" +
+      "🔴 Slingshot R — Deportivo 2 plazas (" + slingshotCount + " unidades disponibles)\n" +
       "  • 3 Horas  — $" + s["3hr"] + " (depósito reembolsable: $" + s["3hr"] + ")\n" +
       "  • 6 Horas  — $" + s["6hr"] + " (depósito reembolsable: $" + s["6hr"] + ")\n" +
       "  • 24 Horas — $" + s["24hr"] + " (depósito reembolsable: $" + s["24hr"] + ")\n" +
@@ -113,7 +163,7 @@ function buildChatPricingText(lang) {
       "¡Pregúntame sobre un auto específico para más detalles!";
   }
   return "Here are our current rates 🚗\n\n" +
-    "🔴 Slingshot R — Sports 2-Seater (2 units available)\n" +
+    "🔴 Slingshot R — Sports 2-Seater (" + slingshotCount + " units available)\n" +
     "  • 3 Hours  — $" + s["3hr"] + " (refundable deposit: $" + s["3hr"] + ")\n" +
     "  • 6 Hours  — $" + s["6hr"] + " (refundable deposit: $" + s["6hr"] + ")\n" +
     "  • 24 Hours — $" + s["24hr"] + " (refundable deposit: $" + s["24hr"] + ")\n" +
@@ -136,8 +186,9 @@ function buildChatPricingText(lang) {
 /** Build the Slingshot-only pricing message. */
 function buildChatSlingshotPricingText(lang) {
   var s = getChatPricing().slingshot;
+  var slingshotCount = getSlingshotUnitCount();
   if (lang === "es") {
-    return "Aquí están las tarifas del Slingshot R 🔴 (tenemos 2 unidades)\n\n" +
+    return "Aquí están las tarifas del Slingshot R 🔴 (tenemos " + slingshotCount + " unidades)\n\n" +
       "⏱ Tarifas por Duración (Deportivo 2 plazas):\n" +
       "  • 3 Horas  — $" + s["3hr"] + "  💰 Depósito reembolsable: $" + s["3hr"] + "\n" +
       "  • 6 Horas  — $" + s["6hr"] + "  💰 Depósito reembolsable: $" + s["6hr"] + "\n" +
@@ -147,7 +198,7 @@ function buildChatSlingshotPricingText(lang) {
       "💡 El depósito de seguridad iguala el precio del alquiler y se reembolsa después de la devolución e inspección del vehículo.\n\n" +
       "¿Listo para reservar? <a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot</a>";
   }
-  return "Here are the Slingshot R rates 🔴 (we have 2 units)\n\n" +
+  return "Here are the Slingshot R rates 🔴 (we have " + slingshotCount + " units)\n\n" +
     "⏱ Rates by Duration (Sports 2-Seater):\n" +
     "  • 3 Hours  — $" + s["3hr"] + "  💰 Refundable deposit: $" + s["3hr"] + "\n" +
     "  • 6 Hours  — $" + s["6hr"] + "  💰 Refundable deposit: $" + s["6hr"] + "\n" +
@@ -232,11 +283,7 @@ function nextDayChatbot(iso) {
  */
 function getVehicleBookingInfo(vehicleId, lang) {
   var locale = lang === "es" ? "es-US" : "en-US";
-  var names = { slingshot: "Slingshot R",
-                slingshot2: "Slingshot R (Unit 2)",
-                slingshot3: "Slingshot R (Unit 3)",
-                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
-  var vName = names[vehicleId] || vehicleId;
+  var vName = getVehicleMeta(vehicleId).name;
 
   if (!slyBookedDates) {
     return lang === "es"
@@ -298,20 +345,16 @@ function getVehicleBookingInfo(vehicleId, lang) {
  * Build a summary for ALL vehicles combining fleet-status + next-available info.
  */
 function buildAvailabilityMessage(lang) {
-  var ids   = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
-  var icons = { slingshot: "🔴", slingshot2: "🔴", slingshot3: "🔴", camry: "🔵", camry2013: "🟢" };
-  var names = { slingshot: "Slingshot R",
-                slingshot2: "Slingshot R (Unit 2)",
-                slingshot3: "Slingshot R (Unit 3)",
-                camry: "Camry 2012", camry2013: "Camry 2013 SE" };
+  var ids   = getFleetVehicleIds();
   var locale = lang === "es" ? "es-US" : "en-US";
   var today  = SlyLA.todayISO();
 
   var lines = [];
   for (var k = 0; k < ids.length; k++) {
     var id     = ids[k];
-    var vName  = names[id];
-    var icon   = icons[id];
+    var meta   = getVehicleMeta(id);
+    var vName  = meta.name;
+    var icon   = meta.icon;
     var ranges = slyBookedDates ? ((slyBookedDates[id] || []).slice().sort(function(a, b) {
       return a.from < b.from ? -1 : 1;
     })) : [];
@@ -408,28 +451,63 @@ function buildFleetMessage(lang) {
       "<a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot</a>";
   }
 
+  var fleetIds = getFleetVehicleIds();
+  var slingshotIds = fleetIds.filter(function(id) { return getVehicleMeta(id).type === "slingshot"; });
+  var economyIds = fleetIds.filter(function(id) { return getVehicleMeta(id).type === "economy"; });
+  var otherIds = fleetIds.filter(function(id) {
+    var t = getVehicleMeta(id).type;
+    return t !== "slingshot" && t !== "economy";
+  });
+
+  function renderList(ids, renderer) {
+    return ids.map(function(id) {
+      var meta = getVehicleMeta(id);
+      return renderer(id, meta);
+    }).join("\n");
+  }
+
   if (lang === "es") {
     var p = getChatPricing(), s = p.slingshot, e = p.economy;
-    return "Contamos con <strong>5 vehículos</strong> en nuestra flota:\n\n" +
-      "🔴 Slingshot R — Deportivo 2 plazas" + statusLine("slingshot") + "\n" +
-      "🔴 Slingshot R (Unidad 2)" + statusLine("slingshot2") + "\n" +
-      "🔴 Slingshot R (Unidad 3)" + statusLine("slingshot3") + "\n" +
-      "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
-      "   💰 Depósito reembolsable igual al precio del alquiler\n\n" +
-      "🔵 Camry 2012 — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry") + "\n\n" +
-      "🟢 Camry 2013 SE — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine("camry2013") + "\n\n" +
-      "¡Visita nuestra página de Autos para ver y reservar!";
+    var outEs = "Contamos con <strong>" + fleetIds.length + " vehículos</strong> en nuestra flota:\n\n";
+    if (slingshotIds.length) {
+      outEs += renderList(slingshotIds, function(id, meta) {
+        return meta.icon + " " + meta.name + " — Deportivo 2 plazas" + statusLine(id);
+      }) + "\n" +
+        "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
+        "   💰 Depósito reembolsable igual al precio del alquiler\n\n";
+    }
+    if (economyIds.length) {
+      outEs += renderList(economyIds, function(id, meta) {
+        return meta.icon + " " + meta.name + " — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine(id);
+      }) + "\n\n";
+    }
+    if (otherIds.length) {
+      outEs += renderList(otherIds, function(id, meta) {
+        return meta.icon + " " + meta.name + statusLine(id);
+      }) + "\n\n";
+    }
+    return outEs + "¡Visita nuestra página de Autos para ver y reservar!";
   }
   var pricing2 = getChatPricing(), slPricing = pricing2.slingshot, economy2 = pricing2.economy;
-  return "We have <strong>5 vehicles</strong> in our fleet:\n\n" +
-    "🔴 Slingshot R — Sports 2-Seater" + statusLine("slingshot") + "\n" +
-    "🔴 Slingshot R (Unit 2)" + statusLine("slingshot2") + "\n" +
-    "🔴 Slingshot R (Unit 3)" + statusLine("slingshot3") + "\n" +
-    "   3 hrs $" + slPricing["3hr"] + " · 6 hrs $" + slPricing["6hr"] + " · 24 hrs $" + slPricing["24hr"] + "\n" +
-    "   💰 Refundable deposit equals your rental fee\n\n" +
-    "🔵 Camry 2012 — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine("camry") + "\n\n" +
-    "🟢 Camry 2013 SE — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine("camry2013") + "\n\n" +
-    "Visit our Cars page to browse and book!";
+  var outEn = "We have <strong>" + fleetIds.length + " vehicles</strong> in our fleet:\n\n";
+  if (slingshotIds.length) {
+    outEn += renderList(slingshotIds, function(id, meta) {
+      return meta.icon + " " + meta.name + " — Sports 2-Seater" + statusLine(id);
+    }) + "\n" +
+      "   3 hrs $" + slPricing["3hr"] + " · 6 hrs $" + slPricing["6hr"] + " · 24 hrs $" + slPricing["24hr"] + "\n" +
+      "   💰 Refundable deposit equals your rental fee\n\n";
+  }
+  if (economyIds.length) {
+    outEn += renderList(economyIds, function(id, meta) {
+      return meta.icon + " " + meta.name + " — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine(id);
+    }) + "\n\n";
+  }
+  if (otherIds.length) {
+    outEn += renderList(otherIds, function(id, meta) {
+      return meta.icon + " " + meta.name + statusLine(id);
+    }) + "\n\n";
+  }
+  return outEn + "Visit our Cars page to browse and book!";
 }
 
 var botResponses = {
