@@ -1191,8 +1191,73 @@ async function sendReservationDepositBalanceOwnerEmail({
   });
 }
 
+async function buildUpdatedRentalAgreementAttachment({
+  bookingId,
+  paymentIntentId,
+  vehicleId,
+  vehicleName,
+  renterName,
+  renterEmail,
+  renterPhone,
+  pickupDate,
+  pickupTime,
+  returnDate,
+  returnTime,
+  totalPrice,
+  amountPaid,
+}) {
+  if (!bookingId) return [];
+  try {
+    const sb = getSupabaseAdmin();
+    if (!sb) return [];
+    const { data: docsRow } = await sb
+      .from("pending_booking_docs")
+      .select("signature, insurance_coverage_choice")
+      .eq("booking_id", bookingId)
+      .maybeSingle();
+    if (!docsRow?.signature) return [];
+
+    const resolvedTotal = normalizeCurrency(totalPrice || amountPaid || 0);
+    const rentalDays = pickupDate && returnDate ? computeRentalDays(pickupDate, returnDate) : 0;
+    const pdfBuffer = await generateRentalAgreementPdf({
+      vehicleId: vehicleId || "",
+      car: vehicleName || vehicleId || "",
+      name: renterName || "",
+      email: renterEmail || "",
+      phone: renterPhone || "",
+      pickup: pickupDate || "",
+      pickupTime: pickupTime || "",
+      returnDate: returnDate || "",
+      returnTime: returnTime || "",
+      total: resolvedTotal.toFixed(2),
+      // This document is sent after the balance-completion payment succeeds.
+      // At this point the booking is fully paid, so no balance remains.
+      deposit: 0,
+      days: rentalDays,
+      protectionPlan: false,
+      protectionPlanTier: null,
+      signature: docsRow.signature,
+      fullRentalCost: resolvedTotal,
+      balanceAtPickup: 0,
+      insuranceCoverageChoice: docsRow.insurance_coverage_choice || "yes",
+    });
+
+    const safeBookingId = String(bookingId).replace(/[^a-zA-Z0-9_-]/g, "") || "booking";
+    return [{
+      filename: `updated-rental-agreement-${safeBookingId}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+      cid: paymentIntentId ? `agreement-${paymentIntentId}` : undefined,
+    }];
+  } catch (err) {
+    console.error("stripe-webhook: updated agreement PDF build failed (non-fatal):", err.message);
+    return [];
+  }
+}
+
 async function sendBalancePaidCustomerEmail({
-  renterEmail, renterName, vehicleName, pickupDate, returnDate, amountPaid, totalPrice,
+  renterEmail, renterName, renterPhone, bookingId, paymentIntentId, vehicleId,
+  vehicleName, pickupDate, pickupTime, returnDate, returnTime, amountPaid, totalPrice,
 }) {
   if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -1202,14 +1267,31 @@ async function sendBalancePaidCustomerEmail({
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
   const firstName = (renterName || "").split(" ")[0] || "there";
+  const agreementAttachment = await buildUpdatedRentalAgreementAttachment({
+    bookingId,
+    paymentIntentId,
+    vehicleId,
+    vehicleName,
+    renterName,
+    renterEmail,
+    renterPhone,
+    pickupDate,
+    pickupTime,
+    returnDate,
+    returnTime,
+    totalPrice,
+    amountPaid,
+  });
   await transporter.sendMail({
     from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
     to: renterEmail,
     subject: "✅ Payment Received — Your Rental is Fully Booked!",
+    attachments: agreementAttachment,
     html: `
       <h2>✅ Payment Received — You're All Set!</h2>
       <p>Hi ${esc(firstName)},</p>
       <p>Your remaining balance has been received. Your rental is fully booked and ready to go. See you at pickup!</p>
+      ${agreementAttachment.length ? "<p>📄 Your updated rental agreement is attached for your records.</p>" : ""}
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate || "")}</td></tr>
@@ -1219,6 +1301,21 @@ async function sendBalancePaidCustomerEmail({
       </table>
       <p>Questions? Call us at <strong>(213) 916-6606</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
     `,
+    text: [
+      "✅ Payment Received — You're All Set!",
+      "",
+      `Hi ${firstName},`,
+      "Your remaining balance has been received. Your rental is fully booked and ready to go.",
+      ...(agreementAttachment.length ? ["Your updated rental agreement PDF is attached."] : []),
+      "",
+      `Vehicle      : ${vehicleName || ""}`,
+      `Pickup Date  : ${pickupDate || ""}`,
+      `Return Date  : ${returnDate || ""}`,
+      `Balance Paid : $${normalizeCurrency(amountPaid).toFixed(2)}`,
+      `Total Paid   : $${normalizeCurrency(totalPrice).toFixed(2)}`,
+      "",
+      "Questions? Call (213) 916-6606.",
+    ].filter(Boolean).join("\n"),
   });
 }
 
@@ -2164,9 +2261,15 @@ export default async function handler(req, res) {
           await sendBalancePaidCustomerEmail({
             renterEmail:  balancePaidContact.email,
             renterName:   balancePaidContact.name,
+            renterPhone:  balancePaidContact.phone,
+            bookingId:    bookingPatch?.bookingId || bookingRef || "",
+            paymentIntentId: paymentIntent.id,
+            vehicleId:    bookingPatch?.vehicleId || vehicle_id || "",
             vehicleName:  balancePaidContact.vehicleName,
             pickupDate:   balancePaidContact.pickupDate,
+            pickupTime:   bookingPatch?.pickupTime || meta.pickup_time || "",
             returnDate:   balancePaidContact.returnDate,
+            returnTime:   bookingPatch?.returnTime || meta.return_time || "",
             amountPaid:   paidAmount,
             totalPrice:   balancePaidContact.totalPrice,
           });
@@ -2383,11 +2486,19 @@ export default async function handler(req, res) {
               try {
                 await sendSlingshotFullyPaidEmail({
                   to:          email || booking.email,
+                  bookingId:   booking.bookingId || booking.paymentIntentId || "",
+                  paymentIntentId: paymentIntent.id,
+                  vehicleId:   vehicle_id || booking.vehicleId || "",
                   renterName:  renter_name || booking.name || "",
+                  renterEmail: email || booking.email || "",
+                  renterPhone: renter_phone || booking.phone || "",
                   vehicleName: meta.vehicle_name || booking.vehicleName || vehicle_id,
                   pickupDate:  meta.pickup_date  || booking.pickupDate,
+                  pickupTime:  meta.pickup_time  || booking.pickupTime || "",
                   returnDate:  meta.return_date  || booking.returnDate,
+                  returnTime:  meta.return_time  || booking.returnTime || "",
                   amountPaid:  paymentIntent.amount ? (paymentIntent.amount / 100) : 0,
+                  totalPrice:  booking.totalPrice || meta.full_rental_amount || 0,
                 });
               } catch (emailErr) {
                 console.error("stripe-webhook: slingshot balance paid email error:", emailErr.message);
@@ -2633,7 +2744,10 @@ async function sendSlingshotDepositOwnerEmail({
 // ── Slingshot fully-paid confirmation email to customer ───────────────────
 
 async function sendSlingshotFullyPaidEmail({
-  to, renterName, vehicleName, pickupDate, returnDate, amountPaid,
+  to, bookingId, paymentIntentId, vehicleId, vehicleName,
+  renterName, renterEmail, renterPhone,
+  pickupDate, pickupTime, returnDate, returnTime,
+  amountPaid, totalPrice,
 }) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -2643,13 +2757,30 @@ async function sendSlingshotFullyPaidEmail({
     auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
   });
   const firstName = renterName ? renterName.split(" ")[0] : "there";
+  const agreementAttachment = await buildUpdatedRentalAgreementAttachment({
+    bookingId,
+    paymentIntentId,
+    vehicleId,
+    vehicleName,
+    renterName,
+    renterEmail,
+    renterPhone,
+    pickupDate,
+    pickupTime,
+    returnDate,
+    returnTime,
+    totalPrice,
+    amountPaid,
+  });
   await transporter.sendMail({
     from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
     to,
     subject: "✅ Slingshot Booking Fully Paid – Sly Transportation Services LLC",
+    attachments: agreementAttachment,
     html: `
       <h2>✅ Your Slingshot Booking is Fully Paid!</h2>
       <p>Hi ${esc(firstName)}, your payment has been received and your booking is complete.</p>
+      ${agreementAttachment.length ? "<p>📄 Your updated rental agreement is attached for your records.</p>" : ""}
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate)}</td></tr>
@@ -2663,6 +2794,7 @@ async function sendSlingshotFullyPaidEmail({
       "✅ Your Slingshot Booking is Fully Paid!",
       "",
       `Hi ${firstName}, your payment has been received and your booking is complete.`,
+      ...(agreementAttachment.length ? ["Your updated rental agreement PDF is attached."] : []),
       "",
       `Vehicle     : ${vehicleName}`,
       `Pickup Date : ${pickupDate}`,
@@ -2672,6 +2804,6 @@ async function sendSlingshotFullyPaidEmail({
       `Questions? Contact ${OWNER_EMAIL} or call (213) 916-6606.`,
       "",
       "Sly Transportation Services LLC",
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
   });
 }
