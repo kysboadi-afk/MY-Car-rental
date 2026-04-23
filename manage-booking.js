@@ -196,7 +196,7 @@
         $editSection.style.display = "none";
       }
 
-      const canPayBalance = booking.status === "reserved" &&
+      const canPayBalance = ["reserved", "pending"].includes(booking.status) &&
         booking.paymentStatus === "partial" &&
         Number(booking.balanceDue || 0) > 0;
       if (canPayBalance) {

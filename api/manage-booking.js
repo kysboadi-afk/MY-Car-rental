@@ -296,7 +296,7 @@ export default async function handler(req, res) {
     const baseVerifyQuery = () => sb
       .from("bookings")
       .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
-      .eq("status", "reserved")
+      .in("status", ["reserved", "pending"])
       .eq("payment_status", "partial")
       .order("created_at", { ascending: false })
       .limit(100);
@@ -421,7 +421,7 @@ export default async function handler(req, res) {
     }
     const row = await fetchBookingFromSupabase(bookingRef);
     if (!row) return res.status(404).json({ error: "Booking not found" });
-    if (row.status !== "reserved" || row.payment_status !== "partial") {
+    if (!["reserved", "pending"].includes(row.status) || row.payment_status !== "partial") {
       return res.status(409).json({ error: "This booking is not eligible for balance payment." });
     }
     const balanceDue = Number(row.remaining_balance || 0);
