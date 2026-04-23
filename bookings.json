@@ -353,7 +353,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "active_rental",
+      "status": "reserved_unpaid",
       "amountPaid": 617.4,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_a32938ff3d1d",
