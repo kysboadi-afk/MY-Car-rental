@@ -46,7 +46,8 @@ async function resolveBookingId(sb, rawRef) {
       .eq("booking_ref", rawRef)
       .maybeSingle();
     return data?.booking_ref || null;
-  } catch {
+  } catch (err) {
+    console.warn(`stripe-reconcile: resolveBookingId lookup error (non-fatal): ${err.message}`);
     return null;
   }
 }
@@ -588,7 +589,7 @@ export default async function handler(req, res) {
         if (origBookingId && !dryRun) {
           const resolvedBookingId = await resolveBookingId(sb, origBookingId);
           if (resolvedBookingId) {
-            const extBooking =
+            const resolvedBooking =
               bookingsByBookingId.get(origBookingId) ||
               bookingsByPI.get(payment.payment_intent_id) ||
               null;
@@ -596,12 +597,12 @@ export default async function handler(req, res) {
               await autoCreateRevenueRecord({
                 bookingId:       resolvedBookingId,
                 paymentIntentId: payment.payment_intent_id,
-                vehicleId:       extBooking?.vehicleId || null,
-                name:            extBooking?.name || null,
-                phone:           extBooking?.phone || null,
-                email:           payment.customer_email || extBooking?.email || null,
-                pickupDate:      extBooking?.pickupDate || null,
-                returnDate:      extBooking?.returnDate || null,
+                vehicleId:       resolvedBooking?.vehicleId || null,
+                name:            resolvedBooking?.name || null,
+                phone:           resolvedBooking?.phone || null,
+                email:           payment.customer_email || resolvedBooking?.email || null,
+                pickupDate:      resolvedBooking?.pickupDate || null,
+                returnDate:      resolvedBooking?.returnDate || null,
                 amountPaid:      payment.amount_gross,
                 paymentMethod:   "stripe",
                 type:            "extension",

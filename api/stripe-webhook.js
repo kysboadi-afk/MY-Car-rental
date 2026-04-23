@@ -413,7 +413,7 @@ async function resolveCustomerIdFromSupabase(phone, email) {
 async function resolveBookingId(rawRef) {
   if (!rawRef) return null;
   const sb = getSupabaseAdmin();
-  if (!sb) return rawRef; // can't validate — pass through
+  if (!sb) return null; // Supabase unavailable — cannot validate
   try {
     const { data } = await sb
       .from("bookings")
@@ -425,7 +425,7 @@ async function resolveBookingId(rawRef) {
     return null;
   } catch (err) {
     console.warn(`stripe-webhook: resolveBookingId lookup error (non-fatal): ${err.message}`);
-    return rawRef; // pass through; autoCreateRevenueRecord will validate
+    return null; // treat lookup errors the same as not-found
   }
 }
 
