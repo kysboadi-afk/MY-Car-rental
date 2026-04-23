@@ -529,10 +529,12 @@ export default async function handler(req, res) {
   // ── action: initiate_paid_change ─────────────────────────────────────────────
   if (action === "initiate_paid_change") {
     if (!process.env.STRIPE_SECRET_KEY) {
-      return res.status(500).json({ error: "Server configuration error: STRIPE_SECRET_KEY is missing." });
+      console.error("manage-booking initiate_paid_change: STRIPE_SECRET_KEY is not set");
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
     }
     if (!process.env.STRIPE_PUBLISHABLE_KEY) {
-      return res.status(500).json({ error: "Server configuration error: STRIPE_PUBLISHABLE_KEY is missing." });
+      console.error("manage-booking initiate_paid_change: STRIPE_PUBLISHABLE_KEY is not set");
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
     }
 
     const row = await fetchBookingFromSupabase(bookingRef);

@@ -1814,18 +1814,21 @@ export default async function handler(req, res) {
           newVehicleId, newProtectionPlan, newProtectionPlanTier,
         } = pendingChange;
 
-        const targetDbVehicleId = newVehicleId || bkRow.vehicle_id;
-        const targetUiVehicleId = uiVehicleId(targetDbVehicleId);
-        const vehicleData = await getVehicleById(targetUiVehicleId);
+        // newVehicleId in pending_change is already a DB-canonical vehicle ID
+        // (stored by manage-booking.js initiate_paid_change via normalizeVehicleId).
+        // Use uiVehicleId to map back to the UI key for availability/pricing lookups.
+        const pendingDbVehicleId  = newVehicleId || bkRow.vehicle_id;
+        const pendingUiVehicleId  = uiVehicleId(pendingDbVehicleId);
+        const vehicleData = await getVehicleById(pendingUiVehicleId);
         const depositPaid = Number(bkRow.deposit_paid || 0);
 
         // Recompute pricing
         let newTotal = Number(bkRow.total_price || 0);
         let newBalanceDue = Number(bkRow.remaining_balance || 0);
-        if (vehicleData) {
+        if (vehicleData !== null && vehicleData !== undefined) {
           const settings = await loadPricingSettings();
           const rentalCost = computeCarAmountFromVehicleData(vehicleData, newPickupDate, newReturnDate, settings);
-          if (rentalCost != null) {
+          if (rentalCost !== null && rentalCost !== undefined) {
             const days = computeRentalDays(newPickupDate, newReturnDate);
             const dppCost = newProtectionPlan ? computeDppCostFromSettings(days, newProtectionPlanTier || null) : 0;
             const preTax = rentalCost + dppCost;
@@ -1835,13 +1838,13 @@ export default async function handler(req, res) {
         }
 
         // Build new balance link
-        const newBalanceLink = `https://www.slytrans.com/balance.html?v=${encodeURIComponent(targetUiVehicleId)}&p=${encodeURIComponent(newPickupDate)}&r=${encodeURIComponent(newReturnDate)}&b=${encodeURIComponent(bookingRef)}`;
+        const newBalanceLink = `https://www.slytrans.com/balance.html?v=${encodeURIComponent(pendingUiVehicleId)}&p=${encodeURIComponent(newPickupDate)}&r=${encodeURIComponent(newReturnDate)}&b=${encodeURIComponent(bookingRef)}`;
 
         // Apply the change
         const { error: updateErr } = await sb
           .from("bookings")
           .update({
-            vehicle_id:           targetDbVehicleId,
+            vehicle_id:           pendingDbVehicleId,
             pickup_date:          newPickupDate,
             return_date:          newReturnDate,
             pickup_time:          newPickupTime || bkRow.pickup_time,
@@ -1881,15 +1884,15 @@ export default async function handler(req, res) {
                 return { data, sha: file.sha };
               },
               apply: (data) => {
-                if (!Array.isArray(data[targetUiVehicleId])) data[targetUiVehicleId] = [];
-                data[targetUiVehicleId] = data[targetUiVehicleId].filter(
+                if (!Array.isArray(data[pendingUiVehicleId])) data[pendingUiVehicleId] = [];
+                data[pendingUiVehicleId] = data[pendingUiVehicleId].filter(
                   (r) => !(r.from === bkRow.pickup_date && r.to === bkRow.return_date)
                 );
                 const entry = { from: newPickupDate, to: newReturnDate };
                 if (newPickupTime) entry.fromTime = newPickupTime;
                 if (newReturnTime) entry.toTime   = newReturnTime;
-                data[targetUiVehicleId].push(entry);
-                data[targetUiVehicleId].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+                data[pendingUiVehicleId].push(entry);
+                data[pendingUiVehicleId].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
               },
               save: async (data, sha, message) => {
                 const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
@@ -1905,7 +1908,7 @@ export default async function handler(req, res) {
                   throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
                 }
               },
-              message: `booking_change_fee: update dates for ${targetUiVehicleId}: ${bkRow.pickup_date}→${bkRow.return_date} replaced by ${newPickupDate}→${newReturnDate}`,
+              message: `booking_change_fee: update dates for ${pendingUiVehicleId}: ${bkRow.pickup_date}→${bkRow.return_date} replaced by ${newPickupDate}→${newReturnDate}`,
             });
           };
           await bookingChangeFeeDateUpdate();
@@ -1917,7 +1920,7 @@ export default async function handler(req, res) {
         try {
           const currentUiVid = uiVehicleId(bkRow.vehicle_id || "");
           await updateBooking(currentUiVid, bookingRef, {
-            vehicleId:          targetUiVehicleId,
+            vehicleId:          pendingUiVehicleId,
             pickupDate:         newPickupDate,
             returnDate:         newReturnDate,
             pickupTime:         newPickupTime || undefined,
@@ -1937,7 +1940,7 @@ export default async function handler(req, res) {
           await autoCreateRevenueRecord({
             bookingId:       bookingRef,
             paymentIntentId: paymentIntent.id,
-            vehicleId:       targetDbVehicleId,
+            vehicleId:       pendingDbVehicleId,
             customerId,
             email:           bkRow.customer_email || "",
             amountPaid:      Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100,

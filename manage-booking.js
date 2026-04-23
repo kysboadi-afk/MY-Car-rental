@@ -321,6 +321,11 @@
         return;
       }
 
+      if (typeof Stripe === "undefined") { // eslint-disable-line no-undef
+        $stripeErr.textContent = "Payment library failed to load. Please refresh the page.";
+        $stripeErr.style.display = "block";
+        return;
+      }
       stripeInstance = Stripe(data.publishableKey); // eslint-disable-line no-undef
       stripeElements = stripeInstance.elements();
       stripeCardElement = stripeElements.create("card");
