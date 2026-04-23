@@ -1164,10 +1164,14 @@ export default async function handler(req, res) {
             return res.status(200).json({ received: true });
           }
 
-          // Resolve and verify the booking_ref against Supabase before any revenue
-          // record writes.  Falls back to bookingRef so the booking-update logic
-          // (which uses bookings.json, not Supabase) is unaffected.
-          const resolvedBookingId = (await resolveBookingId(bookingRef)) ?? bookingRef;
+          // Resolve booking_ref against Supabase before any processing.
+          // Never fall back to the raw bookingRef: an unconfirmed ref would fail
+          // the DB trigger on revenue_records and signals a real data issue.
+          const resolvedBookingId = await resolveBookingId(bookingRef);
+          if (!resolvedBookingId) {
+            console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
+            return res.status(200).json({ received: true });
+          }
 
           let foundBooking = false;
           let alreadyApplied = false;

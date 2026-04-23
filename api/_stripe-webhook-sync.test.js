@@ -544,6 +544,7 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking called with upda
       newReturnTime: "3:00 PM",
     },
   }];
+  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
 
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
@@ -642,6 +643,7 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
       label:         "+3 days",
     },
   }];
+  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
 
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
@@ -687,6 +689,7 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
       price:         110,
     },
   }];
+  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
 
   // amountCents = 11000 → $110.00 extension
   const event = piSucceededEvent({
@@ -754,6 +757,7 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
       price:         110,
     },
   }];
+  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
   bookedDatesStore = {
     camry: [{ from: "2026-12-10", to: "2026-12-12" }],
   };
@@ -817,6 +821,7 @@ test("webhook rental_extension: idempotency guard skips re-application when retu
     amountPaid: 220,
     extensionCount: 1,
   }];
+  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
 
   const event = piSucceededEvent({
     payment_type: "rental_extension",
@@ -861,6 +866,7 @@ test("webhook rental_extension: alreadyApplied path recovers missing revenue rec
     amountPaid: 330,
     extensionCount: 1,
   }];
+  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
 
   const event = piSucceededEvent({
     payment_type:    "rental_extension",
@@ -908,6 +914,7 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
     amountPaid: 300,
     extensionPendingPayment: { newReturnDate: "2026-12-22", newReturnTime: "11:30 AM", price: 300 },
   }];
+  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
 
   const event = piSucceededEvent({
     payment_type: "rental_extension",
@@ -934,6 +941,7 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
     status: "booked_paid",
     amountPaid: 300,
   }];
+  supabaseBookingsStore["bk-ext-invalid-status"] = { id: "sb_bk-ext-invalid-status", booking_ref: "bk-ext-invalid-status" };
   const invalidEvent = piSucceededEvent({
     payment_type: "rental_extension",
     vehicle_id: "slingshot",

@@ -586,7 +586,9 @@ export default async function handler(req, res) {
           booking_id: origBookingId || "<missing>",
         });
 
-        if (origBookingId && !dryRun) {
+        if (dryRun) {
+          // Fall through to generic auto-create so the preview report shows the PI.
+        } else if (origBookingId) {
           const resolvedBookingId = await resolveBookingId(sb, origBookingId);
           if (resolvedBookingId) {
             const resolvedBooking =
@@ -620,9 +622,22 @@ export default async function handler(req, res) {
             }
             continue; // handled — skip the generic raw-insert path
           }
+          // Booking ref not confirmed in Supabase — never insert with unverified ref.
+          console.error("[BOOKING_RESOLVE_FAILED]", {
+            bookingRef: origBookingId,
+            paymentIntentId: payment.payment_intent_id,
+          });
+          results.unmatched++;
+          continue; // skip generic raw-insert for this extension PI
+        } else {
+          // origBookingId missing — log and skip
+          console.error("[BOOKING_RESOLVE_FAILED]", {
+            bookingRef: "<missing>",
+            paymentIntentId: payment.payment_intent_id,
+          });
+          results.unmatched++;
+          continue;
         }
-        // No resolvable booking_ref or dry-run: fall through to generic auto-create
-        // (the raw-insert path will mark the record as orphan if needed).
       }
 
       if (!matchedRecord) {
