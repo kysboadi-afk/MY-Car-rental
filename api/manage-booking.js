@@ -293,23 +293,36 @@ export default async function handler(req, res) {
 
     const lookupEmail = identifier.includes("@") ? identifier.toLowerCase() : "";
     const lookupPhone = normalizeLookupPhone(identifier);
-    let verifyQuery = sb
+    const baseVerifyQuery = () => sb
       .from("bookings")
       .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
       .eq("status", "reserved")
       .eq("payment_status", "partial")
       .order("created_at", { ascending: false })
       .limit(100);
-    if (lookupEmail) {
-      verifyQuery = verifyQuery.ilike("customer_email", lookupEmail);
-    } else if (lookupPhone) {
-      const phoneTail = lookupPhone.slice(-10);
-      verifyQuery = verifyQuery.or(
-        `customer_phone.ilike.%${lookupPhone}%,customer_phone.ilike.%${phoneTail}%`
-      );
-    }
 
-    const { data: candidates, error: lookupErr } = await verifyQuery;
+    let candidates = [];
+    let lookupErr = null;
+    if (lookupEmail) {
+      const result = await baseVerifyQuery().ilike("customer_email", lookupEmail);
+      candidates = result.data || [];
+      lookupErr = result.error || null;
+    } else if (lookupPhone) {
+      const primaryPattern = `%${lookupPhone}%`;
+      const primaryResult = await baseVerifyQuery().ilike("customer_phone", primaryPattern);
+      candidates = primaryResult.data || [];
+      lookupErr = primaryResult.error || null;
+      if (!lookupErr && candidates.length === 0) {
+        const phoneTail = lookupPhone.slice(-10);
+        if (phoneTail && phoneTail !== lookupPhone) {
+          const fallbackResult = await baseVerifyQuery().ilike("customer_phone", `%${phoneTail}%`);
+          candidates = fallbackResult.data || [];
+          lookupErr = fallbackResult.error || null;
+        }
+      }
+    } else {
+      candidates = [];
+    }
     if (lookupErr) {
       console.error("manage-booking verify lookup error:", lookupErr.message);
       return res.status(500).json({ error: "Could not verify booking right now." });
