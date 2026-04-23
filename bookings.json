@@ -408,7 +408,7 @@
       "pickupDate": "2026-04-23",
       "pickupTime": "08:00",
       "returnDate": "2026-04-30",
-      "returnTime": "08:00",
+      "returnTime": "6:00PM",
       "location": "",
       "status": "reserved_unpaid",
       "amountPaid": 50,
@@ -422,7 +422,8 @@
         "unpaid_final": "2026-04-23T14:30:08.800Z"
       },
       "createdAt": "2026-04-23T11:29:16.423Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "updatedAt": "2026-04-23T18:58:04.391Z"
     },
     {
       "bookingId": "76bd67fc1e4b7ad9",
