@@ -93,24 +93,24 @@ function isWithinCutoff(pickupDate, pickupTime) {
 }
 
 /**
- * Lookup a booking row from Supabase by booking_id (canonical identifier).
+ * Lookup a booking row from Supabase by booking_ref (canonical bk-... identifier).
  * Returns null when Supabase is unavailable or the row is not found.
  */
-async function fetchBookingFromSupabase(bookingId) {
+async function fetchBookingFromSupabase(bookingRef) {
   const sb = getSupabaseAdmin();
   if (!sb) return null;
   const { data, error } = await sb
     .from("bookings")
     .select(
-      "id, booking_id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
+      "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
       "status, payment_status, total_price, deposit_paid, remaining_balance, " +
       "change_count, manage_token, balance_payment_link, pending_change, " +
       "customer_name, customer_email, customer_phone, payment_intent_id, created_at"
     )
-    .eq("booking_id", bookingId)
+    .eq("booking_ref", bookingRef)
     .maybeSingle();
   if (error) {
-    console.error("[manage-booking] BOOKING_LOOKUP_ERROR: queried booking_id =", bookingId, "| error.code =", error.code, "| error.message =", error.message);
+    console.error("[manage-booking] BOOKING_LOOKUP_ERROR: queried booking_ref =", bookingRef, "| error.code =", error.code, "| error.message =", error.message);
     return null;
   }
   return data || null;
@@ -302,7 +302,7 @@ export default async function handler(req, res) {
     const lookupBookingRef = normalizeLookupBookingRef(identifier);
     const baseVerifyQuery = () => sb
       .from("bookings")
-      .select("booking_id, booking_ref, vehicle_id, customer_email, customer_phone, created_at")
+      .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
       .in("status", MANAGE_ELIGIBLE_STATUSES)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -314,9 +314,9 @@ export default async function handler(req, res) {
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else if (lookupBookingRef) {
-      // Check booking ID BEFORE phone: booking IDs like "bk-3bcf479ac6ec" contain
+      // Check booking ref BEFORE phone: booking refs like "bk-3bcf479ac6ec" contain
       // digits which would make lookupPhone truthy, causing the wrong branch to run.
-      const result = await baseVerifyQuery().eq("booking_id", lookupBookingRef);
+      const result = await baseVerifyQuery().eq("booking_ref", lookupBookingRef);
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else if (lookupPhone) {
@@ -334,12 +334,12 @@ export default async function handler(req, res) {
     }
 
     const matches = (candidates || []).filter((row) => {
-      const rowEmail    = String(row.customer_email || "").trim().toLowerCase();
-      const rowPhone    = normalizeLookupPhone(row.customer_phone || "");
-      const rowBookingId = String(row.booking_id || "").trim().toLowerCase();
+      const rowEmail      = String(row.customer_email || "").trim().toLowerCase();
+      const rowPhone      = normalizeLookupPhone(row.customer_phone || "");
+      const rowBookingRef = String(row.booking_ref || "").trim().toLowerCase();
       if (lookupEmail)      return rowEmail === lookupEmail;
       if (lookupPhone)      return !!rowPhone && rowPhone === lookupPhone;
-      if (lookupBookingRef) return !!rowBookingId && rowBookingId === lookupBookingRef;
+      if (lookupBookingRef) return !!rowBookingRef && rowBookingRef === lookupBookingRef;
       return false;
     });
 
@@ -350,13 +350,13 @@ export default async function handler(req, res) {
     // Use the most recent eligible booking (results are already ordered by created_at desc).
     const selected = matches[0];
 
-    const manageToken = createManageToken(selected.booking_id);
-    console.log("[manage-booking] VERIFY: booking_id =", selected.booking_id, "| booking_ref =", selected.booking_ref, "| token =", manageToken);
+    const manageToken = createManageToken(selected.booking_ref);
+    console.log("[manage-booking] VERIFY: booking_ref =", selected.booking_ref, "| token =", manageToken);
     try {
       await sb
         .from("bookings")
         .update({ manage_token: manageToken, updated_at: new Date().toISOString() })
-        .eq("booking_id", selected.booking_id);
+        .eq("booking_ref", selected.booking_ref);
     } catch (tokenErr) {
       console.warn("manage-booking verify: failed to persist manage token (non-fatal):", tokenErr.message);
     }
@@ -364,7 +364,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       verified: true,
       token: manageToken,
-      bookingId: selected.booking_id,
+      bookingId: selected.booking_ref,
       vehicleId: uiVehicleId(selected.vehicle_id || ""),
     });
   }
@@ -378,28 +378,7 @@ export default async function handler(req, res) {
 
   // ── action: get ─────────────────────────────────────────────────────────────
   if (action === "get") {
-    // Decode the token payload (without re-verifying) to expose raw field names
-    // and confirm what value was encoded by VERIFY.
-    let rawPayload = null;
-    try {
-      const dotIdx = (token || "").lastIndexOf(".");
-      if (dotIdx > 0) {
-        rawPayload = JSON.parse(Buffer.from(token.slice(0, dotIdx), "base64url").toString("utf-8"));
-      }
-    } catch { /* ignore decode errors */ }
-
-    const rawBookingRef = rawPayload?.bookingRef;
-    const rawBookingId  = rawPayload?.bookingId;
-    const idMatch = bookingId === (rawBookingRef ?? rawBookingId ?? null);
-
-    console.log(
-      "[manage-booking] GET: resolved_booking_id =", bookingId,
-      "| token_payload_keys =", rawPayload ? Object.keys(rawPayload) : null,
-      "| raw_bookingRef =", rawBookingRef,
-      "| raw_bookingId =",  rawBookingId,
-      "| id_match =", idMatch
-    );
-
+    console.log("[manage-booking] GET: resolved_booking_ref =", bookingId);
     const row = await fetchBookingFromSupabase(bookingId);
     console.log("[manage-booking] GET: fetchBookingFromSupabase(", bookingId, ") =", row ? "FOUND" : "NULL");
     if (!row) return res.status(404).json({ error: "Booking not found" });
@@ -616,7 +595,7 @@ export default async function handler(req, res) {
         balance_payment_link: newBalanceLink,
         updated_at:          new Date().toISOString(),
       })
-      .eq("booking_id", bookingId);
+      .eq("booking_ref", bookingId);
 
     if (sbErr) {
       console.error("manage-booking apply_change Supabase update error:", sbErr.message);
@@ -759,7 +738,7 @@ export default async function handler(req, res) {
         pending_change: pendingChange,
         updated_at: new Date().toISOString(),
       })
-      .eq("booking_id", bookingId);
+      .eq("booking_ref", bookingId);
 
     if (sbErr) {
       console.error("manage-booking initiate_paid_change Supabase update error:", sbErr.message);
