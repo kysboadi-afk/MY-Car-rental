@@ -292,9 +292,7 @@ export default async function handler(req, res) {
 
   if (action === "verify") {
     const identifier = String(body.identifier || "").trim();
-    const selectedVehicleUiId = String(body.vehicleId || "").trim();
-    if (!identifier) return res.status(400).json({ error: "Phone or email is required." });
-    if (!selectedVehicleUiId) return res.status(400).json({ error: "Vehicle selection is required." });
+    if (!identifier) return res.status(400).json({ error: "Phone, email, or booking ID is required." });
 
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable." });
@@ -351,25 +349,11 @@ export default async function handler(req, res) {
     });
 
     if (!matches.length) {
-      return res.status(404).json({ error: "No eligible deposit booking was found with that email/phone/booking ID." });
+      return res.status(404).json({ error: "No eligible booking was found with that phone, email, or booking ID." });
     }
 
-    const selectedVehicleDbId = normalizeVehicleId(selectedVehicleUiId);
-    const selected = matches.find((row) => {
-      const rowNorm = normalizeVehicleId(row.vehicle_id || "");
-      const rowUi   = uiVehicleId(rowNorm);
-      return rowUi === selectedVehicleUiId || rowNorm === selectedVehicleDbId;
-    });
-    if (!selected) {
-      const expectedVehicles = [...new Set(
-        matches.map((row) => uiVehicleId(normalizeVehicleId(row.vehicle_id || ""))).filter(Boolean)
-      )];
-      return res.status(409).json({
-        error: expectedVehicles.length
-          ? `Vehicle mismatch. Please select: ${expectedVehicles.join(", ")}`
-          : "Vehicle mismatch. Please select the correct booked vehicle.",
-      });
-    }
+    // Use the most recent eligible booking (results are already ordered by created_at desc).
+    const selected = matches[0];
 
     const manageToken = createManageToken(selected.booking_ref);
     try {

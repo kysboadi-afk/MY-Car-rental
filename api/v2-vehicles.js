@@ -104,9 +104,12 @@ export default async function handler(req, res) {
           const status = row.data?.status;
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
+          const vid = (row.vehicle_id || "").toLowerCase();
+          const vname = (row.data?.vehicle_name || row.data?.name || "").toLowerCase();
+          const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
           if (scope === "cars" || scope === "car") {
-            if (type === "slingshot") continue;
-          } else if (scope === "slingshot" && type !== "slingshot") {
+            if (isSlingshot) continue;
+          } else if (scope === "slingshot" && !isSlingshot) {
             continue;
           }
 
@@ -140,9 +143,12 @@ export default async function handler(req, res) {
         const status = v.status;
         if (status && status !== "active") continue;
         const type = v.type || "";
+        const vid = (v.vehicle_id || "").toLowerCase();
+        const vname = (v.vehicle_name || v.name || "").toLowerCase();
+        const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
         if (scope === "cars" || scope === "car") {
-          if (type === "slingshot") continue;
-        } else if (scope === "slingshot" && type !== "slingshot") {
+          if (isSlingshot) continue;
+        } else if (scope === "slingshot" && !isSlingshot) {
           continue;
         }
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
