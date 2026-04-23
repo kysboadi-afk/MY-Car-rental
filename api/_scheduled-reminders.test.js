@@ -398,7 +398,7 @@ test("processActiveRentals: sends ended at return_datetime", async () => {
   assert.equal(sentMarks.some((m) => m.key === "late_at_return"), true, "ended should be sent at 08:00 for 08:00 return");
 });
 
-test("processActiveRentals: does not send grace SMS at return_datetime +1h", async () => {
+test("processActiveRentals: sends grace at return_datetime +1h", async () => {
   reset();
   const now = new Date("2026-06-15T09:00:00-07:00");
   const allBookings = {
@@ -408,7 +408,7 @@ test("processActiveRentals: does not send grace SMS at return_datetime +1h", asy
 
   await processActiveRentals(allBookings, now, sentMarks);
 
-  assert.equal(sentMarks.some((m) => m.key === "late_grace_expired"), false, "grace SMS should no longer be sent");
+  assert.equal(sentMarks.some((m) => m.key === "late_grace_expired"), true, "grace should be sent at 09:00 for 08:00 return");
 });
 
 test("processActiveRentals: sends late fee at return_datetime +2h", async () => {

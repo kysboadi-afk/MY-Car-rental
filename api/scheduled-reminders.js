@@ -9,11 +9,12 @@
 // Reminder types fired per booking status:
 //
 //  reserved_unpaid  → UNPAID_REMINDER_24H, UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
-//  booked_paid      → (no pre-pickup SMS)
+//  booked_paid      → PICKUP_REMINDER_24H
 //                     + auto-activated → active_rental once pickup time arrives
-//  active_rental    → LATE_AT_RETURN_TIME, LATE_FEE_APPLIED
+//  active_rental    → ACTIVE_RENTAL_MID,
+//                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
 //                     + auto-completed → completed_rental after AUTO_COMPLETE_HOURS
-//  completed_rental → (contact tag update only — no customer SMS)
+//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_7
 //
 // Required environment variables:
 //   TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY
@@ -31,8 +32,13 @@ import {
   UNPAID_REMINDER_24H,
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
+  PICKUP_REMINDER_24H,
+  ACTIVE_RENTAL_MID,
   LATE_AT_RETURN_TIME,
+  LATE_GRACE_EXPIRED,
   LATE_FEE_APPLIED,
+  POST_RENTAL_THANK_YOU,
+  RETENTION_DAY_7,
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
@@ -79,6 +85,7 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
+const GRACE_OFFSET_MS    = 60 * 60 * 1000;
 const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 function ghHeaders() {
@@ -525,6 +532,12 @@ async function processPaidBookings(allBookings, now, sentMarks) {
         booking_ref: id, vehicleId, status: "booked_paid",
         pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
       });
+
+      // 24-hour reminder (window: 24h–23h)
+      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
+        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
+      }
     }
   }
 }
@@ -555,11 +568,35 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
+      const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
+      const graceAt = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
       const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
       const nowIso = now.toISOString();
       const returnIso = returnDt.toISOString();
+
+      // EXTEND SMS: 6 hours before return_time (3 hours for rentals under 24 h).
+      // Conditions: active_rental, actual_return_time not set.
+      // Guard: do not fire on the pickup calendar day when return is a different day.
+      if (!booking.actualReturnTime) {
+        const isSameDayRental = booking.pickupDate === booking.returnDate;
+        const isPickupDay     = now.toDateString() === pickupDt.toDateString();
+        const extendLeadMin   = totalMinutes < 24 * 60 ? 3 * 60 : 6 * 60;
+        const inExtendWindow  = minutesUntilReturn <= extendLeadMin && minutesUntilReturn > extendLeadMin - 15;
+
+        if (
+          inExtendWindow &&
+          !(isPickupDay && !isSameDayRental) &&
+          !alreadySent(booking, "active_mid")
+        ) {
+          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
+          if (sent) {
+            console.log(`[EXTEND_SMS_SENT] bookingId=${id} vehicle=${vehicleId} returnDate=${booking.returnDate} returnTime=${booking.returnTime || ""} returnDatetime=${returnDt.toISOString()}`);
+            sentMarks.push({ vehicleId, id, key: "active_mid" });
+          }
+        }
+      }
 
       // Ended at return_datetime (0–15 min window for cron cadence)
       if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_at_return")) {
@@ -568,7 +605,14 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         if (sent) sentMarks.push({ vehicleId, id, key: "late_at_return" });
       }
 
-      // Late fee at return_datetime + 2 hours
+      // Grace at return_datetime + 1 hour (15 min window for cron cadence)
+      if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) && !alreadySent(booking, "late_grace_expired")) {
+        logSmsTrigger(id, returnIso, nowIso, "grace");
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
+        if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
+      }
+
+      // Late fee at return_datetime + 2 hours, once per booking, no active extension
       if (
         now >= lateFeeAt &&
         !alreadySent(booking, "late_fee_applied") &&
@@ -599,28 +643,52 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 }
 
 /**
- * Process completed_rental bookings — promote contact tag (no customer SMS).
+ * Process completed_rental bookings — post-rental and retention SMS.
  */
 async function processCompleted(allBookings, now, sentMarks) {
+  const retentionSchedule = [
+    { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
+  ];
+
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "completed_rental") continue;
       if (!booking.phone || !booking.completedAt) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
+      const v = vars(booking);
       const completedAt = new Date(booking.completedAt);
       const hoursSinceComplete = (now - completedAt) / 3600000;
 
-      // Promote to past_customer in TextMagic contact database (within 1 hour of completion)
+      // Thank-you immediately on completion (within 1 hour)
       if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you")) {
-        try {
-          await upsertContact(normalizePhone(booking.phone), booking.name || "", {
-            addTags:    ["past_customer"],
-            removeTags: ["booked"],
-          });
+        const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v));
+        if (sent) {
           sentMarks.push({ vehicleId, id, key: "post_thank_you" });
-        } catch (contactErr) {
-          console.error("scheduled-reminders: TextMagic contact update failed:", contactErr);
+          // Promote to past_customer in TextMagic contact database
+          if (booking.phone) {
+            try {
+              await upsertContact(normalizePhone(booking.phone), booking.name || "", {
+                addTags:    ["past_customer"],
+                removeTags: ["booked"],
+              });
+            } catch (contactErr) {
+              console.error("scheduled-reminders: TextMagic contact update failed:", contactErr);
+            }
+          }
+        }
+      }
+
+      // Retention sequence
+      for (const item of retentionSchedule) {
+        const targetHours = item.days * 24;
+        if (
+          hoursSinceComplete >= targetHours &&
+          hoursSinceComplete < targetHours + 24 &&
+          !alreadySent(booking, item.key)
+        ) {
+          const sent = await safeSend(booking.phone, render(item.template, v));
+          if (sent) sentMarks.push({ vehicleId, id, key: item.key });
         }
       }
     }
