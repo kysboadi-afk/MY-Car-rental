@@ -311,6 +311,29 @@
       "source": "admin_ai",
       "activatedAt": "2026-04-23T09:55:05.452Z",
       "updatedAt": "2026-04-23T09:55:05.452Z"
+    },
+    {
+      "bookingId": "a92f60e1928858af",
+      "name": "Anthony Johnson",
+      "phone": "",
+      "email": "",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-10",
+      "pickupTime": "",
+      "returnDate": "2026-04-18",
+      "returnTime": "",
+      "location": "",
+      "status": "booked_paid",
+      "amountPaid": 50,
+      "totalPrice": 50,
+      "paymentIntentId": "manual_ce3e279ed100",
+      "paymentLink": "",
+      "paymentMethod": "cash",
+      "notes": "Reservation deposit paid, Stripe fee deducted. Net received: $48.25. No emails to be sent.",
+      "smsSentAt": {},
+      "createdAt": "2026-04-23T09:57:52.571Z",
+      "source": "admin_ai"
     }
   ],
   "camry2013": [
