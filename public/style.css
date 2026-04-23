@@ -679,17 +679,27 @@ body {
 }
 
 /* BOOKED / DISABLED BUTTON STATE */
-.car-info button.btn-booked,
 .car-info button:disabled {
   background: #555 !important;
   color: #999 !important;
   cursor: not-allowed !important;
   opacity: 0.65;
 }
-.car-info button.btn-booked:hover,
 .car-info button:disabled:hover {
   background: #555 !important;
   color: #999 !important;
+}
+
+/* BOOKED ACTION BUTTON — Complete Booking / Extend Rental */
+.car-info button.btn-booked {
+  background: #1a7a3c !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+}
+.car-info button.btn-booked:hover {
+  background: #156330 !important;
+  color: #fff !important;
 }
 
 /* WAITLIST button — overrides the disabled/booked grey style so it looks clickable */
