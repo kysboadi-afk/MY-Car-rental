@@ -349,7 +349,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "amountPaid": 617.4,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_a32938ff3d1d",
@@ -358,7 +358,9 @@
       "notes": "Balance at pickup $567.40, reservation deposit not refundable. Payment type: reservation_deposit. Stripe Customer ID: cus_UO2eMoHJZAbXQd. Protection Plan: Standard. No emails to be sent.",
       "smsSentAt": {},
       "createdAt": "2026-04-23T09:59:41.239Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "activatedAt": "2026-04-23T10:00:06.285Z",
+      "updatedAt": "2026-04-23T10:00:06.285Z"
     }
   ],
   "camry2013": [
