@@ -19,8 +19,8 @@
 (function () {
   "use strict";
 
-  const API_BASE = "https://sly-rides.vercel.app/api/manage-booking";
-  const VEHICLES_API = "https://sly-rides.vercel.app/api/v2-vehicles?scope=cars";
+  const API_BASE = "/api/manage-booking";
+  const VEHICLES_API = "/api/v2-vehicles?scope=cars";
   const PAYMENT_SUCCESS_RELOAD_DELAY_MS = 2200;
 
   // ── Parse token from URL ────────────────────────────────────────────────────
