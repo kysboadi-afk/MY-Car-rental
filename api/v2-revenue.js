@@ -362,13 +362,12 @@ export default async function handler(req, res) {
 
       if (sb) {
         try {
-          // Query revenue_reporting_base — the canonical view that already applies
-          // payment_status='paid', sync_excluded=false, and is_orphan=false.
           const { data: recs, error: recsErr } = await sb
-            .from("revenue_reporting_base")
-            .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, deposit_amount, is_cancelled, is_no_show");
+            .from("revenue_records_effective")
+            .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, deposit_amount, is_cancelled, is_no_show")
+            .eq("payment_status", "paid");
           if (!recsErr) return res.status(200).json(aggregateRecords(recs));
-          if (!isSchemaError(recsErr)) console.error("v2-revenue summary error (revenue_reporting_base):", recsErr.message);
+          if (!isSchemaError(recsErr)) console.error("v2-revenue summary error (revenue_records_effective):", recsErr.message);
         } catch (sumErr) {
           console.error("v2-revenue summary error:", sumErr);
         }
