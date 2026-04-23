@@ -184,6 +184,9 @@ mock.module("./_sms-templates.js", {
   namedExports: {
     render:                   (t) => t,
     DEFAULT_LOCATION:         "Los Angeles, CA",
+    BOOKING_CONFIRMED:          "booking_confirmed",
+    SLINGSHOT_DEPOSIT_RECEIVED: "slingshot_deposit_received",
+    RESERVATION_DEPOSIT_CONFIRMED: "reservation_deposit_confirmed",
     EXTEND_CONFIRMED_SLINGSHOT: "ext_slingshot",
     EXTEND_CONFIRMED_ECONOMY:   "ext_economy",
   },

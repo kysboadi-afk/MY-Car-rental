@@ -20,10 +20,18 @@
 //   TEXTMAGIC_WEBHOOK_SECRET (optional) — if set, validates X-TM-Signature header
 
 import Stripe from "stripe";
+import crypto from "crypto";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, EXTEND_UNAVAILABLE, EXTEND_LIMITED, EXTEND_OPTIONS_SLINGSHOT, EXTEND_OPTIONS_ECONOMY, EXTEND_SELECTED, EXTEND_PAYMENT_PENDING } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { CARS } from "./_pricing.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+
+// Disable Vercel's built-in body parser so we can read the raw request body
+// for TEXTMAGIC_WEBHOOK_SECRET HMAC-SHA256 signature verification.
+export const config = {
+  api: { bodyParser: false },
+};
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -237,6 +245,18 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
     data[vehicleId][idx].extendPending = true;
     data[vehicleId][idx].extendAvailMinutes = availMinutes;
     await saveBookings(data, sha, `Mark extendPending for booking ${bookingId}`);
+    // Dual-write to Supabase so extend_pending is queryable without GitHub JSON.
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb && bookingId) {
+        await sb
+          .from("bookings")
+          .update({ extend_pending: true, updated_at: new Date().toISOString() })
+          .eq("booking_ref", bookingId);
+      }
+    } catch (sbErr) {
+      console.error("receive-textmagic-sms: Supabase extendPending write failed (non-fatal):", sbErr.message);
+    }
   }
 
   // Send option SMS
@@ -313,6 +333,22 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
     };
     if (!data[vehicleId][idx].extensionCount) data[vehicleId][idx].extensionCount = 0;
     await saveBookings(data, sha, `Save extension selection for booking ${bookingId}`);
+    // Dual-write to Supabase so extension_pending_payment is durable.
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb && bookingId) {
+        await sb
+          .from("bookings")
+          .update({
+            extend_pending:            false,
+            extension_pending_payment: data[vehicleId][idx].extensionPendingPayment,
+            updated_at:                new Date().toISOString(),
+          })
+          .eq("booking_ref", bookingId);
+      }
+    } catch (sbErr) {
+      console.error("receive-textmagic-sms: Supabase extensionPendingPayment write failed (non-fatal):", sbErr.message);
+    }
   }
 
   await sendSms(
@@ -336,8 +372,47 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
+  // Buffer raw body (required for signature verification and manual JSON parsing).
+  let rawBody = "";
+  try {
+    await new Promise((resolve, reject) => {
+      req.on("data", (chunk) => { rawBody += chunk; });
+      req.on("end", resolve);
+      req.on("error", reject);
+    });
+  } catch (bufErr) {
+    console.error("receive-textmagic-sms: failed to read request body:", bufErr);
+    return res.status(400).json({ error: "Failed to read request body" });
+  }
+
+  // Validate X-TM-Signature header when TEXTMAGIC_WEBHOOK_SECRET is configured.
+  const tmSecret = process.env.TEXTMAGIC_WEBHOOK_SECRET;
+  const tmSig = req.headers["x-tm-signature"];
+  if (tmSecret) {
+    if (!tmSig) {
+      console.warn("receive-textmagic-sms: missing X-TM-Signature header — rejecting request");
+      return res.status(403).json({ error: "Missing signature" });
+    }
+    const expectedSig = crypto
+      .createHmac("sha256", tmSecret)
+      .update(rawBody)
+      .digest("hex");
+    if (expectedSig !== tmSig) {
+      console.warn("receive-textmagic-sms: X-TM-Signature mismatch — rejecting request");
+      return res.status(403).json({ error: "Invalid signature" });
+    }
+  }
+
+  // Parse the JSON body (Vercel body parser is disabled above).
+  let body;
+  try {
+    body = rawBody ? JSON.parse(rawBody) : {};
+  } catch (parseErr) {
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
+
   // TextMagic sends: { from, to, text, id, ... }
-  const { from: fromPhone, text: messageText } = req.body || {};
+  const { from: fromPhone, text: messageText } = body;
 
   if (!fromPhone || !messageText) {
     return res.status(400).json({ error: "Missing from or text" });
@@ -357,10 +432,6 @@ export default async function handler(req, res) {
 
   let allBookings, data, sha;
   try {
-    // TODO (Phase 3 — pending Supabase schema): migrate primary booking read to
-    // Supabase once extendPending and extensionPendingPayment fields are added to
-    // the bookings table. These fields are required by handleExtend and
-    // handleExtendSelection and are currently stored only in bookings.json.
     const loaded = await loadBookings();
     allBookings = loaded.data;
     data = loaded.data;

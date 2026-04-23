@@ -21,7 +21,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
@@ -1591,6 +1591,19 @@ export default async function handler(req, res) {
             console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
           }
 
+          // Clear extension-pending fields in Supabase now that payment succeeded.
+          try {
+            const sbExt = getSupabaseAdmin();
+            if (sbExt && bookingRef) {
+              await sbExt
+                .from("bookings")
+                .update({ extend_pending: false, extension_pending_payment: null, updated_at: new Date().toISOString() })
+                .eq("booking_ref", bookingRef);
+            }
+          } catch (extClrErr) {
+            console.error("stripe-webhook: Supabase extension field clear error (non-fatal):", extClrErr.message);
+          }
+
           // Create a new extension revenue record (type='extension').
           try {
             const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
@@ -1898,10 +1911,14 @@ export default async function handler(req, res) {
       }
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-          const smsVehicle = sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle");
           await sendSms(
             normalizePhone(bookingForSync.phone),
-            `Deposit received for ${smsVehicle}. Remaining balance: $${remainingBalance.toFixed(2)}. Visit slytrans.com and tap Complete Booking to finish payment.`
+            render(RESERVATION_DEPOSIT_CONFIRMED, {
+              customer_name:     sanitizeSmsValue(bookingForSync.name || ""),
+              vehicle:           sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle"),
+              remaining_balance: remainingBalance.toFixed(2),
+              payment_link:      balanceLink,
+            })
           );
         }
       } catch (smsErr) {
@@ -2254,6 +2271,7 @@ export default async function handler(req, res) {
           phone:       bookingPatch?.phone       || (meta.renter_phone ? normalizePhone(meta.renter_phone) : ""),
           vehicleName: bookingPatch?.vehicleName || meta.vehicle_name || vehicle_id              || "",
           pickupDate:  bookingPatch?.pickupDate  || meta.pickup_date                             || "",
+          pickupTime:  bookingPatch?.pickupTime  || meta.pickup_time                             || "",
           returnDate:  bookingPatch?.returnDate  || meta.return_date                             || "",
           totalPrice:  bookingPatch?.totalPrice  || normalizeCurrency(meta.full_rental_amount || paidAmount),
         };
@@ -2294,10 +2312,15 @@ export default async function handler(req, res) {
         }
         try {
           if (balancePaidContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-            const smsVehicle = sanitizeSmsValue(balancePaidContact.vehicleName || "your vehicle");
             await sendSms(
               normalizePhone(balancePaidContact.phone),
-              `✅ Payment complete! Your ${smsVehicle} rental is fully booked. See you at pickup. – Sly Rides`
+              render(BOOKING_CONFIRMED, {
+                customer_name: sanitizeSmsValue(balancePaidContact.name || ""),
+                vehicle:       sanitizeSmsValue(balancePaidContact.vehicleName || "your vehicle"),
+                pickup_date:   balancePaidContact.pickupDate || "",
+                pickup_time:   balancePaidContact.pickupTime || "",
+                location:      DEFAULT_LOCATION,
+              })
             );
           }
         } catch (smsErr) {
@@ -2440,8 +2463,14 @@ export default async function handler(req, res) {
       // Send SMS to customer with completion link
       if (renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
         try {
-          const smsText = `Your Slingshot booking is reserved! Complete your payment here: ${completionLink}`;
-          await sendSms(normalizePhone(renter_phone), smsText);
+          await sendSms(
+            normalizePhone(renter_phone),
+            render(SLINGSHOT_DEPOSIT_RECEIVED, {
+              customer_name: sanitizeSmsValue(renter_name || ""),
+              vehicle:       sanitizeSmsValue(meta.vehicle_name || vehicle_id || "Slingshot"),
+              payment_link:  completionLink,
+            })
+          );
           console.log(`stripe-webhook: slingshot deposit SMS sent to ${renter_phone}`);
         } catch (smsErr) {
           console.error("stripe-webhook: slingshot deposit SMS error:", smsErr.message);
@@ -2510,7 +2539,16 @@ export default async function handler(req, res) {
             if (phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
               try {
                 const vehicleName = meta.vehicle_name || booking.vehicleName || "Slingshot";
-                await sendSms(normalizePhone(phone), `✅ Payment complete! Your ${vehicleName} rental is fully booked. See you at pickup. – Sly Rides`);
+                await sendSms(
+                  normalizePhone(phone),
+                  render(BOOKING_CONFIRMED, {
+                    customer_name: sanitizeSmsValue(renter_name || booking.name || ""),
+                    vehicle:       sanitizeSmsValue(vehicleName),
+                    pickup_date:   meta.pickup_date  || booking.pickupDate  || "",
+                    pickup_time:   meta.pickup_time  || booking.pickupTime  || "",
+                    location:      DEFAULT_LOCATION,
+                  })
+                );
               } catch (smsErr) {
                 console.error("stripe-webhook: slingshot balance SMS error:", smsErr.message);
               }
