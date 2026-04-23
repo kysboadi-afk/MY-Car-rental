@@ -23,7 +23,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
  * vehicle_id was provided.
  *
  * Examples:
- *   ("camry",     "Camry 2012")    → "camry"
+ *   ("camry", "Camry 2012") → "camry"
  *   ("camry2013", "Camry 2013 SE") → "camry2013"
  *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
  *
