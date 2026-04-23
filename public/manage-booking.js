@@ -140,21 +140,41 @@
   }
 
   // ── Load booking ────────────────────────────────────────────────────────────
+  // Step 2 of the two-step flow: send { action:"get", token } to retrieve the
+  // booking details.  Must only be called after activeToken has been set by
+  // verifyBooking() (Step 1) or pre-populated from the URL ?t= param.
   async function loadBooking() {
     if (!activeToken) {
-      showError("Please verify your booking using your phone/email and booked vehicle.");
+      // No token — drop back to the verify form so the customer can identify
+      // themselves and obtain a fresh token via the verify action.
+      $loading.style.display  = "none";
+      $verifyState.style.display = "block";
       return;
     }
+
+    const getPayload = { action: "get", token: activeToken };
+    console.log("[manage-booking] Step 2 — get payload:", getPayload);
 
     try {
       const resp = await fetch(API_BASE, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ action: "get", token: activeToken }),
+        body:    JSON.stringify(getPayload),
       });
       const data = await resp.json();
+      console.log("[manage-booking] Step 2 — get response (status " + resp.status + "):", data);
 
       if (!resp.ok || data.error) {
+        console.error("[manage-booking] get failed — status:", resp.status, "body:", data);
+        // A 401 means the token is missing or expired.  Clear it and return the
+        // customer to the verify form so they can obtain a fresh one.
+        if (resp.status === 401) {
+          activeToken = "";
+          $loading.style.display     = "none";
+          $verifyState.style.display = "block";
+          setVerifyMsg("Your session has expired. Please verify your booking again.", "error");
+          return;
+        }
         showError(data.error || "Could not load booking.");
         return;
       }
@@ -228,6 +248,7 @@
     }
   }
 
+  // ── Step 1: Verify identity and obtain a manage token ──────────────────────
   async function verifyBooking() {
     const identifier = ($verifyIdentifier.value || "").trim();
     if (!identifier) {
@@ -238,16 +259,18 @@
     $btnVerify.disabled = true;
     $btnVerify.textContent = "Verifying…";
     setVerifyMsg("", null);
+
+    const verifyPayload = { action: "verify", identifier };
+    console.log("[manage-booking] Step 1 — verify payload:", verifyPayload);
+
     try {
       const resp = await fetch(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "verify",
-          identifier,
-        }),
+        body: JSON.stringify(verifyPayload),
       });
       const data = await resp.json();
+      console.log("[manage-booking] Step 1 — verify response (status " + resp.status + "):", data);
       if (!resp.ok) {
         setVerifyMsg(data.error || "Verification failed. Please check your information and try again.", "error");
         return;
@@ -256,14 +279,16 @@
         setVerifyMsg("Verification failed. Please try again.", "error");
         return;
       }
+      // Store the token so Step 2 (get) can use it.
       activeToken = data.token;
+      console.log("[manage-booking] token stored, proceeding to Step 2 (get)");
       setVerifyMsg("Verified. Loading your booking…", "success");
       $verifyState.style.display = "none";
       $loading.style.display = "block";
       await loadBooking();
     } catch (err) {
       setVerifyMsg("Network error. Please try again.", "error");
-      console.error("manage-booking verify error:", err);
+      console.error("[manage-booking] Step 1 — verify network error:", err);
     } finally {
       $btnVerify.disabled = false;
       $btnVerify.textContent = "Verify Booking";
