@@ -790,7 +790,8 @@
       "activatedAt": "2026-04-21T00:00:00.347Z",
       "updatedAt": "2026-04-23T18:00:07.424Z",
       "smsSentAt": {
-        "active_mid": "2026-04-21T13:45:39.279Z"
+        "active_mid": "2026-04-21T13:45:39.279Z",
+        "post_thank_you": "2026-04-23T18:05:09.653Z"
       },
       "extensionPendingPayment": null,
       "extensionCount": 1,
