@@ -324,7 +324,7 @@
       "returnDate": "2026-04-18",
       "returnTime": "",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "amountPaid": 50,
       "totalPrice": 50,
       "paymentIntentId": "manual_ce3e279ed100",
@@ -333,7 +333,9 @@
       "notes": "Reservation deposit paid, Stripe fee deducted. Net received: $48.25. No emails to be sent.",
       "smsSentAt": {},
       "createdAt": "2026-04-23T09:57:52.571Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "activatedAt": "2026-04-23T10:00:06.285Z",
+      "updatedAt": "2026-04-23T10:00:06.285Z"
     },
     {
       "bookingId": "07ed4baaf6664164",
