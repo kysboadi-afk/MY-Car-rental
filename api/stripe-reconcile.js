@@ -27,6 +27,30 @@ import Stripe from "stripe";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
+import { autoCreateRevenueRecord } from "./_booking-automation.js";
+
+/**
+ * Resolves a raw booking reference to the canonical booking_ref confirmed in
+ * Supabase bookings.  Returns booking_ref when found, null otherwise.
+ *
+ * @param {object} sb      - Supabase admin client
+ * @param {string|null} rawRef - booking_id / original_booking_id from PI metadata
+ * @returns {Promise<string|null>}
+ */
+async function resolveBookingId(sb, rawRef) {
+  if (!rawRef || !sb) return null;
+  try {
+    const { data } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("booking_ref", rawRef)
+      .maybeSingle();
+    return data?.booking_ref || null;
+  } catch (err) {
+    console.warn(`stripe-reconcile: resolveBookingId lookup error (non-fatal): ${err.message}`);
+    return null;
+  }
+}
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -551,14 +575,74 @@ export default async function handler(req, res) {
         }
       }
 
-      // Extension PIs with no existing revenue record fall through to the auto-create
-      // path below, which will insert a new row with type='extension'.
+      // Extension PIs with no existing revenue record: use autoCreateRevenueRecord
+      // (idempotent, deduplicates on payment_intent_id) when the booking_ref can be
+      // resolved to a real booking in Supabase.  Orphan cases (booking not found)
+      // fall through to the generic raw-insert path below.
       if (!matchedRecord && payment.payment_type === "rental_extension") {
         const origBookingId = payment.metadata_booking_id || payment.metadata_original_booking_id;
         console.log("stripe-reconcile: extension revenue record not found — will auto-create", {
           pi_id:      payment.payment_intent_id,
           booking_id: origBookingId || "<missing>",
         });
+
+        if (dryRun) {
+          // Fall through to generic auto-create so the preview report shows the PI.
+        } else {
+          // Guard: booking_ref must resolve against Supabase. Unresolvable refs
+          // are rejected here to prevent orphan rows that would fail the DB trigger.
+          if (!origBookingId) {
+            console.error("[BOOKING_RESOLVE_FAILED]", {
+              bookingRef:      "<missing>",
+              paymentIntentId: payment.payment_intent_id,
+            });
+            results.unmatched++;
+            continue;
+          }
+
+          const resolvedBookingId = await resolveBookingId(sb, origBookingId);
+          if (!resolvedBookingId) {
+            // Booking ref not confirmed in Supabase — never insert with unverified ref.
+            console.error("[BOOKING_RESOLVE_FAILED]", {
+              bookingRef:      origBookingId,
+              paymentIntentId: payment.payment_intent_id,
+            });
+            results.unmatched++;
+            continue; // skip generic raw-insert for this extension PI
+          }
+
+          // Use resolvedBookingId (the confirmed booking_ref) as the lookup key.
+          const resolvedBooking =
+            bookingsByBookingId.get(resolvedBookingId) ||
+            bookingsByPI.get(payment.payment_intent_id) ||
+            null;
+          try {
+            await autoCreateRevenueRecord({
+              bookingId:       resolvedBookingId,
+              paymentIntentId: payment.payment_intent_id,
+              vehicleId:       resolvedBooking?.vehicleId || null,
+              name:            resolvedBooking?.name || null,
+              phone:           resolvedBooking?.phone || null,
+              email:           payment.customer_email || resolvedBooking?.email || null,
+              pickupDate:      resolvedBooking?.pickupDate || null,
+              returnDate:      resolvedBooking?.returnDate || null,
+              amountPaid:      payment.amount_gross,
+              paymentMethod:   "stripe",
+              type:            "extension",
+              stripeFee:       payment.stripe_fee,
+              stripeNet:       payment.stripe_net,
+            }, { strict: false, requireStripeFee: false });
+            console.log("[RECOVERY_CREATED_EXTENSION]", payment.payment_intent_id);
+            results.created++;
+          } catch (recoveryErr) {
+            console.error(
+              "stripe-reconcile extension recovery error for PI",
+              payment.payment_intent_id, ":", recoveryErr.message
+            );
+            results.unmatched++;
+          }
+          continue; // handled — skip the generic raw-insert path
+        }
       }
 
       if (!matchedRecord) {
