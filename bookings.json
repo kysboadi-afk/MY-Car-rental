@@ -276,7 +276,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "reserved_unpaid",
+      "status": "booked_paid",
       "amountPaid": 617.4,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_f21b8479ce35",
@@ -285,7 +285,8 @@
       "notes": "Reservation deposit; Balance at pickup: $567.40; Protection plan: Standard; Stripe Customer ID: cus_UO2eMoHJZAbXQd.",
       "smsSentAt": {},
       "createdAt": "2026-04-23T09:47:52.428Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "updatedAt": "2026-04-23T10:08:32.093Z"
     },
     {
       "bookingId": "efab2f7c6915d77b",
