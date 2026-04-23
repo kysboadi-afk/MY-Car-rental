@@ -782,19 +782,20 @@
       "returnDate": "2026-04-23",
       "returnTime": "14:00",
       "location": "",
-      "status": "active_rental",
+      "status": "completed_rental",
       "paymentIntentId": "pi_3TOOVvPo7fICjrtZ19MsJPKV",
       "amountPaid": 121.28,
       "notes": "Website payment — automatic creation of booking.",
       "createdAt": "2026-04-20T23:46:10.003Z",
       "activatedAt": "2026-04-21T00:00:00.347Z",
-      "updatedAt": "2026-04-21T00:00:00.347Z",
+      "updatedAt": "2026-04-23T18:00:07.424Z",
       "smsSentAt": {
         "active_mid": "2026-04-21T13:45:39.279Z"
       },
       "extensionPendingPayment": null,
       "extensionCount": 1,
-      "extensionEmailSent": true
+      "extensionEmailSent": true,
+      "completedAt": "2026-04-23T18:00:07.424Z"
     }
   ]
 }
