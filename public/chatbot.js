@@ -621,11 +621,8 @@ var botResponses = {
     {
       patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
       reply: "You're welcome! 😊 Happy to help. Enjoy your ride with Sly Transportation Services LLC! 🚗💨"
-    },
-    {
-      patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
-      reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (213) 916-6606"
     }
+  ],
 
   es: [
     {
@@ -717,10 +714,6 @@ var botResponses = {
     {
       patterns: ["gracias","muchas gracias","te agradezco","genial","perfecto","excelente"],
       reply: "¡De nada! 😊 Un placer ayudarte. ¡Disfruta tu viaje con Sly Transportation Services LLC! 🚗💨"
-    },
-    {
-      patterns: ["texto","sms","notificación","notificacion","notificaciones","recordatorio","recordatorios","mensaje","mensajes","me van a mandar","van a enviar","mensajes automáticos","mensajes automaticos","qué mensajes","que mensajes"],
-      reply: "📱 Notificaciones SMS Automáticas\n\nEsquema de mensajes que recibirás:\n\n<strong>Antes del recogida</strong>\n  • 24 hrs antes — recordatorio de recogida con hora y ubicación\n\n<strong>Durante tu renta</strong>\n  • Antes del fin — opción para extender tu renta\n  • Al vencer — aviso de que el tiempo de renta terminó\n  • +1 hr vencido — aviso de período de gracia expirado\n  • +2 hrs vencido — cargo por retraso (si aplica)\n\n<strong>Después de devolución</strong>\n  • Al completarse — mensaje de agradecimiento\n  • Día 7 — mensaje de seguimiento\n\nTodos incluyen opción STOP para cancelar.\n\n¿Preguntas? 📞 (213) 916-6606"
     }
   ]
 };
@@ -778,10 +771,6 @@ var slingshotBotResponses = {
     {
       patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
       reply: "You're welcome! 😊 Enjoy your Slingshot experience! 🔴💨"
-    },
-    {
-      patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
-      reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (213) 916-6606"
     }
   ],
   es: [
@@ -834,10 +823,6 @@ var slingshotBotResponses = {
     {
       patterns: ["gracias","muchas gracias","genial","perfecto","excelente"],
       reply: "¡De nada! 😊 ¡Disfruta tu experiencia en el Slingshot! 🔴💨"
-    },
-    {
-      patterns: ["texto","sms","notificación","notificacion","notificaciones","recordatorio","recordatorios","mensaje","mensajes","me van a mandar","van a enviar","mensajes automáticos","mensajes automaticos","qué mensajes","que mensajes"],
-      reply: "📱 Notificaciones SMS Automáticas\n\nEsquema de mensajes que recibirás:\n\n<strong>Antes del recogida</strong>\n  • 24 hrs antes — recordatorio de recogida con hora y ubicación\n\n<strong>Durante tu renta</strong>\n  • Antes del fin — opción para extender tu renta\n  • Al vencer — aviso de que el tiempo de renta terminó\n  • +1 hr vencido — aviso de período de gracia expirado\n  • +2 hrs vencido — cargo por retraso (si aplica)\n\n<strong>Después de devolución</strong>\n  • Al completarse — mensaje de agradecimiento\n  • Día 7 — mensaje de seguimiento\n\nTodos incluyen opción STOP para cancelar.\n\n¿Preguntas? 📞 (213) 916-6606"
     }
   ]
 };
