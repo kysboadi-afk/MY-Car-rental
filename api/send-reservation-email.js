@@ -1109,7 +1109,6 @@ export default async function handler(req, res) {
               : `Total Charged  : $${total || "TBD"}`,
             !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
             !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
-            !isBalancePayment && balancePayUrl   ? `Pay balance online: ${balancePayUrl}` : "",
             breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
             "",
             "We will be in touch shortly to confirm your rental pick-up details.",
@@ -1135,7 +1134,6 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
               ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-              ${!isBalancePayment && balancePayUrl   ? `<tr><td colspan="2" style="padding:12px;border:1px solid #ddd;text-align:center"><a href="${esc(balancePayUrl)}" style="display:inline-block;padding:12px 28px;background:#c8a000;color:#000;border-radius:10px;text-decoration:none;font-weight:bold;font-size:15px">💳 Pay Balance Online</a><br><span style="font-size:12px;color:#888;display:block;margin-top:6px">Or pay in person at pickup — your choice</span></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>

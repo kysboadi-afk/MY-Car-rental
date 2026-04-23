@@ -1131,7 +1131,7 @@ function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking
 }
 
 async function sendReservationDepositBalanceEmail({
-  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink, manageLink,
+  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance,
 }) {
   if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -1156,14 +1156,13 @@ async function sendReservationDepositBalanceEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
-      <p><a href="${esc(balanceLink)}" style="display:inline-block;background:#ffb400;color:#000;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Pay Remaining Balance</a></p>
-      ${manageLink ? `<p style="margin-top:16px"><a href="${esc(manageLink)}" style="display:inline-block;background:#1a73e8;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Manage Your Booking</a></p><p style="font-size:12px;color:#666">Use the Manage Your Booking link to update your dates, vehicle, or protection plan. (Link expires in 72 hours.)</p>` : ""}
+      <p>To complete your booking, visit <strong>www.slytrans.com</strong> and tap <strong>Complete Booking</strong>. You will verify your phone/email and vehicle before viewing your booking.</p>
     `,
   });
 }
 
 async function sendReservationDepositBalanceOwnerEmail({
-  renterName, renterEmail, renterPhone, vehicleName, bookingId, depositPaid, remainingBalance, balanceLink,
+  renterName, renterEmail, renterPhone, vehicleName, bookingId, depositPaid, remainingBalance,
 }) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -1187,7 +1186,7 @@ async function sendReservationDepositBalanceOwnerEmail({
       <strong>Vehicle:</strong> ${esc(vehicleName || "N/A")}<br>
       <strong>Deposit Paid:</strong> $${esc(normalizeCurrency(depositPaid).toFixed(2))}<br>
       <strong>Remaining Balance:</strong> $${esc(normalizeCurrency(remainingBalance).toFixed(2))}</p>
-      <p>Customer payment link: <a href="${esc(balanceLink)}">${esc(balanceLink)}</a></p>
+      <p>Customer must complete website verification flow (Complete Booking) before paying balance.</p>
     `,
   });
 }
@@ -1678,10 +1677,8 @@ export default async function handler(req, res) {
 
       // Generate a manage token and persist it so the customer can access the
       // booking portal to update dates / vehicle / protection plan.
-      let manageLink = null;
       try {
         const manageToken = createManageToken(resolvedBookingId);
-        manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
         const sbForToken = getSupabaseAdmin();
         if (sbForToken) {
           const { error: tokenErr } = await sbForToken
@@ -1719,8 +1716,6 @@ export default async function handler(req, res) {
           returnDate: bookingForSync.returnDate,
           depositPaid: amountPaid,
           remainingBalance,
-          balanceLink,
-          manageLink,
         });
       } catch (emailErr) {
         console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
@@ -1734,7 +1729,6 @@ export default async function handler(req, res) {
           bookingId: resolvedBookingId,
           depositPaid: amountPaid,
           remainingBalance,
-          balanceLink,
         });
       } catch (ownerErr) {
         console.error("stripe-webhook: reservation_deposit owner balance email failed:", ownerErr.message);
@@ -1742,10 +1736,9 @@ export default async function handler(req, res) {
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
           const smsVehicle = sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle");
-          const smsLink = sanitizeSmsValue(balanceLink);
           await sendSms(
             normalizePhone(bookingForSync.phone),
-            `Deposit received for ${smsVehicle}. Remaining balance: $${remainingBalance.toFixed(2)}. Pay here: ${smsLink}`
+            `Deposit received for ${smsVehicle}. Remaining balance: $${remainingBalance.toFixed(2)}. Visit slytrans.com and tap Complete Booking to finish payment.`
           );
         }
       } catch (smsErr) {
@@ -1977,10 +1970,10 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true });
     }
 
-    // Skip balance payments — dates were already blocked when the deposit was paid.
-    if (paymentType === "balance_payment") {
+    // Skip date blocking for balance payments — dates were already blocked when the deposit was paid.
+    if (paymentType === "balance_payment" || paymentType === "rental_balance") {
       console.log(
-        `stripe-webhook: balance_payment for PaymentIntent ${paymentIntent.id} — skipping date blocking`
+        `stripe-webhook: ${paymentType} for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );
       const meta = paymentIntent.metadata || {};
       const { vehicle_id } = meta;

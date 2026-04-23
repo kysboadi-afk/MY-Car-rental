@@ -58,7 +58,24 @@
 <div class="container">
   <div class="manage-card">
 
-    <div id="loading-state" style="text-align:center;padding:40px 0">
+    <div id="verify-state" style="display:none">
+      <h2>Complete Your Booking</h2>
+      <p style="margin-bottom:14px;color:#444">Verify your booking first to continue.</p>
+      <div class="form-group" style="margin-bottom:12px">
+        <label for="verify-identifier">Phone or Email</label>
+        <input id="verify-identifier" type="text" placeholder="Enter phone or email" autocomplete="email">
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label for="verify-vehicle">Vehicle Booked</label>
+        <select id="verify-vehicle">
+          <option value="">-- Select your vehicle --</option>
+        </select>
+      </div>
+      <div id="verify-msg"></div>
+      <button id="btn-verify" class="btn-primary">Verify Booking</button>
+    </div>
+
+    <div id="loading-state" style="text-align:center;padding:40px 0;display:none">
       <span class="spinner"></span> Loading your booking&hellip;
     </div>
 
@@ -86,11 +103,24 @@
           <tr><td>Balance Due</td><td id="s-balance">–</td></tr>
           <tr><td>Status</td><td id="s-status">–</td></tr>
         </table>
-        <a id="s-pay-link" href="#" target="_blank" style="display:none" class="btn-secondary" rel="noopener">Pay Remaining Balance</a>
+        <div id="pay-balance-section" style="display:none">
+          <button id="btn-init-balance" class="btn-secondary" type="button">Pay Remaining Balance</button>
+          <div id="balance-payment-wrap" style="display:none;margin-top:10px">
+            <div id="balance-stripe-element"></div>
+            <div id="balance-error" class="error-msg" style="display:none"></div>
+            <button id="btn-confirm-balance" class="btn-primary" type="button">Complete Payment</button>
+          </div>
+        </div>
       </div>
 
       <div id="edit-section">
         <h3>Update Booking Dates or Vehicle</h3>
+        <div class="form-group" style="margin-bottom:16px">
+          <label for="new-vehicle">Vehicle</label>
+          <select id="new-vehicle">
+            <option value="">-- Select vehicle --</option>
+          </select>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label for="new-pickup">New Pickup Date</label>
