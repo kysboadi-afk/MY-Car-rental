@@ -49,6 +49,7 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
+import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -1265,80 +1266,93 @@ export default async function handler(req, res) {
       });
     }
 
-    // ── DELETE (hard-delete a booking record) ───────────────────────────────
-    if (action === "delete") {
+    // ── RESEND_MANAGE_LINK — regenerate manage token + resend email to customer ─
+    if (action === "resend_manage_link") {
       const { bookingId } = body;
       if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
 
-      const sbDel = getSupabaseAdmin();
-      if (!sbDel) return res.status(500).json({ error: "Database not configured" });
+      const sbManage = getSupabaseAdmin();
+      if (!sbManage) return res.status(503).json({ error: "Database not configured" });
 
-      // 1. Look up the booking in Supabase to get vehicleId + dates for cleanup.
-      let pickupDate, returnDate, vehicleId;
-      try {
-        const { data: row, error: lookupErr } = await sbDel
-          .from("bookings")
-          .select("vehicle_id, pickup_date, return_date")
-          .eq("booking_ref", bookingId)
-          .maybeSingle();
-        if (lookupErr) {
-          console.warn("[DELETE] Failed to fetch booking details:", lookupErr.message);
-        } else if (row) {
-          vehicleId  = uiVehicleId(row.vehicle_id);
-          pickupDate = row.pickup_date;
-          returnDate = row.return_date;
-        }
-      } catch (_e) {
-        console.warn("[DELETE] Failed to fetch booking details:", _e.message);
-      }
-
-      // 2. Delete revenue records (non-fatal).
-      try {
-        await sbDel.from("revenue_records").delete().eq("booking_id", bookingId);
-      } catch (_e) {
-        console.warn("[DELETE] Failed to delete revenue records:", _e.message);
-      }
-
-      // 3. Delete blocked_dates rows for this booking (non-fatal).
-      try {
-        await sbDel.from("blocked_dates").delete().eq("booking_ref", bookingId);
-      } catch (_e) {
-        console.warn("[DELETE] Failed to delete blocked_dates rows:", _e.message);
-      }
-
-      // 4. Delete the booking row from Supabase.
-      const { error: delErr } = await sbDel
+      // Load the booking row
+      const { data: bkRow, error: bkErr } = await sbManage
         .from("bookings")
-        .delete()
+        .select("id, booking_ref, customer_email, vehicle_id, pickup_date, return_date, remaining_balance, balance_payment_link")
+        .eq("booking_ref", bookingId)
+        .maybeSingle();
+
+      if (bkErr || !bkRow) {
+        return res.status(404).json({ error: `Booking "${bookingId}" not found` });
+      }
+
+      // Generate a new 72-hour manage token
+      const newToken = createManageToken(bookingId);
+      const manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(newToken)}`;
+
+      const { error: updErr } = await sbManage
+        .from("bookings")
+        .update({ manage_token: newToken, updated_at: new Date().toISOString() })
         .eq("booking_ref", bookingId);
-      if (delErr) return res.status(500).json({ error: delErr.message });
 
-      // 5. Remove from bookings.json (non-fatal).
-      try {
-        const { data: bData, sha: bSha } = await loadBookings();
-        let removed = false;
-        for (const [vid, list] of Object.entries(bData)) {
-          if (!Array.isArray(list)) continue;
-          const before = list.length;
-          bData[vid] = list.filter((b) => b.bookingId !== bookingId);
-          if (bData[vid].length !== before) removed = true;
+      if (updErr) return res.status(500).json({ error: `Failed to update manage token: ${updErr.message}` });
+
+      // Optionally send email
+      if (bkRow.customer_email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host:   process.env.SMTP_HOST,
+            port:   parseInt(process.env.SMTP_PORT || "587"),
+            secure: process.env.SMTP_PORT === "465",
+            auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          });
+          const balanceLink = bkRow.balance_payment_link || "";
+          await transporter.sendMail({
+            from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+            to:      bkRow.customer_email,
+            subject: "Your Booking Management Link",
+            html: `
+              <h2>Manage Your Booking</h2>
+              <p>Here is your link to manage your reservation. It expires in 72 hours.</p>
+              <p><a href="${manageLink}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Manage Your Booking</a></p>
+              ${balanceLink ? `<p>Or <a href="${balanceLink}">pay your remaining balance here</a>.</p>` : ""}
+              <p>Questions? Call us at (213) 916-6606.</p>
+            `,
+          });
+        } catch (emailErr) {
+          console.error("v2-bookings resend_manage_link: email failed (non-fatal):", emailErr.message);
         }
-        if (removed) {
-          await saveBookings(bData, bSha, `Delete booking ${bookingId} from bookings.json`);
-        }
-      } catch (_e) {
-        console.warn("[DELETE] Failed to update bookings.json:", _e.message);
       }
 
-      // 6. Unblock booked-dates.json (non-fatal).
-      if (vehicleId && pickupDate && returnDate) {
-        await unblockBookedDates(vehicleId, pickupDate, returnDate).catch((e) =>
-          console.warn("[DELETE] Failed to unblock booked-dates.json:", e.message)
-        );
+      return res.status(200).json({ success: true, manageLink });
+    }
+
+    // ── OVERRIDE_BALANCE — admin manually sets a new balance payment link ─────
+    if (action === "override_balance") {
+      const { bookingId, balancePaymentLink, changeCount } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      if (!balancePaymentLink || typeof balancePaymentLink !== "string") {
+        return res.status(400).json({ error: "balancePaymentLink is required and must be a string" });
       }
 
-      console.log("[BOOKING_DELETED]", { booking_ref: bookingId, vehicle_id: vehicleId });
-      return res.status(200).json({ success: true, bookingId });
+      const sbOvr = getSupabaseAdmin();
+      if (!sbOvr) return res.status(503).json({ error: "Database not configured" });
+
+      const ovrPayload = {
+        balance_payment_link: balancePaymentLink.trim(),
+        updated_at: new Date().toISOString(),
+      };
+      if (typeof changeCount === "number" && changeCount >= 0) {
+        ovrPayload.change_count = changeCount;
+      }
+
+      const { error: ovrErr } = await sbOvr
+        .from("bookings")
+        .update(ovrPayload)
+        .eq("booking_ref", bookingId);
+
+      if (ovrErr) return res.status(500).json({ error: `Failed to override balance link: ${ovrErr.message}` });
+
+      return res.status(200).json({ success: true });
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

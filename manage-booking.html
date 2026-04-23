@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="description" content="Manage your car rental reservation with Sly Transportation Services LLC.">
+  <title>Sly Transportation Services LLC | Manage Your Booking</title>
+  <link rel="icon" href="images/logo.jpg" type="image/jpeg">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    .manage-card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.10);
+      padding: 32px;
+      max-width: 620px;
+      margin: 32px auto;
+    }
+    .manage-card h2 { margin-top: 0; }
+    .booking-summary table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    .booking-summary td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+    .booking-summary td:first-child { font-weight: 600; width: 45%; }
+    .form-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .form-group { flex: 1; min-width: 160px; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.92em; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; box-sizing: border-box; }
+    .price-preview { background: #f5f7fa; border-radius: 8px; padding: 16px; margin: 16px 0; font-size: 0.95em; }
+    .price-preview .new-total { font-size: 1.15em; font-weight: 700; color: #1a73e8; }
+    .price-preview .fee-notice { color: #c62828; font-weight: 600; margin-top: 8px; }
+    .btn-primary { background: #ffb400; color: #000; border: none; padding: 13px 28px; border-radius: 6px; font-size: 1em; font-weight: 700; cursor: pointer; width: 100%; margin-top: 12px; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: #1a73e8; color: #fff; border: none; padding: 13px 28px; border-radius: 6px; font-size: 1em; font-weight: 700; cursor: pointer; width: 100%; margin-top: 8px; }
+    .lock-notice { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-weight: 600; }
+    .status-badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 700; text-transform: uppercase; }
+    .status-reserved { background: #e3f2fd; color: #1565c0; }
+    .status-active   { background: #e8f5e9; color: #2e7d32; }
+    .status-partial  { background: #fff8e1; color: #f57f17; }
+    #stripe-element { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin: 12px 0; }
+    .error-msg { color: #c62828; background: #ffebee; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+    .success-msg { color: #2e7d32; background: #e8f5e9; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 3px solid #ccc; border-top-color: #1a73e8; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<header class="site-header">
+  <a href="index.html" class="logo-link"><img src="images/logo.jpg" alt="Sly Transportation Services LLC Logo" class="site-logo"></a>
+  <nav class="site-nav">
+    <a href="index.html">Home</a>
+    <a href="cars.html">Browse Cars</a>
+    <a href="index.html#how-it-works">How It Works</a>
+    <a href="index.html#about">About</a>
+  </nav>
+  <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
+</header>
+
+<div class="container">
+  <div class="manage-card">
+
+    <div id="loading-state" style="text-align:center;padding:40px 0">
+      <span class="spinner"></span> Loading your booking&hellip;
+    </div>
+
+    <div id="error-state" style="display:none">
+      <h2>Unable to Load Booking</h2>
+      <div id="error-msg" class="error-msg"></div>
+      <p>Please <a href="tel:+12139166606">call us at (213) 916-6606</a> for assistance.</p>
+    </div>
+
+    <div id="main-content" style="display:none">
+      <h2>Manage Your Booking</h2>
+
+      <div id="lock-notice" class="lock-notice" style="display:none">
+        🔒 Bookings cannot be changed within 3 hours of pickup. Please call <a href="tel:+12139166606">(213) 916-6606</a> for urgent changes.
+      </div>
+
+      <div class="booking-summary">
+        <table>
+          <tr><td>Booking ID</td><td id="s-booking-id">–</td></tr>
+          <tr><td>Vehicle</td><td id="s-vehicle">–</td></tr>
+          <tr><td>Pickup</td><td id="s-pickup">–</td></tr>
+          <tr><td>Return</td><td id="s-return">–</td></tr>
+          <tr><td>Total</td><td id="s-total">–</td></tr>
+          <tr><td>Deposit Paid</td><td id="s-deposit">–</td></tr>
+          <tr><td>Balance Due</td><td id="s-balance">–</td></tr>
+          <tr><td>Status</td><td id="s-status">–</td></tr>
+        </table>
+        <a id="s-pay-link" href="#" target="_blank" style="display:none" class="btn-secondary" rel="noopener">Pay Remaining Balance</a>
+      </div>
+
+      <div id="edit-section">
+        <h3>Update Booking Dates or Vehicle</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="new-pickup">New Pickup Date</label>
+            <input type="date" id="new-pickup">
+          </div>
+          <div class="form-group">
+            <label for="new-return">New Return Date</label>
+            <input type="date" id="new-return">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="new-pickup-time">Pickup Time</label>
+            <select id="new-pickup-time">
+              <option value="">-- Select --</option>
+              <option>7:00 AM</option><option>8:00 AM</option><option>9:00 AM</option>
+              <option>10:00 AM</option><option>11:00 AM</option><option>12:00 PM</option>
+              <option>1:00 PM</option><option>2:00 PM</option><option>3:00 PM</option>
+              <option>4:00 PM</option><option>5:00 PM</option><option>6:00 PM</option>
+              <option>7:00 PM</option><option>8:00 PM</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="new-return-time">Return Time</label>
+            <select id="new-return-time">
+              <option value="">-- Select --</option>
+              <option>7:00 AM</option><option>8:00 AM</option><option>9:00 AM</option>
+              <option>10:00 AM</option><option>11:00 AM</option><option>12:00 PM</option>
+              <option>1:00 PM</option><option>2:00 PM</option><option>3:00 PM</option>
+              <option>4:00 PM</option><option>5:00 PM</option><option>6:00 PM</option>
+              <option>7:00 PM</option><option>8:00 PM</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label for="new-protection">
+            <input type="checkbox" id="new-protection"> Add Damage Protection Plan
+          </label>
+          <div id="dpp-tier-row" style="display:none;margin-top:8px">
+            <label for="new-protection-tier">Protection Tier</label>
+            <select id="new-protection-tier">
+              <option value="basic">Basic – $15/day (limits liability to $2,500)</option>
+              <option value="standard">Standard – $30/day (limits liability to $1,000)</option>
+              <option value="premium">Premium – $50/day (limits liability to $500)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="price-preview" class="price-preview" style="display:none">
+          <div>New Total: <span class="new-total" id="preview-total">–</span></div>
+          <div>Balance Due After Change: <span id="preview-balance">–</span></div>
+          <div id="fee-notice" class="fee-notice" style="display:none"></div>
+        </div>
+
+        <div id="action-msg"></div>
+
+        <!-- Free change button (change_count === 0) -->
+        <button id="btn-apply" class="btn-primary" style="display:none">Apply Change (Free)</button>
+
+        <!-- Paid change: show Stripe card element -->
+        <div id="paid-change-section" style="display:none">
+          <p>A <strong>change fee</strong> of <span id="change-fee-amount">$25</span> is required for this update.</p>
+          <div id="stripe-element"></div>
+          <div id="stripe-error" class="error-msg" style="display:none"></div>
+          <button id="btn-pay-fee" class="btn-primary">Pay Change Fee &amp; Apply</button>
+        </div>
+
+        <button id="btn-preview" class="btn-secondary" style="margin-top:12px">Preview New Pricing</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<footer style="text-align:center;padding:32px 0;color:#888;font-size:0.85em">
+  &copy; 2025 Sly Transportation Services LLC &bull; <a href="tel:+12139166606">(213) 916-6606</a>
+</footer>
+
+<script src="manage-booking.js"></script>
+</body>
+</html>

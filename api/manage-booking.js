@@ -1,0 +1,626 @@
+// api/manage-booking.js
+// Customer-facing booking management endpoint.
+//
+// Allows customers to view and modify their reservation after paying a deposit.
+// Authentication is via a short-lived HMAC-signed manage_token (not an admin secret).
+//
+// POST /api/manage-booking
+// Actions (all require a valid manage_token in the request body):
+//   get                — load booking details for the customer portal
+//   check_availability — preview a proposed change (availability + new pricing)
+//   apply_change       — apply a free first change (change_count === 0)
+//   initiate_paid_change — store the pending change and create a Stripe PI for the fee
+//
+// Required environment variables:
+//   OTP_SECRET         — signs / verifies manage tokens
+//   STRIPE_SECRET_KEY  — for initiate_paid_change
+//   STRIPE_PUBLISHABLE_KEY
+//   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — Supabase admin client
+//   GITHUB_TOKEN / GITHUB_REPO              — booked-dates.json updates
+
+import Stripe from "stripe";
+import nodemailer from "nodemailer";
+import { verifyManageToken } from "./_manage-booking-token.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { hasDateTimeOverlap } from "./_availability.js";
+import { updateBooking, loadBookings } from "./_bookings.js";
+import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { autoUpsertBooking, writeAuditLog } from "./_booking-automation.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
+import { getVehicleById } from "./_vehicles.js";
+import {
+  loadPricingSettings,
+  computeCarAmountFromVehicleData,
+  computeDppCostFromSettings,
+  applyTax,
+} from "./_settings.js";
+import { computeRentalDays } from "./_pricing.js";
+import { normalizeClockTime } from "./_time.js";
+
+const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+
+// No edits within 3 hours of pickup.
+const CUTOFF_HOURS = 3;
+
+/**
+ * Escape HTML special characters to prevent XSS in email templates.
+ */
+function esc(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Returns true when now is within CUTOFF_HOURS of the booking's pickup datetime.
+ */
+function isWithinCutoff(pickupDate, pickupTime) {
+  if (!pickupDate) return false;
+  const base = new Date(pickupDate + "T00:00:00");
+  if (pickupTime) {
+    const ampm = pickupTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampm) {
+      let h = parseInt(ampm[1], 10);
+      const m = parseInt(ampm[2], 10);
+      if (ampm[3].toUpperCase() === "PM" && h !== 12) h += 12;
+      if (ampm[3].toUpperCase() === "AM" && h === 12) h = 0;
+      base.setHours(h, m, 0, 0);
+    }
+  }
+  const diffMs = base.getTime() - Date.now();
+  return diffMs >= 0 && diffMs <= CUTOFF_HOURS * 60 * 60 * 1000;
+}
+
+/**
+ * Lookup a booking row from Supabase by booking_ref.
+ * Returns null when Supabase is unavailable or the row is not found.
+ */
+async function fetchBookingFromSupabase(bookingRef) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  const { data, error } = await sb
+    .from("bookings")
+    .select(
+      "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
+      "status, payment_status, total_price, deposit_paid, remaining_balance, " +
+      "change_count, manage_token, balance_payment_link, pending_change, " +
+      "customer_id, notes, payment_intent_id, created_at"
+    )
+    .eq("booking_ref", bookingRef)
+    .maybeSingle();
+  if (error) {
+    console.error("manage-booking: Supabase booking lookup error:", error.message);
+    return null;
+  }
+  return data || null;
+}
+
+/**
+ * Load the booked-dates.json ranges for a vehicle from GitHub.
+ * Returns an empty array on any error.
+ */
+async function loadBookedRanges(vehicleId) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return [];
+  try {
+    const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!resp.ok) return [];
+    const file = await resp.json();
+    const data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
+    return data[vehicleId] || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Update the booked-dates.json entry for a vehicle:
+ *  1. Remove the old date range (matched by oldFrom/oldTo).
+ *  2. Insert the new date range.
+ */
+async function updateBookedDates(vehicleId, oldFrom, oldTo, newFrom, newTo, newFromTime, newToTime) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    console.warn("manage-booking: GITHUB_TOKEN not set — skipping booked-dates update");
+    return;
+  }
+
+  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+
+  async function load() {
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
+    if (!resp.ok) return { data: {}, sha: null };
+    const file = await resp.json();
+    let data = {};
+    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); } catch { /* ignore */ }
+    return { data, sha: file.sha };
+  }
+
+  async function save(data, sha, message) {
+    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
+    if (sha) body.sha = sha;
+    const resp = await fetch(apiUrl, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+    }
+  }
+
+  await updateJsonFileWithRetry({
+    load,
+    apply: (data) => {
+      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
+      // Remove the old range
+      data[vehicleId] = data[vehicleId].filter(
+        (r) => !(r.from === oldFrom && r.to === oldTo)
+      );
+      // Insert the new range
+      const entry = { from: newFrom, to: newTo };
+      if (newFromTime) entry.fromTime = newFromTime;
+      if (newToTime)   entry.toTime   = newToTime;
+      data[vehicleId].push(entry);
+      data[vehicleId].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+    },
+    save,
+    message: `manage-booking: update dates for ${vehicleId}: ${oldFrom}→${oldTo} replaced by ${newFrom}→${newTo}`,
+  });
+}
+
+/**
+ * Recompute total and balance_due for a non-Slingshot booking after a change.
+ * Returns { newTotal, newBalanceDue } or null on unknown vehicle.
+ */
+async function recomputePricing(vehicleData, pickupDate, returnDate, protectionPlan, protectionPlanTier, depositPaid) {
+  const settings = await loadPricingSettings();
+  const rentalCost = computeCarAmountFromVehicleData(vehicleData, pickupDate, returnDate, settings);
+  if (rentalCost == null) return null;
+  const days = computeRentalDays(pickupDate, returnDate);
+  const dppCost = protectionPlan ? computeDppCostFromSettings(days, protectionPlanTier || null) : 0;
+  const preTax = rentalCost + dppCost;
+  const newTotal = applyTax(preTax, settings);
+  const newBalanceDue = Math.max(0, Math.round((newTotal - depositPaid) * 100) / 100);
+  return { newTotal: Math.round(newTotal * 100) / 100, newBalanceDue, settings };
+}
+
+/**
+ * Build a fresh balance payment link URL.
+ * Parameters mirror buildReservationBalanceLink in stripe-webhook.js.
+ */
+function buildBalanceLink(bookingRef, row, vehicleId) {
+  const base = "https://www.slytrans.com/balance.html";
+  const p = new URLSearchParams();
+  const vid = uiVehicleId(vehicleId || row.vehicle_id || "");
+  if (vid)                    p.set("v",  vid);
+  if (row.pickup_date)        p.set("p",  row.pickup_date);
+  if (row.return_date)        p.set("r",  row.return_date);
+  if (row.customer_email)     p.set("e",  row.customer_email);
+  if (bookingRef)             p.set("b",  bookingRef);
+  if (row.payment_intent_id)  p.set("opi", row.payment_intent_id);
+  return `${base}?${p.toString()}`;
+}
+
+/**
+ * Send the customer an email with the updated balance link after a change.
+ */
+async function sendChangeConfirmationEmail({
+  renterEmail, renterName, vehicleName,
+  newPickupDate, newReturnDate,
+  newTotal, newBalanceDue, balanceLink,
+}) {
+  if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || "587"),
+      secure: process.env.SMTP_PORT === "465",
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    const firstName = (renterName || "").split(" ")[0] || "there";
+    await transporter.sendMail({
+      from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+      to: renterEmail,
+      subject: "Your Booking Has Been Updated",
+      html: `
+        <h2>✅ Booking Updated</h2>
+        <p>Hi ${esc(firstName)},</p>
+        <p>Your booking for <strong>${esc(vehicleName)}</strong> has been updated.</p>
+        <table style="border-collapse:collapse;width:100%;margin:16px 0">
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(newPickupDate)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(newReturnDate)}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(newTotal?.toFixed(2)))}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(newBalanceDue?.toFixed(2)))}</td></tr>
+        </table>
+        <p><a href="${esc(balanceLink)}" style="background:#1a73e8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">Pay Remaining Balance</a></p>
+        <p>If you have questions, call us at (213) 916-6606.</p>
+      `,
+    });
+  } catch (emailErr) {
+    console.error("manage-booking: change confirmation email failed (non-fatal):", emailErr.message);
+  }
+}
+
+export default async function handler(req, res) {
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+  const body = req.body || {};
+  const { action, token } = body;
+
+  if (!token) return res.status(401).json({ error: "manage_token is required" });
+  if (!action) return res.status(400).json({ error: "action is required" });
+
+  const bookingRef = verifyManageToken(token);
+  if (!bookingRef) {
+    return res.status(401).json({ error: "Invalid or expired manage token. Please contact us to get a new link." });
+  }
+
+  // ── action: get ─────────────────────────────────────────────────────────────
+  if (action === "get") {
+    const row = await fetchBookingFromSupabase(bookingRef);
+    if (!row) return res.status(404).json({ error: "Booking not found" });
+
+    const vehicleId = uiVehicleId(row.vehicle_id || "");
+    const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+
+    return res.status(200).json({
+      bookingRef,
+      vehicleId,
+      vehicleName: vehicleData?.name || vehicleId,
+      pickupDate:  row.pickup_date,
+      returnDate:  row.return_date,
+      pickupTime:  row.pickup_time,
+      returnTime:  row.return_time,
+      status:      row.status,
+      paymentStatus: row.payment_status,
+      totalPrice:    Number(row.total_price   || 0),
+      depositPaid:   Number(row.deposit_paid  || 0),
+      balanceDue:    Number(row.remaining_balance || 0),
+      changeCount:   Number(row.change_count  || 0),
+      balancePaymentLink: row.balance_payment_link || null,
+      lockedForEditing: isWithinCutoff(
+        row.pickup_date,
+        row.pickup_time ? new Date(`2000-01-01T${row.pickup_time}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : null
+      ),
+    });
+  }
+
+  // ── action: check_availability ──────────────────────────────────────────────
+  if (action === "check_availability") {
+    const row = await fetchBookingFromSupabase(bookingRef);
+    if (!row) return res.status(404).json({ error: "Booking not found" });
+
+    // 3-hour cutoff guard on current pickup
+    if (isWithinCutoff(row.pickup_date, row.pickup_time)) {
+      return res.status(409).json({ error: "Bookings cannot be changed within 3 hours of pickup." });
+    }
+
+    const {
+      newPickupDate, newReturnDate,
+      newPickupTime, newReturnTime,
+      newVehicleId, newProtectionPlan, newProtectionPlanTier,
+    } = body;
+
+    if (!newPickupDate || !newReturnDate) {
+      return res.status(400).json({ error: "newPickupDate and newReturnDate are required" });
+    }
+
+    const targetVehicleUiId = newVehicleId || uiVehicleId(row.vehicle_id || "");
+    const vehicleData = await getVehicleById(targetVehicleUiId);
+    if (!vehicleData) return res.status(400).json({ error: "Invalid vehicle" });
+
+    // Check availability, excluding this booking's own current range
+    const ranges = await loadBookedRanges(targetVehicleUiId);
+    const otherRanges = ranges.filter(
+      (r) => !(r.from === row.pickup_date && r.to === row.return_date)
+    );
+
+    const fPickupTime  = normalizeClockTime(newPickupTime)  || null;
+    const fReturnTime  = normalizeClockTime(newReturnTime)  || null;
+    const conflict = hasDateTimeOverlap(otherRanges, newPickupDate, newReturnDate, fPickupTime, fReturnTime);
+
+    if (conflict) {
+      return res.status(200).json({
+        available: false,
+        reason: "The requested dates are not available for this vehicle.",
+      });
+    }
+
+    const depositPaid  = Number(row.deposit_paid || 0);
+    const hasProtection = newProtectionPlan !== undefined ? !!newProtectionPlan : false;
+    const tier = newProtectionPlanTier || null;
+
+    const pricing = await recomputePricing(vehicleData, newPickupDate, newReturnDate, hasProtection, tier, depositPaid);
+    if (!pricing) return res.status(400).json({ error: "Could not compute pricing for this vehicle" });
+
+    const settings = await loadPricingSettings();
+    const changeFeeRequired = Number(row.change_count || 0) > 0;
+    const changeFee = changeFeeRequired ? (settings.booking_change_fee || 25) : 0;
+
+    return res.status(200).json({
+      available: true,
+      newTotal:     pricing.newTotal,
+      newBalanceDue: pricing.newBalanceDue,
+      changeFeeRequired,
+      changeFee,
+    });
+  }
+
+  // ── action: apply_change ────────────────────────────────────────────────────
+  if (action === "apply_change") {
+    const row = await fetchBookingFromSupabase(bookingRef);
+    if (!row) return res.status(404).json({ error: "Booking not found" });
+
+    // 3-hour cutoff
+    if (isWithinCutoff(row.pickup_date, row.pickup_time)) {
+      return res.status(409).json({ error: "Bookings cannot be changed within 3 hours of pickup." });
+    }
+
+    // Only free (first) changes allowed here
+    const changeCount = Number(row.change_count || 0);
+    if (changeCount > 0) {
+      return res.status(402).json({
+        error: "A change fee is required for additional changes.",
+        requiresChangeFee: true,
+      });
+    }
+
+    const {
+      newPickupDate, newReturnDate,
+      newPickupTime, newReturnTime,
+      newVehicleId, newProtectionPlan, newProtectionPlanTier,
+    } = body;
+
+    if (!newPickupDate || !newReturnDate) {
+      return res.status(400).json({ error: "newPickupDate and newReturnDate are required" });
+    }
+
+    const targetVehicleUiId = newVehicleId || uiVehicleId(row.vehicle_id || "");
+    const vehicleData = await getVehicleById(targetVehicleUiId);
+    if (!vehicleData) return res.status(400).json({ error: "Invalid vehicle" });
+
+    // Availability check (exclude own range)
+    const ranges = await loadBookedRanges(targetVehicleUiId);
+    const otherRanges = ranges.filter(
+      (r) => !(r.from === row.pickup_date && r.to === row.return_date)
+    );
+    const fPickupTime = normalizeClockTime(newPickupTime) || null;
+    const fReturnTime = normalizeClockTime(newReturnTime) || null;
+    if (hasDateTimeOverlap(otherRanges, newPickupDate, newReturnDate, fPickupTime, fReturnTime)) {
+      return res.status(409).json({ error: "The requested dates are not available for this vehicle." });
+    }
+
+    const depositPaid = Number(row.deposit_paid || 0);
+    const hasProtection = newProtectionPlan !== undefined ? !!newProtectionPlan : false;
+    const tier = newProtectionPlanTier || null;
+    const pricing = await recomputePricing(vehicleData, newPickupDate, newReturnDate, hasProtection, tier, depositPaid);
+    if (!pricing) return res.status(400).json({ error: "Could not compute pricing for this vehicle" });
+
+    // Build new balance link
+    const newBalanceLink = buildBalanceLink(bookingRef, {
+      ...row,
+      pickup_date:      newPickupDate,
+      return_date:      newReturnDate,
+      vehicle_id:       normalizeVehicleId(targetVehicleUiId),
+    }, targetVehicleUiId);
+
+    // Update Supabase bookings row
+    const sb = getSupabaseAdmin();
+    if (!sb) return res.status(503).json({ error: "Database unavailable" });
+
+    const { error: sbErr } = await sb
+      .from("bookings")
+      .update({
+        vehicle_id:          normalizeVehicleId(targetVehicleUiId),
+        pickup_date:         newPickupDate,
+        return_date:         newReturnDate,
+        pickup_time:         fPickupTime || row.pickup_time,
+        return_time:         fReturnTime || row.return_time,
+        total_price:         pricing.newTotal,
+        remaining_balance:   pricing.newBalanceDue,
+        change_count:        changeCount + 1,
+        balance_payment_link: newBalanceLink,
+        updated_at:          new Date().toISOString(),
+      })
+      .eq("booking_ref", bookingRef);
+
+    if (sbErr) {
+      console.error("manage-booking apply_change Supabase update error:", sbErr.message);
+      return res.status(500).json({ error: "Failed to save booking change" });
+    }
+
+    // Update booked-dates.json
+    try {
+      await updateBookedDates(
+        targetVehicleUiId,
+        row.pickup_date, row.return_date,
+        newPickupDate, newReturnDate,
+        fPickupTime || "", fReturnTime || ""
+      );
+    } catch (dateErr) {
+      console.error("manage-booking apply_change booked-dates update error (non-fatal):", dateErr.message);
+    }
+
+    // Update bookings.json (legacy store)
+    try {
+      const currentVehicleUiId = uiVehicleId(row.vehicle_id || "");
+      await updateBooking(currentVehicleUiId, bookingRef, {
+        vehicleId:           targetVehicleUiId,
+        pickupDate:          newPickupDate,
+        returnDate:          newReturnDate,
+        pickupTime:          fPickupTime || undefined,
+        returnTime:          fReturnTime || undefined,
+        totalPrice:          pricing.newTotal,
+        remainingBalance:    pricing.newBalanceDue,
+        balancePaymentLink:  newBalanceLink,
+        updatedAt:           new Date().toISOString(),
+      });
+    } catch (jsonErr) {
+      console.error("manage-booking apply_change bookings.json update error (non-fatal):", jsonErr.message);
+    }
+
+    // Audit log
+    try {
+      await writeAuditLog(bookingRef, [
+        { field: "pickup_date",    oldValue: row.pickup_date,  newValue: newPickupDate },
+        { field: "return_date",    oldValue: row.return_date,  newValue: newReturnDate },
+        { field: "vehicle_id",     oldValue: row.vehicle_id,   newValue: normalizeVehicleId(targetVehicleUiId) },
+        { field: "total_price",    oldValue: String(row.total_price), newValue: String(pricing.newTotal) },
+        { field: "remaining_balance", oldValue: String(row.remaining_balance), newValue: String(pricing.newBalanceDue) },
+        { field: "change_count",   oldValue: String(changeCount), newValue: String(changeCount + 1) },
+      ], "customer");
+    } catch (auditErr) {
+      console.error("manage-booking apply_change audit log error (non-fatal):", auditErr.message);
+    }
+
+    // Send confirmation email
+    const updatedRow = await fetchBookingFromSupabase(bookingRef);
+    if (updatedRow?.customer_email) {
+      await sendChangeConfirmationEmail({
+        renterEmail:  updatedRow.customer_email,
+        renterName:   "",
+        vehicleName:  vehicleData.name,
+        newPickupDate,
+        newReturnDate,
+        newTotal:     pricing.newTotal,
+        newBalanceDue: pricing.newBalanceDue,
+        balanceLink:  newBalanceLink,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      newPickupDate,
+      newReturnDate,
+      newTotal:         pricing.newTotal,
+      newBalanceDue:    pricing.newBalanceDue,
+      balancePaymentLink: newBalanceLink,
+      changeCount:      changeCount + 1,
+    });
+  }
+
+  // ── action: initiate_paid_change ─────────────────────────────────────────────
+  if (action === "initiate_paid_change") {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.error("manage-booking initiate_paid_change: STRIPE_SECRET_KEY is not set");
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
+    }
+    if (!process.env.STRIPE_PUBLISHABLE_KEY) {
+      console.error("manage-booking initiate_paid_change: STRIPE_PUBLISHABLE_KEY is not set");
+      return res.status(500).json({ error: "Payment processing is temporarily unavailable. Please contact us at (213) 916-6606." });
+    }
+
+    const row = await fetchBookingFromSupabase(bookingRef);
+    if (!row) return res.status(404).json({ error: "Booking not found" });
+
+    if (isWithinCutoff(row.pickup_date, row.pickup_time)) {
+      return res.status(409).json({ error: "Bookings cannot be changed within 3 hours of pickup." });
+    }
+
+    const {
+      newPickupDate, newReturnDate,
+      newPickupTime, newReturnTime,
+      newVehicleId, newProtectionPlan, newProtectionPlanTier,
+    } = body;
+
+    if (!newPickupDate || !newReturnDate) {
+      return res.status(400).json({ error: "newPickupDate and newReturnDate are required" });
+    }
+
+    const targetVehicleUiId = newVehicleId || uiVehicleId(row.vehicle_id || "");
+    const vehicleData = await getVehicleById(targetVehicleUiId);
+    if (!vehicleData) return res.status(400).json({ error: "Invalid vehicle" });
+
+    // Availability check
+    const ranges = await loadBookedRanges(targetVehicleUiId);
+    const otherRanges = ranges.filter(
+      (r) => !(r.from === row.pickup_date && r.to === row.return_date)
+    );
+    const fPickupTime = normalizeClockTime(newPickupTime) || null;
+    const fReturnTime = normalizeClockTime(newReturnTime) || null;
+    if (hasDateTimeOverlap(otherRanges, newPickupDate, newReturnDate, fPickupTime, fReturnTime)) {
+      return res.status(409).json({ error: "The requested dates are not available for this vehicle." });
+    }
+
+    const settings = await loadPricingSettings();
+    const changeFee = settings.booking_change_fee || 25;
+
+    // Persist the pending change to Supabase
+    const sb = getSupabaseAdmin();
+    if (!sb) return res.status(503).json({ error: "Database unavailable" });
+
+    const pendingChange = {
+      newPickupDate, newReturnDate,
+      newPickupTime: fPickupTime,
+      newReturnTime: fReturnTime,
+      newVehicleId:  normalizeVehicleId(targetVehicleUiId),
+      newProtectionPlan:   !!newProtectionPlan,
+      newProtectionPlanTier: newProtectionPlanTier || null,
+      initiatedAt: new Date().toISOString(),
+    };
+
+    const { error: sbErr } = await sb
+      .from("bookings")
+      .update({
+        pending_change: pendingChange,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("booking_ref", bookingRef);
+
+    if (sbErr) {
+      console.error("manage-booking initiate_paid_change Supabase update error:", sbErr.message);
+      return res.status(500).json({ error: "Failed to store pending change" });
+    }
+
+    // Create Stripe PaymentIntent for the change fee
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(changeFee * 100),
+      currency: "usd",
+      receipt_email: row.customer_email || undefined,
+      description: `Sly Transportation Services LLC – Booking Change Fee (${bookingRef})`,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        payment_type:    "booking_change_fee",
+        booking_id:      bookingRef,
+        vehicle_id:      normalizeVehicleId(targetVehicleUiId),
+        change_fee:      String(changeFee),
+      },
+    });
+
+    return res.status(200).json({
+      clientSecret:    paymentIntent.client_secret,
+      publishableKey:  process.env.STRIPE_PUBLISHABLE_KEY,
+      changeFee,
+    });
+  }
+
+  return res.status(400).json({ error: `Unknown action: ${action}` });
+}

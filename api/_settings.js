@@ -46,6 +46,8 @@ export const PRICING_DEFAULTS = {
   // Note: Slingshot security deposit = rental tier price (dynamic, not a fixed admin setting).
   slingshot_booking_deposit:  SLINGSHOT_BOOKING_DEPOSIT,
   camry_booking_deposit:      CAMRY_BOOKING_DEPOSIT,
+  // Booking change fee (charged for each change after the first free one)
+  booking_change_fee:         25,
 };
 
 /**

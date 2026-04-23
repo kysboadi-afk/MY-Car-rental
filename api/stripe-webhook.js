@@ -27,12 +27,15 @@ import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
-import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
+import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-confirmation-template.js";
+import { createManageToken } from "./_manage-booking-token.js";
+import { getVehicleById } from "./_vehicles.js";
+import { uiVehicleId, normalizeVehicleId } from "./_vehicle-id.js";
 
 // Disable Vercel's built-in body parser so we can pass the raw request body
 // to stripe.webhooks.constructEvent() for signature verification.
@@ -1128,7 +1131,7 @@ function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking
 }
 
 async function sendReservationDepositBalanceEmail({
-  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink,
+  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink, manageLink,
 }) {
   if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -1154,6 +1157,7 @@ async function sendReservationDepositBalanceEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
       <p><a href="${esc(balanceLink)}" style="display:inline-block;background:#ffb400;color:#000;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Pay Remaining Balance</a></p>
+      ${manageLink ? `<p style="margin-top:16px"><a href="${esc(manageLink)}" style="display:inline-block;background:#1a73e8;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Manage Your Booking</a></p><p style="font-size:12px;color:#666">Use the Manage Your Booking link to update your dates, vehicle, or protection plan. (Link expires in 72 hours.)</p>` : ""}
     `,
   });
 }
@@ -1672,6 +1676,30 @@ export default async function handler(req, res) {
         console.warn("stripe-webhook: could not persist balancePaymentLink in bookings.json (non-fatal):", linkErr.message);
       }
 
+      // Generate a manage token and persist it so the customer can access the
+      // booking portal to update dates / vehicle / protection plan.
+      let manageLink = null;
+      try {
+        const manageToken = createManageToken(resolvedBookingId);
+        manageLink = `https://www.slytrans.com/manage-booking.html?t=${encodeURIComponent(manageToken)}`;
+        const sbForToken = getSupabaseAdmin();
+        if (sbForToken) {
+          const { error: tokenErr } = await sbForToken
+            .from("bookings")
+            .update({
+              manage_token:        manageToken,
+              balance_payment_link: balanceLink,
+              updated_at:          new Date().toISOString(),
+            })
+            .eq("booking_ref", resolvedBookingId);
+          if (tokenErr) {
+            console.warn("stripe-webhook: could not persist manage_token (non-fatal):", tokenErr.message);
+          }
+        }
+      } catch (tokenErr) {
+        console.warn("stripe-webhook: manage token generation failed (non-fatal):", tokenErr.message);
+      }
+
       try {
         if (vehicle_id && pickup_date && return_date) {
           await blockBookedDates(vehicle_id, pickup_date, return_date, pickup_time || "", return_time || "");
@@ -1692,6 +1720,7 @@ export default async function handler(req, res) {
           depositPaid: amountPaid,
           remainingBalance,
           balanceLink,
+          manageLink,
         });
       } catch (emailErr) {
         console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
@@ -1721,6 +1750,229 @@ export default async function handler(req, res) {
         }
       } catch (smsErr) {
         console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    // ── Booking change fee (paid for changes after the first free one) ─────────
+    if (paymentType === "booking_change_fee") {
+      const meta = paymentIntent.metadata || {};
+      const bookingRef = meta.booking_id || "";
+      if (!bookingRef) {
+        console.error("[BOOKING_CHANGE_FEE_MISSING_BOOKING_ID]", { paymentIntentId: paymentIntent.id });
+        return res.status(200).json({ received: true });
+      }
+
+      const sb = getSupabaseAdmin();
+      if (!sb) {
+        console.error("stripe-webhook: booking_change_fee — Supabase unavailable");
+        return res.status(200).json({ received: true });
+      }
+
+      // Load the booking and its pending_change
+      const { data: bkRow, error: bkErr } = await sb
+        .from("bookings")
+        .select(
+          "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
+          "change_count, pending_change, total_price, deposit_paid, remaining_balance, " +
+          "customer_email, payment_intent_id, manage_token"
+        )
+        .eq("booking_ref", bookingRef)
+        .maybeSingle();
+
+      if (bkErr || !bkRow) {
+        console.error("stripe-webhook: booking_change_fee — booking not found:", bookingRef, bkErr?.message);
+        return res.status(200).json({ received: true });
+      }
+
+      const pendingChange = bkRow.pending_change;
+      if (!pendingChange || !pendingChange.newPickupDate || !pendingChange.newReturnDate) {
+        console.error("stripe-webhook: booking_change_fee — no pending_change on booking:", bookingRef);
+        return res.status(200).json({ received: true });
+      }
+
+      try {
+        const {
+          newPickupDate, newReturnDate,
+          newPickupTime, newReturnTime,
+          newVehicleId, newProtectionPlan, newProtectionPlanTier,
+        } = pendingChange;
+
+        // newVehicleId in pending_change is already a DB-canonical vehicle ID
+        // (stored by manage-booking.js initiate_paid_change via normalizeVehicleId).
+        // Use uiVehicleId to map back to the UI key for availability/pricing lookups.
+        const pendingDbVehicleId  = newVehicleId || bkRow.vehicle_id;
+        const pendingUiVehicleId  = uiVehicleId(pendingDbVehicleId);
+        const vehicleData = await getVehicleById(pendingUiVehicleId);
+        const depositPaid = Number(bkRow.deposit_paid || 0);
+
+        // Recompute pricing
+        let newTotal = Number(bkRow.total_price || 0);
+        let newBalanceDue = Number(bkRow.remaining_balance || 0);
+        if (vehicleData !== null && vehicleData !== undefined) {
+          const settings = await loadPricingSettings();
+          const rentalCost = computeCarAmountFromVehicleData(vehicleData, newPickupDate, newReturnDate, settings);
+          if (rentalCost !== null && rentalCost !== undefined) {
+            const days = computeRentalDays(newPickupDate, newReturnDate);
+            const dppCost = newProtectionPlan ? computeDppCostFromSettings(days, newProtectionPlanTier || null) : 0;
+            const preTax = rentalCost + dppCost;
+            newTotal = applyTax(preTax, settings);
+            newBalanceDue = Math.max(0, Math.round((newTotal - depositPaid) * 100) / 100);
+          }
+        }
+
+        // Build new balance link
+        const newBalanceLink = `https://www.slytrans.com/balance.html?v=${encodeURIComponent(pendingUiVehicleId)}&p=${encodeURIComponent(newPickupDate)}&r=${encodeURIComponent(newReturnDate)}&b=${encodeURIComponent(bookingRef)}`;
+
+        // Apply the change
+        const { error: updateErr } = await sb
+          .from("bookings")
+          .update({
+            vehicle_id:           pendingDbVehicleId,
+            pickup_date:          newPickupDate,
+            return_date:          newReturnDate,
+            pickup_time:          newPickupTime || bkRow.pickup_time,
+            return_time:          newReturnTime || bkRow.return_time,
+            total_price:          newTotal,
+            remaining_balance:    newBalanceDue,
+            change_count:         Number(bkRow.change_count || 0) + 1,
+            balance_payment_link: newBalanceLink,
+            pending_change:       null,
+            updated_at:           new Date().toISOString(),
+          })
+          .eq("booking_ref", bookingRef);
+
+        if (updateErr) {
+          console.error("stripe-webhook: booking_change_fee Supabase update error:", updateErr.message);
+          return res.status(200).json({ received: true });
+        }
+
+        // Update booked-dates.json
+        try {
+          const bookingChangeFeeDateUpdate = async () => {
+            const token = process.env.GITHUB_TOKEN;
+            if (!token) return;
+            const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
+            const ghhdrs = {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            };
+            await updateJsonFileWithRetry({
+              load: async () => {
+                const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghhdrs });
+                if (!resp.ok) return { data: {}, sha: null };
+                const file = await resp.json();
+                let data = {};
+                try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); } catch { /* ignore */ }
+                return { data, sha: file.sha };
+              },
+              apply: (data) => {
+                if (!Array.isArray(data[pendingUiVehicleId])) data[pendingUiVehicleId] = [];
+                data[pendingUiVehicleId] = data[pendingUiVehicleId].filter(
+                  (r) => !(r.from === bkRow.pickup_date && r.to === bkRow.return_date)
+                );
+                const entry = { from: newPickupDate, to: newReturnDate };
+                if (newPickupTime) entry.fromTime = newPickupTime;
+                if (newReturnTime) entry.toTime   = newReturnTime;
+                data[pendingUiVehicleId].push(entry);
+                data[pendingUiVehicleId].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+              },
+              save: async (data, sha, message) => {
+                const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
+                const body = { message, content, branch: GITHUB_DATA_BRANCH };
+                if (sha) body.sha = sha;
+                const resp = await fetch(apiUrl, {
+                  method: "PUT",
+                  headers: { ...ghhdrs, "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+                if (!resp.ok) {
+                  const text = await resp.text().catch(() => "");
+                  throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
+                }
+              },
+              message: `booking_change_fee: update dates for ${pendingUiVehicleId}: ${bkRow.pickup_date}→${bkRow.return_date} replaced by ${newPickupDate}→${newReturnDate}`,
+            });
+          };
+          await bookingChangeFeeDateUpdate();
+        } catch (dateErr) {
+          console.error("stripe-webhook: booking_change_fee booked-dates update error (non-fatal):", dateErr.message);
+        }
+
+        // Update bookings.json
+        try {
+          const currentUiVid = uiVehicleId(bkRow.vehicle_id || "");
+          await updateBooking(currentUiVid, bookingRef, {
+            vehicleId:          pendingUiVehicleId,
+            pickupDate:         newPickupDate,
+            returnDate:         newReturnDate,
+            pickupTime:         newPickupTime || undefined,
+            returnTime:         newReturnTime || undefined,
+            totalPrice:         newTotal,
+            remainingBalance:   newBalanceDue,
+            balancePaymentLink: newBalanceLink,
+            updatedAt:          new Date().toISOString(),
+          });
+        } catch (jsonErr) {
+          console.error("stripe-webhook: booking_change_fee bookings.json update error (non-fatal):", jsonErr.message);
+        }
+
+        // Revenue record for the change fee itself
+        try {
+          const customerId = await resolveCustomerIdFromSupabase("", bkRow.customer_email || "");
+          await autoCreateRevenueRecord({
+            bookingId:       bookingRef,
+            paymentIntentId: paymentIntent.id,
+            vehicleId:       pendingDbVehicleId,
+            customerId,
+            email:           bkRow.customer_email || "",
+            amountPaid:      Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100,
+            paymentMethod:   "stripe",
+            type:            "booking_change_fee",
+          }, { strict: false, requireStripeFee: false });
+        } catch (revErr) {
+          console.error("stripe-webhook: booking_change_fee revenue record error (non-fatal):", revErr.message);
+        }
+
+        // Send confirmation email
+        try {
+          if (bkRow.customer_email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+            const transporter = nodemailer.createTransport({
+              host:   process.env.SMTP_HOST,
+              port:   parseInt(process.env.SMTP_PORT || "587"),
+              secure: process.env.SMTP_PORT === "465",
+              auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            });
+            await transporter.sendMail({
+              from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+              to:      bkRow.customer_email,
+              subject: "Your Booking Change Has Been Applied",
+              html: `
+                <h2>✅ Booking Change Applied</h2>
+                <p>Your booking change fee was received and your booking has been updated.</p>
+                <table style="border-collapse:collapse;width:100%;margin:16px 0">
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(newPickupDate)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Return</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(newReturnDate)}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>New Total</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(newTotal.toFixed(2))}</td></tr>
+                  <tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(newBalanceDue.toFixed(2))}</td></tr>
+                </table>
+                <p><a href="${esc(newBalanceLink)}" style="background:#ffb400;color:#000;padding:12px 24px;text-decoration:none;border-radius:4px;font-weight:700">Pay Remaining Balance</a></p>
+              `,
+            });
+          }
+        } catch (emailErr) {
+          console.error("stripe-webhook: booking_change_fee confirmation email error (non-fatal):", emailErr.message);
+        }
+
+        console.log("BOOKING_CHANGE_FEE_APPLIED", {
+          booking_id: bookingRef,
+          old_dates: { pickup: bkRow.pickup_date, return: bkRow.return_date },
+          new_dates: { pickup: newPickupDate, return: newReturnDate },
+          payment_intent_id: paymentIntent.id,
+        });
+      } catch (changeErr) {
+        console.error("stripe-webhook: booking_change_fee processing error:", changeErr.message);
       }
       return res.status(200).json({ received: true });
     }
