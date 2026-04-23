@@ -352,7 +352,7 @@ export default async function handler(req, res) {
     });
 
     if (!matches.length) {
-      return res.status(404).json({ error: "No reserved deposit booking was found with that email/phone/booking ID." });
+      return res.status(404).json({ error: "No eligible deposit booking was found with that email/phone/booking ID." });
     }
 
     const selectedVehicleDbId = normalizeVehicleId(selectedVehicleUiId);
