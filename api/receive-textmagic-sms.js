@@ -373,10 +373,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   // Buffer raw body (required for signature verification and manual JSON parsing).
-  let rawBody = "";
+  const chunks = [];
   try {
     await new Promise((resolve, reject) => {
-      req.on("data", (chunk) => { rawBody += chunk; });
+      req.on("data", (chunk) => { chunks.push(chunk); });
       req.on("end", resolve);
       req.on("error", reject);
     });
@@ -384,6 +384,7 @@ export default async function handler(req, res) {
     console.error("receive-textmagic-sms: failed to read request body:", bufErr);
     return res.status(400).json({ error: "Failed to read request body" });
   }
+  const rawBody = Buffer.concat(chunks).toString("utf8");
 
   // Validate X-TM-Signature header when TEXTMAGIC_WEBHOOK_SECRET is configured.
   const tmSecret = process.env.TEXTMAGIC_WEBHOOK_SECRET;
