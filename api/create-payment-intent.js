@@ -137,6 +137,10 @@ export default async function handler(req, res) {
     // Both checks are time-aware: a booking from 9 AM to 9 AM does not block
     // a subsequent booking starting at 9 AM on the same return date.
     let assignedVehicleId = vehicleId;
+    console.log("[VEHICLE_ID_INPUT]", JSON.stringify({
+      vehicleId_raw:  vehicleId,
+      vehicle_name:   vehicleData?.name || null,
+    }));
     if (!testAvailabilityOverride) {
       if (isSlingshotVehicle) {
         // Compute the Slingshot return time from pickup time + duration so the
@@ -278,12 +282,20 @@ export default async function handler(req, res) {
       // Stripe dashboard and can be reconciled with booked-dates.json if needed.
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
       // needed here — values are only rendered in the Stripe dashboard.
-      metadata: {
+      metadata: (() => {
+        const canonicalVehicleId = canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name);
+        console.log("[VEHICLE_ID_STRIPE]", JSON.stringify({
+          vehicleId_raw:       vehicleId,
+          vehicleId_assigned:  assignedVehicleId,
+          vehicleId_canonical: canonicalVehicleId,
+          vehicle_name:        vehicleData.name,
+        }));
+        return {
         booking_id:         bookingId,
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: trimmedPhone,
-        vehicle_id:   canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name),
+        vehicle_id:   canonicalVehicleId,
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
@@ -329,7 +341,8 @@ export default async function handler(req, res) {
           balance_at_pickup:   (afterTaxFullRental - settings.camry_booking_deposit).toFixed(2),
           ...( protectionPlan && tier ? { protection_plan_tier: tier } : {} ),
         } : {}),
-      },
+      };
+      })(),
     };
 
     // All payments use automatic capture

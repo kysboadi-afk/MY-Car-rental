@@ -61,6 +61,7 @@ async function fetchGitHubBookedDates() {
  */
 async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime) {
   const dbVehicleId = normalizeVehicleId(vehicleId);
+  console.log("[VEHICLE_ID_LOOKUP]", JSON.stringify({ vehicleId_ui: vehicleId, vehicleId_db: dbVehicleId, from, to }));
   if (sb) {
     try {
       // Active rental override: if the vehicle has ANY active_rental booking
