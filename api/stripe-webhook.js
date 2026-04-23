@@ -1576,14 +1576,19 @@ export default async function handler(req, res) {
         full_rental_amount,
       } = meta;
       const bookingRef = booking_id || "";
-      const resolvedBookingId = await resolveBookingId(bookingRef);
-      if (!resolvedBookingId) {
+      // For reservation_deposit the booking is being created for the first
+      // time — it has never been written to Supabase yet (create-payment-intent
+      // only embeds the ID in PI metadata), so resolveBookingId would always
+      // return null (not-found).  Use the booking_id from metadata directly;
+      // autoUpsertBooking below will INSERT the row into Supabase.
+      if (!bookingRef) {
         console.error("[BOOKING_RESOLVE_FAILED]", {
-          bookingRef: bookingRef || "<missing>",
+          bookingRef: "<missing>",
           paymentIntentId: paymentIntent.id,
         });
         return res.status(200).json({ received: true });
       }
+      const resolvedBookingId = bookingRef;
 
       const amountPaid = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
       const totalPrice = normalizeCurrency(full_rental_amount || amountPaid);
