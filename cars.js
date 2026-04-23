@@ -225,6 +225,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       btn.style.display = "";
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
+      link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
 
       if (!isBookedToday(bookedDates[vid])) {
         const todayBadge = document.createElement("span");
@@ -297,8 +298,15 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
-      btn.setAttribute("data-i18n", "fleet.extendRental");
-      btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
+      if (isReserved) {
+        btn.setAttribute("data-i18n", "fleet.completeBooking");
+        btn.textContent = i18n.t("fleet.completeBooking") || "✅ Complete Booking";
+        link.href = "manage-booking.html";
+      } else {
+        btn.setAttribute("data-i18n", "fleet.extendRental");
+        btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
+        link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
+      }
       btn.disabled = false;
       btn.style.display = "";
       btn.classList.add("btn-booked");

@@ -97,7 +97,7 @@ async function fetchBookingFromSupabase(bookingRef) {
       "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, " +
       "status, payment_status, total_price, deposit_paid, remaining_balance, " +
       "change_count, manage_token, balance_payment_link, pending_change, " +
-      "customer_id, customer_name, customer_email, customer_phone, notes, payment_intent_id, created_at"
+      "customer_name, customer_email, customer_phone, payment_intent_id, created_at"
     )
     .eq("booking_ref", bookingRef)
     .maybeSingle();
@@ -291,21 +291,30 @@ export default async function handler(req, res) {
     const sb = getSupabaseAdmin();
     if (!sb) return res.status(503).json({ error: "Database unavailable." });
 
-    const { data: candidates, error: lookupErr } = await sb
+    const lookupEmail = identifier.includes("@") ? identifier.toLowerCase() : "";
+    const lookupPhone = normalizeLookupPhone(identifier);
+    let verifyQuery = sb
       .from("bookings")
       .select("booking_ref, vehicle_id, customer_email, customer_phone, created_at")
       .eq("status", "reserved")
       .eq("payment_status", "partial")
       .order("created_at", { ascending: false })
-      .limit(500);
+      .limit(100);
+    if (lookupEmail) {
+      verifyQuery = verifyQuery.ilike("customer_email", lookupEmail);
+    } else if (lookupPhone) {
+      const phoneTail = lookupPhone.slice(-10);
+      verifyQuery = verifyQuery.or(
+        `customer_phone.ilike.%${lookupPhone}%,customer_phone.ilike.%${phoneTail}%`
+      );
+    }
 
+    const { data: candidates, error: lookupErr } = await verifyQuery;
     if (lookupErr) {
       console.error("manage-booking verify lookup error:", lookupErr.message);
       return res.status(500).json({ error: "Could not verify booking right now." });
     }
 
-    const lookupEmail = identifier.includes("@") ? identifier.toLowerCase() : "";
-    const lookupPhone = normalizeLookupPhone(identifier);
     const matches = (candidates || []).filter((row) => {
       const rowEmail = String(row.customer_email || "").trim().toLowerCase();
       const rowPhone = normalizeLookupPhone(row.customer_phone || "");
@@ -354,7 +363,7 @@ export default async function handler(req, res) {
 
   const bookingRef = verifyManageToken(token);
   if (!bookingRef) {
-    return res.status(401).json({ error: "Invalid or expired manage token. Please verify again." });
+    return res.status(401).json({ error: "Invalid or expired manage token. Please verify again, or contact support if your old link no longer works." });
   }
 
   // ── action: get ─────────────────────────────────────────────────────────────

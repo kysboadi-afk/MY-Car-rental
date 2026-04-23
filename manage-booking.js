@@ -21,6 +21,7 @@
 
   const API_BASE = "https://sly-rides.vercel.app/api/manage-booking";
   const VEHICLES_API = "https://sly-rides.vercel.app/api/v2-vehicles";
+  const PAYMENT_SUCCESS_RELOAD_DELAY_MS = 2200;
 
   // ── Parse token from URL ────────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -28,7 +29,7 @@
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const $verifyState   = document.getElementById("verify-state");
-  const $verifyId      = document.getElementById("verify-identifier");
+  const $verifyIdentifier = document.getElementById("verify-identifier");
   const $verifyVehicle = document.getElementById("verify-vehicle");
   const $verifyMsg     = document.getElementById("verify-msg");
   const $btnVerify     = document.getElementById("btn-verify");
@@ -138,7 +139,7 @@
   // ── Load booking ────────────────────────────────────────────────────────────
   async function loadBooking() {
     if (!activeToken) {
-      showError("Booking verification is required.");
+      showError("Please verify your booking using your phone/email and booked vehicle.");
       return;
     }
 
@@ -214,7 +215,7 @@
   }
 
   async function verifyBooking() {
-    const identifier = ($verifyId.value || "").trim();
+    const identifier = ($verifyIdentifier.value || "").trim();
     const vehicleId = ($verifyVehicle.value || "").trim();
     if (!identifier) {
       setVerifyMsg("Enter the phone number or email used on your booking.", "error");
@@ -558,7 +559,7 @@
       }
       if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
         setActionMsg("✅ Payment received. Updating your booking…", "success");
-        setTimeout(() => window.location.reload(), 2200);
+        setTimeout(() => window.location.reload(), PAYMENT_SUCCESS_RELOAD_DELAY_MS);
       }
     } catch (err) {
       $balanceError.textContent = "Payment failed. Please try again.";
