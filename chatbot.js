@@ -91,6 +91,7 @@ var KNOWN_VEHICLE_META = {
   camry:      { name: "Camry 2012", icon: "🔵", type: "economy" },
   camry2013:  { name: "Camry 2013 SE", icon: "🟢", type: "economy" }
 };
+var fleetVehicleIdsCache = { key: "", ids: [] };
 
 function prettifyVehicleId(vehicleId) {
   return String(vehicleId || "")
@@ -113,6 +114,13 @@ function getVehicleMeta(vehicleId) {
 }
 
 function getFleetVehicleIds() {
+  var fleetKeys = Object.keys(slyFleetStatus || {}).sort();
+  var bookedKeys = Object.keys(slyBookedDates || {}).sort();
+  var cacheKey = [fleetKeys.join(","), bookedKeys.join(",")].join("|");
+  if (fleetVehicleIdsCache.key === cacheKey) {
+    return fleetVehicleIdsCache.ids.slice();
+  }
+
   var seen = {};
   var ids = [];
   function add(id) {
@@ -122,9 +130,10 @@ function getFleetVehicleIds() {
   }
 
   Object.keys(KNOWN_VEHICLE_META).forEach(add);
-  Object.keys(slyFleetStatus || {}).sort().forEach(add);
-  Object.keys(slyBookedDates || {}).sort().forEach(add);
+  fleetKeys.forEach(add);
+  bookedKeys.forEach(add);
 
+  fleetVehicleIdsCache = { key: cacheKey, ids: ids.slice() };
   return ids;
 }
 

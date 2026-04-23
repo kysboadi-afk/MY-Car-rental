@@ -25,9 +25,9 @@ const BUSINESS_TZ = "America/Los_Angeles";
 // blocked by active reservations still surface next availability consistently.
 const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
-function buildDefaultStatus(vehicleIds = FALLBACK_VEHICLE_IDS) {
+function buildDefaultStatus() {
   const map = {};
-  for (const vehicleId of vehicleIds) {
+  for (const vehicleId of FALLBACK_VEHICLE_IDS) {
     map[vehicleId] = { available: true, rental_status: "available" };
   }
   return map;
@@ -120,9 +120,13 @@ function formatDateTimeLA(date) {
  */
 async function enrichWithAvailableAt(sb, result) {
   try {
+    const vehicleIds = Object.keys(result || {});
+    if (!vehicleIds.length) return;
+
     const { data: activeRows, error } = await sb
       .from("bookings")
       .select("vehicle_id, return_date, return_time, status")
+      .in("vehicle_id", vehicleIds)
       .in("status", ACTIVE_BOOKING_STATUSES)
       .not("return_date", "is", null)
       .order("return_date", { ascending: false })
@@ -243,10 +247,11 @@ export default async function handler(req, res) {
         // Merge GitHub data into default structure, adding rental_status field
         const result = buildDefaultStatus();
         for (const [vid, val] of Object.entries(content)) {
-          const avail = typeof val?.available === "boolean" ? val.available : true;
+          const vehicleData = val && typeof val === "object" ? val : {};
+          const avail = typeof vehicleData.available === "boolean" ? vehicleData.available : true;
           result[vid] = {
             available: avail,
-            rental_status: val?.rental_status || (avail ? "available" : "maintenance"),
+            rental_status: vehicleData.rental_status || (avail ? "available" : "maintenance"),
           };
         }
         return res.status(200).json(result);
