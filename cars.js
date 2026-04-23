@@ -187,11 +187,7 @@ function getNextAvailDate(vehicleId, bookedDates) {
     return SlyLA.addDaysToISO(upcoming.to, 1);
   }
 
-  // 3) Fallback for stale status with only past ranges.
-  const latestExpired = merged[merged.length - 1];
-  if (latestExpired) {
-    return SlyLA.addDaysToISO(latestExpired.to, 1);
-  }
+  // 3) No current/future block found. Avoid showing a stale past date.
   return null;
 }
 

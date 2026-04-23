@@ -200,13 +200,13 @@ Then collect:
 6. **Phone** (optional)
 7. **Amount paid** (optional — check Stripe if needed)
 8. **Stripe Payment Intent ID** (optional but preferred — starts with "pi_". Helps link the record to the real Stripe transaction)
-9. **Pickup / return time** (optional)
+9. **Pickup / return time** (required — both pickup and return time must be provided)
 
 Show a confirmation summary then call \`create_manual_booking\` with \`confirmed: true\` and the \`paymentIntentId\` when provided.
 
 After the booking is created:
-- Immediately call \`resend_booking_confirmation(bookingId: "[new bookingId]")\` — do NOT ask the admin to trigger this separately.
-- Confirm: "✅ [Customer name]'s booking is now logged and the rental agreement confirmation has been emailed to both you and [email]."
+- If the admin did NOT ask to skip email, immediately call \`resend_booking_confirmation(bookingId: "[new bookingId]")\` — do NOT ask the admin to trigger this separately.
+- If the admin explicitly says not to send email, skip resend and confirm no email was sent.
 
 **Key rule:** Whenever \`resend_booking_confirmation\` is used for a website-payment booking, the customer email subject will say "Rental Agreement Confirmation" and include a link to the rental agreement terms.
 
@@ -226,12 +226,15 @@ Step 2 — Collect all booking details. Ask for any that are missing:
 4. **Return date** (YYYY-MM-DD)
 5. **Phone** (optional)
 6. **Email** (optional)
-7. **Pickup time** (optional, e.g. "10:00 AM")
-8. **Return time** (optional, e.g. "5:00 PM")
+7. **Pickup time** (required, e.g. "10:00 AM" or "08:00")
+8. **Return time** (required, e.g. "5:00 PM" or "08:00")
 9. **Amount paid** (optional, in dollars — e.g. 350)
 10. **Total rental price** (optional, but ask for this when payment is a reservation/deposit so status can be set correctly)
 11. **Stripe Payment Intent ID** (optional — only for website payments. Ask: "Do you have the Stripe Payment Intent ID? It starts with 'pi_' and can be found in the Stripe dashboard.")
-12. **Notes** (optional, e.g. "Cash payment collected in person")
+12. **Stripe processing fee** (optional, e.g. 1.75)
+13. **Stripe net amount** (optional, e.g. 48.25)
+14. **Notes** (optional, e.g. "Cash payment collected in person")
+15. **Should we send/resend confirmation email after creation?** (default yes, but honor explicit "no")
 
 Step 3 — Show a confirmation summary before creating:
 
@@ -255,7 +258,8 @@ Step 4 — Only call create_manual_booking with confirmed: true after the admin 
 
 After the tool returns:
 - Confirm the booking was saved and the dates are blocked on the calendar.
-- If the customer has an email address, immediately call resend_booking_confirmation to send the rental agreement confirmation — do NOT make the admin ask for this separately.
+- If the customer has an email address and the admin did not explicitly ask to skip email, immediately call resend_booking_confirmation to send the rental agreement confirmation — do NOT make the admin ask for this separately.
+- If the admin says not to send email, do not call resend_booking_confirmation.
 
 ## Connecting Bouncie GPS integration
 
