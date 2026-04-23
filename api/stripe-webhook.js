@@ -1107,9 +1107,13 @@ function logWebhookRouting(paymentIntent, reason) {
   );
 }
 
-function safeMoney(value) {
+function normalizeCurrency(value) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+function sanitizeSmsValue(value) {
+  return String(value || "").replace(/[\r\n]+/g, " ").trim();
 }
 
 function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking }) {
@@ -1140,9 +1144,9 @@ function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking
 }
 
 async function sendReservationDepositBalanceEmail({
-  to, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink,
+  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink,
 }) {
-  if (!to || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || "587"),
@@ -1152,7 +1156,7 @@ async function sendReservationDepositBalanceEmail({
   const firstName = (renterName || "").split(" ")[0] || "there";
   await transporter.sendMail({
     from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-    to,
+    to: renterEmail,
     subject: "Your Reservation Deposit Was Received — Complete Remaining Balance",
     html: `
       <h2>✅ Reservation Deposit Received</h2>
@@ -1162,8 +1166,8 @@ async function sendReservationDepositBalanceEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate || "")}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(safeMoney(depositPaid).toFixed(2))}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(safeMoney(remainingBalance).toFixed(2))}</strong></td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
       <p><a href="${esc(balanceLink)}" style="display:inline-block;background:#ffb400;color:#000;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Pay Remaining Balance</a></p>
     `,
@@ -1193,8 +1197,8 @@ async function sendReservationDepositBalanceOwnerEmail({
       ${renterEmail ? `<strong>Email:</strong> ${esc(renterEmail)}<br>` : ""}
       ${renterPhone ? `<strong>Phone:</strong> ${esc(renterPhone)}<br>` : ""}
       <strong>Vehicle:</strong> ${esc(vehicleName || "N/A")}<br>
-      <strong>Deposit Paid:</strong> $${esc(safeMoney(depositPaid).toFixed(2))}<br>
-      <strong>Remaining Balance:</strong> $${esc(safeMoney(remainingBalance).toFixed(2))}</p>
+      <strong>Deposit Paid:</strong> $${esc(normalizeCurrency(depositPaid).toFixed(2))}<br>
+      <strong>Remaining Balance:</strong> $${esc(normalizeCurrency(remainingBalance).toFixed(2))}</p>
       <p>Customer payment link: <a href="${esc(balanceLink)}">${esc(balanceLink)}</a></p>
     `,
   });
@@ -1582,8 +1586,8 @@ export default async function handler(req, res) {
       }
 
       const amountPaid = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
-      const totalPrice = safeMoney(full_rental_amount || amountPaid);
-      const remainingBalance = Math.max(0, safeMoney(totalPrice - amountPaid));
+      const totalPrice = normalizeCurrency(full_rental_amount || amountPaid);
+      const remainingBalance = Math.max(0, normalizeCurrency(totalPrice - amountPaid));
 
       let updatedBooking = null;
       try {
@@ -1634,9 +1638,9 @@ export default async function handler(req, res) {
         let feeFields = { stripeFee: null, stripeNet: null };
         try {
           feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-        } catch (feeErr) {
-          console.warn(`stripe-webhook: reservation_deposit fee lookup failed (non-fatal): ${feeErr.message}`);
-        }
+            } catch (feeErr) {
+              console.warn(`stripe-webhook: reservation_deposit fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
+            }
         const customerId = await resolveCustomerIdFromSupabase(
           bookingForSync.phone || "",
           bookingForSync.email || "",
@@ -1691,7 +1695,7 @@ export default async function handler(req, res) {
 
       try {
         await sendReservationDepositBalanceEmail({
-          to: bookingForSync.email,
+          renterEmail: bookingForSync.email,
           renterName: bookingForSync.name,
           vehicleName: bookingForSync.vehicleName,
           pickupDate: bookingForSync.pickupDate,
@@ -1719,9 +1723,11 @@ export default async function handler(req, res) {
       }
       try {
         if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          const smsVehicle = sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle");
+          const smsLink = sanitizeSmsValue(balanceLink);
           await sendSms(
             normalizePhone(bookingForSync.phone),
-            `Deposit received for ${bookingForSync.vehicleName}. Remaining balance: $${remainingBalance.toFixed(2)}. Pay here: ${balanceLink}`
+            `Deposit received for ${smsVehicle}. Remaining balance: $${remainingBalance.toFixed(2)}. Pay here: ${smsLink}`
           );
         }
       } catch (smsErr) {
@@ -1800,7 +1806,6 @@ export default async function handler(req, res) {
               console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
             }
           } else if (bookingRef) {
-            const paidAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
             const fallbackBooking = {
               bookingId: bookingRef,
               vehicleId: vehicle_id,
@@ -1814,7 +1819,7 @@ export default async function handler(req, res) {
               returnTime: meta.return_time || "",
               paymentIntentId: originalPiId || "",
               amountPaid: paidAmount,
-              totalPrice: safeMoney(meta.full_rental_amount || paidAmount),
+              totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
               paymentStatus: "paid",
               status: "active",
             };
