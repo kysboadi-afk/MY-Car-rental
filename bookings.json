@@ -262,7 +262,8 @@
       "paymentMethod": "stripe",
       "notes": "",
       "smsSentAt": {
-        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+        "unpaid_2h": "2026-04-23T13:00:10.172Z",
+        "unpaid_final": "2026-04-23T14:30:08.800Z"
       },
       "createdAt": "2026-04-23T06:17:42.499Z",
       "source": "public_booking"
@@ -364,7 +365,8 @@
       "paymentMethod": "cash",
       "notes": "Balance at pickup $567.40, reservation deposit not refundable. Payment type: reservation_deposit. Stripe Customer ID: cus_UO2eMoHJZAbXQd. Protection Plan: Standard. No emails to be sent.",
       "smsSentAt": {
-        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+        "unpaid_2h": "2026-04-23T13:00:10.172Z",
+        "unpaid_final": "2026-04-23T14:30:08.800Z"
       },
       "createdAt": "2026-04-23T09:59:41.239Z",
       "source": "admin_ai",
@@ -416,7 +418,8 @@
       "paymentMethod": "cash",
       "notes": "Reservation deposit",
       "smsSentAt": {
-        "unpaid_2h": "2026-04-23T13:00:10.172Z"
+        "unpaid_2h": "2026-04-23T13:00:10.172Z",
+        "unpaid_final": "2026-04-23T14:30:08.800Z"
       },
       "createdAt": "2026-04-23T11:29:16.423Z",
       "source": "admin_ai"
