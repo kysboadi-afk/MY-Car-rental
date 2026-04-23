@@ -401,6 +401,34 @@ async function resolveCustomerIdFromSupabase(phone, email) {
   return null;
 }
 
+/**
+ * Resolves a raw booking reference from Stripe PI metadata to the canonical
+ * booking_ref confirmed to exist in Supabase bookings.
+ * Returns the booking_ref when found, or null when not found (with a warning).
+ * Falls back to the raw input on Supabase errors so the caller can decide.
+ *
+ * @param {string|null} rawRef - booking_id / original_booking_id from PI metadata
+ * @returns {Promise<string|null>}
+ */
+async function resolveBookingId(rawRef) {
+  if (!rawRef) return null;
+  const sb = getSupabaseAdmin();
+  if (!sb) return rawRef; // can't validate — pass through
+  try {
+    const { data } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("booking_ref", rawRef)
+      .maybeSingle();
+    if (data?.booking_ref) return data.booking_ref;
+    console.warn(`stripe-webhook: resolveBookingId — booking_ref "${rawRef}" not found in Supabase`);
+    return null;
+  } catch (err) {
+    console.warn(`stripe-webhook: resolveBookingId lookup error (non-fatal): ${err.message}`);
+    return rawRef; // pass through; autoCreateRevenueRecord will validate
+  }
+}
+
 async function bookingExistsInSupabase(bookingId, paymentIntentId) {
   const sb = getSupabaseAdmin();
   if (!sb) return false;
@@ -1136,6 +1164,11 @@ export default async function handler(req, res) {
             return res.status(200).json({ received: true });
           }
 
+          // Resolve and verify the booking_ref against Supabase before any revenue
+          // record writes.  Falls back to bookingRef so the booking-update logic
+          // (which uses bookings.json, not Supabase) is unaffected.
+          const resolvedBookingId = (await resolveBookingId(bookingRef)) ?? bookingRef;
+
           let foundBooking = false;
           let alreadyApplied = false;
           let invalidStatus = null;
@@ -1268,7 +1301,7 @@ export default async function handler(req, res) {
                 updatedBooking.email || renter_email || "",
               );
               await autoCreateRevenueRecord({
-                bookingId:       bookingRef,
+                bookingId:       resolvedBookingId,
                 paymentIntentId: paymentIntent.id,
                 vehicleId:       vehicle_id,
                 customerId:      extCustomerId,
@@ -1316,7 +1349,7 @@ export default async function handler(req, res) {
             );
 
             await autoCreateRevenueRecord({
-              bookingId:       bookingRef,
+              bookingId:       resolvedBookingId,
               paymentIntentId: paymentIntent.id,
               vehicleId:       vehicle_id,
               customerId:      extCustomerId,
