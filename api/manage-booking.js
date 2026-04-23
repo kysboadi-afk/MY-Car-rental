@@ -357,11 +357,14 @@ export default async function handler(req, res) {
 
     const selectedVehicleDbId = normalizeVehicleId(selectedVehicleUiId);
     const selected = matches.find((row) => {
-      const rowUi = uiVehicleId(row.vehicle_id || "");
-      return rowUi === selectedVehicleUiId || row.vehicle_id === selectedVehicleDbId;
+      const rowNorm = normalizeVehicleId(row.vehicle_id || "");
+      const rowUi   = uiVehicleId(rowNorm);
+      return rowUi === selectedVehicleUiId || rowNorm === selectedVehicleDbId;
     });
     if (!selected) {
-      const expectedVehicles = [...new Set(matches.map((row) => uiVehicleId(row.vehicle_id || "")).filter(Boolean))];
+      const expectedVehicles = [...new Set(
+        matches.map((row) => uiVehicleId(normalizeVehicleId(row.vehicle_id || ""))).filter(Boolean)
+      )];
       return res.status(409).json({
         error: expectedVehicles.length
           ? `Vehicle mismatch. Please select: ${expectedVehicles.join(", ")}`

@@ -53,7 +53,7 @@ import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2012", "camry2013"];
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (Unit 2)",
@@ -209,9 +209,9 @@ export default async function handler(req, res) {
           `);
 
         if (vehicleId && ALLOWED_VEHICLES.includes(vehicleId)) {
-          q = q.eq("vehicle_id", normalizeVehicleId(vehicleId));
+          q = q.eq("vehicle_id", vehicleId);
         } else {
-          q = q.in("vehicle_id", ALLOWED_VEHICLES.map(normalizeVehicleId));
+          q = q.in("vehicle_id", ALLOWED_VEHICLES);
         }
         if (status) {
           q = q.eq("status", status);

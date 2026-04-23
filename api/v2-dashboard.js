@@ -24,7 +24,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2012", "camry2013"];
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (Unit 2)",
@@ -135,7 +135,7 @@ export default async function handler(req, res) {
               deposit_paid, created_at,
               customers ( name )
             `)
-            .in("vehicle_id", ALLOWED_VEHICLES.map(normalizeVehicleId))
+            .in("vehicle_id", ALLOWED_VEHICLES)
             .order("created_at", { ascending: false });
           if (error) throw error; // query error → propagate, do NOT fallback
           return (rows || []).map((r) => ({
