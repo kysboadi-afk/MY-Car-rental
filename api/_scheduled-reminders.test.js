@@ -81,21 +81,12 @@ mock.module("./_sms-templates.js", {
     UNPAID_REMINDER_2H:          "",
     UNPAID_REMINDER_FINAL:       "",
     PICKUP_REMINDER_24H:         "",
-    PICKUP_REMINDER_2H:          "",
-    PICKUP_REMINDER_30MIN:       "",
     ACTIVE_RENTAL_MID:           "",
-    ACTIVE_RENTAL_1H_BEFORE_END: "",
-    ACTIVE_RENTAL_15MIN_BEFORE_END: "",
-    LATE_WARNING_30MIN:          "",
     LATE_AT_RETURN_TIME:         "",
     LATE_GRACE_EXPIRED:          "",
     LATE_FEE_APPLIED:            "",
     POST_RENTAL_THANK_YOU:       "",
-    RETENTION_DAY_1:             "",
-    RETENTION_DAY_3:             "",
     RETENTION_DAY_7:             "",
-    RETENTION_DAY_14:            "",
-    RETENTION_DAY_30:            "",
     BOOKING_CONFIRMED:           "",
     EXTEND_UNAVAILABLE:          "",
     EXTEND_LIMITED:              "",
@@ -392,32 +383,6 @@ test("processAutoCompletions: restores fleet-status for each vehicle independent
 
   const restoreCalls = retryApplies.filter((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
   assert.equal(restoreCalls.length, 2, "Each vehicle should get its own fleet-status restore call");
-});
-
-test("processActiveRentals: sends reminder exactly 2h before return_datetime", async () => {
-  reset();
-  const now = new Date("2026-06-15T06:00:00-07:00");
-  const allBookings = {
-    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
-  };
-  const sentMarks = [];
-
-  await processActiveRentals(allBookings, now, sentMarks);
-
-  assert.equal(sentMarks.some((m) => m.key === "active_2h"), true, "2h reminder should be sent at 06:00 for 08:00 return");
-});
-
-test("processActiveRentals: sends ending-soon exactly 30m before return_datetime", async () => {
-  reset();
-  const now = new Date("2026-06-15T07:30:00-07:00");
-  const allBookings = {
-    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
-  };
-  const sentMarks = [];
-
-  await processActiveRentals(allBookings, now, sentMarks);
-
-  assert.equal(sentMarks.some((m) => m.key === "ending_soon_30min"), true, "ending-soon should be sent at 07:30 for 08:00 return");
 });
 
 test("processActiveRentals: sends ended at return_datetime", async () => {

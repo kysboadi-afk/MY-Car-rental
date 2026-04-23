@@ -9,13 +9,12 @@
 // Reminder types fired per booking status:
 //
 //  reserved_unpaid  → UNPAID_REMINDER_24H, UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
-//  booked_paid      → PICKUP_REMINDER_24H, PICKUP_REMINDER_2H, PICKUP_REMINDER_30MIN
+//  booked_paid      → PICKUP_REMINDER_24H
 //                     + auto-activated → active_rental once pickup time arrives
-//  active_rental    → ACTIVE_RENTAL_MID, ACTIVE_RENTAL_1H_BEFORE_END,
-//                     ACTIVE_RENTAL_15MIN_BEFORE_END, LATE_WARNING_30MIN,
+//  active_rental    → ACTIVE_RENTAL_MID,
 //                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
 //                     + auto-completed → completed_rental after AUTO_COMPLETE_HOURS
-//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_1/3/7/14/30
+//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_7
 //
 // Required environment variables:
 //   TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY
@@ -34,21 +33,12 @@ import {
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
-  PICKUP_REMINDER_2H,
-  PICKUP_REMINDER_30MIN,
   ACTIVE_RENTAL_MID,
-  ACTIVE_RENTAL_1H_BEFORE_END,
-  ACTIVE_RENTAL_15MIN_BEFORE_END,
-  LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
   LATE_FEE_APPLIED,
   POST_RENTAL_THANK_YOU,
-  RETENTION_DAY_1,
-  RETENTION_DAY_3,
   RETENTION_DAY_7,
-  RETENTION_DAY_14,
-  RETENTION_DAY_30,
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
@@ -95,8 +85,6 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
-const REMINDER_OFFSET_MS = 2 * 60 * 60 * 1000;
-const ENDING_SOON_OFFSET_MS = 30 * 60 * 1000;
 const GRACE_OFFSET_MS = 60 * 60 * 1000;
 const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
@@ -550,18 +538,6 @@ async function processPaidBookings(allBookings, now, sentMarks) {
         const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
       }
-
-      // 2-hour reminder (window: 2h–90min)
-      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "pickup_2h")) {
-        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_2H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_2h" });
-      }
-
-      // 30-minute reminder (window: 35–20 min)
-      if (minutesUntilPickup <= 35 && minutesUntilPickup > 20 && !alreadySent(booking, "pickup_30min")) {
-        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_30min" });
-      }
     }
   }
 }
@@ -595,8 +571,6 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const totalMinutes       = (returnDt - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
-      const reminderAt = new Date(returnDt.getTime() - REMINDER_OFFSET_MS);
-      const endingSoonAt = new Date(returnDt.getTime() - ENDING_SOON_OFFSET_MS);
       const graceAt = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
       const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
       const nowIso = now.toISOString();
@@ -622,28 +596,6 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
             sentMarks.push({ vehicleId, id, key: "active_mid" });
           }
         }
-      }
-
-      // Reminder at return_datetime - 2 hours (15 min window for cron cadence)
-      if (
-        now >= reminderAt &&
-        now < new Date(reminderAt.getTime() + TRIGGER_WINDOW_MS) &&
-        !alreadySentAny(booking, ["active_2h", "active_1h"])
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "reminder");
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_2h" });
-      }
-
-      // Ending soon at return_datetime - 30 minutes (15 min window for cron cadence)
-      if (
-        now >= endingSoonAt &&
-        now < new Date(endingSoonAt.getTime() + TRIGGER_WINDOW_MS) &&
-        !alreadySentAny(booking, ["ending_soon_30min", "late_warning_30min"])
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "ending_soon");
-        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "ending_soon_30min" });
       }
 
       // Ended at return_datetime (0–15 min window for cron cadence)
@@ -695,11 +647,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
  */
 async function processCompleted(allBookings, now, sentMarks) {
   const retentionSchedule = [
-    { days: 1,  key: "retention_1d",  template: RETENTION_DAY_1 },
-    { days: 3,  key: "retention_3d",  template: RETENTION_DAY_3 },
     { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
-    { days: 14, key: "retention_14d", template: RETENTION_DAY_14 },
-    { days: 30, key: "retention_30d", template: RETENTION_DAY_30 },
   ];
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
