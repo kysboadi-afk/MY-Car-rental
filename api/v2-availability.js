@@ -20,7 +20,7 @@ import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
-const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 
 /**

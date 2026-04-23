@@ -210,6 +210,23 @@ test("single vehicle: unavailable when Supabase returns a conflicting booking", 
   }
 });
 
+test("single vehicle: reserved status blocks availability", async () => {
+  setupFetchMock();
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ booking_ref: "res123", vehicle_id: "camry", pickup_date: "2026-05-03", return_date: "2026-05-09", status: "reserved" }],
+  });
+  try {
+    const res = makeRes();
+    await handler(makeReq({ query: { vehicleId: "camry", from: "2026-05-01", to: "2026-05-07" } }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.available, false);
+    assert.equal(res._body.source, "supabase");
+  } finally {
+    supabaseMock.client = null;
+    teardownFetchMock();
+  }
+});
+
 // ─── Single-vehicle — Supabase fails → must use GitHub fallback ───────────────
 // This is the bug fixed in this PR: previously fallback was {} so the vehicle
 // would always appear available, allowing double-bookings.

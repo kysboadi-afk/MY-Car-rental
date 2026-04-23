@@ -174,6 +174,19 @@ test("latest active booking return datetime wins per vehicle", async () => {
   assert.equal(res._body.camry?.available_at, "2026-06-10T16:30:00-07:00");
 });
 
+test("reserved booking status is treated as active for available_at computation", async () => {
+  resetMock();
+  sbMock.activeBookingRows = [
+    { vehicle_id: "camry", return_date: "2026-06-12", return_time: "11:00:00", status: "reserved" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.camry?.available_at, "2026-06-12T11:00:00-07:00");
+});
+
 test("available vehicle does not get available_at from booking rows", async () => {
   resetMock();
   sbMock.activeBookingRows = [

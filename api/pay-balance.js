@@ -46,7 +46,10 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration } = req.body;
+    const {
+      vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration,
+      bookingId, originalPaymentIntentId, depositPaymentIntentId,
+    } = req.body;
 
     // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -112,6 +115,8 @@ export default async function handler(req, res) {
       // based on the customer's billing address collected by the Payment Element.
       automatic_tax: { enabled: true },
       metadata: {
+        booking_id:            bookingId || "",
+        original_booking_id:   bookingId || "",
         renter_name:           trimmedName,
         vehicle_id:            vehicleId,
         vehicle_name:          vehicleData.name,
@@ -120,6 +125,8 @@ export default async function handler(req, res) {
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         payment_type:          "balance_payment",
+        original_payment_intent_id: originalPaymentIntentId || depositPaymentIntentId || "",
+        deposit_payment_intent_id:  depositPaymentIntentId || originalPaymentIntentId || "",
         deposit_already_paid:  depositPaid.toFixed(2),
         full_rental_amount:    (computedFullRental + protectionCost).toFixed(2),
         balance_paid:          balanceAmount.toFixed(2),

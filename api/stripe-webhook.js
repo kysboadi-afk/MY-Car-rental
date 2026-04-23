@@ -483,8 +483,9 @@ async function revenueRecordCompleteInSupabase(bookingId, paymentIntentId) {
       row = data || null;
     }
     if (!row) return false;
+    // stripe_fee may be null on initial write when Stripe fee expansion is
+    // unavailable; stripe-reconcile backfills it later.
     return row.gross_amount != null &&
-      row.stripe_fee != null &&
       !!row.payment_intent_id;
   } catch (err) {
     console.error("stripe-webhook: revenueRecordCompleteInSupabase lookup error:", formatSupabaseError(err));
@@ -647,7 +648,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
   const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
-  const status = resolveBookingStatus(payment_type);
+  const isReservationDeposit = payment_type === "reservation_deposit";
+  const status = isReservationDeposit ? "reserved" : resolveBookingStatus(payment_type);
 
   // Route through the centralised booking pipeline — same as manual bookings.
   // This ensures the correct order: customer upsert → booking upsert → revenue record → blocked_dates.
@@ -669,6 +671,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     paymentIntentId:       paymentIntent.id,
     paymentMethod:         "stripe",
     source:                "stripe_webhook",
+    ...(isReservationDeposit ? { type: "reservation_deposit", paymentStatus: "partial" } : {}),
     // Only require a Stripe fee when we actually received fee data from the
     // balance_transaction lookup.  If fee resolution failed (transient Stripe
     // API error) we persist without it and let stripe-reconcile.js backfill.
@@ -1104,6 +1107,103 @@ function logWebhookRouting(paymentIntent, reason) {
   );
 }
 
+function normalizeCurrency(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+function sanitizeSmsValue(value) {
+  return String(value || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking }) {
+  const base = "https://www.slytrans.com/balance.html";
+  const p = new URLSearchParams();
+  const vehicleId = booking?.vehicleId || meta.vehicle_id || "";
+  const pickup = booking?.pickupDate || meta.pickup_date || "";
+  const returnDate = booking?.returnDate || meta.return_date || "";
+  const email = booking?.email || meta.email || "";
+  if (vehicleId) p.set("v", vehicleId);
+  if (pickup) p.set("p", pickup);
+  if (returnDate) p.set("r", returnDate);
+  if (email) p.set("e", email);
+  const name = booking?.name || meta.renter_name || "";
+  if (name) p.set("n", name);
+  const phone = booking?.phone || meta.renter_phone || "";
+  if (phone) p.set("ph", phone);
+  const pickupTime = booking?.pickupTime || meta.pickup_time || "";
+  if (pickupTime) p.set("pt", pickupTime);
+  const returnTime = booking?.returnTime || meta.return_time || "";
+  if (returnTime) p.set("rt", returnTime);
+  const vehicleName = booking?.vehicleName || meta.vehicle_name || vehicleId;
+  if (vehicleName) p.set("car", vehicleName);
+  if (meta.protection_plan_tier) p.set("pp", "1");
+  if (bookingId) p.set("b", bookingId);
+  if (paymentIntentId) p.set("opi", paymentIntentId);
+  return `${base}?${p.toString()}`;
+}
+
+async function sendReservationDepositBalanceEmail({
+  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, balanceLink,
+}) {
+  if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_PORT === "465",
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  const firstName = (renterName || "").split(" ")[0] || "there";
+  await transporter.sendMail({
+    from: `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+    to: renterEmail,
+    subject: "Your Reservation Deposit Was Received — Complete Remaining Balance",
+    html: `
+      <h2>✅ Reservation Deposit Received</h2>
+      <p>Hi ${esc(firstName)},</p>
+      <p>Your booking is reserved. Please complete the remaining balance before pickup.</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || "")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate || "")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate || "")}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
+      </table>
+      <p><a href="${esc(balanceLink)}" style="display:inline-block;background:#ffb400;color:#000;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Pay Remaining Balance</a></p>
+    `,
+  });
+}
+
+async function sendReservationDepositBalanceOwnerEmail({
+  renterName, renterEmail, renterPhone, vehicleName, bookingId, depositPaid, remainingBalance, balanceLink,
+}) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_PORT === "465",
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+  await transporter.sendMail({
+    from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
+    to: OWNER_EMAIL,
+    ...(renterEmail ? { replyTo: renterEmail } : {}),
+    subject: `🔒 Reservation Deposit Paid — ${esc(renterName || "Renter")}`,
+    html: `
+      <h2>🔒 Reservation Deposit Paid</h2>
+      <p>A reservation deposit has been received.</p>
+      <p><strong>Booking ID:</strong> ${esc(bookingId || "N/A")}<br>
+      <strong>Renter:</strong> ${esc(renterName || "N/A")}<br>
+      ${renterEmail ? `<strong>Email:</strong> ${esc(renterEmail)}<br>` : ""}
+      ${renterPhone ? `<strong>Phone:</strong> ${esc(renterPhone)}<br>` : ""}
+      <strong>Vehicle:</strong> ${esc(vehicleName || "N/A")}<br>
+      <strong>Deposit Paid:</strong> $${esc(normalizeCurrency(depositPaid).toFixed(2))}<br>
+      <strong>Remaining Balance:</strong> $${esc(normalizeCurrency(remainingBalance).toFixed(2))}</p>
+      <p>Customer payment link: <a href="${esc(balanceLink)}">${esc(balanceLink)}</a></p>
+    `,
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
@@ -1468,32 +1568,280 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true });
     }
 
+    if (paymentType === "reservation_deposit") {
+      const meta = paymentIntent.metadata || {};
+      const {
+        vehicle_id, pickup_date, return_date, pickup_time, return_time,
+        renter_name, renter_phone, email, vehicle_name, booking_id,
+        full_rental_amount,
+      } = meta;
+      const bookingRef = booking_id || "";
+      const resolvedBookingId = await resolveBookingId(bookingRef);
+      if (!resolvedBookingId) {
+        console.error("[BOOKING_RESOLVE_FAILED]", {
+          bookingRef: bookingRef || "<missing>",
+          paymentIntentId: paymentIntent.id,
+        });
+        return res.status(200).json({ received: true });
+      }
+
+      const amountPaid = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+      const totalPrice = normalizeCurrency(full_rental_amount || amountPaid);
+      const remainingBalance = Math.max(0, normalizeCurrency(totalPrice - amountPaid));
+
+      let updatedBooking = null;
+      try {
+        if (vehicle_id) {
+          await updateBooking(vehicle_id, resolvedBookingId, {
+            status: "reserved",
+            paymentStatus: "partial",
+            amountPaid,
+            totalPrice,
+            remainingBalance,
+          });
+          const { data } = await loadBookings();
+          updatedBooking = (data[vehicle_id] || []).find(
+            (b) => b.bookingId === resolvedBookingId || b.paymentIntentId === resolvedBookingId
+          ) || null;
+        }
+      } catch (bookingErr) {
+        console.error("stripe-webhook: reservation_deposit updateBooking error:", bookingErr.message);
+      }
+
+      const bookingForSync = {
+        bookingId: resolvedBookingId,
+        vehicleId: updatedBooking?.vehicleId || vehicle_id || "",
+        vehicleName: updatedBooking?.vehicleName || vehicle_name || vehicle_id || "",
+        name: updatedBooking?.name || renter_name || "",
+        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : ""),
+        email: updatedBooking?.email || email || "",
+        pickupDate: updatedBooking?.pickupDate || pickup_date || "",
+        pickupTime: updatedBooking?.pickupTime || pickup_time || "",
+        returnDate: updatedBooking?.returnDate || return_date || "",
+        returnTime: updatedBooking?.returnTime || return_time || "",
+        paymentIntentId: updatedBooking?.paymentIntentId || paymentIntent.id,
+        amountPaid,
+        totalPrice,
+        remainingBalance,
+        paymentStatus: "partial",
+        status: "reserved",
+      };
+
+      try {
+        await autoUpsertBooking(bookingForSync, { strict: true });
+      } catch (syncErr) {
+        console.error("stripe-webhook: reservation_deposit booking sync failed:", syncErr.message);
+        return res.status(500).json({ received: false, error: `reservation deposit booking sync failed for ${paymentIntent.id}` });
+      }
+
+      try {
+        let feeFields = { stripeFee: null, stripeNet: null };
+        try {
+          feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+            } catch (feeErr) {
+              console.warn(`stripe-webhook: reservation_deposit fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
+            }
+        const customerId = await resolveCustomerIdFromSupabase(
+          bookingForSync.phone || "",
+          bookingForSync.email || "",
+        );
+        await autoCreateRevenueRecord({
+          bookingId: resolvedBookingId,
+          paymentIntentId: paymentIntent.id,
+          vehicleId: bookingForSync.vehicleId,
+          customerId,
+          name: bookingForSync.name,
+          phone: bookingForSync.phone,
+          email: bookingForSync.email,
+          pickupDate: bookingForSync.pickupDate,
+          returnDate: bookingForSync.returnDate,
+          amountPaid,
+          paymentMethod: "stripe",
+          type: "reservation_deposit",
+          ...feeFields,
+        }, {
+          strict: true,
+          requireStripeFee: false,
+        });
+      } catch (revErr) {
+        console.error("stripe-webhook: reservation_deposit revenue error:", revErr.message);
+        return res.status(500).json({ received: false, error: `reservation deposit revenue persistence failed for ${paymentIntent.id}` });
+      }
+
+      const balanceLink = buildReservationBalanceLink({
+        bookingId: resolvedBookingId,
+        paymentIntentId: paymentIntent.id,
+        meta,
+        booking: bookingForSync,
+      });
+
+      try {
+        if (vehicle_id) {
+          await updateBooking(vehicle_id, resolvedBookingId, { balancePaymentLink: balanceLink });
+        }
+      } catch (linkErr) {
+        console.warn("stripe-webhook: could not persist balancePaymentLink in bookings.json (non-fatal):", linkErr.message);
+      }
+
+      try {
+        if (vehicle_id && pickup_date && return_date) {
+          await blockBookedDates(vehicle_id, pickup_date, return_date, pickup_time || "", return_time || "");
+          await markVehicleUnavailable(vehicle_id);
+        }
+      } catch (availabilityErr) {
+        console.error("stripe-webhook: reservation_deposit availability sync failed:", availabilityErr.message);
+        return res.status(500).json({ received: false, error: `reservation deposit availability sync failed for ${paymentIntent.id}` });
+      }
+
+      try {
+        await sendReservationDepositBalanceEmail({
+          renterEmail: bookingForSync.email,
+          renterName: bookingForSync.name,
+          vehicleName: bookingForSync.vehicleName,
+          pickupDate: bookingForSync.pickupDate,
+          returnDate: bookingForSync.returnDate,
+          depositPaid: amountPaid,
+          remainingBalance,
+          balanceLink,
+        });
+      } catch (emailErr) {
+        console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
+      }
+      try {
+        await sendReservationDepositBalanceOwnerEmail({
+          renterName: bookingForSync.name,
+          renterEmail: bookingForSync.email,
+          renterPhone: bookingForSync.phone,
+          vehicleName: bookingForSync.vehicleName,
+          bookingId: resolvedBookingId,
+          depositPaid: amountPaid,
+          remainingBalance,
+          balanceLink,
+        });
+      } catch (ownerErr) {
+        console.error("stripe-webhook: reservation_deposit owner balance email failed:", ownerErr.message);
+      }
+      try {
+        if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          const smsVehicle = sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle");
+          const smsLink = sanitizeSmsValue(balanceLink);
+          await sendSms(
+            normalizePhone(bookingForSync.phone),
+            `Deposit received for ${smsVehicle}. Remaining balance: $${remainingBalance.toFixed(2)}. Pay here: ${smsLink}`
+          );
+        }
+      } catch (smsErr) {
+        console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
+      }
+      return res.status(200).json({ received: true });
+    }
+
     // Skip balance payments — dates were already blocked when the deposit was paid.
     if (paymentType === "balance_payment") {
       console.log(
         `stripe-webhook: balance_payment for PaymentIntent ${paymentIntent.id} — skipping date blocking`
       );
-      // Update booking status to booked_paid when full balance is paid
-      const { vehicle_id } = paymentIntent.metadata || {};
-      const originalPiId = (paymentIntent.metadata || {}).original_payment_intent_id ||
-        (paymentIntent.metadata || {}).deposit_payment_intent_id;
-      if (vehicle_id && originalPiId) {
+      const meta = paymentIntent.metadata || {};
+      const { vehicle_id } = meta;
+      const rawBookingRef = meta.booking_id || meta.original_booking_id || "";
+      const originalPiId = meta.original_payment_intent_id || meta.deposit_payment_intent_id;
+      let bookingRef = rawBookingRef;
+      if (bookingRef) {
+        const resolved = await resolveBookingId(bookingRef);
+        if (!resolved) {
+          console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
+          return res.status(200).json({ received: true });
+        }
+        bookingRef = resolved;
+      }
+      if (vehicle_id && (bookingRef || originalPiId)) {
         try {
-          await updateBooking(vehicle_id, originalPiId, { status: "booked_paid" });
-          // Sync the status change to Supabase bookings table
+          const lookupId = bookingRef || originalPiId;
+          const paidAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+          await updateBooking(vehicle_id, lookupId, {
+            status: "active",
+            paymentStatus: "paid",
+          });
           const { data: updatedData } = await loadBookings();
           const updatedBooking = (updatedData[vehicle_id] || []).find(
-            (b) => b.bookingId === originalPiId || b.paymentIntentId === originalPiId
+            (b) => b.bookingId === lookupId || b.paymentIntentId === lookupId
           );
           if (updatedBooking) {
-            await autoUpsertBooking(updatedBooking);
+            const baseAmount = Number(updatedBooking.amountPaid || 0);
+            const bookingPatch = {
+              ...updatedBooking,
+              amountPaid: Math.round((baseAmount + paidAmount) * 100) / 100,
+              paymentStatus: "paid",
+              status: "active",
+            };
+            await updateBooking(vehicle_id, lookupId, {
+              amountPaid: bookingPatch.amountPaid,
+              paymentStatus: "paid",
+              status: "active",
+            });
+            await autoUpsertBooking(bookingPatch, { strict: true });
+            const customerId = await resolveCustomerIdFromSupabase(
+              bookingPatch.phone || "",
+              bookingPatch.email || "",
+            );
+            await autoCreateRevenueRecord({
+              bookingId: bookingPatch.bookingId || bookingRef,
+              paymentIntentId: paymentIntent.id,
+              vehicleId: bookingPatch.vehicleId || vehicle_id,
+              customerId,
+              name: bookingPatch.name || meta.renter_name || "",
+              phone: bookingPatch.phone || "",
+              email: bookingPatch.email || meta.email || "",
+              pickupDate: bookingPatch.pickupDate || meta.pickup_date || "",
+              returnDate: bookingPatch.returnDate || meta.return_date || "",
+              amountPaid: paidAmount,
+              paymentMethod: "stripe",
+              type: "rental_balance",
+            }, { strict: true, requireStripeFee: false });
             // Auto-activate if the renter's pickup time has already arrived —
             // e.g. they paid the balance on the day of pickup.
             try {
-              await autoActivateIfPickupArrived(updatedBooking);
+              await autoActivateIfPickupArrived(bookingPatch);
             } catch (activErr) {
               console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
             }
+          } else if (bookingRef) {
+            const fallbackBooking = {
+              bookingId: bookingRef,
+              vehicleId: vehicle_id,
+              vehicleName: meta.vehicle_name || vehicle_id || "",
+              name: meta.renter_name || "",
+              phone: meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
+              email: meta.email || "",
+              pickupDate: meta.pickup_date || "",
+              pickupTime: meta.pickup_time || "",
+              returnDate: meta.return_date || "",
+              returnTime: meta.return_time || "",
+              paymentIntentId: originalPiId || "",
+              amountPaid: paidAmount,
+              totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
+              paymentStatus: "paid",
+              status: "active",
+            };
+            await autoUpsertBooking(fallbackBooking, { strict: true });
+            const customerId = await resolveCustomerIdFromSupabase(
+              fallbackBooking.phone || "",
+              fallbackBooking.email || "",
+            );
+            await autoCreateRevenueRecord({
+              bookingId: bookingRef,
+              paymentIntentId: paymentIntent.id,
+              vehicleId: fallbackBooking.vehicleId,
+              customerId,
+              name: fallbackBooking.name,
+              phone: fallbackBooking.phone,
+              email: fallbackBooking.email,
+              pickupDate: fallbackBooking.pickupDate,
+              returnDate: fallbackBooking.returnDate,
+              amountPaid: paidAmount,
+              paymentMethod: "stripe",
+              type: "rental_balance",
+            }, { strict: true, requireStripeFee: false });
           }
         } catch (err) {
           console.error("stripe-webhook: updateBooking (balance) error:", err);
@@ -1501,7 +1849,7 @@ export default async function handler(req, res) {
       } else {
         logWebhookSkip(
           paymentIntent,
-          `balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} original_payment_intent_id=${originalPiId || "<missing>"}`
+          `balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} booking_id=${bookingRef || "<missing>"} original_payment_intent_id=${originalPiId || "<missing>"}`
         );
       }
       return res.status(200).json({ received: true });

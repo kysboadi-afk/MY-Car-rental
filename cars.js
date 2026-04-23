@@ -234,8 +234,10 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         badge.insertAdjacentElement("afterend", todayBadge);
       }
     } else {
-      badge.setAttribute("data-i18n", "fleet.currentlyBooked");
-      badge.textContent = i18n.t("fleet.currentlyBooked");
+      const isReserved = status && status.rental_status === "reserved";
+      const badgeKey = isReserved ? "fleet.pendingPickup" : "fleet.currentlyBooked";
+      badge.setAttribute("data-i18n", badgeKey);
+      badge.textContent = i18n.t(badgeKey);
       badge.className   = "status-badge unavailable booked";
 
       // Build the "Next Available" badge, using time-aware data when present.
