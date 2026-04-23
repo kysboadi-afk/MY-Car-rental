@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS = [
   { key: "slingshot_security_deposit",  value: 150,     description: "Slingshot refundable security deposit (USD)",     category: "pricing" },
   { key: "slingshot_booking_deposit",   value: 50,      description: "Slingshot non-refundable booking deposit (USD)",  category: "pricing" },
   { key: "camry_booking_deposit",       value: 50,      description: "Economy car (Camry 2012 & Camry 2013 SE) non-refundable booking deposit — same for both (USD)", category: "pricing" },
+  { key: "booking_change_fee",          value: 25,      description: "Fee charged for each booking change after the first free change (USD)", category: "pricing" },
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },
   { key: "auto_create_revenue_on_pay",  value: true,    description: "Auto-create revenue record when payment received",category: "automation" },
   { key: "auto_update_customer_stats",  value: true,    description: "Auto-update customer stats on booking events",    category: "automation" },
