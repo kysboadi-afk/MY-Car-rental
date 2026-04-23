@@ -38,37 +38,11 @@ filterBtns.forEach(btn => {
 
 // ----- Fleet Status & Availability -----
 const API_BASE = "https://sly-rides.vercel.app";
-const BUSINESS_TZ = "America/Los_Angeles";
-
-function todayISO() {
-  return isoDateInBusinessTz(new Date());
-}
-
-function isoDateInBusinessTz(dateInput) {
-  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: BUSINESS_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
-  const year = parts.find(function(p) { return p.type === "year"; })?.value;
-  const month = parts.find(function(p) { return p.type === "month"; })?.value;
-  const day = parts.find(function(p) { return p.type === "day"; })?.value;
-  return year + "-" + month + "-" + day;
-}
-
-function addDaysToISO(isoDate, days) {
-  const parts = String(isoDate || "").split("-").map(Number);
-  const y = parts[0], m = parts[1], d = parts[2];
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
+// Timezone helpers are provided by la-date.js (loaded before this script).
+const SlyLA = window.SlyLA;
 
 function isBookedToday(ranges) {
-  const today = todayISO();
+  const today = SlyLA.todayISO();
   return (ranges || []).some(r => today >= r.from && today <= r.to);
 }
 
@@ -84,7 +58,7 @@ carCards.forEach(card => {
 
 function applyFleetStatus(fleetStatus, bookedDates) {
   const i18n  = window.slyI18n || { t: function(k) { return k; } };
-  const today = todayISO();
+  const today = SlyLA.todayISO();
 
   // Helper: find the next available ISO date after the current booking ends
   function getNextAvailDate(vehicleId) {
@@ -103,7 +77,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         merged.push({ from: currentRange.from, to: currentRange.to });
         continue;
       }
-      var previousRangeEndPlusOneISO = addDaysToISO(previousRange.to, 1);
+      var previousRangeEndPlusOneISO = SlyLA.addDaysToISO(previousRange.to, 1);
       if (currentRange.from <= previousRangeEndPlusOneISO) {
         if (currentRange.to > previousRange.to) previousRange.to = currentRange.to;
       } else {
@@ -113,19 +87,19 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
     for (var mergedIndex = 0; mergedIndex < merged.length; mergedIndex++) {
       if (merged[mergedIndex].from <= today && today <= merged[mergedIndex].to) {
-        return addDaysToISO(merged[mergedIndex].to, 1);
+        return SlyLA.addDaysToISO(merged[mergedIndex].to, 1);
       }
     }
 
     for (var upcomingIndex = 0; upcomingIndex < merged.length; upcomingIndex++) {
       if (merged[upcomingIndex].from > today) {
-        return addDaysToISO(merged[upcomingIndex].to, 1);
+        return SlyLA.addDaysToISO(merged[upcomingIndex].to, 1);
       }
     }
 
     var latestExpired = merged[merged.length - 1];
     if (latestExpired) {
-      return addDaysToISO(latestExpired.to, 1);
+      return SlyLA.addDaysToISO(latestExpired.to, 1);
     }
     return null;
   }
@@ -194,9 +168,9 @@ function applyFleetStatus(fleetStatus, bookedDates) {
           // Return time is already in the past — just say "Available Today"
           nextBadge.textContent = "Available Today";
         } else {
-          const availDateISO = isoDateInBusinessTz(availDate);
+          const availDateISO = SlyLA.isoDateInLA(availDate);
           const timeStr = availDate.toLocaleTimeString("en-US", {
-            timeZone: BUSINESS_TZ,
+            timeZone: SlyLA.tz,
             hour: "numeric",
             minute: "2-digit",
             hour12: true
@@ -205,7 +179,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
             nextBadge.textContent = "Available Today at " + timeStr;
           } else {
             const formatted2 = availDate.toLocaleDateString("en-US", {
-              timeZone: BUSINESS_TZ,
+              timeZone: SlyLA.tz,
               month: "short",
               day: "numeric",
               year: "numeric"
@@ -219,7 +193,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         if (nextISO) {
           const d = new Date(nextISO + "T00:00:00");
           const formatted = d.toLocaleDateString("en-US", {
-            timeZone: BUSINESS_TZ,
+            timeZone: SlyLA.tz,
             month: "short",
             day: "numeric",
             year: "numeric"

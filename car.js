@@ -3,6 +3,8 @@
 // The API functions are deployed on Vercel (sly-rides.vercel.app).
 // Because they are on different domains, the full Vercel URL must be used here.
 const API_BASE = "https://sly-rides.vercel.app";
+// Timezone helpers are provided by la-date.js (loaded before this script).
+const SlyLA = window.SlyLA;
 
 // Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
 // Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
@@ -748,7 +750,7 @@ insuranceUpload.addEventListener("change", function(e) {
 
 
 // Block past dates — only allow today or future dates
-const todayStr = new Date().toISOString().split("T")[0];
+const todayStr = SlyLA.todayISO();
 pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
@@ -1379,7 +1381,7 @@ initDatePickers();
     }
 
     if (isUnavailable) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = SlyLA.todayISO();
       // For Slingshot: the next available date is the earliest date when ANY
       // unit's current booking ends (that unit then becomes free).
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
@@ -1392,9 +1394,7 @@ initDatePickers();
         // 1. Preferred: find a range that covers today
         for (const r of ranges) {
           if (r.from <= today && today <= r.to) {
-            const d = new Date(r.to + "T00:00:00");
-            d.setDate(d.getDate() + 1);
-            const candidate = d.toISOString().slice(0, 10);
+            const candidate = SlyLA.addDaysToISO(r.to, 1);
             // Keep the earliest "next available" across all units
             if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
             break;
@@ -1410,9 +1410,7 @@ initDatePickers();
             }
           }
           if (latestExpired) {
-            const d = new Date(latestExpired.to + "T00:00:00");
-            d.setDate(d.getDate() + 1);
-            const candidate = d.toISOString().slice(0, 10);
+            const candidate = SlyLA.addDaysToISO(latestExpired.to, 1);
             if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
           }
         }
@@ -1441,12 +1439,12 @@ function showVehicleUnavailable(nextAvailableISO) {
   let nextLine = "";
   if (nextAvailableISO) {
     const d = new Date(nextAvailableISO + "T00:00:00");
-    const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const formatted = d.toLocaleDateString("en-US", { timeZone: SlyLA.tz, month: "long", day: "numeric", year: "numeric" });
     nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
 
     // Set minimum new return date in the extend form
     const extReturn = document.getElementById("extNewReturn");
-    if (extReturn) extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
+    if (extReturn) extReturn.setAttribute("min", SlyLA.todayISO());
   }
 
   notice.innerHTML = `
@@ -1502,7 +1500,7 @@ function showVehicleUnavailable(nextAvailableISO) {
     // Set minimum new return date to today
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
-      extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
+      extReturn.setAttribute("min", SlyLA.todayISO());
     }
     // Initialize the extend rental form interactions
     initExtendRentalForm();
@@ -1523,7 +1521,7 @@ function initExtendRentalForm() {
   var extPriceAmount  = document.getElementById("extPriceAmount");
 
   // Set today as the minimum new return date
-  var todayISO = new Date().toISOString().slice(0, 10);
+  var todayISO = SlyLA.todayISO();
   if (extNewReturn && !extNewReturn.getAttribute("min")) {
     extNewReturn.setAttribute("min", todayISO);
   }
@@ -1540,7 +1538,7 @@ function initExtendRentalForm() {
       return;
     }
 
-    var today = new Date().toISOString().slice(0, 10);
+    var today = SlyLA.todayISO();
     var newReturn = extNewReturn.value;
     if (newReturn <= today) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
