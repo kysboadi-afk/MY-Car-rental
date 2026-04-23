@@ -207,7 +207,8 @@
         "late_at_return": "2026-04-22T08:00:25.616Z",
         "late_grace_expired": "2026-04-22T09:00:53.916Z",
         "late_fee_pending": "2026-04-22T09:00:53.916Z",
-        "post_thank_you": "2026-04-22T12:15:21.121Z"
+        "post_thank_you": "2026-04-22T12:15:21.121Z",
+        "retention_1d": "2026-04-23T12:05:21.259Z"
       },
       "createdAt": "2026-04-21T02:15:44.514Z",
       "source": "stripe_webhook",
