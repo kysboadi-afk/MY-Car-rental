@@ -403,7 +403,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "reserved_unpaid",
+      "status": "booked_paid",
       "amountPaid": 50,
       "totalPrice": 617.4,
       "paymentIntentId": "manual_e561d72fec44",
@@ -413,7 +413,7 @@
       "smsSentAt": {},
       "createdAt": "2026-04-23T10:57:28.597Z",
       "source": "admin_ai",
-      "updatedAt": "2026-04-23T11:00:25.360Z",
+      "updatedAt": "2026-04-23T11:16:16.247Z",
       "activatedAt": "2026-04-23T11:00:25.360Z"
     }
   ],
