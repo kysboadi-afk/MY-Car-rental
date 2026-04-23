@@ -301,7 +301,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       if (isReserved) {
         btn.setAttribute("data-i18n", "fleet.completeBooking");
         btn.textContent = i18n.t("fleet.completeBooking") || "✅ Complete Booking";
-        link.href = "manage-booking.html";
+        link.href = "https://www.slytrans.com/manage-booking.html";
       } else {
         btn.setAttribute("data-i18n", "fleet.extendRental");
         btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
