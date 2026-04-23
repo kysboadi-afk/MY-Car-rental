@@ -643,8 +643,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   const persistPayload = {
     bookingId:             booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
     name:                  renter_name || "",
-    phone:                 renter_phone ? normalizePhone(renter_phone) : "",
-    email:                 email || "",
+    phone:                 renter_phone ? normalizePhone(renter_phone) : normalizePhone(paymentIntent.customer_details?.phone || ""),
+    email:                 email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
     vehicleId,
     vehicleName:           vehicle_name || vehicleId,
     pickupDate:            pickup_date,
@@ -1779,8 +1779,8 @@ export default async function handler(req, res) {
         vehicleId: updatedBooking?.vehicleId || vehicle_id || "",
         vehicleName: updatedBooking?.vehicleName || vehicle_name || vehicle_id || "",
         name: updatedBooking?.name || renter_name || "",
-        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : ""),
-        email: updatedBooking?.email || email || "",
+        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(paymentIntent.customer_details?.phone || "")),
+        email: updatedBooking?.email || email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
         pickupDate: updatedBooking?.pickupDate || pickup_date || "",
         pickupTime: updatedBooking?.pickupTime || pickup_time || "",
         returnDate: updatedBooking?.returnDate || return_date || "",
@@ -1792,6 +1792,13 @@ export default async function handler(req, res) {
         paymentStatus: "partial",
         status: "reserved",
       };
+
+      if (!bookingForSync.phone && !bookingForSync.email) {
+        console.error(
+          `[BOOKING_MISSING_CONTACT] booking ${resolvedBookingId} (PI ${paymentIntent.id}) ` +
+          `has no phone or email — manage-booking verify will fail for this customer`
+        );
+      }
 
       try {
         await autoUpsertBooking(bookingForSync, { strict: true });

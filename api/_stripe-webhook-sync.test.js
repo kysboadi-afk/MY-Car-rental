@@ -1012,3 +1012,116 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
   assert.equal(invalidSaved.returnDate, "2026-12-26", "invalid status must not mutate booking");
   assert.equal(automationCalls.booking.length, 0, "invalid status must not upsert booking");
 });
+
+// ─── 7. customer_details fallback for missing contact info ────────────────────
+
+test("webhook reservation_deposit: uses customer_details.phone when renter_phone absent from metadata", async () => {
+  resetStore(); resetCalls();
+  const bookingId = "bk-cd-phone-fallback";
+  bookingsStore["camry"] = [{
+    bookingId,
+    vehicleId: "camry",
+    vehicleName: "Camry 2012",
+    name: "CD Phone Renter",
+    phone: "",
+    email: "cdphone@example.com",
+    pickupDate: "2026-11-01",
+    returnDate: "2026-11-03",
+    status: "reserved_unpaid",
+    amountPaid: 0,
+    totalPrice: 200,
+    paymentIntentId: "pi_cd_phone_dep",
+  }];
+
+  const event = piSucceededEvent({
+    payment_type: "reservation_deposit",
+    booking_id: bookingId,
+    vehicle_id: "camry",
+    vehicle_name: "Camry 2012",
+    pickup_date: "2026-11-01",
+    return_date: "2026-11-03",
+    pickup_time: "10:00 AM",
+    return_time: "10:00 AM",
+    renter_name: "CD Phone Renter",
+    renter_phone: "",    // ← missing from metadata
+    email: "cdphone@example.com",
+    full_rental_amount: "200.00",
+  }, 5000);
+  // Inject customer_details onto the PI object — simulates Stripe populating this
+  // from the payment form when metadata phone was empty.
+  event.data.object.customer_details = { phone: "+13105550099", email: null };
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const bookingSync = automationCalls.booking.find((b) => b.bookingId === bookingId);
+  assert.ok(bookingSync, "reservation_deposit must sync booking");
+  assert.equal(bookingSync.phone, "+13105550099",
+    "should fall back to customer_details.phone when renter_phone is absent");
+});
+
+test("webhook reservation_deposit: uses customer_details.email when metadata email absent", async () => {
+  resetStore(); resetCalls();
+  const bookingId = "bk-cd-email-fallback";
+  bookingsStore["camry"] = [{
+    bookingId,
+    vehicleId: "camry",
+    vehicleName: "Camry 2012",
+    name: "CD Email Renter",
+    phone: "+13105551122",
+    email: "",
+    pickupDate: "2026-11-05",
+    returnDate: "2026-11-07",
+    status: "reserved_unpaid",
+    amountPaid: 0,
+    totalPrice: 200,
+    paymentIntentId: "pi_cd_email_dep",
+  }];
+
+  const event = piSucceededEvent({
+    payment_type: "reservation_deposit",
+    booking_id: bookingId,
+    vehicle_id: "camry",
+    vehicle_name: "Camry 2012",
+    pickup_date: "2026-11-05",
+    return_date: "2026-11-07",
+    pickup_time: "10:00 AM",
+    return_time: "10:00 AM",
+    renter_name: "CD Email Renter",
+    renter_phone: "+13105551122",
+    email: "",    // ← missing from metadata
+    full_rental_amount: "200.00",
+  }, 5000);
+  event.data.object.customer_details = { phone: null, email: "cdemail@example.com" };
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const bookingSync = automationCalls.booking.find((b) => b.bookingId === bookingId);
+  assert.ok(bookingSync, "reservation_deposit must sync booking");
+  assert.equal(bookingSync.email, "cdemail@example.com",
+    "should fall back to customer_details.email when metadata email is absent");
+});
+
+test("webhook full_payment: uses customer_details.phone when renter_phone absent from metadata", async () => {
+  resetStore(); resetCalls();
+
+  const event = piSucceededEvent({
+    vehicle_id: "slingshot", vehicle_name: "Slingshot R",
+    pickup_date: "2026-11-10", return_date: "2026-11-10",
+    renter_name: "CD Full Pay",
+    renter_phone: "",    // ← missing
+    email: "cdfull@example.com",
+    payment_type: "full_payment",
+  });
+  event.data.object.customer_details = { phone: "+13105550011", email: null };
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const bookingSync = automationCalls.booking.find((b) => b.phone === "+13105550011");
+  assert.ok(bookingSync, "full_payment booking must carry phone from customer_details fallback");
+});

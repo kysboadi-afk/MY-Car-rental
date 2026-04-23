@@ -343,6 +343,50 @@ test("backfill: dry_run=true skips balance_payment (routing consistent with live
   assert.equal(persistedOpts.length, 0);
 });
 
+test("backfill: phone falls back to customer_details.phone when renter_phone is absent in metadata", async () => {
+  reset();
+  stripePiList = [makePi("pi_cd_phone_1", "full_payment", {
+    metadata: { renter_phone: "" },
+    pi:       { customer_details: { phone: "+13105559999" } },
+  })];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._body.processed, 1);
+  assert.equal(persistedOpts.length, 1);
+  assert.equal(persistedOpts[0].phone, "+13105559999", "should use customer_details.phone when renter_phone is empty");
+});
+
+test("backfill: email falls back to customer_details.email when metadata email is absent", async () => {
+  reset();
+  stripePiList = [makePi("pi_cd_email_1", "full_payment", {
+    metadata: { email: "" },
+    pi:       { customer_details: { email: "cd-fallback@example.com" } },
+  })];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._body.processed, 1);
+  assert.equal(persistedOpts.length, 1);
+  assert.equal(persistedOpts[0].email, "cd-fallback@example.com", "should use customer_details.email when metadata email is empty");
+});
+
+test("backfill: email falls back to receipt_email when both metadata email and customer_details.email are absent", async () => {
+  reset();
+  stripePiList = [makePi("pi_receipt_email_1", "full_payment", {
+    metadata: { email: "" },
+    pi:       { receipt_email: "receipt@example.com", customer_details: null },
+  })];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret" }), res);
+
+  assert.equal(res._body.processed, 1);
+  assert.equal(persistedOpts[0].email, "receipt@example.com", "should use receipt_email as last-resort fallback");
+});
+
 test("backfill: details include payment_type for every entry", async () => {
   reset();
   existingRevenuePiIds = new Set(["pi_existing_1"]);

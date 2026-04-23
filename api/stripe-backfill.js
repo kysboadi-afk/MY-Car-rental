@@ -182,8 +182,8 @@ function buildPersistOpts(pi) {
   return {
     bookingId:             booking_id || ("backfill-" + crypto.randomBytes(8).toString("hex")),
     name:                  renter_name  || "",
-    phone:                 renter_phone ? normalizePhone(renter_phone) : "",
-    email:                 email        || pi.receipt_email || "",
+    phone:                 renter_phone ? normalizePhone(renter_phone) : normalizePhone(pi.customer_details?.phone || ""),
+    email:                 email || pi.receipt_email || pi.customer_details?.email || "",
     vehicleId:             vehicle_id,
     vehicleName:           vehicle_name || vehicle_id,
     pickupDate:            pickup_date,
@@ -222,7 +222,7 @@ export default async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { secret, dry_run = false, created_after, created_before } = body;
+  const { secret, dry_run = false, created_after, created_before, backfill_contacts = false } = body;
 
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -237,7 +237,118 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: "Supabase is not configured." });
   }
 
-  // Validate optional date range parameters
+  // ── backfill_contacts mode ────────────────────────────────────────────────
+  // Repairs existing bookings that have no customer_phone or customer_email by
+  // fetching the original PaymentIntent from Stripe and reading contact data from
+  // metadata (renter_phone / email) or Stripe-collected customer_details.
+  if (backfill_contacts) {
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+
+      console.log(`stripe-backfill: contacts backfill starting (dry_run=${dry_run})`);
+
+      // Fetch bookings missing phone or email that have a payment_intent_id.
+      const { data: rows, error: rowsErr } = await sb
+        .from("bookings")
+        .select("id, booking_ref, payment_intent_id, customer_phone, customer_email")
+        .not("payment_intent_id", "is", null)
+        .or("customer_phone.is.null,customer_email.is.null");
+
+      if (rowsErr) {
+        console.error("stripe-backfill: contacts backfill — Supabase query failed:", rowsErr.message);
+        return res.status(500).json({ error: `Supabase query failed: ${rowsErr.message}` });
+      }
+
+      const candidates = (rows || []).filter(
+        (r) => r.payment_intent_id && (!r.customer_phone || !r.customer_email)
+      );
+
+      console.log(`stripe-backfill: contacts backfill — found ${candidates.length} booking(s) to repair`);
+
+      const details = [];
+      let updated = 0;
+      let noData  = 0;
+      let errors  = 0;
+
+      for (const row of candidates) {
+        const piId = row.payment_intent_id;
+        let pi = null;
+
+        try {
+          pi = await stripe.paymentIntents.retrieve(piId);
+        } catch (stripeErr) {
+          console.error(`stripe-backfill: contacts backfill — could not fetch PI ${piId}: ${stripeErr.message}`);
+          details.push({ booking_ref: row.booking_ref, pi: piId, status: "error", reason: stripeErr.message });
+          errors++;
+          continue;
+        }
+
+        const meta = pi.metadata || {};
+        const rawPhone = meta.renter_phone || pi.customer_details?.phone || "";
+        const rawEmail = meta.email || pi.customer_details?.email || pi.receipt_email || "";
+
+        const resolvedPhone = rawPhone ? normalizePhone(rawPhone) : null;
+        const resolvedEmail = rawEmail ? rawEmail.trim().toLowerCase() : null;
+
+        // Only patch the fields that are currently null — never overwrite existing data.
+        const patch = {};
+        if (!row.customer_phone && resolvedPhone) patch.customer_phone = resolvedPhone;
+        if (!row.customer_email && resolvedEmail) patch.customer_email = resolvedEmail;
+
+        if (Object.keys(patch).length === 0) {
+          console.log(`stripe-backfill: contacts backfill — no contact data found for ${row.booking_ref} (PI ${piId})`);
+          details.push({ booking_ref: row.booking_ref, pi: piId, status: "no_data", reason: "no phone or email found in Stripe" });
+          noData++;
+          continue;
+        }
+
+        if (dry_run) {
+          details.push({
+            booking_ref: row.booking_ref,
+            pi:          piId,
+            status:      "would_update",
+            patch,
+          });
+          updated++;
+          continue;
+        }
+
+        patch.updated_at = new Date().toISOString();
+        const { error: updateErr } = await sb
+          .from("bookings")
+          .update(patch)
+          .eq("id", row.id);
+
+        if (updateErr) {
+          console.error(`stripe-backfill: contacts backfill — update failed for ${row.booking_ref}: ${updateErr.message}`);
+          details.push({ booking_ref: row.booking_ref, pi: piId, status: "error", reason: updateErr.message });
+          errors++;
+        } else {
+          console.log(`stripe-backfill: contacts backfill — updated ${row.booking_ref} phone=${patch.customer_phone ?? "(kept)"} email=${patch.customer_email ?? "(kept)"}`);
+          details.push({ booking_ref: row.booking_ref, pi: piId, status: "updated", patch: { customer_phone: patch.customer_phone, customer_email: patch.customer_email } });
+          updated++;
+        }
+      }
+
+      console.log(
+        `stripe-backfill: contacts backfill done — ` +
+        `candidates=${candidates.length} updated=${updated} no_data=${noData} errors=${errors}` +
+        (dry_run ? " [DRY RUN]" : "")
+      );
+
+      return res.status(200).json({
+        dry_run,
+        candidates: candidates.length,
+        updated,
+        no_data: noData,
+        errors,
+        details,
+      });
+    } catch (err) {
+      console.error("stripe-backfill: contacts backfill fatal error:", err.message);
+      return res.status(500).json({ error: `Contact backfill failed: ${err.message}` });
+    }
+  }
   if (created_after !== undefined && typeof created_after !== "number") {
     return res.status(400).json({ error: "created_after must be a Unix timestamp (number)." });
   }
