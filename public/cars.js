@@ -38,13 +38,11 @@ filterBtns.forEach(btn => {
 
 // ----- Fleet Status & Availability -----
 const API_BASE = "https://sly-rides.vercel.app";
-
-function todayISO() {
-  return new Date().toISOString().split("T")[0];
-}
+// Timezone helpers are provided by la-date.js (loaded before this script).
+const SlyLA = window.SlyLA;
 
 function isBookedToday(ranges) {
-  const today = todayISO();
+  const today = SlyLA.todayISO();
   return (ranges || []).some(r => today >= r.from && today <= r.to);
 }
 
@@ -60,7 +58,7 @@ carCards.forEach(card => {
 
 function applyFleetStatus(fleetStatus, bookedDates) {
   const i18n  = window.slyI18n || { t: function(k) { return k; } };
-  const today = new Date().toISOString().slice(0, 10);
+  const today = SlyLA.todayISO();
 
   // Helper: find the next available ISO date after the current booking ends
   function getNextAvailDate(vehicleId) {
@@ -79,9 +77,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         merged.push({ from: currentRange.from, to: currentRange.to });
         continue;
       }
-      var previousRangeEndPlusOne = new Date(previousRange.to + "T00:00:00");
-      previousRangeEndPlusOne.setDate(previousRangeEndPlusOne.getDate() + 1);
-      var previousRangeEndPlusOneISO = previousRangeEndPlusOne.toISOString().slice(0, 10);
+      var previousRangeEndPlusOneISO = SlyLA.addDaysToISO(previousRange.to, 1);
       if (currentRange.from <= previousRangeEndPlusOneISO) {
         if (currentRange.to > previousRange.to) previousRange.to = currentRange.to;
       } else {
@@ -91,25 +87,19 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
     for (var mergedIndex = 0; mergedIndex < merged.length; mergedIndex++) {
       if (merged[mergedIndex].from <= today && today <= merged[mergedIndex].to) {
-        const nextAvailableDate = new Date(merged[mergedIndex].to + "T00:00:00");
-        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-        return nextAvailableDate.toISOString().slice(0, 10);
+        return SlyLA.addDaysToISO(merged[mergedIndex].to, 1);
       }
     }
 
     for (var upcomingIndex = 0; upcomingIndex < merged.length; upcomingIndex++) {
       if (merged[upcomingIndex].from > today) {
-        const nextAvailableDate = new Date(merged[upcomingIndex].to + "T00:00:00");
-        nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-        return nextAvailableDate.toISOString().slice(0, 10);
+        return SlyLA.addDaysToISO(merged[upcomingIndex].to, 1);
       }
     }
 
     var latestExpired = merged[merged.length - 1];
     if (latestExpired) {
-      const nextAvailableDate = new Date(latestExpired.to + "T00:00:00");
-      nextAvailableDate.setDate(nextAvailableDate.getDate() + 1);
-      return nextAvailableDate.toISOString().slice(0, 10);
+      return SlyLA.addDaysToISO(latestExpired.to, 1);
     }
     return null;
   }
@@ -178,12 +168,22 @@ function applyFleetStatus(fleetStatus, bookedDates) {
           // Return time is already in the past — just say "Available Today"
           nextBadge.textContent = "Available Today";
         } else {
-          const availDateISO = availDate.toISOString().slice(0, 10);
-          const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          const availDateISO = SlyLA.isoDateInLA(availDate);
+          const timeStr = availDate.toLocaleTimeString("en-US", {
+            timeZone: SlyLA.tz,
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true
+          });
           if (availDateISO === today) {
             nextBadge.textContent = "Available Today at " + timeStr;
           } else {
-            const formatted2 = availDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            const formatted2 = availDate.toLocaleDateString("en-US", {
+              timeZone: SlyLA.tz,
+              month: "short",
+              day: "numeric",
+              year: "numeric"
+            });
             const tpl2 = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
             nextBadge.textContent = tpl2.replace("{date}", formatted2 + " at " + timeStr);
           }
@@ -192,7 +192,12 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         const nextISO = getNextAvailDate(vehicleId);
         if (nextISO) {
           const d = new Date(nextISO + "T00:00:00");
-          const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const formatted = d.toLocaleDateString("en-US", {
+            timeZone: SlyLA.tz,
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+          });
           const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
           nextBadge.textContent = tpl.replace("{date}", formatted);
         }

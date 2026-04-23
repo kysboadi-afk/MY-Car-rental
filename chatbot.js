@@ -16,7 +16,32 @@ function isSlingshotMode() {
   return window.slyChatbotMode === "slingshot";
 }
 
-// ── Live fleet status + booked dates (fetched at startup) ─────────────────────
+// ── Los Angeles timezone helper ───────────────────────────────────────────────
+// SlyLA is provided by la-date.js; if that script wasn't loaded (e.g., on a
+// page that only embeds the chatbot widget), define a self-contained fallback.
+var SlyLA = window.SlyLA || (function () {
+  var TZ = "America/Los_Angeles";
+  function isoDateInLA(d) {
+    try {
+      var parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit"
+      }).formatToParts(d instanceof Date ? d : new Date(d || Date.now()));
+      var y = (parts.find(function(p){return p.type==="year";})||{}).value;
+      var m = (parts.find(function(p){return p.type==="month";})||{}).value;
+      var day=(parts.find(function(p){return p.type==="day";})||{}).value;
+      return y+"-"+m+"-"+day;
+    } catch(_) { return new Date().toISOString().slice(0,10); }
+  }
+  function addDaysToISO(iso, n) {
+    var p = String(iso||"").split("-").map(Number);
+    if (!isFinite(p[0])||!isFinite(p[1])||!isFinite(p[2])) return null;
+    var dt = new Date(Date.UTC(p[0],p[1]-1,p[2]));
+    dt.setUTCDate(dt.getUTCDate()+n);
+    return dt.toISOString().slice(0,10);
+  }
+  return { tz: TZ, todayISO: function(){return isoDateInLA(new Date());},
+           isoDateInLA: isoDateInLA, addDaysToISO: addDaysToISO };
+}());
 var CHATBOT_API_BASE = "https://sly-rides.vercel.app";
 var slyFleetStatus  = null;
 var slyBookedDates  = null;
@@ -198,10 +223,7 @@ function fmtDateChatbot(iso, locale) {
 
 /** Return the ISO date of the day after the given ISO date. */
 function nextDayChatbot(iso) {
-  var p = iso.split("-");
-  var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return SlyLA.addDaysToISO(iso, 1);
 }
 
 /**
@@ -222,7 +244,7 @@ function getVehicleBookingInfo(vehicleId, lang) {
       : "I couldn't load the latest booking info right now. Call us at 📞 (213) 916-6606 for up-to-date availability.";
   }
 
-  var today  = new Date().toISOString().slice(0, 10);
+  var today  = SlyLA.todayISO();
   var ranges = (slyBookedDates[vehicleId] || []).slice().sort(function(a, b) {
     return a.from < b.from ? -1 : 1;
   });
@@ -283,7 +305,7 @@ function buildAvailabilityMessage(lang) {
                 slingshot3: "Slingshot R (Unit 3)",
                 camry: "Camry 2012", camry2013: "Camry 2013 SE" };
   var locale = lang === "es" ? "es-US" : "en-US";
-  var today  = new Date().toISOString().slice(0, 10);
+  var today  = SlyLA.todayISO();
 
   var lines = [];
   for (var k = 0; k < ids.length; k++) {
@@ -337,7 +359,7 @@ function buildAvailabilityMessage(lang) {
  */
 function buildFleetMessage(lang) {
   var locale = lang === "es" ? "es-US" : "en-US";
-  var today  = new Date().toISOString().slice(0, 10);
+  var today  = SlyLA.todayISO();
 
   function statusLine(vehicleId) {
     if (!slyFleetStatus) return "";
