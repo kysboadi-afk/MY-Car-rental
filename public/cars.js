@@ -97,10 +97,7 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       }
     }
 
-    var latestExpired = merged[merged.length - 1];
-    if (latestExpired) {
-      return SlyLA.addDaysToISO(latestExpired.to, 1);
-    }
+    // No current/future block found. Avoid showing a stale past date.
     return null;
   }
 

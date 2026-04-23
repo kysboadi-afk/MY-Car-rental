@@ -3025,6 +3025,7 @@ async function toolCreateManualBooking({
   vehicleId, name, phone, email,
   pickupDate, pickupTime, returnDate, returnTime,
   amountPaid, totalPrice, paymentIntentId: suppliedPaymentIntentId, notes,
+  stripeFee, stripeNet, sendConfirmationEmail,
 }) {
   if (!vehicleId || !MANUAL_BOOKING_VEHICLES[vehicleId]) {
     throw new Error(`Invalid vehicleId "${vehicleId}". Must be one of: ${Object.keys(MANUAL_BOOKING_VEHICLES).join(", ")}.`);
@@ -3041,6 +3042,14 @@ async function toolCreateManualBooking({
   }
   if (pickupDate > returnDate) {
     throw new Error("pickupDate must not be after returnDate.");
+  }
+  const normalizedPickupTime = typeof pickupTime === "string" ? pickupTime.trim() : "";
+  if (!parseTime12h(normalizedPickupTime)) {
+    throw new Error("pickupTime is required and must be a valid time (e.g. 10:00 AM or 08:00).");
+  }
+  const normalizedReturnTime = typeof returnTime === "string" ? returnTime.trim() : "";
+  if (!parseTime12h(normalizedReturnTime)) {
+    throw new Error("returnTime is required and must be a valid time (e.g. 5:00 PM or 08:00).");
   }
 
   if (!process.env.GITHUB_TOKEN) {
@@ -3064,6 +3073,18 @@ async function toolCreateManualBooking({
   const bookingStatus = normalizedAmountPaid <= 0 || hasOutstandingBalance
     ? "reserved_unpaid"
     : "booked_paid";
+  const normalizedStripeFee = Number.isFinite(Number(stripeFee)) && Number(stripeFee) >= 0
+    ? Math.round(Number(stripeFee) * 100) / 100
+    : null;
+  const normalizedStripeNet = Number.isFinite(Number(stripeNet)) && Number(stripeNet) >= 0
+    ? Math.round(Number(stripeNet) * 100) / 100
+    : null;
+  if (normalizedStripeFee != null && normalizedStripeFee > normalizedAmountPaid) {
+    throw new Error("stripeFee must be less than or equal to amountPaid.");
+  }
+  if (normalizedStripeNet != null && normalizedStripeNet > normalizedAmountPaid) {
+    throw new Error("stripeNet must be less than or equal to amountPaid.");
+  }
   // Keep legacy manual-booking behavior: when totalPrice is not provided, treat
   // the paid amount as the booking total for persistence/reporting. If both are
   // zero, this remains a no-payment reservation placeholder.
@@ -3083,9 +3104,9 @@ async function toolCreateManualBooking({
     phone:           typeof phone === "string" ? phone.trim() : "",
     email:           typeof email === "string" ? email.trim() : "",
     pickupDate,
-    pickupTime:      typeof pickupTime === "string" ? pickupTime.trim() : "",
+    pickupTime:      normalizedPickupTime,
     returnDate,
-    returnTime:      typeof returnTime === "string" ? returnTime.trim() : "",
+    returnTime:      normalizedReturnTime,
     location:        "",
     status:          bookingStatus,
     paymentIntentId: resolvedPaymentIntentId,
@@ -3094,6 +3115,9 @@ async function toolCreateManualBooking({
     notes:           typeof notes === "string" ? notes.trim().slice(0, 500)
                        : (isWebsitePayment ? "Website payment — confirmation email not received" : ""),
     paymentMethod:   isWebsitePayment ? "stripe" : "cash",
+    stripeFee:       normalizedStripeFee,
+    stripeNet:       normalizedStripeNet,
+    strictPersistence: true,
     source:          "admin_ai",
   });
 
@@ -3117,6 +3141,7 @@ async function toolCreateManualBooking({
   const statusSyncMsg = vehicleStatusSync?.synced
     ? `fleet status is set to ${vehicleRentalStatus}`
     : `fleet status sync failed (${vehicleStatusSync?.warning || "unknown error"})`;
+  const shouldSendConfirmation = sendConfirmationEmail !== false;
 
   return {
     success:          true,
@@ -3132,7 +3157,8 @@ async function toolCreateManualBooking({
     isWebsitePayment,
     vehicleStatus:    vehicleStatusSync,
     notes:            result.booking.notes || null,
-    message:          `Booking created (${result.booking.status}). Dates ${pickupDate} → ${returnDate} are blocked for ${result.booking.vehicleName}, and ${statusSyncMsg}. Use resend_booking_confirmation(bookingId: "${result.bookingId}") to send the confirmation email.`,
+    sendConfirmationEmail: shouldSendConfirmation,
+    message:          `Booking created (${result.booking.status}). Dates ${pickupDate} → ${returnDate} are blocked for ${result.booking.vehicleName}, and ${statusSyncMsg}. No email was sent automatically.${shouldSendConfirmation ? ` Use resend_booking_confirmation(bookingId: "${result.bookingId}") if you want to send one.` : " Email sending was intentionally skipped."}`,
   };
 }
 
