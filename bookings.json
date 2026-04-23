@@ -378,7 +378,7 @@
       "returnDate": "2026-04-30",
       "returnTime": "08:00",
       "location": "",
-      "status": "booked_paid",
+      "status": "active_rental",
       "amountPaid": 50,
       "totalPrice": 50,
       "paymentIntentId": "manual_edd816c0f18f",
@@ -387,7 +387,9 @@
       "notes": "Reservation deposit of $50 made; $1.75 in Stripe fees, net amount received $48.25. Full payment pending. Stripe Customer ID: cus_UO2eMoHJZAbXQd. Protection Plan: Standard. Reservation status.",
       "smsSentAt": {},
       "createdAt": "2026-04-23T10:22:29.049Z",
-      "source": "admin_ai"
+      "source": "admin_ai",
+      "activatedAt": "2026-04-23T10:25:02.413Z",
+      "updatedAt": "2026-04-23T10:25:02.413Z"
     }
   ],
   "camry2013": [
