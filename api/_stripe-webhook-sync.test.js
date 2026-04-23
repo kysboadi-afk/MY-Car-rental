@@ -513,7 +513,9 @@ test("webhook reservation_deposit: creates reservation_deposit revenue and syncs
     totalPrice: 350,
     paymentIntentId: "pi_old_deposit",
   }];
-  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
+  // Do NOT pre-seed supabaseBookingsStore — in production the booking has never
+  // been written to Supabase at the time the deposit webhook fires.
+  // autoUpsertBooking in the handler will INSERT it for the first time.
 
   const event = piSucceededEvent({
     payment_type: "reservation_deposit",
