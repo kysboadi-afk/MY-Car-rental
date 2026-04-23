@@ -413,6 +413,29 @@
       "smsSentAt": {},
       "createdAt": "2026-04-23T11:29:16.423Z",
       "source": "admin_ai"
+    },
+    {
+      "bookingId": "76bd67fc1e4b7ad9",
+      "name": "Anthony Johnson",
+      "phone": "",
+      "email": "cheftony90@icloud.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-23",
+      "pickupTime": "",
+      "returnDate": "2026-04-30",
+      "returnTime": "",
+      "location": "",
+      "status": "reserved_unpaid",
+      "amountPaid": 50,
+      "totalPrice": 617.4,
+      "paymentIntentId": "manual_6df71deed62e",
+      "paymentLink": "",
+      "paymentMethod": "cash",
+      "notes": "Deposit paid. Confirmation emails not required.",
+      "smsSentAt": {},
+      "createdAt": "2026-04-23T11:39:11.533Z",
+      "source": "admin_ai"
     }
   ],
   "camry2013": [
