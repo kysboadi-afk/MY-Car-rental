@@ -26,13 +26,10 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
-import { buildServiceUrl } from "./_quick-service-token.js";
 import {
   render,
   MAINTENANCE_AVAILABILITY_REQUEST,
-  MAINTENANCE_AVAILABILITY_FOLLOWUP,
   MAINTENANCE_AVAILABILITY_URGENT,
-  MAINTENANCE_AVAILABILITY_ESCALATION,
 } from "./_sms-templates.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -40,12 +37,6 @@ import {
 const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
-const ESCALATION_DELAY_MS = 48 * 60 * 60 * 1000; // 48 hours
-
-// Hours after warn SMS before a "please schedule" follow-up is sent.
-// Configurable via MAINT_SCHEDULE_HOURS env var (default: 24 h).
-const SCHEDULE_REMINDER_HOURS = Math.max(1, Number(process.env.MAINT_SCHEDULE_HOURS) || 24);
-const SCHEDULE_REMINDER_MS    = SCHEDULE_REMINDER_HOURS * 60 * 60 * 1000;
 
 // Daily mileage threshold per driver — alerts owner when exceeded within 24 h.
 // Configurable via DRIVER_MILEAGE_THRESHOLD_DAILY env var (default: 200 miles/day).
@@ -53,11 +44,6 @@ const DRIVER_MILEAGE_THRESHOLD_DAILY = Math.max(
   1,
   Number(process.env.DRIVER_MILEAGE_THRESHOLD_DAILY) || 200
 );
-
-// Base URL for owner/admin quick-service links (NOT sent to customers)
-const SITE_BASE = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "https://www.slytrans.com";
 
 // Service definitions — intervals match lib/ai/mileage.js
 const SERVICES = [
@@ -85,10 +71,8 @@ const SERVICES = [
 ];
 
 // Deduplication key helpers (stored in booking.smsSentAt)
-const keyWarn        = (type) => `maint_${type}_warn`;
-const keyUrgent      = (type) => `maint_${type}_urgent`;
-const keyEscalate    = (type) => `maint_${type}_escalate`;
-const keySchedRemind = (type) => `maint_${type}_sched_remind`;
+const keyWarn   = (type) => `maint_${type}_warn`;
+const keyUrgent = (type) => `maint_${type}_urgent`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -180,7 +164,6 @@ export default async function handler(req, res) {
         ran_at:      new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         alerts_sent: 0,
-        escalations: 0,
         detail:      "No Bouncie-tracked non-slingshot vehicles found",
       });
     }
@@ -254,7 +237,6 @@ export default async function handler(req, res) {
     // ── 3. Process each vehicle ──────────────────────────────────────────────
     const sentMarks      = [];   // { vehicleId, id, key } — dedup marks
     const bookingUpdates = [];   // { vehicleId, id, patch } — maintenance_status
-    const escalations    = [];   // summary for response
     let   alertsSent     = 0;
 
     for (const row of trackedVehicles) {
@@ -278,9 +260,8 @@ export default async function handler(req, res) {
 
         if (pct < svc.warnPct) continue; // Below warning threshold
 
-        const kWarn     = keyWarn(svc.type);
-        const kUrgent   = keyUrgent(svc.type);
-        const kEscalate = keyEscalate(svc.type);
+        const kWarn   = keyWarn(svc.type);
+        const kUrgent = keyUrgent(svc.type);
 
         if (pct >= 1.0) {
           // ── Overdue (100%+) ──────────────────────────────────────────────
@@ -294,64 +275,9 @@ export default async function handler(req, res) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kUrgent });
               alertsSent++;
             }
-          } else if (!alreadySent(booking, kEscalate)) {
-            // Check 48 h escalation window
-            const urgentAt  = new Date(booking.smsSentAt[kUrgent]).getTime();
-            const hoursWaited = (Date.now() - urgentAt) / 3600000;
-
-            if (Date.now() - urgentAt >= ESCALATION_DELAY_MS) {
-              // ── Escalation ───────────────────────────────────────────────
-              const customerName = booking.name || "there";
-              const driverSent = await safeSendSms(phone,
-                render(MAINTENANCE_AVAILABILITY_ESCALATION, { customer_name: customerName })
-              );
-              const serviceUrl = buildServiceUrl(vid, svc.type);
-              const ownerSmsSent = await safeSendSms(OWNER_PHONE,
-                `🚨 ${name} driver has ignored ${svc.label} request for ${Math.floor(hoursWaited)}h. Booking: ${bookingId}. Driver: ${booking.name || "Unknown"} (${phone || "no phone"}). Mark done: ${serviceUrl}`
-              );
-              await sendOwnerAlertEmail(
-                `🚨 Maintenance Non-Compliance — ${name}`,
-                `<p>🚨 <strong>${name}</strong> driver has ignored a maintenance request for ${Math.floor(hoursWaited)} hours.</p>
-<p><strong>Service required:</strong> ${svc.label}</p>
-<p><strong>Miles since last service:</strong> ${Math.round(since).toLocaleString()} mi (interval: ${svc.interval.toLocaleString()} mi)</p>
-<p><strong>Booking ID:</strong> ${bookingId}</p>
-<p><strong>Driver:</strong> ${booking.name || "Unknown"}</p>
-<p><strong>Driver phone:</strong> ${phone || "N/A"}</p>
-<p><strong>Current odometer:</strong> ${miles.toLocaleString()} mi</p>
-<p>Please review and take action immediately.</p>
-<p><a href="${serviceUrl}" style="display:inline-block;padding:10px 20px;background:#2e7d32;color:#fff;border-radius:4px;text-decoration:none">✅ Mark ${svc.label} as complete</a></p>
-<p style="font-size:12px;color:#888">This link expires in 30 minutes. Open a new alert to get a fresh link.</p>`
-              );
-
-              if (driverSent || ownerSmsSent) {
-                sentMarks.push({ vehicleId: vid, id: bookingId, key: kEscalate });
-                alertsSent++;
-                escalations.push({ vehicleId: vid, bookingId, serviceType: svc.type, name });
-
-                // Mark booking as non_compliant
-                bookingUpdates.push({
-                  vehicleId: vid,
-                  id:        bookingId,
-                  patch:     { maintenance_status: "non_compliant" },
-                });
-
-                // Flag vehicle as service_required in Supabase JSONB (non-fatal)
-                sb.from("vehicles")
-                  .update({
-                    data:       { ...(row.data || {}), service_required: true },
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq("vehicle_id", vid)
-                  .then(() => {})
-                  .catch((err) =>
-                    console.warn(`maintenance-alerts: vehicle flag failed for ${vid}:`, err.message)
-                  );
-              }
-            }
           }
         } else {
           // ── Due Soon (80%–100%) ──────────────────────────────────────────
-          const kSchedRemind = keySchedRemind(svc.type);
           if (!alreadySent(booking, kWarn)) {
             // Friendly first-contact message — no service type, no links
             const customerName = booking.name || "there";
@@ -361,36 +287,6 @@ export default async function handler(req, res) {
             if (sent) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kWarn });
               alertsSent++;
-            }
-          } else if (!alreadySent(booking, kSchedRemind)) {
-            // ── Schedule follow-up — if no appointment was booked within X hours ──
-            const warnAt = new Date(booking.smsSentAt[kWarn]).getTime();
-            if (Date.now() - warnAt >= SCHEDULE_REMINDER_MS) {
-              // Check whether an appointment already exists for this vehicle+service
-              let hasAppointment = false;
-              try {
-                const { data: appts } = await sb
-                  .from("maintenance_appointments")
-                  .select("id")
-                  .eq("vehicle_id", vid)
-                  .eq("service_type", svc.type)
-                  .in("status", ["pending_approval", "scheduled"])
-                  .limit(1);
-                hasAppointment = Array.isArray(appts) && appts.length > 0;
-              } catch (err) {
-                console.warn(`maintenance-alerts: appointment check failed for ${vid}:`, err.message);
-              }
-
-              if (!hasAppointment) {
-                const customerName = booking.name || "there";
-                const sent = await safeSendSms(phone,
-                  render(MAINTENANCE_AVAILABILITY_FOLLOWUP, { customer_name: customerName })
-                );
-                if (sent) {
-                  sentMarks.push({ vehicleId: vid, id: bookingId, key: kSchedRemind });
-                  alertsSent++;
-                }
-              }
             }
           }
         }
@@ -500,13 +396,11 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      ran_at:             new Date().toISOString(),
-      duration_ms:        Date.now() - startedAt,
-      vehicles_checked:   trackedVehicles.length,
-      active_bookings:    Object.keys(activeBookingByVehicle).length,
-      alerts_sent:        alertsSent,
-      escalations:        escalations.length,
-      escalation_details: escalations,
+      ran_at:           new Date().toISOString(),
+      duration_ms:      Date.now() - startedAt,
+      vehicles_checked: trackedVehicles.length,
+      active_bookings:  Object.keys(activeBookingByVehicle).length,
+      alerts_sent:      alertsSent,
     });
   } catch (err) {
     console.error("maintenance-alerts error:", err);

@@ -29,7 +29,6 @@ import { sendSms } from "./_textmagic.js";
 import {
   render,
   DEFAULT_LOCATION,
-  UNPAID_REMINDER_24H,
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
@@ -489,12 +488,6 @@ async function processUnpaid(allBookings, now, sentMarks) {
         booking_ref: id, vehicleId, status: "reserved_unpaid",
         pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
       });
-
-      // 24-hour reminder (window: 24h–23h)
-      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "unpaid_24h")) {
-        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_24H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_24h" });
-      }
 
       // 2-hour reminder (window: 2h–90min)
       if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h")) {
