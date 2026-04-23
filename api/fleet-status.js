@@ -8,7 +8,7 @@
 //   2. GitHub fleet-status.json   (legacy { vehicleId: { available: bool } } format)
 //   3. Hard-coded defaults        (all available)
 //
-// Response: { slingshot: { available, rental_status, available_at }, camry: { … }, … }
+// Response: { vehicle_id: { available, rental_status, available_at }, ... }
 //
 // available_at is computed from the latest active booking return datetime in
 // America/Los_Angeles for vehicles currently marked unavailable.
@@ -19,19 +19,19 @@ import { getSupabaseAdmin } from "./_supabase.js";
 const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALL_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
 // Keep aligned with booked-dates/v2 availability "active" statuses so vehicles
 // blocked by active reservations still surface next availability consistently.
 const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
-const DEFAULT_STATUS = {
-  slingshot: { available: true, rental_status: "available" },
-  slingshot2: { available: true, rental_status: "available" },
-  slingshot3: { available: true, rental_status: "available" },
-  camry: { available: true, rental_status: "available" },
-  camry2013: { available: true, rental_status: "available" },
-};
+function buildDefaultStatus() {
+  const map = {};
+  for (const vehicleId of FALLBACK_VEHICLE_IDS) {
+    map[vehicleId] = { available: true, rental_status: "available" };
+  }
+  return map;
+}
 
 /** Convert Supabase rental_status → boolean available for backwards compat */
 function rentalStatusToAvailable(status) {
@@ -120,10 +120,13 @@ function formatDateTimeLA(date) {
  */
 async function enrichWithAvailableAt(sb, result) {
   try {
+    const vehicleIds = Object.keys(result || {});
+    if (!vehicleIds.length) return;
+
     const { data: activeRows, error } = await sb
       .from("bookings")
       .select("vehicle_id, return_date, return_time, status")
-      .in("vehicle_id", ALL_VEHICLES)
+      .in("vehicle_id", vehicleIds)
       .in("status", ACTIVE_BOOKING_STATUSES)
       .not("return_date", "is", null)
       .order("return_date", { ascending: false })
@@ -202,11 +205,10 @@ export default async function handler(req, res) {
     try {
       const { data: rows, error } = await sb
         .from("vehicles")
-        .select("vehicle_id, rental_status")
-        .in("vehicle_id", ALL_VEHICLES);
+        .select("vehicle_id, rental_status");
 
       if (!error && rows && rows.length > 0) {
-        const result = { ...DEFAULT_STATUS };
+        const result = buildDefaultStatus();
         for (const row of rows) {
           if (row.vehicle_id) {
             result[row.vehicle_id] = {
@@ -243,15 +245,14 @@ export default async function handler(req, res) {
           Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
         );
         // Merge GitHub data into default structure, adding rental_status field
-        const result = { ...DEFAULT_STATUS };
+        const result = buildDefaultStatus();
         for (const [vid, val] of Object.entries(content)) {
-          if (ALL_VEHICLES.includes(vid)) {
-            const avail = typeof val.available === "boolean" ? val.available : true;
-            result[vid] = {
-              available: avail,
-              rental_status: val.rental_status || (avail ? "available" : "maintenance"),
-            };
-          }
+          const vehicleData = val && typeof val === "object" ? val : {};
+          const avail = typeof vehicleData.available === "boolean" ? vehicleData.available : true;
+          result[vid] = {
+            available: avail,
+            rental_status: vehicleData.rental_status || (avail ? "available" : "maintenance"),
+          };
         }
         return res.status(200).json(result);
       } catch (parseErr) {
@@ -263,5 +264,5 @@ export default async function handler(req, res) {
   }
 
   // ── 3. Hard-coded defaults ──────────────────────────────────────────────
-  return res.status(200).json(DEFAULT_STATUS);
+  return res.status(200).json(buildDefaultStatus());
 }
