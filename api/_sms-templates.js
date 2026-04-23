@@ -103,6 +103,21 @@ export const WAITLIST_DECLINED =
 // 3. BOOKING / PAYMENT FLOW
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Sent when a slingshot security deposit is received and rental balance remains. */
+export const SLINGSHOT_DEPOSIT_RECEIVED =
+  "Your {vehicle} is reserved, {customer_name}.\n\n" +
+  "Complete your rental payment here:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent when an economy reservation deposit is received and rental balance remains. */
+export const RESERVATION_DEPOSIT_CONFIRMED =
+  "Deposit received for your {vehicle}, {customer_name}.\n\n" +
+  "Remaining balance: ${remaining_balance}\n\n" +
+  "Complete payment here:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent when the customer pays in full. */
 export const BOOKING_CONFIRMED =
   "Your {vehicle} is confirmed, {customer_name}.\n\n" +
@@ -366,6 +381,8 @@ export const TEMPLATES = {
   waitlist_booking_reminder: WAITLIST_BOOKING_REMINDER,
   waitlist_declined:         WAITLIST_DECLINED,
   booking_confirmed:         BOOKING_CONFIRMED,
+  slingshot_deposit_received:   SLINGSHOT_DEPOSIT_RECEIVED,
+  reservation_deposit_confirmed: RESERVATION_DEPOSIT_CONFIRMED,
   unpaid_reminder_24h:       UNPAID_REMINDER_24H,
   unpaid_reminder_2h:        UNPAID_REMINDER_2H,
   unpaid_reminder_final:     UNPAID_REMINDER_FINAL,

@@ -1250,6 +1250,38 @@
 
       <!-- SMS PAGE -->
       <div class="page" id="page-sms">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Automation Schedule</div>
+              <div class="card-sub">When each SMS is sent — toggle or edit any template below</div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:var(--bg);text-align:left;">
+                <th style="padding:8px 12px;font-weight:600;color:var(--text-sub);border-bottom:1px solid var(--border);">Trigger</th>
+                <th style="padding:8px 12px;font-weight:600;color:var(--text-sub);border-bottom:1px solid var(--border);">Template key</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="2" style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;">Unpaid / Reserved</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">24 hrs before pickup — payment still pending</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">unpaid_reminder_24h</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">2 hrs before pickup — payment still pending</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">unpaid_reminder_2h</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">30 min before pickup — final payment warning</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">unpaid_reminder_final</td></tr>
+              <tr><td colspan="2" style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;">Paid / Confirmed</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">24 hrs before pickup</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">pickup_reminder_24h</td></tr>
+              <tr><td colspan="2" style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;">Active Rental</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">6 hrs (or 3 hrs for &lt;24 h rentals) before return — extend offer</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">active_rental_mid</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">At scheduled return time</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">late_at_return_time</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">+1 hr past return — grace period expired</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">late_grace_expired</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">+2 hrs past return — late fee applied</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">late_fee_applied</td></tr>
+              <tr><td colspan="2" style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.05em;">Completed</td></tr>
+              <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">Immediately after rental ends</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">post_rental_thank_you</td></tr>
+              <tr><td style="padding:6px 12px;">7 days after rental ends</td><td style="padding:6px 12px;font-family:monospace;color:var(--text-sub);">retention_day_7</td></tr>
+            </tbody>
+          </table>
+        </div>
         <div class="card">
           <div class="card-header">
             <div>

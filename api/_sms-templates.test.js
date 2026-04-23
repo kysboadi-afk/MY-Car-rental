@@ -100,7 +100,7 @@ test("render APPLICATION_APPROVED fills all variables", () => {
   const msg = render(APPLICATION_APPROVED, {
     customer_name: "Alice",
     vehicle:       "Camry 2012",
-    waitlist_link: "https://www.slytrans.com/cars",
+    waitlist_link: "https://www.slytrans.com/cars.html",
   });
   assert.ok(msg.includes("Alice"));
   assert.ok(msg.includes("Camry 2012"));
