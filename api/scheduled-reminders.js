@@ -57,6 +57,7 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
+import { formatTime12h } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import Stripe from "stripe";
 import {
@@ -375,8 +376,8 @@ function vars(booking) {
     customer_name: booking.name || "Customer",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
-    pickup_time:   booking.pickupTime || "",
-    return_time:   booking.returnTime || "",
+    pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
+    return_time:   booking.returnTime ? (formatTime(returnDt) || formatTime12h(booking.returnTime)) : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
     payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",

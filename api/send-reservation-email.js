@@ -22,7 +22,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
-import { normalizeClockTime, deriveReturnTime } from "./_time.js";
+import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -1187,8 +1187,8 @@ export default async function handler(req, res) {
           render(BOOKING_CONFIRMED, {
             vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             customer_name: (name || "").split(" ")[0] || name || "Customer",
-            pickup_date:   pickup || "",
-            pickup_time:   pickupTime || "",
+            pickup_date:   pickup ? new Date(pickup + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "",
+            pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
             location:      DEFAULT_LOCATION,
           })
         );

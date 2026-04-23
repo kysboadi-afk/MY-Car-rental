@@ -1,5 +1,26 @@
 export const DEFAULT_RETURN_TIME = "10:00";
 
+/**
+ * Convert an HH:MM (24-hour) or "HH:MM:SS" time string to a human-readable
+ * 12-hour format suitable for SMS templates (e.g. "16:00" → "4:00 PM").
+ * Returns the original value unchanged when it cannot be parsed, so callers
+ * never lose data on unexpected input.
+ *
+ * @param {string} hhmm  - e.g. "08:00", "16:00", or "16:00:00"
+ * @returns {string}      - e.g. "8:00 AM", "4:00 PM"
+ */
+export function formatTime12h(hhmm) {
+  if (!hhmm || typeof hhmm !== "string") return hhmm || "";
+  const m = hhmm.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return hhmm;
+  const h = parseInt(m[1], 10);
+  const mins = m[2];
+  if (h === 0)  return `12:${mins} AM`;
+  if (h < 12)   return `${h}:${mins} AM`;
+  if (h === 12) return `12:${mins} PM`;
+  return `${h - 12}:${mins} PM`;
+}
+
 export function normalizeClockTime(rawTime) {
   const val = rawTime ? String(rawTime).trim() : "";
   if (!val) return "";
