@@ -65,11 +65,18 @@ mock.module("./_supabase.js", {
       }
 
       return {
-        from: (_table) => ({
+        from: (table) => ({
           select:  (...args) => makeQuery().select(...args),
           insert:  async (_row) => ({ data: [{ id: "sb-id-1" }], error: null }),
           upsert:  async (_rows, _opts) => ({ error: null }),
-          delete:  () => ({ eq: async () => ({ error: null }) }),
+          delete:  () => ({
+            eq: async (col, val) => {
+              if (table === "revenue_records" && col === "id" && Array.isArray(supabaseRecords)) {
+                supabaseRecords = supabaseRecords.filter((r) => r.id !== val);
+              }
+              return { error: null };
+            },
+          }),
           update:  (_u) => ({ eq: () => ({ select: () => ({ single: async () => ({ data: { id: "sb-id-1" }, error: null }) }) }) }),
         }),
       };
@@ -338,6 +345,43 @@ test("sync: skips already-synced bookings (idempotent)", async () => {
   assert.equal(res._status, 200);
   assert.equal(res._body.synced,  0, "already-synced booking should be skipped");
   assert.equal(res._body.skipped, 1);
+});
+
+test("delete: removes record from Supabase list results", async () => {
+  resetState();
+  supabaseRecords = [
+    { id: "sb-del-1", booking_id: "bk-del-1", vehicle_id: "camry", gross_amount: 50, payment_status: "paid" },
+  ];
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", id: "sb-del-1" }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body.success, true);
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.records.length, 0, "deleted Supabase record should not remain in list");
+});
+
+test("delete: removes record from GitHub fallback list results", async () => {
+  resetState();
+  supabaseRecords = null; // force GitHub fallback
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "gh-del-1", booking_id: "bk-gh-1", vehicle_id: "camry", gross_amount: 50, payment_status: "paid", created_at: "2026-03-01T00:00:00.000Z" },
+  ];
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", id: "gh-del-1" }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body.success, true);
+  assert.equal(ghRecords.length, 0, "deleted GitHub record should be removed from storage");
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.records.length, 0, "deleted GitHub record should not remain in list");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

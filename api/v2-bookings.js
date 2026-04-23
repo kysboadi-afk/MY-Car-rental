@@ -7,6 +7,7 @@
 //   list      — { secret, action:"list", vehicleId?, status? }
 //   list_raw  — { secret, action:"list_raw" }  (unfiltered Supabase read — Phase 6)
 //   update    — { secret, action:"update", vehicleId, bookingId, updates:{status,...} }
+//   delete    — { secret, action:"delete", bookingId }
 //   create    — { secret, action:"create", ...bookingFields } (manual booking)
 //
 // Booking automation (triggered automatically, non-fatal):
@@ -27,7 +28,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { loadBookings, saveBookings } from "./_bookings.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import {
   autoCreateRevenueRecord,
@@ -905,6 +906,111 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, booking: updatedBooking });
+    }
+
+    // ── DELETE (hard-delete booking + related records) ───────────────────────
+    if (action === "delete") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      let canonicalBookingId = bookingId;
+      let deleteVehicleId = null;
+      let deletePickupDate = null;
+      let deleteReturnDate = null;
+      let foundInSupabase = false;
+
+      const sbDelete = getSupabaseAdmin();
+      if (sbDelete) {
+        let bookingRow = null;
+
+        const { data: byRef, error: byRefErr } = await sbDelete
+          .from("bookings")
+          .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date")
+          .eq("booking_ref", bookingId)
+          .maybeSingle();
+        if (byRefErr && !isSchemaError(byRefErr)) throw byRefErr;
+        bookingRow = byRef || null;
+
+        if (!bookingRow) {
+          const { data: byPi, error: byPiErr } = await sbDelete
+            .from("bookings")
+            .select("booking_ref, payment_intent_id, vehicle_id, pickup_date, return_date")
+            .eq("payment_intent_id", bookingId)
+            .maybeSingle();
+          if (byPiErr && !isSchemaError(byPiErr)) throw byPiErr;
+          bookingRow = byPi || null;
+        }
+
+        if (bookingRow) {
+          foundInSupabase = true;
+          canonicalBookingId = bookingRow.booking_ref || bookingId;
+          deleteVehicleId = uiVehicleId(bookingRow.vehicle_id) || null;
+          deletePickupDate = bookingRow.pickup_date || null;
+          deleteReturnDate = bookingRow.return_date || null;
+
+          const { error: rrErr } = await sbDelete
+            .from("revenue_records")
+            .delete()
+            .eq("booking_id", canonicalBookingId);
+          if (rrErr && !isSchemaError(rrErr)) throw rrErr;
+
+          const { error: bdErr } = await sbDelete
+            .from("blocked_dates")
+            .delete()
+            .eq("booking_ref", canonicalBookingId);
+          if (bdErr && !isSchemaError(bdErr)) throw bdErr;
+
+          const { error: bookingDelErr } = await sbDelete
+            .from("bookings")
+            .delete()
+            .eq("booking_ref", canonicalBookingId);
+          if (bookingDelErr && !isSchemaError(bookingDelErr)) throw bookingDelErr;
+        }
+      }
+
+      let foundInJson = false;
+      if (process.env.GITHUB_TOKEN) {
+        await updateJsonFileWithRetry({
+          load: loadBookings,
+          apply: (data) => {
+            for (const vid of ALLOWED_VEHICLES) {
+              if (!Array.isArray(data[vid])) continue;
+              const originalLen = data[vid].length;
+              data[vid] = data[vid].filter((b) => {
+                const id = b?.bookingId || "";
+                const pi = b?.paymentIntentId || "";
+                const matches = (
+                  id === bookingId ||
+                  id === canonicalBookingId ||
+                  pi === bookingId ||
+                  pi === canonicalBookingId
+                );
+                if (matches && !deleteVehicleId) {
+                  deleteVehicleId = b?.vehicleId || vid;
+                  deletePickupDate = b?.pickupDate || null;
+                  deleteReturnDate = b?.returnDate || null;
+                }
+                return !matches;
+              });
+              if (data[vid].length !== originalLen) foundInJson = true;
+            }
+          },
+          save: saveBookings,
+          message: `v2: Delete booking ${canonicalBookingId}`,
+        });
+      }
+
+      if (!foundInSupabase && !foundInJson) {
+        return res.status(404).json({ error: `Booking "${bookingId}" not found` });
+      }
+
+      if (deleteVehicleId && deletePickupDate && deleteReturnDate) {
+        await unblockBookedDates(deleteVehicleId, deletePickupDate, deleteReturnDate).catch((err) => {
+          console.warn("v2-bookings delete: unblockBookedDates failed (non-fatal):", err.message);
+        });
+      }
+
+      return res.status(200).json({ success: true, bookingId: canonicalBookingId });
     }
 
     // ── FLAG (toggle flagged state on a booking) ────────────────────────────
