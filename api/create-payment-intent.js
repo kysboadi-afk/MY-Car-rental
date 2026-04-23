@@ -283,11 +283,11 @@ export default async function handler(req, res) {
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
       // needed here — values are only rendered in the Stripe dashboard.
       metadata: (() => {
-        const canonicalVehicleId = canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name);
+        const vehicleIdForMetadata = canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name);
         console.log("[VEHICLE_ID_STRIPE]", JSON.stringify({
           vehicleId_raw:       vehicleId,
           vehicleId_assigned:  assignedVehicleId,
-          vehicleId_canonical: canonicalVehicleId,
+          vehicleId_canonical: vehicleIdForMetadata,
           vehicle_name:        vehicleData.name,
         }));
         return {
@@ -295,7 +295,7 @@ export default async function handler(req, res) {
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: trimmedPhone,
-        vehicle_id:   canonicalVehicleId,
+        vehicle_id:   vehicleIdForMetadata,
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
