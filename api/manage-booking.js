@@ -54,7 +54,7 @@ function normalizeLookupPhone(value) {
 
 function normalizeLookupBookingRef(value) {
   const trimmed = String(value || "").trim();
-  return /^bk-[a-z0-9]+$/i.test(trimmed) ? trimmed.toLowerCase() : "";
+  return /^bk-[a-z0-9]+$/.test(trimmed.toLowerCase()) ? trimmed.toLowerCase() : "";
 }
 
 /**
@@ -350,7 +350,7 @@ export default async function handler(req, res) {
     });
 
     if (!matches.length) {
-      return res.status(404).json({ error: "No reserved deposit booking was found with that phone/email/booking ID." });
+      return res.status(404).json({ error: "No reserved deposit booking was found with that email/phone/booking ID." });
     }
 
     const selectedVehicleDbId = normalizeVehicleId(selectedVehicleUiId);
