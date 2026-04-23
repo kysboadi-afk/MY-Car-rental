@@ -269,11 +269,7 @@ const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
  * Strategy (in priority order):
  *  1. Derive a candidate ID from metadata.vehicle_id by lowercasing and
  *     stripping non-alphanumeric characters.  If the result looks canonical
- *     (matches CANONICAL_ID_PATTERN) it is used — unless the vehicle_name
- *     produces a *more specific* ID (i.e. the name-derived ID starts with the
- *     vehicle_id-derived ID and is longer), in which case the name-derived ID
- *     wins.  This handles legacy sessions where vehicle_id="camry" but
- *     vehicle_name="Camry 2012" → canonical "camry2012".
+ *     (matches CANONICAL_ID_PATTERN) it is used as-is.
  *  2. If step 1 fails (vehicle_id absent or non-canonical), derive the ID from
  *     metadata.vehicle_name using generic normalization:
  *       - lowercase
@@ -287,9 +283,8 @@ const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
  * automatically as long as Stripe metadata carries either a canonical vehicle_id
  * or a human-readable vehicle_name following the pattern "<make> <year/variant>".
  *
- * Future requirement: Stripe checkout sessions should send the canonical
- * vehicle_id directly (e.g. "camry2012", "corolla2020") so that name-based
- * mapping is never needed.
+ * Stripe checkout sessions should send canonical vehicle_id directly so
+ * vehicle_id stays aligned between UI, Stripe metadata, and DB records.
  *
  * @param {object} metadata - PaymentIntent metadata
  * @returns {string} canonical vehicle_id
@@ -324,17 +319,6 @@ export function mapVehicleId(metadata = {}) {
 
   // ── Step 1: vehicle_id passthrough ──────────────────────────────────────────
   if (normId && CANONICAL_ID_PATTERN.test(normId)) {
-    // If vehicle_name yields a more-specific ID (nameId starts with normId and
-    // is longer), use the name-derived ID instead.  This handles legacy sessions
-    // where vehicle_id="camry" but vehicle_name="Camry 2012" → "camry2012".
-    if (nameId && CANONICAL_ID_PATTERN.test(nameId) && nameId.startsWith(normId) && nameId !== normId) {
-      console.log("[VEHICLE_MAPPING]", {
-        vehicle_name: rawName, vehicle_id_raw: rawId,
-        normalized_id: normId, normalized_name: nameId,
-        mapped_vehicle_id: nameId, source: "name_override_of_prefix_id", success: true,
-      });
-      return nameId;
-    }
     console.log("[VEHICLE_MAPPING]", {
       vehicle_name: rawName, vehicle_id_raw: rawId,
       normalized_id: normId, mapped_vehicle_id: normId,

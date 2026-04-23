@@ -18,17 +18,14 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 /**
  * Derive the canonical vehicle_id to embed in Stripe PaymentIntent metadata.
  *
- * Mirrors the normalization logic in mapVehicleId (stripe-webhook.js):
- *  - Tokenize vehicle_name: lowercase, strip non-alphanum, skip single-letter
- *    tokens (e.g. "r" in "Slingshot R"), stop after the first numeric token
- *    (year) to drop trim-level suffixes (e.g. "SE" in "Camry 2013 SE").
- *  - If the name-derived ID is more specific than the raw vehicle_id (starts
- *    with it AND the raw ID has no digits), use the name-derived ID.
- *  - Otherwise use the normalised raw vehicle_id.
+ * Uses the raw vehicle ID from the booking flow whenever present so UI and DB
+ * IDs stay exactly aligned. Only falls back to a name-derived ID when no
+ * vehicle_id was provided.
  *
  * Examples:
- *   ("camry",     "Camry 2012")    → "camry2012"
+ *   ("camry", "Camry 2012") → "camry"
  *   ("camry2013", "Camry 2013 SE") → "camry2013"
+ *   ("", "Slingshot R") → "slingshot"
  *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
  *
  * @param {string} vehicleIdRaw  - internal vehicle key (e.g. "camry")
@@ -50,12 +47,6 @@ function canonicalVehicleIdForStripe(vehicleIdRaw, vehicleNameRaw) {
     if (parts.length > 0) nameId = parts.join("");
   }
 
-  // If the raw vehicle_id has no digits (bare make, e.g. "camry") and the
-  // name-derived ID starts with it and adds specificity (year), prefer nameId.
-  const idHasDigit = /\d/.test(normId);
-  if (!idHasDigit && nameId && nameId.startsWith(normId) && nameId !== normId) {
-    return nameId;
-  }
   return normId || nameId;
 }
 
@@ -146,6 +137,10 @@ export default async function handler(req, res) {
     // Both checks are time-aware: a booking from 9 AM to 9 AM does not block
     // a subsequent booking starting at 9 AM on the same return date.
     let assignedVehicleId = vehicleId;
+    console.log("[VEHICLE_ID_INPUT]", JSON.stringify({
+      vehicleId_raw:  vehicleId,
+      vehicle_name:   vehicleData?.name || null,
+    }));
     if (!testAvailabilityOverride) {
       if (isSlingshotVehicle) {
         // Compute the Slingshot return time from pickup time + duration so the
@@ -287,12 +282,20 @@ export default async function handler(req, res) {
       // Stripe dashboard and can be reconciled with booked-dates.json if needed.
       // Stripe stores metadata as plain text (not HTML) so no HTML escaping is
       // needed here — values are only rendered in the Stripe dashboard.
-      metadata: {
+      metadata: (() => {
+        const vehicleIdForMetadata = canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name);
+        console.log("[VEHICLE_ID_STRIPE]", JSON.stringify({
+          vehicleId_raw:       vehicleId,
+          vehicleId_assigned:  assignedVehicleId,
+          vehicleId_canonical: vehicleIdForMetadata,
+          vehicle_name:        vehicleData.name,
+        }));
+        return {
         booking_id:         bookingId,
         stripe_customer_id: stripeCustomerId,
         renter_name:  trimmedName,
         renter_phone: trimmedPhone,
-        vehicle_id:   canonicalVehicleIdForStripe(assignedVehicleId, vehicleData.name),
+        vehicle_id:   vehicleIdForMetadata,
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
@@ -338,7 +341,8 @@ export default async function handler(req, res) {
           balance_at_pickup:   (afterTaxFullRental - settings.camry_booking_deposit).toFixed(2),
           ...( protectionPlan && tier ? { protection_plan_tier: tier } : {} ),
         } : {}),
-      },
+      };
+      })(),
     };
 
     // All payments use automatic capture

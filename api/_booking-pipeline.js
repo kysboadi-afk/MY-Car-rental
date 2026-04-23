@@ -247,7 +247,8 @@ export async function persistBooking(opts) {
 
   // ── 1. Log booking start ──────────────────────────────────────────────────
   pipelineLog("info", traceId, "booking_start", {
-    vehicleId:   opts.vehicleId,
+    vehicleId:           opts.vehicleId,
+    vehicleIdNormalized: normalizeVehicleId(opts.vehicleId),
     pickupDate:  opts.pickupDate,
     returnDate:  opts.returnDate,
     amountPaid:  opts.amountPaid,
