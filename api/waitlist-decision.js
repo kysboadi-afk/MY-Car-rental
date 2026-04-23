@@ -367,7 +367,7 @@ export default async function handler(req, res) {
           render(WAITLIST_APPROVED, {
             customer_name: entry.name,
             vehicle:       entry.vehicleName || vehicleId,
-            booking_link:  "https://www.slytrans.com/cars",
+            booking_link:  "https://www.slytrans.com/cars.html",
           })
         );
       } else {
