@@ -18,16 +18,12 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 /**
  * Derive the canonical vehicle_id to embed in Stripe PaymentIntent metadata.
  *
- * Mirrors the normalization logic in mapVehicleId (stripe-webhook.js):
- *  - Tokenize vehicle_name: lowercase, strip non-alphanum, skip single-letter
- *    tokens (e.g. "r" in "Slingshot R"), stop after the first numeric token
- *    (year) to drop trim-level suffixes (e.g. "SE" in "Camry 2013 SE").
- *  - If the name-derived ID is more specific than the raw vehicle_id (starts
- *    with it AND the raw ID has no digits), use the name-derived ID.
- *  - Otherwise use the normalised raw vehicle_id.
+ * Uses the raw vehicle ID from the booking flow whenever present so UI and DB
+ * IDs stay exactly aligned. Only falls back to a name-derived ID when no
+ * vehicle_id was provided.
  *
  * Examples:
- *   ("camry",     "Camry 2012")    → "camry2012"
+ *   ("camry",     "Camry 2012")    → "camry"
  *   ("camry2013", "Camry 2013 SE") → "camry2013"
  *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
  *
@@ -50,12 +46,6 @@ function canonicalVehicleIdForStripe(vehicleIdRaw, vehicleNameRaw) {
     if (parts.length > 0) nameId = parts.join("");
   }
 
-  // If the raw vehicle_id has no digits (bare make, e.g. "camry") and the
-  // name-derived ID starts with it and adds specificity (year), prefer nameId.
-  const idHasDigit = /\d/.test(normId);
-  if (!idHasDigit && nameId && nameId.startsWith(normId) && nameId !== normId) {
-    return nameId;
-  }
   return normId || nameId;
 }
 

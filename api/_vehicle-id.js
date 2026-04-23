@@ -1,7 +1,7 @@
 // Map legacy IDs and user-facing names to canonical IDs before persistence.
 const VEHICLE_ID_ALIASES = {
-  camry: "camry2012",
-  "Camry 2012": "camry2012",
+  camry: "camry",
+  "Camry 2012": "camry",
   "Camry 2013 SE": "camry2013",
 };
 
@@ -16,7 +16,7 @@ export function normalizeVehicleId(vehicleId) {
   return VEHICLE_ID_ALIASES[raw] || raw;
 }
 
-// Reverse map: DB-canonical ID → UI/vehicles.json key (e.g. "camry2012" → "camry").
+// Reverse map: DB-canonical ID → UI/vehicles.json key (e.g. "camry" → "camry").
 // Built from the simple-key entries in VEHICLE_ID_ALIASES (excludes display-name keys
 // like "Camry 2012" which start with an uppercase letter).
 const DB_TO_UI_MAP = Object.fromEntries(
@@ -29,7 +29,7 @@ const DB_TO_UI_MAP = Object.fromEntries(
  * Reverse of normalizeVehicleId: maps a DB-canonical vehicle ID back to its
  * UI/vehicles.json key.  Unknown IDs are returned unchanged.
  *
- * @param {string} dbId - e.g. "camry2012"
+ * @param {string} dbId - e.g. "camry"
  * @returns {string}     - e.g. "camry"
  */
 export function uiVehicleId(dbId) {
