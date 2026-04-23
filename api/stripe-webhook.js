@@ -1157,7 +1157,7 @@ async function sendReservationDepositBalanceEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
-      <p>To view or manage your booking, visit <a href="https://www.slytrans.com/manage-booking.html">https://www.slytrans.com/manage-booking.html</a> and enter your phone number, email, or Booking ID.</p>
+      <p>To view or manage your booking, visit <a href="https://www.slytrans.com/manage-booking.html">Manage Booking</a> and enter your phone number, email, or Booking ID.</p>
     `,
   });
 }

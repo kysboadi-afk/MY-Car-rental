@@ -1142,7 +1142,7 @@ export default async function handler(req, res) {
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
-            <p>You can view and manage your booking at <a href="https://www.slytrans.com/manage-booking.html">https://www.slytrans.com/manage-booking.html</a> using your phone number, email, or Booking ID.</p>
+            <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
             <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
