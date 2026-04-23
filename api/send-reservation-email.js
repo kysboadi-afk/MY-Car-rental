@@ -1095,6 +1095,7 @@ export default async function handler(req, res) {
             "Here are your booking details:",
             "",
             `Payment Status : CONFIRMED`,
+            bookingId ? `Booking ID     : ${bookingId}` : "",
             `Vehicle        : ${car || ""}`,
             vehicleMake  ? `Make           : ${vehicleMake}`  : "",
             vehicleModel ? `Model          : ${vehicleModel}` : "",
@@ -1112,6 +1113,9 @@ export default async function handler(req, res) {
             !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
             breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
             "",
+            "Manage your booking at: https://www.slytrans.com/manage-booking.html",
+            "Use your phone number, email, or Booking ID to access it.",
+            "",
             "We will be in touch shortly to confirm your rental pick-up details.",
             `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
             "",
@@ -1122,6 +1126,7 @@ export default async function handler(req, res) {
             <p>${esc(customerIntro)} Here are your booking details:</p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+              ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
               ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
               ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
@@ -1137,6 +1142,7 @@ export default async function handler(req, res) {
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
+            <p>You can view and manage your booking at <a href="https://www.slytrans.com/manage-booking.html">https://www.slytrans.com/manage-booking.html</a> using your phone number, email, or Booking ID.</p>
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
             <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
