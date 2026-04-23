@@ -1230,6 +1230,8 @@ async function buildUpdatedRentalAgreementAttachment({
       returnDate: returnDate || "",
       returnTime: returnTime || "",
       total: resolvedTotal.toFixed(2),
+      // This document is sent after the balance-completion payment succeeds.
+      // At this point the booking is fully paid, so no balance remains.
       deposit: 0,
       days: rentalDays,
       protectionPlan: false,
@@ -1304,7 +1306,7 @@ async function sendBalancePaidCustomerEmail({
       "",
       `Hi ${firstName},`,
       "Your remaining balance has been received. Your rental is fully booked and ready to go.",
-      agreementAttachment.length ? "Your updated rental agreement PDF is attached." : "",
+      ...(agreementAttachment.length ? ["Your updated rental agreement PDF is attached."] : []),
       "",
       `Vehicle      : ${vehicleName || ""}`,
       `Pickup Date  : ${pickupDate || ""}`,
@@ -2792,7 +2794,7 @@ async function sendSlingshotFullyPaidEmail({
       "✅ Your Slingshot Booking is Fully Paid!",
       "",
       `Hi ${firstName}, your payment has been received and your booking is complete.`,
-      agreementAttachment.length ? "Your updated rental agreement PDF is attached." : "",
+      ...(agreementAttachment.length ? ["Your updated rental agreement PDF is attached."] : []),
       "",
       `Vehicle     : ${vehicleName}`,
       `Pickup Date : ${pickupDate}`,
@@ -2802,6 +2804,6 @@ async function sendSlingshotFullyPaidEmail({
       `Questions? Contact ${OWNER_EMAIL} or call (213) 916-6606.`,
       "",
       "Sly Transportation Services LLC",
-    ].join("\n"),
+    ].filter(Boolean).join("\n"),
   });
 }
