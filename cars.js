@@ -4,6 +4,7 @@
 // remove, or update vehicles in the admin portal without touching code.
 
 const API_BASE = "https://sly-rides.vercel.app";
+const BUSINESS_TZ = "America/Los_Angeles";
 
 // ─── i18n helper ─────────────────────────────────────────────────────────────
 function t(key, fallback) {
@@ -27,7 +28,29 @@ function fmtMoney(n) {
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
-function todayISO() { return new Date().toISOString().split("T")[0]; }
+function isoDateInBusinessTz(dateInput = new Date()) {
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find(p => p.type === "year")?.value;
+  const month = parts.find(p => p.type === "month")?.value;
+  const day = parts.find(p => p.type === "day")?.value;
+  return `${year}-${month}-${day}`;
+}
+
+function todayISO() { return isoDateInBusinessTz(new Date()); }
+
+function addDaysToISO(isoDate, days) {
+  const [y, m, d] = String(isoDate || "").split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
 
 function isBookedToday(ranges) {
   const today = todayISO();
@@ -166,9 +189,7 @@ function getNextAvailDate(vehicleId, bookedDates) {
       merged.push({ from: r.from, to: r.to });
       continue;
     }
-    const prevEnd = new Date(prev.to + "T00:00:00");
-    prevEnd.setDate(prevEnd.getDate() + 1); // treat back-to-back ranges as continuous
-    const prevEndISO = prevEnd.toISOString().slice(0, 10);
+    const prevEndISO = addDaysToISO(prev.to, 1); // treat back-to-back ranges as continuous
     if (r.from <= prevEndISO) {
       if (r.to > prev.to) prev.to = r.to;
     } else {
@@ -179,9 +200,7 @@ function getNextAvailDate(vehicleId, bookedDates) {
   // 1) If currently inside a merged block, next available is after its end.
   for (const r of merged) {
     if (r.from <= today && today <= r.to) {
-      const d = new Date(r.to + "T00:00:00");
-      d.setDate(d.getDate() + 1);
-      return d.toISOString().slice(0, 10);
+      return addDaysToISO(r.to, 1);
     }
   }
 
@@ -189,17 +208,13 @@ function getNextAvailDate(vehicleId, bookedDates) {
   //    show availability after that upcoming reserved block.
   const upcoming = merged.find(r => r.from > today);
   if (upcoming) {
-    const d = new Date(upcoming.to + "T00:00:00");
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
+    return addDaysToISO(upcoming.to, 1);
   }
 
   // 3) Fallback for stale status with only past ranges.
   const latestExpired = merged[merged.length - 1];
   if (latestExpired) {
-    const d = new Date(latestExpired.to + "T00:00:00");
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
+    return addDaysToISO(latestExpired.to, 1);
   }
   return null;
 }
@@ -265,12 +280,22 @@ function applyFleetStatus(fleetStatus, bookedDates) {
           // Return time is already in the past — just say "Available Today"
           nextBadge.textContent = "Available Today";
         } else {
-          const availDateISO = availDate.toISOString().slice(0, 10);
-          const timeStr = availDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          const availDateISO = isoDateInBusinessTz(availDate);
+          const timeStr = availDate.toLocaleTimeString("en-US", {
+            timeZone: BUSINESS_TZ,
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true
+          });
           if (availDateISO === todayISO()) {
             nextBadge.textContent = `Available Today at ${timeStr}`;
           } else {
-            const formatted = availDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            const formatted = availDate.toLocaleDateString("en-US", {
+              timeZone: BUSINESS_TZ,
+              month: "short",
+              day: "numeric",
+              year: "numeric"
+            });
             const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
             nextBadge.textContent = tpl.replace("{date}", `${formatted} at ${timeStr}`);
           }
@@ -279,7 +304,12 @@ function applyFleetStatus(fleetStatus, bookedDates) {
         const nextISO = getNextAvailDate(vid, bookedDates);
         if (nextISO) {
           const d = new Date(nextISO + "T00:00:00");
-          const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const formatted = d.toLocaleDateString("en-US", {
+            timeZone: BUSINESS_TZ,
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+          });
           const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
           nextBadge.textContent = tpl.replace("{date}", formatted);
         }
