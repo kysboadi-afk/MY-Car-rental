@@ -1,6 +1,5 @@
 // Map legacy IDs and user-facing names to canonical IDs before persistence.
 const VEHICLE_ID_ALIASES = {
-  camry: "camry",
   "Camry 2012": "camry",
   "Camry 2013 SE": "camry2013",
 };
