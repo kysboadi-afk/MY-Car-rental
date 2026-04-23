@@ -110,7 +110,7 @@ async function fetchBookingFromSupabase(bookingId) {
     .eq("booking_id", bookingId)
     .maybeSingle();
   if (error) {
-    console.error("manage-booking: Supabase booking lookup error:", error.message);
+    console.error("[manage-booking] BOOKING_LOOKUP_ERROR: queried booking_id =", bookingId, "| error.code =", error.code, "| error.message =", error.message);
     return null;
   }
   return data || null;
@@ -351,7 +351,7 @@ export default async function handler(req, res) {
     const selected = matches[0];
 
     const manageToken = createManageToken(selected.booking_id);
-    console.log("VERIFY:", { booking_id: selected.booking_id, booking_ref: selected.booking_ref, token: manageToken });
+    console.log("[manage-booking] VERIFY: booking_id =", selected.booking_id, "| booking_ref =", selected.booking_ref, "| token =", manageToken);
     try {
       await sb
         .from("bookings")
@@ -378,8 +378,30 @@ export default async function handler(req, res) {
 
   // ── action: get ─────────────────────────────────────────────────────────────
   if (action === "get") {
-    console.log("GET:", { token, resolved_booking_id: bookingId });
+    // Decode the token payload (without re-verifying) to expose raw field names
+    // and confirm what value was encoded by VERIFY.
+    let rawPayload = null;
+    try {
+      const dotIdx = (token || "").lastIndexOf(".");
+      if (dotIdx > 0) {
+        rawPayload = JSON.parse(Buffer.from(token.slice(0, dotIdx), "base64url").toString("utf-8"));
+      }
+    } catch { /* ignore decode errors */ }
+
+    const rawBookingRef = rawPayload?.bookingRef;
+    const rawBookingId  = rawPayload?.bookingId;
+    const idMatch = bookingId === (rawBookingRef ?? rawBookingId ?? null);
+
+    console.log(
+      "[manage-booking] GET: resolved_booking_id =", bookingId,
+      "| token_payload_keys =", rawPayload ? Object.keys(rawPayload) : null,
+      "| raw_bookingRef =", rawBookingRef,
+      "| raw_bookingId =",  rawBookingId,
+      "| id_match =", idMatch
+    );
+
     const row = await fetchBookingFromSupabase(bookingId);
+    console.log("[manage-booking] GET: fetchBookingFromSupabase(", bookingId, ") =", row ? "FOUND" : "NULL");
     if (!row) return res.status(404).json({ error: "Booking not found" });
 
     const vehicleId = uiVehicleId(row.vehicle_id || "");
