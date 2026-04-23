@@ -1131,7 +1131,7 @@ function buildReservationBalanceLink({ bookingId, paymentIntentId, meta, booking
 }
 
 async function sendReservationDepositBalanceEmail({
-  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance,
+  renterEmail, renterName, vehicleName, pickupDate, returnDate, depositPaid, remainingBalance, bookingId,
 }) {
   if (!renterEmail || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
   const transporter = nodemailer.createTransport({
@@ -1150,13 +1150,14 @@ async function sendReservationDepositBalanceEmail({
       <p>Hi ${esc(firstName)},</p>
       <p>Your booking is reserved. Please complete the remaining balance before pickup.</p>
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate || "")}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(depositPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(remainingBalance).toFixed(2))}</strong></td></tr>
       </table>
-      <p>To complete your booking, visit <strong>www.slytrans.com</strong> and tap <strong>Complete Booking</strong>. You will verify your phone/email and vehicle before viewing your booking.</p>
+      <p>To view or manage your booking, visit <a href="https://www.slytrans.com/manage-booking.html">Manage Booking</a> and enter your phone number, email, or Booking ID.</p>
     `,
   });
 }
@@ -1892,6 +1893,7 @@ export default async function handler(req, res) {
           returnDate: bookingForSync.returnDate,
           depositPaid: amountPaid,
           remainingBalance,
+          bookingId: resolvedBookingId,
         });
       } catch (emailErr) {
         console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
