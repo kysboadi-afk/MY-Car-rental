@@ -314,18 +314,11 @@ export default async function handler(req, res) {
       candidates = result.data || [];
       lookupErr = result.error || null;
     } else if (lookupPhone) {
-      const primaryPattern = `%${lookupPhone}%`;
-      const primaryResult = await baseVerifyQuery().ilike("customer_phone", primaryPattern);
-      candidates = primaryResult.data || [];
-      lookupErr = primaryResult.error || null;
-      if (!lookupErr && candidates.length === 0) {
-        const phoneTail = lookupPhone.slice(-10);
-        if (phoneTail && phoneTail !== lookupPhone) {
-          const fallbackResult = await baseVerifyQuery().ilike("customer_phone", `%${phoneTail}%`);
-          candidates = fallbackResult.data || [];
-          lookupErr = fallbackResult.error || null;
-        }
-      }
+      // Fetch all eligible bookings and normalize in JS — stored phones may have
+      // formatting chars (parens, dashes, spaces) that break a substring ilike match.
+      const result = await baseVerifyQuery();
+      candidates = result.data || [];
+      lookupErr = result.error || null;
     } else if (lookupBookingRef) {
       const result = await baseVerifyQuery().eq("booking_ref", lookupBookingRef);
       candidates = result.data || [];
