@@ -587,11 +587,12 @@ const transporter = nodemailer.createTransport({
  */
 function buildBookingRecord(fields, paymentLink = "") {
   const {
-    vehicleId, car, name, phone, email,
+    vehicleId, bookingId, car, name, phone, email,
     pickup, pickupTime, returnDate, returnTime,
     total, fullRentalCost, paymentIntentId,
   } = fields;
   return {
+    bookingId,
     vehicleId,
     vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
     name:            name || "",
