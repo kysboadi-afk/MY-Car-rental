@@ -25,6 +25,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
  * Examples:
  *   ("camry", "Camry 2012") → "camry"
  *   ("camry2013", "Camry 2013 SE") → "camry2013"
+ *   ("", "Slingshot R") → "slingshot"
  *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
  *
  * @param {string} vehicleIdRaw  - internal vehicle key (e.g. "camry")

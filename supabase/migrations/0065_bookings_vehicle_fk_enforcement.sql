@@ -8,8 +8,7 @@ BEGIN
     FROM public.vehicles
     WHERE vehicle_id = 'camry'
   ) THEN
-    RAISE EXCEPTION
-      'Required canonical vehicle_id "camry" is missing in public.vehicles; ensure that row exists before running this migration.';
+    RAISE EXCEPTION 'Required canonical vehicle_id "camry" is missing in public.vehicles; ensure that row exists before running this migration.';
   END IF;
 END $$;
 
