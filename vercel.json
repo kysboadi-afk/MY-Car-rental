@@ -15,7 +15,8 @@
     "api/admin-resend-extension.js":        { "maxDuration": 25 },
     "api/admin-resend-booking.js":          { "maxDuration": 30 },
     "api/v2-customers.js":                  { "maxDuration": 25 },
-    "api/revenue-self-heal.js":             { "maxDuration": 60 }
+    "api/revenue-self-heal.js":             { "maxDuration": 60 },
+    "api/v2-system-health.js":              { "maxDuration": 30 }
   },
   "headers": [
     {
@@ -55,6 +56,10 @@
     {
       "path": "/api/cleanup-blocked-dates",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/v2-system-health",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
