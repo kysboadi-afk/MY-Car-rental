@@ -37,6 +37,7 @@ import {
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { CARS } from "./_pricing.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { validateLink, PAGE_URLS } from "./_link-validator.js";
 
 // Disable Vercel's built-in body parser so we can read the raw request body
 // for TEXTMAGIC_WEBHOOK_SECRET HMAC-SHA256 signature verification.
@@ -321,6 +322,54 @@ function buildExtensionPaymentLink(clientSecret, piId) {
 }
 
 /**
+ * Validate a payment link and log the result to sms_logs.metadata.
+ *
+ * Only the base page (balance.html) is validated via HEAD — the client_secret
+ * query parameters are not reachable server-side and are not sent to the
+ * validator.  If the base page is unreachable, the fallback URL is returned
+ * and `fallbackUsed: true` is included in the log metadata.
+ *
+ * @param {string} fullLink    - the full payment URL (may contain ?cs=...)
+ * @param {string} bookingId   - booking_ref for sms_logs write
+ * @param {string} templateKey - sms template key for the sms_logs row
+ * @returns {Promise<{ url: string, meta: object }>}
+ */
+async function validatePaymentLinkForSms(fullLink, bookingId, templateKey) {
+  const validation = await validateLink(fullLink, {
+    baseUrlForValidation: PAGE_URLS.balance,
+    fallback:             PAGE_URLS.cars,
+  });
+
+  const meta = {
+    link:          fullLink,
+    validated:     validation.ok,
+    http_status:   validation.status,
+    fallback_used: validation.fallbackUsed,
+    validated_at:  new Date().toISOString(),
+  };
+
+  // Best-effort: log to sms_logs.metadata for audit
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb && bookingId) {
+      await sb.from("sms_logs").upsert(
+        {
+          booking_id:          bookingId,
+          template_key:        templateKey,
+          return_date_at_send: "1970-01-01",
+          metadata:            meta,
+        },
+        { onConflict: "booking_id,template_key,return_date_at_send" }
+      );
+    }
+  } catch (logErr) {
+    console.warn("receive-textmagic-sms: sms_logs link metadata write failed (non-fatal):", logErr.message);
+  }
+
+  return { url: validation.url, meta };
+}
+
+/**
  * Handle the EXTEND keyword from a customer.
  */
 async function handleExtend(fromPhone, allBookings, data, sha) {
@@ -424,12 +473,19 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
 
   // Create Stripe PaymentIntent for extension charge (with full metadata)
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, selected.price, selected.label);
-  const paymentLink = pi
+  const rawPaymentLink = pi
     ? buildExtensionPaymentLink(pi.client_secret, pi.id)
     : (booking.paymentLink || "https://www.slytrans.com/balance.html");
 
-  // Save extension info to booking
+  // Validate the base page is reachable before storing or sending the link
   const bookingId = booking.bookingId || booking.paymentIntentId;
+  const { url: paymentLink } = await validatePaymentLinkForSms(
+    rawPaymentLink,
+    bookingId,
+    "extend_selected"
+  );
+
+  // Save extension info to booking
   const idx = data[vehicleId].findIndex(
     (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
   );
@@ -526,12 +582,14 @@ async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data
 
   // Create Stripe PaymentIntent for the extension charge
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, price, label);
-  const paymentLink = pi
+  const rawPaymentLink = pi
     ? buildExtensionPaymentLink(pi.client_secret, pi.id)
     : (booking.paymentLink || "https://www.slytrans.com/balance.html");
 
-  // Persist extension selection to booking
+  // Validate base page before storing or sending the link
   const bookingId = booking.bookingId || booking.paymentIntentId;
+  const templateKey = days < 7 ? "extend_selected_upsell" : "extend_selected";
+  const { url: paymentLink } = await validatePaymentLinkForSms(rawPaymentLink, bookingId, templateKey);
   const idx = data[vehicleId]
     ? data[vehicleId].findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
     : -1;
