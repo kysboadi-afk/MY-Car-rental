@@ -47,6 +47,7 @@
 //   count:    number,
 // }
 
+import Stripe from "stripe";
 import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
@@ -603,8 +604,15 @@ async function fixStaleReservations(sb) {
   };
 }
 
-// Fix 6: queue orphan-PI revenue records for booking reconstruction
-// Marks them is_orphan=false so revenue-self-heal cron picks them up.
+// Fix 6: queue orphan-PI revenue records for booking reconstruction.
+//
+// Safety guards — reconstruction is ONLY queued when ALL of the following hold:
+//   1. Stripe PaymentIntent status === "succeeded"
+//   2. pi.metadata.booking_id is present
+//   3. No booking with that booking_ref already exists in the DB
+//
+// If metadata is incomplete (guard 2 fails) → flag only, do NOT auto-repair.
+// Idempotent: a booking that already exists is never reconstructed again.
 async function fixStripePaymentNoBooking(sb) {
   const cutoff60d = new Date(Date.now() - SIXTY_DAYS_MS).toISOString();
 
@@ -619,20 +627,97 @@ async function fixStripePaymentNoBooking(sb) {
 
   if (!rows || rows.length === 0) return { fixed: 0, message: "No unlinked Stripe payments found." };
 
-  const ids = rows.map((r) => r.id);
-  const { error: updateErr } = await sb
-    .from("revenue_records")
-    .update({ is_orphan: false, sync_excluded: false })
-    .in("id", ids);
-  if (updateErr) throw new Error("Could not update orphan records: " + updateErr.message);
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-  console.log(
-    `[v2-system-health] fix_pi_no_booking: queued ${rows.length} records for revenue-self-heal`,
-    rows.map((r) => r.payment_intent_id || r.booking_id),
-  );
+  let queued             = 0;
+  let skippedNotSucceeded = 0;
+  let skippedIncomplete  = 0;
+  let skippedExists      = 0;
+  const failures         = [];
+
+  for (const row of rows) {
+    const piId = row.payment_intent_id;
+    try {
+      // Guard 1: PaymentIntent must have status "succeeded"
+      let pi;
+      try {
+        pi = await stripe.paymentIntents.retrieve(piId);
+      } catch (stripeErr) {
+        failures.push({ id: piId, error: `Stripe retrieve failed: ${stripeErr.message}` });
+        console.error(`[v2-system-health] fix_pi_no_booking: Stripe error for ${piId}:`, stripeErr.message);
+        continue;
+      }
+      if (pi.status !== "succeeded") {
+        skippedNotSucceeded++;
+        console.log(`[v2-system-health] fix_pi_no_booking: skipped ${piId} (status=${pi.status})`);
+        continue;
+      }
+
+      // Guard 2: metadata.booking_id must be present
+      const bookingRef = pi.metadata?.booking_id;
+      if (!bookingRef) {
+        skippedIncomplete++;
+        console.warn(
+          `[v2-system-health] fix_pi_no_booking: flagged ${piId} — metadata.booking_id missing, not auto-repairing`,
+        );
+        continue;
+      }
+
+      // Guard 3: booking_ref must NOT already exist in the bookings table
+      const { data: existing, error: bErr } = await sb
+        .from("bookings")
+        .select("booking_ref")
+        .eq("booking_ref", bookingRef)
+        .maybeSingle();
+      if (bErr) {
+        failures.push({ id: piId, error: `bookings lookup failed: ${bErr.message}` });
+        console.error(`[v2-system-health] fix_pi_no_booking: bookings lookup error for ${piId}:`, bErr.message);
+        continue;
+      }
+      if (existing?.booking_ref) {
+        skippedExists++;
+        console.log(
+          `[v2-system-health] fix_pi_no_booking: skipped ${piId} — booking ${bookingRef} already exists`,
+        );
+        continue;
+      }
+
+      // All guards passed — queue for reconstruction
+      const { error: updateErr } = await sb
+        .from("revenue_records")
+        .update({ is_orphan: false, sync_excluded: false })
+        .eq("id", row.id);
+      if (updateErr) {
+        failures.push({ id: piId, error: `revenue_records update failed: ${updateErr.message}` });
+        console.error(`[v2-system-health] fix_pi_no_booking: update error for ${piId}:`, updateErr.message);
+        continue;
+      }
+
+      queued++;
+      console.log(
+        `[v2-system-health] fix_pi_no_booking: queued ${piId} (booking_ref=${bookingRef}) for reconstruction`,
+      );
+    } catch (err) {
+      failures.push({ id: piId, error: err.message });
+      console.error(`[v2-system-health] fix_pi_no_booking: unexpected error for ${piId}:`, err.message);
+    }
+  }
+
+  const parts = [];
+  if (queued > 0)              parts.push(`${queued} queued for reconstruction`);
+  if (skippedExists > 0)       parts.push(`${skippedExists} already exist`);
+  if (skippedIncomplete > 0)   parts.push(`${skippedIncomplete} flagged (incomplete metadata)`);
+  if (skippedNotSucceeded > 0) parts.push(`${skippedNotSucceeded} not yet succeeded`);
+  if (failures.length > 0)     parts.push(`${failures.length} failed`);
+
   return {
-    fixed: rows.length,
-    message: `Queued ${rows.length} payment${rows.length !== 1 ? "s" : ""} for booking reconstruction (revenue-self-heal runs every 5 min).`,
+    fixed:               queued,
+    skippedExists,
+    skippedIncomplete,
+    skippedNotSucceeded,
+    failed:              failures.length,
+    failures,
+    message: parts.length ? parts.join(", ") + "." : "No eligible payments to reconstruct.",
   };
 }
 
