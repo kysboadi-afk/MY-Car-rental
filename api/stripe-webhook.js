@@ -596,6 +596,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     email,
     payment_type,
     full_rental_amount,
+    balance_at_pickup,
     protection_plan_tier,
   } = meta;
 
@@ -635,6 +636,13 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
   const amountPaid  = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
   const totalPrice  = full_rental_amount ? Math.round(parseFloat(full_rental_amount) * 100) / 100 : amountPaid;
+
+  // Derive the deposit actually collected: prefer amount_received from Stripe,
+  // then fall back to full_rental_amount - balance_at_pickup from metadata.
+  const paidFromStripe   = (paymentIntent.amount_received || 0) / 100;
+  const paidFromMetadata =
+    Number(full_rental_amount || 0) - Number(balance_at_pickup || 0);
+  const depositPaidAmount = paidFromStripe > 0 ? paidFromStripe : paidFromMetadata;
   const isReservationDeposit = payment_type === "reservation_deposit";
   const status = isReservationDeposit ? "reserved" : resolveBookingStatus(payment_type);
 
@@ -706,8 +714,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       return_time:               parseTime12h(return_time  || "") || null,
       status:                    isDepositPayment ? "reserved" : persistPayload.status,
       total_price:               totalPrice,
-      deposit_paid:              amountPaid,
-      remaining_balance:         Math.max(0, totalPrice - amountPaid),
+      deposit_paid:              depositPaidAmount,
+      remaining_balance:         Math.max(0, totalPrice - depositPaidAmount),
       payment_status:            isDepositPayment
                                    ? "partial"
                                    : (persistPayload.paymentStatus || "unpaid"),

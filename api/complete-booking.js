@@ -231,10 +231,10 @@ async function handleCreatePaymentIntent(req, res, booking) {
   }
 
   const paymentStatus = booking.paymentStatus || booking.slingshot_payment_status || "";
-  if (paymentStatus === "fully_paid") {
+  if (paymentStatus === "fully_paid" || paymentStatus === "paid") {
     return res.status(409).json({ error: "This booking has already been fully paid.", alreadyPaid: true });
   }
-  if (paymentStatus !== "deposit_paid") {
+  if (!["deposit_paid", "partial"].includes(paymentStatus)) {
     return res.status(400).json({ error: "This booking is not in a state that requires completion." });
   }
 
@@ -255,8 +255,8 @@ async function handleCreatePaymentIntent(req, res, booking) {
         card: { request_three_d_secure: "automatic" },
       },
       metadata: {
-        payment_type:             "slingshot_balance_payment",
-        original_booking_id:      booking.bookingId || "",
+        payment_type:             "rental_balance",
+        booking_id:               booking.bookingId || "",
         payment_link_token:       booking.paymentLinkToken || "",
         vehicle_id:               booking.vehicleId || "",
         vehicle_name:             booking.vehicleName || booking.vehicleId || "",
