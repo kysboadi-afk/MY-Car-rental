@@ -95,6 +95,11 @@ const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
 const GRACE_OFFSET_MS    = 60 * 60 * 1000;
 const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
+// Boundaries (in minutes) for the end-of-rental warning SMS window.
+// Cron runs every 5 min, so a 15-min window ensures the message fires exactly once.
+const WARNING_BEFORE_END_UPPER_MIN = 30; // start of window  (30 min before return)
+const WARNING_BEFORE_END_LOWER_MIN = 15; // end of window    (15 min before return)
+
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
 // non-null value lets the UNIQUE constraint (booking_id, template_key,
@@ -160,7 +165,6 @@ async function logSmsToSupabase(bookingId, templateKey, returnDateStr) {
           booking_id:          bookingId,
           template_key:        templateKey,
           return_date_at_send: date,
-          sent_at:             new Date().toISOString(),
         },
         { onConflict: "booking_id,template_key,return_date_at_send" }
       );
@@ -673,7 +677,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // Single consolidated end-of-rental reminder (replaces TextMagic automations
       // that were sending separate 1h, 30min, and 15min messages).
       if (
-        minutesUntilReturn <= 30 && minutesUntilReturn > 15 &&
+        minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN &&
         !alreadySent(booking, "late_warning_30min") &&
         !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
       ) {
