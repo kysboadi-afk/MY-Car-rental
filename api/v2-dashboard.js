@@ -193,10 +193,11 @@ export default async function handler(req, res) {
     todayLA.setHours(0, 0, 0, 0);
     // ISO date string kept for the "returns today" check (date equality).
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
-    let activeBookings   = 0;
-    let pendingApprovals = 0;
-    let overdueCount     = 0;
+    let activeBookings    = 0;
+    let pendingApprovals  = 0;
+    let overdueCount      = 0;
     let returnsTodayCount = 0;
+    let pickupsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
       if (booking.status === "cancelled_rental") {
@@ -232,6 +233,11 @@ export default async function handler(req, res) {
       if (bookingIsOverdue) overdueCount++;
       if (booking.returnDate === todayStr && bookingIsActive) {
         returnsTodayCount++;
+      }
+      // Pickups today: booked/approved rentals whose pickup date is today (LA).
+      if (booking.pickupDate === todayStr
+          && (booking.status === "reserved_unpaid" || booking.status === "booked_paid")) {
+        pickupsTodayCount++;
       }
     }
 
@@ -493,6 +499,7 @@ export default async function handler(req, res) {
           pendingApprovals,
           overdueCount,
           returnsTodayCount,
+          pickupsTodayCount,
         },
         revenueChart,
         bookingsPerVehicle,
