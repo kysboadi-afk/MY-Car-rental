@@ -374,10 +374,10 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
 // ── Status mapping: old bookings.json values → new bookings table enum ────────
 const BOOKING_STATUS_MAP = {
   reserved_unpaid:  "pending",
-  booked_paid:      "approved",
+  booked_paid:      "pending",
   active_rental:    "active",
   completed_rental: "completed",
-  cancelled_rental: "cancelled",
+  cancelled_rental: "completed",
 };
 
 /**
@@ -453,9 +453,15 @@ export async function autoUpsertBooking(booking, opts = {}) {
     const totalPrice  = Number(booking.totalPrice  || booking.total_price  || amountPaid);
     const remaining   = Math.max(0, totalPrice - amountPaid);
 
-    let paymentStatus = "unpaid";
-    if (amountPaid > 0) {
-      paymentStatus = remaining > 0 ? "partial" : "paid";
+    // Use the caller's explicit paymentStatus when provided (e.g. "partial" for
+    // reservation_deposit); fall back to deriving it from amounts.  Then enforce
+    // the DB constraint: status='reserved' always requires payment_status='partial'
+    // regardless of arithmetic (guards the edge case where totalPrice equals
+    // amountPaid, making remaining=0 and the derived value wrong).
+    let paymentStatus = booking.paymentStatus ||
+      (amountPaid > 0 ? (remaining > 0 ? "partial" : "paid") : "unpaid");
+    if (status === "reserved" && paymentStatus !== "partial") {
+      paymentStatus = "partial";
     }
 
     const record = {

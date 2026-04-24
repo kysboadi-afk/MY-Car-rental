@@ -712,13 +712,13 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       return_date:               return_date  || null,
       pickup_time:               parseTime12h(pickup_time  || "") || null,
       return_time:               parseTime12h(return_time  || "") || null,
-      status:                    isDepositPayment ? "reserved" : persistPayload.status,
+      // status='reserved' requires payment_status='partial' (DB constraint).
+      // Full_payment writes status='pending' + payment_status='paid'.
+      status:                    isDepositPayment ? "reserved" : "pending",
       total_price:               totalPrice,
       deposit_paid:              depositPaidAmount,
       remaining_balance:         Math.max(0, totalPrice - depositPaidAmount),
-      payment_status:            isDepositPayment
-                                   ? "partial"
-                                   : (persistPayload.paymentStatus || "unpaid"),
+      payment_status:            isDepositPayment ? "partial" : "paid",
       payment_method:            "stripe",
       payment_intent_id:         paymentIntent.id,
       stripe_customer_id:        persistPayload.stripeCustomerId        || null,
