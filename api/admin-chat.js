@@ -303,43 +303,138 @@ After the tool returns:
 - If sync_status is "stale": Warn that the device hasn't synced recently and suggest checking that it is powered on.
 - If the tool returns an error (duplicate IMEI, invalid format, vehicle not found): Relay the exact error message to the admin and ask them to correct it.
 
-## Creating a new vehicle (guided flow)
+## ADD_NEW_VEHICLE — Adding a new vehicle (guided flow)
 
-When the admin asks to add or create a vehicle, collect ALL required fields one step at a time before calling create_vehicle:
+Trigger this flow when the admin:
+- Types the command **ADD_NEW_VEHICLE**
+- Says anything like "add a new vehicle", "add a car to the fleet", "create a new rental", "onboard a new vehicle", or similar.
 
-1. Vehicle name (e.g. "Honda Civic 2015")
-2. Daily rental price (must be > $0)
-3. Purchase price — what was paid to acquire the vehicle (must be > $0)
-4. Purchase date — when was it purchased? (format: YYYY-MM-DD)
-5. Bouncie device IMEI — optional. Ask: "Do you want to assign a Bouncie GPS tracker? If so, what is the IMEI?"
+### Step 1 — Collect required information
+
+Ask for any fields that were not already provided. Collect all of the following before proceeding:
+
+1. **Vehicle name** (display name, e.g. "Camry 2014 SE")
+2. **Year** (4-digit model year, e.g. 2014)
+3. **Make** (manufacturer, e.g. Toyota)
+4. **Model** (e.g. Camry, Corolla, Civic)
+5. **Color** (optional — for internal notes)
+6. **Daily rental rate** (must be > $0, e.g. $55/day)
+7. **Weekly rental rate** (optional — leave blank if no weekly discount applies)
+8. **Deposit amount** (e.g. $150 — or $0 / "none" if no deposit required)
+9. **Purchase price** (what was paid to acquire the vehicle, must be > $0)
+10. **Purchase date** (format: YYYY-MM-DD)
+11. **Bouncie GPS IMEI** (optional — 15-digit number for mileage tracking)
+
+### Step 2 — Generate vehicle_id
+
+Generate the vehicle_id as: **make + year** — lowercase letters and digits only, no spaces or separators.
+
+Examples:
+- Toyota Camry 2014 → `camry2014`
+- Honda Civic 2019 → `civic2019`
+- Ford F-150 2022 → `f1502022`
+- Nissan Altima 2016 → `altima2016`
+
+If the generated ID would conflict with an existing vehicle (check via get_vehicles), append a short suffix (e.g. `camry2014b`).
+
+### Step 3 — Show confirmation summary
+
+ALWAYS show this full summary before calling create_vehicle and ask for approval:
+
+---
+**🚗 New Vehicle Setup — ADD_NEW_VEHICLE**
+
+**Vehicle Details**
+- Name: [vehicle name]
+- Year / Make / Model: [year] [make] [model]
+- Color: [color or "Not specified"]
+- Vehicle ID: `[vehicle_id]`
+
+**Stripe Metadata** *(attached to every payment)*
+\`\`\`json
+{
+  "vehicle_id": "[vehicle_id]",
+  "vehicle_name": "[vehicle name]"
+}
+\`\`\`
+
+**Pricing Config**
+- Daily Rate: $[daily_rate]/day
+- Weekly Rate: $[weekly_rate]/week [or "No weekly rate"]
+- Deposit: $[deposit] [or "No deposit required"]
+
+**Acquisition**
+- Purchase Price: $[purchase_price]
+- Purchase Date: [purchase_date]
+- GPS Tracker: [IMEI or "None — mileage tracking will not be active"]
+
+**Integration Checklist**
+- ✅ Stripe metadata — vehicle_id + vehicle_name will be set on all payments
+- ✅ Booking payload — vehicle_id included in all booking records
+- ✅ Pricing logic — daily/weekly/deposit rates stored in vehicle record
+- ✅ Email + agreement — vehicle name will appear in confirmation and rental agreement
+- ✅ Dashboard — vehicle will appear in fleet list and booking counts after creation
+- ✅ Calendar / availability — vehicle will block dates automatically after booking
+- ⚠️ SMS — vehicle name is pulled dynamically from booking records (no extra config needed)
+- ⚠️ Supabase DB — booking inserts include vehicle_id/vehicle_name automatically for all new bookings
+
+Shall I create this vehicle now?
+
+---
+
+### Step 4 — Call create_vehicle with confirmed: true
+
+Only call `create_vehicle` after the admin says yes. Pass:
+- `vehicle_id` — the generated slug (e.g. `camry2014`)
+- `name` — the full display name
+- `type` — always `"car"`
+- `price_per_day` — daily rate
+- `weekly_rate` — weekly rate (if provided)
+- `deposit` — deposit amount (if provided)
+- `purchase_price` — acquisition cost
+- `purchase_date` — YYYY-MM-DD
+- `bouncie_device_id` — IMEI (if provided)
+- `confirmed: true`
+
+### Step 5 — Post-creation verification
+
+After create_vehicle succeeds:
+
+1. Call `get_vehicles` to confirm the new vehicle appears in the fleet list.
+2. Report the integration status:
+
+---
+**✅ Vehicle [vehicle name] (`[vehicle_id]`) is now live.**
+
+**System Integration Status**
+- ✅ Fleet record created — vehicle_id: `[vehicle_id]`
+- ✅ Pricing stored — $[daily]/day[, $[weekly]/week] [, deposit: $[deposit]]
+- ✅ Dashboard — vehicle now visible in admin fleet view
+- ✅ Stripe metadata — vehicle_id + vehicle_name will attach to all future payments
+- ✅ Booking pipeline — vehicle_id included in all new bookings automatically
+- ✅ Calendar — availability tracking active; dates will block on booking
+- [✅ or ⚠️] GPS Tracking — [Bouncie assigned / No device — assign one to enable mileage tracking]
+
+**⚠️ MANDATORY: Run 1 test booking to confirm system integrity**
+1. Go to the Cars page and book this vehicle for a short date range
+2. Complete Stripe payment (use a test card if in test mode)
+3. Confirm:
+   - ✅ Payment succeeds and Stripe metadata includes `vehicle_id` = `[vehicle_id]`
+   - ✅ Confirmation email sent to renter and owner
+   - ✅ SMS notifications sent with correct vehicle name
+   - ✅ Rental agreement PDF generated with correct vehicle name
+   - ✅ Booking appears in dashboard with correct vehicle
+   - ✅ Calendar shows dates as blocked for `[vehicle_id]`
+   - ✅ Revenue recorded under `[vehicle_id]`
+
+---
 
 Validation rules (reject and re-ask if violated):
 - price_per_day must be a positive number
 - purchase_price must be a positive number
 - purchase_date must be a valid calendar date in YYYY-MM-DD format
 - type must always be "car" — never "slingshot" (those are managed separately)
-
-Do NOT call create_vehicle until all required fields are collected and valid.
-
-Before calling create_vehicle, ALWAYS show a confirmation summary in this exact format and ask for approval:
-
----
-**New Vehicle Summary**
-- Name: [vehicle name]
-- Daily Price: $[price]/day
-- Purchase Price: $[purchase_price]
-- Purchase Date: [purchase_date]
-- Bouncie Device: [IMEI or "None — mileage tracking will not be active"]
-
-Shall I create this vehicle?
----
-
-Only call create_vehicle with confirmed: true after the admin says yes.
-
-After creation:
-- Call get_vehicles to verify the vehicle appears in the fleet
-- If bouncie_device_id was provided, confirm tracking_active: true in the result
-- If any warnings are returned, relay them to the admin
+- vehicle_id must be lowercase letters and digits only (no spaces, max 50 chars)
 
 ## Mileage & maintenance context
 - For questions about a specific vehicle's maintenance (e.g. "What's the maintenance status of Camry 2013?"), ALWAYS call get_maintenance_status with the vehicle name. Never use get_mileage for single-vehicle maintenance queries.
@@ -684,7 +779,9 @@ function formatConfirmedReply(toolName, args, result) {
       const warnings = result.warnings?.length
         ? `\n⚠️ ${result.warnings.join("\n⚠️ ")}`
         : "";
-      return `✅ Vehicle **${safe(result.name)}** created successfully (ID: \`${safe(result.created)}\`).\n- Price: $${safe(result.price_per_day)}/day\n- Purchase: $${safe(result.purchase_price)} on ${safe(result.purchase_date)}\n- Tracking: ${result.tracking_active ? `✅ Bouncie assigned (${safe(result.bouncie_device_id)})` : "⚠️ No Bouncie device — assign one via update_vehicle to enable mileage tracking"}${warnings}`;
+      const weeklyLine = result.weekly_rate != null ? `\n- Weekly Rate: $${safe(result.weekly_rate)}/week` : "";
+      const depositLine = result.deposit != null ? `\n- Deposit: $${safe(result.deposit)}` : "";
+      return `✅ Vehicle **${safe(result.name)}** created successfully (ID: \`${safe(result.created)}\`).\n- Price: $${safe(result.price_per_day)}/day${weeklyLine}${depositLine}\n- Purchase: $${safe(result.purchase_price)} on ${safe(result.purchase_date)}\n- Tracking: ${result.tracking_active ? `✅ Bouncie assigned (${safe(result.bouncie_device_id)})` : "⚠️ No Bouncie device — assign one via update_vehicle to enable mileage tracking"}${warnings}`;
     }
     case "add_vehicle":
       return `✅ Vehicle **${safe(result.name)}** added successfully (ID: \`${safe(result.created)}\`).`;
