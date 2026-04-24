@@ -124,12 +124,10 @@ mock.module("./_supabase.js", {
               delete: () => ({ in: async () => ({ error: null }) }),
             };
           }
-          // bookings table — return empty so bookings-count patch is a no-op
+          // bookings table — return empty so join-based totals patch is a no-op
           return {
             select: () => ({
-              not: () => ({
-                not: () => Promise.resolve({ data: [], error: null }),
-              }),
+              not: () => Promise.resolve({ data: [], error: null }),
               in: () => Promise.resolve({ data: [], error: null }),
             }),
           };
