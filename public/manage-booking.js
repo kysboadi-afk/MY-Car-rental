@@ -212,17 +212,15 @@
         if ([...el.options].some((o) => o.value === booking.returnTime)) el.value = booking.returnTime;
       }
 
-      // Lock editing if within 3 hours of pickup or booking status is beyond "editable" states.
+      // Lock editing if booking status is beyond "editable" states.
       // Statuses that allow edits: reserved, pending.
       // Statuses that are verified but read-only: approved, pending_verification.
       const editableStatuses = ["reserved", "pending"];
       const managedStatuses  = ["reserved", "pending", "pending_verification", "approved"];
-      const isLocked = booking.lockedForEditing || !editableStatuses.includes(booking.status);
+      const isLocked = !editableStatuses.includes(booking.status);
       if (isLocked) {
         $lockNotice.style.display = "block";
-        if (booking.lockedForEditing) {
-          $lockNotice.innerHTML = "🔒 Bookings cannot be changed within 3 hours of pickup. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> for urgent changes.";
-        } else if (booking.status === "approved") {
+        if (booking.status === "approved") {
           $lockNotice.innerHTML = "✅ Your booking has been confirmed. Dates and vehicle cannot be changed online. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> if you need assistance.";
         } else if (booking.status === "pending_verification") {
           $lockNotice.innerHTML = "⏳ Your booking is under review. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> if you need to make changes.";
