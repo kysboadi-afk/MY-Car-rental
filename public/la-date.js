@@ -49,6 +49,46 @@
     return dt.toISOString().slice(0, 10);
   }
 
+  /**
+   * Format a "YYYY-MM-DD" date and optional "HH:MM" time as a human-readable
+   * Los Angeles local time string (e.g. "Jun 15, 2024, 8:00 AM").
+   *
+   * Always treats the supplied date/time values as Los Angeles wall-clock
+   * time so that the displayed value exactly matches what the user selected —
+   * no UTC conversion, no timezone shift.
+   *
+   * @param {string} dateStr - "YYYY-MM-DD"
+   * @param {string} [timeStr] - "HH:MM" (24-hour); defaults to "00:00"
+   * @returns {string}
+   */
+  function formatLocalDateTime(dateStr, timeStr) {
+    if (!dateStr) return "";
+
+    var parts = String(dateStr).split("-");
+    var y = Number(parts[0]);
+    var m = Number(parts[1]);
+    var d = Number(parts[2]);
+    if (!isFinite(y) || !isFinite(m) || !isFinite(d)) return dateStr;
+
+    var timeParts = String(timeStr || "").split(":");
+    var h   = Number(timeParts[0]) || 0;
+    var min = Number(timeParts[1]) || 0;
+
+    // Use the multi-argument constructor so the Date is created in the
+    // browser's local timezone without any ISO-string UTC interpretation.
+    var date = new Date(y, m - 1, d, h, min);
+
+    return date.toLocaleString("en-US", {
+      timeZone: BUSINESS_TZ,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+  }
+
   window.SlyLA = {
     /** IANA timezone identifier used throughout the frontend. */
     tz: BUSINESS_TZ,
@@ -60,6 +100,14 @@
     isoDateInLA: isoDateInLA,
 
     /** Pure calendar-day arithmetic: add N days to a "YYYY-MM-DD" string. */
-    addDaysToISO: addDaysToISO
+    addDaysToISO: addDaysToISO,
+
+    /**
+     * Format a date+time for display in Los Angeles local time.
+     * @param {string} dateStr - "YYYY-MM-DD"
+     * @param {string} [timeStr] - "HH:MM" (24-hour)
+     * @returns {string} e.g. "Jun 15, 2024, 8:00 AM"
+     */
+    formatLocalDateTime: formatLocalDateTime
   };
 }());

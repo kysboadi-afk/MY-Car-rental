@@ -777,8 +777,8 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (intro) {
     const namePart   = renterName  ? `<strong>${renterName}</strong>` : "<strong>[Renter]</strong>";
     const carPart    = `<strong>${carData.name}</strong>`;
-    const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
-    const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
+    const pickPart   = pickupVal  ? `<strong>${SlyLA.formatLocalDateTime(pickupVal, pickupTime.value)}</strong>`  : "<strong>[pickup date]</strong>";
+    const retPart    = returnVal  ? `<strong>${SlyLA.formatLocalDateTime(returnVal, returnTime.value)}</strong>`  : "<strong>[return date]</strong>";
     if (lang === "es") {
       intro.innerHTML = `Este Contrato de Alquiler es celebrado entre SLY Transportation Services ("Empresa") y ${namePart} ("Arrendatario") para el alquiler de ${carPart} desde ${pickPart} hasta ${retPart}.`;
     } else {
@@ -1054,8 +1054,12 @@ function applySlingshotDuration() {
     if (!isNaN(nativeTest)) timeStr = pickupTime.value.slice(0, 5);
   }
 
-  // Build pickup moment and add duration
-  const pickupMoment = new Date(dateStr + "T" + timeStr);
+  // Build pickup moment and add duration.
+  // Use the multi-argument constructor (y, m, d, h, min) so the Date is always
+  // created as local time — avoids UTC mis-interpretation of ISO strings.
+  const [pY, pM, pD] = dateStr.split("-").map(Number);
+  const [pH, pMin]   = timeStr.split(":").map(Number);
+  const pickupMoment = new Date(pY, pM - 1, pD, pH, pMin || 0);
   if (isNaN(pickupMoment.getTime())) { updatePayBtn(); return; }
   const returnMoment = new Date(pickupMoment.getTime() + hours * 60 * 60 * 1000);
 
@@ -1117,7 +1121,8 @@ function parseAnyTimeToMs(dateStr, timeStr) {
   } else {
     return NaN;
   }
-  return new Date(dateStr + "T" + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00").getTime();
+  // Use multi-argument constructor so there is no ISO-string UTC interpretation.
+  return new Date(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10)), h, m).getTime();
 }
 
 // Convert a "h:MM AM/PM" time slot string to "HH:MM" for native <input type="time">.
@@ -1649,7 +1654,7 @@ async function launchExtendRentalPayment() {
     // Populate the summary box
     var summaryEl = document.getElementById("ext-rental-summary");
     if (summaryEl) {
-      var displayReturn = confirmedDate + (confirmedTime ? " at " + confirmedTime : "");
+      var displayReturn = SlyLA.formatLocalDateTime(confirmedDate, confirmedTime);
       summaryEl.innerHTML =
         "<strong>⏱️ Rental Extension</strong><br>" +
         (vehicleName ? "Vehicle: " + vehicleName + "<br>" : "") +
@@ -2107,7 +2112,13 @@ function updateTotal() {
   // ----- Daily/weekly vehicles -----
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
-  currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  // Use explicit UTC arithmetic to count whole calendar days without any
+  // ISO-string UTC-vs-local ambiguity.  Date.UTC() always gives midnight UTC.
+  const [puY, puM, puD]   = pickup.value.split("-").map(Number);
+  const [retY, retM, retD] = returnDate.value.split("-").map(Number);
+  currentDayCount = Math.max(minDays, Math.ceil(
+    (Date.UTC(retY, retM - 1, retD) - Date.UTC(puY, puM - 1, puD)) / (1000 * 3600 * 24)
+  ));
 
   // Calculate cost using the best applicable discount tier (greedy: largest period first).
   // "Monthly" is defined as every 30-day block; this is intentional for a rental business
