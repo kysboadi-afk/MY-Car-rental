@@ -368,7 +368,8 @@ export default async function handler(req, res) {
     }
 
     // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
-    // These are NOT in revenue_records and must always be added on top.
+    // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
+    // fee handling) are excluded here to prevent double-counting revenue totals.
     if (sb) {
       const bookingVehicleMap = {};
       for (const b of allBookings) {
@@ -377,9 +378,29 @@ export default async function handler(req, res) {
       try {
         const { data: chargesData } = await sb
           .from("charges")
-          .select("booking_id, amount, created_at")
+          .select("booking_id, amount, created_at, stripe_payment_intent_id")
           .eq("status", "succeeded");
+
+        // Find which charge PIs are already in revenue_records to avoid double-counting.
+        const chargePiIds = (chargesData || [])
+          .map((c) => c.stripe_payment_intent_id)
+          .filter(Boolean);
+        let revenueTrackedPis = new Set();
+        if (chargePiIds.length > 0) {
+          try {
+            const { data: rrRows } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", chargePiIds);
+            revenueTrackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+          } catch (piLookupErr) {
+            console.warn("v2-dashboard: charge PI dedup lookup failed (non-fatal):", piLookupErr.message);
+          }
+        }
+
         for (const charge of (chargesData || [])) {
+          // Skip charges already recorded in revenue_records to avoid double-counting.
+          if (charge.stripe_payment_intent_id && revenueTrackedPis.has(charge.stripe_payment_intent_id)) continue;
           const vid = bookingVehicleMap[charge.booking_id];
           if (!vid) continue;
           if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;

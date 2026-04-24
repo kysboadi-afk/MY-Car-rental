@@ -130,6 +130,14 @@ export default async function handler(req, res) {
     sampleMissingRefs: [],
   };
 
+  const chargesHealthCheck = {
+    checked: false,
+    orphanChargesCount: 0,
+    sampleOrphanChargeIds: [],
+    chargesWithoutRevenueCount: 0,
+    sampleChargesWithoutRevenue: [],
+  };
+
   const sb = getSupabaseAdmin();
   if (!sb) {
     supabaseResult.error = "Supabase client not initialised — SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.";
@@ -175,8 +183,55 @@ export default async function handler(req, res) {
       } catch {
         // Non-fatal diagnostic helper only.
       }
+
+      // Charges health check: flag post-rental charges that are missing a
+      // booking_ref link or have no corresponding revenue_records entry.
+      try {
+        const { data: chargesRows, error: chargesErr } = await sb
+          .from("charges")
+          .select("id, booking_id, stripe_payment_intent_id, status")
+          .eq("status", "succeeded")
+          .limit(200);
+
+        if (!chargesErr) {
+          const orphanChargeIds = (chargesRows || [])
+            .filter((r) => !r.booking_id || !String(r.booking_id).trim())
+            .map((r) => String(r.id))
+            .slice(0, 10);
+
+          // Charges with a Stripe PI but no revenue_records entry.
+          const succeededPiIds = (chargesRows || [])
+            .map((r) => r.stripe_payment_intent_id)
+            .filter(Boolean);
+
+          let chargesWithoutRevenue = 0;
+          let sampleChargesWithoutRevenue = [];
+          if (succeededPiIds.length > 0) {
+            const { data: rrRows, error: rrErr } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", succeededPiIds);
+            if (!rrErr) {
+              const trackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+              const untracked = (chargesRows || []).filter(
+                (r) => r.stripe_payment_intent_id && !trackedPis.has(r.stripe_payment_intent_id)
+              );
+              chargesWithoutRevenue = untracked.length;
+              sampleChargesWithoutRevenue = untracked.map((r) => r.stripe_payment_intent_id).slice(0, 5);
+            }
+          }
+
+          chargesHealthCheck.checked = true;
+          chargesHealthCheck.orphanChargesCount = orphanChargeIds.length;
+          chargesHealthCheck.sampleOrphanChargeIds = orphanChargeIds;
+          chargesHealthCheck.chargesWithoutRevenueCount = chargesWithoutRevenue;
+          chargesHealthCheck.sampleChargesWithoutRevenue = sampleChargesWithoutRevenue;
+        }
+      } catch {
+        // Non-fatal diagnostic helper only.
+      }
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit });
+  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck });
 }

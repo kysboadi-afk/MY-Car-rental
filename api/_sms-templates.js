@@ -285,6 +285,19 @@ export const LATE_GRACE_EXPIRED =
 export const LATE_FEE_APPLIED =
   "A late fee has been applied.\n\n" +
   "Amount: \${late_fee}\n\n" +
+  "Questions? Call (213) 916-6606.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when a post-rental charge (damage, lost key, or other fee) is applied.
+ * Variables: charge_label, amount, reason (include trailing newline when set, or empty string)
+ */
+export const POST_RENTAL_CHARGE =
+  "A post-rental charge has been applied to your booking.\n\n" +
+  "Type: {charge_label}\n" +
+  "Amount: \${amount}\n" +
+  "{reason}" +
+  "\nQuestions? Call (213) 916-6606.\n\n" +
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────

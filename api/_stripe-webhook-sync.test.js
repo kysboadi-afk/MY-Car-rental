@@ -189,6 +189,8 @@ mock.module("./_sms-templates.js", {
     RESERVATION_DEPOSIT_CONFIRMED: "reservation_deposit_confirmed",
     EXTEND_CONFIRMED_SLINGSHOT: "ext_slingshot",
     EXTEND_CONFIRMED_ECONOMY:   "ext_economy",
+    LATE_FEE_APPLIED:           "late_fee_applied",
+    POST_RENTAL_CHARGE:         "post_rental_charge",
   },
 });
 
