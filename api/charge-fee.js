@@ -19,6 +19,10 @@ import Stripe from "stripe";
 import nodemailer from "nodemailer";
 import { isAdminAuthorized } from "./_admin-auth.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { sendSms } from "./_textmagic.js";
+import { render, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { normalizePhone } from "./_bookings.js";
+import { autoCreateRevenueRecord } from "./_booking-automation.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -34,6 +38,18 @@ export const CHARGE_TYPE_LABELS = {
   smoking:         "Smoking Penalty",
   late_fee:        "Late Return Fee",
   custom:          "Additional Charge",
+};
+
+// Maps internal charge_type values to Stripe metadata payment_type values.
+// These are the canonical payment_type identifiers used in:
+//   - Stripe PaymentIntent metadata
+//   - stripe-webhook.js routing
+//   - revenue_records.type
+export const CHARGE_TYPE_TO_PAYMENT_TYPE = {
+  late_fee:        "late_fee",
+  key_replacement: "lost_key_fee",
+  smoking:         "damage_fee",
+  custom:          "other_fee",
 };
 
 const VALID_CHARGE_TYPES = Object.keys(CHARGE_TYPE_LABELS);
@@ -109,7 +125,9 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
 
   const renterName  = booking.customers?.name  || "Customer";
   const renterEmail = booking.customers?.email || null;
+  const renterPhone = booking.customers?.phone || null;
   const label       = CHARGE_TYPE_LABELS[chargeType] || chargeType;
+  const paymentType = CHARGE_TYPE_TO_PAYMENT_TYPE[chargeType] || "other_fee";
   const description = `Sly Transportation Services LLC – ${label}` + (notes ? ` (${notes})` : "");
 
   // ── Create off-session Stripe PaymentIntent ──────────────────────────────
@@ -126,6 +144,13 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
       off_session:    true,
       description,
       metadata: {
+        // Canonical post-rental charge fields (used by stripe-webhook.js routing)
+        payment_type: paymentType,
+        booking_ref:  bookingId,
+        vehicle_id:   booking.vehicle_id || "",
+        renter_name:  renterName,
+        reason:       notes || label,
+        // Legacy fields kept for backward compatibility
         booking_id:   bookingId,
         charge_type:  chargeType,
         notes:        notes || "",
@@ -257,6 +282,61 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     }
 
     await Promise.allSettled(promises);
+  }
+
+  // ── Customer SMS notification ─────────────────────────────────────────────
+  if (renterPhone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+    try {
+      let smsText;
+      if (chargeType === "late_fee") {
+        smsText = render(LATE_FEE_APPLIED, { late_fee: resolvedAmount.toFixed(2) });
+      } else {
+        const reasonLine = notes ? `Reason: ${notes}\n` : "";
+        smsText = render(POST_RENTAL_CHARGE, {
+          charge_label: label,
+          amount:       resolvedAmount.toFixed(2),
+          reason:       reasonLine,
+        });
+      }
+      await sendSms(normalizePhone(renterPhone), smsText);
+    } catch (smsErr) {
+      console.error("charge-fee: customer SMS failed (non-fatal):", smsErr.message);
+    }
+  }
+
+  // ── Create revenue record (idempotent backup; webhook also does this) ──────
+  if (stripePI?.id) {
+    try {
+      const customerId = await (async () => {
+        const sbRev = getSupabaseAdmin();
+        if (!sbRev) return null;
+        const { data } = await sbRev
+          .from("customers")
+          .select("id")
+          .or(
+            renterEmail
+              ? `email.eq.${renterEmail.trim().toLowerCase()}`
+              : `phone.eq.${(renterPhone || "").trim()}`
+          )
+          .maybeSingle();
+        return data?.id || null;
+      })();
+      await autoCreateRevenueRecord({
+        bookingId:       bookingId,
+        paymentIntentId: stripePI.id,
+        vehicleId:       booking.vehicle_id || "",
+        customerId,
+        name:            renterName,
+        email:           renterEmail || "",
+        phone:           renterPhone || "",
+        amountPaid:      resolvedAmount,
+        paymentMethod:   "stripe",
+        type:            paymentType,
+        notes:           notes || label,
+      }, { strict: false, requireStripeFee: false });
+    } catch (revErr) {
+      console.error("charge-fee: revenue record creation failed (non-fatal):", revErr.message);
+    }
   }
 
   return {

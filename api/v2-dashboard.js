@@ -193,10 +193,11 @@ export default async function handler(req, res) {
     todayLA.setHours(0, 0, 0, 0);
     // ISO date string kept for the "returns today" check (date equality).
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
-    let activeBookings   = 0;
-    let pendingApprovals = 0;
-    let overdueCount     = 0;
+    let activeBookings    = 0;
+    let pendingApprovals  = 0;
+    let overdueCount      = 0;
     let returnsTodayCount = 0;
+    let pickupsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
       if (booking.status === "cancelled_rental") {
@@ -232,6 +233,11 @@ export default async function handler(req, res) {
       if (bookingIsOverdue) overdueCount++;
       if (booking.returnDate === todayStr && bookingIsActive) {
         returnsTodayCount++;
+      }
+      // Pickups today: booked/approved rentals whose pickup date is today (LA).
+      if (booking.pickupDate === todayStr
+          && (booking.status === "reserved_unpaid" || booking.status === "booked_paid")) {
+        pickupsTodayCount++;
       }
     }
 
@@ -362,7 +368,8 @@ export default async function handler(req, res) {
     }
 
     // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
-    // These are NOT in revenue_records and must always be added on top.
+    // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
+    // fee handling) are excluded here to prevent double-counting revenue totals.
     if (sb) {
       const bookingVehicleMap = {};
       for (const b of allBookings) {
@@ -371,9 +378,29 @@ export default async function handler(req, res) {
       try {
         const { data: chargesData } = await sb
           .from("charges")
-          .select("booking_id, amount, created_at")
+          .select("booking_id, amount, created_at, stripe_payment_intent_id")
           .eq("status", "succeeded");
+
+        // Find which charge PIs are already in revenue_records to avoid double-counting.
+        const chargePiIds = (chargesData || [])
+          .map((c) => c.stripe_payment_intent_id)
+          .filter(Boolean);
+        let revenueTrackedPis = new Set();
+        if (chargePiIds.length > 0) {
+          try {
+            const { data: rrRows } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", chargePiIds);
+            revenueTrackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+          } catch (piLookupErr) {
+            console.warn("v2-dashboard: charge PI dedup lookup failed (non-fatal):", piLookupErr.message);
+          }
+        }
+
         for (const charge of (chargesData || [])) {
+          // Skip charges already recorded in revenue_records to avoid double-counting.
+          if (charge.stripe_payment_intent_id && revenueTrackedPis.has(charge.stripe_payment_intent_id)) continue;
           const vid = bookingVehicleMap[charge.booking_id];
           if (!vid) continue;
           if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
@@ -493,6 +520,7 @@ export default async function handler(req, res) {
           pendingApprovals,
           overdueCount,
           returnsTodayCount,
+          pickupsTodayCount,
         },
         revenueChart,
         bookingsPerVehicle,

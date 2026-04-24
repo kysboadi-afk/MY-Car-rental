@@ -3563,7 +3563,7 @@ function applyExpenseFilters() {
 function openAddExpenseModal() {
   // Reset form
   document.getElementById('exp-vehicle').value = '';
-  document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('exp-date').value = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
   document.getElementById('exp-category').value = '';
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-notes').value = '';
@@ -4946,7 +4946,7 @@ function renderDiagnostics(data) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
+document.getElementById('mb-pickup-date').min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
 const FLEET_VEHICLES = [
@@ -5530,9 +5530,10 @@ let dmFlatpickrInit = false;
 
 function initDriverMileagePage() {
   if (!dmFlatpickrInit && typeof flatpickr !== 'undefined') {
-    const today     = new Date();
-    const todayStr  = today.toISOString().slice(0, 10);
-    const thirtyAgo = new Date(today - 30 * 86400000).toISOString().slice(0, 10);
+    const laFmt    = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' });
+    const today    = new Date();
+    const todayStr  = laFmt.format(today);
+    const thirtyAgo = laFmt.format(new Date(today - 30 * 86400000));
     flatpickr('#dm-start-date', { dateFormat: 'Y-m-d', defaultDate: thirtyAgo });
     flatpickr('#dm-end-date',   { dateFormat: 'Y-m-d', defaultDate: todayStr  });
     dmFlatpickrInit = true;
