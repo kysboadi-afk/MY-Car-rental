@@ -57,7 +57,11 @@ export function deriveReturnTime(pickupDate, pickupTime, returnTime, durationHou
     return normalizedPickupTime;
   }
 
-  const pickupMoment = new Date(`${pickupDate}T${normalizedPickupTime}:00`);
+  const [pY, pM, pD] = pickupDate.split("-").map(Number);
+  const [pH, pMin]   = normalizedPickupTime.split(":").map(Number);
+  // Use the multi-argument constructor so the Date is created in the server's
+  // local timezone (UTC on Vercel) without ISO-string UTC mis-interpretation.
+  const pickupMoment = new Date(pY, pM - 1, pD, pH, pMin || 0);
   if (Number.isNaN(pickupMoment.getTime())) return normalizedPickupTime;
   const returnMoment = new Date(pickupMoment.getTime() + (hours * 60 * 60 * 1000));
   return `${String(returnMoment.getHours()).padStart(2, "0")}:${String(returnMoment.getMinutes()).padStart(2, "0")}`;
