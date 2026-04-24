@@ -259,12 +259,12 @@ test("A) totals parity: net formula matches (stripe_net ?? gross-fee) - refund_a
   rrRows = [
     // Record with explicit stripe_net
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: "alice@x.com",
-      gross_amount: 300, stripe_fee: 9.57, stripe_net: 290.43, refund_amount: 0,
+      gross_amount: 300, stripe_fee: 9.57, stripe_net: 290.43, refund_amount: 0, net_amount: 300,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-03", vehicle_id: "camry" },
     // Record without stripe_net — should fall back to gross - fee
     { customer_phone: "+14075550002", customer_name: "Bob", customer_email: "bob@x.com",
-      gross_amount: 150, stripe_fee: 4.65, stripe_net: null, refund_amount: 0,
+      gross_amount: 150, stripe_fee: 4.65, stripe_net: null, refund_amount: 0, net_amount: 150,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-02-01", return_date: "2026-02-02", vehicle_id: "camry" },
   ];
@@ -289,30 +289,30 @@ test("B) no skipped rows: all paid non-excluded rows are counted (row_count matc
   resetState();
   rrRows = [
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
-      gross_amount: 100, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 100, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 100,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-02", vehicle_id: "camry" },
     { customer_phone: null, customer_name: "Bob", customer_email: "bob@x.com",
-      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 200,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-02-01", return_date: "2026-02-02", vehicle_id: "camry" },
     { customer_phone: null, customer_name: "Carol With No Email", customer_email: null,
-      gross_amount: 50, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 50, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 50,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-03-01", return_date: "2026-03-02", vehicle_id: "camry" },
     // cancelled — should NOT count in valid/aggregation
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
-      gross_amount: 300, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 300, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 300,
       is_cancelled: true, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-01", return_date: "2026-04-02", vehicle_id: "camry" },
     // sync_excluded — should NOT count
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
-      gross_amount: 999, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 999, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 999,
       is_cancelled: false, is_no_show: false, payment_status: "paid", sync_excluded: true,
       pickup_date: "2026-05-01", return_date: "2026-05-02", vehicle_id: "camry" },
     // orphan — should NOT count
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
-      gross_amount: 888, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 888, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 888,
       is_cancelled: false, is_no_show: false, payment_status: "paid", is_orphan: true,
       pickup_date: "2026-06-01", return_date: "2026-06-02", vehicle_id: "camry" },
   ];
@@ -334,7 +334,7 @@ test("C) missing phone: phone-null rows are included via email fallback", async 
   resetState();
   rrRows = [
     { customer_phone: null, customer_name: "No Phone Guy", customer_email: "nophone@x.com",
-      gross_amount: 400, stripe_fee: 12, stripe_net: null, refund_amount: 0,
+      gross_amount: 400, stripe_fee: 12, stripe_net: null, refund_amount: 0, net_amount: 400,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-10", return_date: "2026-01-12", vehicle_id: "camry" },
   ];
@@ -353,7 +353,7 @@ test("C) missing phone: phone-null AND email-null rows included via name fallbac
   resetState();
   rrRows = [
     { customer_phone: null, customer_name: "Ghost Customer", customer_email: null,
-      gross_amount: 75, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 75, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 75,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-03-01", return_date: "2026-03-02", vehicle_id: "slingshot" },
   ];
@@ -377,13 +377,13 @@ test("D) no duplicate splits: un-normalized phones merge into one customer", asy
     // Phone "3463814616" (no country code) — should normalize to +13463814616
     { customer_phone: "3463814616", customer_name: "Same Person",
       customer_email: "same@x.com",
-      gross_amount: 100, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 100, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 100,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-02", vehicle_id: "camry" },
     // Same person, already normalized
     { customer_phone: "+13463814616", customer_name: "Same Person",
       customer_email: "same@x.com",
-      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 200,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-02-01", return_date: "2026-02-02", vehicle_id: "camry" },
   ];
@@ -400,12 +400,12 @@ test("D) no duplicate splits: emails with different case merge into one customer
   rrRows = [
     { customer_phone: null, customer_name: "Email Case Person",
       customer_email: "User@Example.COM",
-      gross_amount: 150, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 150, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 150,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-02", vehicle_id: "camry" },
     { customer_phone: null, customer_name: "Email Case Person",
       customer_email: "user@example.com",
-      gross_amount: 50, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 50, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 50,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-02-01", return_date: "2026-02-02", vehicle_id: "camry" },
   ];
@@ -428,7 +428,7 @@ test("E) refund consistency: refund_amount=300 reduces net_total by 300", async 
   rrRows = [
     { customer_phone: "+13105550001", customer_name: "Refund Alice",
       customer_email: "alice@x.com",
-      gross_amount: 500, stripe_fee: 15.45, stripe_net: 484.55, refund_amount: 300,
+      gross_amount: 500, stripe_fee: 15.45, stripe_net: 484.55, refund_amount: 300, net_amount: 200,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-03", vehicle_id: "camry" },
   ];
@@ -457,11 +457,11 @@ test("F) determinism: running sync twice produces identical totals", async () =>
   resetState();
   rrRows = [
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: "alice@x.com",
-      gross_amount: 300, stripe_fee: 9.57, stripe_net: 290.43, refund_amount: 0,
+      gross_amount: 300, stripe_fee: 9.57, stripe_net: 290.43, refund_amount: 0, net_amount: 300,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-01-01", return_date: "2026-01-03", vehicle_id: "camry" },
     { customer_phone: "+14075550002", customer_name: "Bob", customer_email: "bob@x.com",
-      gross_amount: 150, stripe_fee: 4.65, stripe_net: null, refund_amount: 0,
+      gross_amount: 150, stripe_fee: 4.65, stripe_net: null, refund_amount: 0, net_amount: 150,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-02-01", return_date: "2026-02-02", vehicle_id: "camry" },
   ];
@@ -488,7 +488,7 @@ test("F) determinism: sync does not create more rows when duplicate-email custom
   resetState();
   rrRows = [
     { customer_phone: null, customer_name: "Brandon Bookhart", customer_email: "brandon.bookhart@gmail.com",
-      gross_amount: 462.55, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 462.55, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 462.55,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-10", return_date: "2026-04-11", vehicle_id: "camry" },
   ];
@@ -510,7 +510,7 @@ test("F) determinism: sync matches legacy mixed-case email rows without creating
   resetState();
   rrRows = [
     { customer_phone: null, customer_name: "Case Legacy", customer_email: "legacy@example.com",
-      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0,
+      gross_amount: 200, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 200,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-15", return_date: "2026-04-16", vehicle_id: "camry" },
   ];
@@ -592,7 +592,7 @@ test("sync: falls back to revenue_records_effective when revenue_reporting_base 
   reportingBaseSchemaError = true;
   rrRows = [
     { customer_phone: "+13105550001", customer_name: "Fallback User", customer_email: "fallback@x.com",
-      gross_amount: 250, stripe_fee: 7.5, stripe_net: 242.5, refund_amount: 0,
+      gross_amount: 250, stripe_fee: 7.5, stripe_net: 242.5, refund_amount: 0, net_amount: 250,
       is_cancelled: false, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-07-01", return_date: "2026-07-02", vehicle_id: "camry" },
   ];

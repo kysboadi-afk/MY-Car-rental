@@ -389,15 +389,15 @@ export default async function handler(req, res) {
         try {
           let rrResult = await sb
             .from("revenue_reporting_base")
-            .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id");
+            .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, net_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id");
 
           // Keep compatibility with older DBs that haven't applied the canonical
-          // reporting view migration yet.
+          // reporting view migration yet (migration 0072 adds net_amount and customer fields).
           if (rrResult.error && isSchemaError(rrResult.error)) {
             console.warn("v2-customers sync: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
             rrResult = await sb
               .from("revenue_records_effective")
-              .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id, sync_excluded, is_orphan")
+              .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, net_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id, sync_excluded, is_orphan")
               .eq("payment_status", "paid");
           }
 
@@ -688,10 +688,13 @@ export default async function handler(req, res) {
                 //   LEFT JOIN revenue_records r ON r.booking_id = b.booking_ref
                 //   GROUP BY b.customer_email
                 //
-                // This is the authoritative source for both metrics:
-                //   • total_bookings = distinct booking rows (not revenue record count)
-                //   • total_spent    = net_amount (gross − refund), includes all revenue
-                //                      types: rental, extension, fee records
+                // Note: in revenue_records the column that stores the booking reference
+                // value is named booking_id (not booking_ref), so the join is:
+                //   r.booking_id = b.booking_ref
+                // net_amount is the GENERATED ALWAYS column (gross_amount − refund_amount)
+                // and is used directly here — no recomputation.
+                // Sums across ALL revenue types (rental, extension, fee) that share
+                // the same booking_id.
                 try {
                   const CANCELLED_STATUSES = ["cancelled", "cancelled_rental"];
                   const { data: bkRows, error: bkErr } = await sb
@@ -700,13 +703,18 @@ export default async function handler(req, res) {
                     .not("status", "in", `(${CANCELLED_STATUSES.join(",")})`);
 
                   if (!bkErr && Array.isArray(bkRows) && bkRows.length > 0) {
-                    // Build net_amount per booking_ref from the already-fetched revenue
-                    // records.  Sums across ALL revenue types (rental + extension + fee)
-                    // that share the same booking_id (= booking_ref).
+                    // Index net_amount per booking_id (= b.booking_ref) from rrRows.
+                    // Sums across ALL revenue types (rental + extension + fee) that share
+                    // the same booking_id.  Uses the pre-computed net_amount column directly.
                     const netByBookingRef = {};
                     for (const r of rrRows) {
                       if (r.is_cancelled || r.is_no_show || !r.booking_id) continue;
-                      const net = Number(r.gross_amount || 0) - Number(r.refund_amount || 0);
+                      // net_amount = gross_amount − refund_amount (GENERATED ALWAYS on revenue_records).
+                      // Use it directly; fall back to recomputation only if the field is absent
+                      // (e.g. when queried from an older view that predates migration 0072).
+                      const net = r.net_amount != null
+                        ? Number(r.net_amount)
+                        : Number(r.gross_amount || 0) - Number(r.refund_amount || 0);
                       netByBookingRef[r.booking_id] = (netByBookingRef[r.booking_id] || 0) + net;
                     }
 
