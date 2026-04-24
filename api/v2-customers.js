@@ -716,8 +716,7 @@ export default async function handler(req, res) {
                     const byCustomerId = {};
                     for (const b of bkRows) {
                       const email  = normalizeEmail(b.customer_email);
-                      const net    = b.booking_ref != null && netByBookingRef[b.booking_ref] != null
-                        ? netByBookingRef[b.booking_ref] : 0;
+                      const net    = netByBookingRef[b.booking_ref] ?? 0;
 
                       if (email) {
                         if (!byEmail[email]) byEmail[email] = { bookingCount: 0, totalSpent: 0 };
