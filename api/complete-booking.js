@@ -4,6 +4,8 @@
 //
 // GET  /api/complete-booking?token=<payment_link_token>
 //   → Returns booking info (name, email, phone, remaining_balance, payment_status, dates, vehicle).
+// GET  /api/complete-booking?email=<email>&phone=<phone>
+//   → Looks up booking via manage_booking_lookup Supabase RPC (email and/or phone).
 //
 // POST /api/complete-booking
 //   → { action: "create_payment_intent", token }
@@ -32,32 +34,97 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ── GET: look up booking by token ─────────────────────────────────────────
+  // ── GET: look up booking by token, email, or phone ───────────────────────
   if (req.method === "GET") {
-    const token = req.query.token;
-    if (!token || typeof token !== "string" || token.trim().length < 32) {
-      return res.status(400).json({ error: "Invalid or missing token." });
+    const token = req.query.token?.trim();
+    const email = req.query.email?.trim()?.toLowerCase(); // normalize email
+    const phone = req.query.phone?.trim();
+
+    let booking = null;
+
+    // 1. Token flow (existing)
+    if (token && token.length >= 32) {
+      booking = await findBookingByToken(token);
     }
-    const booking = await findBookingByToken(token.trim());
+
+    // 2. Email / phone lookup (NEW)
+    if (!booking && (email || phone)) {
+      try {
+        const supabase = getSupabaseAdmin();
+
+        const { data, error } = await supabase.rpc("manage_booking_lookup", {
+          p_email: email || null,
+          p_phone: phone || null, // DB handles normalization
+        });
+
+        if (error) {
+          console.error("[complete-booking] lookup error:", error);
+        }
+
+        if (data && data.length > 0) {
+          booking = supabaseRowToBooking(data[0]);
+        }
+      } catch (err) {
+        console.error("[complete-booking] RPC lookup failed:", err.message);
+      }
+    }
+
     if (!booking) {
-      return res.status(404).json({ error: "Booking not found. The link may have expired or already been used." });
+      return res.status(404).json({
+        error: "Booking not found. Use your email, phone number, or original link.",
+      });
     }
+
     return res.status(200).json(sanitizeBooking(booking));
   }
 
   // ── POST: create payment intent or finalize ───────────────────────────────
   if (req.method === "POST") {
-    const { action, token } = req.body || {};
-    if (!token || typeof token !== "string" || token.trim().length < 32) {
-      return res.status(400).json({ error: "Invalid or missing token." });
+    const { action, token, booking_ref, email, phone } = req.body || {};
+
+    let booking = null;
+
+    // 1. Token flow (existing)
+    if (token && typeof token === "string" && token.trim().length >= 32) {
+      booking = await findBookingByToken(token.trim());
     }
-    const cleanToken = token.trim();
+
+    // 2. Booking_ref + identity verification (NEW) — booking_ref alone is NOT enough
+    if (!booking && booking_ref && (email || phone)) {
+      try {
+        const supabase = getSupabaseAdmin();
+
+        const { data, error } = await supabase.rpc("manage_booking_lookup", {
+          p_email: email ? email.trim().toLowerCase() : null,
+          p_phone: phone ? phone.trim() : null, // DB handles normalization
+        });
+
+        if (error) {
+          console.error("[complete-booking] POST lookup error:", error);
+        }
+
+        if (data && data.length > 0) {
+          const match = data.find((row) => row.booking_ref === booking_ref);
+          if (match) {
+            booking = supabaseRowToBooking(match);
+          }
+        }
+      } catch (err) {
+        console.error("[complete-booking] POST lookup failed:", err.message);
+      }
+    }
+
+    if (!booking) {
+      return res.status(404).json({
+        error: "Booking not found or verification failed.",
+      });
+    }
 
     if (action === "create_payment_intent") {
-      return handleCreatePaymentIntent(req, res, cleanToken);
+      return handleCreatePaymentIntent(req, res, booking);
     }
     if (action === "finalize") {
-      return handleFinalize(req, res, cleanToken);
+      return handleFinalize(req, res, booking);
     }
     return res.status(400).json({ error: "Unknown action." });
   }
@@ -155,17 +222,12 @@ function supabaseRowToBooking(row) {
 /**
  * Create a Stripe PaymentIntent for the remaining balance on a deposit-paid booking.
  */
-async function handleCreatePaymentIntent(req, res, token) {
+async function handleCreatePaymentIntent(req, res, booking) {
   if (!process.env.STRIPE_SECRET_KEY) {
     return res.status(500).json({ error: "Server configuration error: STRIPE_SECRET_KEY is missing." });
   }
   if (!process.env.STRIPE_PUBLISHABLE_KEY) {
     return res.status(500).json({ error: "Server configuration error: STRIPE_PUBLISHABLE_KEY is missing." });
-  }
-
-  const booking = await findBookingByToken(token);
-  if (!booking) {
-    return res.status(404).json({ error: "Booking not found. The link may have expired or already been used." });
   }
 
   const paymentStatus = booking.paymentStatus || booking.slingshot_payment_status || "";
@@ -195,7 +257,7 @@ async function handleCreatePaymentIntent(req, res, token) {
       metadata: {
         payment_type:             "slingshot_balance_payment",
         original_booking_id:      booking.bookingId || "",
-        payment_link_token:       token,
+        payment_link_token:       booking.paymentLinkToken || "",
         vehicle_id:               booking.vehicleId || "",
         vehicle_name:             booking.vehicleName || booking.vehicleId || "",
         renter_name:              booking.name || "",
@@ -221,13 +283,8 @@ async function handleCreatePaymentIntent(req, res, token) {
  * Finalize: mark the booking as fully paid after Stripe confirms payment.
  * Called from the complete-booking.html success handler.
  */
-async function handleFinalize(req, res, token) {
+async function handleFinalize(req, res, booking) {
   const { paymentIntentId } = req.body || {};
-
-  const booking = await findBookingByToken(token);
-  if (!booking) {
-    return res.status(404).json({ error: "Booking not found." });
-  }
 
   // Optionally verify the PaymentIntent status with Stripe
   if (paymentIntentId && process.env.STRIPE_SECRET_KEY) {
