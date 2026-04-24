@@ -1889,7 +1889,21 @@ export default async function handler(req, res) {
         booking: bookingForSync,
       });
 
-      // Customer email — includes balance payment link
+      // ── Full unified owner + customer email (same path as full_payment) ───
+      // sendWebhookNotificationEmails sends the complete owner notification
+      // including: attachments (signature PDF, ID photo, insurance), pricing
+      // breakdown, protection plan details, and all booking fields.  The
+      // isDepositMode flag inside the function ensures payment labels read
+      // "Reservation deposit" and the remaining balance is shown prominently.
+      try {
+        await sendWebhookNotificationEmails(paymentIntent);
+      } catch (emailErr) {
+        console.error("stripe-webhook: reservation_deposit sendWebhookNotificationEmails error:", emailErr.message);
+      }
+
+      // Customer balance-link email — deposit-specific: gives the renter the
+      // URL to pay the remaining balance.  Sent as a second email on top of
+      // the unified confirmation above.
       try {
         await sendReservationDepositBalanceEmail({
           renterEmail: bookingForSync.email,
@@ -1903,21 +1917,6 @@ export default async function handler(req, res) {
         });
       } catch (emailErr) {
         console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
-      }
-
-      // Owner email — deposit received notification
-      try {
-        await sendReservationDepositBalanceOwnerEmail({
-          renterName: bookingForSync.name,
-          renterEmail: bookingForSync.email,
-          renterPhone: bookingForSync.phone,
-          vehicleName: bookingForSync.vehicleName,
-          bookingId: resolvedBookingId,
-          depositPaid: amountPaid,
-          remainingBalance,
-        });
-      } catch (ownerErr) {
-        console.error("stripe-webhook: reservation_deposit owner balance email failed:", ownerErr.message);
       }
 
       // Owner SMS
@@ -2289,11 +2288,105 @@ export default async function handler(req, res) {
         bookingRef = resolved;
       }
       if (vehicle_id && (bookingRef || originalPiId)) {
+        const paidAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+
+        // ── Step 1: Notifications FIRST (never depend on DB) ───────────────
+        // Build contact snapshot from PI metadata so notifications fire even
+        // if the DB writes below encounter a transient error.
+        const preContact = {
+          name:        meta.renter_name || "",
+          email:       meta.email || "",
+          phone:       meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
+          vehicleName: meta.vehicle_name || vehicle_id || "",
+          vehicleId:   vehicle_id || "",
+          pickupDate:  meta.pickup_date || "",
+          pickupTime:  meta.pickup_time || "",
+          returnDate:  meta.return_date || "",
+          returnTime:  meta.return_time || "",
+          totalPrice:  normalizeCurrency(meta.full_rental_amount || paidAmount),
+        };
+
+        // Owner email — full balance-paid notification
+        try {
+          await sendBalancePaidOwnerEmail({
+            renterName:      preContact.name,
+            renterEmail:     preContact.email,
+            renterPhone:     preContact.phone,
+            vehicleName:     preContact.vehicleName,
+            bookingId:       bookingRef || originalPiId || "",
+            pickupDate:      preContact.pickupDate,
+            returnDate:      preContact.returnDate,
+            amountPaid:      paidAmount,
+            totalPrice:      preContact.totalPrice,
+            paymentIntentId: paymentIntent.id,
+          });
+        } catch (ownerErr) {
+          console.error("stripe-webhook: balance_paid owner email error (non-fatal):", ownerErr.message);
+        }
+
+        // Customer email — balance received confirmation with updated agreement
+        if (preContact.email) {
+          try {
+            await sendBalancePaidCustomerEmail({
+              renterEmail:     preContact.email,
+              renterName:      preContact.name,
+              renterPhone:     preContact.phone,
+              bookingId:       bookingRef || "",
+              paymentIntentId: paymentIntent.id,
+              vehicleId:       preContact.vehicleId,
+              vehicleName:     preContact.vehicleName,
+              pickupDate:      preContact.pickupDate,
+              pickupTime:      preContact.pickupTime,
+              returnDate:      preContact.returnDate,
+              returnTime:      preContact.returnTime,
+              amountPaid:      paidAmount,
+              totalPrice:      preContact.totalPrice,
+            });
+          } catch (emailErr) {
+            console.error("stripe-webhook: balance_paid customer email error (non-fatal):", emailErr.message);
+          }
+        }
+
+        // Owner SMS
+        if (process.env.OWNER_PHONE && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          try {
+            const ownerSmsText = [
+              `✅ Balance paid: ${sanitizeSmsValue(preContact.name || "Unknown")}`,
+              `Vehicle: ${sanitizeSmsValue(preContact.vehicleName || "")}`,
+              `Dates: ${preContact.pickupDate || ""} → ${preContact.returnDate || ""}`,
+              `Amount: $${paidAmount.toFixed(2)} / Total: $${preContact.totalPrice.toFixed(2)}`,
+              `PI: ${paymentIntent.id}`,
+            ].join("\n");
+            await sendSms(normalizePhone(process.env.OWNER_PHONE), ownerSmsText.slice(0, MAX_ALERT_SMS_LENGTH));
+          } catch (ownerSmsErr) {
+            console.error("stripe-webhook: balance_paid owner SMS error (non-fatal):", ownerSmsErr.message);
+          }
+        }
+
+        // Renter SMS — booking confirmed
+        if (preContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          try {
+            await sendSms(
+              normalizePhone(preContact.phone),
+              render(BOOKING_CONFIRMED, {
+                customer_name: sanitizeSmsValue(preContact.name || ""),
+                vehicle:       sanitizeSmsValue(preContact.vehicleName || "your vehicle"),
+                pickup_date:   preContact.pickupDate || "",
+                pickup_time:   preContact.pickupTime || "",
+                location:      DEFAULT_LOCATION,
+              })
+            );
+          } catch (smsErr) {
+            console.error("stripe-webhook: balance_paid SMS error (non-fatal):", smsErr.message);
+          }
+        }
+
+        // ── Step 2: DB writes (booking update + revenue record) ─────────────
+        // Runs AFTER notifications — DB failures are logged but do not prevent
+        // the owner/customer from being notified.
         let bookingPatch = null;
-        let paidAmount = 0;
         try {
           const lookupId = bookingRef || originalPiId;
-          paidAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
           await updateBooking(vehicle_id, lookupId, {
             status: "active",
             paymentStatus: "paid",
@@ -2381,70 +2474,6 @@ export default async function handler(req, res) {
           }
         } catch (err) {
           console.error("stripe-webhook: updateBooking (balance) error:", err);
-        }
-
-        // ── Balance-paid notifications (customer + owner) ──────────────────────
-        // Resolve the best available contact snapshot for notifications.
-        const balancePaidContact = {
-          name:        bookingPatch?.name        || meta.renter_name                             || "",
-          email:       bookingPatch?.email       || meta.email                                   || "",
-          phone:       bookingPatch?.phone       || (meta.renter_phone ? normalizePhone(meta.renter_phone) : ""),
-          vehicleName: bookingPatch?.vehicleName || meta.vehicle_name || vehicle_id              || "",
-          pickupDate:  bookingPatch?.pickupDate  || meta.pickup_date                             || "",
-          pickupTime:  bookingPatch?.pickupTime  || meta.pickup_time                             || "",
-          returnDate:  bookingPatch?.returnDate  || meta.return_date                             || "",
-          totalPrice:  bookingPatch?.totalPrice  || normalizeCurrency(meta.full_rental_amount || paidAmount),
-        };
-        try {
-          await sendBalancePaidCustomerEmail({
-            renterEmail:  balancePaidContact.email,
-            renterName:   balancePaidContact.name,
-            renterPhone:  balancePaidContact.phone,
-            bookingId:    bookingPatch?.bookingId || bookingRef || "",
-            paymentIntentId: paymentIntent.id,
-            vehicleId:    bookingPatch?.vehicleId || vehicle_id || "",
-            vehicleName:  balancePaidContact.vehicleName,
-            pickupDate:   balancePaidContact.pickupDate,
-            pickupTime:   bookingPatch?.pickupTime || meta.pickup_time || "",
-            returnDate:   balancePaidContact.returnDate,
-            returnTime:   bookingPatch?.returnTime || meta.return_time || "",
-            amountPaid:   paidAmount,
-            totalPrice:   balancePaidContact.totalPrice,
-          });
-        } catch (emailErr) {
-          console.error("stripe-webhook: balance_paid customer email error (non-fatal):", emailErr.message);
-        }
-        try {
-          await sendBalancePaidOwnerEmail({
-            renterName:   balancePaidContact.name,
-            renterEmail:  balancePaidContact.email,
-            renterPhone:  balancePaidContact.phone,
-            vehicleName:  balancePaidContact.vehicleName,
-            bookingId:    bookingRef,
-            pickupDate:   balancePaidContact.pickupDate,
-            returnDate:   balancePaidContact.returnDate,
-            amountPaid:   paidAmount,
-            totalPrice:   balancePaidContact.totalPrice,
-            paymentIntentId: paymentIntent.id,
-          });
-        } catch (ownerErr) {
-          console.error("stripe-webhook: balance_paid owner email error (non-fatal):", ownerErr.message);
-        }
-        try {
-          if (balancePaidContact.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-            await sendSms(
-              normalizePhone(balancePaidContact.phone),
-              render(BOOKING_CONFIRMED, {
-                customer_name: sanitizeSmsValue(balancePaidContact.name || ""),
-                vehicle:       sanitizeSmsValue(balancePaidContact.vehicleName || "your vehicle"),
-                pickup_date:   balancePaidContact.pickupDate || "",
-                pickup_time:   balancePaidContact.pickupTime || "",
-                location:      DEFAULT_LOCATION,
-              })
-            );
-          }
-        } catch (smsErr) {
-          console.error("stripe-webhook: balance_paid SMS error (non-fatal):", smsErr.message);
         }
       } else {
         logWebhookSkip(
