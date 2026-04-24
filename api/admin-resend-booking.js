@@ -171,17 +171,12 @@ export default async function handler(req, res) {
     let pdfBuffer = null;
 
     // Try to download the stored PDF from Supabase Storage.
+    // agreement_pdf_url is stored as a raw bucket-relative path (e.g. "bk-xxx/rental-agreement-...pdf").
     if (storedDocs?.agreement_pdf_url && sb) {
       try {
-        // agreement_pdf_url is either a full public URL or a storage path.
-        // Extract the object path relative to the bucket.
-        const urlStr = storedDocs.agreement_pdf_url;
-        const storageMarker = "/rental-agreements/";
-        const markerIdx = urlStr.indexOf(storageMarker);
-        const storagePath = markerIdx >= 0 ? urlStr.slice(markerIdx + storageMarker.length) : urlStr;
         const { data: blobData, error: dlErr } = await sb.storage
           .from("rental-agreements")
-          .download(storagePath);
+          .download(storedDocs.agreement_pdf_url);
         if (!dlErr && blobData) {
           pdfBuffer = Buffer.from(await blobData.arrayBuffer());
           console.log(`admin-resend-booking: downloaded stored PDF for booking_id ${booking_id}`);
@@ -237,13 +232,11 @@ export default async function handler(req, res) {
             .from("rental-agreements")
             .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
           if (!uploadErr) {
-            const { data: urlData } = sb.storage.from("rental-agreements").getPublicUrl(storagePath);
-            const pdfUrl = urlData?.publicUrl || storagePath;
             await sb.from("pending_booking_docs").upsert(
-              { booking_id, agreement_pdf_url: pdfUrl, email_sent: storedDocs?.email_sent ?? false },
+              { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
               { onConflict: "booking_id" }
             );
-            console.log(`admin-resend-booking: regenerated PDF stored at ${pdfUrl}`);
+            console.log(`admin-resend-booking: regenerated PDF stored at ${storagePath}`);
           } else {
             console.warn("admin-resend-booking: PDF storage upload failed (non-fatal):", uploadErr.message);
           }

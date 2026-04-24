@@ -1184,13 +1184,9 @@ export default async function handler(req, res) {
 
         if (storedDocs?.agreement_pdf_url && sbPdf) {
           try {
-            const urlStr = storedDocs.agreement_pdf_url;
-            const storageMarker = "/rental-agreements/";
-            const markerIdx = urlStr.indexOf(storageMarker);
-            const storagePath = markerIdx >= 0 ? urlStr.slice(markerIdx + storageMarker.length) : urlStr;
             const { data: blobData, error: dlErr } = await sbPdf.storage
               .from("rental-agreements")
-              .download(storagePath);
+              .download(storedDocs.agreement_pdf_url);
             if (!dlErr && blobData) {
               pdfBuffer = Buffer.from(await blobData.arrayBuffer());
             } else if (dlErr) {
@@ -1240,10 +1236,8 @@ export default async function handler(req, res) {
                 .from("rental-agreements")
                 .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
               if (!uploadErr) {
-                const { data: urlData } = sbPdf.storage.from("rental-agreements").getPublicUrl(storagePath);
-                const pdfUrl = urlData?.publicUrl || storagePath;
                 await sbPdf.from("pending_booking_docs").upsert(
-                  { booking_id: bookingId, agreement_pdf_url: pdfUrl, email_sent: storedDocs?.email_sent ?? false },
+                  { booking_id: bookingId, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
                   { onConflict: "booking_id" }
                 );
               } else {

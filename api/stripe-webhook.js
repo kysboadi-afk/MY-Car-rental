@@ -957,7 +957,7 @@ async function sendWebhookNotificationEmails(paymentIntent) {
     });
     console.log(`stripe-webhook: rental agreement PDF generated for PI ${paymentIntent.id}`);
 
-    // Upload to Supabase Storage and persist the URL for future recovery.
+    // Upload to Supabase Storage and persist the path for future recovery.
     if (booking_id) {
       try {
         const sbPdf = getSupabaseAdmin();
@@ -969,13 +969,11 @@ async function sendWebhookNotificationEmails(paymentIntent) {
           if (uploadErr) {
             console.warn("stripe-webhook: PDF storage upload failed (non-fatal):", uploadErr.message);
           } else {
-            const { data: urlData } = sbPdf.storage.from("rental-agreements").getPublicUrl(storagePath);
-            const pdfUrl = urlData?.publicUrl || storagePath;
             await sbPdf.from("pending_booking_docs").upsert(
-              { booking_id, agreement_pdf_url: pdfUrl, email_sent: storedDocs?.email_sent ?? false },
+              { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
               { onConflict: "booking_id" }
             );
-            console.log(`stripe-webhook: PDF stored at ${pdfUrl} for booking_id ${booking_id}`);
+            console.log(`stripe-webhook: PDF stored at ${storagePath} for booking_id ${booking_id}`);
           }
         }
       } catch (storageErr) {
