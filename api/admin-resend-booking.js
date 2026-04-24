@@ -159,9 +159,37 @@ export default async function handler(req, res) {
   // ── 3. Build attachments ──────────────────────────────────────────────────
   const attachments = [];
 
-  // Rental agreement PDF (requires stored signature)
-  if (storedDocs && storedDocs.signature) {
-    try {
+  // Rental agreement PDF: use the pre-stored PDF when available (faster and
+  // guarantees the document matches the original booking).  If it is missing
+  // (older bookings, storage failure, or storedDocs absent) regenerate from
+  // the payment-intent metadata — no signature gate.
+  try {
+    const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+    const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
+    const pdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
+
+    let pdfBuffer = null;
+
+    // Try to download the stored PDF from Supabase Storage.
+    // agreement_pdf_url is stored as a raw bucket-relative path (e.g. "bk-xxx/rental-agreement-...pdf").
+    if (storedDocs?.agreement_pdf_url && sb) {
+      try {
+        const { data: blobData, error: dlErr } = await sb.storage
+          .from("rental-agreements")
+          .download(storedDocs.agreement_pdf_url);
+        if (!dlErr && blobData) {
+          pdfBuffer = Buffer.from(await blobData.arrayBuffer());
+          console.log(`admin-resend-booking: downloaded stored PDF for booking_id ${booking_id}`);
+        } else if (dlErr) {
+          console.warn("admin-resend-booking: stored PDF download failed (will regenerate):", dlErr.message);
+        }
+      } catch (dlErr) {
+        console.warn("admin-resend-booking: stored PDF download error (will regenerate):", dlErr.message);
+      }
+    }
+
+    // Regenerate if we still don't have a buffer.
+    if (!pdfBuffer) {
       const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
       const rentalDays = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
       const hasProtectionPlan = !!protection_plan_tier;
@@ -186,25 +214,45 @@ export default async function handler(req, res) {
         days:         rentalDays,
         protectionPlan:          hasProtectionPlan,
         protectionPlanTier:      protection_plan_tier || null,
-        signature:               storedDocs.signature,
+        signature:               storedDocs?.signature || null,
         fullRentalCost:          full_rental_amount || null,
         balanceAtPickup:         balance_at_pickup  || null,
-        insuranceCoverageChoice: storedDocs.insurance_coverage_choice ||
+        insuranceCoverageChoice: storedDocs?.insurance_coverage_choice ||
           (hasProtectionPlan ? "no" : "yes"),
       };
 
-      const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
-      const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
-      attachments.push({
-        filename:    `rental-agreement-${safeName}-${safeDate}.pdf`,
-        content:     pdfBuffer,
-        contentType: "application/pdf",
-      });
-      console.log(`admin-resend-booking: rental agreement PDF generated for PI ${piId}`);
-    } catch (pdfErr) {
-      console.error("admin-resend-booking: PDF generation failed (non-fatal):", pdfErr.message);
+      pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+      console.log(`admin-resend-booking: rental agreement PDF regenerated for PI ${piId}`);
+
+      // Persist the regenerated PDF so future recoveries can reuse it.
+      if (sb && booking_id) {
+        try {
+          const storagePath = `${booking_id}/${pdfFilename}`;
+          const { error: uploadErr } = await sb.storage
+            .from("rental-agreements")
+            .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
+          if (!uploadErr) {
+            await sb.from("pending_booking_docs").upsert(
+              { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
+              { onConflict: "booking_id" }
+            );
+            console.log(`admin-resend-booking: regenerated PDF stored at ${storagePath}`);
+          } else {
+            console.warn("admin-resend-booking: PDF storage upload failed (non-fatal):", uploadErr.message);
+          }
+        } catch (storageErr) {
+          console.warn("admin-resend-booking: PDF storage persist failed (non-fatal):", storageErr.message);
+        }
+      }
     }
+
+    attachments.push({
+      filename:    pdfFilename,
+      content:     pdfBuffer,
+      contentType: "application/pdf",
+    });
+  } catch (pdfErr) {
+    console.error("admin-resend-booking: PDF generation failed (non-fatal):", pdfErr.message);
   }
 
   // Renter ID photo

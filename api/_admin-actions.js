@@ -3289,16 +3289,43 @@ async function toolResendBookingConfirmation({ bookingId }) {
   // ── Build attachments ────────────────────────────────────────────────────
   const attachments = [];
 
-  // Generate rental agreement PDF from stored signature + booking data.
+  // Rental agreement PDF: use the pre-stored PDF when available; regenerate
+  // (without a signature gate) when it is missing so every recovery email
+  // always includes an agreement document.
   let agreementPdfFilename = null;
-  if (storedDocs && storedDocs.signature) {
-    try {
+  try {
+    const safeName_ = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
+    const safeDate_ = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
+    agreementPdfFilename = `rental-agreement-${safeName_}-${safeDate_}.pdf`;
+
+    let pdfBuffer = null;
+
+    // Try to download the stored PDF from Supabase Storage.
+    // agreement_pdf_url is stored as a raw bucket-relative path.
+    if (storedDocs?.agreement_pdf_url && sb) {
+      try {
+        const { data: blobData, error: dlErr } = await sb.storage
+          .from("rental-agreements")
+          .download(storedDocs.agreement_pdf_url);
+        if (!dlErr && blobData) {
+          pdfBuffer = Buffer.from(await blobData.arrayBuffer());
+          console.log(`toolResendBookingConfirmation: downloaded stored PDF for booking ${bookingId}`);
+        } else if (dlErr) {
+          console.warn("toolResendBookingConfirmation: stored PDF download failed (will regenerate):", dlErr.message);
+        }
+      } catch (dlErr) {
+        console.warn("toolResendBookingConfirmation: stored PDF download error (will regenerate):", dlErr.message);
+      }
+    }
+
+    // Regenerate if we still don't have a buffer.
+    if (!pdfBuffer) {
       const vehicleInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : {};
       const rentalDays  = (pickupDate && returnDate) ? computeRentalDays(pickupDate, returnDate) : 0;
-      const hasProtectionPlan = !!(storedDocs.protection_plan_tier || booking.protectionPlanTier);
+      const hasProtectionPlan = !!(storedDocs?.protection_plan_tier || booking.protectionPlanTier);
       // storedDocs.protection_plan_tier is the authoritative source (captured at booking time);
       // booking.protectionPlanTier is a fallback for older records that predated pending_booking_docs.
-      const protectionPlanTier = storedDocs.protection_plan_tier || booking.protectionPlanTier || null;
+      const protectionPlanTier = storedDocs?.protection_plan_tier || booking.protectionPlanTier || null;
 
       const pdfBody = {
         vehicleId:   vehicleId   || "",
@@ -3320,26 +3347,46 @@ async function toolResendBookingConfirmation({ bookingId }) {
         days:         rentalDays,
         protectionPlan:          hasProtectionPlan,
         protectionPlanTier:      protectionPlanTier,
-        signature:               storedDocs.signature,
+        signature:               storedDocs?.signature || null,
         fullRentalCost:          booking.fullRentalCost  || null,
         balanceAtPickup:         booking.balanceAtPickup || null,
-        insuranceCoverageChoice: storedDocs.insurance_coverage_choice ||
+        insuranceCoverageChoice: storedDocs?.insurance_coverage_choice ||
           (hasProtectionPlan ? "no" : "yes"),
       };
 
-      const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
-      const safeName  = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
-      const safeDate  = (pickupDate || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
-      agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
-      attachments.push({
-        filename:    agreementPdfFilename,
-        content:     pdfBuffer,
-        contentType: "application/pdf",
-      });
-      console.log(`toolResendBookingConfirmation: rental agreement PDF generated for booking ${bookingId}`);
-    } catch (pdfErr) {
-      console.error("toolResendBookingConfirmation: PDF generation failed (non-fatal):", pdfErr.message);
+      pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+      console.log(`toolResendBookingConfirmation: rental agreement PDF regenerated for booking ${bookingId}`);
+
+      // Persist the regenerated PDF so future recoveries can reuse it.
+      if (sb) {
+        try {
+          const storagePath = `${bookingId}/${agreementPdfFilename}`;
+          const { error: uploadErr } = await sb.storage
+            .from("rental-agreements")
+            .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
+          if (!uploadErr) {
+            await sb.from("pending_booking_docs").upsert(
+              { booking_id: bookingId, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
+              { onConflict: "booking_id" }
+            );
+            console.log(`toolResendBookingConfirmation: regenerated PDF stored at ${storagePath}`);
+          } else {
+            console.warn("toolResendBookingConfirmation: PDF storage upload failed (non-fatal):", uploadErr.message);
+          }
+        } catch (storageErr) {
+          console.warn("toolResendBookingConfirmation: PDF storage persist failed (non-fatal):", storageErr.message);
+        }
+      }
     }
+
+    attachments.push({
+      filename:    agreementPdfFilename,
+      content:     pdfBuffer,
+      contentType: "application/pdf",
+    });
+  } catch (pdfErr) {
+    console.error("toolResendBookingConfirmation: PDF generation failed (non-fatal):", pdfErr.message);
+    agreementPdfFilename = null;
   }
 
   // Attach renter's ID photo if available.

@@ -911,52 +911,77 @@ async function sendWebhookNotificationEmails(paymentIntent) {
   // ── Build attachments from stored docs ────────────────────────────────────
   const attachments = [];
 
-  // Generate rental agreement PDF if signature is available.
-  if (storedDocs && storedDocs.signature) {
-    try {
-      const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
-      const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
-      const hasProtectionPlan = !!protection_plan_tier;
+  // Always generate the rental agreement PDF from payment-intent metadata.
+  // Signature is included when available (storedDocs); the document is still
+  // valid and attachable even when the frontend did not supply a signature.
+  try {
+    const vehicleInfo = (vehicle_id && CARS[vehicle_id]) ? CARS[vehicle_id] : {};
+    const rentalDays  = (pickup_date && return_date) ? computeRentalDays(pickup_date, return_date) : 0;
+    const hasProtectionPlan = !!protection_plan_tier;
 
-      const pdfBody = {
-        vehicleId:   vehicle_id  || "",
-        car:         vehicle_name || vehicleInfo.name || vehicle_id || "",
-        vehicleMake:  vehicleInfo.make  || null,
-        vehicleModel: vehicleInfo.model || null,
-        vehicleYear:  vehicleInfo.year  || null,
-        vehicleVin:   vehicleInfo.vin   || null,
-        vehicleColor: vehicleInfo.color || null,
-        name:         renter_name || "",
-        email:        email       || "",
-        phone:        renter_phone || "",
-        pickup:       pickup_date  || "",
-        pickupTime:   pickup_time  || "",
-        returnDate:   return_date  || "",
-        returnTime:   return_time  || "",
-        total:        full_rental_amount || amountDollars,
-        deposit:      vehicleInfo.deposit || 0,
-        days:         rentalDays,
-        protectionPlan:     hasProtectionPlan,
-        protectionPlanTier: protection_plan_tier || null,
-        signature:          storedDocs.signature,
-        fullRentalCost:     full_rental_amount || null,
-        balanceAtPickup:    balance_at_pickup  || null,
-        insuranceCoverageChoice: storedDocs.insurance_coverage_choice ||
-          (hasProtectionPlan ? "no" : "yes"),
-      };
+    const pdfBody = {
+      vehicleId:   vehicle_id  || "",
+      car:         vehicle_name || vehicleInfo.name || vehicle_id || "",
+      vehicleMake:  vehicleInfo.make  || null,
+      vehicleModel: vehicleInfo.model || null,
+      vehicleYear:  vehicleInfo.year  || null,
+      vehicleVin:   vehicleInfo.vin   || null,
+      vehicleColor: vehicleInfo.color || null,
+      name:         renter_name || "",
+      email:        email       || "",
+      phone:        renter_phone || "",
+      pickup:       pickup_date  || "",
+      pickupTime:   pickup_time  || "",
+      returnDate:   return_date  || "",
+      returnTime:   return_time  || "",
+      total:        full_rental_amount || amountDollars,
+      deposit:      vehicleInfo.deposit || 0,
+      days:         rentalDays,
+      protectionPlan:     hasProtectionPlan,
+      protectionPlanTier: protection_plan_tier || null,
+      signature:          storedDocs?.signature || null,
+      fullRentalCost:     full_rental_amount || null,
+      balanceAtPickup:    balance_at_pickup  || null,
+      insuranceCoverageChoice: storedDocs?.insurance_coverage_choice ||
+        (hasProtectionPlan ? "no" : "yes"),
+    };
 
-      const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
-      const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
-      attachments.push({
-        filename:    `rental-agreement-${safeName}-${safeDate}.pdf`,
-        content:     pdfBuffer,
-        contentType: "application/pdf",
-      });
-      console.log(`stripe-webhook: rental agreement PDF generated for PI ${paymentIntent.id}`);
-    } catch (pdfErr) {
-      console.error("stripe-webhook: PDF generation failed (non-fatal):", pdfErr.message);
+    const pdfBuffer = await generateRentalAgreementPdf(pdfBody);
+    const safeName  = (renter_name || "renter").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
+    const safeDate  = (pickup_date || "booking").replace(/[^0-9-]/g, "");
+    const pdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
+    attachments.push({
+      filename:    pdfFilename,
+      content:     pdfBuffer,
+      contentType: "application/pdf",
+    });
+    console.log(`stripe-webhook: rental agreement PDF generated for PI ${paymentIntent.id}`);
+
+    // Upload to Supabase Storage and persist the path for future recovery.
+    if (booking_id) {
+      try {
+        const sbPdf = getSupabaseAdmin();
+        if (sbPdf) {
+          const storagePath = `${booking_id}/${pdfFilename}`;
+          const { error: uploadErr } = await sbPdf.storage
+            .from("rental-agreements")
+            .upload(storagePath, pdfBuffer, { contentType: "application/pdf", upsert: true });
+          if (uploadErr) {
+            console.warn("stripe-webhook: PDF storage upload failed (non-fatal):", uploadErr.message);
+          } else {
+            await sbPdf.from("pending_booking_docs").upsert(
+              { booking_id, agreement_pdf_url: storagePath, email_sent: storedDocs?.email_sent ?? false },
+              { onConflict: "booking_id" }
+            );
+            console.log(`stripe-webhook: PDF stored at ${storagePath} for booking_id ${booking_id}`);
+          }
+        }
+      } catch (storageErr) {
+        console.warn("stripe-webhook: PDF storage/url persist failed (non-fatal):", storageErr.message);
+      }
     }
+  } catch (pdfErr) {
+    console.error("stripe-webhook: PDF generation failed (non-fatal):", pdfErr.message);
   }
 
   // Attach renter's ID photo if available.
