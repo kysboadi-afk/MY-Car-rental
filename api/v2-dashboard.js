@@ -185,10 +185,6 @@ export default async function handler(req, res) {
       .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
-    // Bookings in these statuses are treated as "in progress" (not yet cancelled/completed).
-    const inProgressStatuses = new Set(["active_rental", "reserved_unpaid", "reserved", "booked_paid"]);
-    // Same set used below for upcoming-booking alerts.
-    const activeStatuses = inProgressStatuses;
     const now = new Date();
     // Use LA wall-clock date so "today" aligns with the stored booking dates
     // (which are always in America/Los_Angeles, not UTC).
@@ -199,17 +195,25 @@ export default async function handler(req, res) {
     let returnsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
+      const isCancelled = booking.status === "cancelled_rental";
+      if (isCancelled) {
+        // Cancelled bookings never contribute to any active/overdue KPIs.
+        continue;
+      }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
-      const isInProgress = inProgressStatuses.has(booking.status);
+      // Overdue: either explicitly flagged by an admin (status === "overdue") OR the
+      // return datetime has provably passed. The explicit status check is intentional
+      // — it covers cases where an admin marks a rental overdue without a precise
+      // return time stored (returnDateTime would be null/invalid).
       const bookingIsOverdue = booking.status === "overdue"
-        || (isInProgress && !!returnDateTime && now >= returnDateTime);
-      // Active: pickup date has been reached (pickupDate <= today) and the return
-      // date has not yet passed (returnDate >= today), for any in-progress status.
-      // Keep visible when return datetime is missing/invalid to avoid dropping
-      // currently-rented vehicles due to incomplete time data.
-      const pickupStarted = !booking.pickupDate || booking.pickupDate <= today;
-      const notReturned   = !booking.returnDate || booking.returnDate >= today;
-      const bookingIsActive = isInProgress && pickupStarted && notReturned
+        || (!!returnDateTime && now >= returnDateTime);
+      // Active rental = date range only: pickup has started AND return has not passed.
+      // Status-agnostic so new statuses never break the count.
+      // Both dates must be present; if either is missing the booking is not counted
+      // as active (incomplete data should not inflate the KPI).
+      const pickupStarted = !!booking.pickupDate && booking.pickupDate <= today;
+      const notReturned   = !!booking.returnDate && booking.returnDate >= today;
+      const bookingIsActive = pickupStarted && notReturned
         && (!returnDateTime || now < returnDateTime);
       if (bookingIsActive || bookingIsOverdue) {
         activeBookings++;
@@ -217,7 +221,7 @@ export default async function handler(req, res) {
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (isInProgress && booking.returnDate === today && bookingIsActive) {
+      if (booking.returnDate === today && bookingIsActive) {
         returnsTodayCount++;
       }
     }
@@ -412,7 +416,7 @@ export default async function handler(req, res) {
     }
 
     for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status) && booking.pickupDate) {
+      if (booking.status !== "cancelled_rental" && booking.pickupDate) {
         const pickup = new Date(booking.pickupDate);
         if (pickup >= now && pickup <= in7d) {
           alerts.push({
