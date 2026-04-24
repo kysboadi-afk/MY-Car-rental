@@ -185,7 +185,10 @@ export default async function handler(req, res) {
       .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
-    const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
+    // Bookings in these statuses are treated as "in progress" (not yet cancelled/completed).
+    const inProgressStatuses = new Set(["active_rental", "reserved_unpaid", "reserved", "booked_paid"]);
+    // Same set used below for upcoming-booking alerts.
+    const activeStatuses = inProgressStatuses;
     const now = new Date();
     // Use LA wall-clock date so "today" aligns with the stored booking dates
     // (which are always in America/Los_Angeles, not UTC).
@@ -197,11 +200,16 @@ export default async function handler(req, res) {
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      const isInProgress = inProgressStatuses.has(booking.status);
       const bookingIsOverdue = booking.status === "overdue"
-        || (booking.status === "active_rental" && !!returnDateTime && now >= returnDateTime);
-      // Keep active_rental visible in KPIs when return datetime is missing/invalid;
-      // this avoids dropping currently-rented vehicles due to incomplete time data.
-      const bookingIsActive = booking.status === "active_rental"
+        || (isInProgress && !!returnDateTime && now >= returnDateTime);
+      // Active: pickup date has been reached (pickupDate <= today) and the return
+      // date has not yet passed (returnDate >= today), for any in-progress status.
+      // Keep visible when return datetime is missing/invalid to avoid dropping
+      // currently-rented vehicles due to incomplete time data.
+      const pickupStarted = !booking.pickupDate || booking.pickupDate <= today;
+      const notReturned   = !booking.returnDate || booking.returnDate >= today;
+      const bookingIsActive = isInProgress && pickupStarted && notReturned
         && (!returnDateTime || now < returnDateTime);
       if (bookingIsActive || bookingIsOverdue) {
         activeBookings++;
@@ -209,7 +217,7 @@ export default async function handler(req, res) {
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (booking.status === "active_rental" && booking.returnDate === today && bookingIsActive) {
+      if (isInProgress && booking.returnDate === today && bookingIsActive) {
         returnsTodayCount++;
       }
     }
