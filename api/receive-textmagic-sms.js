@@ -66,6 +66,17 @@ const ECONOMY_EXTENSION_PRICES = {
 };
 
 /**
+ * Find the index of a booking within `data[vehicleId]` by bookingId or paymentIntentId.
+ * Returns -1 if not found or if the vehicle's booking array is missing/not an array.
+ */
+function findBookingIndex(data, vehicleId, bookingId) {
+  if (!Array.isArray(data[vehicleId])) return -1;
+  return data[vehicleId].findIndex(
+    (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+  );
+}
+
+/**
  * Find the active rental for a given phone number.
  * @param {object} allBookings
  * @param {string} phone - any format; matched by normalized number
@@ -487,9 +498,7 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   );
 
   // Save extension info to booking
-  const idx = Array.isArray(data[vehicleId])
-    ? data[vehicleId].findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
-    : -1;
+  const idx = findBookingIndex(data, vehicleId, bookingId);
   if (idx !== -1) {
     data[vehicleId][idx].extendPending = false;
     data[vehicleId][idx].extensionPendingPayment = {
@@ -591,9 +600,7 @@ async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data
   const bookingId = booking.bookingId || booking.paymentIntentId;
   const templateKey = days < 7 ? "extend_selected_upsell" : "extend_selected";
   const { url: paymentLink } = await validatePaymentLinkForSms(rawPaymentLink, bookingId, templateKey);
-  const idx = data[vehicleId]
-    ? data[vehicleId].findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
-    : -1;
+  const idx = findBookingIndex(data, vehicleId, bookingId);
   if (idx !== -1) {
     data[vehicleId][idx].extendPending = false;
     data[vehicleId][idx].extensionPendingPayment = {

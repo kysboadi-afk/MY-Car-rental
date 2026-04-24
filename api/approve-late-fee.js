@@ -226,6 +226,7 @@ export default async function handler(req, res) {
          <input type="number" id="newAmount" name="newAmount"
                 min="1" max="5000" step="0.01"
                 value="${esc(String(amount))}" required />
+         <!-- Server-side validation of this range is enforced in handleAdjustPost() -->
          <button type="submit">✅ Confirm &amp; Charge</button>
        </form>
        <p style="font-size:13px;color:#777">Amount must be between $1 and $5,000.</p>`

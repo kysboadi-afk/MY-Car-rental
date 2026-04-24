@@ -235,12 +235,12 @@ test("render EXTEND_SELECTED fills all variables", () => {
     extra_time:   "+2 hours",
     vehicle:      "Slingshot R",
     price:        "100",
-    payment_link: "https://example.com/pay",
+    payment_link: "https://www.slytrans.com/balance.html?test=1",
   });
   assert.ok(msg.includes("+2 hours"));
   assert.ok(msg.includes("Slingshot R"));
   assert.ok(msg.includes("$100"));
-  assert.ok(msg.includes("https://example.com/pay"));
+  assert.ok(msg.includes("https://www.slytrans.com/balance.html?test=1"));
   assert.ok(!msg.includes("{"));
 });
 
@@ -279,14 +279,14 @@ test("render EXTEND_SELECTED_UPSELL fills all variables", () => {
     extra_time:   "+3 days",
     vehicle:      "Camry 2012",
     price:        "165",
-    payment_link: "https://example.com/pay",
+    payment_link: "https://www.slytrans.com/balance.html?test=1",
     weekly_price: "350",
   });
   assert.ok(msg.includes("+3 days"));
   assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("$165"));
   assert.ok(msg.includes("$350"));
-  assert.ok(msg.includes("https://example.com/pay"));
+  assert.ok(msg.includes("https://www.slytrans.com/balance.html?test=1"));
   assert.ok(!msg.includes("{"));
 });
 

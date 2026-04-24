@@ -86,7 +86,9 @@ export async function validateLink(url, opts = {}) {
       status = resp.status;
     } catch (headErr) {
       // Network-level error on HEAD (DNS failure, timeout, connection refused, etc.).
-      // Do NOT retry with GET — the server is likely unreachable entirely.
+      // Unlike an HTTP 405 response (which means the server is up but doesn't support HEAD),
+      // a network error means the server is unreachable — retrying with GET would also fail
+      // and waste time, so we fall straight through to the fallback.
       headNetworkError = true;
       console.warn(`_link-validator: HEAD network error for ${targetUrl}: ${headErr.message}`);
     }
