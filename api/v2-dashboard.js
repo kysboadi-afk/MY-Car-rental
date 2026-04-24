@@ -185,31 +185,52 @@ export default async function handler(req, res) {
       .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
-    const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
     const now = new Date();
-    // Use LA wall-clock date so "today" aligns with the stored booking dates
-    // (which are always in America/Los_Angeles, not UTC).
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
+    // Anchor "today" to Los Angeles wall-clock time so the boundaries align with
+    // LA operations regardless of where the Vercel function runs.
+    // todayLA = LA midnight (start of current LA day).
+    const todayLA = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    todayLA.setHours(0, 0, 0, 0);
+    // ISO date string kept for the "returns today" check (date equality).
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
     let returnsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
+      if (booking.status === "cancelled_rental") {
+        // Cancelled bookings never contribute to any active/overdue KPIs.
+        continue;
+      }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      // Overdue: either explicitly flagged by an admin (status === "overdue") OR the
+      // return datetime has provably passed. The explicit status check is intentional
+      // — it covers cases where an admin marks a rental overdue without a precise
+      // return time stored (returnDateTime would be null/invalid).
       const bookingIsOverdue = booking.status === "overdue"
-        || (booking.status === "active_rental" && !!returnDateTime && now >= returnDateTime);
-      // Keep active_rental visible in KPIs when return datetime is missing/invalid;
-      // this avoids dropping currently-rented vehicles due to incomplete time data.
-      const bookingIsActive = booking.status === "active_rental"
-        && (!returnDateTime || now < returnDateTime);
+        || (!!returnDateTime && now >= returnDateTime);
+      // Active rental = date range only, timezone-safe:
+      //   pickup midnight <= LA today  AND  return end-of-day >= LA today
+      // Status-agnostic so new statuses never break the count.
+      // Both dates must be present; missing dates do not inflate the KPI.
+      let bookingIsActive = false;
+      if (booking.pickupDate && booking.returnDate) {
+        const pickup = new Date(booking.pickupDate);
+        pickup.setHours(0, 0, 0, 0);
+        const returnD = new Date(booking.returnDate);
+        returnD.setHours(23, 59, 59, 999);
+        bookingIsActive = pickup <= todayLA
+          && returnD >= todayLA
+          && (!returnDateTime || now < returnDateTime);
+      }
       if (bookingIsActive || bookingIsOverdue) {
         activeBookings++;
         activeOrOverdueBookings.push(booking);
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (booking.status === "active_rental" && booking.returnDate === today && bookingIsActive) {
+      if (booking.returnDate === todayStr && bookingIsActive) {
         returnsTodayCount++;
       }
     }
@@ -404,7 +425,7 @@ export default async function handler(req, res) {
     }
 
     for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status) && booking.pickupDate) {
+      if (booking.status !== "cancelled_rental" && booking.pickupDate) {
         const pickup = new Date(booking.pickupDate);
         if (pickup >= now && pickup <= in7d) {
           alerts.push({
