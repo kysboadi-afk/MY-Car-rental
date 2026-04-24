@@ -22,10 +22,22 @@
 import Stripe from "stripe";
 import crypto from "crypto";
 import { sendSms } from "./_textmagic.js";
-import { render, DEFAULT_LOCATION, EXTEND_UNAVAILABLE, EXTEND_LIMITED, EXTEND_OPTIONS_SLINGSHOT, EXTEND_OPTIONS_ECONOMY, EXTEND_SELECTED, EXTEND_PAYMENT_PENDING } from "./_sms-templates.js";
+import {
+  render,
+  DEFAULT_LOCATION,
+  EXTEND_UNAVAILABLE,
+  EXTEND_LIMITED,
+  EXTEND_OPTIONS_SLINGSHOT,
+  EXTEND_FLEXIBLE_PROMPT,
+  EXTEND_INVALID_INPUT,
+  EXTEND_SELECTED,
+  EXTEND_SELECTED_UPSELL,
+  EXTEND_PAYMENT_PENDING,
+} from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { CARS } from "./_pricing.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { validateLink, PAGE_URLS } from "./_link-validator.js";
 
 // Disable Vercel's built-in body parser so we can read the raw request body
 // for TEXTMAGIC_WEBHOOK_SECRET HMAC-SHA256 signature verification.
@@ -42,11 +54,27 @@ const SLINGSHOT_EXTENSION_PRICES = {
   4: { hours: 4,  label: "+4 hours", price: 150 },
 };
 
+// Valid reply digits for Slingshot — derived from SLINGSHOT_EXTENSION_PRICES keys so
+// that a single source of truth governs both the menu and the validation guard.
+const SLINGSHOT_VALID_OPTIONS_RE = new RegExp(`^[${Object.keys(SLINGSHOT_EXTENSION_PRICES).join("")}]$`);
+const SLINGSHOT_OPTIONS_STRING = Object.keys(SLINGSHOT_EXTENSION_PRICES).join(", ");
+
 const ECONOMY_EXTENSION_PRICES = {
   1: { days: 1,  label: "+1 day",  price: 55  },
   3: { days: 3,  label: "+3 days", price: 165 },
   7: { days: 7,  label: "+1 week", price: 350 },
 };
+
+/**
+ * Find the index of a booking within `data[vehicleId]` by bookingId or paymentIntentId.
+ * Returns -1 if not found or if the vehicle's booking array is missing/not an array.
+ */
+function findBookingIndex(data, vehicleId, bookingId) {
+  if (!Array.isArray(data[vehicleId])) return -1;
+  return data[vehicleId].findIndex(
+    (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+  );
+}
 
 /**
  * Find the active rental for a given phone number.
@@ -135,6 +163,105 @@ function isSlingshotVehicle(vehicleId) {
 }
 
 /**
+ * Parse a customer's freeform reply into a number of extension days.
+ *
+ * Accepted formats (case-insensitive):
+ *   "3"           → 3
+ *   "3 days"      → 3
+ *   "3 day"       → 3
+ *   "1 week"      → 7
+ *   "2 weeks"     → 14
+ *   "week"        → 7
+ *   "month"       → 30
+ *   "1 month"     → 30
+ *   "2 months"    → 60
+ *
+ * Returns null when the input is unrecognisable or results in 0 / negative days.
+ *
+ * @param {string} text - raw customer reply (trimmed)
+ * @returns {number|null}
+ */
+export function parseDaysFromMessage(text) {
+  if (!text || typeof text !== "string") return null;
+  const t = text.trim().toLowerCase();
+
+  // Bare "month" (no number prefix)
+  if (t === "month") return 30;
+
+  // "N months" / "N month"
+  const monthMatch = t.match(/^(\d+)\s*months?$/);
+  if (monthMatch) {
+    const n = parseInt(monthMatch[1], 10);
+    return n > 0 ? n * 30 : null;
+  }
+
+  // Bare "week" (no number prefix)
+  if (t === "week") return 7;
+
+  // "N weeks" / "N week"
+  const weekMatch = t.match(/^(\d+)\s*weeks?$/);
+  if (weekMatch) {
+    const n = parseInt(weekMatch[1], 10);
+    return n > 0 ? n * 7 : null;
+  }
+
+  // "N days" / "N day"
+  const dayMatch = t.match(/^(\d+)\s*days?$/);
+  if (dayMatch) {
+    const n = parseInt(dayMatch[1], 10);
+    return n > 0 ? n : null;
+  }
+
+  // Plain integer
+  const numMatch = t.match(/^(\d+)$/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10);
+    return n > 0 ? n : null;
+  }
+
+  return null;
+}
+
+/**
+ * Compute the extension price for a given number of days using the vehicle's
+ * tiered pricing: monthly → biweekly → weekly → daily.
+ *
+ * Rates (camry defaults):
+ *   1–6 days  → $55/day
+ *   7 days    → $350
+ *   14 days   → $650
+ *   30 days   → $1,300
+ *
+ * @param {number} days       - number of extension days; values < 1 are clamped to 1
+ * @param {object} [car]      - vehicle pricing object from CARS; defaults to camry rates
+ * @returns {number}          - price in dollars (no tax applied)
+ */
+export function computeEconomyExtensionPriceDays(days, car = null) {
+  const fallbackCar = { pricePerDay: 55, weekly: 350, biweekly: 650, monthly: 1300 };
+  const c = (car && car.pricePerDay) ? car : (CARS.camry || fallbackCar);
+  let remaining = Math.max(1, days);
+  let cost = 0;
+
+  if (c.monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost += months * c.monthly;
+    remaining = remaining % 30;
+  }
+  if (c.biweekly && remaining >= 14) {
+    const periods = Math.floor(remaining / 14);
+    cost += periods * c.biweekly;
+    remaining = remaining % 14;
+  }
+  if (c.weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost += weeks * c.weekly;
+    remaining = remaining % 7;
+  }
+  cost += remaining * (c.pricePerDay || 55);
+  return cost;
+}
+
+/**
  * Add hours to a time string ("3:00 PM" + 2h = "5:00 PM").
  * Returns both a formatted time string and the new ISO date/time.
  */
@@ -207,6 +334,54 @@ function buildExtensionPaymentLink(clientSecret, piId) {
 }
 
 /**
+ * Validate a payment link and log the result to sms_logs.metadata.
+ *
+ * Only the base page (balance.html) is validated via HEAD — the client_secret
+ * query parameters are not reachable server-side and are not sent to the
+ * validator.  If the base page is unreachable, the fallback URL is returned
+ * and `fallbackUsed: true` is included in the log metadata.
+ *
+ * @param {string} fullLink    - the full payment URL (may contain ?cs=...)
+ * @param {string} bookingId   - booking_ref for sms_logs write
+ * @param {string} templateKey - sms template key for the sms_logs row
+ * @returns {Promise<{ url: string, meta: object }>}
+ */
+async function validatePaymentLinkForSms(fullLink, bookingId, templateKey) {
+  const validation = await validateLink(fullLink, {
+    baseUrlForValidation: PAGE_URLS.balance,
+    fallback:             PAGE_URLS.cars,
+  });
+
+  const meta = {
+    link:          fullLink,
+    validated:     validation.ok,
+    http_status:   validation.status,
+    fallback_used: validation.fallbackUsed,
+    validated_at:  new Date().toISOString(),
+  };
+
+  // Best-effort: log to sms_logs.metadata for audit
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb && bookingId) {
+      await sb.from("sms_logs").upsert(
+        {
+          booking_id:          bookingId,
+          template_key:        templateKey,
+          return_date_at_send: "1970-01-01",
+          metadata:            meta,
+        },
+        { onConflict: "booking_id,template_key,return_date_at_send" }
+      );
+    }
+  } catch (logErr) {
+    console.warn("receive-textmagic-sms: sms_logs link metadata write failed (non-fatal):", logErr.message);
+  }
+
+  return { url: validation.url, meta };
+}
+
+/**
  * Handle the EXTEND keyword from a customer.
  */
 async function handleExtend(fromPhone, allBookings, data, sha) {
@@ -260,7 +435,7 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   }
 
   // Send option SMS
-  const optionMsg = isSlingshot ? EXTEND_OPTIONS_SLINGSHOT : EXTEND_OPTIONS_ECONOMY;
+  const optionMsg = isSlingshot ? EXTEND_OPTIONS_SLINGSHOT : EXTEND_FLEXIBLE_PROMPT;
   await sendSms(fromPhone, optionMsg);
 }
 
@@ -310,15 +485,20 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
 
   // Create Stripe PaymentIntent for extension charge (with full metadata)
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, selected.price, selected.label);
-  const paymentLink = pi
+  const rawPaymentLink = pi
     ? buildExtensionPaymentLink(pi.client_secret, pi.id)
     : (booking.paymentLink || "https://www.slytrans.com/balance.html");
 
-  // Save extension info to booking
+  // Validate the base page is reachable before storing or sending the link
   const bookingId = booking.bookingId || booking.paymentIntentId;
-  const idx = data[vehicleId].findIndex(
-    (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
+  const { url: paymentLink } = await validatePaymentLinkForSms(
+    rawPaymentLink,
+    bookingId,
+    "extend_selected"
   );
+
+  // Save extension info to booking
+  const idx = findBookingIndex(data, vehicleId, bookingId);
   if (idx !== -1) {
     data[vehicleId][idx].extendPending = false;
     data[vehicleId][idx].extensionPendingPayment = {
@@ -360,6 +540,122 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
       payment_link: paymentLink,
     })
   );
+}
+
+/**
+ * Handle a flexible day-count extension for economy (non-slingshot) vehicles.
+ * Called after `parseDaysFromMessage` has successfully extracted the number of days.
+ *
+ * Pricing tiers (camry defaults):
+ *   1–6 days  → $55/day
+ *   7 days    → $350
+ *   14 days   → $650
+ *   30 days   → $1,300
+ *
+ * Upsell: when the customer requests fewer than 7 days, the confirmation SMS
+ * includes a note that a full 7-day extension is available at the weekly rate.
+ *
+ * @param {string} fromPhone
+ * @param {number} days          - parsed extension days (must be ≥ 1)
+ * @param {object} allBookings
+ * @param {object} data          - mutable bookings data snapshot
+ * @param {string} sha           - current GitHub SHA for optimistic locking
+ */
+async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data, sha) {
+  const match = findExtendPending(allBookings, fromPhone);
+  if (!match) return; // shouldn't happen — caller verified this
+
+  const { vehicleId, booking } = match;
+
+  // Check calendar availability
+  const availMinutes = getAvailableExtensionMinutes(allBookings, vehicleId, booking.returnDate, booking.returnTime);
+  const requiredMinutes = days * 24 * 60;
+
+  if (availMinutes !== Infinity && requiredMinutes > availMinutes) {
+    const maxDays = Math.max(0, Math.floor(availMinutes / 60 / 24));
+    await sendSms(
+      fromPhone,
+      render(EXTEND_LIMITED, {
+        max_available_time: `${maxDays} day${maxDays !== 1 ? "s" : ""}`,
+        vehicle: booking.vehicleName || vehicleId,
+      })
+    );
+    return;
+  }
+
+  // Compute tiered price using the booking vehicle's rates (fall back to camry)
+  const car = CARS[vehicleId] || CARS.camry;
+  const price = computeEconomyExtensionPriceDays(days, car);
+  const label = `+${days} day${days !== 1 ? "s" : ""}`;
+  const newReturnDate = addDaysToDate(booking.returnDate, days);
+  const newReturnTime = booking.returnTime || "";
+
+  // Create Stripe PaymentIntent for the extension charge
+  const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, price, label);
+  const rawPaymentLink = pi
+    ? buildExtensionPaymentLink(pi.client_secret, pi.id)
+    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
+
+  // Validate base page before storing or sending the link
+  const bookingId = booking.bookingId || booking.paymentIntentId;
+  const templateKey = days < 7 ? "extend_selected_upsell" : "extend_selected";
+  const { url: paymentLink } = await validatePaymentLinkForSms(rawPaymentLink, bookingId, templateKey);
+  const idx = findBookingIndex(data, vehicleId, bookingId);
+  if (idx !== -1) {
+    data[vehicleId][idx].extendPending = false;
+    data[vehicleId][idx].extensionPendingPayment = {
+      days,
+      label,
+      price,
+      newReturnDate,
+      newReturnTime,
+      paymentIntentId: pi ? pi.id : null,
+      paymentLink,
+      createdAt: new Date().toISOString(),
+    };
+    await saveBookings(data, sha, `Save flexible extension selection for booking ${bookingId}`);
+    // Dual-write to Supabase
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb && bookingId) {
+        await sb
+          .from("bookings")
+          .update({
+            extend_pending:            false,
+            extension_pending_payment: data[vehicleId][idx].extensionPendingPayment,
+            updated_at:                new Date().toISOString(),
+          })
+          .eq("booking_ref", bookingId);
+      }
+    } catch (sbErr) {
+      console.error("receive-textmagic-sms: Supabase flexibleExtension write failed (non-fatal):", sbErr.message);
+    }
+  }
+
+  // Send confirmation SMS — include weekly upsell when days < 7
+  const weeklyPrice = car.weekly || 350;
+  if (days < 7) {
+    await sendSms(
+      fromPhone,
+      render(EXTEND_SELECTED_UPSELL, {
+        extra_time:   label,
+        vehicle:      booking.vehicleName || vehicleId,
+        price:        String(price),
+        payment_link: paymentLink,
+        weekly_price: String(weeklyPrice),
+      })
+    );
+  } else {
+    await sendSms(
+      fromPhone,
+      render(EXTEND_SELECTED, {
+        extra_time:   label,
+        vehicle:      booking.vehicleName || vehicleId,
+        price:        String(price),
+        payment_link: paymentLink,
+      })
+    );
+  }
 }
 
 export default async function handler(req, res) {
@@ -447,11 +743,34 @@ export default async function handler(req, res) {
 
     if (keyword === "EXTEND") {
       await handleExtend(normalizedFrom, allBookings, data, sha);
-    } else if (/^[12347]$/.test(keyword)) {
-      // Numeric reply — could be an extension option selection
-      await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
+    } else {
+      // Check if this customer has a pending extend selection
+      const pendingMatch = findExtendPending(allBookings, normalizedFrom);
+      if (pendingMatch) {
+        if (isSlingshotVehicle(pendingMatch.vehicleId)) {
+          // Slingshot: fixed option menu derived from SLINGSHOT_EXTENSION_PRICES
+          if (SLINGSHOT_VALID_OPTIONS_RE.test(keyword)) {
+            await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
+          } else {
+            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: SLINGSHOT_OPTIONS_STRING }));
+          }
+        } else {
+          // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)
+          const days = parseDaysFromMessage(messageText.trim());
+          if (days === null) {
+            await sendSms(
+              normalizedFrom,
+              render(EXTEND_INVALID_INPUT, {
+                options: "a number of days — e.g. 3, 7, 14, or say \"2 weeks\", \"month\"",
+              })
+            );
+          } else {
+            await handleFlexibleEconomyExtension(normalizedFrom, days, allBookings, data, sha);
+          }
+        }
+      }
+      // Unknown keywords with no pending extension are silently ignored
     }
-    // Unknown keywords are silently ignored
 
     return res.status(200).json({ ok: true });
   } catch (err) {

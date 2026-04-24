@@ -42,7 +42,9 @@ function getSecret() {
 export function createLateFeeToken(bookingId, amount, action, ttlMs = DEFAULT_TTL_MS) {
   if (!bookingId) throw new Error("bookingId is required");
   if (typeof amount !== "number" || amount <= 0) throw new Error("amount must be a positive number");
-  if (action !== "approve" && action !== "decline") throw new Error('action must be "approve" or "decline"');
+  if (action !== "approve" && action !== "decline" && action !== "adjust") {
+    throw new Error('action must be "approve", "decline", or "adjust"');
+  }
 
   const secret  = getSecret();
   const payload = Buffer.from(JSON.stringify({
@@ -90,7 +92,7 @@ export function verifyLateFeeToken(token) {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
 
     if (!data.bookingId || typeof data.amount !== "number" || !data.action) return null;
-    if (data.action !== "approve" && data.action !== "decline") return null;
+    if (!["approve", "decline", "adjust"].includes(data.action)) return null;
     if (typeof data.exp !== "number" || Date.now() > data.exp) return null;
 
     return { bookingId: data.bookingId, amount: data.amount, action: data.action };
@@ -100,13 +102,13 @@ export function verifyLateFeeToken(token) {
 }
 
 /**
- * Build approve and decline URLs for an owner notification email/SMS.
+ * Build approve, decline, and adjust URLs for an owner notification email/SMS.
  *
  * @param {string} bookingId
  * @param {number} amount      — USD
  * @param {string} [baseUrl]   — defaults to VERCEL_URL or "https://sly-rides.vercel.app"
  * @param {number} [ttlMs]
- * @returns {{ approveUrl: string, declineUrl: string }}
+ * @returns {{ approveUrl: string, declineUrl: string, adjustUrl: string }}
  */
 export function buildLateFeeUrls(bookingId, amount, baseUrl, ttlMs) {
   const base = baseUrl || (process.env.VERCEL_URL
@@ -115,6 +117,7 @@ export function buildLateFeeUrls(bookingId, amount, baseUrl, ttlMs) {
 
   const approveToken = createLateFeeToken(bookingId, amount, "approve", ttlMs);
   const declineToken = createLateFeeToken(bookingId, amount, "decline", ttlMs);
+  const adjustToken  = createLateFeeToken(bookingId, amount, "adjust",  ttlMs);
 
   const params = (token) =>
     `?bookingId=${encodeURIComponent(bookingId)}&amount=${encodeURIComponent(amount)}&token=${encodeURIComponent(token)}`;
@@ -122,5 +125,6 @@ export function buildLateFeeUrls(bookingId, amount, baseUrl, ttlMs) {
   return {
     approveUrl: `${base}/api/approve-late-fee${params(approveToken)}&action=approve`,
     declineUrl: `${base}/api/approve-late-fee${params(declineToken)}&action=decline`,
+    adjustUrl:  `${base}/api/approve-late-fee${params(adjustToken)}&action=adjust`,
   };
 }

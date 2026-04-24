@@ -230,12 +230,47 @@ export const EXTEND_OPTIONS_ECONOMY =
   "7 = +1 week\n\n" +
   "Reply STOP to opt out.";
 
+/**
+ * Sent to economy customers when they type EXTEND.
+ * Replaces the fixed-menu prompt with an open-ended day picker.
+ */
+export const EXTEND_FLEXIBLE_PROMPT =
+  "How many days would you like to extend?\n\n" +
+  "Just reply with a number — for example:\n" +
+  "  3 \u2022 7 \u2022 14 \u2022 30\n" +
+  "Or say: \u201c2 weeks\u201d, \u201cmonth\u201d\n\n" +
+  "Pricing: 1\u20136 days = $55/day \u2022 1 week = $350 \u2022 2 weeks = $650 \u2022 Month = $1,300\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when the customer\u2019s reply cannot be parsed or is invalid.
+ * Variable: {options} — human-readable description of valid inputs.
+ */
+export const EXTEND_INVALID_INPUT =
+  "Sorry, we couldn\u2019t understand your reply.\n\n" +
+  "Please reply with {options}.\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent after the customer selects an extension option (before payment). */
 export const EXTEND_SELECTED =
   "+{extra_time} added to your {vehicle}\n\n" +
   "Total: \${price}\n\n" +
   "Complete here:\n" +
   "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Like EXTEND_SELECTED but includes a weekly upsell suggestion.
+ * Sent when the customer requests fewer than 7 days.
+ * Variables: extra_time, vehicle, price, payment_link, weekly_price.
+ */
+export const EXTEND_SELECTED_UPSELL =
+  "+{extra_time} added to your {vehicle}\n\n" +
+  "Total: \${price}\n\n" +
+  "Complete here:\n" +
+  "{payment_link}\n\n" +
+  "Tip: A full 7-day extension is only \${weekly_price}.\n" +
+  "Text EXTEND to switch.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent after a Slingshot extension payment succeeds. */
@@ -409,7 +444,10 @@ export const TEMPLATES = {
   extend_limited:            EXTEND_LIMITED,
   extend_options_slingshot:  EXTEND_OPTIONS_SLINGSHOT,
   extend_options_economy:    EXTEND_OPTIONS_ECONOMY,
+  extend_flexible_prompt:    EXTEND_FLEXIBLE_PROMPT,
+  extend_invalid_input:      EXTEND_INVALID_INPUT,
   extend_selected:           EXTEND_SELECTED,
+  extend_selected_upsell:    EXTEND_SELECTED_UPSELL,
   extend_confirmed_slingshot: EXTEND_CONFIRMED_SLINGSHOT,
   extend_confirmed_economy:  EXTEND_CONFIRMED_ECONOMY,
   extend_payment_pending:    EXTEND_PAYMENT_PENDING,
