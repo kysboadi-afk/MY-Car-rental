@@ -26,7 +26,10 @@ import {
   EXTEND_UNAVAILABLE,
   EXTEND_OPTIONS_SLINGSHOT,
   EXTEND_OPTIONS_ECONOMY,
+  EXTEND_FLEXIBLE_PROMPT,
+  EXTEND_INVALID_INPUT,
   EXTEND_SELECTED,
+  EXTEND_SELECTED_UPSELL,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
@@ -241,6 +244,52 @@ test("render EXTEND_SELECTED fills all variables", () => {
   assert.ok(!msg.includes("{"));
 });
 
+test("EXTEND_FLEXIBLE_PROMPT instructs customer to reply with days", () => {
+  assert.ok(EXTEND_FLEXIBLE_PROMPT.includes("days"), "should mention days");
+  assert.ok(EXTEND_FLEXIBLE_PROMPT.includes("Reply STOP"), "must include opt-out");
+});
+
+test("EXTEND_FLEXIBLE_PROMPT includes pricing reference", () => {
+  assert.ok(EXTEND_FLEXIBLE_PROMPT.includes("$55"), "must show daily rate");
+  assert.ok(EXTEND_FLEXIBLE_PROMPT.includes("$350"), "must show weekly rate");
+});
+
+test("EXTEND_INVALID_INPUT references {options} variable", () => {
+  assert.ok(EXTEND_INVALID_INPUT.includes("{options}"));
+  assert.ok(EXTEND_INVALID_INPUT.includes("Reply STOP"));
+});
+
+test("render EXTEND_INVALID_INPUT fills options variable", () => {
+  const msg = render(EXTEND_INVALID_INPUT, { options: "1, 2, or 4" });
+  assert.ok(msg.includes("1, 2, or 4"));
+  assert.ok(!msg.includes("{options}"));
+});
+
+test("EXTEND_SELECTED_UPSELL references all required variables", () => {
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("{extra_time}"));
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("{vehicle}"));
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("{price}"));
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("{payment_link}"));
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("{weekly_price}"));
+  assert.ok(EXTEND_SELECTED_UPSELL.includes("Reply STOP"));
+});
+
+test("render EXTEND_SELECTED_UPSELL fills all variables", () => {
+  const msg = render(EXTEND_SELECTED_UPSELL, {
+    extra_time:   "+3 days",
+    vehicle:      "Camry 2012",
+    price:        "165",
+    payment_link: "https://example.com/pay",
+    weekly_price: "350",
+  });
+  assert.ok(msg.includes("+3 days"));
+  assert.ok(msg.includes("Camry 2012"));
+  assert.ok(msg.includes("$165"));
+  assert.ok(msg.includes("$350"));
+  assert.ok(msg.includes("https://example.com/pay"));
+  assert.ok(!msg.includes("{"));
+});
+
 // ─── Late return templates ────────────────────────────────────────────────────
 
 test("LATE_WARNING_30MIN references return_time", () => {
@@ -299,7 +348,9 @@ test("TEMPLATES map contains all expected keys", () => {
     "pickup_reminder_24h", "pickup_reminder_2h", "pickup_reminder_30min",
     "active_rental_mid", "active_rental_1h_before_end", "active_rental_15min_before_end",
     "extend_unavailable", "extend_limited", "extend_options_slingshot", "extend_options_economy",
-    "extend_selected", "extend_confirmed_slingshot", "extend_confirmed_economy", "extend_payment_pending",
+    "extend_flexible_prompt", "extend_invalid_input",
+    "extend_selected", "extend_selected_upsell",
+    "extend_confirmed_slingshot", "extend_confirmed_economy", "extend_payment_pending",
     "late_warning_30min", "late_at_return_time", "late_grace_expired", "late_fee_applied",
     "post_rental_thank_you",
     "retention_day_1", "retention_day_3", "retention_day_7", "retention_day_14", "retention_day_30",

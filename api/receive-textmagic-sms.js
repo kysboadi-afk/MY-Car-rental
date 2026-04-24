@@ -22,7 +22,18 @@
 import Stripe from "stripe";
 import crypto from "crypto";
 import { sendSms } from "./_textmagic.js";
-import { render, DEFAULT_LOCATION, EXTEND_UNAVAILABLE, EXTEND_LIMITED, EXTEND_OPTIONS_SLINGSHOT, EXTEND_OPTIONS_ECONOMY, EXTEND_SELECTED, EXTEND_PAYMENT_PENDING } from "./_sms-templates.js";
+import {
+  render,
+  DEFAULT_LOCATION,
+  EXTEND_UNAVAILABLE,
+  EXTEND_LIMITED,
+  EXTEND_OPTIONS_SLINGSHOT,
+  EXTEND_FLEXIBLE_PROMPT,
+  EXTEND_INVALID_INPUT,
+  EXTEND_SELECTED,
+  EXTEND_SELECTED_UPSELL,
+  EXTEND_PAYMENT_PENDING,
+} from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { CARS } from "./_pricing.js";
 import { getSupabaseAdmin } from "./_supabase.js";
@@ -132,6 +143,98 @@ function parseDateTime(date, time) {
 
 function isSlingshotVehicle(vehicleId) {
   return typeof vehicleId === "string" && vehicleId.startsWith("slingshot");
+}
+
+/**
+ * Parse a customer's freeform reply into a number of extension days.
+ *
+ * Accepted formats (case-insensitive):
+ *   "3"           → 3
+ *   "3 days"      → 3
+ *   "3 day"       → 3
+ *   "1 week"      → 7
+ *   "2 weeks"     → 14
+ *   "week"        → 7
+ *   "month"       → 30
+ *   "1 month"     → 30
+ *   "2 months"    → 60
+ *
+ * Returns null when the input is unrecognisable or results in 0 / negative days.
+ *
+ * @param {string} text - raw customer reply (trimmed)
+ * @returns {number|null}
+ */
+export function parseDaysFromMessage(text) {
+  if (!text || typeof text !== "string") return null;
+  const t = text.trim().toLowerCase();
+
+  // "month" / "N months"
+  const monthMatch = t.match(/^(\d+)\s*months?$/) || (t === "month" ? ["month", "1"] : null);
+  if (monthMatch) {
+    const n = parseInt(monthMatch[1], 10);
+    return n > 0 ? n * 30 : null;
+  }
+
+  // "week" / "N weeks"
+  const weekMatch = t.match(/^(\d+)\s*weeks?$/) || (t === "week" ? ["week", "1"] : null);
+  if (weekMatch) {
+    const n = parseInt(weekMatch[1], 10);
+    return n > 0 ? n * 7 : null;
+  }
+
+  // "N days" / "N day"
+  const dayMatch = t.match(/^(\d+)\s*days?$/);
+  if (dayMatch) {
+    const n = parseInt(dayMatch[1], 10);
+    return n > 0 ? n : null;
+  }
+
+  // Plain integer
+  const numMatch = t.match(/^(\d+)$/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10);
+    return n > 0 ? n : null;
+  }
+
+  return null;
+}
+
+/**
+ * Compute the extension price for a given number of days using the vehicle's
+ * tiered pricing: monthly → biweekly → weekly → daily.
+ *
+ * Rates (camry defaults):
+ *   1–6 days  → $55/day
+ *   7 days    → $350
+ *   14 days   → $650
+ *   30 days   → $1,300
+ *
+ * @param {number} days       - number of extension days (min 1)
+ * @param {object} [car]      - vehicle pricing object from CARS; defaults to camry rates
+ * @returns {number}          - price in dollars (no tax applied)
+ */
+export function computeEconomyExtensionPriceDays(days, car = null) {
+  const c = car || CARS.camry;
+  let remaining = Math.max(1, days);
+  let cost = 0;
+
+  if (c.monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost += months * c.monthly;
+    remaining = remaining % 30;
+  }
+  if (c.biweekly && remaining >= 14) {
+    const periods = Math.floor(remaining / 14);
+    cost += periods * c.biweekly;
+    remaining = remaining % 14;
+  }
+  if (c.weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost += weeks * c.weekly;
+    remaining = remaining % 7;
+  }
+  cost += remaining * (c.pricePerDay || 55);
+  return cost;
 }
 
 /**
@@ -260,7 +363,7 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   }
 
   // Send option SMS
-  const optionMsg = isSlingshot ? EXTEND_OPTIONS_SLINGSHOT : EXTEND_OPTIONS_ECONOMY;
+  const optionMsg = isSlingshot ? EXTEND_OPTIONS_SLINGSHOT : EXTEND_FLEXIBLE_PROMPT;
   await sendSms(fromPhone, optionMsg);
 }
 
@@ -362,6 +465,122 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   );
 }
 
+/**
+ * Handle a flexible day-count extension for economy (non-slingshot) vehicles.
+ * Called after `parseDaysFromMessage` has successfully extracted the number of days.
+ *
+ * Pricing tiers (camry defaults):
+ *   1–6 days  → $55/day
+ *   7 days    → $350
+ *   14 days   → $650
+ *   30 days   → $1,300
+ *
+ * Upsell: when the customer requests fewer than 7 days, the confirmation SMS
+ * includes a note that a full 7-day extension is available at the weekly rate.
+ *
+ * @param {string} fromPhone
+ * @param {number} days          - parsed extension days (must be ≥ 1)
+ * @param {object} allBookings
+ * @param {object} data          - mutable bookings data snapshot
+ * @param {string} sha           - current GitHub SHA for optimistic locking
+ */
+async function handleFlexibleEconomyExtension(fromPhone, days, allBookings, data, sha) {
+  const match = findExtendPending(allBookings, fromPhone);
+  if (!match) return; // shouldn't happen — caller verified this
+
+  const { vehicleId, booking } = match;
+
+  // Check calendar availability
+  const availMinutes = getAvailableExtensionMinutes(allBookings, vehicleId, booking.returnDate, booking.returnTime);
+  const requiredMinutes = days * 24 * 60;
+
+  if (availMinutes !== Infinity && requiredMinutes > availMinutes) {
+    const maxDays = Math.max(0, Math.floor(availMinutes / 60 / 24));
+    await sendSms(
+      fromPhone,
+      render(EXTEND_LIMITED, {
+        max_available_time: `${maxDays} day${maxDays !== 1 ? "s" : ""}`,
+        vehicle: booking.vehicleName || vehicleId,
+      })
+    );
+    return;
+  }
+
+  // Compute tiered price using the booking vehicle's rates (fall back to camry)
+  const car = CARS[vehicleId] || CARS.camry;
+  const price = computeEconomyExtensionPriceDays(days, car);
+  const label = `+${days} day${days !== 1 ? "s" : ""}`;
+  const newReturnDate = addDaysToDate(booking.returnDate, days);
+  const newReturnTime = booking.returnTime || "";
+
+  // Create Stripe PaymentIntent for the extension charge
+  const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, price, label);
+  const paymentLink = pi
+    ? buildExtensionPaymentLink(pi.client_secret, pi.id)
+    : (booking.paymentLink || "https://www.slytrans.com/balance.html");
+
+  // Persist extension selection to booking
+  const bookingId = booking.bookingId || booking.paymentIntentId;
+  const idx = data[vehicleId]
+    ? data[vehicleId].findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
+    : -1;
+  if (idx !== -1) {
+    data[vehicleId][idx].extendPending = false;
+    data[vehicleId][idx].extensionPendingPayment = {
+      days,
+      label,
+      price,
+      newReturnDate,
+      newReturnTime,
+      paymentIntentId: pi ? pi.id : null,
+      paymentLink,
+      createdAt: new Date().toISOString(),
+    };
+    await saveBookings(data, sha, `Save flexible extension selection for booking ${bookingId}`);
+    // Dual-write to Supabase
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb && bookingId) {
+        await sb
+          .from("bookings")
+          .update({
+            extend_pending:            false,
+            extension_pending_payment: data[vehicleId][idx].extensionPendingPayment,
+            updated_at:                new Date().toISOString(),
+          })
+          .eq("booking_ref", bookingId);
+      }
+    } catch (sbErr) {
+      console.error("receive-textmagic-sms: Supabase flexibleExtension write failed (non-fatal):", sbErr.message);
+    }
+  }
+
+  // Send confirmation SMS — include weekly upsell when days < 7
+  const weeklyPrice = car.weekly || 350;
+  if (days < 7) {
+    await sendSms(
+      fromPhone,
+      render(EXTEND_SELECTED_UPSELL, {
+        extra_time:   label,
+        vehicle:      booking.vehicleName || vehicleId,
+        price:        String(price),
+        payment_link: paymentLink,
+        weekly_price: String(weeklyPrice),
+      })
+    );
+  } else {
+    await sendSms(
+      fromPhone,
+      render(EXTEND_SELECTED, {
+        extra_time:   label,
+        vehicle:      booking.vehicleName || vehicleId,
+        price:        String(price),
+        payment_link: paymentLink,
+      })
+    );
+  }
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -447,11 +666,34 @@ export default async function handler(req, res) {
 
     if (keyword === "EXTEND") {
       await handleExtend(normalizedFrom, allBookings, data, sha);
-    } else if (/^[12347]$/.test(keyword)) {
-      // Numeric reply — could be an extension option selection
-      await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
+    } else {
+      // Check if this customer has a pending extend selection
+      const pendingMatch = findExtendPending(allBookings, normalizedFrom);
+      if (pendingMatch) {
+        if (isSlingshotVehicle(pendingMatch.vehicleId)) {
+          // Slingshot: fixed option menu (1 = +1h, 2 = +2h, 4 = +4h)
+          if (/^[124]$/.test(keyword)) {
+            await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
+          } else {
+            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: "1, 2, or 4" }));
+          }
+        } else {
+          // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)
+          const days = parseDaysFromMessage(messageText.trim());
+          if (days === null) {
+            await sendSms(
+              normalizedFrom,
+              render(EXTEND_INVALID_INPUT, {
+                options: "a number of days — e.g. 3, 7, 14, or say \"2 weeks\", \"month\"",
+              })
+            );
+          } else {
+            await handleFlexibleEconomyExtension(normalizedFrom, days, allBookings, data, sha);
+          }
+        }
+      }
+      // Unknown keywords with no pending extension are silently ignored
     }
-    // Unknown keywords are silently ignored
 
     return res.status(200).json({ ok: true });
   } catch (err) {

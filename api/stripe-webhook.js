@@ -1601,6 +1601,7 @@ export default async function handler(req, res) {
               cur.returnTime = resolvedReturnTime;
               cur.extensionPendingPayment = null;
               cur.extensionCount = (cur.extensionCount || 0) + 1;
+              cur.lastExtensionAt = new Date().toISOString();
               cur.payments = updatedPayments;
 
               // Clear late-return and end-of-rental markers so they re-fire for the new return date.
@@ -1697,12 +1698,20 @@ export default async function handler(req, res) {
           }
 
           // Clear extension-pending fields in Supabase now that payment succeeded.
+          // Also persist extension_count and last_extension_at so the sms_logs
+          // engine and admin panel always see the latest return schedule.
           try {
             const sbExt = getSupabaseAdmin();
             if (sbExt && bookingRef) {
               await sbExt
                 .from("bookings")
-                .update({ extend_pending: false, extension_pending_payment: null, updated_at: new Date().toISOString() })
+                .update({
+                  extend_pending:            false,
+                  extension_pending_payment: null,
+                  extension_count:           updatedBooking.extensionCount || 1,
+                  last_extension_at:         updatedBooking.lastExtensionAt || new Date().toISOString(),
+                  updated_at:                new Date().toISOString(),
+                })
                 .eq("booking_ref", bookingRef);
             }
           } catch (extClrErr) {
