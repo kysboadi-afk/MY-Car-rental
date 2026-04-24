@@ -1799,7 +1799,7 @@
         </div>
 
         <!-- Check cards grid -->
-        <div id="health-checks-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;display:none;"></div>
+        <div id="health-checks-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;display:none;"></div>
 
         <!-- Idle state -->
         <div id="health-idle" class="card" style="text-align:center;padding:40px 20px;">
@@ -6032,7 +6032,7 @@ async function loadSystemHealth() {
   const banner  = document.getElementById('health-banner');
   const badge   = document.getElementById('health-badge');
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+  if (btn) { btn.disabled = true; const lbl = btn.querySelector('.btn-label'); if (lbl) lbl.textContent = 'Running…'; }
   if (loading) loading.style.display = '';
   if (grid)    grid.style.display    = 'none';
   if (idle)    idle.style.display    = 'none';
@@ -6050,7 +6050,7 @@ async function loadSystemHealth() {
       banner.innerHTML = `❌ Health check failed: ${esc(err.message)}`;
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run Checks'; }
+    if (btn) { btn.disabled = false; const lbl = btn.querySelector('.btn-label'); if (lbl) lbl.textContent = 'Run Checks'; }
     if (loading) loading.style.display = 'none';
   }
 }

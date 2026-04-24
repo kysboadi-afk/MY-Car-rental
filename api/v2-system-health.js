@@ -273,10 +273,9 @@ export default async function handler(req, res) {
             info: `status=active but return_date=${b.return_date} is outside today (${today})`,
           })),
         ];
-        const severity = markedActivePastReturn.length > 0 ? "warning" : "warning";
         checks.activeRentalCount = check(
           "Active Rental Count",
-          severity,
+          "warning",
           `${drift} active-status mismatch${drift !== 1 ? "es" : ""} detected.`,
           items,
           "Review bookings and update status via the Bookings tab.",
