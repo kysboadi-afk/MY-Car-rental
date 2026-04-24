@@ -447,6 +447,29 @@
       "smsSentAt": {},
       "createdAt": "2026-04-23T11:39:11.533Z",
       "source": "admin_ai"
+    },
+    {
+      "bookingId": "485af5179dd3061004910abb7f0d5d8e",
+      "name": "Anthony Johnson",
+      "phone": "2138011313",
+      "email": "cheftony90@icloud.com",
+      "vehicleId": "camry",
+      "vehicleName": "Camry 2012",
+      "pickupDate": "2026-04-23",
+      "pickupTime": "18:00",
+      "returnDate": "2026-04-30",
+      "returnTime": "18:00",
+      "location": "1200 S Figueroa St, Los Angeles, CA 90015",
+      "status": "reserved_unpaid",
+      "amountPaid": 385.88,
+      "totalPrice": 385.88,
+      "paymentIntentId": "pi_3TPaRmPo7fICjrtZ0yGYbSEg",
+      "paymentLink": "https://www.slytrans.com/balance.html?v=camry&p=2026-04-23&r=2026-04-30&pp=0&n=Anthony%20Johnson&e=cheftony90%40icloud.com&ph=2138011313&pt=18%3A00&rt=18%3A00&car=Camry%202012",
+      "paymentMethod": "stripe",
+      "notes": "",
+      "smsSentAt": {},
+      "createdAt": "2026-04-24T03:30:57.923Z",
+      "source": "public_booking"
     }
   ],
   "camry2013": [
