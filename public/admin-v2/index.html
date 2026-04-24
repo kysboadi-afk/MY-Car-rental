@@ -854,6 +854,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2z"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="3"/></svg>
         AI Assistant
       </a>
+      <a class="nav-item" data-page="system-health" href="#" onclick="navigate('system-health');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        System Health
+        <span class="nav-badge" id="health-badge" style="display:none">!</span>
+      </a>
       <a class="nav-item" data-page="settings" href="#" onclick="navigate('settings');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         Settings
@@ -1771,6 +1776,47 @@
         </div>
       </div>
 
+      <!-- SYSTEM HEALTH PAGE -->
+      <div class="page" id="page-system-health">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div style="font-size:18px;font-weight:700;">🩺 System Health</div>
+            <div style="font-size:13px;color:var(--text-sub);margin-top:2px;">Real-time integrity snapshot — payments, bookings, revenue, and agreements</div>
+            <div id="health-last-checked" style="font-size:12px;color:var(--text-sub);margin-top:4px;display:none;">Last checked: <span id="health-last-checked-ts"></span></div>
+          </div>
+          <button class="btn btn-primary" id="health-run-btn" onclick="loadSystemHealth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            <span class="btn-label">Run Checks</span>
+          </button>
+        </div>
+
+        <!-- Overall status banner -->
+        <div id="health-banner" style="display:none;padding:14px 18px;border-radius:10px;margin-bottom:20px;font-size:14px;font-weight:600;"></div>
+
+        <!-- Loading state -->
+        <div id="health-loading" class="loading" style="display:none;">
+          <div class="loading-spinner"></div>
+          <div>Running health checks…</div>
+        </div>
+
+        <!-- Check cards grid -->
+        <div id="health-checks-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;display:none;"></div>
+
+        <!-- Idle state -->
+        <div id="health-idle" class="card" style="text-align:center;padding:40px 20px;">
+          <div style="font-size:40px;margin-bottom:12px;">🩺</div>
+          <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px;">Run a Health Check</div>
+          <p style="font-size:13px;color:var(--text-sub);max-width:380px;margin:0 auto 20px;">
+            Click <strong>Run Checks</strong> to verify payment → booking → revenue consistency,
+            missing agreement PDFs, active rental counts, and more.
+          </p>
+          <button class="btn btn-primary" onclick="loadSystemHealth()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Run Checks Now
+          </button>
+        </div>
+      </div>
+
       <!-- AI ASSISTANT PAGE -->
       <div class="page" id="page-ai">
         <div class="ai-layout">
@@ -2461,6 +2507,7 @@ function navigate(page) {
     'system-settings':  'System Settings',
     'ai':               'AI Assistant',
     'driver-mileage':   'Driver Mileage Report',
+    'system-health':    'System Health',
   };
 
   document.getElementById(`page-${page}`).classList.add('active');
@@ -2488,6 +2535,7 @@ function navigate(page) {
   else if (page === 'settings') loadSiteContent();
   else if (page === 'ai') loadAiInsights();
   else if (page === 'driver-mileage') initDriverMileagePage();
+  else if (page === 'system-health') loadSystemHealth();
 }
 
 function refreshCurrentPage() {
@@ -2515,6 +2563,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'gps') loadGpsTracking();
   else if (currentPage === 'block-dates') loadBlockedDates();
   else if (currentPage === 'settings') loadSiteContent();
+  else if (currentPage === 'system-health') loadSystemHealth();
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -5975,6 +6024,164 @@ function renderDiagnostics(data) {
     </table>
     ${guidance}
   `;
+}
+
+// ── System Health ─────────────────────────────────────────────────────────
+async function loadSystemHealth() {
+  const btn     = document.getElementById('health-run-btn');
+  const loading = document.getElementById('health-loading');
+  const grid    = document.getElementById('health-checks-grid');
+  const idle    = document.getElementById('health-idle');
+  const banner  = document.getElementById('health-banner');
+  const badge   = document.getElementById('health-badge');
+
+  if (btn) { btn.disabled = true; const lbl = btn.querySelector('.btn-label'); if (lbl) lbl.textContent = 'Running…'; }
+  if (loading) loading.style.display = '';
+  if (grid)    grid.style.display    = 'none';
+  if (idle)    idle.style.display    = 'none';
+  if (banner)  { banner.style.display = 'none'; banner.textContent = ''; }
+
+  try {
+    const data = await apiPost('/api/v2-system-health', { secret: adminSecret });
+    renderSystemHealth(data);
+  } catch (err) {
+    if (banner) {
+      banner.style.display = '';
+      banner.style.background = '#fef2f2';
+      banner.style.border = '1px solid #fca5a5';
+      banner.style.color = 'var(--danger)';
+      banner.innerHTML = `❌ Health check failed: ${esc(err.message)}`;
+    }
+  } finally {
+    if (btn) { btn.disabled = false; const lbl = btn.querySelector('.btn-label'); if (lbl) lbl.textContent = 'Run Checks'; }
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function renderSystemHealth(data) {
+  const grid    = document.getElementById('health-checks-grid');
+  const banner  = document.getElementById('health-banner');
+  const badge   = document.getElementById('health-badge');
+  const lastChk = document.getElementById('health-last-checked');
+  const lastTs  = document.getElementById('health-last-checked-ts');
+  if (!grid) return;
+
+  const checks  = data.checks || {};
+  const overall = data.overallStatus || 'ok';
+  const ts      = data.checkedAt ? new Date(data.checkedAt).toLocaleString() : '';
+
+  // "Last checked" line
+  if (lastChk && lastTs && ts) {
+    lastTs.textContent = ts;
+    lastChk.style.display = '';
+  }
+
+  // Overall status banner
+  if (banner) {
+    banner.style.display = '';
+    if (overall === 'ok') {
+      banner.style.background = '#f0fdf4';
+      banner.style.border = '1px solid #86efac';
+      banner.style.color = 'var(--success)';
+      banner.innerHTML = `✅ All systems operational — no issues detected.`;
+    } else if (overall === 'warning') {
+      banner.style.background = '#fffbeb';
+      banner.style.border = '1px solid #fde68a';
+      banner.style.color = 'var(--warning)';
+      banner.innerHTML = `⚠️ Some checks need attention.`;
+    } else {
+      banner.style.background = '#fef2f2';
+      banner.style.border = '1px solid #fca5a5';
+      banner.style.color = 'var(--danger)';
+      banner.innerHTML = `❌ Critical issues detected — action required.`;
+    }
+  }
+
+  // Sidebar badge
+  if (badge) {
+    const issueCount = Object.values(checks).filter((c) => c.status !== 'ok').length;
+    if (issueCount > 0) {
+      badge.style.display = '';
+      badge.textContent = issueCount;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  // Render check cards
+  grid.style.display = 'grid';
+  grid.innerHTML = Object.entries(checks).map(([checkKey, c]) => {
+    const statusColor = c.status === 'ok'
+      ? 'var(--success)'
+      : c.status === 'warning'
+      ? 'var(--warning)'
+      : 'var(--danger)';
+    const statusBg = c.status === 'ok'
+      ? '#f0fdf4'
+      : c.status === 'warning'
+      ? '#fffbeb'
+      : '#fef2f2';
+    const statusIcon = c.status === 'ok' ? '✅' : c.status === 'warning' ? '⚠️' : '❌';
+
+    const itemsHtml = (c.items || []).length > 0
+      ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
+          ${(c.items || []).map((item) => `
+            <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
+              <code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>
+              <span style="color:var(--text-sub);">${esc(item.info)}</span>
+            </div>`).join('')}
+        </div>`
+      : '';
+
+    const detailHtml = c.detail
+      ? `<div style="margin-top:8px;font-size:12px;color:var(--text-sub);padding:8px 10px;background:var(--bg);border-radius:6px;">
+           💡 ${esc(c.detail)}
+         </div>`
+      : '';
+
+    const fixBtnHtml = c.fixable && c.status !== 'ok'
+      ? `<div style="margin-top:10px;">
+           <button class="btn btn-secondary btn-sm health-fix-btn" data-check-key="${esc(checkKey)}" style="font-size:12px;">
+             🔧 Fix Now
+           </button>
+         </div>`
+      : '';
+
+    return `<div class="card" style="border-top:3px solid ${statusColor};">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
+        <div style="width:36px;height:36px;background:${statusBg};border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${statusIcon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">${esc(c.label)}</div>
+          <div style="font-size:13px;color:${statusColor};margin-top:2px;">${esc(c.summary)}</div>
+        </div>
+        ${c.count > 0 ? `<span style="background:${statusBg};color:${statusColor};font-size:12px;font-weight:700;padding:2px 8px;border-radius:12px;flex-shrink:0;">${c.count}</span>` : ''}
+      </div>
+      ${itemsHtml}
+      ${detailHtml}
+      ${fixBtnHtml}
+    </div>`;
+  }).join('');
+
+  // Attach Fix Now button listeners via event delegation (avoids inline onclick XSS)
+  grid.querySelectorAll('.health-fix-btn').forEach((btn) => {
+    btn.addEventListener('click', function() { fixHealthCheck(this.dataset.checkKey, this); });
+  });
+}
+
+async function fixHealthCheck(checkKey, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Fixing…'; }
+  try {
+    const result = await apiPost('/api/v2-system-health', {
+      secret: adminSecret,
+      action: `fix_${checkKey}`,
+    });
+    showToast(result.message || 'Fix applied.', 'success');
+    // Re-run all checks to reflect updated state
+    await loadSystemHealth();
+  } catch (err) {
+    showToast('Fix failed: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🔧 Fix Now'; }
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
