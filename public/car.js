@@ -1232,7 +1232,7 @@ async function initDatePickers() {
       }
       // Populate/refresh time slots for the newly selected pickup date.
       const dateStr = selectedDates[0]
-        ? selectedDates[0].toISOString().slice(0, 10)
+        ? (window.SlyLA ? window.SlyLA.isoDateInLA(selectedDates[0]) : selectedDates[0].toISOString().slice(0, 10))
         : "";
       updatePickupTimeSlots(dateStr);
     }

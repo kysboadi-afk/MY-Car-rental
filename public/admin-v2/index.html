@@ -4168,7 +4168,7 @@ function applyExpenseFilters() {
 function openAddExpenseModal() {
   // Reset form
   document.getElementById('exp-vehicle').value = '';
-  document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('exp-date').value = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
   document.getElementById('exp-category').value = '';
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-notes').value = '';
@@ -4557,7 +4557,8 @@ function renderActionRequired(data) {
 
   // pendingApprovals from server-side KPI is accurate (covers all bookings)
   const pending  = kpis.pendingApprovals != null ? kpis.pendingApprovals : bookings.filter((b) => b.status === 'reserved_unpaid').length;
-  // returnsTodayCount and overdueCount from server-side KPI cover ALL active bookings (not just recent 10)
+  // returnsTodayCount, pickupsTodayCount, and overdueCount from server-side KPI cover ALL bookings
+  // (not just recent 10) and use LA timezone — always prefer over client-side fallback.
   const returns  = kpis.returnsTodayCount != null ? kpis.returnsTodayCount : bookings.filter((b) => {
     if (b.status !== 'active_rental' || b.returnDate !== today) return false;
     const returnDateTime = bookingReturnDateTime(b);
@@ -4568,7 +4569,8 @@ function renderActionRequired(data) {
     const returnDateTime = bookingReturnDateTime(b);
     return !!returnDateTime && now >= returnDateTime;
   }).length;
-  const pickups  = bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
+  const pickups  = kpis.pickupsTodayCount != null ? kpis.pickupsTodayCount
+    : bookings.filter((b) => b.pickupDate === today && ['reserved_unpaid','booked_paid'].includes(b.status)).length;
 
   const setTile = (id, count, urgency) => {
     const el = document.getElementById(id + '-count');
@@ -5976,7 +5978,7 @@ function renderDiagnostics(data) {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-document.getElementById('mb-pickup-date').min = new Date().toISOString().split('T')[0];
+document.getElementById('mb-pickup-date').min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
 const FLEET_VEHICLES = [
@@ -6656,9 +6658,10 @@ let dmFlatpickrInit = false;
 
 function initDriverMileagePage() {
   if (!dmFlatpickrInit && typeof flatpickr !== 'undefined') {
-    const today     = new Date();
-    const todayStr  = today.toISOString().slice(0, 10);
-    const thirtyAgo = new Date(today - 30 * 86400000).toISOString().slice(0, 10);
+    const laFmt    = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' });
+    const today    = new Date();
+    const todayStr  = laFmt.format(today);
+    const thirtyAgo = laFmt.format(new Date(today - 30 * 86400000));
     flatpickr('#dm-start-date', { dateFormat: 'Y-m-d', defaultDate: thirtyAgo });
     flatpickr('#dm-end-date',   { dateFormat: 'Y-m-d', defaultDate: todayStr  });
     dmFlatpickrInit = true;
