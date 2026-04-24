@@ -53,6 +53,11 @@ const SLINGSHOT_EXTENSION_PRICES = {
   4: { hours: 4,  label: "+4 hours", price: 150 },
 };
 
+// Valid reply digits for Slingshot — derived from SLINGSHOT_EXTENSION_PRICES keys so
+// that a single source of truth governs both the menu and the validation guard.
+const SLINGSHOT_VALID_OPTIONS_RE = new RegExp(`^[${Object.keys(SLINGSHOT_EXTENSION_PRICES).join("")}]$`);
+const SLINGSHOT_VALID_OPTIONS_LABEL = Object.keys(SLINGSHOT_EXTENSION_PRICES).join(", ");
+
 const ECONOMY_EXTENSION_PRICES = {
   1: { days: 1,  label: "+1 day",  price: 55  },
   3: { days: 3,  label: "+3 days", price: 165 },
@@ -168,15 +173,21 @@ export function parseDaysFromMessage(text) {
   if (!text || typeof text !== "string") return null;
   const t = text.trim().toLowerCase();
 
-  // "month" / "N months"
-  const monthMatch = t.match(/^(\d+)\s*months?$/) || (t === "month" ? ["month", "1"] : null);
+  // Bare "month" (no number prefix)
+  if (t === "month") return 30;
+
+  // "N months" / "N month"
+  const monthMatch = t.match(/^(\d+)\s*months?$/);
   if (monthMatch) {
     const n = parseInt(monthMatch[1], 10);
     return n > 0 ? n * 30 : null;
   }
 
-  // "week" / "N weeks"
-  const weekMatch = t.match(/^(\d+)\s*weeks?$/) || (t === "week" ? ["week", "1"] : null);
+  // Bare "week" (no number prefix)
+  if (t === "week") return 7;
+
+  // "N weeks" / "N week"
+  const weekMatch = t.match(/^(\d+)\s*weeks?$/);
   if (weekMatch) {
     const n = parseInt(weekMatch[1], 10);
     return n > 0 ? n * 7 : null;
@@ -209,7 +220,7 @@ export function parseDaysFromMessage(text) {
  *   14 days   → $650
  *   30 days   → $1,300
  *
- * @param {number} days       - number of extension days (min 1)
+ * @param {number} days       - number of extension days; values < 1 are clamped to 1
  * @param {object} [car]      - vehicle pricing object from CARS; defaults to camry rates
  * @returns {number}          - price in dollars (no tax applied)
  */
@@ -671,11 +682,11 @@ export default async function handler(req, res) {
       const pendingMatch = findExtendPending(allBookings, normalizedFrom);
       if (pendingMatch) {
         if (isSlingshotVehicle(pendingMatch.vehicleId)) {
-          // Slingshot: fixed option menu (1 = +1h, 2 = +2h, 4 = +4h)
-          if (/^[124]$/.test(keyword)) {
+          // Slingshot: fixed option menu derived from SLINGSHOT_EXTENSION_PRICES
+          if (SLINGSHOT_VALID_OPTIONS_RE.test(keyword)) {
             await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
           } else {
-            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: "1, 2, or 4" }));
+            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: SLINGSHOT_VALID_OPTIONS_LABEL }));
           }
         } else {
           // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   id                   uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_id           text          NOT NULL,   -- booking_ref from bookings table (bk-...)
   template_key         text          NOT NULL,   -- e.g. 'late_warning_30min', 'late_at_return'
-  return_date_at_send  date          NOT NULL DEFAULT '1970-01-01',
+  return_date_at_send  date          NOT NULL DEFAULT '1970-01-01', -- sentinel for non-return-time messages
   sent_at              timestamptz   NOT NULL DEFAULT now(),
 
   CONSTRAINT sms_logs_dedup UNIQUE (booking_id, template_key, return_date_at_send)

@@ -96,9 +96,11 @@ const GRACE_OFFSET_MS    = 60 * 60 * 1000;
 const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 // Boundaries (in minutes) for the end-of-rental warning SMS window.
-// Cron runs every 5 min, so a 15-min window ensures the message fires exactly once.
-const WARNING_BEFORE_END_UPPER_MIN = 30; // start of window  (30 min before return)
-const WARNING_BEFORE_END_LOWER_MIN = 15; // end of window    (15 min before return)
+// Cron runs every 5 min so a 15-min window ensures the message fires exactly once.
+// Window is (WARNING_BEFORE_END_LOWER_MIN, WARNING_BEFORE_END_UPPER_MIN]:
+//   minutesUntilReturn > 15 && minutesUntilReturn <= 30  →  fires once per return event
+const WARNING_BEFORE_END_UPPER_MIN = 30; // inclusive upper bound: fires when ≤ 30 min remain
+const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire when ≤ 15 min remain
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
@@ -655,7 +657,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
 
-      // Use LA-timezone datetimes so all SMS triggers fire at the correct
+      // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
       // wall-clock time in Los Angeles, not at UTC equivalents.
       const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
       if (isNaN(returnDt.getTime())) continue;
