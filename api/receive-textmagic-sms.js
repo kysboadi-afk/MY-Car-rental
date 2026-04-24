@@ -57,7 +57,7 @@ const SLINGSHOT_EXTENSION_PRICES = {
 // Valid reply digits for Slingshot — derived from SLINGSHOT_EXTENSION_PRICES keys so
 // that a single source of truth governs both the menu and the validation guard.
 const SLINGSHOT_VALID_OPTIONS_RE = new RegExp(`^[${Object.keys(SLINGSHOT_EXTENSION_PRICES).join("")}]$`);
-const SLINGSHOT_VALID_OPTIONS_LABEL = Object.keys(SLINGSHOT_EXTENSION_PRICES).join(", ");
+const SLINGSHOT_OPTIONS_STRING = Object.keys(SLINGSHOT_EXTENSION_PRICES).join(", ");
 
 const ECONOMY_EXTENSION_PRICES = {
   1: { days: 1,  label: "+1 day",  price: 55  },
@@ -226,7 +226,8 @@ export function parseDaysFromMessage(text) {
  * @returns {number}          - price in dollars (no tax applied)
  */
 export function computeEconomyExtensionPriceDays(days, car = null) {
-  const c = car || CARS.camry;
+  const fallbackCar = { pricePerDay: 55, weekly: 350, biweekly: 650, monthly: 1300 };
+  const c = (car && car.pricePerDay) ? car : (CARS.camry || fallbackCar);
   let remaining = Math.max(1, days);
   let cost = 0;
 
@@ -486,9 +487,9 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   );
 
   // Save extension info to booking
-  const idx = data[vehicleId].findIndex(
-    (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
-  );
+  const idx = Array.isArray(data[vehicleId])
+    ? data[vehicleId].findIndex((b) => b.bookingId === bookingId || b.paymentIntentId === bookingId)
+    : -1;
   if (idx !== -1) {
     data[vehicleId][idx].extendPending = false;
     data[vehicleId][idx].extensionPendingPayment = {
@@ -744,7 +745,7 @@ export default async function handler(req, res) {
           if (SLINGSHOT_VALID_OPTIONS_RE.test(keyword)) {
             await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
           } else {
-            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: SLINGSHOT_VALID_OPTIONS_LABEL }));
+            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: SLINGSHOT_OPTIONS_STRING }));
           }
         } else {
           // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)

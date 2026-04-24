@@ -99,14 +99,31 @@ test("validateLink: returns ok=false on network error", async () => {
 
 test("validateLink: retries with GET when HEAD returns 405", async () => {
   let callCount = 0;
+  const methods = [];
   setFetch(async (_url, opts) => {
     callCount++;
+    methods.push(opts && opts.method);
     if (opts && opts.method === "HEAD") return fakeResp(405);
     return fakeResp(200); // GET succeeds
   });
   const r = await validateLink("https://www.slytrans.com/balance.html");
   assert.equal(r.ok, true);
   assert.ok(callCount >= 2, "should have retried with GET");
+  assert.ok(methods.includes("GET"), "should have made a GET request");
+});
+
+test("validateLink: does NOT retry GET on network error (no wasted request)", async () => {
+  let callCount = 0;
+  setFetch(async () => {
+    callCount++;
+    throw new Error("ECONNREFUSED");
+  });
+  const r = await validateLink("https://www.slytrans.com/balance.html");
+  assert.equal(r.ok,           false);
+  assert.equal(r.status,       null);
+  assert.equal(r.fallbackUsed, true);
+  // Should only have tried once (HEAD), not retried with GET
+  assert.equal(callCount, 1, "should not retry GET on network error");
 });
 
 // ── validateLink — baseUrlForValidation ───────────────────────────────────────

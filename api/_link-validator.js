@@ -76,37 +76,37 @@ export async function validateLink(url, opts = {}) {
   try {
     // First attempt: HEAD (cheaper, no body transfer)
     let resp;
+    let headNetworkError = false;
     try {
       resp = await fetch(targetUrl, {
         method:  "HEAD",
         signal:  controller.signal,
-        headers: { "User-Agent": "SlyRides-LinkValidator/1.0" },
+        headers: { "User-Agent": "SLY-RIDES-LinkValidator/1.0" },
       });
       status = resp.status;
     } catch (headErr) {
-      // Network error on HEAD — try GET as last resort
-      resp = await fetch(targetUrl, {
-        method:  "GET",
-        signal:  controller.signal,
-        headers: { "User-Agent": "SlyRides-LinkValidator/1.0" },
-      });
-      status = resp.status;
+      // Network-level error on HEAD (DNS failure, timeout, connection refused, etc.).
+      // Do NOT retry with GET — the server is likely unreachable entirely.
+      headNetworkError = true;
+      console.warn(`_link-validator: HEAD network error for ${targetUrl}: ${headErr.message}`);
     }
 
-    // 405 Method Not Allowed: server doesn't support HEAD; try GET
-    if (status === 405) {
+    // 405 Method Not Allowed: server doesn't support HEAD; retry with GET
+    if (!headNetworkError && status === 405) {
       const getResp = await fetch(targetUrl, {
         method:  "GET",
         signal:  controller.signal,
-        headers: { "User-Agent": "SlyRides-LinkValidator/1.0" },
+        headers: { "User-Agent": "SLY-RIDES-LinkValidator/1.0" },
       });
       status = getResp.status;
     }
 
-    ok = status >= 200 && status < 400;
+    if (!headNetworkError) {
+      ok = status !== null && status >= 200 && status < 400;
+    }
   } catch (err) {
-    // Network error, timeout, DNS failure, etc.
-    console.warn(`_link-validator: fetch failed for ${targetUrl}: ${err.message}`);
+    // Outer catch: handles errors from the GET retry on 405, or any other unexpected error.
+    console.warn(`_link-validator: fetch error for ${targetUrl}: ${err.message}`);
     ok     = false;
     status = null;
   } finally {
