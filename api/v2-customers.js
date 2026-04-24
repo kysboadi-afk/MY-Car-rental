@@ -389,7 +389,11 @@ export default async function handler(req, res) {
         try {
           let rrResult = await sb
             .from("revenue_reporting_base")
-            .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, net_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id");
+            .select([
+              "booking_id", "customer_phone", "customer_name", "customer_email",
+              "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
+              "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
+            ].join(", "));
 
           // Keep compatibility with older DBs that haven't applied the canonical
           // reporting view migration yet (migration 0072 adds net_amount and customer fields).
@@ -397,7 +401,12 @@ export default async function handler(req, res) {
             console.warn("v2-customers sync: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
             rrResult = await sb
               .from("revenue_records_effective")
-              .select("booking_id, customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, net_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id, sync_excluded, is_orphan")
+              .select([
+                "booking_id", "customer_phone", "customer_name", "customer_email",
+                "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
+                "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
+                "sync_excluded", "is_orphan",
+              ].join(", "))
               .eq("payment_status", "paid");
           }
 
@@ -708,6 +717,9 @@ export default async function handler(req, res) {
                     // the same booking_id.  Uses the pre-computed net_amount column directly.
                     const netByBookingRef = {};
                     for (const r of rrRows) {
+                      // Defensive: skip cancelled/no-show even though revenue_reporting_base
+                      // filters them out, because the fallback path (revenue_records_effective)
+                      // does not — and rrRows is shared between both paths.
                       if (r.is_cancelled || r.is_no_show || !r.booking_id) continue;
                       // net_amount = gross_amount − refund_amount (GENERATED ALWAYS on revenue_records).
                       // Use it directly; fall back to recomputation only if the field is absent
