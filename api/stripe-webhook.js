@@ -643,8 +643,19 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
   const persistPayload = {
     bookingId:             booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
     name:                  renter_name || "",
-    phone:                 renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || ""),
-    email:                 email || meta.customer_email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
+    phone: normalizePhone(
+      renter_phone ||
+      meta.renter_phone ||
+      paymentIntent.customer_details?.phone ||
+      ""
+    ),
+    email: String(
+      email ||
+      meta.email ||
+      paymentIntent.customer_details?.email ||
+      paymentIntent.receipt_email ||
+      ""
+    ),
     vehicleId,
     vehicleName:           vehicle_name || vehicleId,
     pickupDate:            pickup_date,
