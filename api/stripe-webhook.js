@@ -2099,6 +2099,8 @@ export default async function handler(req, res) {
             change_count:         Number(bkRow.change_count || 0) + 1,
             balance_payment_link: newBalanceLink,
             pending_change:       null,
+            has_protection_plan:  !!newProtectionPlan,
+            protection_plan_tier: newProtectionPlan ? (newProtectionPlanTier || null) : null,
             updated_at:           new Date().toISOString(),
           })
           .eq("booking_ref", bookingRef);

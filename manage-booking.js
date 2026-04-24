@@ -192,11 +192,16 @@
 
       const $status = document.getElementById("s-status");
       const statusMap = {
-        reserved: ["Reserved", "status-reserved"],
-        active:   ["Active",   "status-active"],
-        partial:  ["Partial",  "status-partial"],
+        reserved:             ["Reserved",          "status-reserved"],
+        reserved_unpaid:      ["Awaiting Payment",  "status-partial"],
+        pending:              ["Pending Review",     "status-reserved"],
+        pending_verification: ["Under Review",       "status-partial"],
+        approved:             ["Approved",           "status-active"],
+        active:               ["Active",             "status-active"],
+        partial:              ["Partial",            "status-partial"],
       };
-      const [label, cls] = statusMap[booking.status] || [booking.status || "–", ""];
+      const statusKey = (booking.status || "").toLowerCase().replace(/\s+/g, "_");
+      const [label, cls] = statusMap[statusKey] || [booking.status || "–", ""];
       $status.innerHTML = `<span class="status-badge ${cls}">${label}</span>`;
 
       // Pre-fill edit form with current values
@@ -211,24 +216,34 @@
         const el = document.getElementById("new-return-time");
         if ([...el.options].some((o) => o.value === booking.returnTime)) el.value = booking.returnTime;
       }
+      // Pre-fill protection plan checkbox from current booking state
+      $newProtection.checked = !!booking.hasProtectionPlan;
+      $dppTierRow.style.display = booking.hasProtectionPlan ? "block" : "none";
+      if (booking.protectionPlanTier) {
+        const tierEl = document.getElementById("new-protection-tier");
+        if ([...tierEl.options].some((o) => o.value === booking.protectionPlanTier)) {
+          tierEl.value = booking.protectionPlanTier;
+        }
+      }
 
-      // Lock editing if booking status is beyond "editable" states.
-      // Statuses that allow edits: reserved, pending.
-      // Statuses that are verified but read-only: approved, pending_verification.
-      const editableStatuses = ["reserved", "pending"];
-      const managedStatuses  = ["reserved", "pending", "pending_verification", "approved"];
-      const isLocked = !editableStatuses.includes(booking.status);
+      // Statuses that allow date/vehicle/plan edits online
+      const editableStatuses = ["reserved", "reserved_unpaid", "pending"];
+      // Statuses that allow the pay-balance button
+      const managedStatuses  = ["reserved", "reserved_unpaid", "pending", "pending_verification", "approved", "active"];
+      const isLocked = !editableStatuses.includes(statusKey);
       if (isLocked) {
         $lockNotice.style.display = "block";
-        if (booking.status === "approved") {
+        if (statusKey === "approved" || statusKey === "active") {
           $lockNotice.innerHTML = "✅ Your booking has been confirmed. Dates and vehicle cannot be changed online. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> if you need assistance.";
-        } else if (booking.status === "pending_verification") {
+        } else if (statusKey === "pending_verification") {
           $lockNotice.innerHTML = "⏳ Your booking is under review. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> if you need to make changes.";
+        } else {
+          $lockNotice.innerHTML = "ℹ️ Your booking is currently locked. Please call <a href=\"tel:+12139166606\">(213) 916-6606</a> for assistance.";
         }
         $editSection.style.display = "none";
       }
 
-      const canPayBalance = managedStatuses.includes(booking.status) &&
+      const canPayBalance = managedStatuses.includes(statusKey) &&
         Number(booking.balanceDue || 0) > 0;
       if (canPayBalance) {
         $payBalanceSection.style.display = "block";
@@ -295,6 +310,8 @@
   // ── DPP tier toggle ─────────────────────────────────────────────────────────
   $newProtection.addEventListener("change", () => {
     $dppTierRow.style.display = $newProtection.checked ? "block" : "none";
+    const $ownInsuranceNote = document.getElementById("own-insurance-note");
+    if ($ownInsuranceNote) $ownInsuranceNote.style.display = $newProtection.checked ? "none" : "block";
     // Reset preview when protection plan changes
     $pricePreview.style.display = "none";
     $btnApply.style.display     = "none";
@@ -537,14 +554,12 @@
     $btnInitBalance.textContent = "Loading Payment…";
     $balanceError.style.display = "none";
     try {
-      const resp = await fetch("/api/complete-booking", {
+      const resp = await fetch(API_BASE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "create_payment_intent",
-          booking_ref: booking.bookingId,
-          email: booking.customerEmail || undefined,
-          phone: booking.customerPhone || undefined,
+          action: "create_balance_payment_intent",
+          token:  activeToken,
         }),
       });
       const data = await resp.json();
