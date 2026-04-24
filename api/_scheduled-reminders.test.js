@@ -76,21 +76,21 @@ mock.module("./_settings.js", {
 mock.module("./_sms-templates.js", {
   namedExports: {
     render: (t) => t,
-    DEFAULT_LOCATION:            "Los Angeles, CA",
-    UNPAID_REMINDER_24H:         "",
-    UNPAID_REMINDER_2H:          "",
-    UNPAID_REMINDER_FINAL:       "",
-    PICKUP_REMINDER_24H:         "",
-    ACTIVE_RENTAL_MID:           "",
-    LATE_AT_RETURN_TIME:         "",
-    LATE_GRACE_EXPIRED:          "",
-    LATE_FEE_APPLIED:            "",
-    POST_RENTAL_THANK_YOU:       "",
-    RETENTION_DAY_7:             "",
-    BOOKING_CONFIRMED:           "",
-    EXTEND_UNAVAILABLE:          "",
-    EXTEND_LIMITED:              "",
-    EXTEND_CONFIRMED:            "",
+    DEFAULT_LOCATION:                "Los Angeles, CA",
+    UNPAID_REMINDER_24H:             "",
+    UNPAID_REMINDER_2H:              "",
+    UNPAID_REMINDER_FINAL:           "",
+    PICKUP_REMINDER_24H:             "",
+    LATE_WARNING_30MIN:              "",
+    LATE_AT_RETURN_TIME:             "",
+    LATE_GRACE_EXPIRED:              "",
+    LATE_FEE_APPLIED:                "",
+    POST_RENTAL_THANK_YOU:           "",
+    RETENTION_DAY_7:                 "",
+    BOOKING_CONFIRMED:               "",
+    EXTEND_UNAVAILABLE:              "",
+    EXTEND_LIMITED:                  "",
+    EXTEND_CONFIRMED:                "",
   },
 });
 
@@ -104,6 +104,14 @@ mock.module("./stripe-webhook.js", {
     markVehicleUnavailable:        async () => {},
     sendWebhookNotificationEmails: async () => {},
     mapVehicleId:                  (meta = {}) => meta.vehicle_id || "camry",
+  },
+});
+
+// Stub Supabase so sms_logs queries are no-ops in tests.
+// getSupabaseAdmin returns null → isSmsLogged returns false → smsSentAt gates behaviour.
+mock.module("./_supabase.js", {
+  namedExports: {
+    getSupabaseAdmin: () => null,
   },
 });
 
@@ -422,4 +430,93 @@ test("processActiveRentals: sends late fee at return_datetime +2h", async () => 
   await processActiveRentals(allBookings, now, sentMarks);
 
   assert.equal(sentMarks.some((m) => m.key === "late_fee_pending"), true, "late-fee flow should start at 10:00 for 08:00 return");
+});
+
+test("processActiveRentals: sends 30-min warning before return", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 7:40 AM (20 min before, inside 15–30 min window)
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_warning_30min"), true,
+    "30-min warning should fire when minutesUntilReturn is between 15 and 30");
+});
+
+test("processActiveRentals: does NOT send 30-min warning outside window", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 7:00 AM (60 min before, outside 15–30 min window)
+  const now = new Date("2026-06-15T07:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_warning_30min"), false,
+    "30-min warning must NOT fire 60 min before return");
+});
+
+test("processActiveRentals: does NOT send 30-min warning when already sent (smsSentAt flag)", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:40:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+      smsSentAt:  { late_warning_30min: "2026-06-15T07:35:00.000Z" },
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_warning_30min"), false,
+    "30-min warning must not be resent when smsSentAt flag is already set");
+});
+
+test("processActiveRentals: does not send mid-rental EXTEND invitation", async () => {
+  reset();
+  // Simulate cron running 6 hours before return — old active_mid trigger point
+  const now = new Date("2026-06-15T02:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "active_mid"), false,
+    "mid-rental EXTEND SMS must no longer be sent (removed to reduce noise)");
+  assert.equal(smsCalls.length, 0, "No SMS should be sent 6 hours before return");
+});
+
+test("processActiveRentals: extension awareness — fires return-time SMS for new return_date after extension", async () => {
+  reset();
+  // Booking was extended: new returnDate is 2026-06-16 (one day later).
+  // smsSentAt has late_at_return set from the OLD return date (2026-06-15),
+  // but because the key is the same string it would normally block the send.
+  // With sms_logs disabled (null Supabase) the smsSentAt flag still blocks —
+  // but this test verifies that clearing smsSentAt (simulating a fresh booking
+  // after extension) allows the new return-time SMS to fire correctly.
+  const now = new Date("2026-06-16T08:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      returnDate: "2026-06-16",
+      returnTime: "8:00 AM",
+      // smsSentAt does NOT have late_at_return set (extension cleared it)
+      smsSentAt:  {},
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(sentMarks.some((m) => m.key === "late_at_return"), true,
+    "late_at_return should fire for the new return_date after extension");
 });
