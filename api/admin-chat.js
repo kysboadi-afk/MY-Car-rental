@@ -327,7 +327,7 @@ Ask for any fields that were not already provided. Collect all of the following 
 
 ### Step 2 — Generate vehicle_id
 
-Generate the vehicle_id as: **make + year** — lowercase letters and digits only, no spaces or separators.
+Generate the vehicle_id as: **model + year** — lowercase letters and digits only, no spaces or separators.
 
 Examples:
 - Toyota Camry 2014 → `camry2014`
@@ -434,7 +434,7 @@ Validation rules (reject and re-ask if violated):
 - purchase_price must be a positive number
 - purchase_date must be a valid calendar date in YYYY-MM-DD format
 - type must always be "car" — never "slingshot" (those are managed separately)
-- vehicle_id must be lowercase letters and digits only (no spaces, max 50 chars)
+- vehicle_id must be lowercase letters, digits, hyphens, or underscores (2–50 chars)
 
 ## Mileage & maintenance context
 - For questions about a specific vehicle's maintenance (e.g. "What's the maintenance status of Camry 2013?"), ALWAYS call get_maintenance_status with the vehicle name. Never use get_mileage for single-vehicle maintenance queries.
