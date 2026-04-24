@@ -401,6 +401,7 @@ export default async function handler(req, res) {
 
     // 3. Last-resort fallback: bookings.json (legacy GitHub-stored bookings)
     if (!row) {
+      console.warn("[manage-booking] Supabase miss → fallback used", bookingId);
       try {
         const { data } = await loadBookings();
         vehicleLoop: for (const vehicleId of Object.keys(data)) {
