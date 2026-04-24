@@ -90,10 +90,10 @@ async function runStep(traceId, stepName, fn, payload = null) {
 
 const BOOKING_STATUS_MAP = {
   reserved_unpaid:  "pending",
-  booked_paid:      "approved",
+  booked_paid:      "pending",
   active_rental:    "active",
   completed_rental: "completed",
-  cancelled_rental: "cancelled",
+  cancelled_rental: "completed",
 };
 
 function normalizeEmail(email) {
@@ -115,7 +115,19 @@ function buildAtomicPayload(booking) {
   const amountPaid = Number(booking.amountPaid || 0);
   const totalPrice = Number(booking.totalPrice || amountPaid);
   const remainingBalance = Math.max(0, totalPrice - amountPaid);
-  const paymentStatus = amountPaid > 0 ? (remainingBalance > 0 ? "partial" : "paid") : "unpaid";
+
+  const resolvedStatus = BOOKING_STATUS_MAP[booking.status] || booking.status || "pending";
+
+  // Use the caller's explicit paymentStatus when provided (e.g. "partial" for
+  // reservation_deposit); fall back to deriving it from amounts.  Then enforce
+  // the DB constraint: status='reserved' always requires payment_status='partial'
+  // regardless of arithmetic (guards the edge case where totalPrice equals
+  // amountPaid, making remaining=0 and the derived value wrong).
+  let paymentStatus = booking.paymentStatus ||
+    (amountPaid > 0 ? (remainingBalance > 0 ? "partial" : "paid") : "unpaid");
+  if (resolvedStatus === "reserved" && paymentStatus !== "partial") {
+    paymentStatus = "partial";
+  }
 
   return {
     p_customer_name: booking.name || "Unknown",
@@ -127,7 +139,7 @@ function buildAtomicPayload(booking) {
     p_return_date: booking.returnDate || null,
     p_pickup_time: parseTime12h(booking.pickupTime || ""),
     p_return_time: parseTime12h(booking.returnTime || ""),
-    p_status: BOOKING_STATUS_MAP[booking.status] || booking.status || "pending",
+    p_status: resolvedStatus,
     p_total_price: totalPrice,
     p_deposit_paid: amountPaid,
     p_remaining_balance: remainingBalance,
