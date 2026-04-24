@@ -56,6 +56,10 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
 
+// Stale reservation threshold
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;  // 24 hours
+const SIXTY_DAYS_MS      = 60 * 24 * 60 * 60 * 1000;
+
 // Dedup: only fire one alert per this many milliseconds.
 const ALERT_COOLDOWN_MS  = 60 * 60 * 1000; // 1 hour
 const ALERT_COOLDOWN_KEY = "health_alert_last_sent_at";
@@ -323,7 +327,7 @@ async function checkOrphanRevenue(sb) {
 // Check 5 — Stale / stuck reservations
 async function checkStaleReservations(sb) {
   try {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
 
     const { data: staleRows, error: sErr } = await sb
       .from("bookings")
@@ -370,7 +374,7 @@ async function checkStaleReservations(sb) {
 // these are Stripe-confirmed payments for which no booking was ever created.
 async function checkStripePaymentNoBooking(sb) {
   try {
-    const cutoff60d = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const cutoff60d = new Date(Date.now() - SIXTY_DAYS_MS).toISOString();
 
     const { data: orphanPIRows, error: oErr } = await sb
       .from("revenue_records")
@@ -552,7 +556,7 @@ async function fixOrphanRevenue(sb) {
 
 // Fix 5: cancel stale unpaid reservations older than 24 hours
 async function fixStaleReservations(sb) {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();
 
   const { data: staleRows, error: sErr } = await sb
     .from("bookings")
@@ -583,7 +587,7 @@ async function fixStaleReservations(sb) {
 // Fix 6: queue orphan-PI revenue records for booking reconstruction
 // Marks them is_orphan=false so revenue-self-heal cron picks them up.
 async function fixStripePaymentNoBooking(sb) {
-  const cutoff60d = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff60d = new Date(Date.now() - SIXTY_DAYS_MS).toISOString();
 
   const { data: rows, error: oErr } = await sb
     .from("revenue_records")

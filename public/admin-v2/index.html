@@ -6139,8 +6139,7 @@ function renderSystemHealth(data) {
 
     const fixBtnHtml = c.fixable && c.status !== 'ok'
       ? `<div style="margin-top:10px;">
-           <button class="btn btn-secondary btn-sm" id="fix-btn-${esc(checkKey)}"
-             onclick="fixHealthCheck('${esc(checkKey)}', this)" style="font-size:12px;">
+           <button class="btn btn-secondary btn-sm health-fix-btn" data-check-key="${esc(checkKey)}" style="font-size:12px;">
              🔧 Fix Now
            </button>
          </div>`
@@ -6160,6 +6159,11 @@ function renderSystemHealth(data) {
       ${fixBtnHtml}
     </div>`;
   }).join('');
+
+  // Attach Fix Now button listeners via event delegation (avoids inline onclick XSS)
+  grid.querySelectorAll('.health-fix-btn').forEach((btn) => {
+    btn.addEventListener('click', function() { fixHealthCheck(this.dataset.checkKey, this); });
+  });
 }
 
 async function fixHealthCheck(checkKey, btn) {
