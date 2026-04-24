@@ -484,11 +484,30 @@ async function fixPaymentBookingRevenue(sb) {
   );
   if (missing.length === 0) return { fixed: 0, message: "No missing revenue records found." };
 
-  let fixed = 0;
+  let fixed   = 0;
+  let skipped = 0;
   const failures = [];
 
   for (const b of missing) {
     try {
+      // Per-row idempotency guard — re-check immediately before inserting so
+      // concurrent invocations (cron + manual) cannot create duplicate records.
+      // This is a second check on top of the bulk revenueRefs filter above.
+      const { data: existing, error: existErr } = await sb
+        .from("revenue_records")
+        .select("id")
+        .eq("booking_id", b.booking_ref)
+        .maybeSingle();
+      if (existErr) {
+        throw new Error(`pre-insert check failed for ${b.booking_ref}: ${existErr.message}`);
+      }
+      if (existing?.id) {
+        // A record appeared between the bulk query and this insert — skip it.
+        skipped++;
+        console.log(`[v2-system-health] fix_revenue: skipped ${b.booking_ref} (record already exists)`);
+        continue;
+      }
+
       await autoCreateRevenueRecord({
         bookingId:       b.booking_ref,
         vehicleId:       b.vehicle_id,
@@ -573,7 +592,7 @@ async function fixStaleReservations(sb) {
   const refs = rows.map((r) => r.booking_ref).filter(Boolean);
   const { error: updateErr } = await sb
     .from("bookings")
-    .update({ status: "cancelled" })
+    .update({ status: "cancelled_rental" })
     .in("booking_ref", refs);
   if (updateErr) throw new Error("Could not cancel reservations: " + updateErr.message);
 
