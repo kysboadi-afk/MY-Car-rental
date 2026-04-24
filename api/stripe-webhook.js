@@ -2109,7 +2109,6 @@ export default async function handler(req, res) {
 
       // Create/update the revenue record for the charge (idempotent by PI ID).
       try {
-        const customerId = await resolveCustomerIdFromSupabase("", "");
         let feeFields = { stripeFee: null, stripeNet: null };
         try {
           feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
@@ -2120,7 +2119,7 @@ export default async function handler(req, res) {
           bookingId:       resolvedRef,
           paymentIntentId: paymentIntent.id,
           vehicleId:       vehicleId,
-          customerId,
+          customerId:      null,
           name:            renterName,
           amountPaid,
           paymentMethod:   "stripe",
