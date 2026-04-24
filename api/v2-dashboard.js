@@ -186,17 +186,20 @@ export default async function handler(req, res) {
 
     // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
     const now = new Date();
-    // Use LA wall-clock date so "today" aligns with the stored booking dates
-    // (which are always in America/Los_Angeles, not UTC).
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
+    // Anchor "today" to Los Angeles wall-clock time so the boundaries align with
+    // LA operations regardless of where the Vercel function runs.
+    // todayLA = LA midnight (start of current LA day).
+    const todayLA = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    todayLA.setHours(0, 0, 0, 0);
+    // ISO date string kept for the "returns today" check (date equality).
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
     let activeBookings   = 0;
     let pendingApprovals = 0;
     let overdueCount     = 0;
     let returnsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      const isCancelled = booking.status === "cancelled_rental";
-      if (isCancelled) {
+      if (booking.status === "cancelled_rental") {
         // Cancelled bookings never contribute to any active/overdue KPIs.
         continue;
       }
@@ -207,21 +210,27 @@ export default async function handler(req, res) {
       // return time stored (returnDateTime would be null/invalid).
       const bookingIsOverdue = booking.status === "overdue"
         || (!!returnDateTime && now >= returnDateTime);
-      // Active rental = date range only: pickup has started AND return has not passed.
+      // Active rental = date range only, timezone-safe:
+      //   pickup midnight <= LA today  AND  return end-of-day >= LA today
       // Status-agnostic so new statuses never break the count.
-      // Both dates must be present; if either is missing the booking is not counted
-      // as active (incomplete data should not inflate the KPI).
-      const pickupStarted = !!booking.pickupDate && booking.pickupDate <= today;
-      const notReturned   = !!booking.returnDate && booking.returnDate >= today;
-      const bookingIsActive = pickupStarted && notReturned
-        && (!returnDateTime || now < returnDateTime);
+      // Both dates must be present; missing dates do not inflate the KPI.
+      let bookingIsActive = false;
+      if (booking.pickupDate && booking.returnDate) {
+        const pickup = new Date(booking.pickupDate);
+        pickup.setHours(0, 0, 0, 0);
+        const returnD = new Date(booking.returnDate);
+        returnD.setHours(23, 59, 59, 999);
+        bookingIsActive = pickup <= todayLA
+          && returnD >= todayLA
+          && (!returnDateTime || now < returnDateTime);
+      }
       if (bookingIsActive || bookingIsOverdue) {
         activeBookings++;
         activeOrOverdueBookings.push(booking);
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (booking.returnDate === today && bookingIsActive) {
+      if (booking.returnDate === todayStr && bookingIsActive) {
         returnsTodayCount++;
       }
     }
