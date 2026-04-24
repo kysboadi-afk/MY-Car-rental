@@ -553,9 +553,9 @@ async function requestLateFeeApproval(booking, feeAmount) {
     try {
       const smsText =
         `[SLY RIDES] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
-        `Approve $${feeAmount}: ${approveUrl}\n` +
-        `Adjust: ${adjustUrl}\n` +
-        `Decline: ${declineUrl}`;
+        `Approve $${feeAmount} charge: ${approveUrl}\n` +
+        `Adjust amount: ${adjustUrl}\n` +
+        `Decline (no charge): ${declineUrl}`;
       await sendSms(OWNER_PHONE, smsText);
       sent = true;
     } catch (err) {
