@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -670,6 +670,66 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     ...extraFields,
   };
   console.log("[BOOKING_DATA]", persistPayload);
+
+  // ── Explicit Supabase pre-write (BEFORE persistBooking) ──────────────────
+  // Guarantee the booking row exists in Supabase before the full pipeline
+  // runs.  This ensures Supabase is written first even if persistBooking()
+  // later encounters a transient error on a subsequent step.
+  {
+    const sbPre = getSupabaseAdmin();
+    if (!sbPre) {
+      throw new Error(
+        `stripe-webhook: Supabase admin client unavailable — cannot pre-write booking ${persistPayload.bookingId} for PI ${paymentIntent.id}`
+      );
+    }
+
+    const isDepositPayment =
+      paymentIntent.metadata?.payment_type === "reservation_deposit";
+
+    const preWriteRecord = {
+      booking_ref:               persistPayload.bookingId,
+      vehicle_id:                normalizeVehicleId(vehicleId) || null,
+      pickup_date:               pickup_date  || null,
+      return_date:               return_date  || null,
+      pickup_time:               parseTime12h(pickup_time  || "") || null,
+      return_time:               parseTime12h(return_time  || "") || null,
+      status:                    isDepositPayment ? "reserved" : persistPayload.status,
+      total_price:               totalPrice,
+      deposit_paid:              amountPaid,
+      remaining_balance:         Math.max(0, totalPrice - amountPaid),
+      payment_status:            isDepositPayment
+                                   ? "partial"
+                                   : (persistPayload.paymentStatus || "unpaid"),
+      payment_method:            "stripe",
+      payment_intent_id:         paymentIntent.id,
+      stripe_customer_id:        persistPayload.stripeCustomerId        || null,
+      stripe_payment_method_id:  persistPayload.stripePaymentMethodId   || null,
+      customer_name:             persistPayload.name  || null,
+      customer_email:            persistPayload.email || null,
+      customer_phone:            persistPayload.phone || null,
+    };
+
+    const { data: preWriteData, error: preWriteError } = await sbPre
+      .from("bookings")
+      .upsert(preWriteRecord, { onConflict: "booking_ref" })
+      .select("booking_ref");
+
+    if (preWriteError) {
+      throw new Error(
+        `stripe-webhook: Supabase pre-write failed for PI ${paymentIntent.id} bookingId=${persistPayload.bookingId}: ${preWriteError.message}`
+      );
+    }
+
+    if (!preWriteData || preWriteData.length === 0) {
+      console.warn(
+        `stripe-webhook: Supabase pre-write returned no rows for PI ${paymentIntent.id} bookingId=${persistPayload.bookingId} — row may not have been affected`
+      );
+    } else {
+      console.log(
+        `stripe-webhook: Supabase pre-write succeeded for PI ${paymentIntent.id} bookingId=${persistPayload.bookingId}`
+      );
+    }
+  }
 
   let result = null;
   let supabaseExists = false;

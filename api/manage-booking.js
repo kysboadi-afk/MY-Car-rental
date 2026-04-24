@@ -408,6 +408,7 @@ export default async function handler(req, res) {
             (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
           );
           if (match) {
+            console.warn("[manage-booking] Supabase miss → fallback used", bookingId);
             row = {
               booking_ref:       match.bookingId,
               vehicle_id:        match.vehicleId,

@@ -211,11 +211,37 @@ mock.module("./_supabase.js", {
         // Fluent builder — assembles select/eq/maybeSingle or update/eq chains.
         let _selectCols = null;
         let _updatePayload = null;
+        let _upsertPayload = null;
         const _eqFilters = {};
 
         const builder = {
-          select(cols) { _selectCols = cols; return builder; },
+          select(cols) {
+            _selectCols = cols;
+            // Terminate a upsert().select() chain — return rows that were upserted.
+            if (_upsertPayload !== null && table === "bookings") {
+              const key = _upsertPayload.booking_ref;
+              const row = key ? { booking_ref: key } : null;
+              return Promise.resolve({ data: row ? [row] : [], error: null });
+            }
+            return builder;
+          },
           update(payload) { _updatePayload = payload; return builder; },
+          upsert(payload, _opts) {
+            _upsertPayload = payload;
+            if (table === "bookings" && payload?.booking_ref) {
+              const key = payload.booking_ref;
+              supabaseBookingsStore[key] = {
+                ...(supabaseBookingsStore[key] || {}),
+                id: supabaseBookingsStore[key]?.id || `sb_${key}`,
+                booking_ref: key,
+                payment_intent_id: payload.payment_intent_id || supabaseBookingsStore[key]?.payment_intent_id || null,
+                status: payload.status || supabaseBookingsStore[key]?.status || null,
+                return_date: payload.return_date || supabaseBookingsStore[key]?.return_date || null,
+                total_price: payload.total_price ?? supabaseBookingsStore[key]?.total_price ?? 0,
+              };
+            }
+            return builder;
+          },
           eq(col, val) {
             _eqFilters[col] = val;
             if (_updatePayload !== null) {
@@ -439,7 +465,7 @@ test("webhook new booking: PREFLIGHT — all four sync helpers fire on new payme
   );
 });
 
-test("webhook new booking: retries persistence checks and still creates only one booking", async () => {
+test("webhook new booking: pre-write guarantees Supabase row and idempotent json entry", async () => {
   resetStore(); resetCalls();
   const event = piSucceededEvent({
     vehicle_id: "camry", vehicle_name: "Camry 2012",
@@ -449,6 +475,9 @@ test("webhook new booking: retries persistence checks and still creates only one
   });
   event.data.object.id = "pi_retry_booking";
   try {
+    // Simulate autoUpsertBooking not writing for the first 2 pipeline calls.
+    // The explicit pre-write upsert now guarantees supabaseExists=true before
+    // the pipeline loop starts, so the loop exits after one pass regardless.
     skipSupabaseUpsertPi = "pi_retry_booking";
     skipSupabaseUpsertCount = 2;
 
@@ -456,14 +485,18 @@ test("webhook new booking: retries persistence checks and still creates only one
     await handler(makeWebhookReq(event), res);
     assert.equal(res._status, 200);
 
+    // Pre-write must have stored the booking in Supabase (keyed by booking_ref).
     const persisted = Object.values(supabaseBookingsStore).find(
       (r) => r.payment_intent_id === "pi_retry_booking"
     );
-    assert.ok(persisted, "webhook retries must eventually persist the booking in Supabase");
-    assert.ok(automationCalls.booking.length >= 3, "webhook must retry booking persistence when verification fails");
+    assert.ok(persisted, "pre-write must persist the booking in Supabase before the pipeline runs");
 
+    // Pipeline must have run at least once.
+    assert.ok(automationCalls.booking.length >= 1, "pipeline must call autoUpsertBooking at least once");
+
+    // Idempotency: bookings.json must contain exactly one entry for this PI.
     const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
-    assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings during retries");
+    assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings");
   } finally {
     skipSupabaseUpsertPi = null;
     skipSupabaseUpsertCount = 0;
