@@ -562,7 +562,7 @@ async function toolAddVehicle({ vehicleId, vehicleName, type, dailyRate }) {
 // ISO date pattern YYYY-MM-DD
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-async function toolCreateVehicle({ name, type, price_per_day, purchase_price, purchase_date, bouncie_device_id }) {
+async function toolCreateVehicle({ vehicle_id: requestedVehicleId, name, type, price_per_day, weekly_rate, deposit, purchase_price, purchase_date, bouncie_device_id }) {
   // ── Validation ─────────────────────────────────────────────────────────────
   if (!name || !String(name).trim()) throw new Error("name is required");
 
@@ -574,6 +574,16 @@ async function toolCreateVehicle({ name, type, price_per_day, purchase_price, pu
   const dailyRate = Number(price_per_day);
   if (!price_per_day || isNaN(dailyRate) || dailyRate <= 0) {
     throw new Error("price_per_day must be a number greater than 0");
+  }
+
+  const weeklyRate = weekly_rate != null ? Number(weekly_rate) : null;
+  if (weeklyRate !== null && (isNaN(weeklyRate) || weeklyRate < 0)) {
+    throw new Error("weekly_rate must be a non-negative number");
+  }
+
+  const depositAmt = deposit != null ? Number(deposit) : null;
+  if (depositAmt !== null && (isNaN(depositAmt) || depositAmt < 0)) {
+    throw new Error("deposit must be a non-negative number");
   }
 
   const purchaseCost = Number(purchase_price);
@@ -589,25 +599,39 @@ async function toolCreateVehicle({ name, type, price_per_day, purchase_price, pu
     throw new Error(`purchase_date "${purchase_date}" is not a valid calendar date`);
   }
 
-  // ── ID generation (reuse same logic as toolAddVehicle) ────────────────────
+  // ── ID generation ─────────────────────────────────────────────────────────
   const vehicles = await loadAllVehicles();
 
-  const base = String(name)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 45) || "vehicle";
-
+  // Validate and use a caller-supplied vehicle_id when provided.
+  const VEHICLE_ID_RE_LOCAL = /^[a-z0-9_-]{2,50}$/;
   let vehicleId;
-  if (!vehicles[base]) {
-    vehicleId = base;
+  if (requestedVehicleId) {
+    const candidateId = String(requestedVehicleId).trim().toLowerCase();
+    if (!VEHICLE_ID_RE_LOCAL.test(candidateId)) {
+      throw new Error(`vehicle_id "${candidateId}" is invalid — must be 2–50 lowercase letters, digits, hyphens, or underscores`);
+    }
+    if (vehicles[candidateId]) {
+      throw new Error(`vehicle_id "${candidateId}" is already taken — choose a different ID`);
+    }
+    vehicleId = candidateId;
   } else {
-    let attempts = 0;
-    do {
-      if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${name}"`);
-      const suffix = randomBytes(3).toString("hex").slice(0, 4);
-      vehicleId = `${base}-${suffix}`;
-    } while (vehicles[vehicleId]);
+    // Auto-generate from name (reuse same logic as toolAddVehicle)
+    const base = String(name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 45) || "vehicle";
+
+    if (!vehicles[base]) {
+      vehicleId = base;
+    } else {
+      let attempts = 0;
+      do {
+        if (++attempts > 100) throw new Error(`Could not generate a unique vehicle ID from name "${name}"`);
+        const suffix = randomBytes(3).toString("hex").slice(0, 4);
+        vehicleId = `${base}-${suffix}`;
+      } while (vehicles[vehicleId]);
+    }
   }
 
   // ── Build vehicle record ───────────────────────────────────────────────────
@@ -620,6 +644,8 @@ async function toolCreateVehicle({ name, type, price_per_day, purchase_price, pu
     purchase_price: purchaseCost,
     purchase_date:  purchase_date,
   };
+  if (weeklyRate !== null) vehicleObj.weekly = weeklyRate;
+  if (depositAmt !== null) vehicleObj.deposit = depositAmt;
 
   // ── Write to Supabase ──────────────────────────────────────────────────────
   const sb = getSupabaseAdmin();
@@ -660,6 +686,8 @@ async function toolCreateVehicle({ name, type, price_per_day, purchase_price, pu
     name:           vehicleObj.vehicle_name,
     type:           resolvedType,
     price_per_day:  dailyRate,
+    weekly_rate:    weeklyRate,
+    deposit:        depositAmt,
     purchase_price: purchaseCost,
     purchase_date,
     bouncie_device_id: bouncie_device_id || null,
