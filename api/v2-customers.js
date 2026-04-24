@@ -389,15 +389,24 @@ export default async function handler(req, res) {
         try {
           let rrResult = await sb
             .from("revenue_reporting_base")
-            .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id");
+            .select([
+              "booking_id", "customer_phone", "customer_name", "customer_email",
+              "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
+              "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
+            ].join(", "));
 
           // Keep compatibility with older DBs that haven't applied the canonical
-          // reporting view migration yet.
+          // reporting view migration yet (migration 0072 adds net_amount and customer fields).
           if (rrResult.error && isSchemaError(rrResult.error)) {
             console.warn("v2-customers sync: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
             rrResult = await sb
               .from("revenue_records_effective")
-              .select("customer_phone, customer_name, customer_email, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show, pickup_date, return_date, vehicle_id, sync_excluded, is_orphan")
+              .select([
+                "booking_id", "customer_phone", "customer_name", "customer_email",
+                "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
+                "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
+                "sync_excluded", "is_orphan",
+              ].join(", "))
               .eq("payment_status", "paid");
           }
 
@@ -679,43 +688,109 @@ export default async function handler(req, res) {
               }
 
               if (!schemaError) {
-                // ── Patch total_bookings from the bookings table ──────────────
-                // revenue_records may include duplicates or missing records, so
-                // the authoritative booking count comes from the bookings table.
-                // This runs after the upsert so all customer rows exist with IDs.
+                // ── Patch total_bookings and total_spent from bookings ⨯ revenue_records ──
+                // Implements the canonical aggregation:
+                //   SELECT b.customer_email,
+                //          COUNT(DISTINCT b.id)  AS bookings,
+                //          SUM(r.net_amount)     AS total_spent
+                //   FROM   bookings b
+                //   LEFT JOIN revenue_records r ON r.booking_id = b.booking_ref
+                //   GROUP BY b.customer_email
+                //
+                // Note: in revenue_records the column that stores the booking reference
+                // value is named booking_id (not booking_ref), so the join is:
+                //   r.booking_id = b.booking_ref
+                // net_amount is the GENERATED ALWAYS column (gross_amount − refund_amount)
+                // and is used directly here — no recomputation.
+                // Sums across ALL revenue types (rental, extension, fee) that share
+                // the same booking_id.
                 try {
                   const CANCELLED_STATUSES = ["cancelled", "cancelled_rental"];
-                  const { data: bkRows } = await sb
+                  const { data: bkRows, error: bkErr } = await sb
                     .from("bookings")
-                    .select("customer_id")
-                    .not("customer_id", "is", null)
+                    .select("id, booking_ref, customer_email, customer_id")
                     .not("status", "in", `(${CANCELLED_STATUSES.join(",")})`);
 
-                  if (Array.isArray(bkRows) && bkRows.length > 0) {
-                    const countById = {};
-                    for (const row of bkRows) {
-                      countById[row.customer_id] = (countById[row.customer_id] || 0) + 1;
+                  if (!bkErr && Array.isArray(bkRows) && bkRows.length > 0) {
+                    // Index net_amount per booking_id (= b.booking_ref) from rrRows.
+                    // Sums across ALL revenue types (rental + extension + fee) that share
+                    // the same booking_id.  Uses the pre-computed net_amount column directly.
+                    const netByBookingRef = {};
+                    for (const r of rrRows) {
+                      // Defensive: skip cancelled/no-show even though revenue_reporting_base
+                      // filters them out, because the fallback path (revenue_records_effective)
+                      // does not — and rrRows is shared between both paths.
+                      if (r.is_cancelled || r.is_no_show || !r.booking_id) continue;
+                      // net_amount = gross_amount − refund_amount (GENERATED ALWAYS on revenue_records).
+                      // Use it directly; fall back to recomputation only if the field is absent
+                      // (e.g. when queried from an older view that predates migration 0072).
+                      const net = r.net_amount != null
+                        ? Number(r.net_amount)
+                        : Number(r.gross_amount || 0) - Number(r.refund_amount || 0);
+                      netByBookingRef[r.booking_id] = (netByBookingRef[r.booking_id] || 0) + net;
                     }
 
-                    // Fetch the IDs of the phone-keyed customers we just upserted
-                    const phones = phoneUpserts.map((u) => u.phone);
-                    const { data: freshCustomers } = await sb
-                      .from("customers")
-                      .select("id, phone, total_bookings")
-                      .in("phone", phones);
+                    // Group bookings by customer_email and by customer_id (UUID).
+                    // email is the primary key; customer_id covers phone-only bookings.
+                    const byEmail      = {};
+                    const byCustomerId = {};
+                    for (const b of bkRows) {
+                      const email  = normalizeEmail(b.customer_email);
+                      const net    = netByBookingRef[b.booking_ref] ?? 0;
 
-                    for (const cust of (freshCustomers || [])) {
-                      const accurate = countById[cust.id] || 0;
-                      if (accurate !== (cust.total_bookings || 0)) {
+                      if (email) {
+                        if (!byEmail[email]) byEmail[email] = { bookingCount: 0, totalSpent: 0 };
+                        byEmail[email].bookingCount += 1;
+                        byEmail[email].totalSpent   += net;
+                      }
+
+                      if (b.customer_id) {
+                        if (!byCustomerId[b.customer_id]) byCustomerId[b.customer_id] = { bookingCount: 0, totalSpent: 0 };
+                        byCustomerId[b.customer_id].bookingCount += 1;
+                        byCustomerId[b.customer_id].totalSpent   += net;
+                      }
+                    }
+
+                    // Update email-keyed customers with accurate aggregates.
+                    const processedCustomerIds = new Set();
+                    for (const [email, agg] of Object.entries(byEmail)) {
+                      try {
+                        const { existing } = await findMostRecentCustomerByEmail(sb, email);
+                        if (!existing) continue;
+                        processedCustomerIds.add(existing.id);
+                        const totalBookings = agg.bookingCount;
+                        const totalSpent    = Math.round(agg.totalSpent * 100) / 100;
                         await sb.from("customers")
-                          .update({ total_bookings: accurate, updated_at: new Date().toISOString() })
+                          .update({ total_bookings: totalBookings, total_spent: totalSpent, updated_at: new Date().toISOString() })
+                          .eq("id", existing.id);
+                        console.log(`v2-customers sync: corrected totals for ${email}: bookings=${totalBookings} spent=${totalSpent}`);
+                      } catch (emailPatchErr) {
+                        console.warn(`v2-customers sync: email-patch failed for ${email} (non-fatal):`, emailPatchErr.message);
+                      }
+                    }
+
+                    // Update phone-keyed customers not already covered by email lookup.
+                    const phones = phoneUpserts.map((u) => u.phone).filter(Boolean);
+                    if (phones.length > 0) {
+                      const { data: freshCustomers } = await sb
+                        .from("customers")
+                        .select("id, phone")
+                        .in("phone", phones);
+                      for (const cust of (freshCustomers || [])) {
+                        if (processedCustomerIds.has(cust.id)) continue;
+                        const agg = byCustomerId[cust.id];
+                        if (!agg) continue;
+                        const totalBookings = agg.bookingCount;
+                        const totalSpent    = Math.round(agg.totalSpent * 100) / 100;
+                        await sb.from("customers")
+                          .update({ total_bookings: totalBookings, total_spent: totalSpent, updated_at: new Date().toISOString() })
                           .eq("id", cust.id);
-                        console.log(`v2-customers sync: corrected total_bookings for ${cust.id}: ${cust.total_bookings} → ${accurate}`);
+                        console.log(`v2-customers sync: corrected totals for phone-keyed ${cust.id}: bookings=${totalBookings} spent=${totalSpent}`);
                       }
                     }
                   }
                 } catch (bkCountErr) {
-                  console.warn("v2-customers sync: bookings-table count patch failed (non-fatal):", bkCountErr.message);
+                  console.warn("v2-customers sync: join-based totals patch failed (non-fatal):", bkCountErr.message);
                 }
 
                 return res.status(200).json({ synced: totalCustomers, message: `Synced ${totalCustomers} customers from revenue records` });
