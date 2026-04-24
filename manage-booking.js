@@ -231,11 +231,10 @@
       }
 
       const canPayBalance = managedStatuses.includes(booking.status) &&
-        booking.paymentStatus === "partial" &&
         Number(booking.balanceDue || 0) > 0;
       if (canPayBalance) {
         $payBalanceSection.style.display = "block";
-        $btnInitBalance.textContent = `Pay Remaining Balance (${fmt(Number(booking.balanceDue || 0))})`;
+        $btnInitBalance.textContent = `Complete Booking / Pay Balance (${fmt(Number(booking.balanceDue || 0))})`;
       } else {
         $payBalanceSection.style.display = "none";
       }
@@ -540,10 +539,15 @@
     $btnInitBalance.textContent = "Loading Payment…";
     $balanceError.style.display = "none";
     try {
-      const resp = await fetch(API_BASE, {
+      const resp = await fetch("/api/complete-booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create_balance_payment_intent", token: activeToken }),
+        body: JSON.stringify({
+          action: "create_payment_intent",
+          booking_ref: booking.bookingId,
+          email: booking.customerEmail || undefined,
+          phone: booking.customerPhone || undefined,
+        }),
       });
       const data = await resp.json();
       if (!resp.ok || !data.clientSecret) {
@@ -571,7 +575,7 @@
       console.error("manage-booking balance init error:", err);
     } finally {
       $btnInitBalance.disabled = false;
-      $btnInitBalance.textContent = `Pay Remaining Balance (${fmt(Number(booking && booking.balanceDue ? booking.balanceDue : 0))})`;
+      $btnInitBalance.textContent = `Complete Booking / Pay Balance (${fmt(Number(booking && booking.balanceDue ? booking.balanceDue : 0))})`;
     }
   });
 
