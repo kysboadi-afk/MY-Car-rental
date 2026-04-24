@@ -36,23 +36,45 @@ export default async function handler(req, res) {
 
   // ── GET: look up booking by token, email, or phone ───────────────────────
   if (req.method === "GET") {
-    const token = req.query.token;
-    const email = typeof req.query.email === "string" ? req.query.email.trim() : undefined;
-    const phone = typeof req.query.phone === "string" ? req.query.phone.trim() : undefined;
+    const token = req.query.token?.trim();
+    const email = req.query.email?.trim()?.toLowerCase(); // normalize email
+    const phone = req.query.phone?.trim();
 
     let booking = null;
 
-    if (token && typeof token === "string" && token.trim().length >= 32) {
-      booking = await findBookingByToken(token.trim());
-    } else if (email || phone) {
-      booking = await findBookingByEmailOrPhone(email || null, phone || null);
-    } else {
-      return res.status(400).json({ error: "Provide a token, email, or phone number." });
+    // 1. Token flow (existing)
+    if (token && token.length >= 32) {
+      booking = await findBookingByToken(token);
+    }
+
+    // 2. Email / phone lookup (NEW)
+    if (!booking && (email || phone)) {
+      try {
+        const supabase = getSupabaseAdmin();
+
+        const { data, error } = await supabase.rpc("manage_booking_lookup", {
+          p_email: email || null,
+          p_phone: phone || null, // DB handles normalization
+        });
+
+        if (error) {
+          console.error("[complete-booking] lookup error:", error);
+        }
+
+        if (data && data.length > 0) {
+          booking = supabaseRowToBooking(data[0]);
+        }
+      } catch (err) {
+        console.error("[complete-booking] RPC lookup failed:", err.message);
+      }
     }
 
     if (!booking) {
-      return res.status(404).json({ error: "Booking not found. The link may have expired or already been used." });
+      return res.status(404).json({
+        error: "Booking not found. Use your email, phone number, or original link.",
+      });
     }
+
     return res.status(200).json(sanitizeBooking(booking));
   }
 
@@ -111,30 +133,6 @@ async function findBookingByToken(token) {
     console.error("complete-booking: Supabase token lookup error:", err.message);
   }
   return null;
-}
-
-/**
- * Look up a booking via the manage_booking_lookup Supabase RPC,
- * which accepts an email and/or phone number.
- */
-async function findBookingByEmailOrPhone(email, phone) {
-  try {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) return null;
-    const { data, error } = await supabase.rpc("manage_booking_lookup", {
-      p_email: email || null,
-      p_phone: phone || null,
-    });
-    if (error) {
-      console.error("complete-booking: manage_booking_lookup error:", error.message);
-      return null;
-    }
-    const row = Array.isArray(data) ? data[0] : null;
-    return row ? supabaseRowToBooking(row) : null;
-  } catch (err) {
-    console.error("complete-booking: findBookingByEmailOrPhone error:", err.message);
-    return null;
-  }
 }
 
 /**
