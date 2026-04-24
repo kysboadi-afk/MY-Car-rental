@@ -1879,6 +1879,82 @@ export default async function handler(req, res) {
         );
       }
 
+      // ── Step 1: Send owner + renter communications FIRST ─────────────────
+      // Build the balance link before any DB write so the customer email can
+      // include it regardless of whether Supabase persistence succeeds.
+      const balanceLink = buildReservationBalanceLink({
+        bookingId: resolvedBookingId,
+        paymentIntentId: paymentIntent.id,
+        meta,
+        booking: bookingForSync,
+      });
+
+      // Customer email — includes balance payment link
+      try {
+        await sendReservationDepositBalanceEmail({
+          renterEmail: bookingForSync.email,
+          renterName: bookingForSync.name,
+          vehicleName: bookingForSync.vehicleName,
+          pickupDate: bookingForSync.pickupDate,
+          returnDate: bookingForSync.returnDate,
+          depositPaid: amountPaid,
+          remainingBalance,
+          bookingId: resolvedBookingId,
+        });
+      } catch (emailErr) {
+        console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
+      }
+
+      // Owner email — deposit received notification
+      try {
+        await sendReservationDepositBalanceOwnerEmail({
+          renterName: bookingForSync.name,
+          renterEmail: bookingForSync.email,
+          renterPhone: bookingForSync.phone,
+          vehicleName: bookingForSync.vehicleName,
+          bookingId: resolvedBookingId,
+          depositPaid: amountPaid,
+          remainingBalance,
+        });
+      } catch (ownerErr) {
+        console.error("stripe-webhook: reservation_deposit owner balance email failed:", ownerErr.message);
+      }
+
+      // Owner SMS
+      if (process.env.OWNER_PHONE && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        try {
+          const ownerSmsText = [
+            `🔒 Reservation deposit: ${sanitizeSmsValue(bookingForSync.name || "Unknown")}`,
+            `Vehicle: ${sanitizeSmsValue(bookingForSync.vehicleName || vehicle_id || "")}`,
+            `Dates: ${bookingForSync.pickupDate || ""} → ${bookingForSync.returnDate || ""}`,
+            `Deposit: $${amountPaid.toFixed(2)} / Balance: $${remainingBalance.toFixed(2)}`,
+            `PI: ${paymentIntent.id}`,
+          ].join("\n");
+          await sendSms(normalizePhone(process.env.OWNER_PHONE), ownerSmsText.slice(0, MAX_ALERT_SMS_LENGTH));
+        } catch (ownerSmsErr) {
+          console.error("stripe-webhook: reservation_deposit owner SMS error (non-fatal):", ownerSmsErr.message);
+        }
+      }
+
+      // Renter SMS — includes balance payment link
+      try {
+        if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+          await sendSms(
+            normalizePhone(bookingForSync.phone),
+            render(RESERVATION_DEPOSIT_CONFIRMED, {
+              customer_name:     sanitizeSmsValue(bookingForSync.name || ""),
+              vehicle:           sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle"),
+              remaining_balance: remainingBalance.toFixed(2),
+              payment_link:      balanceLink,
+            })
+          );
+        }
+      } catch (smsErr) {
+        console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
+      }
+
+      // ── Step 2: Persist booking to Supabase ───────────────────────────────
+      // Runs AFTER all notifications so DB failures never silence owner/renter alerts.
       try {
         await autoUpsertBooking(bookingForSync, { strict: true });
       } catch (syncErr) {
@@ -1886,6 +1962,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ received: false, error: `reservation deposit booking sync failed for ${paymentIntent.id}` });
       }
 
+      // ── Step 3: Create revenue record ─────────────────────────────────────
       try {
         let feeFields = { stripeFee: null, stripeNet: null };
         try {
@@ -1920,13 +1997,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ received: false, error: `reservation deposit revenue persistence failed for ${paymentIntent.id}` });
       }
 
-      const balanceLink = buildReservationBalanceLink({
-        bookingId: resolvedBookingId,
-        paymentIntentId: paymentIntent.id,
-        meta,
-        booking: bookingForSync,
-      });
-
+      // ── Step 4: Persist balance link and manage token ─────────────────────
       try {
         if (vehicle_id) {
           await updateBooking(vehicle_id, resolvedBookingId, { balancePaymentLink: balanceLink });
@@ -1960,6 +2031,7 @@ export default async function handler(req, res) {
         console.warn("stripe-webhook: manage token generation failed (non-fatal):", tokenErr.message);
       }
 
+      // ── Step 5: Block dates and mark vehicle unavailable ──────────────────
       try {
         if (vehicle_id && pickup_date && return_date) {
           await blockBookedDates(vehicle_id, pickup_date, return_date, pickup_time || "", return_time || "");
@@ -1970,48 +2042,6 @@ export default async function handler(req, res) {
         return res.status(500).json({ received: false, error: `reservation deposit availability sync failed for ${paymentIntent.id}` });
       }
 
-      try {
-        await sendReservationDepositBalanceEmail({
-          renterEmail: bookingForSync.email,
-          renterName: bookingForSync.name,
-          vehicleName: bookingForSync.vehicleName,
-          pickupDate: bookingForSync.pickupDate,
-          returnDate: bookingForSync.returnDate,
-          depositPaid: amountPaid,
-          remainingBalance,
-          bookingId: resolvedBookingId,
-        });
-      } catch (emailErr) {
-        console.error("stripe-webhook: reservation_deposit customer balance email failed:", emailErr.message);
-      }
-      try {
-        await sendReservationDepositBalanceOwnerEmail({
-          renterName: bookingForSync.name,
-          renterEmail: bookingForSync.email,
-          renterPhone: bookingForSync.phone,
-          vehicleName: bookingForSync.vehicleName,
-          bookingId: resolvedBookingId,
-          depositPaid: amountPaid,
-          remainingBalance,
-        });
-      } catch (ownerErr) {
-        console.error("stripe-webhook: reservation_deposit owner balance email failed:", ownerErr.message);
-      }
-      try {
-        if (bookingForSync.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-          await sendSms(
-            normalizePhone(bookingForSync.phone),
-            render(RESERVATION_DEPOSIT_CONFIRMED, {
-              customer_name:     sanitizeSmsValue(bookingForSync.name || ""),
-              vehicle:           sanitizeSmsValue(bookingForSync.vehicleName || "your vehicle"),
-              remaining_balance: remainingBalance.toFixed(2),
-              payment_link:      balanceLink,
-            })
-          );
-        }
-      } catch (smsErr) {
-        console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
-      }
       return res.status(200).json({ received: true });
     }
 
@@ -2667,13 +2697,57 @@ export default async function handler(req, res) {
       logWebhookRouting(paymentIntent, `${paymentType} — processing with generic booking path`);
     }
 
-    // Persist booking first so slow/non-critical side effects cannot prevent
-    // core booking + revenue writes from happening.
-    //
-    // Fee resolution and booking persistence are intentionally decoupled:
-    // a transient Stripe API failure for the balance_transaction lookup must
-    // not prevent the booking from being saved or the owner email from firing.
+    // ── Step 1: Send owner + renter communications FIRST ─────────────────────
+    // Notifications must NEVER depend on DB success.  They fire here, before any
+    // persistence attempt, so the owner and customer are always notified even
+    // when Supabase or the JSON store has a transient failure.
     // stripe-reconcile.js will backfill the stripe_fee later.
+    {
+      const _notifyMeta = paymentIntent.metadata || {};
+
+      // Owner + customer emails (includes rental agreement PDF attachment)
+      try {
+        await sendWebhookNotificationEmails(paymentIntent);
+      } catch (emailErr) {
+        console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
+      }
+
+      // Owner SMS — inform the business of every new confirmed booking
+      if (process.env.OWNER_PHONE && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        try {
+          const ownerSmsText = [
+            `🔔 New booking: ${sanitizeSmsValue(_notifyMeta.renter_name || "Unknown")}`,
+            `Vehicle: ${sanitizeSmsValue(_notifyMeta.vehicle_name || _notifyMeta.vehicle_id || "")}`,
+            `Dates: ${_notifyMeta.pickup_date || ""} → ${_notifyMeta.return_date || ""}`,
+            `Amount: $${paymentIntent.amount ? (paymentIntent.amount / 100).toFixed(2) : "N/A"}`,
+            `PI: ${paymentIntent.id}`,
+          ].join("\n");
+          await sendSms(normalizePhone(process.env.OWNER_PHONE), ownerSmsText.slice(0, MAX_ALERT_SMS_LENGTH));
+        } catch (ownerSmsErr) {
+          console.error("stripe-webhook: owner booking SMS error (non-fatal):", ownerSmsErr.message);
+        }
+      }
+
+      // Renter SMS — booking confirmation to the customer
+      if (_notifyMeta.renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
+        try {
+          await sendSms(
+            normalizePhone(_notifyMeta.renter_phone),
+            render(BOOKING_CONFIRMED, {
+              customer_name: sanitizeSmsValue(_notifyMeta.renter_name || ""),
+              vehicle:       sanitizeSmsValue(_notifyMeta.vehicle_name || _notifyMeta.vehicle_id || "your vehicle"),
+              pickup_date:   _notifyMeta.pickup_date || "",
+              pickup_time:   _notifyMeta.pickup_time || "",
+              location:      DEFAULT_LOCATION,
+            })
+          );
+        } catch (renterSmsErr) {
+          console.error("stripe-webhook: renter booking SMS error (non-fatal):", renterSmsErr.message);
+        }
+      }
+    }
+
+    // ── Step 2: Fee resolution (non-blocking, reconcile backfills if missing) ─
     let feeFields = null;
     try {
       feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
@@ -2685,6 +2759,9 @@ export default async function handler(req, res) {
       );
     }
 
+    // ── Step 3: Persist booking (Supabase + JSON + revenue record) ───────────
+    // Runs AFTER notifications so DB failures never silence owner/renter alerts.
+    // Returns 500 at the end so Stripe retries if persistence fails.
     let persistenceFailed = false;
     try {
       await saveWebhookBookingRecord(paymentIntent, feeFields || {});
@@ -2692,11 +2769,9 @@ export default async function handler(req, res) {
       persistenceFailed = true;
       // Log the full error (including stack) so the cause is visible in Vercel logs.
       console.error("stripe-webhook: saveWebhookBookingRecord error:", bookingErr);
-      // Do NOT return 500 here — fall through to the email block below so the
-      // owner is still notified.  We return 500 at the end so Stripe retries.
     }
 
-    // Block the booked dates and mark the vehicle unavailable.
+    // ── Step 4: Block the booked dates and mark the vehicle unavailable ───────
     if (vehicle_id && pickup_date && return_date) {
       try {
         await blockBookedDates(vehicle_id, pickup_date, return_date, meta_pickup_time || "", meta_return_time || "");
@@ -2715,19 +2790,8 @@ export default async function handler(req, res) {
       );
     }
 
-    // Send server-side backup notification emails to the owner and customer.
-    // These fire on every confirmed payment as a guaranteed fallback for the
-    // browser-side send-reservation-email call (which can fail if the customer's
-    // sessionStorage is lost during a 3DS redirect or if the browser is closed
-    // before success.html completes).
-    try {
-      await sendWebhookNotificationEmails(paymentIntent);
-    } catch (emailErr) {
-      console.error("stripe-webhook: sendWebhookNotificationEmails error:", emailErr.message);
-    }
-
-    // Return 500 AFTER email so Stripe retries the webhook for persistence,
-    // but the owner notification has already been dispatched.
+    // Return 500 so Stripe retries for persistence failures.
+    // Notifications have already been dispatched above.
     if (persistenceFailed) {
       return res.status(500).json({
         received: false,
