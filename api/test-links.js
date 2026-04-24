@@ -15,13 +15,18 @@
 
 import { validateLink, PAGE_URLS, BASE_URL } from "./_link-validator.js";
 
+// The API base URL — approve-late-fee lives on Vercel, not GitHub Pages.
+const API_BASE_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "https://sly-rides.vercel.app";
+
 export const config = {
   api: { bodyParser: false },
 };
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
-/** Link catalogue — every URL type that can appear in a customer-facing SMS. */
+/** Link catalogue — every URL type that can appear in a customer-facing SMS or owner alert. */
 const LINK_CATALOGUE = [
   {
     name: "Payment / extension page (balance.html)",
@@ -42,6 +47,17 @@ const LINK_CATALOGUE = [
   {
     name: "Homepage (root /)",
     url:  BASE_URL,
+  },
+  // Owner action links — these always return an HTML page (400 for missing token,
+  // never a network error or 404).  We validate the endpoint is reachable, not the
+  // token itself (tokens are single-use time-limited and cannot be pre-generated here).
+  {
+    name:                "Owner late-fee action endpoint (approve-late-fee)",
+    url:                 `${API_BASE_URL}/api/approve-late-fee`,
+    // A GET with no query params returns 400 (malformed link page) — which is
+    // still an HTTP response from a reachable endpoint, so we treat any 4xx from
+    // this URL as "ok" (endpoint reachable).
+    acceptStatusCodes:   [200, 400, 401, 403, 405],
   },
 ];
 
@@ -69,12 +85,18 @@ export default async function handler(req, res) {
 
   // Validate every link in the catalogue concurrently.
   const results = await Promise.all(
-    LINK_CATALOGUE.map(async ({ name, url }) => {
+    LINK_CATALOGUE.map(async ({ name, url, acceptStatusCodes }) => {
       const r = await validateLink(url);
+      // For entries with a custom acceptStatusCodes list (e.g. owner action endpoints
+      // that intentionally return 400 when accessed without a token), treat any listed
+      // status code as success rather than relying solely on validateLink's 2xx logic.
+      const ok = acceptStatusCodes
+        ? acceptStatusCodes.includes(r.status) || r.ok
+        : r.ok;
       return {
         name,
         url,
-        ok:           r.ok,
+        ok,
         status:       r.status,
         fallbackUsed: r.fallbackUsed,
         resolvedUrl:  r.url,
