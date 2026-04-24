@@ -1,17 +1,23 @@
 // api/approve-late-fee.js
-// One-click late-fee approval/decline endpoint for the owner.
+// One-click late-fee approval/decline/adjustment endpoint for the owner.
 //
 // Sent as a link in the automated late-return owner email/SMS when a customer
-// is overdue past the grace period.  The admin clicks Approve → the card is
-// charged immediately via the same executeChargeFee() logic used by the Admin
-// UI and the AI assistant.  Clicking Decline records the decision and does
-// nothing to the card.
+// is overdue past the grace period.
+//
+// Actions:
+//   approve — charge immediately via executeChargeFee() + update late_fee_status
+//   decline — record dismissal + update late_fee_status, no charge
+//   adjust  — show an HTML form to enter a new amount, then re-sign and execute
 //
 // GET /api/approve-late-fee
-//   ?action=approve|decline
+//   ?action=approve|decline|adjust
 //   &bookingId=<id>
 //   &amount=<dollars>
 //   &token=<hmac-signed-token>
+//
+// POST /api/approve-late-fee
+//   For the adjust form submission:
+//   body: { bookingId, originalAmount, newAmount, originalToken }
 //
 // Returns a mobile-friendly HTML result page (no login required — token guards it).
 //
@@ -22,10 +28,13 @@
 //   SMTP_HOST/PORT/USER/PASS — for result confirmation email (optional but recommended)
 //   OWNER_EMAIL            — owner's email address
 
-import { verifyLateFeeToken } from "./_late-fee-token.js";
-import { executeChargeFee }   from "./charge-fee.js";
-import { getSupabaseAdmin }   from "./_supabase.js";
-import nodemailer             from "nodemailer";
+import { verifyLateFeeToken, buildLateFeeUrls } from "./_late-fee-token.js";
+import { executeChargeFee }                      from "./charge-fee.js";
+import { getSupabaseAdmin }                      from "./_supabase.js";
+import { validateLink, PAGE_URLS }               from "./_link-validator.js";
+import { sendSms }                               from "./_textmagic.js";
+import { normalizePhone }                        from "./_bookings.js";
+import nodemailer                                from "nodemailer";
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
@@ -54,6 +63,14 @@ function htmlPage(title, color, heading, body) {
     p    { color: #aaa; line-height: 1.6; }
     .amt { color: #ffb400; font-weight: bold; font-size: 1.2em; }
     a    { color: #1a73e8; }
+    form { text-align: left; margin: 24px 0; }
+    label { display: block; margin-bottom: 6px; color: #ccc; font-size: 14px; }
+    input[type=number] { width: 100%; padding: 10px; border: 1px solid #444; border-radius: 6px;
+                         background: #1a1a1a; color: #eee; font-size: 16px; box-sizing: border-box; }
+    button { display: block; width: 100%; margin-top: 16px; padding: 14px;
+             background: #1a73e8; color: #fff; border: none; border-radius: 8px;
+             font-size: 16px; font-weight: bold; cursor: pointer; }
+    button:hover { background: #1558b0; }
   </style>
 </head>
 <body>
@@ -86,15 +103,74 @@ async function sendResultEmail(subject, html) {
   }
 }
 
+/**
+ * Update bookings.late_fee_status and audit fields in Supabase.
+ * Non-fatal — logs errors but never throws.
+ */
+async function updateLateFeeStatus(bookingId, status, approvedBy) {
+  try {
+    const sb = getSupabaseAdmin();
+    if (!sb || !bookingId) return;
+    await sb
+      .from("bookings")
+      .update({
+        late_fee_status:      status,
+        late_fee_approved_at: new Date().toISOString(),
+        late_fee_approved_by: approvedBy,
+        updated_at:           new Date().toISOString(),
+      })
+      .eq("booking_ref", bookingId);
+  } catch (err) {
+    console.warn("approve-late-fee: late_fee_status update failed (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Build and validate a payment link for the customer as a charge-failed fallback.
+ * Returns a safe URL (original or cars.html fallback).
+ */
+async function buildFallbackPaymentLink(bookingId) {
+  // The balance page is the canonical fallback — customer can pay manually.
+  const baseLink = `${PAGE_URLS.balance}?ref=${encodeURIComponent(bookingId)}&type=late_fee`;
+  const { url } = await validateLink(baseLink, {
+    baseUrlForValidation: PAGE_URLS.balance,
+    fallback:             PAGE_URLS.cars,
+  });
+  return url;
+}
+
+/**
+ * Send a fallback payment link to the customer when off-session charge fails.
+ * Non-fatal.
+ */
+async function sendCustomerFallbackSms(bookingId, amount, phone) {
+  if (!phone || !process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) return;
+  try {
+    const paymentLink = await buildFallbackPaymentLink(bookingId);
+    const msg =
+      `A late fee of $${amount} is owed on your rental.\n\n` +
+      `Please complete payment here:\n${paymentLink}\n\n` +
+      `Questions? Call (213) 916-6606.\n\nReply STOP to opt out.`;
+    await sendSms(normalizePhone(phone), msg);
+  } catch (smsErr) {
+    console.warn("approve-late-fee: fallback SMS to customer failed (non-fatal):", smsErr.message);
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
 
+  // ── POST: adjust form submission ──────────────────────────────────────────
+  if (req.method === "POST") {
+    return handleAdjustPost(req, res);
+  }
+
+  // ── GET: approve / decline / adjust ──────────────────────────────────────
   const { action, bookingId: rawBookingId, amount: rawAmount, token } = req.query || {};
 
-  // ── Basic validation ──────────────────────────────────────────────────────
-  if (!["approve", "decline"].includes(action) || !rawBookingId || !token) {
+  if (!["approve", "decline", "adjust"].includes(action) || !rawBookingId || !token) {
     return res.status(400).send(htmlPage(
       "Error", "#c62828", "❌ Invalid link",
       `<p>This approval link is malformed. Please check the latest alert email or contact support.</p>`
@@ -120,6 +196,7 @@ export default async function handler(req, res) {
 
   // ── Decline ───────────────────────────────────────────────────────────────
   if (action === "decline") {
+    await updateLateFeeStatus(bookingId, "dismissed", "admin_link");
     await sendResultEmail(
       `[Sly Rides] Late Fee Declined — Booking ${bookingId}`,
       `<h2>Late Fee Declined</h2>
@@ -127,7 +204,6 @@ export default async function handler(req, res) {
        <p>No charge was applied to the customer's card.</p>
        <p>You can still charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     );
-
     return res.status(200).send(htmlPage(
       "Declined", "#888", "✅ Late Fee Declined",
       `<p>No charge was applied to the customer's card.</p>
@@ -136,9 +212,63 @@ export default async function handler(req, res) {
     ));
   }
 
-  // ── Approve: idempotency check then execute the charge ────────────────────
-  // Guard against double-tap: if a succeeded late_fee charge already exists
-  // for this booking, return a "already charged" page instead of charging again.
+  // ── Adjust: show form to enter new amount ─────────────────────────────────
+  if (action === "adjust") {
+    return res.status(200).send(htmlPage(
+      "Adjust Late Fee", "#1a73e8", "✏️ Adjust Late Fee Amount",
+      `<p>Assessed amount: <span class="amt">$${esc(String(amount))}</span></p>
+       <p>Enter the adjusted amount to charge, then click Confirm.</p>
+       <form method="POST" action="/api/approve-late-fee">
+         <input type="hidden" name="bookingId"      value="${esc(bookingId)}" />
+         <input type="hidden" name="originalAmount" value="${esc(String(amount))}" />
+         <input type="hidden" name="originalToken"  value="${esc(token)}" />
+         <label for="newAmount">New amount (USD):</label>
+         <input type="number" id="newAmount" name="newAmount"
+                min="1" max="5000" step="0.01"
+                value="${esc(String(amount))}" required />
+         <button type="submit">✅ Confirm &amp; Charge</button>
+       </form>
+       <p style="font-size:13px;color:#777">Amount must be between $1 and $5,000.</p>`
+    ));
+  }
+
+  // ── Approve ───────────────────────────────────────────────────────────────
+  return handleApprove(res, bookingId, amount, amount, "admin_link");
+}
+
+// ── Adjust POST handler ───────────────────────────────────────────────────────
+
+async function handleAdjustPost(req, res) {
+  // Parse application/x-www-form-urlencoded body (Vercel parses it into req.body)
+  const body           = req.body || {};
+  const bookingId      = String(body.bookingId      || "").trim();
+  const originalAmount = parseFloat(body.originalAmount) || 0;
+  const newAmount      = parseFloat(body.newAmount)      || 0;
+  const originalToken  = String(body.originalToken  || "").trim();
+
+  if (!bookingId || newAmount <= 0 || newAmount > 5000) {
+    return res.status(400).send(htmlPage(
+      "Error", "#c62828", "❌ Invalid adjustment",
+      `<p>Amount must be between $1 and $5,000. Please go back and try again.</p>`
+    ));
+  }
+
+  // Verify the original adjust token to authenticate this form submission
+  const decoded = verifyLateFeeToken(originalToken);
+  if (!decoded || decoded.action !== "adjust" || decoded.bookingId !== bookingId) {
+    return res.status(401).send(htmlPage(
+      "Link Expired", "#c62828", "⏰ Link expired or invalid",
+      `<p>This form's token has expired. Please click the Adjust link in the original email again.</p>`
+    ));
+  }
+
+  return handleApprove(res, bookingId, newAmount, originalAmount, "admin_link");
+}
+
+// ── Shared approve + charge logic ─────────────────────────────────────────────
+
+async function handleApprove(res, bookingId, amount, originalAmount, approvedBy) {
+  // Idempotency guard: prevent double-charging
   try {
     const sb = getSupabaseAdmin();
     if (sb) {
@@ -159,24 +289,32 @@ export default async function handler(req, res) {
       }
     }
   } catch (err) {
-    // Non-fatal: if the idempotency check fails, proceed with the charge
-    // (better to risk a duplicate than block the owner from charging at all)
     console.warn("approve-late-fee: idempotency check failed (non-fatal):", err.message);
   }
 
+  const adjustmentNote = (originalAmount && originalAmount !== amount)
+    ? `Late return — approved via admin link (adjusted from $${originalAmount} to $${amount})`
+    : "Late return — approved via admin approval link";
+
   try {
+    // Pass approved_by/approved_at as extra metadata for the charges row
     const result = await executeChargeFee({
       bookingId,
-      chargeType: "late_fee",
+      chargeType:           "late_fee",
       amount,
-      notes:      "Late return — approved via admin approval link",
-      chargedBy:  "admin",
+      notes:                adjustmentNote,
+      chargedBy:            approvedBy,
+      adjustedFromAmount:   (originalAmount && originalAmount !== amount) ? originalAmount : undefined,
     });
+
+    // Mark booking as approved in Supabase
+    await updateLateFeeStatus(bookingId, "approved", approvedBy);
 
     await sendResultEmail(
       `[Sly Rides] ✅ Late Fee Charged — Booking ${bookingId}`,
       `<h2>Late Fee Charged Successfully</h2>
        <p>A late fee of <strong>$${esc(String(amount))}</strong> was charged to the customer's card for booking <strong>${esc(bookingId)}</strong>.</p>
+       ${originalAmount && originalAmount !== amount ? `<p><em>(Original assessed amount: $${esc(String(originalAmount))})</em></p>` : ""}
        <p>${esc(result.message || "")}</p>
        <p>Confirmation emails have been sent to both you and the customer.</p>`
     );
@@ -185,23 +323,47 @@ export default async function handler(req, res) {
       "Charge Approved", "#4caf50", "✅ Late Fee Charged",
       `<p class="amt">$${esc(String(amount))} charged successfully.</p>
        <p>Booking: <strong>${esc(bookingId)}</strong></p>
+       ${originalAmount && originalAmount !== amount ? `<p style="font-size:13px;color:#aaa">(Adjusted from original $${esc(String(originalAmount))})</p>` : ""}
        <p>Confirmation emails have been sent to you and the customer.</p>`
     ));
   } catch (err) {
     console.error("approve-late-fee: charge failed:", err.message);
+
+    // Mark booking as failed in Supabase
+    await updateLateFeeStatus(bookingId, "failed", approvedBy);
+
+    // Look up customer phone to send a fallback payment link via SMS
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        const { data: bk } = await sb
+          .from("bookings")
+          .select("customers(phone)")
+          .eq("booking_ref", bookingId)
+          .maybeSingle();
+        const phone = bk?.customers?.phone;
+        if (phone) {
+          await sendCustomerFallbackSms(bookingId, amount, phone);
+        }
+      }
+    } catch (lookupErr) {
+      console.warn("approve-late-fee: fallback SMS lookup failed (non-fatal):", lookupErr.message);
+    }
 
     await sendResultEmail(
       `[Sly Rides] ❌ Late Fee Charge Failed — Booking ${bookingId}`,
       `<h2>Late Fee Charge Failed</h2>
        <p>Attempted to charge <strong>$${esc(String(amount))}</strong> for booking <strong>${esc(bookingId)}</strong> — but Stripe returned an error:</p>
        <blockquote>${esc(err.message)}</blockquote>
-       <p>Please charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+       <p>A payment link has been sent to the customer as a fallback.</p>
+       <p>Please also charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a> if needed.</p>`
     );
 
     return res.status(200).send(htmlPage(
       "Charge Failed", "#c62828", "❌ Charge Failed",
       `<p>Stripe could not process the late fee for booking <strong>${esc(bookingId)}</strong>.</p>
        <p><em>${esc(err.message)}</em></p>
+       <p>A payment link has been sent to the customer as a fallback.</p>
        <p>Please charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
     ));
   }

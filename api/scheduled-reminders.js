@@ -487,8 +487,8 @@ async function requestLateFeeApproval(booking, feeAmount) {
 
   let sent = false;
 
-  // Build HMAC-signed approve / decline URLs (24 h expiry)
-  const { approveUrl, declineUrl } = buildLateFeeUrls(bookingId, feeAmount);
+  // Build HMAC-signed approve / adjust / decline URLs (24 h expiry)
+  const { approveUrl, declineUrl, adjustUrl } = buildLateFeeUrls(bookingId, feeAmount);
 
   // ── Email to owner ──────────────────────────────────────────────────────
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
@@ -518,6 +518,9 @@ async function requestLateFeeApproval(booking, feeAmount) {
             <a href="${escStr(approveUrl)}" style="display:inline-block;padding:12px 24px;background:#4caf50;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:12px">
               ✅ Approve &amp; Charge $${escStr(String(feeAmount))}
             </a>
+            <a href="${escStr(adjustUrl)}" style="display:inline-block;padding:12px 24px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:12px">
+              ✏️ Adjust Amount
+            </a>
             <a href="${escStr(declineUrl)}" style="display:inline-block;padding:12px 24px;background:#888;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">
               ❌ Decline — Do Not Charge
             </a>
@@ -533,6 +536,7 @@ async function requestLateFeeApproval(booking, feeAmount) {
           `Late Fee   : $${feeAmount}`,
           ``,
           `APPROVE & charge: ${approveUrl}`,
+          `ADJUST amount:    ${adjustUrl}`,
           `DECLINE (no charge): ${declineUrl}`,
           ``,
           `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin-v2/`,
@@ -549,7 +553,8 @@ async function requestLateFeeApproval(booking, feeAmount) {
     try {
       const smsText =
         `[SLY RIDES] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
-        `Approve $${feeAmount} charge: ${approveUrl}\n` +
+        `Approve $${feeAmount}: ${approveUrl}\n` +
+        `Adjust: ${adjustUrl}\n` +
         `Decline: ${declineUrl}`;
       await sendSms(OWNER_PHONE, smsText);
       sent = true;
@@ -750,6 +755,24 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
           sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
           await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+
+          // Persist late_fee_status = 'pending_approval' to Supabase for audit trail.
+          // Non-fatal — the approval email/SMS is the authoritative delivery mechanism.
+          try {
+            const sbFee = getSupabaseAdmin();
+            if (sbFee && id) {
+              await sbFee
+                .from("bookings")
+                .update({
+                  late_fee_status: "pending_approval",
+                  late_fee_amount: feeAmount,
+                  updated_at:      new Date().toISOString(),
+                })
+                .eq("booking_ref", id);
+            }
+          } catch (sbFeeErr) {
+            console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+          }
         }
       }
     }

@@ -73,11 +73,12 @@ function esc(str) {
  * @param {object} params
  * @param {string} params.bookingId   - booking_ref
  * @param {string} params.chargeType  - one of VALID_CHARGE_TYPES
- * @param {number} [params.amount]    - USD; uses predefined fee when omitted
- * @param {string} [params.notes]     - optional note
- * @param {string} [params.chargedBy] - "admin" | "ai"
+ * @param {number} [params.amount]              - USD; uses predefined fee when omitted
+ * @param {string} [params.notes]               - optional note
+ * @param {string} [params.chargedBy]           - "admin" | "ai" | "admin_link"
+ * @param {number} [params.adjustedFromAmount]  - original assessed amount when admin adjusted
  */
-export async function executeChargeFee({ bookingId, chargeType, amount, notes, chargedBy = "admin" }) {
+export async function executeChargeFee({ bookingId, chargeType, amount, notes, chargedBy = "admin", adjustedFromAmount }) {
   if (!bookingId) throw new Error("booking_id is required");
   if (!chargeType || !VALID_CHARGE_TYPES.includes(chargeType)) {
     throw new Error(`charge_type must be one of: ${VALID_CHARGE_TYPES.join(", ")}`);
@@ -173,6 +174,12 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     status:                   stripeStatus,
     charged_by:               chargedBy,
     error_message:            stripeError || null,
+    // Approval audit fields (from late-fee approval flow)
+    approved_by:              chargedBy || null,
+    approved_at:              new Date().toISOString(),
+    adjusted_from_amount:     (adjustedFromAmount != null && adjustedFromAmount !== resolvedAmount)
+                                ? adjustedFromAmount
+                                : null,
   };
 
   const { data: insertedCharge, error: insertErr } = await sb
