@@ -21,7 +21,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
@@ -2064,6 +2064,79 @@ export default async function handler(req, res) {
       } catch (availabilityErr) {
         console.error("stripe-webhook: reservation_deposit availability sync failed:", availabilityErr.message);
         return res.status(500).json({ received: false, error: `reservation deposit availability sync failed for ${paymentIntent.id}` });
+      }
+
+      return res.status(200).json({ received: true });
+    }
+
+    // ── Post-rental charges (late fees, damages, lost keys, etc.) ────────────
+    // These PaymentIntents are created off-session by charge-fee.js (admin or AI
+    // interface) and carry payment_type in the metadata.  They must NOT be
+    // processed as new bookings — they only create a revenue record tied to an
+    // existing booking_ref.
+    if (
+      paymentType === "late_fee" ||
+      paymentType === "damage_fee" ||
+      paymentType === "lost_key_fee" ||
+      paymentType === "other_fee"
+    ) {
+      const meta         = paymentIntent.metadata || {};
+      // booking_ref is the canonical field; booking_id is the legacy alias.
+      const rawBookingRef = meta.booking_ref || meta.booking_id || "";
+      const vehicleId     = meta.vehicle_id  || "";
+      const reason        = meta.reason      || "";
+      const renterName    = meta.renter_name || "";
+
+      console.log(`stripe-webhook: post-rental ${paymentType} PI=${paymentIntent.id} booking_ref=${rawBookingRef || "<missing>"}`);
+
+      if (!rawBookingRef) {
+        console.error("[BOOKING_RESOLVE_FAILED]", {
+          paymentType,
+          paymentIntentId: paymentIntent.id,
+          reason: "missing booking_ref in metadata",
+        });
+        return res.status(200).json({ received: true });
+      }
+
+      // Verify the booking exists before writing the revenue record.
+      const resolvedRef = await resolveBookingId(rawBookingRef);
+      if (!resolvedRef) {
+        console.error("[BOOKING_RESOLVE_FAILED]", { paymentType, bookingRef: rawBookingRef, paymentIntentId: paymentIntent.id });
+        return res.status(200).json({ received: true });
+      }
+
+      const amountPaid = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+
+      // Create/update the revenue record for the charge (idempotent by PI ID).
+      try {
+        const customerId = await resolveCustomerIdFromSupabase("", "");
+        let feeFields = { stripeFee: null, stripeNet: null };
+        try {
+          feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+        } catch (feeErr) {
+          console.warn(`stripe-webhook: post-rental fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
+        }
+        await autoCreateRevenueRecord({
+          bookingId:       resolvedRef,
+          paymentIntentId: paymentIntent.id,
+          vehicleId:       vehicleId,
+          customerId,
+          name:            renterName,
+          amountPaid,
+          paymentMethod:   "stripe",
+          type:            paymentType,
+          notes:           reason || paymentType,
+          ...feeFields,
+        }, { strict: false, requireStripeFee: false });
+        console.log("[POST_RENTAL_CHARGE_RECORDED]", {
+          payment_type:      paymentType,
+          booking_ref:       resolvedRef,
+          payment_intent_id: paymentIntent.id,
+          amount:            amountPaid,
+          reason,
+        });
+      } catch (revErr) {
+        console.error(`stripe-webhook: post-rental revenue record failed for PI ${paymentIntent.id}:`, revErr.message);
       }
 
       return res.status(200).json({ received: true });

@@ -287,6 +287,18 @@ export const LATE_FEE_APPLIED =
   "Amount: \${late_fee}\n\n" +
   "Reply STOP to opt out.";
 
+/**
+ * Sent when a post-rental charge (damage, lost key, or other fee) is applied.
+ * Variables: charge_label, amount, reason
+ */
+export const POST_RENTAL_CHARGE =
+  "A post-rental charge has been applied to your booking.\n\n" +
+  "Type: {charge_label}\n" +
+  "Amount: \${amount}\n" +
+  "{reason}" +
+  "\n\nQuestions? Call (213) 916-6606.\n\n" +
+  "Reply STOP to opt out.";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. MAINTENANCE (customer-facing only — no technical details, no links)
 // ─────────────────────────────────────────────────────────────────────────────
