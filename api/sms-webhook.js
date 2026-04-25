@@ -5,13 +5,12 @@
 // This endpoint accepts webhooks from two providers:
 //
 //   • Twilio  — application/x-www-form-urlencoded (Body/From/NumMedia/MediaUrl0)
-//               If a photo is attached its URL is stored in oil_check_photo_url;
-//               a photo is NOT required to accept the reply.
+//               MMS photo is REQUIRED on this path.  The photo URL is forwarded
+//               to the owner for manual review but is NOT stored in the database.
 //
 //   • TextMagic — application/json (from/text only)
-//               TextMagic does not relay MMS media; oil_check_photo_url = null.
-//
-// Photo requirement is waived for both providers until Twilio MMS is in use.
+//               TextMagic does not relay MMS media; photo requirement is waived
+//               on this path (keyword-only reply accepted).
 //
 // Outbound SMS is sent via the existing TextMagic sendSms helper.
 //
@@ -44,7 +43,15 @@ const REPLY_LOW  =
   "Oil is low.\n\n" +
   "Thank you for confirming. Please do not continue driving if level is very low.\n\n" +
   "We will contact you shortly to schedule service.";
-const REPLY_INVALID =
+const REPLY_NO_PHOTO =
+  "Please attach a clear photo of the dipstick and reply FULL, MID, or LOW.";
+const REPLY_INVALID_PHOTO =
+  "Reply with:\n" +
+  "FULL (top line)\n" +
+  "MID (between lines)\n" +
+  "LOW (below safe line)\n" +
+  "and include a photo.";
+const REPLY_INVALID_TEXT_ONLY =
   "Reply with:\n" +
   "FULL (top line)\n" +
   "MID (between lines)\n" +
@@ -55,8 +62,9 @@ const REPLY_INVALID =
 /**
  * Buffer the raw request body and detect content type.
  *
- * Returns { from, text, mediaUrl } where mediaUrl is the MMS photo URL
- * (Twilio only; empty string for TextMagic JSON which doesn't relay media).
+ * Returns { from, text, numMedia, mediaUrl, photoCapable } where:
+ *   photoCapable = true  — Twilio URL-encoded; MMS MediaUrl0 is forwarded.
+ *   photoCapable = false — TextMagic JSON; MMS media is never relayed.
  */
 async function parseWebhookBody(req) {
   const chunks = [];
@@ -74,28 +82,34 @@ async function parseWebhookBody(req) {
     const params = new URLSearchParams(rawBody);
     const numMedia = parseInt(params.get("NumMedia") || "0", 10);
     return {
-      from:     params.get("From") || "",
-      text:     params.get("Body") || "",
-      mediaUrl: numMedia > 0 ? (params.get("MediaUrl0") || "") : "",
+      from:         params.get("From") || "",
+      text:         params.get("Body") || "",
+      numMedia,
+      mediaUrl:     numMedia > 0 ? (params.get("MediaUrl0") || "") : "",
+      photoCapable: true,
     };
   }
 
   // JSON path — TextMagic (and any other JSON provider).
-  // TextMagic does not forward MMS media in its inbound webhook payload.
+  // TextMagic does not forward MMS media in its inbound webhook payload,
+  // so we cannot capture a photo URL from this path.
   let body = {};
   try { body = rawBody ? JSON.parse(rawBody) : {}; } catch (_) { /* ignore */ }
 
   return {
-    from:     body.from || body.From || "",
-    text:     body.text || body.Body || "",
-    mediaUrl: "",
+    from:         body.from || body.From || "",
+    text:         body.text || body.Body || "",
+    numMedia:     0,
+    mediaUrl:     "",
+    photoCapable: false,
   };
 }
 
 // ── Admin alert for LOW oil ───────────────────────────────────────────────────
 
-async function triggerLowOilAlert(bookingId, phone, vehicleId) {
-  const msg = `LOW OIL ALERT: ${bookingId} / ${phone} / ${vehicleId}`;
+async function triggerLowOilAlert(bookingId, phone, vehicleId, photoUrl) {
+  const photoLine = photoUrl ? `\nPhoto: ${photoUrl}` : "";
+  const msg = `LOW OIL ALERT: ${bookingId} / ${phone} / ${vehicleId}${photoLine}`;
   console.error(msg);
 
   // Slack alert (non-fatal)
@@ -119,6 +133,21 @@ async function triggerLowOilAlert(bookingId, phone, vehicleId) {
     } catch (err) {
       console.error("sms-webhook: owner SMS alert failed (non-fatal):", err.message);
     }
+  }
+}
+
+/**
+ * Forward oil-check photo to owner for manual verification.
+ * Called for FULL and MID levels (LOW uses triggerLowOilAlert instead).
+ */
+async function notifyOwnerPhoto(bookingId, phone, vehicleId, level, photoUrl) {
+  if (!photoUrl || !OWNER_PHONE) return;
+  const msg =
+    `OIL CHECK (${level.toUpperCase()}): ${bookingId} / ${phone} / ${vehicleId}\nPhoto: ${photoUrl}`;
+  try {
+    await sendSms(OWNER_PHONE, msg);
+  } catch (err) {
+    console.error("sms-webhook: owner photo notify failed (non-fatal):", err.message);
   }
 }
 
@@ -146,7 +175,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Failed to read request body" });
   }
 
-  const { from: fromRaw, text: textRaw, mediaUrl } = parsed;
+  const { from: fromRaw, text: textRaw, numMedia, mediaUrl, photoCapable } = parsed;
 
   if (!fromRaw) {
     return res.status(200).json({ ok: true }); // nothing to do
@@ -182,10 +211,25 @@ export default async function handler(req, res) {
   const { id: bookingId, booking_ref: bookingRef, vehicle_id: vehicleId } = booking;
 
   // ── Validate reply ────────────────────────────────────────────────────────
+  // photoCapable = true  (Twilio): MMS is forwarded — require a photo.
+  // photoCapable = false (TextMagic): MMS is never relayed — accept keyword only.
+  const hasPhoto = photoCapable ? (numMedia > 0 && !!mediaUrl) : null;
+
   if (!VALID_LEVELS.has(keyword)) {
     // Unrecognised reply
+    const invalidReply = photoCapable ? REPLY_INVALID_PHOTO : REPLY_INVALID_TEXT_ONLY;
     try {
-      await sendSms(fromPhone, REPLY_INVALID);
+      await sendSms(fromPhone, invalidReply);
+    } catch (smsErr) {
+      console.error("sms-webhook: sendSms failed:", smsErr.message);
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  if (photoCapable && !hasPhoto) {
+    // Twilio path — valid keyword but no MMS photo attached
+    try {
+      await sendSms(fromPhone, REPLY_NO_PHOTO);
     } catch (smsErr) {
       console.error("sms-webhook: sendSms failed:", smsErr.message);
     }
@@ -193,7 +237,8 @@ export default async function handler(req, res) {
   }
 
   // ── Valid reply — update DB ───────────────────────────────────────────────
-  // mediaUrl is populated only when a Twilio MMS photo is attached; null otherwise.
+  // Photo URL is NOT stored in the database; owner verifies manually via the
+  // forwarded SMS notification below.
   const nowTs = new Date().toISOString();
 
   const bookingUpdate = {
@@ -201,7 +246,6 @@ export default async function handler(req, res) {
     oil_status:             keyword,
     oil_check_required:     false,
     oil_check_missed_count: 0,
-    oil_check_photo_url:    mediaUrl || null,
     updated_at:             nowTs,
   };
 
@@ -226,12 +270,11 @@ export default async function handler(req, res) {
     .from("vehicle_state")
     .upsert(
       {
-        vehicle_id:               vehicleId,
-        last_oil_check_at:        nowTs,
-        last_oil_status:          keyword,
-        last_oil_check_photo_url: mediaUrl || null,
-        last_oil_check_mileage:   vState?.current_mileage ?? null,
-        updated_at:               nowTs,
+        vehicle_id:             vehicleId,
+        last_oil_check_at:      nowTs,
+        last_oil_status:        keyword,
+        last_oil_check_mileage: vState?.current_mileage ?? null,
+        updated_at:             nowTs,
       },
       { onConflict: "vehicle_id" }
     );
@@ -256,9 +299,12 @@ export default async function handler(req, res) {
     console.error("sms-webhook: sendSms reply failed:", smsErr.message);
   }
 
-  // ── LOW oil — trigger admin alert ─────────────────────────────────────────
+  // ── LOW oil — trigger admin alert (includes photo URL for manual review) ──
   if (keyword === "low") {
-    await triggerLowOilAlert(bookingRef || bookingId, fromPhone, vehicleId);
+    await triggerLowOilAlert(bookingRef || bookingId, fromPhone, vehicleId, mediaUrl || "");
+  } else if (mediaUrl) {
+    // FULL / MID — forward photo to owner for manual verification (non-escalating)
+    await notifyOwnerPhoto(bookingRef || bookingId, fromPhone, vehicleId, keyword, mediaUrl);
   }
 
   return res.status(200).json({ ok: true, level: keyword });
