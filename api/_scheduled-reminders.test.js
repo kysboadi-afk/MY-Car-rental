@@ -187,7 +187,7 @@ function makeBooking(overrides = {}) {
 
 test("processAutoCompletions: does not touch bookings whose return time has not passed", async () => {
   reset();
-  const now = new Date("2026-03-22T09:00:00"); // before 10:00 AM return
+  const now = new Date("2026-03-22T09:00:00-07:00"); // before 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -197,7 +197,7 @@ test("processAutoCompletions: does not touch bookings whose return time has not 
 
 test("processAutoCompletions: does not touch bookings that are only 1 hour overdue", async () => {
   reset();
-  const now = new Date("2026-03-22T11:00:00"); // 1h past 10:00 AM return
+  const now = new Date("2026-03-22T11:00:00-07:00"); // 1h past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -207,7 +207,7 @@ test("processAutoCompletions: does not touch bookings that are only 1 hour overd
 
 test("processAutoCompletions: does not touch bookings that are 3.9 hours overdue", async () => {
   reset();
-  const now = new Date("2026-03-22T13:54:00"); // 3h54m past return
+  const now = new Date("2026-03-22T13:54:00-07:00"); // 3h54m past return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -217,7 +217,7 @@ test("processAutoCompletions: does not touch bookings that are 3.9 hours overdue
 
 test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
   reset();
-  const now = new Date("2026-03-22T04:30:00"); // before 10:00:00 return
+  const now = new Date("2026-03-22T04:30:00-07:00"); // before 10:00:00 return
   const allBookings = { camry: [makeBooking({ returnTime: "10:00:00" })] };
 
   await processAutoCompletions(allBookings, now);
@@ -227,7 +227,7 @@ test("processAutoCompletions: respects 24-hour return times with seconds", async
 
 test("processAutoCompletions: auto-completes booking that is 4+ hours past return time", async () => {
   reset();
-  const now = new Date("2026-03-22T14:05:00"); // 4h5m past 10:00 AM return
+  const now = new Date("2026-03-22T14:05:00-07:00"); // 4h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -243,7 +243,7 @@ test("processAutoCompletions: auto-completes booking that is 4+ hours past retur
 
 test("processAutoCompletions: sets completedAt to now.toISOString()", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -253,7 +253,7 @@ test("processAutoCompletions: sets completedAt to now.toISOString()", async () =
 
 test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -264,7 +264,7 @@ test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", as
 
 test("processAutoCompletions: calls autoUpsertBooking", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -275,7 +275,7 @@ test("processAutoCompletions: calls autoUpsertBooking", async () => {
 
 test("processAutoCompletions: skips already-completed bookings", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = {
     camry: [makeBooking({ status: "completed_rental", completedAt: "2026-03-22T12:00:00.000Z" })],
   };
@@ -287,7 +287,7 @@ test("processAutoCompletions: skips already-completed bookings", async () => {
 
 test("processAutoCompletions: skips cancelled bookings", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking({ status: "cancelled_rental" })] };
 
   await processAutoCompletions(allBookings, now);
@@ -297,7 +297,7 @@ test("processAutoCompletions: skips cancelled bookings", async () => {
 
 test("processAutoCompletions: handles multiple vehicles independently", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00"); // 5h past 10:00 AM return
+  const now = new Date("2026-03-22T15:00:00-07:00"); // 5h past 10:00 AM return
   const allBookings = {
     camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
     slingshot: [makeBooking({ bookingId: "bk-slingshot", vehicleId: "slingshot",
@@ -312,7 +312,7 @@ test("processAutoCompletions: handles multiple vehicles independently", async ()
 
 test("processAutoCompletions: removes booking from booked-dates.json", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -326,7 +326,7 @@ test("processAutoCompletions: no-ops when GITHUB_TOKEN is absent", async () => {
   const saved = process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_TOKEN;
 
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -337,7 +337,7 @@ test("processAutoCompletions: no-ops when GITHUB_TOKEN is absent", async () => {
 
 test("processAutoCompletions: availability is now bookings-driven — no fleet-status.json write needed", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00"); // 5h past 10:00 AM return
+  const now = new Date("2026-03-22T15:00:00-07:00"); // 5h past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -350,7 +350,7 @@ test("processAutoCompletions: availability is now bookings-driven — no fleet-s
 
 test("processAutoCompletions: does NOT restore fleet-status when another active_rental remains", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = {
     camry: [
       makeBooking({ bookingId: "bk-001", returnDate: "2026-03-22", returnTime: "10:00 AM" }),
@@ -366,7 +366,7 @@ test("processAutoCompletions: does NOT restore fleet-status when another active_
 
 test("processAutoCompletions: fleet-status not written even when completing the only active_rental", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   // One active_rental overdue, one completed_rental (already done)
   const allBookings = {
     camry: [
@@ -384,7 +384,7 @@ test("processAutoCompletions: fleet-status not written even when completing the 
 
 test("processAutoCompletions: fleet-status not written independently per vehicle (no-op)", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00");
+  const now = new Date("2026-03-22T15:00:00-07:00");
   const allBookings = {
     camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
     camry2013: [makeBooking({ bookingId: "bk-c2013",     vehicleId: "camry2013" })],

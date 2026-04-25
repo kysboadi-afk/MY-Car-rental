@@ -297,6 +297,28 @@ async function markVehicleAvailable(vehicleId) {
 
 const BUSINESS_TZ = "America/Los_Angeles";
 
+/**
+ * Format a Date as a human-readable Los Angeles wall-clock string.
+ * Used in debug logs so that timestamp comparisons are easy to reason about.
+ * e.g. "5/1/2026, 3:00:00 PM PDT"
+ * @param {Date} date
+ * @returns {string}
+ */
+function toLAString(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return String(date);
+  return date.toLocaleString("en-US", {
+    timeZone:     BUSINESS_TZ,
+    timeZoneName: "short",
+    year:         "numeric",
+    month:        "numeric",
+    day:          "numeric",
+    hour:         "numeric",
+    minute:       "2-digit",
+    second:       "2-digit",
+    hour12:       true,
+  });
+}
+
 function normalizeTimeForLAIso(time) {
   if (!time) return "00:00:00";
   const t = String(time).trim();
@@ -673,6 +695,14 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const nowIso    = now.toISOString();
       const returnIso = returnDt.toISOString();
 
+      console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
+        timezone:          BUSINESS_TZ,
+        now_la:            toLAString(now),
+        return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
+        return_la:         toLAString(returnDt),
+        mins_until_return: Math.round(minutesUntilReturn),
+      });
+
       // returnDateStr is stored in sms_logs so old triggers are invalidated when
       // the booking is extended to a new return_date.
       const returnDateStr = booking.returnDate;
@@ -884,8 +914,17 @@ export async function processAutoActivations(allBookings, now) {
     for (const booking of bookings) {
       if (booking.status !== "booked_paid") continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone pickup datetime so auto-activation fires at the correct
+      // wall-clock time in Los Angeles, not at the UTC equivalent.
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
+
+      console.log("[TZ_DEBUG][AUTO_ACTIVATE]", {
+        timezone:        BUSINESS_TZ,
+        now_la:          toLAString(now),
+        pickup_raw:      `${booking.pickupDate} ${booking.pickupTime || ""}`,
+        pickup_la:       toLAString(pickupDt),
+      });
 
       // Only activate once pickup time has arrived (or passed)
       if (now < pickupDt) continue;
@@ -939,10 +978,21 @@ export async function processAutoCompletions(allBookings, now) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
 
-      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+      // Use LA-timezone return datetime so the 4-hour auto-complete threshold is
+      // measured from the correct Los Angeles wall-clock return time, not UTC.
+      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
       if (isNaN(returnDt.getTime())) continue;
 
       const minsOverdue = (now - returnDt) / 60000;
+
+      console.log("[TZ_DEBUG][AUTO_COMPLETE]", {
+        timezone:       BUSINESS_TZ,
+        now_la:         toLAString(now),
+        return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
+        return_la:      toLAString(returnDt),
+        mins_overdue:   Math.round(minsOverdue),
+      });
+
       if (minsOverdue < AUTO_COMPLETE_HOURS * 60) continue;
 
       const id          = booking.bookingId || booking.paymentIntentId;
