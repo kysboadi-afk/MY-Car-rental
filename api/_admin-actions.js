@@ -760,7 +760,7 @@ async function toolSendSms({ phone, message }) {
 }
 
 async function toolGetInsights() {
-  console.time("AI request");
+  console.time("toolGetInsights");
   try {
   const sb = getSupabaseAdmin();
   const [allBookings, vehicles] = await Promise.all([
@@ -811,10 +811,10 @@ async function toolGetInsights() {
   const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
   const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
-  console.timeEnd("AI request");
+  console.timeEnd("toolGetInsights");
   return { insights, problems };
   } catch (err) {
-    console.timeEnd("AI request");
+    console.timeEnd("toolGetInsights");
     throw err;
   }
 }

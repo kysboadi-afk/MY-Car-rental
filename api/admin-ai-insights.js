@@ -210,16 +210,19 @@ export default async function handler(req, res) {
     };
   }
 
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("AI timeout")), TIMEOUT_MS)
-  );
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("AI timeout")), TIMEOUT_MS);
+  });
 
   console.time("AI request");
   try {
     const result = await Promise.race([mainLogic(), timeoutPromise]);
+    clearTimeout(timeoutId);
     console.timeEnd("AI request");
     return res.status(200).json(result);
   } catch (err) {
+    clearTimeout(timeoutId);
     console.timeEnd("AI request");
     if (err.message === "AI timeout") {
       return res.status(200).json({ message: "System is busy. Try a simpler question." });
