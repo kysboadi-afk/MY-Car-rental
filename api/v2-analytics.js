@@ -10,12 +10,12 @@
 //   revenue_trend — { secret, action:"revenue_trend", months? } — monthly revenue (last N months)
 //   bookings_heatmap — { secret, action:"bookings_heatmap", vehicleId? } — day-of-week patterns
 //
-// Financial source of truth: revenue_records (Supabase).
-//   gross_revenue = SUM(net_amount)    WHERE payment_status='paid' AND NOT cancelled/no-show
-//                   net_amount is the generated column gross_amount − refund_amount and
+// Financial source of truth: revenue_records_effective (Supabase), identical to
+// v2-dashboard.js and the Revenue Tracker page so all surfaces report the same totals.
+//   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
 //                   includes all payment methods (cash, manual, Stripe, etc.)
 //   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled/non-Stripe rows)
-//   net_revenue   = gross_revenue − total_fees
+//   net_revenue   = SUM(stripe_net ?? gross − fee) − SUM(refund_amount)
 //   profit        = net_revenue − total_expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records is empty.
@@ -131,8 +131,10 @@ export default async function handler(req, res) {
     const activeStatuses = new Set(["booked_paid", "active_rental"]);
 
     // ── Load revenue_records from Supabase (financial source of truth) ────────
-    // Mirrors v2-dashboard.js exactly: payment_status='paid', sync_excluded=false,
-    // skip is_cancelled and is_no_show, null stripe_fee treated as 0.
+    // Uses revenue_records_effective with payment_status='paid' — identical to
+    // v2-dashboard.js and the Revenue Tracker page — so all three surfaces report
+    // the same totals.  sync_excluded rows are excluded by the view definition.
+    // is_cancelled and is_no_show rows are skipped in the aggregation loop below.
     //
     // rrByVehicle: { [vehicleId]: { gross, fees, net, count } }
     const rrByVehicle = {};
@@ -141,38 +143,27 @@ export default async function handler(req, res) {
     const sb = getSupabaseAdmin();
     if (sb) {
       try {
-        let rrResult = await sb
-          .from("revenue_reporting_base")
-          .select("vehicle_id, pickup_date, net_amount, stripe_fee, is_cancelled, is_no_show");
-
-        // If the canonical view is not deployed yet (migration pending), fall back to the
-        // underlying revenue_records_effective view with the same filters applied server-side.
-        // This matches exactly what the Revenue page does for its own display.
-        if (rrResult.error && isSchemaError(rrResult.error)) {
-          console.warn("v2-analytics: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
-          rrResult = await sb
-            .from("revenue_records_effective")
-            .select("vehicle_id, pickup_date, net_amount, stripe_fee, is_cancelled, is_no_show")
-            .eq("payment_status", "paid");
-        }
+        const rrResult = await sb
+          .from("revenue_records_effective")
+          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
+          .eq("payment_status", "paid");
 
         const { data: rrRows, error: rrErr } = rrResult;
 
         if (rrErr) {
-          // At this point revenue_reporting_base was already tried (and failed with a schema
-          // error), so any remaining error here means revenue_records_effective is also
-          // unavailable — fall through to the bookings.json fallback below.
           console.error("v2-analytics: revenue records unavailable, falling back to bookings.json:", rrErr.message);
         } else if ((rrRows || []).length > 0) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
-            const vid   = uiVehicleId(r.vehicle_id) || "unknown";
-            // net_amount = gross_amount − refund_amount (GENERATED column).
-            // This is the "gross revenue" figure: total collected minus refunds, before fees.
-            const gross = Number(r.net_amount || 0);
-            const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-            const net   = gross - fee;
+            const vid    = uiVehicleId(r.vehicle_id) || "unknown";
+            // Use gross_amount (total collected before refunds or fees) as the gross
+            // figure — matching the Revenue Tracker and Dashboard formulas exactly.
+            const gross  = Number(r.gross_amount  || 0);
+            const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const refund = Number(r.refund_amount || 0);
+            // net = (stripe_net ?? gross − fee) − refund_amount, matching Revenue Tracker.
+            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
             if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
             rrByVehicle[vid].gross += gross;
             rrByVehicle[vid].fees  += fee;
