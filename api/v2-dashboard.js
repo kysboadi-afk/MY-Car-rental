@@ -34,11 +34,17 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
 };
 const DB_TO_APP_STATUS = {
-  pending:   "reserved_unpaid",
-  approved:  "booked_paid",
-  active:    "active_rental",
-  completed: "completed_rental",
-  cancelled: "cancelled_rental",
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  approved:             "booked_paid",
+  booked_paid:          "booked_paid",
+  active:               "active_rental",
+  active_rental:        "active_rental",
+  completed:            "completed_rental",
+  completed_rental:     "completed_rental",
+  cancelled:            "cancelled_rental",
+  cancelled_rental:     "cancelled_rental",
 };
 const DEFAULT_RETURN_TIME = "10:00";
 
@@ -164,11 +170,49 @@ export default async function handler(req, res) {
       return Object.values(data).flat();
     }
 
-    const [{ data: vehicles }, { data: expenses }, allBookingsRaw] = await Promise.all([
-      loadVehicles(),
-      fetchExpenses(),
-      fetchBookingsKpis(),
-    ]);
+    const metricsPromise = sb
+      ? sb.from("admin_metrics_v2").select("*").single()
+          .then((r) => r, (e) => {
+            console.warn("v2-dashboard: admin_metrics_v2 query failed (non-fatal), falling back to revenue_records loop:", e?.message);
+            return { data: null, error: e };
+          })
+      : Promise.resolve({ data: null });
+
+    const bookingsPromise = sb
+      ? sb.from("bookings")
+          .select(`
+            booking_ref, vehicle_id, status,
+            pickup_date, return_date, pickup_time, return_time,
+            deposit_paid, created_at,
+            customers ( name )
+          `)
+          .in("vehicle_id", ALLOWED_VEHICLES)
+          .order("created_at", { ascending: false })
+          .limit(20)
+          .then((r) => r, () => ({ data: null }))
+      : Promise.resolve({ data: null });
+
+    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult] =
+      await Promise.all([
+        loadVehicles(),
+        fetchExpenses(),
+        fetchBookingsKpis(),
+        metricsPromise,
+        bookingsPromise,
+      ]);
+
+    // admin_metrics_v2: pre-aggregated dashboard KPIs.
+    // When available it replaces the sequential revenue_records and charges queries.
+    const metricsView = metricsViewResult?.data ?? null;
+    const viewOk = !!metricsView && !metricsViewResult?.error;
+
+    // Scope prefix selects the right pre-aggregated column set:
+    //   "car"/"cars" → car_  prefix
+    //   "slingshot"  → slingshot_ prefix
+    //   (none)       → total_ prefix
+    const vp = scope === "slingshot"
+      ? "slingshot"
+      : (scope === "car" || scope === "cars") ? "car" : "total";
 
     // Filter vehicles by scope: "car" → exclude slingshots; "slingshot" → only slingshots
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
@@ -241,13 +285,27 @@ export default async function handler(req, res) {
       }
     }
 
+    // Override booking-count KPIs with view values when the view is available.
+    // The view uses server-side timezone-aware SQL and covers all booking status
+    // variants (including newer 'reserved' / 'pending_verification'), making it
+    // more accurate than the JS loop above (which only checks legacy status names).
+    if (viewOk) {
+      activeBookings    = Number(metricsView[`${vp}_active_rentals`]    || 0);
+      pendingApprovals  = Number(metricsView[`${vp}_pending_approvals`] || 0);
+      overdueCount      = Number(metricsView[`${vp}_overdue_count`]     || 0);
+      returnsTodayCount = Number(metricsView[`${vp}_returns_today`]     || 0);
+      pickupsTodayCount = Number(metricsView[`${vp}_pickups_today`]     || 0);
+    }
+
     // Total expenses (scoped)
     const totalExpenses = expenses
       .filter((e) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(e.vehicle_id))
       .reduce((s, e) => s + Number(e.amount || 0), 0);
 
-    // ── Financial KPIs: revenue_records (primary) or bookings.json (fallback) ─
-    // Mirrors the same source of truth used by api/v2-revenue.js so totals match.
+    // ── Financial KPIs: admin_metrics_v2 view (primary) or revenue_records loop (fallback) ─
+    // The view pre-aggregates revenue_records + supplemental charges in SQL,
+    // replacing the sequential revenue_records query and charges dedup loop below.
+    // Falls back to the revenue_records JS loop when the view is unavailable.
 
     let totalRevenue    = 0;
     let totalStripeFees = 0;
@@ -261,7 +319,39 @@ export default async function handler(req, res) {
     const rrByBookingId = {}; // { [bookingId]: gross_amount }
     let financialsFromRevRecords = false;
 
-    if (sb) {
+    if (viewOk) {
+      // Fast path: all financial totals come from the pre-aggregated view.
+      const viewRevenue    = Number(metricsView[`${vp}_revenue`]          || 0);
+      const viewReconciled = Number(metricsView[`${vp}_reconciled_count`] || 0);
+
+      // Only trust the view's financial data when it contains real Stripe-backed
+      // revenue OR when the view at least has reconciled records (even at $0).
+      // When both are zero the revenue_records table is empty for this scope and
+      // we fall through to the bookings-based fallback so the dashboard shows
+      // deposit amounts as a best-effort estimate instead of a misleading $0.
+      if (viewRevenue > 0 || viewReconciled > 0) {
+        financialsFromRevRecords = true;
+        totalRevenue    = viewRevenue;
+        totalStripeFees = Number(metricsView[`${vp}_stripe_fees`]      || 0);
+        netRevenue      = Number(metricsView[`${vp}_net_revenue`]      || 0);
+        reconciledCount = viewReconciled;
+
+        // Populate per-vehicle revenue map (used by vehicleStats computation below).
+        // view includes both revenue_records and supplemental charges.
+        const vRevJson = metricsView.vehicle_revenue_json || {};
+        for (const [vid, vr] of Object.entries(vRevJson)) {
+          const normVid = uiVehicleId(vid);
+          rrByVehicle[normVid] = {
+            gross: Number(vr.gross || 0),
+            net:   Number(vr.net   || 0),
+            count: Number(vr.count || 0),
+          };
+          bookingsPerVehicle[normVid] = Number(vr.count || 0);
+        }
+      }
+    }
+
+    if (sb && !viewOk) {
       try {
         const { data: rrRows, error: rrErr } = await sb
           .from("revenue_records_effective")
@@ -370,7 +460,9 @@ export default async function handler(req, res) {
     // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
     // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
     // fee handling) are excluded here to prevent double-counting revenue totals.
-    if (sb) {
+    // Skipped when viewOk because the admin_metrics_v2 view already incorporates
+    // these supplemental charges via its charges_net CTE.
+    if (sb && !viewOk) {
       const bookingVehicleMap = {};
       for (const b of allBookings) {
         if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
@@ -428,14 +520,17 @@ export default async function handler(req, res) {
     }
 
     // Vehicles available
+    // When the view is available, use its pre-computed count (scope-aware, server-side).
     const vehicleList = Object.values(filteredVehicles);
     const unavailableVehicleIds = new Set(
       activeOrOverdueBookings
         .map((b) => b.vehicleId)
     );
-    const availableVehicles = vehicleList.filter(
-      (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
-    ).length;
+    const availableVehicles = viewOk
+      ? Number(metricsView[`${vp}_available_vehicles`] || 0)
+      : vehicleList.filter(
+          (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
+        ).length;
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
@@ -471,30 +566,55 @@ export default async function handler(req, res) {
       });
     }
 
-    // Revenue chart: last 12 months sorted (gross revenue by month)
-    const revenueChart = Object.entries(monthlyRevenue)
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .slice(-12)
-      .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    // Revenue chart: last 12 months sorted (gross revenue by month).
+    // When viewOk, use the pre-computed JSONB from the view (already sorted ASC).
+    const revenueChart = viewOk
+      ? (metricsView[`${vp}_revenue_chart`] || [])
+      : Object.entries(monthlyRevenue)
+          .sort(([a], [b]) => (a > b ? 1 : -1))
+          .slice(-12)
+          .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
 
-    // Recent bookings (last 10 across all vehicles)
-    const recentBookings = [...allBookings]
-      .filter((b) => b.createdAt)
-      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-      .slice(0, 10)
-      .map((b) => ({
-        bookingId:   b.bookingId,
-        name:        b.name,
-        vehicleId:   b.vehicleId,
-        vehicleName: b.vehicleName,
-        pickupDate:  b.pickupDate,
-        returnDate:  b.returnDate,
-        status:      b.status,
-        amountPaid:  financialsFromRevRecords && b.bookingId != null && rrByBookingId[b.bookingId] != null
-          ? rrByBookingId[b.bookingId]
-          : bookingRevenue(b),
-        createdAt:   b.createdAt,
+    // Recent bookings (last 10 across all vehicles).
+    // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
+    // Otherwise slice from the full allBookings list.
+    //
+    // Note: amountPaid in the view path always reflects deposit_paid because
+    // rrByBookingId (which holds full Stripe gross amounts per booking) is only
+    // populated in the non-view (revenue_records loop) path.  Both paths surface
+    // the deposit amount in practice when the fallback also lacks rrByBookingId.
+    let recentBookings;
+    if (viewOk && recentBkResult?.data) {
+      recentBookings = recentBkResult.data.slice(0, 10).map((r) => ({
+        bookingId:   r.booking_ref || "",
+        name:        r.customers?.name || "",
+        vehicleId:   uiVehicleId(r.vehicle_id),
+        vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
+        pickupDate:  r.pickup_date  || "",
+        returnDate:  r.return_date  || "",
+        status:      DB_TO_APP_STATUS[r.status] || r.status,
+        amountPaid:  Number(r.deposit_paid || 0),
+        createdAt:   r.created_at,
       }));
+    } else {
+      recentBookings = [...allBookings]
+        .filter((b) => b.createdAt)
+        .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
+        .slice(0, 10)
+        .map((b) => ({
+          bookingId:   b.bookingId,
+          name:        b.name,
+          vehicleId:   b.vehicleId,
+          vehicleName: b.vehicleName,
+          pickupDate:  b.pickupDate,
+          returnDate:  b.returnDate,
+          status:      b.status,
+          amountPaid:  financialsFromRevRecords && b.bookingId != null && rrByBookingId[b.bookingId] != null
+            ? rrByBookingId[b.bookingId]
+            : bookingRevenue(b),
+          createdAt:   b.createdAt,
+        }));
+    }
 
     // Net profit = net revenue − total expenses
     const netProfit = netRevenue - totalExpenses;

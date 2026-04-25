@@ -16,9 +16,6 @@ export function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  console.log("SUPABASE_URL:", url ? "OK" : "MISSING");
-  console.log("SUPABASE_KEY:", key ? "OK" : "MISSING");
-
   if (!url || !key) {
     console.error("❌ Supabase env vars missing");
     return null;

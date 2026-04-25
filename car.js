@@ -1354,14 +1354,13 @@ initDatePickers();
 
 // ----- Fleet Status Check -----
 // Fetch the vehicle's availability from the fleet-status API.  If the vehicle
-// is unavailable (active booking exists), show a "Currently Rented" notice and
-// replace the booking form with the Extend Rental section.
+// is unavailable (active booking exists), replace the booking form with the
+// Extend Rental section.
 // Fails open on any API error so transient outages do not lock out the form.
 //
 // For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
-// slingshot3).  The notice is shown only when ALL units are simultaneously
-// unavailable.  For display, the earliest next_available_display (or available_at)
-// across booked units is used so the customer sees the soonest a unit frees up.
+// slingshot3).  The form is replaced only when ALL units are simultaneously
+// unavailable.
 (async function checkFleetStatus() {
   if (IS_TEST_MODE_OVERRIDE) return;
   try {
@@ -1385,50 +1384,29 @@ initDatePickers();
 
     if (isUnavailable) {
       // For Slingshot: pick the entry with the earliest available_at so the
-      // customer sees the soonest any unit becomes free.
+      // extend form's minimum return date is set correctly.
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
 
       let availableAt = null;
-      let availableAtDisplay = null;
       for (const id of idsToCheck) {
         const entry = status[id];
         if (entry && entry.available === false) {
           if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
             availableAt = entry.available_at;
-            availableAtDisplay = entry.next_available_display || null;
-          } else if (!availableAt && entry.next_available_display) {
-            // next_available_display is set even when return_time was absent
-            // (date-only format); capture it so we still show the right date.
-            availableAtDisplay = entry.next_available_display;
           }
         }
       }
 
-      showVehicleUnavailable(availableAt, availableAtDisplay);
+      showVehicleUnavailable(availableAt);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
+function showVehicleUnavailable(nextAvailableISO) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
-
-  // ── 1. Insert / update the "Currently Rented" notice at the top ──────────
-  let notice = document.getElementById("vehicleUnavailableNotice");
-  if (!notice) {
-    notice = document.createElement("div");
-    notice.id = "vehicleUnavailableNotice";
-    notice.className = "vehicle-unavailable-notice";
-    bookingSection.insertBefore(notice, bookingSection.firstChild);
-  }
-
-  // Use the pre-formatted string from the backend (LA timezone, correct date and time).
-  // This is the single source of truth — no frontend date math needed.
-  const nextLine = nextAvailableDisplay
-    ? `<p>📅 Next available: <strong>${nextAvailableDisplay}</strong></p>`
-    : "";
 
   if (nextAvailableISO) {
     // Set minimum new return date in the extend form to the current return date
@@ -1447,12 +1425,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     }
   }
 
-  notice.innerHTML = `
-    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Rented")}</strong></p>
-    ${nextLine}
-    <p><a href="${vehicleId.startsWith('slingshot') ? 'slingshot.html' : 'cars.html'}">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
-
-  // ── 2. Hide the regular booking form elements ────────────────────────────
+  // ── Hide the regular booking form elements ────────────────────────────
   // Hide the heading and all regular form inputs/sections.  The extend rental
   // section is shown below instead so there are no duplicate "reserve" CTAs.
   const bookingHeading = bookingSection.querySelector("h2");
@@ -1493,7 +1466,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     if (!el.closest("#extendRentalSection")) el.disabled = true;
   });
 
-  // ── 3. Show the Extend Rental section ────────────────────────────────────
+  // ── Show the Extend Rental section ────────────────────────────────────
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";
@@ -1552,15 +1525,21 @@ function initExtendRentalForm() {
 
     var isSlingshot = carData.hourlyTiers;
 
+    // Base date for computing extra days: use the current booking's return date
+    // (stored as the min attribute on the date input) so the estimate matches
+    // what the server charges.  Falls back to today if min is not set or is in
+    // the past (e.g. overdue rentals).
+    var minDate = extNewReturn.getAttribute("min") || today;
+    var baseDate = minDate > today ? minDate : today;
+
     if (isSlingshot) {
-      // For Slingshot: rough estimate based on current return date being today
-      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
       var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
       if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
     } else {
       // Economy cars: use the same tiered pricing as the main booking flow
-      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var daily   = carData.pricePerDay  || 55;
       var weekly  = carData.weekly       || 350;
       var biweek  = carData.biweekly     || 650;
@@ -2475,6 +2454,9 @@ stripeBtn.addEventListener("click", async () => {
                 }),
               }),
               new Promise(resolve => setTimeout(resolve, 5000)),
+            ]);
+          } catch (e) {
+            console.warn("Could not upload booking docs:", e);
           }
         }
 

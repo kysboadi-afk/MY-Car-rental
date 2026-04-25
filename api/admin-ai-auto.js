@@ -204,7 +204,7 @@ async function fetchAllData() {
         .from("bookings")
         .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(50);
       if (!error && data) {
         allBookings = data.map((row) => ({
           bookingId:  row.booking_id || "",
@@ -366,6 +366,8 @@ export default async function handler(req, res) {
 
   const autoMode = process.env.AUTO_MODE === "true";
 
+  console.time("AI request");
+
   try {
     const runStart = Date.now();
     const { allBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle } = await fetchAllData();
@@ -391,26 +393,40 @@ export default async function handler(req, res) {
       sb,
     });
 
+    // Fetch precomputed KPIs from the admin_metrics_v2 view (single DB round-trip).
+    let metrics = null;
+    if (sb) {
+      const { data, error: metricsErr } = await sb.from("admin_metrics_v2").select("*").single();
+      if (metricsErr) {
+        console.warn("admin-ai-auto: admin_metrics_v2 query failed:", metricsErr.message);
+      }
+      metrics = data;
+    }
+
     const runMs = Date.now() - runStart;
 
     const output = {
-      ran_at:            new Date().toISOString(),
-      auto_mode:         autoMode,
-      duration_ms:       runMs,
-      problems_found:    problems.length,
+      ran_at:             new Date().toISOString(),
+      auto_mode:          autoMode,
+      duration_ms:        runMs,
+      problems_found:     problems.length,
       problems,
       suggestions,
       actions_taken,
-      priority_alerts:   priorityAlerts,
-      revenue_this_week: insights.revenue?.thisWeek,
-      bookings_last_7d:  insights.bookings?.last7Days,
+      priority_alerts:    priorityAlerts,
+      revenue_this_week:  metrics?.revenue_this_week,
+      revenue_this_month: metrics?.revenue_this_month,
+      active_rentals:     metrics?.active_rentals,
+      bookings_last_7d:   insights.bookings?.last7Days,
     };
 
     // Log the auto-run to ai_logs
     await logAiAction("auto_run", { auto_mode: autoMode, booking_count: allBookings.length }, output, "cron");
 
+    console.timeEnd("AI request");
     return res.status(200).json(output);
   } catch (err) {
+    console.timeEnd("AI request");
     console.error("admin-ai-auto error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }

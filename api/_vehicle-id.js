@@ -4,9 +4,11 @@ const VEHICLE_ID_ALIASES = {
   "Camry 2013 SE": "camry2013",
 };
 
-// Legacy raw IDs that normalize to a canonical ID.
-// These are intentionally NOT included in VEHICLE_ID_ALIASES so they do not
-// affect the DB_TO_UI_MAP reverse lookup (which would break uiVehicleId).
+// Legacy raw IDs (stored in old DB records) that must map to their canonical ID.
+// These are kept separate from VEHICLE_ID_ALIASES so they do not pollute the
+// DB_TO_UI_MAP reverse lookup (built only from simple lowercase alias keys).
+// uiVehicleId() also consults this map so that legacy bookings with
+// vehicle_id="camry2012" are correctly grouped under the "camry" vehicle.
 const LEGACY_ID_NORMALIZE = {
   "camry2012": "camry",
 };
@@ -32,13 +34,15 @@ const DB_TO_UI_MAP = Object.fromEntries(
 );
 
 /**
- * Reverse of normalizeVehicleId: maps a DB-canonical vehicle ID back to its
- * UI/vehicles.json key.  Unknown IDs are returned unchanged.
+ * Reverse of normalizeVehicleId: maps a DB vehicle ID back to its canonical
+ * UI/vehicles.json key.  Handles both current IDs (via DB_TO_UI_MAP) and
+ * legacy raw IDs that were stored before normalisation was enforced (e.g.
+ * "camry2012" → "camry").  Unknown IDs are returned unchanged.
  *
- * @param {string} dbId - e.g. "camry"
- * @returns {string}     - e.g. "camry"
+ * @param {string} dbId - e.g. "camry" or legacy "camry2012"
+ * @returns {string}     - canonical key, e.g. "camry"
  */
 export function uiVehicleId(dbId) {
   const raw = String(dbId || "").trim();
-  return DB_TO_UI_MAP[raw] || raw;
+  return DB_TO_UI_MAP[raw] || LEGACY_ID_NORMALIZE[raw] || raw;
 }

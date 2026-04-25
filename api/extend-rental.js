@@ -22,6 +22,7 @@ import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { computeFinalReturnDate } from "./_final-return-date.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
               .select("booking_ref, return_date, return_time, status")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
-            if (sbRow && (sbRow.status === "active" || sbRow.status === "overdue")) {
+            if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
               // Capture the canonical Supabase booking_ref so the conflict-check
               // loop can skip this booking even when activeBooking.bookingId is a
               // legacy Stripe PI ID that does not match booking_ref.
@@ -141,7 +142,7 @@ export default async function handler(req, res) {
             .from("bookings")
             .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone")
             .eq("vehicle_id", vehicleId)
-            .in("status", ["active", "overdue"]);
+            .in("status", ["active", "active_rental", "overdue"]);
 
           if (sbActive) {
             for (const row of sbActive) {
@@ -201,13 +202,15 @@ export default async function handler(req, res) {
     // was in bookings.json but its bookingId is a legacy Stripe PI ID that does not match
     // any booking_ref in Supabase), resolve it now via renter contact info.
     // This guarantees the conflict-check loop can always skip the active booking.
+    // Also fetches return_date/return_time so effectiveReturnDate reflects the live
+    // Supabase value even when the primary lookup failed due to a PI-ID mismatch.
     if (sb && !sbActiveBookingRef) {
       try {
         let refQuery = sb
           .from("bookings")
-          .select("booking_ref")
+          .select("booking_ref, return_date, return_time")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["active", "overdue"]);
+          .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
           refQuery = refQuery.eq("customer_email", trimmedEmail);
         } else if (normalizedPhone) {
@@ -216,6 +219,15 @@ export default async function handler(req, res) {
         const { data: refRow } = await refQuery.maybeSingle();
         if (refRow && refRow.booking_ref) {
           sbActiveBookingRef = refRow.booking_ref;
+          // Populate sbReturnDate/sbReturnTime if they weren't resolved by the
+          // primary lookup — this fixes stale bookings.json return dates for
+          // bookings whose bookingId is a legacy Stripe PI ID.
+          if (!sbReturnDate && refRow.return_date) {
+            sbReturnDate = String(refRow.return_date).split("T")[0];
+          }
+          if (!sbReturnTime && refRow.return_time) {
+            sbReturnTime = String(refRow.return_time).substring(0, 5);
+          }
         }
       } catch (refFallbackErr) {
         console.warn("extend-rental: canonical ref fallback lookup failed (non-fatal):", refFallbackErr.message);
@@ -224,7 +236,7 @@ export default async function handler(req, res) {
 
     // Effective return date: prefer Supabase when it is more recent.  This corrects
     // stale bookings.json return dates caused by admin-driven extensions.
-    const effectiveReturnDate = (sbReturnDate && sbReturnDate > (activeBooking.returnDate || ""))
+    let effectiveReturnDate = (sbReturnDate && sbReturnDate > (activeBooking.returnDate || ""))
       ? sbReturnDate
       : (activeBooking.returnDate || "");
 
@@ -234,6 +246,20 @@ export default async function handler(req, res) {
     const existingReturnTime = normalizeClockTime(sbReturnTime || activeBooking.returnTime);
     const resolvedReturnTime = existingReturnTime || DEFAULT_RETURN_TIME;
     const needsReturnTimePersist = !activeBooking.returnTime || activeBooking.returnTime !== resolvedReturnTime;
+
+    // Incorporate paid extensions from revenue_records so the "must be after
+    // current return" validation always uses the true finalReturnDate, not just
+    // what bookings.return_date says (which can lag behind revenue_records when
+    // the Stripe webhook failed to update the bookings row).
+    if (sb) {
+      const extBookingRef = sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId;
+      const { date: finalDate } = await computeFinalReturnDate(
+        sb, extBookingRef, effectiveReturnDate, resolvedReturnTime
+      );
+      if (finalDate > effectiveReturnDate) {
+        effectiveReturnDate = finalDate;
+      }
+    }
 
     // ── Validate new return date is after current return date ───────────────
     const currentReturnMs = parseDateTimeMs(effectiveReturnDate, resolvedReturnTime);
@@ -262,7 +288,19 @@ export default async function handler(req, res) {
 
     for (const b of vehicleBookings) {
       if (b === activeBooking) continue;
+      if (b.bookingId === activeBooking.bookingId) continue;
+      // Also skip when the JSON entry's ID matches the Supabase canonical ref —
+      // covers legacy entries where b.bookingId is a Stripe PI ID and the
+      // activeBooking was resolved via Supabase with a bk-... booking_ref.
+      if (sbActiveBookingRef && (b.bookingId === sbActiveBookingRef || b.paymentIntentId === sbActiveBookingRef)) continue;
       if (b.status === "cancelled" || b.status === "completed_rental") continue;
+      // Safety guard: skip bookings that end on or before the current effective
+      // return date — they cannot conflict with the extension window.  Mirrors
+      // the identical guard in the Supabase conflict loop below and acts as the
+      // last line of defence when ID matching fails to exclude the active booking
+      // (e.g. its returnDate equals effectiveReturnDate but lacks a returnTime,
+      // causing the date-only midnight boundary to spill into the extension window).
+      if (b.returnDate && b.returnDate <= effectiveReturnDate) continue;
 
       const hasConflict = hasDateTimeOverlap(
         extensionRange,
@@ -299,12 +337,43 @@ export default async function handler(req, res) {
           .from("bookings")
           .select("booking_ref, pickup_date, return_date, pickup_time, return_time")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["pending", "active", "overdue", "reserved"])
+          .not("status", "in", "(cancelled,completed_rental)")
           .gte("pickup_date", conflictFloorDate);
         if (sbActiveBookingRef) {
           futureQuery = futureQuery.neq("booking_ref", sbActiveBookingRef);
         }
         const { data: sbFuture } = await futureQuery;
+
+        // Batch-fetch paid, non-cancelled extension revenue_records for this
+        // vehicle so we can compute the true finalReturnDate for each
+        // conflicting booking.  This guards against stale return_date values
+        // in the bookings table (e.g. extension recorded in revenue_records but
+        // not yet reflected in bookings.return_date).
+        // Only paid extensions with is_cancelled=false are counted — unpaid or
+        // cancelled extensions do NOT extend a booking's blocking window.
+        let extensionMaxReturnByRef = {};
+        if (sbFuture && sbFuture.length > 0) {
+          try {
+            const { data: extRecords } = await sb
+              .from("revenue_records")
+              .select("original_booking_id, return_date")
+              .eq("vehicle_id", vehicleId)
+              .eq("type", "extension")
+              .eq("payment_status", "paid")
+              .eq("is_cancelled", false)
+              .gte("return_date", conflictFloorDate);
+            for (const rec of (extRecords || [])) {
+              if (!rec.original_booking_id || !rec.return_date) continue;
+              const rd = String(rec.return_date).split("T")[0];
+              const key = rec.original_booking_id;
+              if (!extensionMaxReturnByRef[key] || rd > extensionMaxReturnByRef[key]) {
+                extensionMaxReturnByRef[key] = rd;
+              }
+            }
+          } catch (extErr) {
+            console.warn("extend-rental: revenue_records extension lookup failed (non-fatal):", extErr.message);
+          }
+        }
 
         for (const fbk of (sbFuture || [])) {
           // Skip the current renter's own booking.  activeBookingRef may be a
@@ -318,7 +387,26 @@ export default async function handler(req, res) {
           const fbkPickupDate = String(fbk.pickup_date || "").split("T")[0];
           // Skip bookings without a pickup date or without a return date.
           if (!fbkPickupDate || !fbk.return_date) continue;
-          const fbkReturnDate = String(fbk.return_date).split("T")[0];
+
+          // Compute finalReturnDate: take the maximum of the booking's own
+          // return_date and the latest paid extension return_date from
+          // revenue_records.  This ensures a booking that has been genuinely
+          // extended (and has a paid revenue_record) is not under-counted as a
+          // blocking future booking.
+          const bookingReturnDate = String(fbk.return_date).split("T")[0];
+          const extReturnDate = extensionMaxReturnByRef[fbk.booking_ref] || null;
+          const fbkReturnDate = (extReturnDate && extReturnDate > bookingReturnDate)
+            ? extReturnDate
+            : bookingReturnDate;
+
+          // Safety guard: skip any booking whose effective end date is on or
+          // before our current effective return date — such a booking cannot
+          // block the extension window.  This is the final line of defence
+          // against self-conflict in edge cases (e.g. same-day rentals) where
+          // sbActiveBookingRef was not resolved and the active booking appears
+          // in the query results.
+          if (fbkReturnDate <= effectiveReturnDate) continue;
+
           // Supabase stores times as "HH:MM:SS"; take first 5 chars → "HH:MM".
           const fbkPickupTime = fbk.pickup_time ? String(fbk.pickup_time).substring(0, 5) : "";
           const fbkReturnTime = fbk.return_time ? String(fbk.return_time).substring(0, 5) : "";
@@ -349,6 +437,9 @@ export default async function handler(req, res) {
 
     let extensionAmountPreTax;
     let extensionLabel;
+    // Hoisted for debug logging below; only populated for economy vehicles.
+    let extensionDays = null;
+    let pricePerDay   = null;
 
     if (isSlingshot) {
       // Slingshot: bill by extra hours at daily rate ÷ 24
@@ -361,8 +452,9 @@ export default async function handler(req, res) {
     } else {
       // Economy/car vehicles: bill by extra days using the same tiered pricing as
       // the main booking flow (monthly → bi-weekly → weekly → daily).
-      // Use the vehicle's own stored rates so newly added vehicles are priced
-      // correctly (not at the hardcoded Camry rates).
+      // Extension days are counted from effectiveReturnDate (the authoritative
+      // current return date, preferring Supabase over bookings.json) to
+      // newReturnDate — never from today or pickup_date.
       const extraMs   = newReturnMs - currentReturnMs;
       const extraDays = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
       extensionLabel  = `+${extraDays} day${extraDays !== 1 ? "s" : ""}`;
@@ -393,6 +485,8 @@ export default async function handler(req, res) {
       cost += remaining * dailyRate;
 
       extensionAmountPreTax = cost;
+      extensionDays = extraDays;
+      pricePerDay   = dailyRate;
     }
 
     // Slingshot: no tax — consistent with the main booking flow which also charges no tax.
@@ -400,6 +494,19 @@ export default async function handler(req, res) {
     const extensionAmount = isSlingshot
       ? extensionAmountPreTax
       : applyTax(extensionAmountPreTax, settings);
+
+    // Temporary debug log — compare Camry 2012 vs Camry 2013 outputs to
+    // identify stale returnDate or rate mismatch.
+    console.log({
+      vehicle_id:      vehicleId,
+      booking_ref:     activeBooking?.bookingId,
+      current_return:  activeBooking?.returnDate,
+      effective_return: effectiveReturnDate,
+      requested_return: newReturnDate,
+      extension_days:  extensionDays,
+      daily_rate:      pricePerDay,
+      total_amount:    extensionAmount,
+    });
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);

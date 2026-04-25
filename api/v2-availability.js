@@ -17,6 +17,7 @@
 import { getSupabaseAdmin } from "./_supabase.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
+import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_final-return-date.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -64,10 +65,11 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
   console.log("[VEHICLE_ID_LOOKUP]", JSON.stringify({ vehicleId_ui: vehicleId, vehicleId_db: dbVehicleId, from, to }));
   if (sb) {
     try {
-      // Active rental override: if the vehicle has ANY active_rental booking
-      // (regardless of return date), it is unavailable.  This ensures an overdue
-      // booking that has not yet been auto-completed still blocks new bookings even
-      // after returnDateTime + buffer has technically passed.
+      // Active rental override: if the vehicle has an active_rental booking whose
+      // finalReturnDate (accounting for paid extensions) extends into or past the
+      // requested range, it is unavailable.  If the final return + prep buffer is
+      // strictly before the requested start, fall through to the date-range check
+      // so that future bookings are allowed once the rental has physically ended.
       // Note: a composite index on (vehicle_id, status) in the bookings table is
       // recommended so this single-row lookup stays fast as the table grows.
       const { data: activeRentals, error: activeRentalError } = await sb
@@ -77,7 +79,29 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
         .eq("status", "active_rental")
         .limit(1);
       if (!activeRentalError && activeRentals && activeRentals.length > 0) {
-        return { available: false, conflicts: activeRentals, source: "supabase" };
+        const ar         = activeRentals[0];
+        const arRef      = ar.booking_ref || null;
+        const arBaseDate = ar.return_date ? String(ar.return_date).split("T")[0] : "";
+        const arBaseTime = ar.return_time ? String(ar.return_time).substring(0, 5) : "";
+
+        // Incorporate any paid extensions so the block window reflects the true
+        // final return date (non-fatal: falls back to booking's own return_date).
+        const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
+          sb, arRef, arBaseDate, arBaseTime
+        );
+
+        // Compute millisecond timestamps anchored to Los Angeles wall-clock time
+        // so DST transitions are handled correctly.
+        const finalReturnMs    = buildDateTimeLA(finalDate, finalTime || "00:00").getTime();
+        const requestedStartMs = buildDateTimeLA(from, fromTime || "00:00").getTime();
+
+        if (requestedStartMs < finalReturnMs + PREP_BUFFER_MS) {
+          // Requested window starts before the final return + prep buffer → blocked.
+          return { available: false, conflicts: activeRentals, source: "supabase" };
+        }
+        // Otherwise, the rental has ended (possibly including extensions) and the
+        // requested start is after the prep buffer — fall through to the date-range
+        // check so genuinely future bookings are correctly allowed.
       }
 
       // Query Supabase bookings for any active booking that overlaps [from, to].
