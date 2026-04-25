@@ -99,8 +99,9 @@ export default async function handler(req, res) {
     // via admin actions that only update Supabase.  Supabase is the authoritative
     // source for the live return date; bookings.json is the fallback.
     const sb = getSupabaseAdmin();
-    let sbReturnDate = null;    // YYYY-MM-DD from Supabase (may be more recent than bookings.json)
-    let sbReturnTime = null;    // HH:MM from Supabase
+    let sbReturnDate = null;       // YYYY-MM-DD from Supabase (may be more recent than bookings.json)
+    let sbReturnTime = null;       // HH:MM from Supabase
+    let sbActiveBookingRef = null; // canonical booking_ref from Supabase (used for conflict-skip)
 
     if (sb) {
       try {
@@ -111,10 +112,16 @@ export default async function handler(req, res) {
           if (bookingRef) {
             const { data: sbRow } = await sb
               .from("bookings")
-              .select("return_date, return_time, status")
+              .select("booking_ref, return_date, return_time, status")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
             if (sbRow && (sbRow.status === "active" || sbRow.status === "overdue")) {
+              // Capture the canonical Supabase booking_ref so the conflict-check
+              // loop can skip this booking even when activeBooking.bookingId is a
+              // legacy Stripe PI ID that does not match booking_ref.
+              if (sbRow.booking_ref) {
+                sbActiveBookingRef = sbRow.booking_ref;
+              }
               const sbDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
               // Only use Supabase date when it is strictly later (guards against stale Supabase rows).
               if (sbDate && sbDate > (activeBooking.returnDate || "")) {
@@ -267,7 +274,13 @@ export default async function handler(req, res) {
           .gte("pickup_date", conflictFloorDate);
 
         for (const fbk of (sbFuture || [])) {
-          if (fbk.booking_ref === activeBookingRef) continue;
+          // Skip the current renter's own booking.  activeBookingRef may be a
+          // legacy Stripe PI ID that doesn't match booking_ref, so also compare
+          // against sbActiveBookingRef (the canonical bk-... ref from Supabase).
+          if (
+            fbk.booking_ref === activeBookingRef ||
+            (sbActiveBookingRef && fbk.booking_ref === sbActiveBookingRef)
+          ) continue;
 
           const fbkPickupDate = String(fbk.pickup_date || "").split("T")[0];
           // Skip bookings without a pickup date or without a return date.
