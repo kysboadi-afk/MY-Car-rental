@@ -261,11 +261,14 @@ test("add-manual-booking: PREFLIGHT — all four Supabase helpers fire together"
 test("add-manual-booking: 409 when dates conflict with an existing booking", async () => {
   resetStore(); resetCalls();
   nextAvailability = false;
-  const res = makeRes();
-  await handler(makeReq(basePayload()), res);
-  nextAvailability = true;
-  assert.equal(res._status, 409);
-  assert.equal(res._body?.error, "conflict");
-  assert.equal(automationCalls.revenue.length,  0, "no revenue record should be created on conflict");
-  assert.equal(automationCalls.booking.length,  0, "no booking should be created on conflict");
+  try {
+    const res = makeRes();
+    await handler(makeReq(basePayload()), res);
+    assert.equal(res._status, 409);
+    assert.equal(res._body?.error, "conflict");
+    assert.equal(automationCalls.revenue.length,  0, "no revenue record should be created on conflict");
+    assert.equal(automationCalls.booking.length,  0, "no booking should be created on conflict");
+  } finally {
+    nextAvailability = true;
+  }
 });
