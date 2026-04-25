@@ -46,20 +46,20 @@ async function fetchAllData() {
     try {
       const { data, error } = await sb
         .from("bookings")
-        .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
+        .select("booking_ref, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date, status, total_price, created_at")
         .order("created_at", { ascending: false })
         .limit(500);
       if (!error && data) {
         allBookings = data.map((row) => ({
-          bookingId:  row.booking_id || "",
+          bookingId:  row.booking_ref || "",
           name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          phone:      row.customer_phone || "",
+          email:      row.customer_email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: Number(row.total_price || 0),
           createdAt:  row.created_at || "",
         }));
       }
