@@ -203,9 +203,10 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // Default 10 s — generous enough for a cold Supabase connection + the
-  // revenue_records_effective query added to fetchAllData.  5 s was too
-  // tight and caused spurious "System is busy" responses.
+  // Default 10 s budget: ~3 s Supabase cold-start + 3 s for parallel queries
+  // (bookings, vehicles, revenue_records_effective) + 4 s buffer for computation.
+  // 5 s was too tight after revenue_records_effective was added to fetchAllData
+  // and caused spurious "System is busy" responses on first load.
   const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 10000;
 
   async function mainLogic() {

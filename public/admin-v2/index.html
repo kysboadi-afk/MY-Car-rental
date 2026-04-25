@@ -5938,10 +5938,11 @@ function renderDiagnostics(data) {
 
   // ── Environment variables ──────────────────────────────────────────────
   const envRows = Object.entries(data.env || {}).map(([key, status]) => {
-    const ok       = status === 'ok';
+    const ok       = status === 'ok' || status.startsWith('ok (');
     const optional = status === 'optional' || status === 'not required';
-    const color = ok ? 'var(--success)' : (optional ? 'var(--text-sub)' : 'var(--danger)');
-    const icon  = ok ? '✅' : (optional ? '⚪' : '❌');
+    const warning  = status.startsWith('warning:');
+    const color = ok ? 'var(--success)' : (optional ? 'var(--text-sub)' : (warning ? 'var(--warning, #d97706)' : 'var(--danger)'));
+    const icon  = ok ? '✅' : (optional ? '⚪' : (warning ? '⚠️' : '❌'));
     return `<tr>
       <td style="padding:5px 8px;font-family:monospace;font-size:12px;">${esc(key)}</td>
       <td style="padding:5px 8px;color:${color};font-weight:500;">${icon} ${esc(status)}</td>
@@ -5967,7 +5968,8 @@ function renderDiagnostics(data) {
   }
 
   // ── Actionable fix guidance ────────────────────────────────────────────
-  const envMissing = Object.entries(data.env || {}).filter(([, v]) => v === 'missing').map(([k]) => k);
+  const envMissing  = Object.entries(data.env || {}).filter(([, v]) => v === 'missing').map(([k]) => k);
+  const envWarnings = Object.entries(data.env || {}).filter(([, v]) => v.startsWith('warning:')).map(([k, v]) => ({ key: k, msg: v }));
   const tablesMissing = sbConnected
     ? Object.entries(sb.tables || {}).filter(([, v]) => v === 'missing' || v === 'error').map(([k]) => k)
     : [];
@@ -5987,6 +5989,17 @@ function renderDiagnostics(data) {
       <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
       and a new deployment triggered.
     </div>`;
+  }
+  if (envWarnings.length > 0) {
+    guidance += envWarnings.map(({ key, msg }) =>
+      `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+        <strong style="color:var(--warning, #d97706);">⚠ Configuration warning — <code>${esc(key)}</code></strong><br>
+        ${esc(msg)}<br>
+        Update <code>${esc(key)}</code> in
+        <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
+        and redeploy.
+      </div>`
+    ).join('');
   }
   if (tablesMissing.length > 0) {
     guidance += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">

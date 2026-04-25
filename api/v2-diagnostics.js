@@ -17,6 +17,7 @@
 //     SMTP_HOST:                "ok" | "missing",
 //     TEXTMAGIC_USERNAME:       "ok" | "missing",
 //     OPENAI_API_KEY:           "ok" | "missing" | "not required",
+//     OPENAI_MODEL:             "ok" | "optional" | "ok (...)" | "warning: ...",
 //   },
 //   supabase: {
 //     connected: boolean,
@@ -36,6 +37,39 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+// OpenAI model validation.
+// Fast models work well within the 45 s budget. Slow/reasoning models regularly
+// exceed it and produce "Connection timed out" errors in the AI assistant.
+const FAST_OPENAI_MODELS = new Set([
+  "gpt-4.1-mini",    // default — recommended
+  "gpt-4.1-nano",
+  "gpt-4.1",
+  "gpt-4o-mini",
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-0125",
+]);
+const SLOW_OPENAI_MODELS = new Set([
+  "gpt-4o",          // high latency, causes timeouts on multi-tool queries
+  "gpt-4-turbo",
+  "gpt-4-turbo-preview",
+  "gpt-4",
+  "o1",
+  "o1-mini",
+  "o1-preview",
+  "o3",
+  "o3-mini",
+]);
+
+function validateOpenAiModel(modelEnv) {
+  if (!modelEnv) return "optional";                          // default gpt-4.1-mini will be used
+  if (FAST_OPENAI_MODELS.has(modelEnv)) return "ok";
+  if (SLOW_OPENAI_MODELS.has(modelEnv)) {
+    return `warning: ${modelEnv} is too slow for multi-tool queries — change to gpt-4.1-mini in Vercel`;
+  }
+  // Unknown model — still set, just flag it so the admin knows to verify it.
+  return `ok (${modelEnv})`;
+}
 
 // All tables that the v2 admin panel reads from or writes to.
 const REQUIRED_TABLES = [
@@ -115,7 +149,7 @@ export default async function handler(req, res) {
     TEXTMAGIC_USERNAME:        process.env.TEXTMAGIC_USERNAME        ? "ok" : "missing",
     // Optional — only needed for the AI assistant feature.
     OPENAI_API_KEY:            process.env.OPENAI_API_KEY            ? "ok" : "optional",
-    OPENAI_MODEL:              process.env.OPENAI_MODEL              || "gpt-4.1-mini (default)",
+    OPENAI_MODEL:              validateOpenAiModel(process.env.OPENAI_MODEL),
   };
 
   // ── Supabase connectivity and table checks ───────────────────────────────
