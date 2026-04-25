@@ -65,9 +65,12 @@ mock.module("./_booking-automation.js", {
   },
 });
 
+let nextAvailability = true;
+
 mock.module("./_availability.js", {
   namedExports: {
     hasOverlap: (ranges, from, to) => ranges.some((r) => from <= r.to && r.from <= to),
+    isDatesAndTimesAvailable: async () => nextAvailability,
   },
 });
 
@@ -253,4 +256,16 @@ test("add-manual-booking: PREFLIGHT — all four Supabase helpers fire together"
   assert.ok(automationCalls.customer.length > 0, "customer upsert must fire");
   assert.ok(automationCalls.booking.length  > 0, "booking upsert must fire");
   assert.ok(automationCalls.blocked.length  > 0, "blocked date must fire");
+});
+
+test("add-manual-booking: 409 when dates conflict with an existing booking", async () => {
+  resetStore(); resetCalls();
+  nextAvailability = false;
+  const res = makeRes();
+  await handler(makeReq(basePayload()), res);
+  nextAvailability = true;
+  assert.equal(res._status, 409);
+  assert.equal(res._body?.error, "conflict");
+  assert.equal(automationCalls.revenue.length,  0, "no revenue record should be created on conflict");
+  assert.equal(automationCalls.booking.length,  0, "no booking should be created on conflict");
 });
