@@ -274,7 +274,18 @@ export default async function handler(req, res) {
     for (const b of vehicleBookings) {
       if (b === activeBooking) continue;
       if (b.bookingId === activeBooking.bookingId) continue;
+      // Also skip when the JSON entry's ID matches the Supabase canonical ref —
+      // covers legacy entries where b.bookingId is a Stripe PI ID and the
+      // activeBooking was resolved via Supabase with a bk-... booking_ref.
+      if (sbActiveBookingRef && (b.bookingId === sbActiveBookingRef || b.paymentIntentId === sbActiveBookingRef)) continue;
       if (b.status === "cancelled" || b.status === "completed_rental") continue;
+      // Safety guard: skip bookings that end on or before the current effective
+      // return date — they cannot conflict with the extension window.  Mirrors
+      // the identical guard in the Supabase conflict loop below and acts as the
+      // last line of defence when ID matching fails to exclude the active booking
+      // (e.g. its returnDate equals effectiveReturnDate but lacks a returnTime,
+      // causing the date-only midnight boundary to spill into the extension window).
+      if (b.returnDate && b.returnDate <= effectiveReturnDate) continue;
 
       const hasConflict = hasDateTimeOverlap(
         extensionRange,
