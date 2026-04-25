@@ -858,11 +858,17 @@ function formatConfirmedReply(toolName, args, result) {
       );
     }
     case "record_extension_payment":
-      return `✅ ${safe(result.message || `Extension recorded for booking \`${safe(args.bookingId)}\`.`)}\n- New return date: ${safe(result.newReturnDate)}\n- Total paid so far: $${safe(result.updatedAmountPaid)}`;
+      return result.message
+        ? `✅ ${safe(result.message)}\n- New return date: ${safe(result.newReturnDate)}\n- Total paid so far: $${safe(result.updatedAmountPaid)}`
+        : `✅ Extension recorded for booking \`${safe(args.bookingId)}\`.\n- New return date: ${safe(result.newReturnDate)}\n- Total paid so far: $${safe(result.updatedAmountPaid)}`;
     case "create_manual_booking":
-      return `✅ ${safe(result.message || `Booking created for ${safe(args.name)}.`)}\n- Booking ID: \`${safe(result.bookingId)}\`\n- Status: ${safe(result.status)}\n- Dates blocked: ${safe(result.pickupDate)} → ${safe(result.returnDate)}`;
+      return result.message
+        ? `✅ ${safe(result.message)}\n- Booking ID: \`${safe(result.bookingId)}\`\n- Status: ${safe(result.status)}\n- Dates blocked: ${safe(result.pickupDate)} → ${safe(result.returnDate)}`
+        : `✅ Booking created for ${safe(args.name)}.\n- Booking ID: \`${safe(result.bookingId)}\`\n- Status: ${safe(result.status)}\n- Dates blocked: ${safe(result.pickupDate)} → ${safe(result.returnDate)}`;
     case "resend_booking_confirmation":
-      return `✅ ${safe(result.message || `Confirmation resent for booking \`${safe(args.bookingId)}\`.`)}`;
+      return result.message
+        ? `✅ ${safe(result.message)}`
+        : `✅ Confirmation resent for booking \`${safe(args.bookingId)}\`.`;
     case "recount_customer_counts":
       return `✅ ${safe(result.message || "Customer counts updated.")}${result.changes?.length ? `\n${result.changes.map((c) => `- ${safe(c.name)}: ${safe(c.old)} → ${safe(c.new)}`).join("\n")}` : ""}`;
     case "reconcile_stripe":

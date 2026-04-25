@@ -177,7 +177,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const TIMEOUT_MS = 5000;
+  const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 5000;
 
   async function mainLogic() {
     const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
