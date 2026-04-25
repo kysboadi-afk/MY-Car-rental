@@ -1,6 +1,9 @@
 {
   "functions": {
     "api/admin-chat.js":                    { "maxDuration": 60 },
+    "api/sms-webhook.js":                   { "maxDuration": 30 },
+    "api/bouncie-sync-cron.js":             { "maxDuration": 30 },
+    "api/oil-check-cron.js":               { "maxDuration": 60 },
     "api/stripe-reconcile.js":              { "maxDuration": 60 },
     "api/stripe-backfill.js":              { "maxDuration": 60 },
     "api/stripe-replay.js":               { "maxDuration": 60 },
@@ -50,6 +53,14 @@
     {
       "path": "/api/v2-system-health",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/bouncie-sync-cron",
+      "schedule": "0 8,20 * * *"
+    },
+    {
+      "path": "/api/oil-check-cron",
+      "schedule": "0 17 * * *"
     }
   ]
 }
