@@ -22,11 +22,18 @@ import { uiVehicleId } from "./_vehicle-id.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const DB_TO_APP_STATUS = {
-  pending:   "reserved_unpaid",
-  approved:  "booked_paid",
-  active:    "active_rental",
-  completed: "completed_rental",
-  cancelled: "cancelled_rental",
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  approved:             "booked_paid",
+  booked_paid:          "booked_paid",
+  active:               "active_rental",
+  active_rental:        "active_rental",
+  overdue:              "overdue",
+  completed:            "completed_rental",
+  completed_rental:     "completed_rental",
+  cancelled:            "cancelled_rental",
+  cancelled_rental:     "cancelled_rental",
 };
 
 function revenueFromBooking(booking) {
@@ -46,7 +53,7 @@ async function fetchAllData() {
     try {
       const { data, error } = await sb
         .from("bookings")
-        .select("booking_ref, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date, status, total_price, created_at")
+        .select("booking_ref, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date, status, deposit_paid, total_price, created_at")
         .order("created_at", { ascending: false })
         .limit(500);
       if (!error && data) {
@@ -59,7 +66,7 @@ async function fetchAllData() {
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: Number(row.total_price || 0),
+          amountPaid: Number(row.deposit_paid || row.total_price || 0),
           createdAt:  row.created_at || "",
         }));
       }
