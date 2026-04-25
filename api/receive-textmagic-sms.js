@@ -121,7 +121,15 @@ function getAvailableExtensionMinutes(allBookings, vehicleId, currentReturnDate,
   if (isNaN(returnDt.getTime())) return Infinity;
 
   const vehicleBookings = (allBookings[vehicleId] || []).filter(
-    (b) => b.status === "booked_paid" || b.status === "reserved_unpaid" || b.status === "active_rental"
+    (b) =>
+      b.status === "booked_paid" ||
+      b.status === "reserved_unpaid" ||
+      b.status === "active_rental" ||
+      b.status === "reserved" ||
+      b.status === "pending" ||
+      b.status === "approved" ||
+      b.status === "pending_verification" ||
+      b.status === "active"
   );
 
   let nextStart = Infinity;

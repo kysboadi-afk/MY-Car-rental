@@ -318,6 +318,165 @@ test("extend-rental: 409 when future booking has 'booked_paid' status in Supabas
   assert.equal(res._status, 409, "booked_paid future booking must block the extension");
 });
 
+test("extend-rental: 200 for same-day rental (effectiveReturnDate guard prevents self-conflict)", async () => {
+  // Same-day rental: pickup and return both today (Apr 25).
+  // conflictFloorDate = Apr 25 = pickup_date, so the active booking itself
+  // could appear in the Supabase query results when sbActiveBookingRef is null.
+  // The fbkReturnDate <= effectiveReturnDate guard must catch this and skip it.
+  const active = makeActiveBooking({
+    pickupDate:  "2026-04-25",
+    returnDate:  "2026-04-25",
+  });
+  mockBookings = { camry: [active] };
+
+  // Supabase returns the active booking with the same return date as pickup.
+  // sbActiveBookingRef will be null (simulate enrichment mismatch by using
+  // a legacy PI ID as the bookingId so neither ref check fires).
+  const activeWithPiId = { ...active, bookingId: "pi_legacy_pi_id" };
+  mockBookings = { camry: [activeWithPiId] };
+
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      {
+        match: (t) => t === "bookings",
+        rows: [
+          // Active booking (same-day, simulating a Supabase ref mismatch)
+          {
+            booking_ref:    "bk-camry-active-001",
+            return_date:    "2026-04-25",
+            return_time:    "17:00:00",
+            status:         "active_rental",
+            customer_email: "alice@example.com",
+            customer_phone: "2135550100",
+            customer_name:  "Alice Tester",
+            pickup_date:    "2026-04-25",
+            pickup_time:    "10:00:00",
+          },
+        ],
+      },
+      { match: (t) => t === "revenue_records", rows: [] },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-04-28",
+  }), res);
+
+  assert.notEqual(res._status, 409, "same-day rental must not self-conflict");
+  assert.equal(res._status, 200);
+});
+
+test("extend-rental: 409 when paid extension revenue_record extends a future booking past newReturnDate", async () => {
+  // Future booking (status=pending) has return_date=May 3 in bookings table,
+  // but has a paid extension revenue_record pushing its effective end to May 8.
+  // The renter wants to extend to May 5 which would overlap May 1→May 8.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      {
+        match: (t) => t === "bookings",
+        rows: [
+          // Enrichment: active booking
+          {
+            booking_ref:    "bk-camry-active-001",
+            return_date:    "2026-04-30",
+            return_time:    "17:00:00",
+            status:         "active_rental",
+            customer_email: "alice@example.com",
+            customer_phone: "2135550100",
+            customer_name:  "Alice Tester",
+            pickup_date:    "2026-04-15",
+            pickup_time:    "10:00:00",
+          },
+          // Future booking: bookings table shows return May 3 but has paid extension to May 8
+          {
+            booking_ref: "bk-camry-future-002",
+            pickup_date: "2026-05-01",
+            return_date: "2026-05-03",
+            pickup_time: "10:00:00",
+            return_time: "17:00:00",
+            status:      "pending",
+          },
+        ],
+      },
+      // revenue_records: paid extension for the future booking → finalReturnDate May 8
+      {
+        match: (t) => t === "revenue_records",
+        rows: [
+          {
+            original_booking_id: "bk-camry-future-002",
+            return_date:         "2026-05-08",
+          },
+        ],
+      },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",   // overlaps future booking [May 1 → May 8]
+  }), res);
+
+  assert.equal(res._status, 409, "paid extension record extending future booking must block extension");
+});
+
+test("extend-rental: 200 when future booking has UNPAID extension revenue_record (must not block)", async () => {
+  // Future booking has a revenue_record of type=extension but payment_status=pending.
+  // Unpaid extensions must NOT extend the blocking window.
+  // The future booking's nominal end (May 3) does not overlap [Apr 30→May 2].
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      {
+        match: (t) => t === "bookings",
+        rows: [
+          {
+            booking_ref:    "bk-camry-active-001",
+            return_date:    "2026-04-30",
+            return_time:    "17:00:00",
+            status:         "active_rental",
+            customer_email: "alice@example.com",
+            customer_phone: "2135550100",
+            customer_name:  "Alice Tester",
+            pickup_date:    "2026-04-15",
+            pickup_time:    "10:00:00",
+          },
+          {
+            booking_ref: "bk-camry-future-003",
+            pickup_date: "2026-05-04",
+            return_date: "2026-05-07",
+            pickup_time: "10:00:00",
+            return_time: "17:00:00",
+            status:      "reserved",
+          },
+        ],
+      },
+      // revenue_records returns empty because the mock only responds to
+      // is_cancelled=false + payment_status=paid — unpaid records are excluded.
+      { match: (t) => t === "revenue_records", rows: [] },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-02",   // Apr 30 → May 2, does not overlap May 4 pickup
+  }), res);
+
+  assert.notEqual(res._status, 409, "unpaid extension record must not expand the blocking window");
+  assert.equal(res._status, 200);
+});
+
 test("extend-rental: 400 when new return date is not after current return date", async () => {
   const active = makeActiveBooking();
   mockBookings = { camry: [active] };
