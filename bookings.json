@@ -175,6 +175,33 @@
             "smsSentAt": {},
             "createdAt": "2026-03-29T20:38:00.000Z",
             "source": "public_booking"
+        },
+        {
+            "bookingId": "bk-c0c7138a5d2a",
+            "name": "Brandon Bookhart",
+            "phone": "+15303285561",
+            "email": "brandon.bookhart@gmail.com",
+            "vehicleId": "camry2013",
+            "vehicleName": "Camry 2013 SE",
+            "pickupDate": "2026-04-24",
+            "pickupTime": "08:00",
+            "returnDate": "2026-04-26",
+            "returnTime": "08:00",
+            "location": "",
+            "status": "active_rental",
+            "paymentIntentId": "",
+            "paymentMethod": "stripe",
+            "stripeCustomerId": "cus_UKU6OFbaET2wdh",
+            "amountPaid": 60.64,
+            "totalPrice": 60.64,
+            "remainingBalance": 0,
+            "paymentStatus": "paid",
+            "notes": "Full payment $60.64 via Stripe. +1 day extension applied (bk-test-deposit-1 PI, manual backfill).",
+            "smsSentAt": {},
+            "createdAt": "2026-04-24T08:00:00.000Z",
+            "source": "stripe_webhook_manual_backfill",
+            "extensionCount": 1,
+            "lastExtensionAt": "2026-04-25T20:45:06.000Z"
         }
     ]
 }
