@@ -1,47 +1,33 @@
 // api/_availability.js
-// Shared helpers for reading and checking vehicle date availability.
+// Shared helpers for checking vehicle date availability.
 // Used by create-payment-intent.js and send-reservation-email.js.
+//
+// Single source of truth: Supabase `bookings` table.
+// All availability checks query bookings directly — booked-dates.json is NOT used.
+// Fails open (returns available=true) when Supabase is not configured or throws,
+// so a transient DB outage does not permanently block new bookings.
 
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
-const FLEET_STATUS_PATH = "fleet-status.json";
-
-/**
- * Fetch and decode a JSON file from the GitHub Contents API.
- * Returns the parsed object, or null on any error.
- * @param {string} filePath - repo-relative path (e.g. "booked-dates.json")
- */
-async function fetchGitHubFile(filePath) {
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${filePath}`;
-  const headers = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (process.env.GITHUB_TOKEN) {
-    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
-  const resp = await fetch(apiUrl, { headers });
-  if (!resp.ok) return null;
-  const fileData = await resp.json();
-  return JSON.parse(
-    Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-  );
-}
+// All booking statuses that mean the vehicle is occupied / unavailable.
+// Keep aligned with fleet-status.js and v2-availability.js.
+const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
 /**
- * Fetch the current booked-dates.json from the GitHub Contents API.
- * Returns the parsed object, or null on any error.
+ * Convert a PostgreSQL time string "HH:MM:SS" to 12-hour "H:MM AM/PM" format.
+ * Returns null when the input is absent or unparseable.
+ *
+ * @param {string|null} pgTime - e.g. "09:00:00" or "13:30:00"
+ * @returns {string|null}
  */
-export async function fetchBookedDates() {
-  return fetchGitHubFile(BOOKED_DATES_PATH);
-}
-
-/**
- * Fetch the current fleet-status.json from the GitHub Contents API.
- * Returns the parsed object, or null on any error.
- */
-export async function fetchFleetStatus() {
-  return fetchGitHubFile(FLEET_STATUS_PATH);
+function pgTimeTo12h(pgTime) {
+  if (!pgTime || typeof pgTime !== "string") return null;
+  const m = pgTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const mins = m[2];
+  const ampm = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mins} ${ampm}`;
 }
 
 /**
@@ -138,15 +124,30 @@ export function hasDateTimeOverlap(ranges, fromDate, toDate, fromTime, toTime) {
 
 /**
  * Returns true if the dates [from, to] are available for the given vehicle.
- * Fails open (returns true) when the GitHub token is absent or on fetch errors
+ * Queries the Supabase bookings table directly — no static JSON files.
+ * Fails open (returns true) when Supabase is not configured or on any error
  * so that transient issues do not permanently block payments.
+ *
+ * @param {string} vehicleId
+ * @param {string} from - YYYY-MM-DD
+ * @param {string} to   - YYYY-MM-DD
+ * @returns {Promise<boolean>} true when available
  */
 export async function isDatesAvailable(vehicleId, from, to) {
   try {
-    const data = await fetchBookedDates();
-    if (!data) return true; // can't verify — allow through
-    const ranges = data[vehicleId] || [];
-    return !hasOverlap(ranges, from, to);
+    const { getSupabaseAdmin } = await import("./_supabase.js");
+    const sb = getSupabaseAdmin();
+    if (!sb) return true; // Supabase not configured — fail open
+    const { data, error } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("vehicle_id", vehicleId)
+      .in("status", ACTIVE_BOOKING_STATUSES)
+      .lte("pickup_date", to)
+      .gte("return_date", from)
+      .limit(1);
+    if (error) return true; // fail open on query error
+    return !data || data.length === 0;
   } catch {
     return true; // fail open on transient errors
   }
@@ -154,15 +155,14 @@ export async function isDatesAvailable(vehicleId, from, to) {
 
 /**
  * Returns true if the datetime range [from+fromTime, to+toTime] is available
- * for the given vehicle.  Uses the time-aware hasDateTimeOverlap so that
- * back-to-back bookings sharing a return/pickup date at the same time are
- * correctly allowed, while any minute-level overlap is rejected.
+ * for the given vehicle.  Queries the Supabase bookings table directly.
  *
- * Falls back to full-day blocking (no time precision) when times are absent,
- * which is the conservative safe behaviour for legacy booked-date entries.
+ * When times are provided the check is time-aware so back-to-back bookings
+ * sharing a return/pickup date at the same time are correctly allowed, while
+ * any minute-level overlap is rejected.
  *
- * Fails open (returns true) on transient fetch errors so a GitHub outage does
- * not permanently prevent bookings.
+ * Fails open (returns true) when Supabase is not configured or on any error
+ * so that transient issues do not permanently block payments.
  *
  * @param {string} vehicleId
  * @param {string} from      - YYYY-MM-DD pickup date
@@ -173,10 +173,48 @@ export async function isDatesAvailable(vehicleId, from, to) {
  */
 export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, toTime) {
   try {
-    const data = await fetchBookedDates();
-    if (!data) return true; // can't verify — allow through
-    const ranges = data[vehicleId] || [];
-    return !hasDateTimeOverlap(ranges, from, to, fromTime, toTime);
+    const { getSupabaseAdmin } = await import("./_supabase.js");
+    const sb = getSupabaseAdmin();
+    if (!sb) return true; // Supabase not configured — fail open
+
+    // Active rental override: if the vehicle has ANY active_rental booking it is
+    // unavailable regardless of dates (overdue bookings must still block new ones).
+    const { data: activeRentals, error: activeRentalError } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("vehicle_id", vehicleId)
+      .eq("status", "active_rental")
+      .limit(1);
+    if (!activeRentalError && activeRentals && activeRentals.length > 0) {
+      return false;
+    }
+
+    // Query for date-range overlaps: pickup_date <= to AND return_date >= from
+    const { data: rows, error } = await sb
+      .from("bookings")
+      .select("pickup_date, return_date, pickup_time, return_time")
+      .eq("vehicle_id", vehicleId)
+      .in("status", ACTIVE_BOOKING_STATUSES)
+      .lte("pickup_date", to)
+      .gte("return_date", from);
+    if (error) return true; // fail open on query error
+
+    const conflicts = rows || [];
+    if (conflicts.length === 0) return true;
+
+    // When times are provided, refine the date-level hits with a time-aware
+    // overlap check so back-to-back same-date bookings work correctly.
+    if (fromTime && toTime) {
+      const sbRanges = conflicts.map((r) => ({
+        from:     r.pickup_date,
+        to:       r.return_date,
+        fromTime: pgTimeTo12h(r.pickup_time),
+        toTime:   pgTimeTo12h(r.return_time),
+      }));
+      return !hasDateTimeOverlap(sbRanges, from, to, fromTime, toTime);
+    }
+
+    return false;
   } catch {
     return true; // fail open on transient errors
   }

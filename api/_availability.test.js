@@ -1,8 +1,21 @@
 // Tests for api/_availability.js — parseDateTimeMs and hasDateTimeOverlap
 //
 // Run with: npm test
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+
+// ─── Supabase mock ────────────────────────────────────────────────────────────
+// Must be registered before _availability.js functions are called so the
+// dynamic import("./_supabase.js") inside isDatesAndTimesAvailable/isDatesAvailable
+// gets the mocked client.
+const supabaseMock = { client: null };
+
+mock.module("./_supabase.js", {
+  namedExports: {
+    getSupabaseAdmin: () => supabaseMock.client,
+  },
+});
+
 import {
   parseDateTimeMs,
   hasDateTimeOverlap,
@@ -171,20 +184,90 @@ test("hasOverlap: ranges touch at endpoint — overlap", () => {
   assert.equal(hasOverlap(ranges, "2026-03-07", "2026-03-14"), true);
 });
 
-test("isDatesAndTimesAvailable: camry honors blocked ranges", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      content: Buffer.from(JSON.stringify({
-        camry: [{ from: "2026-04-20", to: "2026-04-30", fromTime: "9:00 AM", toTime: "10:00 AM" }],
-      })).toString("base64"),
-    }),
+
+// ─── isDatesAndTimesAvailable: Supabase-based ────────────────────────────────
+
+// Helper: build a minimal Supabase client stub whose queries resolve to rows.
+// Each call to .then() resolves with the same { data, error } — good enough for
+// the chained builder pattern used in _availability.js.
+function makeSupabaseClient({ rows = [], error = null } = {}) {
+  return {
+    from() {
+      return {
+        select() { return this; },
+        eq()     { return this; },
+        in()     { return this; },
+        lte()    { return this; },
+        gte()    { return this; },
+        limit()  { return this; },
+        async then(resolve) { return resolve({ data: rows, error }); },
+      };
+    },
+  };
+}
+
+test("isDatesAndTimesAvailable: returns true when Supabase not configured (fail open)", async () => {
+  supabaseMock.client = null;
+  const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+  assert.equal(result, true);
+});
+
+test("isDatesAndTimesAvailable: camry available when Supabase returns no conflicts", async () => {
+  supabaseMock.client = makeSupabaseClient({ rows: [] });
+  try {
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAndTimesAvailable: camry blocked when Supabase returns overlapping booking", async () => {
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ pickup_date: "2026-04-20", return_date: "2026-04-25", pickup_time: "09:00:00", return_time: "10:00:00" }],
   });
   try {
-    const available = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
-    assert.equal(available, false);
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, false);
   } finally {
-    globalThis.fetch = originalFetch;
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAndTimesAvailable: returns true (fail open) when Supabase query errors", async () => {
+  supabaseMock.client = makeSupabaseClient({ error: { message: "connection timeout" } });
+  try {
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAvailable: returns true when Supabase not configured (fail open)", async () => {
+  supabaseMock.client = null;
+  const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+  assert.equal(result, true);
+});
+
+test("isDatesAvailable: camry available when Supabase returns no conflicts", async () => {
+  supabaseMock.client = makeSupabaseClient({ rows: [] });
+  try {
+    const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAvailable: camry blocked when Supabase returns an overlapping booking", async () => {
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ booking_ref: "bk-abc" }],
+  });
+  try {
+    const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+    assert.equal(result, false);
+  } finally {
+    supabaseMock.client = null;
   }
 });
