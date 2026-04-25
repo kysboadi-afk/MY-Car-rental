@@ -1393,6 +1393,26 @@ initDatePickers();
       // For Slingshot: the next available date is the earliest date when ANY
       // unit's current booking ends (that unit then becomes free).
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
+
+      // Prefer the time-aware available_at field from fleet-status (sourced from
+      // Supabase return_date + return_time).  For Slingshot pick the earliest
+      // available_at across all currently-booked units.
+      let availableAt = null;
+      for (const id of idsToCheck) {
+        const entry = status[id];
+        if (entry && entry.available === false && entry.available_at) {
+          if (!availableAt || entry.available_at < availableAt) {
+            availableAt = entry.available_at;
+          }
+        }
+      }
+      if (availableAt) {
+        showVehicleUnavailable(availableAt);
+        return;
+      }
+
+      // Fallback: compute next available from booked-dates.json (date-only,
+      // used when Supabase is not configured or available_at is absent).
       let nextAvail = null;
 
       for (const id of idsToCheck) {
@@ -1446,9 +1466,41 @@ function showVehicleUnavailable(nextAvailableISO) {
 
   let nextLine = "";
   if (nextAvailableISO) {
-    const d = new Date(nextAvailableISO + "T00:00:00");
-    const formatted = d.toLocaleDateString("en-US", { timeZone: SlyLA.tz, month: "long", day: "numeric", year: "numeric" });
-    nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+    // If a full ISO timestamp was supplied (contains "T"), show date + time so
+    // renters see "April 30 at 6:00 PM" rather than the next calendar day.
+    const hasTime = nextAvailableISO.includes("T");
+    if (hasTime) {
+      const d = new Date(nextAvailableISO);
+      if (Number.isFinite(d.getTime())) {
+        if (d.getTime() <= Date.now()) {
+          nextLine = `<p>✅ <strong>Available Now</strong></p>`;
+        } else {
+          const dateISO = SlyLA.isoDateInLA(d);
+          const timeStr = d.toLocaleTimeString("en-US", {
+            timeZone: SlyLA.tz,
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          });
+          if (dateISO === SlyLA.todayISO()) {
+            nextLine = `<p>📅 Next available: <strong>Today at ${timeStr}</strong></p>`;
+          } else {
+            const dateStr = d.toLocaleDateString("en-US", {
+              timeZone: SlyLA.tz,
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            });
+            nextLine = `<p>📅 Next available: <strong>${dateStr} at ${timeStr}</strong></p>`;
+          }
+        }
+      }
+    } else {
+      // Date-only fallback (from booked-dates.json when available_at is absent)
+      const d = new Date(nextAvailableISO + "T00:00:00");
+      const formatted = d.toLocaleDateString("en-US", { timeZone: SlyLA.tz, month: "long", day: "numeric", year: "numeric" });
+      nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+    }
 
     // Set minimum new return date in the extend form
     const extReturn = document.getElementById("extNewReturn");
