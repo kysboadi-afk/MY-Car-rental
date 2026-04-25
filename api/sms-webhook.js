@@ -2,15 +2,7 @@
 // Inbound SMS webhook — Oil Check Compliance reply handler.
 //
 // Customers reply FULL, MID, or LOW to confirm their oil level.
-// This endpoint accepts webhooks from two providers:
-//
-//   • Twilio  — application/x-www-form-urlencoded (Body/From/NumMedia/MediaUrl0)
-//               MMS photo is REQUIRED on this path.  The photo URL is forwarded
-//               to the owner for manual review but is NOT stored in the database.
-//
-//   • TextMagic — application/json (from/text only)
-//               TextMagic does not relay MMS media; photo requirement is waived
-//               on this path (keyword-only reply accepted).
+// This endpoint accepts webhooks from TextMagic (application/json, from/text only).
 //
 // Outbound SMS is sent via the existing TextMagic sendSms helper.
 //
@@ -27,7 +19,7 @@
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 
-// Disable Vercel body parser so we can read both JSON and URL-encoded bodies.
+// Disable Vercel body parser so we can read the raw JSON body.
 export const config = {
   api: { bodyParser: false },
 };
@@ -43,15 +35,7 @@ const REPLY_LOW  =
   "Oil is low.\n\n" +
   "Thank you for confirming. Please do not continue driving if level is very low.\n\n" +
   "We will contact you shortly to schedule service.";
-const REPLY_NO_PHOTO =
-  "Please attach a clear photo of the dipstick and reply FULL, MID, or LOW.";
-const REPLY_INVALID_PHOTO =
-  "Reply with:\n" +
-  "FULL (top line)\n" +
-  "MID (between lines)\n" +
-  "LOW (below safe line)\n" +
-  "and include a photo.";
-const REPLY_INVALID_TEXT_ONLY =
+const REPLY_INVALID =
   "Reply with:\n" +
   "FULL (top line)\n" +
   "MID (between lines)\n" +
@@ -60,11 +44,9 @@ const REPLY_INVALID_TEXT_ONLY =
 // ── Body parser ───────────────────────────────────────────────────────────────
 
 /**
- * Buffer the raw request body and detect content type.
+ * Buffer the raw request body (TextMagic JSON).
  *
- * Returns { from, text, numMedia, mediaUrl, photoCapable } where:
- *   photoCapable = true  — Twilio URL-encoded; MMS MediaUrl0 is forwarded.
- *   photoCapable = false — TextMagic JSON; MMS media is never relayed.
+ * Returns { from, text }.
  */
 async function parseWebhookBody(req) {
   const chunks = [];
@@ -75,33 +57,12 @@ async function parseWebhookBody(req) {
   });
   const rawBody = Buffer.concat(chunks).toString("utf8");
 
-  const contentType = (req.headers["content-type"] || "").toLowerCase();
-
-  if (contentType.includes("application/x-www-form-urlencoded")) {
-    // Twilio — relays MMS attachments via NumMedia / MediaUrl0
-    const params = new URLSearchParams(rawBody);
-    const numMedia = parseInt(params.get("NumMedia") || "0", 10);
-    return {
-      from:         params.get("From") || "",
-      text:         params.get("Body") || "",
-      numMedia,
-      mediaUrl:     numMedia > 0 ? (params.get("MediaUrl0") || "") : "",
-      photoCapable: true,
-    };
-  }
-
-  // JSON path — TextMagic (and any other JSON provider).
-  // TextMagic does not forward MMS media in its inbound webhook payload,
-  // so we cannot capture a photo URL from this path.
   let body = {};
   try { body = rawBody ? JSON.parse(rawBody) : {}; } catch (_) { /* ignore */ }
 
   return {
-    from:         body.from || body.From || "",
-    text:         body.text || body.Body || "",
-    numMedia:     0,
-    mediaUrl:     "",
-    photoCapable: false,
+    from: body.from || body.From || "",
+    text: body.text || body.Body || "",
   };
 }
 
@@ -159,7 +120,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Failed to read request body" });
   }
 
-  const { from: fromRaw, text: textRaw, numMedia, mediaUrl, photoCapable } = parsed;
+  const { from: fromRaw, text: textRaw } = parsed;
 
   if (!fromRaw) {
     return res.status(200).json({ ok: true }); // nothing to do
@@ -195,25 +156,9 @@ export default async function handler(req, res) {
   const { id: bookingId, booking_ref: bookingRef, vehicle_id: vehicleId } = booking;
 
   // ── Validate reply ────────────────────────────────────────────────────────
-  // photoCapable = true  (Twilio): MMS is forwarded — require a photo.
-  // photoCapable = false (TextMagic): MMS is never relayed — accept keyword only.
-  const hasPhoto = photoCapable ? (numMedia > 0 && !!mediaUrl) : null;
-
   if (!VALID_LEVELS.has(keyword)) {
-    // Unrecognised reply
-    const invalidReply = photoCapable ? REPLY_INVALID_PHOTO : REPLY_INVALID_TEXT_ONLY;
     try {
-      await sendSms(fromPhone, invalidReply);
-    } catch (smsErr) {
-      console.error("sms-webhook: sendSms failed:", smsErr.message);
-    }
-    return res.status(200).json({ ok: true });
-  }
-
-  if (photoCapable && !hasPhoto) {
-    // Twilio path — valid keyword but no MMS photo attached
-    try {
-      await sendSms(fromPhone, REPLY_NO_PHOTO);
+      await sendSms(fromPhone, REPLY_INVALID);
     } catch (smsErr) {
       console.error("sms-webhook: sendSms failed:", smsErr.message);
     }
@@ -221,8 +166,6 @@ export default async function handler(req, res) {
   }
 
   // ── Valid reply — update DB ───────────────────────────────────────────────
-  // Photo URL is NOT stored in the database; owner verifies manually via the
-  // forwarded SMS notification below.
   const nowTs = new Date().toISOString();
 
   const bookingUpdate = {
