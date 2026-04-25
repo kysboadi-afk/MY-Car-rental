@@ -20,6 +20,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
+import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import crypto from "crypto";
@@ -103,6 +104,23 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
+      // When a scope filter is requested, resolve the matching vehicle IDs first.
+      // scope='car' → non-slingshot vehicles; scope='slingshot' → slingshot vehicles only.
+      let scopedVehicleIds = null;
+      if (body.scope) {
+        try {
+          const { data: vData } = await loadVehicles();
+          scopedVehicleIds = Object.values(vData || {})
+            .filter((v) => body.scope === "slingshot"
+              ? (v.type || "") === "slingshot"
+              : (v.type || "") !== "slingshot")
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-revenue: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
@@ -112,6 +130,7 @@ export default async function handler(req, res) {
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
           const { data, error } = await q;
           if (!error) {
             // If Supabase has records, return them directly.
@@ -131,6 +150,7 @@ export default async function handler(req, res) {
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
+      if (scopedVehicleIds) records = records.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
       records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
       if (body.limit) records = records.slice(0, Number(body.limit));
       if (records.length > 0) return res.status(200).json({ records });
@@ -169,6 +189,7 @@ export default async function handler(req, res) {
         if (body.status)    derived = derived.filter((r) => r.payment_status === body.status);
         if (body.startDate) derived = derived.filter((r) => r.pickup_date   >= body.startDate);
         if (body.endDate)   derived = derived.filter((r) => r.return_date   <= body.endDate);
+        if (scopedVehicleIds) derived = derived.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
         derived.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
         if (body.limit) derived = derived.slice(0, Number(body.limit));
         return res.status(200).json({ records: derived, _source: "bookings_derived" });

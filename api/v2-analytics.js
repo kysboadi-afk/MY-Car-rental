@@ -120,6 +120,9 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
+  // scope: 'car' → only non-slingshot vehicles; 'slingshot' → only slingshot vehicles; absent → all
+  const scope = body.scope || null;
+
   try {
     const [{ data: bookingsData }, vehicles, expenses] = await Promise.all([
       loadBookings(),
@@ -130,6 +133,19 @@ export default async function handler(req, res) {
     const allBookings    = Object.values(bookingsData).flat();
     const paidStatuses   = new Set(["booked_paid", "active_rental", "completed_rental"]);
     const activeStatuses = new Set(["booked_paid", "active_rental"]);
+
+    // Build vehicle-type lookup for scope filtering across all actions.
+    const vehicleTypeMap = {};
+    for (const [vid, v] of Object.entries(vehicles)) {
+      vehicleTypeMap[vid] = (v.type || "").toLowerCase();
+    }
+
+    /** Returns true if vehicleId matches the requested scope. */
+    function inScope(vid) {
+      if (!scope) return true;
+      const t = vehicleTypeMap[vid] || "";
+      return scope === "slingshot" ? t === "slingshot" : t !== "slingshot";
+    }
 
     // ── Load revenue_records from Supabase (financial source of truth) ────────
     // Uses revenue_records_effective with payment_status='paid' — identical to
@@ -187,6 +203,7 @@ export default async function handler(req, res) {
       const vehicleStats = {};
 
       for (const [vehicleId, vehicle] of Object.entries(vehicles)) {
+        if (!inScope(vehicleId)) continue;
         const vBookings    = (bookingsData[vehicleId] || []);
         const paidBookings = vBookings.filter((b) => paidStatuses.has(b.status));
 
@@ -357,7 +374,8 @@ export default async function handler(req, res) {
 
       if (financialsFromRevRecords) {
         // Aggregate from revenue_records (already grouped by vehicle+month in rrByVehicle)
-        for (const vr of Object.values(rrByVehicle)) {
+        for (const [vid, vr] of Object.entries(rrByVehicle)) {
+          if (!inScope(vid)) continue;
           for (const [m, amount] of Object.entries(vr.monthly)) {
             if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
             monthly[m].revenue  += amount;
@@ -370,6 +388,7 @@ export default async function handler(req, res) {
         for (const m of Object.keys(monthly)) monthly[m].bookings = 0;
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
           const m = (b.pickupDate || "").slice(0, 7);
           if (m && monthly[m]) monthly[m].bookings += 1;
         }
@@ -377,6 +396,7 @@ export default async function handler(req, res) {
         // Fallback: bookings.json
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
           const m = (b.pickupDate || "").slice(0, 7);
           if (!m) continue;
           if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };

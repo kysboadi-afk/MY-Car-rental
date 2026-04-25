@@ -3930,7 +3930,7 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       allRevenueRecords = data.records || [];
       renderRevenueSummary();
@@ -4127,8 +4127,8 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'slingshot' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'slingshot' }),
   ]).then(([fleetData, trendData]) => {
     renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
     document.getElementById('analytics-loading').style.display = 'none';
