@@ -157,7 +157,10 @@ function computeLatestByVehicle(rows) {
         status: row.status || null,
         return_date: row.return_date,
       });
-      // Use midnight so date ordering still works without exposing a synthetic time.
+      // Midnight is used ONLY for internal date ordering so the latest booking
+      // per vehicle is still selected correctly.  hasTime = false ensures no
+      // time component is shown to customers via next_available_display, and
+      // available_at remains null (no synthetic timestamp is exposed).
       returnDateTime = buildDateTimeLA(row.return_date, "00:00");
     } else {
       returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
