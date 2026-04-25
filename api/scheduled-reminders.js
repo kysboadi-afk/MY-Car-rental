@@ -816,7 +816,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
                 .select("status")
                 .eq("booking_ref", id)
                 .maybeSingle();
-              if (sbStatusRow && sbStatusRow.status !== "active_rental") {
+              if (sbStatusRow && !["active_rental", "active", "overdue"].includes(sbStatusRow.status)) {
                 console.warn(
                   `[LATE_FEE] SKIPPED booking ${id}: Supabase status is ` +
                   `"${sbStatusRow.status}" (expected active_rental). ` +
