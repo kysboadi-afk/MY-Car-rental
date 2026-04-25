@@ -383,7 +383,7 @@
       "pickupDate": "2026-04-23",
       "pickupTime": "08:00",
       "returnDate": "2026-04-30",
-      "returnTime": "08:00",
+      "returnTime": "18:00",
       "location": "",
       "status": "active_rental",
       "amountPaid": 50,
@@ -396,7 +396,15 @@
       "createdAt": "2026-04-23T10:22:29.049Z",
       "source": "admin_ai",
       "activatedAt": "2026-04-23T10:25:02.413Z",
-      "updatedAt": "2026-04-23T10:25:02.413Z"
+      "updatedAt": "2026-04-23T10:25:02.413Z",
+      "extensionPendingPayment": {
+        "label": "+1 day",
+        "price": 60.64,
+        "newReturnDate": "2026-05-01",
+        "newReturnTime": "18:00",
+        "paymentIntentId": "pi_3TQ4bNPo7fICjrtZ1QcgCFDI",
+        "createdAt": "2026-04-25T11:42:25.934Z"
+      }
     },
     {
       "bookingId": "b1c743eadeef391a",
