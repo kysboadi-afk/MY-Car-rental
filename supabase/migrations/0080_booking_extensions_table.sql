@@ -3,13 +3,18 @@
 -- Creates a normalised booking_extensions table so every paid rental extension
 -- is tracked as a first-class row rather than a denormalised counter on the
 -- bookings row.  Each row carries the Stripe PaymentIntent ID (for deduplication),
--- the extension charge, and the new return date applied.
+-- the extension charge, the new return date, and the return time.
+--
+-- Return time: extensions do not include a time picker, so new_return_time is
+-- always copied from the parent booking's return_time at the moment payment is
+-- confirmed.  This keeps the renter on their original daily schedule.
 --
 -- Replaces manual writes of bookings.extension_count / bookings.last_extension_at
 -- with an auto-maintained Postgres trigger that derives those values by aggregating
 -- over booking_extensions rows (COUNT / MAX).
 --
--- Historical extensions are backfilled from revenue_records where type='extension'.
+-- Historical extensions are backfilled from revenue_records where type='extension',
+-- with new_return_time sourced from the parent bookings row.
 --
 -- Safe to re-run: all DDL statements use IF NOT EXISTS / CREATE OR REPLACE / ON CONFLICT.
 
@@ -21,6 +26,7 @@ CREATE TABLE IF NOT EXISTS booking_extensions (
   payment_intent_id text          UNIQUE,
   amount            numeric(10,2) NOT NULL DEFAULT 0,
   new_return_date   date          NOT NULL,
+  new_return_time   time,
   created_at        timestamptz   NOT NULL DEFAULT now()
 );
 
@@ -34,6 +40,8 @@ COMMENT ON COLUMN booking_extensions.amount
   IS 'Extension charge in USD.';
 COMMENT ON COLUMN booking_extensions.new_return_date
   IS 'The new return date applied by this extension.';
+COMMENT ON COLUMN booking_extensions.new_return_time
+  IS 'Return time for the extended booking. Copied from the parent booking (no time picker in the extend flow).';
 
 -- ── 2. Indexes ────────────────────────────────────────────────────────────────
 
@@ -78,43 +86,43 @@ CREATE TRIGGER booking_extensions_sync_stats
 -- ── 4. Backfill from revenue_records ─────────────────────────────────────────
 --
 -- 4a. Stripe-paid extensions: booking_id = bookings.booking_ref (direct link).
+--     new_return_time is sourced from the parent booking's return_time since
+--     the extend flow has no time picker.
 
-INSERT INTO booking_extensions (booking_id, payment_intent_id, amount, new_return_date, created_at)
+INSERT INTO booking_extensions (booking_id, payment_intent_id, amount, new_return_date, new_return_time, created_at)
 SELECT
   rr.booking_id,
   rr.payment_intent_id,
   COALESCE(rr.gross_amount, 0),
   rr.return_date,
+  b.return_time,
   COALESCE(rr.created_at, now())
 FROM revenue_records rr
+JOIN bookings b ON b.booking_ref = rr.booking_id
 WHERE rr.type           = 'extension'
   AND rr.payment_status = 'paid'
   AND rr.is_cancelled   = false
   AND rr.booking_id     IS NOT NULL
   AND rr.return_date    IS NOT NULL
-  AND EXISTS (
-    SELECT 1 FROM bookings WHERE booking_ref = rr.booking_id
-  )
 ON CONFLICT (payment_intent_id) DO NOTHING;
 
 -- 4b. Manually-created extensions: original_booking_id = bookings.booking_ref.
 --     These have a synthetic booking_id (e.g. "ext-...") so we map via
 --     original_booking_id which points to the real booking_ref.
 
-INSERT INTO booking_extensions (booking_id, payment_intent_id, amount, new_return_date, created_at)
+INSERT INTO booking_extensions (booking_id, payment_intent_id, amount, new_return_date, new_return_time, created_at)
 SELECT
   rr.original_booking_id,
   rr.payment_intent_id,
   COALESCE(rr.gross_amount, 0),
   rr.return_date,
+  b.return_time,
   COALESCE(rr.created_at, now())
 FROM revenue_records rr
+JOIN bookings b ON b.booking_ref = rr.original_booking_id
 WHERE rr.type                = 'extension'
   AND rr.payment_status      = 'paid'
   AND rr.is_cancelled        = false
   AND rr.original_booking_id IS NOT NULL
   AND rr.return_date         IS NOT NULL
-  AND EXISTS (
-    SELECT 1 FROM bookings WHERE booking_ref = rr.original_booking_id
-  )
 ON CONFLICT (payment_intent_id) DO NOTHING;

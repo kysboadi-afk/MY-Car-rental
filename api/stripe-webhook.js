@@ -1626,6 +1626,26 @@ export default async function handler(req, res) {
                 strict:           false,   // non-fatal — booking date is already consistent
                 requireStripeFee: false,   // reconcile will fill in fees if missing
               });
+              // Also recover the booking_extensions row if it was missed.
+              try {
+                const sbBErecov = getSupabaseAdmin();
+                if (sbBErecov && resolvedBookingId && new_return_date) {
+                  await sbBErecov
+                    .from("booking_extensions")
+                    .upsert(
+                      {
+                        booking_id:        resolvedBookingId,
+                        payment_intent_id: paymentIntent.id,
+                        amount:            Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
+                        new_return_date:   new_return_date,
+                        new_return_time:   updatedBooking.returnTime || null,
+                      },
+                      { onConflict: "payment_intent_id", ignoreDuplicates: true }
+                    );
+                }
+              } catch (beRecovErr) {
+                console.warn("stripe-webhook: alreadyApplied booking_extensions recovery failed (non-fatal):", beRecovErr.message);
+              }
             } catch (recoveryErr) {
               console.warn(
                 `stripe-webhook: alreadyApplied extension revenue recovery failed (non-fatal): ${recoveryErr.message}`
@@ -1649,8 +1669,8 @@ export default async function handler(req, res) {
           }
 
           // Clear extension-pending fields in Supabase now that payment succeeded.
-          // Also persist extension_count and last_extension_at so the sms_logs
-          // engine and admin panel always see the latest return schedule.
+          // extension_count and last_extension_at are maintained automatically by
+          // the sync_booking_extension_stats trigger on booking_extensions.
           try {
             const sbExt = getSupabaseAdmin();
             if (sbExt && bookingRef) {
@@ -1659,14 +1679,38 @@ export default async function handler(req, res) {
                 .update({
                   extend_pending:            false,
                   extension_pending_payment: null,
-                  extension_count:           updatedBooking.extensionCount || 1,
-                  last_extension_at:         updatedBooking.lastExtensionAt || new Date().toISOString(),
                   updated_at:                new Date().toISOString(),
                 })
                 .eq("booking_ref", bookingRef);
             }
           } catch (extClrErr) {
             console.error("stripe-webhook: Supabase extension field clear error (non-fatal):", extClrErr.message);
+          }
+
+          // Insert a dedicated booking_extensions row for this payment.
+          // new_return_time is taken from the booking's existing return_time
+          // because the extend flow has no time picker — the renter keeps their
+          // original daily schedule.
+          // The insert is idempotent via the UNIQUE constraint on payment_intent_id.
+          try {
+            const sbBE = getSupabaseAdmin();
+            if (sbBE && resolvedBookingId && new_return_date) {
+              await sbBE
+                .from("booking_extensions")
+                .upsert(
+                  {
+                    booking_id:        resolvedBookingId,
+                    payment_intent_id: paymentIntent.id,
+                    amount:            extensionAmountDollars,
+                    new_return_date:   new_return_date,
+                    new_return_time:   updatedBooking.returnTime || null,
+                    created_at:        new Date().toISOString(),
+                  },
+                  { onConflict: "payment_intent_id", ignoreDuplicates: true }
+                );
+            }
+          } catch (beErr) {
+            console.error("stripe-webhook: booking_extensions insert error (non-fatal):", beErr.message);
           }
 
           // Create a new extension revenue record (type='extension').
