@@ -31,6 +31,7 @@
 //     orphanRevenue:          HealthCheck,
 //     staleReservations:      HealthCheck,
 //     stripePaymentNoBooking: HealthCheck,
+//     extensionReturnDateSync: HealthCheck,
 //   },
 //   overallStatus: "ok" | "warning" | "error",
 //   checkedAt: ISO-8601 string,
@@ -429,6 +430,111 @@ async function checkStripePaymentNoBooking(sb) {
   }
 }
 
+// Check 7 — Extension payment recorded but booking return_date not updated
+// Detects cases where a renter paid for a rental extension (Stripe PI succeeded,
+// type='extension' revenue record created) but the booking's return_date in the
+// bookings table still shows the original date.  This happens when the
+// autoUpsertBooking sync step inside stripe-webhook.js fails non-fatally —
+// money was collected but the calendar date wasn't moved.
+async function checkExtensionReturnDateSync(sb) {
+  try {
+    // Fetch all paid, non-cancelled extension revenue records.
+    const { data: extRows, error: extErr } = await sb
+      .from("revenue_records")
+      .select("booking_id, return_date, gross_amount, vehicle_id")
+      .eq("type", "extension")
+      .eq("payment_status", "paid")
+      .eq("is_cancelled", false)
+      .not("return_date", "is", null)
+      .not("booking_id", "is", null)
+      // 500 is deliberately generous for this fleet size.  If the limit is ever
+      // reached the check will still flag any mismatches it does find — it will
+      // not silently pass.
+      .limit(500);
+
+    if (extErr) {
+      console.error("[v2-system-health] extensionReturnDateSync query error:", extErr.message);
+      return check("Extension Return Date Sync", "error", "Could not query extension records: " + extErr.message);
+    }
+
+    const rows = extRows || [];
+    if (rows.length === 0) {
+      return check("Extension Return Date Sync", "ok", "No paid extension records to check.");
+    }
+
+    // Find the latest (max) extension return_date per booking.
+    const maxExtReturn = {};
+    for (const r of rows) {
+      const cur = maxExtReturn[r.booking_id];
+      if (!cur || r.return_date > cur.return_date) {
+        maxExtReturn[r.booking_id] = { return_date: r.return_date, vehicle_id: r.vehicle_id };
+      }
+    }
+
+    const bookingIds = Object.keys(maxExtReturn);
+    if (bookingIds.length === 0) {
+      return check("Extension Return Date Sync", "ok", "No extension records with return dates.");
+    }
+
+    // Fetch the current return_date for those bookings.
+    const { data: bookingRows, error: bErr } = await sb
+      .from("bookings")
+      .select("booking_ref, return_date, status")
+      .in("booking_ref", bookingIds);
+
+    if (bErr) {
+      console.error("[v2-system-health] extensionReturnDateSync bookings query error:", bErr.message);
+      return check("Extension Return Date Sync", "error", "Could not query bookings: " + bErr.message);
+    }
+
+    const bookingByRef = {};
+    for (const b of bookingRows || []) {
+      bookingByRef[b.booking_ref] = b;
+    }
+
+    // Flag bookings where the booking's return_date < the latest paid extension's
+    // return_date (extension was paid but booking date wasn't moved forward).
+    // Skip completed/cancelled bookings — stale dates there are expected.
+    const SKIP_STATUSES = new Set(["completed", "completed_rental", "cancelled", "cancelled_rental"]);
+    const mismatches = [];
+
+    for (const [bookingId, ext] of Object.entries(maxExtReturn)) {
+      const booking = bookingByRef[bookingId];
+      if (!booking || SKIP_STATUSES.has(booking.status)) continue;
+      if (booking.return_date && booking.return_date < ext.return_date) {
+        mismatches.push({
+          id:   bookingId,
+          info: `booking return_date=${booking.return_date} but extension paid through ${ext.return_date} (vehicle=${ext.vehicle_id || "?"})`,
+        });
+      }
+    }
+
+    if (mismatches.length === 0) {
+      return check(
+        "Extension Return Date Sync",
+        "ok",
+        `All ${bookingIds.length} extended booking${bookingIds.length !== 1 ? "s" : ""} have correct return dates.`,
+      );
+    }
+
+    console.error(
+      `[v2-system-health] ${mismatches.length} extension return date mismatch(es):`,
+      mismatches.map((m) => m.id),
+    );
+    return check(
+      "Extension Return Date Sync",
+      "error",
+      `${mismatches.length} booking${mismatches.length !== 1 ? "s" : ""} with extension paid but return date not updated.`,
+      mismatches,
+      "The renter paid to extend their rental but the booking return date was not moved forward. Manually update the return date in the Bookings tab.",
+      false,
+    );
+  } catch (err) {
+    console.error("[v2-system-health] extensionReturnDateSync exception:", err);
+    return check("Extension Return Date Sync", "error", "Unexpected error: " + err.message);
+  }
+}
+
 // ── Run all checks ─────────────────────────────────────────────────────────
 
 async function runAllChecks(sb) {
@@ -436,12 +542,13 @@ async function runAllChecks(sb) {
   const checkedAt = new Date().toISOString();
 
   await Promise.all([
-    checkPaymentBookingRevenue(sb) .then((r) => { checks.paymentBookingRevenue  = r; }),
-    checkMissingAgreements(sb)     .then((r) => { checks.missingAgreements      = r; }),
-    checkActiveRentalCount(sb)     .then((r) => { checks.activeRentalCount      = r; }),
-    checkOrphanRevenue(sb)         .then((r) => { checks.orphanRevenue          = r; }),
-    checkStaleReservations(sb)     .then((r) => { checks.staleReservations      = r; }),
-    checkStripePaymentNoBooking(sb).then((r) => { checks.stripePaymentNoBooking = r; }),
+    checkPaymentBookingRevenue(sb)    .then((r) => { checks.paymentBookingRevenue    = r; }),
+    checkMissingAgreements(sb)        .then((r) => { checks.missingAgreements        = r; }),
+    checkActiveRentalCount(sb)        .then((r) => { checks.activeRentalCount        = r; }),
+    checkOrphanRevenue(sb)            .then((r) => { checks.orphanRevenue            = r; }),
+    checkStaleReservations(sb)        .then((r) => { checks.staleReservations        = r; }),
+    checkStripePaymentNoBooking(sb)   .then((r) => { checks.stripePaymentNoBooking   = r; }),
+    checkExtensionReturnDateSync(sb)  .then((r) => { checks.extensionReturnDateSync  = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);

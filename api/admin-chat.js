@@ -1023,13 +1023,20 @@ export default async function handler(req, res) {
     let completion;
     let openAiTimeoutId;
     try {
+      // The Promise.race fires at roundTimeout ms and returns a clean JSON
+      // response.  The SDK-level timeout (set 1 s later) ensures the underlying
+      // HTTP connection is also properly aborted so it doesn't keep consuming
+      // resources until Vercel's 60 s maxDuration kills the function.
       completion = await Promise.race([
-        client.chat.completions.create({
-          model,
-          messages,
-          tools: TOOL_DEFINITIONS,
-          tool_choice: "auto",
-        }),
+        client.chat.completions.create(
+          {
+            model,
+            messages,
+            tools: TOOL_DEFINITIONS,
+            tool_choice: "auto",
+          },
+          { timeout: roundTimeout + 1000 }, // SDK aborts HTTP 1 s after our race fires
+        ),
         new Promise((_resolve, reject) => {
           openAiTimeoutId = setTimeout(
             () => reject(new OpenAiRoundTimeoutError(roundTimeout)),
@@ -1039,7 +1046,11 @@ export default async function handler(req, res) {
       ]);
     } catch (err) {
       console.error("admin-chat: OpenAI error:", err);
-      if (err?.isTimeout === true || err?.name === "OpenAiRoundTimeoutError") {
+      if (
+        err?.isTimeout === true ||
+        err?.name === "OpenAiRoundTimeoutError" ||
+        err?.name === "APIConnectionTimeoutError" // SDK-level timeout
+      ) {
         return res.status(200).json({
           reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
           tool_calls: toolCallsMade,
