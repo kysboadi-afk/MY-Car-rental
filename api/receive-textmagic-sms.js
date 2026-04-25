@@ -38,6 +38,7 @@ import { loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { CARS } from "./_pricing.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { validateLink, PAGE_URLS } from "./_link-validator.js";
+import { computeFinalReturnDate } from "./_final-return-date.js";
 
 // Disable Vercel's built-in body parser so we can read the raw request body
 // for TEXTMAGIC_WEBHOOK_SECRET HMAC-SHA256 signature verification.
@@ -404,8 +405,19 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   const { vehicleId, booking } = match;
   const isSlingshot = isSlingshotVehicle(vehicleId);
 
-  // Check availability
-  const availMinutes = getAvailableExtensionMinutes(allBookings, vehicleId, booking.returnDate, booking.returnTime);
+  // Resolve the true final return date/time from revenue_records so that
+  // availability checks and extension limits use the renter's actual current
+  // return schedule (including any paid extensions), not a stale JSON value.
+  const bookingId   = booking.bookingId || booking.paymentIntentId;
+  const sb          = getSupabaseAdmin();
+  const { date: finalReturnDate, time: finalReturnTime } = await computeFinalReturnDate(
+    sb, bookingId, booking.returnDate, booking.returnTime
+  );
+
+  // Check availability using the final (possibly extended) return date/time.
+  const availMinutes = getAvailableExtensionMinutes(
+    allBookings, vehicleId, finalReturnDate, finalReturnTime || booking.returnTime
+  );
 
   if (availMinutes <= 0) {
     await sendSms(fromPhone, render(EXTEND_UNAVAILABLE, {}));
@@ -423,7 +435,6 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   }
 
   // Mark this booking as awaiting option selection
-  const bookingId = booking.bookingId || booking.paymentIntentId;
   const idx = data[vehicleId].findIndex(
     (b) => b.bookingId === bookingId || b.paymentIntentId === bookingId
   );
@@ -433,7 +444,6 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
     await saveBookings(data, sha, `Mark extendPending for booking ${bookingId}`);
     // Dual-write to Supabase so extend_pending is queryable without GitHub JSON.
     try {
-      const sb = getSupabaseAdmin();
       if (sb && bookingId) {
         await sb
           .from("bookings")
@@ -482,16 +492,25 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
     return;
   }
 
+  // Resolve the true final return date/time from revenue_records so the new
+  // return date is computed from the renter's actual current end time, not a
+  // potentially stale bookings.json value.
+  const selectionBookingId = booking.bookingId || booking.paymentIntentId;
+  const selSb = getSupabaseAdmin();
+  const { date: selFinalDate, time: selFinalTime } = await computeFinalReturnDate(
+    selSb, selectionBookingId, booking.returnDate, booking.returnTime
+  );
+
   // Compute new return time / date first (needed for PI metadata)
-  let newReturnDate = booking.returnDate;
-  let newReturnTime = booking.returnTime;
+  let newReturnDate = selFinalDate || booking.returnDate;
+  let newReturnTime = selFinalTime || booking.returnTime;
 
   if (isSlingshot) {
-    const updated = addHoursToDateTime(booking.returnDate, booking.returnTime, selected.hours);
+    const updated = addHoursToDateTime(newReturnDate, newReturnTime, selected.hours);
     newReturnDate = updated.newDate;
     newReturnTime = updated.newTime;
   } else {
-    newReturnDate = addDaysToDate(booking.returnDate, selected.days);
+    newReturnDate = addDaysToDate(newReturnDate, selected.days);
   }
 
   // Create Stripe PaymentIntent for extension charge (with full metadata)

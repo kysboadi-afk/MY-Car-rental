@@ -22,6 +22,7 @@ import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { computeFinalReturnDate } from "./_final-return-date.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -235,7 +236,7 @@ export default async function handler(req, res) {
 
     // Effective return date: prefer Supabase when it is more recent.  This corrects
     // stale bookings.json return dates caused by admin-driven extensions.
-    const effectiveReturnDate = (sbReturnDate && sbReturnDate > (activeBooking.returnDate || ""))
+    let effectiveReturnDate = (sbReturnDate && sbReturnDate > (activeBooking.returnDate || ""))
       ? sbReturnDate
       : (activeBooking.returnDate || "");
 
@@ -245,6 +246,20 @@ export default async function handler(req, res) {
     const existingReturnTime = normalizeClockTime(sbReturnTime || activeBooking.returnTime);
     const resolvedReturnTime = existingReturnTime || DEFAULT_RETURN_TIME;
     const needsReturnTimePersist = !activeBooking.returnTime || activeBooking.returnTime !== resolvedReturnTime;
+
+    // Incorporate paid extensions from revenue_records so the "must be after
+    // current return" validation always uses the true finalReturnDate, not just
+    // what bookings.return_date says (which can lag behind revenue_records when
+    // the Stripe webhook failed to update the bookings row).
+    if (sb) {
+      const extBookingRef = sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId;
+      const { date: finalDate } = await computeFinalReturnDate(
+        sb, extBookingRef, effectiveReturnDate, resolvedReturnTime
+      );
+      if (finalDate > effectiveReturnDate) {
+        effectiveReturnDate = finalDate;
+      }
+    }
 
     // ── Validate new return date is after current return date ───────────────
     const currentReturnMs = parseDateTimeMs(effectiveReturnDate, resolvedReturnTime);

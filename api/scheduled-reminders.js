@@ -56,6 +56,7 @@ import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { formatTime12h } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { computeFinalReturnDate } from "./_final-return-date.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -676,17 +677,25 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   bookings.json are still written for backwards compatibility.
  */
 export async function processActiveRentals(allBookings, now, sentMarks) {
+  const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
 
+      // Compute the final return date/time, incorporating any paid extensions
+      // recorded in revenue_records so that SMS triggers always fire against the
+      // renter's true (extended) return schedule, not a stale bookings.json date.
+      const id = booking.bookingId || booking.paymentIntentId;
+      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
+        sb, id, booking.returnDate, booking.returnTime
+      );
+
       // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
       // wall-clock time in Los Angeles, not at UTC equivalents.
-      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
+      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
       if (isNaN(returnDt.getTime())) continue;
 
-      const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
       const minutesUntilReturn = (returnDt - now) / 60000;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
@@ -700,6 +709,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           timezone:          BUSINESS_TZ,
           now_la:            toLAString(now),
           return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_final:      `${finalDate} ${finalTime}`,
           return_la:         toLAString(returnDt),
           mins_until_return: Math.round(minutesUntilReturn),
         });
@@ -707,7 +717,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 
       // returnDateStr is stored in sms_logs so old triggers are invalidated when
       // the booking is extended to a new return_date.
-      const returnDateStr = booking.returnDate;
+      const returnDateStr = finalDate;
 
       // ── 30 min before return ─────────────────────────────────────────────────
       // Single consolidated end-of-rental reminder (replaces TextMagic automations
@@ -978,13 +988,22 @@ export async function processAutoActivations(allBookings, now) {
 export async function processAutoCompletions(allBookings, now) {
   if (!process.env.GITHUB_TOKEN) return;
 
+  const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
 
+      // Compute the final return date/time, incorporating any paid extensions
+      // from revenue_records so auto-completion fires against the renter's true
+      // (possibly extended) return schedule — never against a stale base date.
+      const id = booking.bookingId || booking.paymentIntentId;
+      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
+        sb, id, booking.returnDate, booking.returnTime
+      );
+
       // Use LA-timezone return datetime so the 4-hour auto-complete threshold is
       // measured from the correct Los Angeles wall-clock return time, not UTC.
-      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
+      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
       if (isNaN(returnDt.getTime())) continue;
 
       const minsOverdue = (now - returnDt) / 60000;
@@ -994,6 +1013,7 @@ export async function processAutoCompletions(allBookings, now) {
           timezone:       BUSINESS_TZ,
           now_la:         toLAString(now),
           return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_final:   `${finalDate} ${finalTime}`,
           return_la:      toLAString(returnDt),
           mins_overdue:   Math.round(minsOverdue),
         });
@@ -1001,7 +1021,6 @@ export async function processAutoCompletions(allBookings, now) {
 
       if (minsOverdue < AUTO_COMPLETE_HOURS * 60) continue;
 
-      const id          = booking.bookingId || booking.paymentIntentId;
       const completedAt = now.toISOString();
 
       console.log(
