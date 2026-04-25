@@ -387,36 +387,22 @@ export default async function handler(req, res) {
       // calls accumulate incorrect totals over time.
       if (sb) {
         try {
-          let rrResult = await sb
-            .from("revenue_reporting_base")
+          // Query revenue_records_effective directly with payment_status='paid' —
+          // the same source used by v2-dashboard.js and the Revenue Tracker page.
+          // This ensures stored customer totals include every paid record (including
+          // rows marked is_orphan) so that Customer Management matches Revenue Tracker.
+          const rrResult = await sb
+            .from("revenue_records_effective")
             .select([
               "booking_id", "customer_phone", "customer_name", "customer_email",
               "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
               "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
-            ].join(", "));
-
-          // Keep compatibility with older DBs that haven't applied the canonical
-          // reporting view migration yet (migration 0072 adds net_amount and customer fields).
-          if (rrResult.error && isSchemaError(rrResult.error)) {
-            console.warn("v2-customers sync: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
-            rrResult = await sb
-              .from("revenue_records_effective")
-              .select([
-                "booking_id", "customer_phone", "customer_name", "customer_email",
-                "gross_amount", "stripe_fee", "stripe_net", "refund_amount", "net_amount",
-                "is_cancelled", "is_no_show", "pickup_date", "return_date", "vehicle_id",
-                "sync_excluded", "is_orphan",
-              ].join(", "))
-              .eq("payment_status", "paid");
-          }
+            ].join(", "))
+            .eq("payment_status", "paid");
 
           const { data: rrData, error: rrError } = rrResult;
-          // revenue_reporting_base already excludes sync_excluded and is_orphan rows via its
-          // WHERE clause (migration 0053), so those fields are not present in its SELECT list.
-          // The filter below is therefore a no-op for the primary path (both fields undefined →
-          // !undefined = true, all rows pass) and a meaningful guard for the fallback path where
-          // revenue_records_effective returns the raw columns.
-          const rrRows = (rrData || []).filter((r) => !r.sync_excluded && !r.is_orphan);
+          // revenue_records_effective already excludes sync_excluded rows via its WHERE clause.
+          const rrRows = rrData || [];
 
           if (!rrError && Array.isArray(rrRows) && rrRows.length > 0) {
               // Group revenue records by the best available identity key, in priority order:

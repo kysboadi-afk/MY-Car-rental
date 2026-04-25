@@ -94,7 +94,8 @@ mock.module("./_supabase.js", {
           }
           if (table === "revenue_records_effective") {
             return {
-              select: () => ({ eq: () => Promise.resolve({ data: rrRows, error: null }) }),
+              // Simulate the DB view: revenue_records_effective already excludes sync_excluded rows.
+              select: () => ({ eq: () => Promise.resolve({ data: (rrRows || []).filter((r) => !r.sync_excluded), error: null }) }),
             };
           }
           if (table === "customers") {
@@ -305,12 +306,12 @@ test("B) no skipped rows: all paid non-excluded rows are counted (row_count matc
       gross_amount: 300, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 300,
       is_cancelled: true, is_no_show: false, payment_status: "paid",
       pickup_date: "2026-04-01", return_date: "2026-04-02", vehicle_id: "camry" },
-    // sync_excluded — should NOT count
+    // sync_excluded — filtered out by revenue_records_effective view at DB level; should NOT count
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
       gross_amount: 999, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 999,
       is_cancelled: false, is_no_show: false, payment_status: "paid", sync_excluded: true,
       pickup_date: "2026-05-01", return_date: "2026-05-02", vehicle_id: "camry" },
-    // orphan — should NOT count
+    // orphan — IS counted now: Revenue Tracker includes these records, so Customer Management should too
     { customer_phone: "+13105550001", customer_name: "Alice", customer_email: null,
       gross_amount: 888, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 888,
       is_cancelled: false, is_no_show: false, payment_status: "paid", is_orphan: true,
@@ -322,9 +323,10 @@ test("B) no skipped rows: all paid non-excluded rows are counted (row_count matc
 
   const agg = parseAggLog();
   assert.ok(agg, "aggregation log must be present");
-  // 3 valid (non-cancelled) rows across the 4 rrRows
-  assert.equal(agg.row_count, 3, "row_count must equal non-cancelled valid rows");
-  assert.equal(agg.gross_total, 350, "gross should sum only non-cancelled rows");
+  // 4 valid rows: Alice (100) + Bob (200) + Carol (50) + Alice orphan (888).
+  // Cancelled row is excluded; sync_excluded row is filtered at DB level.
+  assert.equal(agg.row_count, 4, "row_count must equal non-cancelled valid rows including orphans");
+  assert.equal(agg.gross_total, 1238, "gross should sum non-cancelled rows including orphan records");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -587,9 +589,9 @@ test("auth: wrong secret is rejected with 401", async () => {
   assert.equal(res._status, 401);
 });
 
-test("sync: falls back to revenue_records_effective when revenue_reporting_base is missing", async () => {
+test("sync: uses revenue_records_effective as primary source (not revenue_reporting_base)", async () => {
   resetState();
-  reportingBaseSchemaError = true;
+  // revenue_reporting_base is no longer queried; revenue_records_effective is always the primary source.
   rrRows = [
     { customer_phone: "+13105550001", customer_name: "Fallback User", customer_email: "fallback@x.com",
       gross_amount: 250, stripe_fee: 7.5, stripe_net: 242.5, refund_amount: 0, net_amount: 250,
