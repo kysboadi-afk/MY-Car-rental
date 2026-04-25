@@ -2475,6 +2475,9 @@ stripeBtn.addEventListener("click", async () => {
                 }),
               }),
               new Promise(resolve => setTimeout(resolve, 5000)),
+            ]);
+          } catch (e) {
+            console.warn("Could not upload booking docs:", e);
           }
         }
 

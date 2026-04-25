@@ -626,7 +626,7 @@ var botResponses = {
       patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
       reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (213) 916-6606"
     }
-
+  ],
   es: [
     {
       patterns: ["hola","buenos días","buenas tardes","buenas noches","buenas","qué tal","qué onda","saludos"],
