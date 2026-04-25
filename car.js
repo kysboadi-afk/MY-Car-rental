@@ -1425,7 +1425,7 @@ function showVehicleUnavailable(nextAvailableISO) {
     }
   }
 
-  // ── 2. Hide the regular booking form elements ────────────────────────────
+  // ── Hide the regular booking form elements ────────────────────────────
   // Hide the heading and all regular form inputs/sections.  The extend rental
   // section is shown below instead so there are no duplicate "reserve" CTAs.
   const bookingHeading = bookingSection.querySelector("h2");
@@ -1466,7 +1466,7 @@ function showVehicleUnavailable(nextAvailableISO) {
     if (!el.closest("#extendRentalSection")) el.disabled = true;
   });
 
-  // ── 3. Show the Extend Rental section ────────────────────────────────────
+  // ── Show the Extend Rental section ────────────────────────────────────
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";

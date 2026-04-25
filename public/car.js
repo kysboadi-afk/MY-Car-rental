@@ -1321,21 +1321,6 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
-  // ── 1. Insert / update the "Currently Rented" notice at the top ──────────
-  let notice = document.getElementById("vehicleUnavailableNotice");
-  if (!notice) {
-    notice = document.createElement("div");
-    notice.id = "vehicleUnavailableNotice";
-    notice.className = "vehicle-unavailable-notice";
-    bookingSection.insertBefore(notice, bookingSection.firstChild);
-  }
-
-  // Use the pre-formatted string from the backend (LA timezone, correct date and time).
-  // This is the single source of truth — no frontend date math needed.
-  const nextLine = nextAvailableDisplay
-    ? `<p>📅 Next available: <strong>${nextAvailableDisplay}</strong></p>`
-    : "";
-
   if (nextAvailableISO) {
     // Set minimum new return date in the extend form to the current return date
     // so the customer cannot pick a date before the active rental ends.
@@ -1351,12 +1336,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     }
   }
 
-  notice.innerHTML = `
-    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Rented")}</strong></p>
-    ${nextLine}
-    <p><a href="${vehicleId.startsWith('slingshot') ? 'slingshot.html' : 'cars.html'}">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
-
-  // ── 2. Hide the regular booking form elements ────────────────────────────
+  // ── Hide the regular booking form elements ────────────────────────────
   // Hide the heading and all regular form inputs/sections.  The extend rental
   // section is shown below instead so there are no duplicate "reserve" CTAs.
   const bookingHeading = bookingSection.querySelector("h2");
@@ -1397,7 +1377,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     if (!el.closest("#extendRentalSection")) el.disabled = true;
   });
 
-  // ── 3. Show the Extend Rental section ────────────────────────────────────
+  // ── Show the Extend Rental section ────────────────────────────────────
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";
