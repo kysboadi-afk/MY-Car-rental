@@ -279,25 +279,17 @@ async function saveFleetStatus(data, sha, message) {
 }
 
 /**
- * Mark a vehicle as available in fleet-status.json (non-fatal).
- * Called after a booking is auto-completed and no other active_rental bookings
- * remain for this vehicle, so the website immediately shows it as bookable again.
+ * Previously wrote `available: true` to fleet-status.json on GitHub.
+ * Availability is now derived automatically from the Supabase bookings table
+ * by fleet-status.js — when a booking's status changes to `completed_rental`
+ * it leaves the ACTIVE_BOOKING_STATUSES set, and the vehicle is automatically
+ * shown as available again.  No manual flag write is needed.
  * @param {string} vehicleId
  */
 async function markVehicleAvailable(vehicleId) {
-  if (!process.env.GITHUB_TOKEN || !vehicleId) return;
-  try {
-    await updateJsonFileWithRetry({
-      load:    loadFleetStatus,
-      apply:   (data) => {
-        if (!data[vehicleId]) data[vehicleId] = {};
-        data[vehicleId].available = true;
-      },
-      save:    saveFleetStatus,
-      message: `Auto-complete: mark ${vehicleId} available`,
-    });
-  } catch (err) {
-    console.error("scheduled-reminders: markVehicleAvailable failed (non-fatal):", err.message);
+  // No-op: availability is derived from bookings, not a manual flag.
+  if (vehicleId) {
+    console.log(`scheduled-reminders: markVehicleAvailable(${vehicleId}) — skipped, availability is now bookings-driven`);
   }
 }
 

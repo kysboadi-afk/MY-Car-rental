@@ -28,11 +28,6 @@ function fmtMoney(n) {
   return "$" + num.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-function isBookedToday(ranges) {
-  const today = SlyLA.todayISO();
-  return (ranges || []).some(r => today >= r.from && today <= r.to);
-}
-
 // ─── Card builders ────────────────────────────────────────────────────────────
 
 function buildEconomyCard(v, pricing) {
@@ -150,48 +145,7 @@ function captureButtonKeys() {
   });
 }
 
-function getNextAvailDate(vehicleId, bookedDates) {
-  const today = SlyLA.todayISO();
-  const ranges = (bookedDates[vehicleId] || [])
-    .filter(r => r && r.from && r.to)
-    .slice()
-    .sort((a, b) => a.from < b.from ? -1 : 1);
-  if (!ranges.length) return null;
-
-  const merged = [];
-  for (const r of ranges) {
-    const prev = merged[merged.length - 1];
-    if (!prev) {
-      merged.push({ from: r.from, to: r.to });
-      continue;
-    }
-    const prevEndISO = SlyLA.addDaysToISO(prev.to, 1); // treat back-to-back ranges as continuous
-    if (r.from <= prevEndISO) {
-      if (r.to > prev.to) prev.to = r.to;
-    } else {
-      merged.push({ from: r.from, to: r.to });
-    }
-  }
-
-  // 1) If currently inside a merged block, next available is after its end.
-  for (const r of merged) {
-    if (r.from <= today && today <= r.to) {
-      return SlyLA.addDaysToISO(r.to, 1);
-    }
-  }
-
-  // 2) If currently before an upcoming merged block while fleet says unavailable,
-  //    show availability after that upcoming reserved block.
-  const upcoming = merged.find(r => r.from > today);
-  if (upcoming) {
-    return SlyLA.addDaysToISO(upcoming.to, 1);
-  }
-
-  // 3) No current/future block found. Avoid showing a stale past date.
-  return null;
-}
-
-function applyFleetStatus(fleetStatus, bookedDates) {
+function applyFleetStatus(fleetStatus) {
   const i18n = window.slyI18n || { t: k => k };
 
   document.querySelectorAll("#car-grid .car-card").forEach(card => {
@@ -223,13 +177,11 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       link.style.pointerEvents = "";
       link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
 
-      if (!isBookedToday(bookedDates[vid])) {
-        const todayBadge = document.createElement("span");
-        todayBadge.className = "available-today-badge";
-        todayBadge.setAttribute("data-i18n", "fleet.availableToday");
-        todayBadge.textContent = i18n.t("fleet.availableToday");
-        badge.insertAdjacentElement("afterend", todayBadge);
-      }
+      const todayBadge = document.createElement("span");
+      todayBadge.className = "available-today-badge";
+      todayBadge.setAttribute("data-i18n", "fleet.availableToday");
+      todayBadge.textContent = i18n.t("fleet.availableToday");
+      badge.insertAdjacentElement("afterend", todayBadge);
     } else {
       const isReserved = status && status.rental_status === "reserved";
       const badgeKey = isReserved ? "fleet.pendingPickup" : "fleet.currentlyBooked";
@@ -237,65 +189,14 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = i18n.t(badgeKey);
       badge.className   = "status-badge unavailable booked";
 
-      // Build the "Next Available" badge.
-      // Prefer the pre-formatted next_available_display from fleet-status
-      // (single source of truth, LA timezone, no frontend date math).
-      // Falls back to the available_at timestamp path, then to date-only
-      // booked-dates.json data for environments without Supabase.
+      // Use the pre-formatted next_available_display from fleet-status.
+      // This is the single source of truth — LA timezone, no frontend date math.
       const nextAvailDisplay = status ? status.next_available_display : null;
-      const availableAt = status ? status.available_at : null;
-      const nextBadge = document.createElement("span");
-      nextBadge.className = "next-available-badge";
-      const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-
       if (nextAvailDisplay) {
-        // Backend pre-formatted the string; just render it.
+        const nextBadge = document.createElement("span");
+        nextBadge.className = "next-available-badge";
+        const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
         nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
-      } else {
-        const availDate = availableAt ? new Date(availableAt) : null;
-        const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
-
-        if (hasValidAvailableAt) {
-          const nowMs = Date.now();
-          if (availDate.getTime() <= nowMs) {
-            // Return time is already in the past — just say "Available Today"
-            nextBadge.textContent = "Available Today";
-          } else {
-            const availDateISO = SlyLA.isoDateInLA(availDate);
-            const timeStr = availDate.toLocaleTimeString("en-US", {
-              timeZone: SlyLA.tz,
-              hour: "numeric",
-              minute: "2-digit",
-              hour12: true
-            });
-            if (availDateISO === SlyLA.todayISO()) {
-              nextBadge.textContent = `Available Today at ${timeStr}`;
-            } else {
-              const formatted = availDate.toLocaleDateString("en-US", {
-                timeZone: SlyLA.tz,
-                month: "short",
-                day: "numeric",
-                year: "numeric"
-              });
-              nextBadge.textContent = tpl.replace("{date}", `${formatted} at ${timeStr}`);
-            }
-          }
-        } else {
-          const nextISO = getNextAvailDate(vid, bookedDates);
-          if (nextISO) {
-            const d = new Date(nextISO + "T00:00:00");
-            const formatted = d.toLocaleDateString("en-US", {
-              timeZone: SlyLA.tz,
-              month: "short",
-              day: "numeric",
-              year: "numeric"
-            });
-            nextBadge.textContent = tpl.replace("{date}", formatted);
-          }
-        }
-      }
-
-      if (nextBadge.textContent) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
@@ -318,13 +219,9 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
 async function loadFleetStatus() {
   try {
-    const [fleetRes, bookedRes] = await Promise.all([
-      fetch(API_BASE + "/api/fleet-status"),
-      fetch(API_BASE + "/api/booked-dates"),
-    ]);
+    const fleetRes = await fetch(API_BASE + "/api/fleet-status");
     const fleetStatus = fleetRes.ok ? await fleetRes.json() : {};
-    const bookedDates = bookedRes.ok ? await bookedRes.json() : {};
-    applyFleetStatus(fleetStatus, bookedDates);
+    applyFleetStatus(fleetStatus);
   } catch (err) {
     console.warn("Could not load fleet status:", err);
   }

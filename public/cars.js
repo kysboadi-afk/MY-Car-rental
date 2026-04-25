@@ -41,11 +41,6 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
-function isBookedToday(ranges) {
-  const today = SlyLA.todayISO();
-  return (ranges || []).some(r => today >= r.from && today <= r.to);
-}
-
 // Capture the original data-i18n key for each vehicle's button so that
 // re-applying "available" restores the correct per-vehicle label in any language.
 const originalBtnI18nKey = {};
@@ -56,50 +51,8 @@ carCards.forEach(card => {
   if (btn) originalBtnI18nKey[vehicleId] = btn.getAttribute("data-i18n") || "fleet.bookNow";
 });
 
-function applyFleetStatus(fleetStatus, bookedDates) {
+function applyFleetStatus(fleetStatus) {
   const i18n  = window.slyI18n || { t: function(k) { return k; } };
-  const today = SlyLA.todayISO();
-
-  // Helper: find the next available ISO date after the current booking ends
-  function getNextAvailDate(vehicleId) {
-    const ranges = ((bookedDates[vehicleId] || []).filter(function(r) {
-      return r && r.from && r.to;
-    }).slice().sort(function(a, b) {
-      return a.from < b.from ? -1 : 1;
-    }));
-    if (!ranges.length) return null;
-
-    var merged = [];
-    for (var rangeIndex = 0; rangeIndex < ranges.length; rangeIndex++) {
-      var previousRange = merged[merged.length - 1];
-      var currentRange = ranges[rangeIndex];
-      if (!previousRange) {
-        merged.push({ from: currentRange.from, to: currentRange.to });
-        continue;
-      }
-      var previousRangeEndPlusOneISO = SlyLA.addDaysToISO(previousRange.to, 1);
-      if (currentRange.from <= previousRangeEndPlusOneISO) {
-        if (currentRange.to > previousRange.to) previousRange.to = currentRange.to;
-      } else {
-        merged.push({ from: currentRange.from, to: currentRange.to });
-      }
-    }
-
-    for (var mergedIndex = 0; mergedIndex < merged.length; mergedIndex++) {
-      if (merged[mergedIndex].from <= today && today <= merged[mergedIndex].to) {
-        return SlyLA.addDaysToISO(merged[mergedIndex].to, 1);
-      }
-    }
-
-    for (var upcomingIndex = 0; upcomingIndex < merged.length; upcomingIndex++) {
-      if (merged[upcomingIndex].from > today) {
-        return SlyLA.addDaysToISO(merged[upcomingIndex].to, 1);
-      }
-    }
-
-    // No current/future block found. Avoid showing a stale past date.
-    return null;
-  }
 
   carCards.forEach(card => {
     const vehicleId = card.dataset.vehicle;
@@ -133,15 +86,12 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       link.style.pointerEvents = "";
       link.href = "car.html?vehicle=" + encodeURIComponent(vehicleId);
 
-      // "Available Today" badge — only when today is not blocked
-      const bookedToday = isBookedToday(bookedDates[vehicleId]);
-      if (!bookedToday) {
-        const todayBadge = document.createElement("span");
-        todayBadge.className = "available-today-badge";
-        todayBadge.setAttribute("data-i18n", "fleet.availableToday");
-        todayBadge.textContent = i18n.t("fleet.availableToday");
-        badge.insertAdjacentElement("afterend", todayBadge);
-      }
+      // fleet-status says available = true, so this vehicle is available today
+      const todayBadge = document.createElement("span");
+      todayBadge.className = "available-today-badge";
+      todayBadge.setAttribute("data-i18n", "fleet.availableToday");
+      todayBadge.textContent = i18n.t("fleet.availableToday");
+      badge.insertAdjacentElement("afterend", todayBadge);
     } else {
       // ── Currently Booked state ──────────────────────────────────────────
       var isReserved = status && status.rental_status === "reserved";
@@ -150,65 +100,14 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = i18n.t(badgeKey);
       badge.className = "status-badge unavailable booked";
 
-      // Build the "Next Available" badge.
-      // Prefer the pre-formatted next_available_display from fleet-status
-      // (single source of truth, LA timezone, no frontend date math).
-      // Falls back to the available_at timestamp path, then to date-only
-      // booked-dates.json data for environments without Supabase.
+      // Use the pre-formatted next_available_display from fleet-status.
+      // This is the single source of truth — LA timezone, no frontend date math.
       const nextAvailDisplay = status ? status.next_available_display : null;
-      const availableAt = status ? status.available_at : null;
-      const nextBadge = document.createElement("span");
-      nextBadge.className = "next-available-badge";
-      const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-
       if (nextAvailDisplay) {
-        // Backend pre-formatted the string; just render it.
+        const nextBadge = document.createElement("span");
+        nextBadge.className = "next-available-badge";
+        const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
         nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
-      } else {
-        const availDate = availableAt ? new Date(availableAt) : null;
-        const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
-
-        if (hasValidAvailableAt) {
-          const nowMs = Date.now();
-          if (availDate.getTime() <= nowMs) {
-            // Return time is already in the past — just say "Available Today"
-            nextBadge.textContent = "Available Today";
-          } else {
-            const availDateISO = SlyLA.isoDateInLA(availDate);
-            const timeStr = availDate.toLocaleTimeString("en-US", {
-              timeZone: SlyLA.tz,
-              hour: "numeric",
-              minute: "2-digit",
-              hour12: true
-            });
-            if (availDateISO === today) {
-              nextBadge.textContent = "Available Today at " + timeStr;
-            } else {
-              const formatted2 = availDate.toLocaleDateString("en-US", {
-                timeZone: SlyLA.tz,
-                month: "short",
-                day: "numeric",
-                year: "numeric"
-              });
-              nextBadge.textContent = tpl.replace("{date}", formatted2 + " at " + timeStr);
-            }
-          }
-        } else {
-          const nextISO = getNextAvailDate(vehicleId);
-          if (nextISO) {
-            const d = new Date(nextISO + "T00:00:00");
-            const formatted = d.toLocaleDateString("en-US", {
-              timeZone: SlyLA.tz,
-              month: "short",
-              day: "numeric",
-              year: "numeric"
-            });
-            nextBadge.textContent = tpl.replace("{date}", formatted);
-          }
-        }
-      }
-
-      if (nextBadge.textContent) {
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
@@ -231,15 +130,9 @@ function applyFleetStatus(fleetStatus, bookedDates) {
 
 async function loadFleetStatus() {
   try {
-    const [fleetRes, bookedRes] = await Promise.all([
-      fetch(API_BASE + "/api/fleet-status"),
-      fetch(API_BASE + "/api/booked-dates"),
-    ]);
-
+    const fleetRes = await fetch(API_BASE + "/api/fleet-status");
     const fleetStatus = fleetRes.ok ? await fleetRes.json() : {};
-    const bookedDates = bookedRes.ok ? await bookedRes.json() : {};
-
-    applyFleetStatus(fleetStatus, bookedDates);
+    applyFleetStatus(fleetStatus);
   } catch (err) {
     console.warn("Could not load fleet status:", err);
     // Leave default "Available" badges in place on any error

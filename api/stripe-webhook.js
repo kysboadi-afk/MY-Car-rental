@@ -167,65 +167,16 @@ async function blockBookedDates(vehicleId, from, to, fromTime = "", toTime = "")
 }
 
 /**
- * Mark a vehicle as unavailable in fleet-status.json on GitHub.
- * Mirrors the same logic used by send-reservation-email.js.
+ * Previously wrote `available: false` to fleet-status.json on GitHub.
+ * Availability is now derived automatically from the Supabase bookings table
+ * by fleet-status.js — the booking record inserted during payment processing
+ * is the single source of truth.  No manual flag write is needed.
  */
 async function markVehicleUnavailable(vehicleId) {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.warn("stripe-webhook: GITHUB_TOKEN not set — skipping fleet-status update");
-    return;
+  // No-op: availability is derived from bookings, not a manual flag.
+  if (vehicleId) {
+    console.log(`stripe-webhook: markVehicleUnavailable(${vehicleId}) — skipped, availability is now bookings-driven`);
   }
-  if (!vehicleId) return;
-
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadFleetStatus() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      return { data: {}, sha: null }; // non-fatal
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-    } catch (parseErr) {
-      console.error("stripe-webhook: malformed JSON in fleet-status.json, resetting:", parseErr);
-      data = {};
-    }
-    return { data, sha: file.sha };
-  }
-
-  async function saveFleetStatus(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT fleet-status.json failed: ${resp.status} ${text}`);
-    }
-  }
-
-  await updateJsonFileWithRetry({
-    load:  loadFleetStatus,
-    apply: (data) => {
-      if (!data[vehicleId]) data[vehicleId] = {};
-      data[vehicleId].available = false;
-    },
-    save:    saveFleetStatus,
-    message: `Mark ${vehicleId} unavailable after confirmed booking (webhook)`,
-  });
 }
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
