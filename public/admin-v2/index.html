@@ -4666,7 +4666,7 @@ function loadRevenue() {
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list', scope: 'car' }),
     expensesPromise,
   ])
     .then(([revData, expData]) => {
@@ -4993,8 +4993,8 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
   ]).then(([fleetData, trendData]) => {
     renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
     document.getElementById('analytics-loading').style.display = 'none';
