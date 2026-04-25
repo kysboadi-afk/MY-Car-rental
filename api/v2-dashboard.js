@@ -34,11 +34,17 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
 };
 const DB_TO_APP_STATUS = {
-  pending:   "reserved_unpaid",
-  approved:  "booked_paid",
-  active:    "active_rental",
-  completed: "completed_rental",
-  cancelled: "cancelled_rental",
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  approved:             "booked_paid",
+  booked_paid:          "booked_paid",
+  active:               "active_rental",
+  active_rental:        "active_rental",
+  completed:            "completed_rental",
+  completed_rental:     "completed_rental",
+  cancelled:            "cancelled_rental",
+  cancelled_rental:     "cancelled_rental",
 };
 const DEFAULT_RETURN_TIME = "10:00";
 
@@ -315,23 +321,33 @@ export default async function handler(req, res) {
 
     if (viewOk) {
       // Fast path: all financial totals come from the pre-aggregated view.
-      financialsFromRevRecords = true;
-      totalRevenue    = Number(metricsView[`${vp}_revenue`]          || 0);
-      totalStripeFees = Number(metricsView[`${vp}_stripe_fees`]      || 0);
-      netRevenue      = Number(metricsView[`${vp}_net_revenue`]      || 0);
-      reconciledCount = Number(metricsView[`${vp}_reconciled_count`] || 0);
+      const viewRevenue    = Number(metricsView[`${vp}_revenue`]          || 0);
+      const viewReconciled = Number(metricsView[`${vp}_reconciled_count`] || 0);
 
-      // Populate per-vehicle revenue map (used by vehicleStats computation below).
-      // view includes both revenue_records and supplemental charges.
-      const vRevJson = metricsView.vehicle_revenue_json || {};
-      for (const [vid, vr] of Object.entries(vRevJson)) {
-        const normVid = uiVehicleId(vid);
-        rrByVehicle[normVid] = {
-          gross: Number(vr.gross || 0),
-          net:   Number(vr.net   || 0),
-          count: Number(vr.count || 0),
-        };
-        bookingsPerVehicle[normVid] = Number(vr.count || 0);
+      // Only trust the view's financial data when it contains real Stripe-backed
+      // revenue OR when the view at least has reconciled records (even at $0).
+      // When both are zero the revenue_records table is empty for this scope and
+      // we fall through to the bookings-based fallback so the dashboard shows
+      // deposit amounts as a best-effort estimate instead of a misleading $0.
+      if (viewRevenue > 0 || viewReconciled > 0) {
+        financialsFromRevRecords = true;
+        totalRevenue    = viewRevenue;
+        totalStripeFees = Number(metricsView[`${vp}_stripe_fees`]      || 0);
+        netRevenue      = Number(metricsView[`${vp}_net_revenue`]      || 0);
+        reconciledCount = viewReconciled;
+
+        // Populate per-vehicle revenue map (used by vehicleStats computation below).
+        // view includes both revenue_records and supplemental charges.
+        const vRevJson = metricsView.vehicle_revenue_json || {};
+        for (const [vid, vr] of Object.entries(vRevJson)) {
+          const normVid = uiVehicleId(vid);
+          rrByVehicle[normVid] = {
+            gross: Number(vr.gross || 0),
+            net:   Number(vr.net   || 0),
+            count: Number(vr.count || 0),
+          };
+          bookingsPerVehicle[normVid] = Number(vr.count || 0);
+        }
       }
     }
 

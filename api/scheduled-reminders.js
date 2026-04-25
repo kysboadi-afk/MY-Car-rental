@@ -74,6 +74,8 @@ import {
 // the same as one who is exactly 1 hour late.
 const LATE_FEE_AMOUNTS = {
   slingshot:  100,  // $100/hour (rounded up, min 1 h)
+  slingshot2: 100,  // $100/hour — same rate as slingshot (Unit 2)
+  slingshot3: 100,  // $100/hour — same rate as slingshot (Unit 3)
   camry:       50,  // $50/hour  (rounded up, min 1 h)
   camry2013:   50,  // $50/hour  (rounded up, min 1 h)
 };
