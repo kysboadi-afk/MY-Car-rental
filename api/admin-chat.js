@@ -42,6 +42,7 @@ You have access to real-time business data through tools. Use them to answer adm
 **Dashboard & Overview**
 - Use get_insights for business KPIs, detected problems, revenue trends, and booking statistics.
 - get_insights returns: this-month and last-month gross revenue, week-over-week revenue change, booking counts (last 7 and 30 days), active bookings, vehicles available, and a list of detected operational problems (idle vehicles, overdue maintenance, no new bookings, etc.).
+- If get_insights returns \`{ message: "System is busy. Try a simpler question." }\`, the backend timed out. Ask the admin to try again with a more specific question (e.g. "show me just today's bookings" instead of a broad summary).
 - For **net profit** or **expense** questions always use get_revenue + get_expenses together — get_insights does not include expense or Stripe fee data.
 
 **Vehicles**
@@ -49,6 +50,7 @@ You have access to real-time business data through tools. Use them to answer adm
 
 **Reservations & Bookings (including Raw Bookings)**
 - Use get_bookings to list/filter bookings by vehicle, status, or all. Supports a \`search\` parameter to find bookings by customer name, phone number, email address, or booking ID. Use this whenever the admin asks to "find" or "look up" a specific customer's booking.
+- **Availability is determined solely from the \`bookings\` table in Supabase** (not from any cached JSON file). A vehicle is available for a date range when no booking with an active status overlaps those dates.
 
 **Fleet Status & Mileage**
 - Use **get_maintenance_status** (with vehicleName) whenever the admin asks about maintenance, service, oil change, brakes, tires, or vehicle condition for a specific vehicle. This works for ALL vehicles, including those without GPS tracking. The result includes scheduled appointments (from the driver maintenance scheduling form), completed service history, and mileage-based alerts.
@@ -258,6 +260,7 @@ Step 4 — Only call create_manual_booking with confirmed: true after the admin 
 
 After the tool returns:
 - Confirm the booking was saved and the dates are blocked on the calendar.
+- If the tool returns a **409 conflict error** (dates already booked for that vehicle), inform the admin: "Those dates conflict with an existing booking for [vehicle]. Please choose different dates or check the current bookings."
 - If the customer has an email address and the admin did not explicitly ask to skip email, immediately call resend_booking_confirmation to send the rental agreement confirmation — do NOT make the admin ask for this separately.
 - If the admin says not to send email, do not call resend_booking_confirmation.
 
@@ -600,11 +603,12 @@ The following jobs run automatically without any admin or AI action required:
 - SMS reminders for unpaid bookings: 24h and 1h before pickup
 - Active rental alerts: mid-rental check-in, 1h before return, 15 min before return
 - Late warnings to renter: 30-min grace warning, at return time, after grace period expires
-- **Late fee approval requests** to the owner (email + SMS with ✅ Approve and ❌ Decline buttons) once a rental is overdue past the grace period — one request per booking
+- **Late fee approval requests** to the owner (email + SMS with ✅ Approve, ✏️ Adjust, and ❌ Decline buttons) once a rental is overdue past the grace period — one request per booking
 - Post-rental thank-you SMS immediately on completion; retention sequence at Day 1, 3, 7, 14, 30
 - Auto-activation: transitions \`booked_paid\` → \`active_rental\` when pickup time arrives
 - Auto-completion: transitions \`active_rental\` → \`completed_rental\` when return time passes
 - Stripe reconciliation check: detects PaymentIntents not yet in revenue_records and alerts the owner by email + SMS
+- All SMS notifications are deduplicated via the \`sms_logs\` table — each event type is sent at most once per booking (HIGH_DAILY_MILEAGE alerts are capped at 2 per booking with a 60-minute cooldown)
 
 **AI Auto-Loop** (every 10 minutes — \`/api/admin-ai-auto\`):
 - Computes fleet insights and detects operational problems
@@ -614,10 +618,12 @@ The following jobs run automatically without any admin or AI action required:
 
 **Automatic (triggered by scheduled-reminders when a rental is overdue):**
 1. Once the grace period expires, the system SMS-notifies the renter of the assessed late fee.
-2. The system emails and texts the **owner** with ✅ Approve and ❌ Decline buttons.
+2. The system emails and texts the **owner** with ✅ Approve, ✏️ Adjust, and ❌ Decline buttons.
 3. If the owner approves (clicks the emailed link), the fee is immediately charged to the customer's saved Stripe card via \`/api/approve-late-fee\`.
-4. If declined, no charge is made. The approval link expires in 24 hours.
-5. This happens once per booking — the approval request is **not** re-sent on subsequent cron ticks.
+4. If the owner clicks Adjust, a form lets them enter a different amount before charging.
+5. If declined, no charge is made. The approval link expires in 24 hours.
+6. This happens once per booking — the approval request is **not** re-sent on subsequent cron ticks.
+7. Once approved and charged, \`late_fee_status\` is set to \`'paid'\` in the bookings table — this prevents double-charging.
 
 **Manual (use the AI assistant):**
 - Use \`charge_customer_fee\` with \`charge_type: "late_fee"\` to **immediately charge** the customer's saved card without going through the email approval flow.
@@ -851,6 +857,16 @@ function formatConfirmedReply(toolName, args, result) {
         `- Status: ${c.status === "succeeded" ? "✅ succeeded" : safe(c.status)}`
       );
     }
+    case "record_extension_payment":
+      return `✅ ${safe(result.message || `Extension recorded for booking \`${safe(args.bookingId)}\`.`)}\n- New return date: ${safe(result.newReturnDate)}\n- Total paid so far: $${safe(result.updatedAmountPaid)}`;
+    case "create_manual_booking":
+      return `✅ ${safe(result.message || `Booking created for ${safe(args.name)}.`)}\n- Booking ID: \`${safe(result.bookingId)}\`\n- Status: ${safe(result.status)}\n- Dates blocked: ${safe(result.pickupDate)} → ${safe(result.returnDate)}`;
+    case "resend_booking_confirmation":
+      return `✅ ${safe(result.message || `Confirmation resent for booking \`${safe(args.bookingId)}\`.`)}`;
+    case "recount_customer_counts":
+      return `✅ ${safe(result.message || "Customer counts updated.")}${result.changes?.length ? `\n${result.changes.map((c) => `- ${safe(c.name)}: ${safe(c.old)} → ${safe(c.new)}`).join("\n")}` : ""}`;
+    case "reconcile_stripe":
+      return `✅ ${safe(result.message || "Stripe reconciliation complete.")}`;
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }
