@@ -166,7 +166,10 @@ export default async function handler(req, res) {
 
     const metricsPromise = sb
       ? sb.from("admin_metrics_v2").select("*").single()
-          .then((r) => r, (e) => ({ data: null, error: e }))
+          .then((r) => r, (e) => {
+            console.warn("v2-dashboard: admin_metrics_v2 query failed (non-fatal), falling back to revenue_records loop:", e?.message);
+            return { data: null, error: e };
+          })
       : Promise.resolve({ data: null });
 
     const bookingsPromise = sb
@@ -196,9 +199,6 @@ export default async function handler(req, res) {
     // When available it replaces the sequential revenue_records and charges queries.
     const metricsView = metricsViewResult?.data ?? null;
     const viewOk = !!metricsView && !metricsViewResult?.error;
-    if (!viewOk && metricsViewResult?.error && !isSchemaError(metricsViewResult.error)) {
-      console.warn("v2-dashboard: admin_metrics_v2 query error (non-fatal):", metricsViewResult.error?.message);
-    }
 
     // Scope prefix selects the right pre-aggregated column set:
     //   "car"/"cars" → car_  prefix
@@ -562,6 +562,11 @@ export default async function handler(req, res) {
     // Recent bookings (last 10 across all vehicles).
     // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
     // Otherwise slice from the full allBookings list.
+    //
+    // Note: amountPaid in the view path always reflects deposit_paid because
+    // rrByBookingId (which holds full Stripe gross amounts per booking) is only
+    // populated in the non-view (revenue_records loop) path.  Both paths surface
+    // the deposit amount in practice when the fallback also lacks rrByBookingId.
     let recentBookings;
     if (viewOk && recentBkResult?.data) {
       recentBookings = recentBkResult.data.slice(0, 10).map((r) => ({
