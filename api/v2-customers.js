@@ -402,7 +402,7 @@ export default async function handler(req, res) {
 
           const { data: rrData, error: rrError } = rrResult;
           // revenue_records_effective already excludes sync_excluded rows via its WHERE clause.
-          const rrRows = (rrData || []);
+          const rrRows = rrData || [];
 
           if (!rrError && Array.isArray(rrRows) && rrRows.length > 0) {
               // Group revenue records by the best available identity key, in priority order:

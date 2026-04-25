@@ -12,6 +12,7 @@
 //
 // Financial source of truth: revenue_records_effective (Supabase), identical to
 // v2-dashboard.js and the Revenue Tracker page so all surfaces report the same totals.
+// Formula matches normalizeRevenueRecord() in the admin frontend (public/admin-v2/index.html):
 //   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
 //                   includes all payment methods (cash, manual, Stripe, etc.)
 //   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled/non-Stripe rows)
