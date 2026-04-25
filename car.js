@@ -1552,15 +1552,21 @@ function initExtendRentalForm() {
 
     var isSlingshot = carData.hourlyTiers;
 
+    // Base date for computing extra days: use the current booking's return date
+    // (stored as the min attribute on the date input) so the estimate matches
+    // what the server charges.  Falls back to today if min is not set or is in
+    // the past (e.g. overdue rentals).
+    var minDate = extNewReturn.getAttribute("min") || today;
+    var baseDate = minDate > today ? minDate : today;
+
     if (isSlingshot) {
-      // For Slingshot: rough estimate based on current return date being today
-      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
       var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
       if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
     } else {
       // Economy cars: use the same tiered pricing as the main booking flow
-      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var daily   = carData.pricePerDay  || 55;
       var weekly  = carData.weekly       || 350;
       var biweek  = carData.biweekly     || 650;
