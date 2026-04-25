@@ -695,13 +695,15 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const nowIso    = now.toISOString();
       const returnIso = returnDt.toISOString();
 
-      console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
-        timezone:          BUSINESS_TZ,
-        now_la:            toLAString(now),
-        return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
-        return_la:         toLAString(returnDt),
-        mins_until_return: Math.round(minutesUntilReturn),
-      });
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
+          timezone:          BUSINESS_TZ,
+          now_la:            toLAString(now),
+          return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_la:         toLAString(returnDt),
+          mins_until_return: Math.round(minutesUntilReturn),
+        });
+      }
 
       // returnDateStr is stored in sms_logs so old triggers are invalidated when
       // the booking is extended to a new return_date.
@@ -919,12 +921,14 @@ export async function processAutoActivations(allBookings, now) {
       const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
 
-      console.log("[TZ_DEBUG][AUTO_ACTIVATE]", {
-        timezone:        BUSINESS_TZ,
-        now_la:          toLAString(now),
-        pickup_raw:      `${booking.pickupDate} ${booking.pickupTime || ""}`,
-        pickup_la:       toLAString(pickupDt),
-      });
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][AUTO_ACTIVATE]", {
+          timezone:        BUSINESS_TZ,
+          now_la:          toLAString(now),
+          pickup_raw:      `${booking.pickupDate} ${booking.pickupTime || ""}`,
+          pickup_la:       toLAString(pickupDt),
+        });
+      }
 
       // Only activate once pickup time has arrived (or passed)
       if (now < pickupDt) continue;
@@ -985,13 +989,15 @@ export async function processAutoCompletions(allBookings, now) {
 
       const minsOverdue = (now - returnDt) / 60000;
 
-      console.log("[TZ_DEBUG][AUTO_COMPLETE]", {
-        timezone:       BUSINESS_TZ,
-        now_la:         toLAString(now),
-        return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
-        return_la:      toLAString(returnDt),
-        mins_overdue:   Math.round(minsOverdue),
-      });
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][AUTO_COMPLETE]", {
+          timezone:       BUSINESS_TZ,
+          now_la:         toLAString(now),
+          return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_la:      toLAString(returnDt),
+          mins_overdue:   Math.round(minsOverdue),
+        });
+      }
 
       if (minsOverdue < AUTO_COMPLETE_HOURS * 60) continue;
 
