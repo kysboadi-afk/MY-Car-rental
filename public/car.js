@@ -1352,7 +1352,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   }
 
   notice.innerHTML = `
-    <p>🔴 <strong>${_t("fleet.currentlyBooked", "Currently Rented")}</strong></p>
+    <p><strong>${_t("fleet.currentlyBooked", "🔴 Currently Booked")}</strong></p>
     ${nextLine}
     <p><a href="${vehicleId.startsWith('slingshot') ? 'slingshot.html' : 'cars.html'}">${_t("booking.browseOther", "Browse other available vehicles")}</a></p>`;
 
