@@ -13,6 +13,7 @@ process.env.SMTP_HOST = "smtp.test.invalid";
 process.env.SMTP_PORT = "587";
 process.env.SMTP_USER = "test@test.invalid";
 process.env.SMTP_PASS = "test-password";
+process.env.STRIPE_SECRET_KEY = "sk_live_mock";
 
 // ─── Nodemailer mock ────────────────────────────────────────────────────────
 // Must be registered before the handler module is imported so the
@@ -24,6 +25,17 @@ const mockSendMail = mock.fn(async (opts) => { sentMails.push(opts); });
 mock.module("nodemailer", {
   defaultExport: {
     createTransport: () => ({ sendMail: mockSendMail }),
+  },
+});
+
+mock.module("stripe", {
+  defaultExport: class StripeMock {
+    paymentIntents = {
+      retrieve: async () => ({
+        status: "succeeded",
+        payment_method: { card: { last4: "4242" } },
+      }),
+    };
   },
 });
 
@@ -64,6 +76,8 @@ const VALID_BODY = {
   email: "jane@example.com",
   phone: "555-1234",
   total: "200",
+  paymentStatus: "confirmed",
+  paymentIntentId: "pi_test_123",
   pricePerDay: 50,
   deposit: 0,
   days: 4,
@@ -104,6 +118,19 @@ test("CORS header is NOT set for unknown origin", async () => {
   const res = makeRes();
   await handler(req, res);
   assert.equal(res._headers["Access-Control-Allow-Origin"], undefined);
+});
+
+test("returns 400 when pickupTime is missing", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const req = makeReq("POST", { ...VALID_BODY, pickupTime: "   ", paymentIntentId: "" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 400);
+  assert.match(res._body?.error || "", /pickup time is required/i);
+  assert.equal(mockSendMail.mock.callCount(), 0, "sendMail should not be called when pickupTime is missing");
 });
 
 test("valid POST sends owner email containing renter name", async () => {
@@ -542,7 +569,7 @@ test("returns 500 when SMTP credentials are not configured", async () => {
 
 // ─── paymentStatus tests ───────────────────────────────────────────────────
 
-test("paymentStatus:failed — owner email is sent with FAILED label in subject and body", async () => {
+test("paymentStatus:failed — no owner email is sent", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -551,11 +578,9 @@ test("paymentStatus:failed — owner email is sent with FAILED label in subject 
   await handler(req, res);
 
   assert.equal(res._status, 200);
-  const ownerMail = sentMails[0];
-  assert.ok(ownerMail, "Owner email should have been sent");
-  assert.ok(ownerMail.subject.includes("Payment Failed"), "Subject should indicate payment failed");
-  assert.ok(ownerMail.html.includes("FAILED"), "HTML body should show FAILED status");
-  assert.ok(ownerMail.text.includes("FAILED"), "Plain-text body should show FAILED status");
+  assert.equal(mockSendMail.mock.callCount(), 0, "No email should be sent for failed payment attempts");
+  assert.equal(res._body?.emailSkipped, true);
+  assert.equal(res._body?.reason, "payment_not_confirmed");
 });
 
 test("paymentStatus:failed — customer confirmation email is NOT sent", async () => {
@@ -566,7 +591,7 @@ test("paymentStatus:failed — customer confirmation email is NOT sent", async (
   const res = makeRes();
   await handler(req, res);
 
-  assert.equal(mockSendMail.mock.callCount(), 1, "Only the owner email should be sent for a failed payment");
+  assert.equal(mockSendMail.mock.callCount(), 0, "No email should be sent for a failed payment");
 });
 
 test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
@@ -586,6 +611,30 @@ test("paymentStatus:failed — blockBookedDates is NOT called", async () => {
   globalThis.fetch = originalFetch;
 
   assert.equal(fetchCalls.length, 0, "GitHub API should not be called for a failed payment (neither blockBookedDates nor markVehicleUnavailable)");
+});
+
+test("test mode — booking persistence and availability updates are skipped", async () => {
+  mockSendMail.mock.resetCalls();
+  sentMails.length = 0;
+
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  const savedStripeKey = process.env.STRIPE_SECRET_KEY;
+  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
+  process.env.GITHUB_TOKEN = "test-token";
+  process.env.STRIPE_SECRET_KEY = "sk_test_mock";
+
+  try {
+    const req = makeReq("POST", { ...VALID_BODY, vehicleId: "camry" });
+    const res = makeRes();
+    await handler(req, res);
+    assert.equal(res._status, 200);
+    assert.equal(fetchCalls.length, 0, "Test mode must not update bookings.json, booked-dates.json, or fleet-status.json");
+  } finally {
+    delete process.env.GITHUB_TOKEN;
+    process.env.STRIPE_SECRET_KEY = savedStripeKey;
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("customer email failure returns 200 — owner already received the booking alert", async () => {
@@ -839,6 +888,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
 // A booking payload that simulates the final balance payment after a $50 deposit.
 const BALANCE_PAYMENT_BODY = {
   vehicleId:          "camry",
+  bookingId:          "booking-balance-test-1",
   car:                "Camry 2012",
   name:               "Jane Doe",
   email:              "jane@example.com",
@@ -851,6 +901,8 @@ const BALANCE_PAYMENT_BODY = {
   days:               4,
   protectionPlan:     false,
   paymentType:        "balance_payment",
+  paymentStatus:      "confirmed",
+  paymentIntentId:    "pi_balance_test_123",
   depositAlreadyPaid: "50.00",
   fullRentalTotal:    "219.03",
 };
@@ -925,7 +977,7 @@ test("balance payment: response is 200 and two emails are sent", async () => {
   assert.equal(mockSendMail.mock.callCount(), 2, "Both owner and customer emails should be sent");
 });
 
-// ─── Deposit email includes 'Pay Balance Online' link ────────────────────────
+// ─── Deposit email should not expose direct balance links ─────────────────────
 
 const DEPOSIT_BOOKING_BODY = {
   vehicleId:      "camry",
@@ -938,13 +990,15 @@ const DEPOSIT_BOOKING_BODY = {
   returnDate:     "2026-05-05",
   returnTime:     "09:00",
   total:          "50",           // deposit amount charged
+  paymentStatus:  "confirmed",
   days:           4,
   protectionPlan: false,
+  paymentIntentId: "pi_deposit_test_123",
   fullRentalCost: "200",          // signals this is a deposit payment
   balanceAtPickup: "150",
 };
 
-test("deposit confirmation email includes 'Pay Balance Online' link pointing to balance.html", async () => {
+test("deposit confirmation email does not include direct pay-balance link", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -956,16 +1010,16 @@ test("deposit confirmation email includes 'Pay Balance Online' link pointing to 
   const customerMail = sentMails[1];
   assert.ok(customerMail, "Customer email should be sent");
   assert.ok(
-    customerMail.html.includes("balance.html"),
-    "Customer deposit email HTML should include a link to balance.html"
+    !customerMail.html.includes("balance.html"),
+    "Customer deposit email HTML should not include a direct balance.html link"
   );
   assert.ok(
-    customerMail.html.includes("Pay Balance Online"),
-    "Customer deposit email HTML should include 'Pay Balance Online' button text"
+    !customerMail.html.includes("Pay Balance Online"),
+    "Customer deposit email HTML should not include a 'Pay Balance Online' button"
   );
 });
 
-test("deposit confirmation plain-text email includes pay balance URL", async () => {
+test("deposit confirmation plain-text email does not include pay balance URL", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -977,8 +1031,8 @@ test("deposit confirmation plain-text email includes pay balance URL", async () 
   const customerMail = sentMails[1];
   assert.ok(customerMail, "Customer email should be sent");
   assert.ok(
-    customerMail.text.includes("balance.html"),
-    "Customer deposit plain-text email should include a link to balance.html"
+    !customerMail.text.includes("balance.html"),
+    "Customer deposit plain-text email should not include a link to balance.html"
   );
 });
 
@@ -1017,9 +1071,11 @@ const SLINGSHOT_BODY = {
   email:                 "john@example.com",
   phone:                 "555-9876",
   total:                 "275.50",
+  paymentStatus:         "confirmed",
   deposit:               150,
   days:                  1,
   slingshotDuration:     6,
+  paymentIntentId:       "pi_slingshot_test_123",
   insuranceCoverageChoice: "yes",
   protectionPlan:        false,
   signature:             "John Smith",

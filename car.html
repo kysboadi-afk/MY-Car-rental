@@ -41,6 +41,7 @@
     <a href="index.html#video-testimonial" data-i18n="nav.videoTestimonial">Video Testimonial</a>
     <a href="index.html#about" data-i18n="nav.about">About</a>
   </nav>
+  <a href="https://www.slytrans.com/manage-booking.html" class="header-complete-booking-btn">Complete Booking</a>
   <a href="tel:+12139166606" class="header-phone">📞 (213) 916-6606</a>
 </header>
 
@@ -89,10 +90,13 @@
     </div>
 
     <label for="pickup" data-i18n="booking.pickupDate">Pickup Date</label>
-    <input type="date" id="pickup">
+    <input type="date" id="pickup" required>
 
     <label for="pickupTime" data-i18n="booking.pickupTime">Pickup Time</label>
-    <input type="time" id="pickupTime">
+    <select id="pickupTime" required>
+      <option value="">— Select a pickup time —</option>
+    </select>
+    <div id="noTimesMsg" style="display:none;color:#c62828;font-size:.875rem;margin-top:.25rem" role="alert">No times available today. Please select a different date.</div>
 
     <!-- Slingshot hourly duration selector (shown for Slingshot only, populated by car.js) -->
     <div id="slingshotDurationSection" style="display:none">
@@ -103,10 +107,10 @@
     <!-- Return date/time: user-selected for daily vehicles; auto-computed for Slingshot -->
     <div id="returnDateSection">
       <label for="return" data-i18n="booking.returnDate">Return Date</label>
-      <input type="date" id="return">
+      <input type="date" id="return" required>
 
       <label for="returnTime" data-i18n="booking.returnTime">Return Time <span class="field-note" id="returnTimeNote" data-i18n="booking.returnTimeSame">(same as pickup time)</span></label>
-      <input type="time" id="returnTime" readonly>
+      <input type="time" id="returnTime" readonly required>
     </div>
 
     <label for="name" data-i18n="booking.fullName">Full Name</label>
@@ -117,7 +121,7 @@
     <input type="email" id="email" placeholder="Enter your email" data-i18n-placeholder="booking.emailPh" autocomplete="email">
 
     <label for="phone" data-i18n="booking.phone">Phone Number</label>
-    <input type="tel" id="phone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel">
+    <input type="tel" id="phone" placeholder="Enter your phone number" data-i18n-placeholder="booking.phonePh" autocomplete="tel" required>
 
     <p class="sms-consent" data-i18n="booking.smsConsent">By submitting this form, you agree to receive SMS messaging regarding vehicle availability. Reply STOP to opt out.</p>
 
@@ -336,16 +340,32 @@
 
     <p class="refund-notice" data-i18n-html="booking.refundNotice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
 
-    <!-- Slingshot non-refundable deposit notice — shown by car.js for slingshot only -->
-    <div id="slingshotDepositNotice" class="deposit-notice" style="display:none">
-      <strong>🔒 <span data-deposit-booking>$50</span> Non-Refundable Reservation Deposit</strong>
-      <ul>
-        <li>A <strong><span data-deposit-booking>$50</span> deposit</strong> is charged now to secure your Slingshot reservation.</li>
-        <li>The deposit is applied toward your total rental balance at pickup.</li>
-        <li>The deposit is <strong>NON-REFUNDABLE</strong> — it is forfeited if you cancel or no-show.</li>
-        <li>Remaining balance (rental fee + matching security deposit) is due at pickup.</li>
-      </ul>
+    <!-- Slingshot payment options — shown by car.js for slingshot only -->
+    <div id="slingshotPaymentOptions" style="display:none">
+      <label style="font-weight:600;display:block;margin-bottom:8px">💳 Payment Option</label>
+      <div class="duration-options">
+        <label class="duration-option" id="slingshotPayFullLabel">
+          <input type="radio" name="slingshotPaymentMode" id="slingshotPayFull" value="full" checked>
+          <span id="slingshotPayFullText">Pay in Full (Rental + Security Deposit)</span>
+        </label>
+        <label class="duration-option" id="slingshotPayDepositLabel">
+          <input type="radio" name="slingshotPaymentMode" id="slingshotPayDeposit" value="deposit">
+          <span id="slingshotPayDepositText">Reserve with Security Deposit Only</span>
+        </label>
+      </div>
+      <div id="slingshotDepositOnlyNotice" class="deposit-notice" style="display:none;margin-top:10px">
+        <strong>🔒 Reserve with Security Deposit</strong>
+        <ul>
+          <li>Only the <strong>security deposit</strong> (equal to your rental fee) is charged now.</li>
+          <li>A unique link will be emailed and texted to you to complete the remaining rental payment.</li>
+          <li>Full payment must be completed before the vehicle is handed over.</li>
+          <li>Dates are held for you once the deposit is paid.</li>
+        </ul>
+      </div>
     </div>
+
+    <!-- Slingshot non-refundable deposit notice — legacy element kept for JS compatibility -->
+    <div id="slingshotDepositNotice" style="display:none"></div>
 
     <!-- Camry non-refundable deposit notice — shown by car.js for camry/camry2013 only -->
     <div id="camryDepositNotice" class="deposit-notice" style="display:none">
@@ -364,7 +384,9 @@
     <p class="total"><span data-i18n="booking.subtotalLabel">Subtotal:</span> $<span id="subtotal">0</span></p>
     <p class="total tax-line" id="taxLine" style="display:none"><span data-i18n="booking.salesTaxLabel">Sales Tax:</span> $<span id="tax">0.00</span></p>
     <p class="total">Total: $<span id="total">0</span> <span class="tax-note" id="taxNote" data-i18n="booking.taxNote">(+ applicable sales tax)</span></p>
-    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name and email, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <p class="pay-hint" id="payHint" data-i18n="booking.payHint">Fill in dates, enter your name, email, and phone number, upload your ID, select your insurance coverage option (and upload proof if you have coverage), and sign &amp; agree to terms to enable payment.</p>
+    <!-- Inline payment error — shown instead of alert() so Chrome cannot suppress it -->
+    <div id="payError" role="alert" style="display:none"></div>
     <!-- Reserve-deposit button — shown by car.js for all vehicles; allows renter to pay only a
          $50 non-refundable deposit now and the remaining balance at pickup instead of paying in full -->
     <button id="reserveBtn" class="reserve-btn" style="display:none" disabled aria-describedby="payHint">🔒 Reserve with $50 Deposit</button>
@@ -398,16 +420,13 @@
         <label for="extNewReturn">New Return Date</label>
         <input type="date" id="extNewReturn">
 
-        <label for="extNewReturnTime">New Return Time <span style="font-size:12px;font-weight:400;color:#aaa">(optional)</span></label>
-        <input type="time" id="extNewReturnTime">
-
         <div id="extPriceDisplay" style="display:none;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:8px;padding:12px 16px;margin-bottom:12px">
           <p style="margin:0;color:#aaa;font-size:14px">Estimated extension cost (before tax):</p>
           <p style="margin:4px 0 0;font-size:22px;font-weight:bold;color:#ffb400">$<span id="extPriceAmount">0</span></p>
           <p style="margin:4px 0 0;font-size:12px;color:#888">Final amount including tax is confirmed at checkout.</p>
         </div>
 
-        <button id="extSubmitBtn" class="pay-button" disabled>⏱️ Extend Rental</button>
+        <button id="extSubmitBtn" class="extend-btn" disabled>⏱️ Extend Rental</button>
         <p class="pay-hint" id="extPayHint">Enter your email or phone and select a new return date to enable payment.</p>
       </div>
 
@@ -429,6 +448,7 @@
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="la-date.js"></script>
 <script src="lang.js"></script>
 <script src="car.js"></script>
 <script src="chatbot.js"></script>

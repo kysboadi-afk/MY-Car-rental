@@ -178,7 +178,8 @@
     <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
   </footer>
 
-  <script src="lang.js"></script>
+  <script src="la-date.js"></script>
+<script src="lang.js"></script>
   <script src="chatbot.js"></script>
   <script>
     (function () {
@@ -197,6 +198,8 @@
       var returnTime   = params.get("rt")  || "";
       var carName      = params.get("car") || vehicleId;
       var slingshotDur = params.get("d")   || "";
+      var bookingId    = params.get("b")   || "";
+      var originalPiId = params.get("opi") || "";
 
       // Extension mode params
       var isExtension  = params.get("ext") === "1";
@@ -285,7 +288,7 @@
                   extPayBtn.disabled    = false;
                   extPayBtn.textContent = "Pay $" + extAmount + " Now 🔒";
                 } else if (result.paymentIntent && result.paymentIntent.status === "succeeded") {
-                  window.location.href = "/success.html?ext=1";
+                  window.location.href = "/success.html?ext=1&payment_intent=" + encodeURIComponent(result.paymentIntent.id);
                 }
               });
             });
@@ -339,6 +342,9 @@
           returnDate:        returnDate,
           protectionPlan:    protectionPlan,
           slingshotDuration: slingshotDur ? Number(slingshotDur) : undefined,
+          bookingId:         bookingId || undefined,
+          originalPaymentIntentId: originalPiId || undefined,
+          depositPaymentIntentId:  originalPiId || undefined,
         }),
       })
         .then(function (res) { return res.json(); })

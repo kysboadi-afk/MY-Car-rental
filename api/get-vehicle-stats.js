@@ -28,6 +28,8 @@ import { loadBookings }  from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { analyzeMileage } from "../lib/ai/mileage.js";
+import { computeVehiclePriority } from "../lib/ai/priority.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -87,6 +89,63 @@ export default async function handler(req, res) {
   }
 
   try {
+    const sb = getSupabaseAdmin();
+
+    // Fetch Supabase vehicle columns (bouncie_device_id, decision_status, action_status)
+    // needed for UI badges and tracking warning.  Non-fatal — falls back to empty map.
+    let sbVehicleCols = {};
+    if (sb) {
+      try {
+        const { data: sbRows, error: sbErr } = await sb
+          .from("vehicles")
+          .select("vehicle_id, bouncie_device_id, decision_status, action_status, mileage, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data");
+        if (!sbErr && sbRows) {
+          for (const row of sbRows) {
+            sbVehicleCols[row.vehicle_id] = {
+              bouncie_device_id:         row.bouncie_device_id || null,
+              decision_status:           row.decision_status   || null,
+              action_status:             row.action_status     || null,
+              type:                      row.data?.type || row.data?.vehicle_type || null,
+              mileage:                   row.mileage,
+              last_oil_change_mileage:   row.last_oil_change_mileage,
+              last_brake_check_mileage:  row.last_brake_check_mileage,
+              last_tire_change_mileage:  row.last_tire_change_mileage,
+            };
+          }
+        }
+      } catch {
+        // ignore — UI will render without badges if Supabase is unavailable
+      }
+    }
+
+    // Compute mileage stats for priority calculation (cars with Bouncie only)
+    let mileageStatMap = {};
+    if (sb && Object.keys(sbVehicleCols).length > 0) {
+      try {
+        const mileageInput = Object.entries(sbVehicleCols)
+          .filter(([, c]) => c.bouncie_device_id && (c.type || "") !== "slingshot")
+          .map(([vehicleId, c]) => ({
+            vehicle_id:               vehicleId,
+            total_mileage:            Number(c.mileage) || 0,
+            last_oil_change_mileage:  c.last_oil_change_mileage  != null ? Number(c.last_oil_change_mileage)  : null,
+            last_brake_check_mileage: c.last_brake_check_mileage != null ? Number(c.last_brake_check_mileage) : null,
+            last_tire_change_mileage: c.last_tire_change_mileage != null ? Number(c.last_tire_change_mileage) : null,
+          }));
+        if (mileageInput.length > 0) {
+          // Fetch recent trips for avg-daily-miles computation (non-fatal)
+          const tripRows = await sb.from("trip_log")
+            .select("vehicle_id, trip_distance, trip_at")
+            .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+            .then((r) => r.data || [])
+            .catch(() => []);
+          const { stats } = analyzeMileage(mileageInput, tripRows);
+          for (const s of stats) mileageStatMap[s.vehicle_id] = s;
+        }
+      } catch {
+        // priority degrades gracefully to decision_status-only
+      }
+    }
+
     const [{ data: vehicles }, expenses, { data: bookingsData }] = await Promise.all([
       loadVehicles(),
       loadExpensesAny(),
@@ -97,6 +156,48 @@ export default async function handler(req, res) {
 
     for (const vehicleId of Object.keys(vehicles)) {
       const vehicle = vehicles[vehicleId];
+
+      // Merge Supabase-only columns into the vehicle object for UI consumption
+      const sbCols = sbVehicleCols[vehicleId] || {};
+      if (sbCols.bouncie_device_id !== undefined) vehicle.bouncie_device_id = sbCols.bouncie_device_id;
+      if (sbCols.decision_status   !== undefined) vehicle.decision_status   = sbCols.decision_status;
+      if (sbCols.action_status     !== undefined) vehicle.action_status     = sbCols.action_status;
+      if (sbCols.type && !vehicle.type)           vehicle.type              = sbCols.type;
+
+      // Skip slingshots — they are managed by the dedicated slingshot admin
+      if ((vehicle.type || "") === "slingshot") continue;
+
+      // Tracking warning for cars without a Bouncie device
+      if (!vehicle.bouncie_device_id) {
+        vehicle.tracking_warning = "⚠️ This vehicle is not tracked — no mileage or maintenance alerts";
+      } else {
+        delete vehicle.tracking_warning;
+      }
+
+      // Derived priority (high / medium / low)
+      const { priority, reason: priorityReason } = computeVehiclePriority(vehicle, mileageStatMap[vehicleId] || null);
+      vehicle.priority        = priority;
+      vehicle.priority_reason = priorityReason;
+
+      // ── Computed status (ON_RENTAL / MAINTENANCE / AVAILABLE) ─────────────
+      // Bookings are the source of truth for availability.
+      // A vehicle is ON_RENTAL when today falls within a confirmed booking's date range.
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const allVehicleBookings = bookingsData[vehicleId] || [];
+      const currentBooking = allVehicleBookings.find((b) => {
+        if (b.status !== "booked_paid" && b.status !== "active_rental") return false;
+        const pickup = b.pickupDate || "";
+        const ret    = b.returnDate || "";
+        return pickup <= todayStr && ret >= todayStr;
+      }) || null;
+
+      if (vehicle.status === "maintenance") {
+        vehicle.computed_status = "MAINTENANCE";
+      } else if (currentBooking) {
+        vehicle.computed_status = "ON_RENTAL";
+      } else {
+        vehicle.computed_status = "AVAILABLE";
+      }
 
       // ── Bookings ───────────────────────────────────────────────────────────
       const vehicleBookings = (bookingsData[vehicleId] || []).filter(

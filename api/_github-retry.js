@@ -11,12 +11,17 @@ const DEFAULT_BACKOFF_MS  = 250; // Increased for more spread between retries
 
 /**
  * Returns true if the thrown error looks like a GitHub 409 SHA conflict.
+ * Branch-protection / repository-ruleset violations also return HTTP 409 but
+ * are NOT retryable SHA conflicts — retrying will never succeed, so we return
+ * false for those so the error is surfaced immediately.
  *
  * @param {unknown} err
  * @returns {boolean}
  */
 export function is409Conflict(err) {
   const msg = (err && err.message) ? String(err.message) : "";
+  // Repository ruleset / branch-protection violations: not a SHA conflict.
+  if (/repository rule|must be made through a pull request/i.test(msg)) return false;
   return /\b409\b/.test(msg) || /sha.*conflict|conflict.*sha/i.test(msg);
 }
 

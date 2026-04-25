@@ -10,7 +10,6 @@
 //                  (defaults to slyservices@supports-info.com)
 //   STRIPE_SECRET_KEY — used to look up card last4 from a PaymentIntent (optional)
 import nodemailer from "nodemailer";
-import PDFDocument from "pdfkit";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
 import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
@@ -21,6 +20,9 @@ import { normalizePhone } from "./_bookings.js";
 import { upsertContact, vehicleTag } from "./_contacts.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { generateRentalAgreementPdf, dppTierLiabilityCap } from "./_rental-agreement-pdf.js";
+import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
 import crypto from "crypto";
 
 // Allow larger bodies so the renter's ID photo/PDF and insurance can be attached
@@ -34,9 +36,10 @@ export const config = {
 
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
-const FLEET_STATUS_PATH = "fleet-status.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+const FLEET_STATUS_PATH  = "fleet-status.json";
 
 /**
  * Update booked-dates.json in the GitHub repo to block the reserved dates.
@@ -59,7 +62,7 @@ async function blockBookedDates(vehicleId, from, to) {
   };
 
   async function loadBookedDates() {
-    const resp = await fetch(apiUrl, { headers });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const errText = await resp.text().catch(() => "");
@@ -77,7 +80,7 @@ async function blockBookedDates(vehicleId, from, to) {
 
   async function saveBookedDates(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
@@ -126,7 +129,7 @@ async function markVehicleUnavailable(vehicleId) {
   };
 
   async function loadFleetStatus() {
-    const resp = await fetch(apiUrl, { headers });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const errText = await resp.text().catch(() => "");
@@ -145,7 +148,7 @@ async function markVehicleUnavailable(vehicleId) {
 
   async function saveFleetStatus(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
@@ -195,18 +198,6 @@ function esc(str) {
 }
 
 /**
- * Return the liability cap dollar amount for a given economy DPP tier.
- * Basic → $2,500  |  Standard → $1,000  |  Premium → $500
- * @param {string|undefined} tier - "basic" | "standard" | "premium"
- * @returns {string}  e.g. "$1,000"
- */
-function dppTierLiabilityCap(tier) {
-  if (tier === "basic")   return "$2,500";
-  if (tier === "premium") return "$500";
-  return "$1,000";
-}
-
-/**
  * Build a self-contained HTML document representing the signed rental agreement.
  * This is generated server-side from the verified booking data so it can be
  * attached to the owner confirmation email as a permanent record.
@@ -241,15 +232,15 @@ function generateRentalAgreementHtml(body) {
   const isHourly = !!(carInfo && carInfo.hourlyTiers);
   let depositSection = "";
   if (isHourly) {
-    // Full payment system: security deposit included in total, charged at booking
-    const dppLine = protectionPlan
-      ? `<p><strong>Damage Protection Plan (${dppRatesText}):</strong> automatically included &mdash; reduces your damage liability to $1,000</p>`
-      : "";
+    // Full payment system: security deposit included in total, charged at booking.
+    // No Damage Protection Plan for Slingshot — renter assumes full liability.
+    const insuranceChoiceLabel = insuranceCoverageChoice === "no"
+      ? "Option B — No personal insurance (no DPP available — renter assumes full liability)"
+      : "Option A — Renter provided own insurance (proof required at pickup)";
     depositSection = `
       <h4>SECURITY DEPOSIT (Refundable)</h4>
       <p>A <strong>refundable security deposit equal to your rental fee</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
-      <p><strong>Insurance/Protection Choice:</strong> ${insuranceCoverageChoice === "no" ? "Option B — No personal insurance (Damage Protection Plan included)" : "Option A — Renter provided own insurance (proof required at pickup)"}</p>
-      ${dppLine}
+      <p><strong>Insurance/Protection Choice:</strong> ${insuranceChoiceLabel}</p>
     `;
   } else {
     const dppDetail = protectionPlan
@@ -264,7 +255,7 @@ function generateRentalAgreementHtml(body) {
   // Insurance / protection plan summary
   const insuranceSummary = isHourly
     ? (insuranceCoverageChoice === "no"
-        ? "Option B: No personal insurance — Damage Protection Plan included"
+        ? "Option B: No personal insurance — no DPP available for Slingshot; renter assumes full liability"
         : "Option A: Renter has own insurance (proof required at pickup)")
     : (protectionPlan
         ? `Damage Protection Plan selected — ${tierLabel}`
@@ -432,318 +423,6 @@ function generateRentalAgreementHtml(body) {
 }
 
 /**
- * Generate a PDF rental agreement buffer from the booking data.
- * Returns a Promise<Buffer> containing the PDF bytes.
- *
- * @param {object} body      - validated request body (same shape as generateRentalAgreementHtml)
- * @param {string} [ipAddress]  - customer IP address captured server-side
- * @param {string} [cardLast4]  - last 4 digits of the card used for payment (if available)
- * @returns {Promise<Buffer>}
- */
-function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
-  return new Promise((resolve, reject) => {
-    const {
-      vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor,
-      name, email, phone,
-      pickup, pickupTime, returnDate, returnTime,
-      total, deposit, days, protectionPlan, protectionPlanTier, signature,
-      slingshotDuration,
-      fullRentalCost, balanceAtPickup,
-      insuranceCoverageChoice, slingshotDepositAmount,
-    } = body;
-
-    const signedAt = new Date().toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
-      dateStyle: "long",
-      timeStyle: "short",
-    });
-
-    const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
-    const isHourly = !!(carInfo && carInfo.hourlyTiers);
-    const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day  •  $${PROTECTION_PLAN_WEEKLY}/week  •  $${PROTECTION_PLAN_BIWEEKLY}/2 wks  •  $${PROTECTION_PLAN_MONTHLY}/month`;
-    const pdfTierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
-      : protectionPlanTier === "premium" ? "Premium ($50/day)"
-      : "Standard ($30/day)";
-    // Economy car tier liability cap (Basic: $2,500 / Standard: $1,000 / Premium: $500)
-    const pdfTierLiabilityCap = dppTierLiabilityCap(protectionPlanTier);
-    // Slingshot: insurance choice is explicit; Camry: derive from protectionPlan flag
-    const insuranceSummary = isHourly
-      ? (insuranceCoverageChoice === "no"
-          ? "Option B: No personal insurance — Damage Protection Plan included"
-          : "Option A: Renter has own insurance (proof required at pickup)")
-      : (protectionPlan
-          ? `Damage Protection Plan selected — ${pdfTierLabel}`
-          : "Renter provided personal rental car insurance");
-    const durationLine = isHourly && slingshotDuration
-      ? (Number(slingshotDuration) >= 48
-          ? `${Number(slingshotDuration) / 24}-day rental`
-          : `${Number(slingshotDuration)}-hour rental`)
-      : (days ? `${days} day${Number(days) !== 1 ? "s" : ""}` : "");
-
-    const doc = new PDFDocument({ margin: 50, size: "LETTER" });
-    const chunks = [];
-    doc.on("data", chunk => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    const BRAND_BLACK = "#111111";
-    const SECTION_GRAY = "#555555";
-    const TABLE_HEADER_BG = "#f0f0f0";
-    const LINE_COLOR = "#cccccc";
-    const GREEN = "#2e7d32";
-    const PAGE_WIDTH = doc.page.width - 100; // margins on both sides
-
-    function sectionHeader(text) {
-      doc.moveDown(0.4)
-        .moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).strokeColor(LINE_COLOR).lineWidth(0.5).stroke()
-        .moveDown(0.2)
-        .font("Helvetica-Bold").fontSize(10).fillColor(BRAND_BLACK)
-        .text(text.toUpperCase())
-        .moveDown(0.15);
-      doc.font("Helvetica").fontSize(9).fillColor(BRAND_BLACK);
-    }
-
-    function tableRow(label, value, isLast = false) {
-      const rowY = doc.y;
-      const labelW = PAGE_WIDTH * 0.4;
-      const valueW = PAGE_WIDTH * 0.6;
-      const rowH = 18;
-
-      // Label cell background
-      doc.rect(50, rowY, labelW, rowH).fill(TABLE_HEADER_BG);
-      doc.rect(50 + labelW, rowY, valueW, rowH).fill("#ffffff");
-      // Borders
-      doc.rect(50, rowY, PAGE_WIDTH, rowH).strokeColor(LINE_COLOR).lineWidth(0.5).stroke();
-
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(BRAND_BLACK)
-        .text(label, 55, rowY + 4, { width: labelW - 10 });
-      doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
-        .text(String(value || ""), 55 + labelW, rowY + 4, { width: valueW - 10 });
-
-      doc.y = rowY + rowH;
-    }
-
-    function bodyText(text) {
-      doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK).text(text, { lineGap: 2 });
-    }
-
-    function boldText(text) {
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(BRAND_BLACK).text(text);
-      doc.font("Helvetica").fontSize(8.5);
-    }
-
-    function bulletList(items) {
-      items.forEach(item => {
-        doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
-          .text(`  •  ${item}`, { lineGap: 1 });
-      });
-    }
-
-    // ── Header ─────────────────────────────────────────────────────────────────
-    doc.font("Helvetica-Bold").fontSize(15).fillColor(BRAND_BLACK)
-      .text("SLY TRANSPORTATION SERVICES — CAR RENTAL AGREEMENT", { align: "center" });
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fontSize(9).fillColor(SECTION_GRAY)
-      .text(`Generated: ${signedAt} (Pacific Time)`, { align: "center" });
-    doc.moveDown(0.5);
-
-    // ── Parties ────────────────────────────────────────────────────────────────
-    sectionHeader("Parties");
-    bodyText(`Owner:   SLY Transportation Services — (213) 916-6606 — info@slytrans.com`);
-    bodyText(`Renter:  ${name || "Not provided"}`);
-
-    // ── Renter Information ─────────────────────────────────────────────────────
-    sectionHeader("Renter Information");
-    tableRow("Full Name", name || "Not provided");
-    tableRow("Email", email || "Not provided");
-    tableRow("Phone", phone || "Not provided");
-
-    // ── Vehicle Information ────────────────────────────────────────────────────
-    sectionHeader("Vehicle Information");
-    tableRow("Vehicle", car || "");
-    if (vehicleMake)  tableRow("Make",       vehicleMake);
-    if (vehicleModel) tableRow("Model",      vehicleModel);
-    if (vehicleYear)  tableRow("Year",       String(vehicleYear));
-    if (vehicleVin)   tableRow("VIN / Plate", vehicleVin);
-    if (vehicleColor) tableRow("Color",      vehicleColor);
-    doc.moveDown(0.3);
-    bodyText("Fuel Level at Pickup:  Full   Half   Quarter       Condition Photos Attached: Yes");
-
-    // ── Rental Period ──────────────────────────────────────────────────────────
-    sectionHeader("Rental Period");
-    tableRow("Pickup Date", pickup || "");
-    tableRow("Pickup Time", pickupTime || "Not specified");
-    tableRow("Return Date", returnDate || "");
-    tableRow("Return Time", returnTime || "Not specified");
-    if (durationLine) tableRow("Duration", durationLine);
-    tableRow("Total Charged", `$${total || "TBD"}`);
-    if (!isHourly && balanceAtPickup) tableRow("Balance Due at Pickup", `$${balanceAtPickup}`);
-    tableRow("Insurance / Protection", insuranceSummary);
-    doc.moveDown(0.3);
-    bodyText(isHourly ? "Late Fee: $100/hour after a 30-minute grace period." : "Late Fee: $50/day after a 2-hour grace period.");
-
-    // ── Mileage & Fuel ─────────────────────────────────────────────────────────
-    sectionHeader("Mileage, Geographic Use & Fuel");
-    bodyText("Mileage & Geographic Limit: Unlimited miles are included within a designated local area only. All vehicle use must remain within Los Angeles County or within a 50-mile radius of Los Angeles, unless otherwise approved in writing by the host. Travel outside this area — including trips to San Diego, San Francisco, Las Vegas, or any out-of-state destination — is not allowed without prior written authorization. Unauthorized use outside the approved area will result in a $500 penalty fee and may lead to early termination of the rental without refund. The vehicle is equipped with a GPS tracking system for security and compliance; by renting, you consent to location monitoring during the rental period.");
-    doc.moveDown(0.2);
-    bodyText("Fuel Policy: Return the vehicle with the same fuel level as at pickup, or pay a $5/gallon replacement fee.");
-
-    // ── Deposit / Pricing ──────────────────────────────────────────────────────
-    sectionHeader("Deposit & Protection Plan");
-    if (isHourly && carInfo) {
-      // Full payment system: security deposit included in total
-      bodyText(`Security Deposit: A refundable security deposit equal to your rental fee is included in your total payment. Released within 5–7 business days after return and inspection with no issues. May be retained to cover damages, loss of use, cleaning, tolls, or fuel.`);
-      doc.moveDown(0.2);
-      if (insuranceCoverageChoice === "no") {
-        bodyText(`Option B selected: No personal insurance — Damage Protection Plan automatically included.`);
-        doc.moveDown(0.1);
-        bodyText(`Damage Protection Plan (${dppRatesText}): included — reduces your damage liability to $1,000.`);
-      } else {
-        bodyText(`Option A selected: Renter provided own insurance. Proof of insurance must be presented at pickup.`);
-      }
-    } else {
-      bodyText("No security deposit is required for this vehicle.");
-    }
-    if (!isHourly) {
-      doc.moveDown(0.2);
-      const tierRatesText = `Basic — $${PROTECTION_PLAN_BASIC}/day  •  Standard — $${PROTECTION_PLAN_STANDARD}/day  •  Premium — $${PROTECTION_PLAN_PREMIUM}/day`;
-      bodyText(`Damage Protection Plan (${tierRatesText}): optional add-on — reduces your damage liability.`);
-    }
-
-    // ── Insurance & Liability ──────────────────────────────────────────────────
-    sectionHeader("Insurance & Liability");
-    bodyText("Renter must provide one of the following prior to vehicle release:");
-    bulletList([
-      "Valid personal auto insurance covering rental vehicles (proof required), OR",
-      "Purchase of SLY Transportation Services Damage Protection Plan",
-    ]);
-    doc.moveDown(0.2);
-    bodyText(`Damage Protection Plan (Optional): Basic — $${PROTECTION_PLAN_BASIC}/day  •  Standard — $${PROTECTION_PLAN_STANDARD}/day  •  Premium — $${PROTECTION_PLAN_PREMIUM}/day`);
-    doc.moveDown(0.1);
-    bodyText("This plan reduces the renter's financial responsibility for covered vehicle damage per incident. Liability cap depends on plan selected (Basic: $2,500 / Standard: $1,000 / Premium: $500).");
-    doc.moveDown(0.2);
-    bodyText("Without Protection Plan: Renter is fully responsible for all damages and associated costs, including:");
-    bulletList(["Full cost of vehicle repair or replacement", "Loss of use (rental downtime)", "Diminished value", "Administrative, towing, and storage fees"]);
-    doc.moveDown(0.2);
-    bodyText("With Protection Plan: Renter's maximum liability for covered vehicle damage is limited to " + (isHourly ? "$1,000" : pdfTierLiabilityCap) + " per incident. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.");
-    doc.moveDown(0.2);
-    bodyText("Exclusions (Protection Plan Void If):");
-    bulletList([
-      "Driver is under the influence of drugs or alcohol",
-      "Unauthorized driver operates the vehicle",
-      "Reckless, illegal, or negligent use",
-      "Off-road or prohibited use",
-      "Failure to report damage within 24 hours",
-      "Violation of rental agreement terms",
-    ]);
-    doc.moveDown(0.2);
-    bodyText("Third-Party Liability: Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.");
-
-    // ── Slingshot Speed Policy ─────────────────────────────────────────────────
-    if (isHourly) {
-      sectionHeader("Slingshot Speed Policy");
-      bodyText("Speed Limit: The posted speed limit is 65 mph. Renters may not exceed 75 mph under any circumstances.");
-      doc.moveDown(0.1);
-      bodyText("Strike Policy: After two (2) speed or agreement violations, the renter's security deposit becomes non-refundable.");
-    }
-
-    // ── Use Restrictions ───────────────────────────────────────────────────────
-    sectionHeader("Use Restrictions");
-    bodyText("Renter agrees to all of the following restrictions:");
-    bodyText("No smoking  ·  No pets  ·  No off-road use  ·  No subleasing");
-    bodyText("Approved drivers only  ·  No racing or towing  ·  No commercial hauling");
-
-    // ── Condition Inspection ───────────────────────────────────────────────────
-    sectionHeader("Condition Inspection");
-    bodyText("Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.");
-
-    // ── Termination ────────────────────────────────────────────────────────────
-    sectionHeader("Termination");
-    bodyText("SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.");
-
-    // ── Payment Terms ──────────────────────────────────────────────────────────
-    sectionHeader("Payment Terms");
-    if (isHourly) {
-      bodyText(`Full payment (including a refundable security deposit equal to your rental fee) was charged at the time of booking. The security deposit will be released within 5–7 business days after return and inspection with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`);
-    } else {
-      bodyText("All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.");
-    }
-    doc.moveDown(0.1);
-    bodyText("⚠ No-Refund Policy: All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.");
-
-    // ── Payment Authorization & Chargeback Policy ──────────────────────────────
-    sectionHeader("Payment Authorization & Chargeback Policy");
-    bodyText("By signing this agreement, renter expressly authorizes SLY Transportation Services to charge the payment method on file for all amounts owed, including:");
-    bulletList([
-      "Rental charges and extensions",
-      "Security deposit and any applicable deductions",
-      "Vehicle damage, repair, or replacement costs",
-      "Loss of use and diminished value",
-      "Fuel, cleaning, smoking, or excess wear fees",
-      "Towing, storage, tickets, tolls, and administrative fees",
-    ]);
-    doc.moveDown(0.2);
-    bodyText("Renter acknowledges that all charges are valid, agreed upon, and authorized under this contract and agrees not to initiate a chargeback for any legitimate charge.");
-    doc.moveDown(0.1);
-    bodyText("In the event of a payment dispute or chargeback:");
-    bulletList([
-      "This signed agreement serves as binding proof of authorization",
-      "SLY Transportation Services may submit this agreement and supporting records as evidence",
-      "Renter remains financially responsible for all charges including dispute fees",
-    ]);
-
-    // ── Governing Law ──────────────────────────────────────────────────────────
-    sectionHeader("Governing Law");
-    bodyText("This agreement is governed by the laws of the State of California. Disputes shall be resolved in the courts of Los Angeles County.");
-
-    // ── Electronic Signature Block ─────────────────────────────────────────────
-    doc.moveDown(0.5);
-    const sigBoxY = doc.y;
-    doc.rect(50, sigBoxY, PAGE_WIDTH, 130).fill("#f9f9f9").strokeColor(BRAND_BLACK).lineWidth(1).stroke();
-    doc.y = sigBoxY + 10;
-
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(BRAND_BLACK)
-      .text("ELECTRONIC SIGNATURE", 60, doc.y);
-    doc.moveDown(0.3);
-    doc.font("Helvetica").fontSize(8.5).fillColor(BRAND_BLACK)
-      .text("By typing their name below, the renter agrees to all terms of this Rental Agreement. This electronic signature is legally binding. By signing, the renter confirms they are 21 years of age or older and have full legal capacity to enter into this agreement.", 60, doc.y, { width: PAGE_WIDTH - 20 });
-    doc.moveDown(0.5);
-
-    // Signature in cursive-style font (using Helvetica-BoldOblique as fallback)
-    doc.font("Helvetica-BoldOblique").fontSize(18).fillColor(BRAND_BLACK)
-      .text(signature || "", 60, doc.y);
-    doc.moveDown(0.2);
-
-    // Underline for signature
-    const underlineY = doc.y - 2;
-    doc.moveTo(60, underlineY).lineTo(50 + PAGE_WIDTH - 10, underlineY)
-      .strokeColor("#555555").lineWidth(0.5).stroke();
-    doc.moveDown(0.3);
-
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(GREEN)
-      .text("✓ Digitally Signed", 60, doc.y);
-    doc.moveDown(0.25);
-
-    doc.font("Helvetica").fontSize(8).fillColor(SECTION_GRAY)
-      .text(`Signed: ${signedAt} (Pacific Time)`, 60, doc.y);
-    doc.moveDown(0.1);
-    doc.text(`Renter: ${name || "Not provided"}  |  Email: ${email || "Not provided"}  |  Phone: ${phone || "Not provided"}`, 60, doc.y, { width: PAGE_WIDTH - 20 });
-
-    if (ipAddress) {
-      doc.moveDown(0.1);
-      doc.text(`IP Address: ${ipAddress}`, 60, doc.y);
-    }
-    if (cardLast4) {
-      doc.moveDown(0.1);
-      doc.text(`Card (last 4): ••••  ••••  ••••  ${cardLast4}`, 60, doc.y);
-    }
-
-    doc.end();
-  });
-}
-
-/**
  * Retrieve the last 4 digits of the card used for a PaymentIntent via Stripe API.
  * Returns null if the key is missing, the lookup fails, or no card data is available.
  *
@@ -764,6 +443,130 @@ async function fetchCardLast4(paymentIntentId) {
   }
 }
 
+async function fetchPaymentIntentStatus(paymentIntentId) {
+  if (!paymentIntentId || !process.env.STRIPE_SECRET_KEY) return null;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    return pi?.status || null;
+  } catch (err) {
+    console.warn(`fetchPaymentIntentStatus: failed for PI ${paymentIntentId}:`, err.message);
+    return null;
+  }
+}
+
+function parseSlingshotDurationHours(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim().toLowerCase();
+  if (!text) return null;
+  const n = parseFloat(text);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (text.includes("day")) return Math.round(n * 24);
+  return Math.round(n);
+}
+
+function isNullOrEmptyString(v) {
+  return v == null || (typeof v === "string" && !v.trim());
+}
+
+function inferInsuranceCoverageChoice(insuranceStatus, tier) {
+  if (insuranceStatus === "own_insurance_provided") return "yes";
+  if (insuranceStatus === "no_insurance_no_dpp" || insuranceStatus === "no_insurance_dpp") return "no";
+  return tier ? "no" : "";
+}
+
+const RECOVERABLE_BOOKING_FIELDS = [
+  "vehicleId",
+  "bookingId",
+  "car",
+  "name",
+  "phone",
+  "email",
+  "pickup",
+  "pickupTime",
+  "returnDate",
+  "returnTime",
+  "total",
+  "fullRentalCost",
+  "balanceAtPickup",
+  "paymentType",
+  "paymentStatus",
+  "paymentIntentId",
+  "protectionPlanTier",
+  "protectionPlan",
+  "insuranceCoverageChoice",
+  "slingshotDuration",
+];
+
+/**
+ * Recover a minimal booking payload from Stripe PaymentIntent metadata.
+ * Used when success.html lost sessionStorage but still has paymentIntentId.
+ *
+ * @param {string} paymentIntentId
+ * @returns {Promise<object|null>}
+ */
+async function hydrateBookingBodyFromPaymentIntent(paymentIntentId) {
+  if (!paymentIntentId || !process.env.STRIPE_SECRET_KEY) return null;
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (pi.status !== "succeeded") {
+      console.warn(`hydrateBookingBodyFromPaymentIntent: PI ${paymentIntentId} is not succeeded (status=${pi.status})`);
+      return null;
+    }
+
+    const meta = pi.metadata || {};
+    const vehicleId = meta.vehicle_id || "";
+    const pickup = meta.pickup_date || "";
+    const returnDate = meta.return_date || "";
+    const pickupTime = normalizeClockTime(meta.pickup_time);
+    const parsedDuration = parseSlingshotDurationHours(meta.rental_duration || "");
+    const metaReturnTime = normalizeClockTime(meta.return_time);
+    const returnTime = deriveReturnTime(pickup, pickupTime, metaReturnTime, parsedDuration);
+
+    if (!vehicleId || !pickup || !returnDate || !pickupTime) {
+      console.warn(
+        `hydrateBookingBodyFromPaymentIntent: missing metadata for PI ${paymentIntentId}` +
+        ` vehicle_id=${vehicleId || "<missing>"} pickup_date=${pickup || "<missing>"}` +
+        ` return_date=${returnDate || "<missing>"} pickup_time=${pickupTime || "<missing>"}`
+      );
+      return null;
+    }
+
+    const amountDollars = Number((Number(pi.amount_received || pi.amount || 0) / 100).toFixed(2));
+    const paymentType = meta.payment_type || "full_payment";
+    const tier = meta.protection_plan_tier || "";
+    const insuranceStatus = String(meta.insurance_status || "").toLowerCase();
+    const inferredInsuranceChoice = inferInsuranceCoverageChoice(insuranceStatus, tier);
+
+    return {
+      vehicleId,
+      bookingId: meta.booking_id || "",
+      car: meta.vehicle_name || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+      name: meta.renter_name || "",
+      phone: meta.renter_phone || "",
+      email: meta.email || "",
+      pickup,
+      pickupTime,
+      returnDate,
+      returnTime,
+      total: amountDollars ? amountDollars.toFixed(2) : "0.00",
+      fullRentalCost: meta.full_rental_amount || "",
+      balanceAtPickup: meta.balance_at_pickup || meta.remaining_balance || "",
+      paymentType,
+      paymentStatus: "confirmed",
+      paymentIntentId,
+      protectionPlanTier: tier || undefined,
+      protectionPlan: !!tier,
+      insuranceCoverageChoice: inferredInsuranceChoice || undefined,
+      slingshotDuration: parsedDuration || undefined,
+    };
+  } catch (err) {
+    console.warn(`hydrateBookingBodyFromPaymentIntent: failed for PI ${paymentIntentId}:`, err.message);
+    return null;
+  }
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || "587"),
@@ -773,6 +576,86 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS,
   },
 });
+
+/**
+ * Build the core booking record for persistBooking() from request body fields.
+ * Shared between the SMTP-missing early fallback and the normal confirmation flow.
+ *
+ * @param {object} fields  - destructured req.body fields
+ * @param {string} [paymentLink] - optional balance-pay URL (not yet computed in early path)
+ * @returns {object}
+ */
+function buildBookingRecord(fields, paymentLink = "") {
+  const {
+    vehicleId, bookingId, car, name, phone, email,
+    pickup, pickupTime, returnDate, returnTime,
+    total, fullRentalCost, paymentIntentId,
+  } = fields;
+  return {
+    bookingId,
+    vehicleId,
+    vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
+    name:            name || "",
+    phone:           phone || "",
+    email:           email || "",
+    pickupDate:      pickup || "",
+    pickupTime:      pickupTime || "",
+    returnDate:      returnDate || "",
+    returnTime:      returnTime || "",
+    location:        DEFAULT_LOCATION,
+    status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
+    amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
+    totalPrice:      fullRentalCost
+      ? Math.round(parseFloat(fullRentalCost) * 100) / 100
+      : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
+    paymentIntentId: paymentIntentId || "",
+    paymentLink,
+    paymentMethod:   "stripe",
+    source:          "public_booking",
+  };
+}
+
+async function verifyBookingAndRevenueForEmail(bookingRef, paymentIntentId, opts = {}) {
+  const requireRevenuePaymentIntentMatch = opts.requireRevenuePaymentIntentMatch !== false;
+  const sb = getSupabaseAdmin();
+  if (!bookingRef || !paymentIntentId) {
+    return { ok: false, reason: "missing booking ref or payment intent id" };
+  }
+  if (!sb) {
+    // Supabase is unavailable in some local/test environments; skip strict DB
+    // verification there, but keep strict checks when Supabase is configured.
+    return { ok: true, skipped: true };
+  }
+
+  const bookingQuery = sb
+      .from("bookings")
+      .select("booking_ref,payment_intent_id")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+  const revenueQuery = sb
+      .from("revenue_records")
+      .select("booking_id,payment_intent_id")
+      .eq("booking_id", bookingRef)
+      .maybeSingle();
+  if (requireRevenuePaymentIntentMatch) {
+    bookingQuery.eq("payment_intent_id", paymentIntentId);
+    revenueQuery.eq("payment_intent_id", paymentIntentId);
+  }
+
+  const [{ data: bookingRow, error: bookingErr }, { data: revenueRow, error: revenueErr }] = await Promise.all([
+    bookingQuery,
+    revenueQuery,
+  ]);
+
+  if (bookingErr || !bookingRow) {
+    return { ok: false, reason: bookingErr?.message || "booking record not found in Supabase" };
+  }
+  if (revenueErr || !revenueRow) {
+    return { ok: false, reason: revenueErr?.message || "revenue record not found in Supabase" };
+  }
+
+  return { ok: true };
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -784,13 +667,77 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
-  // Guard: fail fast with a clear log if SMTP credentials are missing
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
-    return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
+  // Parse body first so the booking can always be persisted, even when SMTP
+  // credentials are missing.  A misconfigured email server must never cause a
+  // paid booking to be silently lost.
+  const requestBody = (req.body && typeof req.body === "object" && !Array.isArray(req.body))
+    ? { ...req.body }
+    : {};
+  const requestPaymentIntentId = typeof requestBody.paymentIntentId === "string"
+    ? requestBody.paymentIntentId.trim()
+    : "";
+  const requestPickupTime = normalizeClockTime(requestBody.pickupTime);
+  const isTestMode = !!process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_test_");
+  if (isTestMode) {
+    console.log("[send-reservation-email] TEST MODE → do NOT create bookings, block dates, or update availability");
+  }
+  // Recovery mode is inferred when success.html can provide paymentIntentId but
+  // lost the form payload in sessionStorage (so pickupTime is absent).
+  const usedRecoveryPath = !requestPickupTime && !!requestPaymentIntentId;
+  let hydratedBody = { ...requestBody };
+
+  // Recovery path: if success.html lost sessionStorage, it can still call this
+  // endpoint with only paymentIntentId. Hydrate required fields from Stripe metadata.
+  if (usedRecoveryPath) {
+    const recovered = await hydrateBookingBodyFromPaymentIntent(requestPaymentIntentId);
+    if (recovered) {
+      for (const key of RECOVERABLE_BOOKING_FIELDS) {
+        const value = recovered[key];
+        if (isNullOrEmptyString(hydratedBody[key])) hydratedBody[key] = value;
+      }
+    }
   }
 
-  const { vehicleId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime, returnDate, returnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = req.body;
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = hydratedBody;
+  const normalizedPaymentStatus = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
+
+  const pickupTime = normalizeClockTime(rawPickupTime);
+  if (!pickupTime) {
+    return res.status(400).json({
+      error: usedRecoveryPath
+        ? "Unable to process booking confirmation automatically. Please contact support with your payment confirmation."
+        : "Pickup time is required. Please select a pickup time before proceeding.",
+    });
+  }
+  const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
+  if (!returnTime) {
+    return res.status(400).json({
+      error: usedRecoveryPath
+        ? "Missing required return time. Please contact support with your payment confirmation to complete the booking."
+        : "Return time is required. Please select a return time before proceeding.",
+    });
+  }
+  const bookingBody = { ...hydratedBody, pickupTime, returnTime };
+
+  // Guard: fail fast if SMTP credentials are missing — but persist the booking
+  // first so a paid booking is never lost due to email misconfiguration.
+  // Convention (matching line ~854): absent paymentStatus is treated as "confirmed"
+  // because success.html always sends "confirmed" for successful payments and omits
+  // the field otherwise — an absent value here is always a confirmed payment.
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error("Missing SMTP environment variables (SMTP_HOST, SMTP_USER, SMTP_PASS). Add them in your Vercel project → Settings → Environment Variables.");
+    const isConfirmedPayment  = normalizedPaymentStatus === "confirmed";
+    const isBalancePaymentReq = paymentType === "balance_payment";
+    if (!isTestMode && isConfirmedPayment && !isBalancePaymentReq && vehicleId && (email || phone)) {
+      try {
+        await persistBooking(buildBookingRecord(bookingBody));
+        console.log("[send-reservation-email] SMTP not configured — booking persisted via early fallback");
+      } catch (pipelineErr) {
+        console.error("[send-reservation-email] SMTP missing and early booking persist also failed:", pipelineErr.message);
+      }
+    }
+    return res.status(500).json({ error: "Server configuration error: SMTP credentials are not set." });
+  }
 
   // Extract the customer's IP address from reverse-proxy headers (Vercel sets x-forwarded-for).
   const customerIp = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || null;
@@ -817,8 +764,23 @@ export default async function handler(req, res) {
       </table>`
     : null;
 
-  // isConfirmed: true for successful payments (default), false for failed/cancelled
-  const isConfirmed = !paymentStatus || paymentStatus === "confirmed";
+  if (normalizedPaymentStatus !== "confirmed") {
+    console.log(`[send-reservation-email] skipping email send: paymentStatus=${normalizedPaymentStatus}`);
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "payment_not_confirmed" });
+  }
+  const normalizedPaymentIntentId = typeof paymentIntentId === "string" ? paymentIntentId.trim() : "";
+  if (!normalizedPaymentIntentId) {
+    console.warn("[send-reservation-email] skipping email send: missing payment_intent_id");
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "missing_payment_intent_id" });
+  }
+  const paymentIntentStatus = await fetchPaymentIntentStatus(normalizedPaymentIntentId);
+  if (paymentIntentStatus !== "succeeded") {
+    console.warn(`[send-reservation-email] skipping email send: PI ${normalizedPaymentIntentId} status=${paymentIntentStatus || "unknown"}`);
+    return res.status(200).json({ success: true, emailSkipped: true, reason: "payment_not_succeeded" });
+  }
+
+  // Emails and attachments are sent only for succeeded Stripe payments.
+  const isConfirmed = true;
 
   // isBalancePayment: true when the renter is paying the remaining balance after
   // having already paid the $50 reservation deposit.
@@ -855,21 +817,15 @@ export default async function handler(req, res) {
     : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
   const ownerSubject = isBalancePayment
     ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
-    : (isConfirmed
-        ? `💰 Payment Confirmed – New Booking: ${esc(car)}`
-        : `⚠️ Payment Failed – Booking Attempt: ${esc(car)}`);
-  const statusLabel  = isConfirmed ? "✅ CONFIRMED" : "❌ FAILED";
-  const statusColor  = isConfirmed ? "green" : "red";
+    : `💰 Payment Confirmed – New Booking: ${esc(car)}`;
+  const statusLabel  = "✅ CONFIRMED";
+  const statusColor  = "green";
   const introText    = isBalancePayment
     ? "The renter has paid the remaining balance online. The booking is now fully paid."
-    : (isConfirmed
-        ? "A customer has completed payment. Their rental details are below."
-        : "A customer attempted payment but it did not go through. Details below.");
+    : "A customer has completed payment. Their rental details are below.";
   const footerText   = isBalancePayment
     ? "The remaining balance has been received. The booking is now fully paid — no further action required."
-    : (isConfirmed
-        ? "Payment has been received. Please contact the customer to confirm rental details."
-        : "NOTE: Payment was NOT completed. The customer may retry or need assistance.");
+    : "Payment has been received. Please contact the customer to confirm rental details.";
 
   try {
     // Fetch card last4 from Stripe when a PaymentIntent ID was provided.
@@ -902,7 +858,7 @@ export default async function handler(req, res) {
       const safeName = (name || "renter").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 40);
       const safeDate = (pickup || new Date().toISOString().split("T")[0]).replace(/[^0-9-]/g, "");
       agreementPdfFilename = `rental-agreement-${safeName}-${safeDate}.pdf`;
-      agreementPdfBuffer = await generateRentalAgreementPdf(req.body, customerIp, cardLast4);
+      agreementPdfBuffer = await generateRentalAgreementPdf(bookingBody, customerIp, cardLast4);
       attachments.push({
         filename: agreementPdfFilename,
         content: agreementPdfBuffer,
@@ -911,6 +867,31 @@ export default async function handler(req, res) {
     }
 
     // --- Notify owner ---
+    // Skip the owner email when the Stripe webhook already sent the full
+    // confirmation (with agreement PDF + ID + insurance) to avoid duplicates.
+    let webhookAlreadySentOwnerEmail = false;
+    if (isConfirmed && !isBalancePayment && bookingId) {
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          const { data: docsRow } = await sb
+            .from("pending_booking_docs")
+            .select("email_sent")
+            .eq("booking_id", bookingId)
+            .maybeSingle();
+          webhookAlreadySentOwnerEmail = !!(docsRow && docsRow.email_sent === true);
+        }
+      } catch (docsCheckErr) {
+        // Non-fatal — if the check fails, send the email anyway
+        console.warn("[send-reservation-email] pending_booking_docs check failed (non-fatal):", docsCheckErr.message);
+      }
+    }
+
+    let ownerEmailErr = null;
+    if (webhookAlreadySentOwnerEmail) {
+      console.log(`[send-reservation-email] webhook already sent owner email for booking ${bookingId} — skipping duplicate owner email`);
+    } else {
+    console.log(`[send-reservation-email] entering owner email block — to=${OWNER_EMAIL} SMTP_HOST=${process.env.SMTP_HOST || "(not set)"} booking=${bookingId || "(no id)"} attachments=${attachments.length} files=[${attachments.map(a => a.filename).join(", ") || "none"}]`);
     const ownerEmailOpts = {
       from: `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
       to: OWNER_EMAIL,
@@ -1017,7 +998,7 @@ export default async function handler(req, res) {
         <p style="font-size:13px;color:#555">
           <strong>📅 Calendar update:</strong> These dates are being automatically marked as unavailable on the booking calendar.
           If the calendar is not updated within a few minutes, use the
-          <a href="https://www.slytrans.com/admin.html?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
+          <a href="https://www.slytrans.com/admin-v2/?vehicle=${encodeURIComponent(vehicleId)}&from=${encodeURIComponent(pickup)}&to=${encodeURIComponent(returnDate)}" style="color:#1a73e8">Admin Calendar Page</a>
           to block them manually.
         </p>` : ""}
       `,
@@ -1028,28 +1009,15 @@ export default async function handler(req, res) {
     // saved.  The pipeline logs every step (start, DB attempt, DB result) so
     // there are NO silent failures.
     let persistedBooking = null;
-    if (isConfirmed && !isBalancePayment && vehicleId && phone) {
+    let persistedBookingId = bookingId || null;
+    let pipelineResult = null;
+    let attemptedBookingPersistence = false;
+    if (!isTestMode && isConfirmed && !isBalancePayment && vehicleId && (email || phone)) {
+      attemptedBookingPersistence = true;
       console.log(`[send-reservation-email] booking_pipeline_start vehicleId=${vehicleId} pickup=${pickup} return=${returnDate} amount=${total}`);
-      const pipelineResult = await persistBooking({
-        vehicleId,
-        vehicleName:     car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId,
-        name:            name || "",
-        phone,
-        email:           email || "",
-        pickupDate:      pickup || "",
-        pickupTime:      pickupTime || "",
-        returnDate:      returnDate || "",
-        returnTime:      returnTime || "",
-        location:        DEFAULT_LOCATION,
-        status:          fullRentalCost ? "reserved_unpaid" : "booked_paid",
-        amountPaid:      total ? Math.round(parseFloat(total) * 100) / 100 : 0,
-        totalPrice:      fullRentalCost ? Math.round(parseFloat(fullRentalCost) * 100) / 100 : (total ? Math.round(parseFloat(total) * 100) / 100 : 0),
-        paymentIntentId: paymentIntentId || "",
-        paymentLink:     balancePayUrl || "",
-        paymentMethod:   "stripe",
-        source:          "public_booking",
-      });
+      pipelineResult = await persistBooking(buildBookingRecord(bookingBody, balancePayUrl || ""));
       persistedBooking = pipelineResult.booking;
+      persistedBookingId = pipelineResult.bookingId || persistedBookingId;
       if (!pipelineResult.ok) {
         console.error(`[send-reservation-email] booking_persist_failed bookingId=${pipelineResult.bookingId} errors=${JSON.stringify(pipelineResult.errors)}`);
       } else {
@@ -1057,13 +1025,47 @@ export default async function handler(req, res) {
       }
     }
 
-    let ownerEmailErr = null;
+    if (!isTestMode && !isBalancePayment && vehicleId) {
+      // Emails are allowed only after a non-balance booking attempt actually ran
+      // persistence and produced a verified booking + revenue record.
+      const persistenceIssues = [];
+      if (!attemptedBookingPersistence) persistenceIssues.push("booking_persistence_not_attempted");
+      if (!pipelineResult?.ok) persistenceIssues.push("booking_pipeline_failed");
+      if (!pipelineResult?.supabaseOk) persistenceIssues.push("booking_pipeline_supabase_not_ok");
+      if (!persistedBookingId) persistenceIssues.push("missing_booking_id");
+      if (persistenceIssues.length > 0) {
+        console.warn(`[send-reservation-email] skipping email send: ${persistenceIssues.join(", ")}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: persistenceIssues[0] });
+      }
+      const verification = await verifyBookingAndRevenueForEmail(persistedBookingId, normalizedPaymentIntentId);
+      if (!verification.ok) {
+        console.warn(`[send-reservation-email] skipping email send: ${verification.reason}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "booking_or_revenue_not_verified" });
+      }
+    } else if (isBalancePayment && vehicleId) {
+      // Balance payments are tied to an existing booking created at deposit time.
+      // Verify booking/revenue existence by booking_ref while still requiring a
+      // succeeded PaymentIntent for this balance payment attempt.
+      if (!bookingId) {
+        console.warn("[send-reservation-email] skipping email send: missing booking_id for balance payment verification");
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "missing_booking_id_for_balance_payment" });
+      }
+      const verification = await verifyBookingAndRevenueForEmail(bookingId, normalizedPaymentIntentId, {
+        requireRevenuePaymentIntentMatch: false,
+      });
+      if (!verification.ok) {
+        console.warn(`[send-reservation-email] skipping email send: ${verification.reason}`);
+        return res.status(200).json({ success: true, emailSkipped: true, reason: "booking_or_revenue_not_verified" });
+      }
+    }
+
     try {
       await transporter.sendMail(ownerEmailOpts);
     } catch (ownerErr) {
       console.error("Owner notification email failed:", ownerErr);
       ownerEmailErr = ownerErr;
     }
+    } // end: else (!webhookAlreadySentOwnerEmail)
 
     // --- Confirmation to customer (only for successful payments) ---
     let customerEmailErr = null;
@@ -1093,6 +1095,7 @@ export default async function handler(req, res) {
             "Here are your booking details:",
             "",
             `Payment Status : CONFIRMED`,
+            bookingId ? `Booking ID     : ${bookingId}` : "",
             `Vehicle        : ${car || ""}`,
             vehicleMake  ? `Make           : ${vehicleMake}`  : "",
             vehicleModel ? `Model          : ${vehicleModel}` : "",
@@ -1108,8 +1111,10 @@ export default async function handler(req, res) {
               : `Total Charged  : $${total || "TBD"}`,
             !isBalancePayment && fullRentalCost  ? `Full Rental Cost: $${fullRentalCost}` : "",
             !isBalancePayment && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
-            !isBalancePayment && balancePayUrl   ? `Pay balance online: ${balancePayUrl}` : "",
             breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
+            "",
+            "Manage your booking at: https://www.slytrans.com/manage-booking.html",
+            "Use your phone number, email, or Booking ID to access it.",
             "",
             "We will be in touch shortly to confirm your rental pick-up details.",
             `If you have any questions, reply to this email or reach us at ${OWNER_EMAIL}.`,
@@ -1121,6 +1126,7 @@ export default async function handler(req, res) {
             <p>${esc(customerIntro)} Here are your booking details:</p>
             <table style="border-collapse:collapse;width:100%">
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Payment Status</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>✅ CONFIRMED</strong></td></tr>
+              ${bookingId ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${esc(bookingId)}</code></td></tr>` : ""}
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(car)}</td></tr>
               ${vehicleMake  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Make</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleMake)}</td></tr>`  : ""}
               ${vehicleModel ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Model</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleModel)}</td></tr>` : ""}
@@ -1134,9 +1140,9 @@ export default async function handler(req, res) {
               <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong>${isBalancePayment ? " <em style='font-size:12px;color:#888'>(final payment — fully paid)</em>" : ""}</td></tr>
               ${!isBalancePayment && fullRentalCost  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
               ${!isBalancePayment && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-              ${!isBalancePayment && balancePayUrl   ? `<tr><td colspan="2" style="padding:12px;border:1px solid #ddd;text-align:center"><a href="${esc(balancePayUrl)}" style="display:inline-block;padding:12px 28px;background:#c8a000;color:#000;border-radius:10px;text-decoration:none;font-weight:bold;font-size:15px">💳 Pay Balance Online</a><br><span style="font-size:12px;color:#888;display:block;margin-top:6px">Or pay in person at pickup — your choice</span></td></tr>` : ""}
             </table>
             ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
+            <p>You can <a href="https://www.slytrans.com/manage-booking.html">view and manage your booking</a> using your phone number, email, or Booking ID.</p>
             <p>We will be in touch shortly to confirm your rental pick-up details. If you have any questions, reply to this email or reach us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
             <p><strong>Sly Transportation Services LLC Team 🚗</strong></p>
           `,
@@ -1154,7 +1160,7 @@ export default async function handler(req, res) {
     // Vercel terminates the serverless function as soon as res.json() is called,
     // so any async work scheduled after that is not guaranteed to run.
     // Failures are non-fatal (emails already sent) and only logged.
-    if (isConfirmed && !isBalancePayment && vehicleId && pickup && returnDate) {
+    if (!isTestMode && isConfirmed && !isBalancePayment && vehicleId && pickup && returnDate) {
       try {
         await blockBookedDates(vehicleId, pickup, returnDate);
       } catch (err) {
@@ -1187,8 +1193,8 @@ export default async function handler(req, res) {
           render(BOOKING_CONFIRMED, {
             vehicle:       car || (CARS[vehicleId] && CARS[vehicleId].name) || vehicleId || "",
             customer_name: (name || "").split(" ")[0] || name || "Customer",
-            pickup_date:   pickup || "",
-            pickup_time:   pickupTime || "",
+            pickup_date:   pickup ? new Date(pickup + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric" }) : "",
+            pickup_time:   formatTime12h(pickupTime) || pickupTime || "",
             location:      DEFAULT_LOCATION,
           })
         );

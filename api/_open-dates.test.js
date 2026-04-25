@@ -176,7 +176,7 @@ test("returns 500 when GITHUB_TOKEN is not configured", async () => {
   assert.ok(res._body.error.includes("GITHUB_TOKEN"));
 });
 
-test("successfully removes an existing blocked date range", async () => {
+test("successfully removes an overlapping blocked date range", async () => {
   const fetchFn = mockFetch();
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
@@ -184,16 +184,42 @@ test("successfully removes an existing blocked date range", async () => {
   const req = makeReq("POST", {
     secret: "test-admin-secret",
     vehicleId: "camry",
-    from: "2026-03-01",
-    to: "2026-03-05",
+    from: "2026-03-03",
+    to: "2026-03-04",
   });
   const res = makeRes();
   await handler(req, res);
   globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.deepEqual(res._body, { success: true, removed: 1 });
+  assert.deepEqual(res._body, { success: true, removed: 1, locked: 0 });
   assert.equal(fetchFn.getStored().camry.length, 0, "Blocked range should be removed");
+});
+
+test("removes multiple overlapping ranges", async () => {
+  const fetchFn = mockFetch({
+    camry: [
+      { from: "2026-03-01", to: "2026-03-05" },
+      { from: "2026-03-06", to: "2026-03-08" },
+      { from: "2026-03-15", to: "2026-03-16" },
+    ],
+  });
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = fetchFn;
+
+  const req = makeReq("POST", {
+    secret: "test-admin-secret",
+    vehicleId: "camry",
+    from: "2026-03-04",
+    to: "2026-03-07",
+  });
+  const res = makeRes();
+  await handler(req, res);
+  globalThis.fetch = origFetch;
+
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { success: true, removed: 2, locked: 0 });
+  assert.deepEqual(fetchFn.getStored().camry, [{ from: "2026-03-15", to: "2026-03-16" }]);
 });
 
 test("returns removed:0 when range does not exist", async () => {
@@ -212,7 +238,7 @@ test("returns removed:0 when range does not exist", async () => {
   globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.deepEqual(res._body, { success: true, removed: 0 });
+  assert.deepEqual(res._body, { success: true, removed: 0, locked: 0 });
   // Original range should still be there
   assert.equal(fetchFn.getStored().camry.length, 1);
 });

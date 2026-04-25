@@ -6,16 +6,56 @@
 // raw API responses) are ever exposed.
 //
 // Error categories (in match priority order):
-//   1. GitHub auth failure (401/403)
-//   2. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
-//   3. GitHub rate-limit (429)
-//   4. Network / DNS errors
-//   5. Supabase: missing table / column (migration not applied — PostgreSQL 42P01/42703)
-//   6. Supabase: unique-constraint violation (PostgreSQL 23505)
-//   7. Supabase/PostgREST: single() returned 0 or >1 rows (PGRST116)
-//   8. Generic Supabase/PostgREST error (PGRST error code prefix)
-//   9. GitHub generic failure
-//  10. Fallback
+//   1. Bouncie API authentication failure (invalid or missing API key)
+//   2. GitHub auth failure (401/403) — requires "github" in the error message
+//   3. GitHub SHA conflict — 409 on file PUT (specific to GitHub write flows)
+//   4. GitHub rate-limit (429)
+//   5. Network / DNS errors
+//   6. Supabase: missing table / column (migration not applied — PostgreSQL 42P01/42703)
+//   7. Supabase: unique-constraint violation (PostgreSQL 23505)
+//   8. Supabase/PostgREST: single() returned 0 or >1 rows (PGRST116)
+//   9. Generic Supabase/PostgREST error (PGRST error code prefix)
+//  10. GitHub generic failure
+//  11. Fallback
+
+/**
+ * Escapes characters that have special meaning in HTML.
+ * Used to prevent XSS when embedding strings in HTML responses.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Sends a human-readable HTML error page to the browser.
+ * Suitable for endpoints that are navigated to directly (OAuth flows, etc.)
+ * rather than endpoints called via fetch().
+ *
+ * @param {object} res         - Vercel/Node.js response object
+ * @param {number} status      - HTTP status code (e.g. 401, 503)
+ * @param {string} title       - Short error title (plain text, will be escaped)
+ * @param {string} body        - Longer description (plain text, will be escaped)
+ * @param {string} backUrl     - URL for the "Back" button
+ * @returns {object}           - The response object (for chaining / early return)
+ */
+export function adminHtmlErrorPage(res, status, title, body, backUrl = "https://www.slytrans.com/admin-v2/") {
+  return res.status(status).send(
+    `<!DOCTYPE html><html><head><title>${escHtml(title)}</title>` +
+    `<style>body{font-family:sans-serif;padding:2rem;max-width:560px;margin:auto}` +
+    `.btn{display:inline-block;margin-top:1.5rem;padding:.6rem 1.2rem;` +
+    `background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px}</style></head>` +
+    `<body><h2>⚠️ ${escHtml(title)}</h2><p>${escHtml(body)}</p>` +
+    `<a class="btn" href="${escHtml(backUrl)}">← Back to Admin Panel</a></body></html>`
+  );
+}
 
 /**
  * Returns true when the error is a Supabase/PostgreSQL "table or column not
@@ -54,8 +94,24 @@ export function adminErrorMessage(err) {
   // Supabase JS client exposes the PostgreSQL / PostgREST error code on err.code
   const code = (err && err.code)    ? String(err.code)    : "";
 
+  // ── Bouncie API authentication failure ────────────────────────────────────
+  // Must be checked before the generic 401/403 GitHub block because Bouncie
+  // errors also contain status codes like "(401)" but are unrelated to GitHub.
+  // Handles both missing/expired tokens (not configured) and actual auth
+  // failures (401/403 from the Bouncie API).
+  if (
+    /bouncie/i.test(raw) &&
+    (/\b(401|403)\b/.test(raw) || /unauthorized|not configured/i.test(raw))
+  ) {
+    return "Bouncie is not connected — please go to System Settings and click 'Connect Now' to authorize the GPS integration.";
+  }
+
   // ── GitHub authentication / authorisation failure ──────────────────────────
-  if (/\b(401|403)\b/.test(raw) || /bad credentials|authentication|forbidden/i.test(raw)) {
+  // Require "github" context to avoid false-positives from other 401/403 sources.
+  if (
+    (/\b(401|403)\b/.test(raw) || /bad credentials|forbidden/i.test(raw)) &&
+    /github/i.test(raw)
+  ) {
     return "Authentication failed — please verify that GITHUB_TOKEN is configured correctly and has write access to the repository.";
   }
 
@@ -68,6 +124,14 @@ export function adminErrorMessage(err) {
   // ── GitHub / API rate-limit ────────────────────────────────────────────────
   if (/\b429\b/.test(raw) || /rate.?limit/i.test(raw)) {
     return "API rate limit exceeded — please wait a moment and try again.";
+  }
+
+  // ── Bouncie API network / connectivity failure ─────────────────────────────
+  // Distinct from the auth-failure check above: the Bouncie fetch helpers in
+  // _bouncie.js rethrow network-level errors with "Bouncie API unreachable:"
+  // so they land here rather than in the generic network bucket.
+  if (/bouncie/i.test(raw) && /fetch failed|unreachable|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(raw)) {
+    return "Could not reach the Bouncie GPS API — please check that Bouncie is operational and try again.";
   }
 
   // ── Network / DNS / connection errors ──────────────────────────────────────
@@ -130,51 +194,3 @@ export function adminErrorMessage(err) {
   return "An unexpected error occurred — please try again. If the problem persists, check the server logs for details.";
 }
 
-/**
- * Given an error thrown by an OpenAI API call, return a human-readable
- * string suitable for displaying to an admin user.
- *
- * The fetch wrappers in admin-chat.js and admin-ai-assist.js always throw
- * errors in the form `"OpenAI API error NNN: {body}"` when the OpenAI HTTP
- * response is not 2xx.  This function extracts the numeric status code from
- * that pattern to drive categorisation; text-based heuristics are NOT used
- * so that the logic remains stable if OpenAI changes error message wording.
- *
- * If the error message does not contain the expected pattern (e.g. a network
- * timeout or a JSON parse error) the function falls through to a generic
- * message with a hint to check Vercel function logs.
- *
- * @param {unknown} err - the value caught by a catch block
- * @returns {string}
- */
-export function openAIErrorMessage(err) {
-  const raw = (err && err.message) ? String(err.message) : "";
-
-  // Key not configured — surface as-is (no sensitive data in this message).
-  if (raw.includes("OPENAI_API_KEY")) return raw;
-
-  // SDK errors (openai package) expose a numeric `status` property directly.
-  // Legacy fetch-based callers throw errors shaped "OpenAI API error NNN: …".
-  const statusMatch = raw.match(/OpenAI API error (\d+)/);
-  const status = (err && typeof err.status === "number") ? err.status
-               : statusMatch ? Number(statusMatch[1]) : null;
-
-  if (status === 401) {
-    return "AI assistant error: The OpenAI API key is invalid or revoked. Please verify OPENAI_API_KEY in your Vercel environment settings.";
-  }
-  if (status === 429) {
-    return "AI assistant error: OpenAI usage quota or rate limit exceeded. Please check your OpenAI account billing settings.";
-  }
-  if (status === 404) {
-    return "AI assistant error: The configured AI model was not found. The model may have been deprecated — please check your Vercel configuration.";
-  }
-  if (status === 500) {
-    return "AI assistant error: OpenAI returned HTTP 500 (server-side error). This is usually a transient issue — please try again in a moment. If it persists, check Vercel function logs for the full error detail.";
-  }
-  if (status !== null) {
-    return `AI assistant error: OpenAI returned HTTP ${status}. Check Vercel function logs for full details.`;
-  }
-
-  // No status code in the message — return a generic message with a hint.
-  return "The AI assistant encountered an error. Please try again. If the problem persists, check Vercel function logs.";
-}

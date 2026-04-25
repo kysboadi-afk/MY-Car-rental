@@ -3,6 +3,8 @@
 // The API functions are deployed on Vercel (sly-rides.vercel.app).
 // Because they are on different domains, the full Vercel URL must be used here.
 const API_BASE = "https://sly-rides.vercel.app";
+// Timezone helpers are provided by la-date.js (loaded before this script).
+const SlyLA = window.SlyLA;
 
 // Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
 // Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
@@ -123,10 +125,14 @@ const PROTECTION_PLAN_BASIC    = 15;   // Basic: $15/day
 const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
 const PROTECTION_PLAN_PREMIUM  = 50;   // Premium: $50/day
 
+const pageParams = new URLSearchParams(window.location.search);
+const ADMIN_OVERRIDE = /^(true|1)$/i.test(pageParams.get("admin_override") || "");
+const TEST_MODE = /^(true|1)$/i.test(pageParams.get("test_mode") || "");
+const IS_TEST_MODE_OVERRIDE = ADMIN_OVERRIDE && TEST_MODE;
+
 // ----- Helpers -----
 function getVehicleFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("vehicle");
+  return pageParams.get("vehicle");
 }
 
 // i18n helper — translates a key using lang.js if available, else returns fallback.
@@ -161,6 +167,17 @@ document.getElementById("carPrice").textContent = (carData.hourlyTiers)
   : (carData.weekly)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+if (IS_TEST_MODE_OVERRIDE) {
+  const bookingSection = document.querySelector(".booking");
+  if (bookingSection) {
+    const testModeBanner = document.createElement("div");
+    testModeBanner.id = "testModeBanner";
+    testModeBanner.textContent = "TEST MODE – availability override active";
+    testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
+    bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
+  }
+}
 
 // Hide the nav bar entirely for slingshot booking pages (slingshot has its own landing page)
 if (vehicleId.startsWith("slingshot")) {
@@ -262,6 +279,9 @@ let _pendingPaymentMode = null;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
+// Slingshot payment mode — 'full' (rental + deposit) or 'deposit' (security deposit only).
+// Updated by the payment option radio buttons shown for Slingshot vehicles.
+let slingshotPaymentMode = 'full';
 
 // ----- Slingshot: set up the insurance/protection UI -----
 // For Slingshot: simplify the insurance question — no Damage Protection Plan offered.
@@ -284,11 +304,29 @@ if (carData.hourlyTiers) {
     noInsTextEl.removeAttribute("data-i18n");
     noInsTextEl.innerHTML = `<strong>No</strong> \u2014 I do not have personal auto insurance<br><small style='color:#aaa'>No Damage Protection Plan \u2014 renter assumes full liability for damages</small>`;
   }
-  // Hide the old $50 deposit notice and reserveBtn — not used for Slingshot
+  // Show the Slingshot payment options selector and hide the old deposit notice
+  const payOptSection = document.getElementById("slingshotPaymentOptions");
+  if (payOptSection) payOptSection.style.display = "";
   const oldDepositNotice = document.getElementById("slingshotDepositNotice");
   if (oldDepositNotice) oldDepositNotice.style.display = "none";
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) reserveBtnEl.style.display = "none";
+
+  // Wire up payment option radio buttons
+  const payFullRadio = document.getElementById("slingshotPayFull");
+  const payDepositRadio = document.getElementById("slingshotPayDeposit");
+  const depositOnlyNotice = document.getElementById("slingshotDepositOnlyNotice");
+  function onSlingshotPaymentModeChange() {
+    const checked = document.querySelector('input[name="slingshotPaymentMode"]:checked');
+    slingshotPaymentMode = checked ? checked.value : 'full';
+    if (depositOnlyNotice) {
+      depositOnlyNotice.style.display = slingshotPaymentMode === 'deposit' ? "" : "none";
+    }
+    updateTotal();
+    updatePayBtn();
+  }
+  if (payFullRadio) payFullRadio.addEventListener("change", onSlingshotPaymentModeChange);
+  if (payDepositRadio) payDepositRadio.addEventListener("change", onSlingshotPaymentModeChange);
 }
 
 // For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
@@ -619,7 +657,7 @@ insuranceUpload.addEventListener("change", function(e) {
 
 
 // Block past dates — only allow today or future dates
-const todayStr = new Date().toISOString().split("T")[0];
+const todayStr = SlyLA.todayISO();
 pickup.setAttribute("min", todayStr);
 returnDate.setAttribute("min", todayStr);
 
@@ -645,8 +683,8 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (intro) {
     const namePart   = renterName  ? `<strong>${renterName}</strong>` : "<strong>[Renter]</strong>";
     const carPart    = `<strong>${carData.name}</strong>`;
-    const pickPart   = pickupVal  ? `<strong>${pickupVal}</strong>`  : "<strong>[pickup date]</strong>";
-    const retPart    = returnVal  ? `<strong>${returnVal}</strong>`  : "<strong>[return date]</strong>";
+    const pickPart   = pickupVal  ? `<strong>${SlyLA.formatLocalDateTime(pickupVal, pickupTime.value)}</strong>`  : "<strong>[pickup date]</strong>";
+    const retPart    = returnVal  ? `<strong>${SlyLA.formatLocalDateTime(returnVal, returnTime.value)}</strong>`  : "<strong>[return date]</strong>";
     if (lang === "es") {
       intro.innerHTML = `Este Contrato de Alquiler es celebrado entre SLY Transportation Services ("Empresa") y ${namePart} ("Arrendatario") para el alquiler de ${carPart} desde ${pickPart} hasta ${retPart}.`;
     } else {
@@ -888,7 +926,6 @@ document.getElementById("cancelSignBtn").addEventListener("click", function () {
 
 // Promote return pickers to module scope so applySlingshotDuration() can update them
 let returnPicker = null;
-let returnTimePicker = null;
 
 // ----- Slingshot: auto-compute return date/time from pickup + duration -----
 function applySlingshotDuration() {
@@ -901,31 +938,34 @@ function applySlingshotDuration() {
 
   const dateStr = pickup.value; // "YYYY-MM-DD"
   if (!dateStr) { updatePayBtn(); return; }
-
-  // Normalize pickupTime.value to "HH:MM" regardless of Flatpickr's "h:i K" format
-  let timeStr = "12:00"; // default noon if no time selected
-  const rawTime = pickupTime.value;
-  if (rawTime) {
-    const nativeTest = new Date("1970-01-01T" + rawTime);
-    if (!isNaN(nativeTest)) {
-      // Already HH:MM (native input or Flatpickr with 24-hr format)
-      timeStr = rawTime.slice(0, 5);
+  if (!pickupTime.value) {
+    if (returnPicker) {
+      returnPicker.clear();
     } else {
-      // Flatpickr "h:i K" — e.g. "2:30 PM"
-      const m = rawTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-      if (m) {
-        let h = parseInt(m[1], 10);
-        const mins = m[2];
-        const period = m[3].toUpperCase();
-        if (period === "PM" && h !== 12) h += 12;
-        if (period === "AM" && h === 12) h = 0;
-        timeStr = String(h).padStart(2, "0") + ":" + mins;
-      }
+      returnDate.value = "";
     }
+    returnTime.value = "";
+    updatePayBtn();
+    return;
   }
 
-  // Build pickup moment and add duration
-  const pickupMoment = new Date(dateStr + "T" + timeStr);
+  // pickupTime is a <select> whose option values are stored as HH:MM (24-hour).
+  // The AM/PM display label is separate from the value sent here.
+  // timeSlotToHH handles legacy AM/PM values that may be present in memory;
+  // the fallback treats a valid HH:MM string directly.
+  let timeStr = timeSlotToHH(pickupTime.value);
+  if (!timeStr) {
+    // Fallback: value is already HH:MM
+    const nativeTest = new Date("1970-01-01T" + pickupTime.value);
+    if (!isNaN(nativeTest)) timeStr = pickupTime.value.slice(0, 5);
+  }
+
+  // Build pickup moment and add duration.
+  // Use the multi-argument constructor (y, m, d, h, min) so the Date is always
+  // created as local time — avoids UTC mis-interpretation of ISO strings.
+  const [pY, pM, pD] = dateStr.split("-").map(Number);
+  const [pH, pMin]   = timeStr.split(":").map(Number);
+  const pickupMoment = new Date(pY, pM - 1, pD, pH, pMin || 0);
   if (isNaN(pickupMoment.getTime())) { updatePayBtn(); return; }
   const returnMoment = new Date(pickupMoment.getTime() + hours * 60 * 60 * 1000);
 
@@ -947,12 +987,8 @@ function applySlingshotDuration() {
     returnDate.value = retDateStr;
   }
 
-  // Update return time (via Flatpickr API if available, otherwise direct)
-  if (returnTimePicker) {
-    returnTimePicker.setDate(returnMoment, true);
-  } else {
-    returnTime.value = retTimeStr;
-  }
+  // returnTime is always set directly (no Flatpickr for returnTime)
+  returnTime.value = retTimeStr;
 
   // Show the return section so the renter can see their auto-computed return time
   const retSection = document.getElementById("returnDateSection");
@@ -962,12 +998,134 @@ function applySlingshotDuration() {
   updatePayBtn();
 }
 
+// Fixed time slots available for booking (displayed as options in the pickup time select).
+const TIME_SLOTS = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM"];
+// Minimum buffer (hours) between a car's return and the next available pickup slot.
+const PICKUP_BUFFER_HOURS = 2;
+
+// Module-level cache of booked ranges used by updatePickupTimeSlots().
+// Populated (and refreshed) each time initDatePickers() fetches from the API.
+let bookedRangesCache = [];
+let allUnitRangesCache = []; // one array of raw ranges per Slingshot unit
+
+// Parse any supported time string ("HH:MM" or "h:MM AM/PM") combined with a
+// YYYY-MM-DD date into a Unix-millisecond timestamp.  Returns NaN on failure.
+function parseAnyTimeToMs(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return NaN;
+  const ampm = String(timeStr).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  const h24  = String(timeStr).match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  let h, m;
+  if (ampm) {
+    h = parseInt(ampm[1], 10);
+    m = parseInt(ampm[2], 10);
+    const p = ampm[3].toUpperCase();
+    if (p === "PM" && h !== 12) h += 12;
+    if (p === "AM" && h === 12) h = 0;
+  } else if (h24) {
+    h = parseInt(h24[1], 10);
+    m = parseInt(h24[2], 10);
+  } else {
+    return NaN;
+  }
+  // Use multi-argument constructor so there is no ISO-string UTC interpretation.
+  return new Date(Number(dateStr.slice(0, 4)), Number(dateStr.slice(5, 7)) - 1, Number(dateStr.slice(8, 10)), h, m).getTime();
+}
+
+// Convert a "h:MM AM/PM" time slot string to "HH:MM" for native <input type="time">.
+function timeSlotToHH(slot) {
+  const m = String(slot).match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return "";
+  let h = parseInt(m[1], 10);
+  const mins = m[2];
+  const p = m[3].toUpperCase();
+  if (p === "PM" && h !== 12) h += 12;
+  if (p === "AM" && h === 12) h = 0;
+  return String(h).padStart(2, "0") + ":" + mins;
+}
+
+// Returns true when the given slot on dateStr is blocked by an existing booking
+// (i.e. the car hasn't been returned + buffered yet when this slot starts).
+function isSlotBlocked(dateStr, slot, ranges) {
+  const slotMs = parseAnyTimeToMs(dateStr, slot);
+  if (isNaN(slotMs)) return false;
+  for (const r of ranges) {
+    if (r.to !== dateStr) continue; // only bookings returning on this date matter
+    if (!r.toTime) {
+      // Legacy entry without a return time: conservatively block the whole day.
+      return true;
+    }
+    const returnMs = parseAnyTimeToMs(r.to, r.toTime);
+    if (isNaN(returnMs)) continue;
+    if (returnMs + PICKUP_BUFFER_HOURS * 3600000 > slotMs) return true;
+  }
+  return false;
+}
+
+// Populate the #pickupTime <select> with TIME_SLOTS, disabling any slot that
+// falls within PICKUP_BUFFER_HOURS of an existing booking's return on that date.
+// Option values are HH:MM (24-hour) for consistent backend transport; labels
+// remain AM/PM for display.  Auto-selects the first available slot and syncs returnTime.
+function updatePickupTimeSlots(selectedDate) {
+  pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
+  const noTimesMsg = document.getElementById("noTimesMsg");
+  if (!selectedDate) {
+    if (noTimesMsg) noTimesMsg.style.display = "none";
+    updatePayBtn();
+    return;
+  }
+
+  const isSlingshot = vehicleId.startsWith("slingshot");
+
+  TIME_SLOTS.forEach(function(slot) {
+    const opt = document.createElement("option");
+    // Store the value as HH:MM (24-hour) so the backend always receives a
+    // consistent format regardless of AM/PM display label.
+    opt.value = timeSlotToHH(slot);
+    opt.textContent = slot; // AM/PM label for the user
+
+    if (IS_TEST_MODE_OVERRIDE) {
+      opt.disabled = false;
+    } else if (isSlingshot) {
+      // Slot is available for Slingshot when at least one unit is free.
+      // Disable only when EVERY unit is blocked.
+      const allBlocked = allUnitRangesCache.every(function(unitRanges) {
+        return isSlotBlocked(selectedDate, slot, unitRanges);
+      });
+      opt.disabled = allBlocked;
+    } else {
+      opt.disabled = isSlotBlocked(selectedDate, slot, bookedRangesCache);
+    }
+
+    pickupTime.appendChild(opt);
+  });
+
+  // Auto-select the first non-disabled slot, or show "no times" warning.
+  const firstAvail = pickupTime.querySelector("option:not([disabled]):not([value=''])");
+  if (firstAvail) {
+    firstAvail.selected = true;
+    // Value is already HH:MM — assign directly without conversion.
+    returnTime.value = firstAvail.value;
+    if (noTimesMsg) noTimesMsg.style.display = "none";
+  } else {
+    returnTime.value = "";
+    if (noTimesMsg) noTimesMsg.style.display = "";
+  }
+
+  if (carData.hourlyTiers) {
+    applySlingshotDuration();
+  } else {
+    updateTotal();
+  }
+  updatePayBtn();
+}
+
 // Flag set to true inside initDatePickers() once Flatpickr takes over.
 // Flatpickr already fires native change events after its own onChange, so
 // the native listeners below must skip when Flatpickr is active to avoid
 // calling updateTotal() / applySlingshotDuration() twice on every selection.
+// pickupTime is now a <select> and is handled by its own dedicated listener below.
 let flatpickrActive = false;
-[pickup, pickupTime, returnDate, returnTime].forEach(function(inp) {
+[pickup, returnDate, returnTime].forEach(function(inp) {
   inp.addEventListener("change", function() {
     if (flatpickrActive) return; // Flatpickr's own onChange handles this
     if (carData.hourlyTiers) {
@@ -978,9 +1136,32 @@ let flatpickrActive = false;
   });
 });
 
+// Dedicated change listener for the pickupTime <select>.
+// Values are already HH:MM so returnTime is assigned directly.
+pickupTime.addEventListener("change", function() {
+  const slot = this.value; // HH:MM
+  returnTime.value = slot || "";
+  if (carData.hourlyTiers) {
+    applySlingshotDuration();
+  } else {
+    updateTotal();
+  }
+  updatePayBtn();
+});
+
 // ----- Date Pickers (Flatpickr) -----
 async function initDatePickers() {
   if (typeof flatpickr === "undefined") return; // fallback to native inputs
+
+  // For Slingshot: a date is only truly blocked when ALL units are booked on
+  // that date.  Customers book a generic Slingshot; we assign whichever unit
+  // is free at payment time.
+  const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
+  const isSlingshot = vehicleId.startsWith("slingshot");
+
+  // allUnitRanges: array-of-arrays (one per slingshot unit) for the combined
+  // disable check; unused for non-slingshot vehicles (uses bookedRanges instead).
+  let allUnitRanges = [];
   let bookedRanges = [];
   try {
     // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
@@ -991,22 +1172,49 @@ async function initDatePickers() {
     const resp = await fetch(`${API_BASE}/api/booked-dates`);
     if (resp.ok) {
       const data = await resp.json();
-      bookedRanges = data[vehicleId] || [];
+      if (isSlingshot) {
+        // Collect each unit's ranges; missing unit = no bookings (empty array).
+        // Keep raw ranges (with fromTime/toTime) for the time-slot buffer check.
+        allUnitRanges = SLINGSHOT_IDS.map(function(id) {
+          return (data[id] || []).map(function(r) {
+            return {
+              // Exclusive end: the return date itself is NOT blocked in the
+              // calendar — time slots on that day handle granularity.
+              from: new Date(r.from + "T00:00:00").getTime(),
+              to:   new Date(r.to   + "T00:00:00").getTime(),
+            };
+          });
+        });
+        // Store raw ranges per unit for the time-slot availability check.
+        allUnitRangesCache = SLINGSHOT_IDS.map(function(id) { return data[id] || []; });
+      } else {
+        bookedRanges = data[vehicleId] || [];
+        bookedRangesCache = bookedRanges;
+      }
     }
   } catch (e) { console.error("Failed to load booked dates:", e); }
 
   // Pre-compile range boundaries to millisecond timestamps once so the
   // disable callback never allocates new Date objects per calendar cell.
+  // End date is exclusive: the return date is not blocked in the calendar.
   const compiledRanges = bookedRanges.map(function(r) {
     return {
       from: new Date(r.from + "T00:00:00").getTime(),
-      to: new Date(r.to + "T23:59:59").getTime()
+      to:   new Date(r.to   + "T00:00:00").getTime()
     };
   });
 
   function isBooked(date) {
+    if (IS_TEST_MODE_OVERRIDE) return false;
     const t = date.getTime();
-    return compiledRanges.some(function(r) { return t >= r.from && t <= r.to; });
+    if (isSlingshot) {
+      // Date is blocked only when EVERY Slingshot unit is booked on that day.
+      // Uses exclusive end so the return date itself can accept new pickups.
+      return allUnitRanges.every(function(unitRanges) {
+        return unitRanges.some(function(r) { return t >= r.from && t < r.to; });
+      });
+    }
+    return compiledRanges.some(function(r) { return t >= r.from && t < r.to; });
   }
 
   const pickupPicker = flatpickr(pickup, {
@@ -1022,11 +1230,14 @@ async function initDatePickers() {
           if (returnPicker) returnPicker.set("minDate", selectedDates[0]);
         }
       }
-      if (carData.hourlyTiers) {
-        applySlingshotDuration();
-      } else {
-        updateTotal();
+      // Populate/refresh time slots for the newly selected pickup date.
+      let dateStr = "";
+      if (selectedDates[0]) {
+        dateStr = window.SlyLA
+          ? window.SlyLA.isoDateInLA(selectedDates[0])
+          : selectedDates[0].toISOString().slice(0, 10);
       }
+      updatePickupTimeSlots(dateStr);
     }
   });
 
@@ -1038,25 +1249,8 @@ async function initDatePickers() {
     }
   });
 
-  flatpickr(pickupTime, {
-    enableTime: true,
-    noCalendar: true,
-    dateFormat: "h:i K",
-    onChange: function(selectedDates, timeStr) {
-      if (carData.hourlyTiers) {
-        applySlingshotDuration();
-      } else {
-        if (returnTimePicker) returnTimePicker.setDate(timeStr, true, "h:i K");
-      }
-    }
-  });
-
-  returnTimePicker = flatpickr(returnTime, {
-    enableTime: true,
-    noCalendar: true,
-    dateFormat: "h:i K",
-    clickOpens: false
-  });
+  // pickupTime is now a <select> — no Flatpickr needed.
+  // returnTime mirrors pickupTime and is set programmatically; no Flatpickr needed.
 
   // Flatpickr is now fully active; native change listeners will defer to it.
   flatpickrActive = true;
@@ -1065,45 +1259,65 @@ async function initDatePickers() {
 initDatePickers();
 
 // ----- Fleet Status Check -----
-// Fetch the vehicle's availability from fleet-status.json. If the vehicle is
-// globally marked unavailable (e.g. already rented or taken offline), show a
-// clear "Currently Rented" notice and replace the booking form with the
-// Extend Rental section.  Fails open on any API error so transient outages
-// do not lock out the form.
+// Fetch the vehicle's availability from the fleet-status API.  If the vehicle
+// is unavailable (active booking exists), show a "Currently Rented" notice and
+// replace the booking form with the Extend Rental section.
+// Fails open on any API error so transient outages do not lock out the form.
+//
+// For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
+// slingshot3).  The notice is shown only when ALL units are simultaneously
+// unavailable.  For display, the earliest next_available_display (or available_at)
+// across booked units is used so the customer sees the soonest a unit frees up.
 (async function checkFleetStatus() {
+  if (IS_TEST_MODE_OVERRIDE) return;
   try {
-    const [fleetResp, datesResp] = await Promise.all([
-      fetch(`${API_BASE}/api/fleet-status`),
-      fetch(`${API_BASE}/api/booked-dates`),
-    ]);
+    const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
+    const isSlingshot = vehicleId.startsWith("slingshot");
+
+    const fleetResp = await fetch(`${API_BASE}/api/fleet-status`);
     if (!fleetResp.ok) return;
-    const status      = await fleetResp.json();
-    const bookedDates = datesResp.ok ? await datesResp.json() : {};
-    const entry = status[vehicleId];
-    if (entry && entry.available === false) {
-      // Compute next available date from booked-dates
-      const today  = new Date().toISOString().slice(0, 10);
-      const ranges = ((bookedDates[vehicleId] || []).slice().sort((a, b) =>
-        a.from < b.from ? -1 : 1
-      ));
-      let nextAvail = null;
-      for (const r of ranges) {
-        if (r.from <= today && today <= r.to) {
-          // Add one day after the booking ends
-          const d = new Date(r.to + "T00:00:00");
-          d.setDate(d.getDate() + 1);
-          nextAvail = d.toISOString().slice(0, 10);
-          break;
+    const status = await fleetResp.json();
+
+    let isUnavailable;
+    if (isSlingshot) {
+      // Unavailable only when every Slingshot unit is marked unavailable.
+      isUnavailable = SLINGSHOT_IDS.every(function(id) {
+        return status[id] && status[id].available === false;
+      });
+    } else {
+      const entry = status[vehicleId];
+      isUnavailable = !!(entry && entry.available === false);
+    }
+
+    if (isUnavailable) {
+      // For Slingshot: pick the entry with the earliest available_at so the
+      // customer sees the soonest any unit becomes free.
+      const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
+
+      let availableAt = null;
+      let availableAtDisplay = null;
+      for (const id of idsToCheck) {
+        const entry = status[id];
+        if (entry && entry.available === false) {
+          if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
+            availableAt = entry.available_at;
+            availableAtDisplay = entry.next_available_display || null;
+          } else if (!availableAt && entry.next_available_display) {
+            // next_available_display is set even when return_time was absent
+            // (date-only format); capture it so we still show the right date.
+            availableAtDisplay = entry.next_available_display;
+          }
         }
       }
-      showVehicleUnavailable(nextAvail);
+
+      showVehicleUnavailable(availableAt, availableAtDisplay);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable(nextAvailableISO) {
+function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
@@ -1116,15 +1330,25 @@ function showVehicleUnavailable(nextAvailableISO) {
     bookingSection.insertBefore(notice, bookingSection.firstChild);
   }
 
-  let nextLine = "";
-  if (nextAvailableISO) {
-    const d = new Date(nextAvailableISO + "T00:00:00");
-    const formatted = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+  // Use the pre-formatted string from the backend (LA timezone, correct date and time).
+  // This is the single source of truth — no frontend date math needed.
+  const nextLine = nextAvailableDisplay
+    ? `<p>📅 Next available: <strong>${nextAvailableDisplay}</strong></p>`
+    : "";
 
-    // Set minimum new return date in the extend form
+  if (nextAvailableISO) {
+    // Set minimum new return date in the extend form to the current return date
+    // so the customer cannot pick a date before the active rental ends.
     const extReturn = document.getElementById("extNewReturn");
-    if (extReturn) extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
+    if (extReturn) {
+      let minDate = SlyLA.todayISO();
+      const d2 = new Date(nextAvailableISO);
+      if (Number.isFinite(d2.getTime())) {
+        const returnDateISO = SlyLA.isoDateInLA(d2);
+        if (returnDateISO > minDate) minDate = returnDateISO;
+      }
+      extReturn.setAttribute("min", minDate);
+    }
   }
 
   notice.innerHTML = `
@@ -1177,10 +1401,10 @@ function showVehicleUnavailable(nextAvailableISO) {
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";
-    // Set minimum new return date to today
+    // Fallback: ensure min is set to at least today if not already set above.
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
-      extReturn.setAttribute("min", new Date().toISOString().slice(0, 10));
+      extReturn.setAttribute("min", SlyLA.todayISO());
     }
     // Initialize the extend rental form interactions
     initExtendRentalForm();
@@ -1195,14 +1419,13 @@ function initExtendRentalForm() {
   var extEmail      = document.getElementById("extEmail");
   var extPhone      = document.getElementById("extPhone");
   var extNewReturn  = document.getElementById("extNewReturn");
-  var extReturnTime = document.getElementById("extNewReturnTime");
   var extSubmitBtn  = document.getElementById("extSubmitBtn");
   var extPayHint    = document.getElementById("extPayHint");
   var extPriceDisplay = document.getElementById("extPriceDisplay");
   var extPriceAmount  = document.getElementById("extPriceAmount");
 
   // Set today as the minimum new return date
-  var todayISO = new Date().toISOString().slice(0, 10);
+  var todayISO = SlyLA.todayISO();
   if (extNewReturn && !extNewReturn.getAttribute("min")) {
     extNewReturn.setAttribute("min", todayISO);
   }
@@ -1219,7 +1442,7 @@ function initExtendRentalForm() {
       return;
     }
 
-    var today = new Date().toISOString().slice(0, 10);
+    var today = SlyLA.todayISO();
     var newReturn = extNewReturn.value;
     if (newReturn <= today) {
       if (extPriceDisplay) extPriceDisplay.style.display = "none";
@@ -1233,13 +1456,20 @@ function initExtendRentalForm() {
 
     var isSlingshot = carData.hourlyTiers;
 
+    // Base date for computing extra days: use the current booking's return date
+    // (stored as the min attribute on the date input) so the estimate matches
+    // what the server charges.  Falls back to today if min is not set or is in
+    // the past (e.g. overdue rentals).
+    var minDate = extNewReturn.getAttribute("min") || today;
+    var baseDate = minDate > today ? minDate : today;
+
     if (isSlingshot) {
-      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
       var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
       if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
     } else {
-      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(today)) / (1000 * 3600 * 24)));
+      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
       var daily   = carData.pricePerDay  || 55;
       var weekly  = carData.weekly       || 350;
       var biweek  = carData.biweekly     || 650;
@@ -1278,10 +1508,6 @@ function initExtendRentalForm() {
       updatePriceEstimate();
     });
   }
-  if (extReturnTime) {
-    extReturnTime.addEventListener("change", updateExtBtn);
-  }
-
   updateExtBtn();
 
   if (extSubmitBtn) {
@@ -1293,21 +1519,6 @@ async function launchExtendRentalPayment() {
   var extEmail      = document.getElementById("extEmail").value.trim();
   var extPhone      = (document.getElementById("extPhone") || {}).value || "";
   var newReturnDate = document.getElementById("extNewReturn").value;
-  var newReturnTime = document.getElementById("extNewReturnTime") ? document.getElementById("extNewReturnTime").value : "";
-
-  // Convert native time input (HH:MM) to 12-hour format for readability in emails/SMS
-  function to12Hour(hhmm) {
-    if (!hhmm) return "";
-    var parts = hhmm.match(/^(\d{1,2}):(\d{2})$/);
-    if (!parts) return hhmm;
-    var h = parseInt(parts[1], 10);
-    var m = parts[2];
-    var period = h >= 12 ? "PM" : "AM";
-    if (h === 0) h = 12;
-    else if (h > 12) h -= 12;
-    return h + ":" + m + " " + period;
-  }
-  var newReturnTime12 = to12Hour(newReturnTime);
 
   var submitBtn = document.getElementById("extSubmitBtn");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = _t("booking.loadingPayment", "Loading payment…"); }
@@ -1321,7 +1532,6 @@ async function launchExtendRentalPayment() {
         email:         extEmail,
         phone:         extPhone.trim(),
         newReturnDate,
-        newReturnTime: newReturnTime12,
       }),
     });
     var data = await resp.json();
@@ -1348,7 +1558,7 @@ async function launchExtendRentalPayment() {
     // Populate the summary box
     var summaryEl = document.getElementById("ext-rental-summary");
     if (summaryEl) {
-      var displayReturn = confirmedDate + (confirmedTime ? " at " + confirmedTime : "");
+      var displayReturn = SlyLA.formatLocalDateTime(confirmedDate, confirmedTime);
       summaryEl.innerHTML =
         "<strong>⏱️ Rental Extension</strong><br>" +
         (vehicleName ? "Vehicle: " + vehicleName + "<br>" : "") +
@@ -1446,8 +1656,13 @@ function restoreFailedBooking() {
     // Helper: set a date/time input respecting Flatpickr when active.
     // For native <input type="time"> fallback, converts "h:i K" (e.g. "2:30 PM")
     // to "HH:MM" which is the format the native input requires.
+    // For <select> elements (pickupTime), just sets the value directly.
     function fpSet(input, value) {
       if (!value || !input) return;
+      if (input.tagName === "SELECT") {
+        input.value = value;
+        return;
+      }
       if (flatpickrActive && input._flatpickr) {
         input._flatpickr.setDate(value, true);
       } else {
@@ -1476,7 +1691,12 @@ function restoreFailedBooking() {
 
     // Restore dates / times
     fpSet(pickup, data.pickup);
+    // Populate time slots for the restored pickup date before restoring the selected time.
+    if (data.pickup) updatePickupTimeSlots(data.pickup.slice(0, 10));
     fpSet(pickupTime, data.pickupTime);
+    // Sync returnTime to match restored pickupTime
+    // pickupTime.value is HH:MM; if legacy stored value is AM/PM, convert it.
+    if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime) || data.pickupTime;
     if (!carData.hourlyTiers) {
       fpSet(returnDate, data.returnDate);
     }
@@ -1612,6 +1832,7 @@ window.addEventListener("pageshow", function(e) {
   document.getElementById("phone").value = "";
   pickup.value = "";
   returnDate.value = "";
+  pickupTime.innerHTML = '<option value="">\u2014 Select a pickup time \u2014</option>';
   pickupTime.value = "";
   returnTime.value = "";
   idUpload.value = "";
@@ -1630,6 +1851,12 @@ window.addEventListener("pageshow", function(e) {
     document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
     const retSection = document.getElementById("returnDateSection");
     if (retSection) retSection.style.display = "none";
+    // Reset Slingshot payment mode to 'full' and hide deposit-only notice
+    slingshotPaymentMode = 'full';
+    const payFullRadioReset = document.getElementById("slingshotPayFull");
+    if (payFullRadioReset) payFullRadioReset.checked = true;
+    const depositOnlyNoticeReset = document.getElementById("slingshotDepositOnlyNotice");
+    if (depositOnlyNoticeReset) depositOnlyNoticeReset.style.display = "none";
   }
   const insuranceUploadSection = document.getElementById("insuranceUploadSection");
   const protectionPlanSection = document.getElementById("protectionPlanSection");
@@ -1697,10 +1924,13 @@ function updatePayBtn() {
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
                           (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
-  // Hourly-tier vehicles need pickup + duration; other vehicles need pickup + return date
+  // Hourly-tier vehicles need pickup + duration + pickup time;
+  // other vehicles need pickup + return date + pickup time.
+  // Pickup time is required for all vehicles.
+  const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
   const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration
-    : pickup.value && returnDate.value;
+    ? pickup.value && currentSlingshotDuration && hasTimeWindow
+    : pickup.value && hasTimeWindow;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
@@ -1720,24 +1950,29 @@ function updateTotal() {
     currentDayCount = slingshotDays;
 
     // Security deposit = rental tier price (refundable after return).
-    // No DPP for Slingshot. Total = rental fee + deposit (= rental fee × 2) + tax.
+    // No DPP for Slingshot. No tax — total is rental fee + security deposit only.
     const securityDeposit = tier.price;
-    const rentalBase = tier.price + securityDeposit;
+    const fullTotal = tier.price + securityDeposit; // rental + deposit, no tax
+
+    // Determine the payment amount based on the selected payment mode.
+    // 'full': charge rental + security deposit; 'deposit': charge security deposit only.
+    const isDepositMode = slingshotPaymentMode === 'deposit';
+    const chargeNow = isDepositMode ? securityDeposit : fullTotal;
 
     // Show the rental breakdown so renters know exactly what they're paying.
     const lines = [];
-    lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
+    if (!isDepositMode) {
+      lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
+      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
+    } else {
+      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 reserves your dates)`, amount: securityDeposit });
+      lines.push({ label: `\u23F3 Remaining rental fee (due before pickup \u2014 NOT charged now)`, amount: tier.price });
+    }
 
-    // Security deposit — equals the rental fee, refundable after return with no damage
-    lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
-
-    // Compute LA sales tax (10.25%) on the full rental base.
-    const taxAmount = Math.round(rentalBase * LA_TAX_RATE * 100) / 100;
-    const afterTaxRental = Math.round((rentalBase + taxAmount) * 100) / 100;
-    lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
-
-    currentSubtotal = rentalBase;
-    carData._fullRentalCost = afterTaxRental.toFixed(2);
+    currentSubtotal = chargeNow;
+    carData._fullRentalCost = fullTotal.toFixed(2);
+    carData._rentalPrice = tier.price;
+    carData._securityDeposit = securityDeposit;
 
     const rowsEl = document.getElementById("breakdownRows");
     const frag = document.createDocumentFragment();
@@ -1758,16 +1993,20 @@ function updateTotal() {
     rowsEl.appendChild(frag);
     document.getElementById("priceBreakdown").style.display = "";
 
-    document.getElementById("subtotal").textContent = rentalBase;
+    // Hide tax line — no tax on Slingshot bookings
+    document.getElementById("subtotal").textContent = chargeNow;
     const taxLineEl = document.getElementById("taxLine");
     const taxNoteEl = document.getElementById("taxNote");
-    document.getElementById("tax").textContent = taxAmount.toFixed(2);
-    taxLineEl.style.display = "";
+    taxLineEl.style.display = "none";
     if (taxNoteEl) taxNoteEl.style.display = "none";
-    // Total shows the full amount charged online (rental + deposit + tax)
-    totalEl.textContent = afterTaxRental.toFixed(2);
-    // Standard pay button — full amount charged online
-    stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    // Total reflects only what is charged now
+    totalEl.textContent = chargeNow.toFixed(2);
+    // Pay button text reflects the selected mode
+    if (isDepositMode) {
+      stripeBtn.textContent = `\uD83D\uDD12 Reserve with $${chargeNow.toFixed(2)} Deposit`;
+    } else {
+      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
+    }
     updatePayBtn();
     return;
   }
@@ -1775,7 +2014,13 @@ function updateTotal() {
   // ----- Daily/weekly vehicles -----
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
-  currentDayCount = Math.max(minDays, Math.ceil((new Date(returnDate.value) - new Date(pickup.value))/(1000*3600*24)));
+  // Use explicit UTC arithmetic to count whole calendar days without any
+  // ISO-string UTC-vs-local ambiguity.  Date.UTC() always gives midnight UTC.
+  const [puY, puM, puD]   = pickup.value.split("-").map(Number);
+  const [retY, retM, retD] = returnDate.value.split("-").map(Number);
+  currentDayCount = Math.max(minDays, Math.ceil(
+    (Date.UTC(retY, retM - 1, retD) - Date.UTC(puY, puM - 1, puD)) / (1000 * 3600 * 24)
+  ));
 
   // Calculate cost using the best applicable discount tier (greedy: largest period first).
   // "Monthly" is defined as every 30-day block; this is intentional for a rental business
@@ -1872,10 +2117,11 @@ function updateTotal() {
 
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
-  // Resolve payment mode: deposit when reserveBtn was clicked, full when stripeBtn clicked directly.
-  // _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
+  // Resolve payment mode:
+  // - For Slingshot: use slingshotPaymentMode ('full' or 'deposit') set by the radio buttons.
+  // - For Camry: _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
   if (_pendingPaymentMode === null) {
-    _pendingPaymentMode = 'full'; // stripeBtn is always "Book Now" for all vehicles
+    _pendingPaymentMode = carData.hourlyTiers ? slingshotPaymentMode : 'full';
   }
   const paymentMode = _pendingPaymentMode;
   _pendingPaymentMode = null; // consume and reset
@@ -1885,12 +2131,23 @@ stripeBtn.addEventListener("click", async () => {
   const phone = document.getElementById("phone").value.trim();
   if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
-
-  // Determine the amount charged now: full payment for Slingshot, deposit or full for Camry.
+  if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
+  if (!returnDate.value) { alert(window.slyI18n.t("booking.alertReturnDate")); return; }
+  if (!pickupTime.value) { alert(window.slyI18n.t("booking.alertPickupTime")); return; }
+  if (!returnTime.value) { alert(window.slyI18n.t("booking.alertReturnTime")); return; }
+  const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
   const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
-  // For Slingshot: show full rental total; For Camry reserve: show deposit; For Camry full: full amount.
+  // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
+  // For Camry deposit mode, compute the balance the renter still owes at pickup so
+  // the confirmation email can display the exact amount (full after-tax total minus deposit).
+  if (isCamryDepositMode) {
+    const fullAmtFloat = parseFloat(totalEl.textContent);
+    if (isFinite(fullAmtFloat) && fullAmtFloat > camryDepositAmount) {
+      carData._balanceAtPickup = (fullAmtFloat - camryDepositAmount).toFixed(2);
+    }
+  }
 
   // Meta Pixel — track checkout initiation with the amount being charged
   if (typeof fbq === "function") {
@@ -1955,7 +2212,9 @@ stripeBtn.addEventListener("click", async () => {
         email: email,
         phone: phone,
         pickup: pickup.value,
+        pickupTime: pickupTime.value,
         returnDate: returnDate.value,
+        returnTime: returnTime.value,
         protectionPlan: insuranceCoverageChoice === "no",
         // For Economy cars: pass the selected tier so the server uses the correct flat rate.
         ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
@@ -1963,6 +2222,8 @@ stripeBtn.addEventListener("click", async () => {
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
         paymentMode,
+        adminOverride: ADMIN_OVERRIDE,
+        testMode: TEST_MODE,
       })
     });
 
@@ -2240,23 +2501,8 @@ stripeBtn.addEventListener("click", async () => {
       });
 
       if (error) {
-        // Notify owner of the failed payment attempt (fire-and-forget, non-blocking).
         // Keep booking data in sessionStorage with paymentFailed:true so the form
         // can be pre-filled automatically when the renter returns to try again.
-        fetch(API_BASE + "/api/send-reservation-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...bookingPayload,
-            paymentStatus: "failed",
-            idBase64,
-            idFileName,
-            idMimeType,
-            insuranceBase64,
-            insuranceFileName,
-            insuranceMimeType,
-          }),
-        }).catch(function (err) { console.error("Failed to notify owner of payment failure:", err); });
         sessionStorage.setItem("slyRidesBooking", JSON.stringify({
           ...bookingPayload,
           paymentFailed: true,
@@ -2330,4 +2576,3 @@ stripeBtn.addEventListener("click", async () => {
     stripeBtn.click();
   });
 }());
-

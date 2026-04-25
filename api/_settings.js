@@ -46,6 +46,8 @@ export const PRICING_DEFAULTS = {
   // Note: Slingshot security deposit = rental tier price (dynamic, not a fixed admin setting).
   slingshot_booking_deposit:  SLINGSHOT_BOOKING_DEPOSIT,
   camry_booking_deposit:      CAMRY_BOOKING_DEPOSIT,
+  // Booking change fee (charged for each change after the first free one)
+  booking_change_fee:         25,
 };
 
 /**
@@ -83,6 +85,34 @@ export async function loadPricingSettings() {
   } catch {
     // Never crash a payment request because of a settings lookup failure.
     return { ...PRICING_DEFAULTS };
+  }
+}
+
+/**
+ * Reads a single boolean setting from the system_settings table.
+ * Returns `defaultVal` when Supabase is unavailable or the key is not found.
+ *
+ * @param {string}  key          - system_settings key
+ * @param {boolean} defaultVal   - value to return when the setting cannot be read
+ * @returns {Promise<boolean>}
+ */
+export async function loadBooleanSetting(key, defaultVal = true) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return defaultVal;
+
+  try {
+    const { data, error } = await sb
+      .from("system_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+    if (error || !data) return defaultVal;
+    // Supabase stores jsonb booleans as JS booleans; guard against "false" strings.
+    if (data.value === false || data.value === "false") return false;
+    if (data.value === true  || data.value === "true")  return true;
+    return defaultVal;
+  } catch {
+    return defaultVal;
   }
 }
 
@@ -244,4 +274,69 @@ export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate,
   lines.push(`Total: $${total.toFixed(2)}`);
 
   return lines;
+}
+
+/**
+ * Compute the pre-tax rental cost for ANY car vehicle using its stored rate
+ * fields and the same greedy monthly → biweekly → weekly → daily tier logic.
+ *
+ * For the two known economy cars (camry / camry2013) this delegates to the
+ * existing computeCamryAmountFromSettings() so their admin-configurable
+ * system_settings rates continue to be honoured.
+ *
+ * For vehicles added via the admin portal or AI (e.g. "civic2024"), the
+ * vehicle's own stored rates are used:
+ *   vehicleData.pricePerDay  — daily rate (required)
+ *   vehicleData.weekly       — weekly rate  (optional; applied for 7+ day rentals)
+ *   vehicleData.biweekly     — bi-weekly rate (optional; applied for 14+ days)
+ *   vehicleData.monthly      — monthly rate (optional; applied for 30+ days)
+ *
+ * Returns null for slingshot vehicles (they use hourly tiers) or when the
+ * vehicle data is missing a daily rate.
+ *
+ * @param {object} vehicleData  - result of getVehicleById() from _vehicles.js
+ * @param {string} pickup       - ISO date string, e.g. "2025-07-01"
+ * @param {string} returnDate   - ISO date string, e.g. "2025-07-08"
+ * @param {object} settings     - result of loadPricingSettings()
+ * @returns {number|null}
+ */
+export function computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings) {
+  if (!vehicleData || vehicleData.isSlingshot) return null;
+
+  // Delegate to the existing settings-aware function for known economy cars.
+  if (vehicleData.vehicleId === "camry" || vehicleData.vehicleId === "camry2013") {
+    return computeCamryAmountFromSettings(vehicleData.vehicleId, pickup, returnDate, settings);
+  }
+
+  // New/custom vehicles: use stored rates with greedy tier logic.
+  // Fall back to the configured camry daily rate only when no rate is stored —
+  // this is a last-resort guard so the payment endpoint never charges $0.
+  const daily    = vehicleData.pricePerDay || settings.camry_daily_rate;
+  const weekly   = vehicleData.weekly   || null;
+  const biweekly = vehicleData.biweekly || null;
+  const monthly  = vehicleData.monthly  || null;
+
+  if (!daily) return null;
+
+  let remaining = computeRentalDays(pickup, returnDate);
+  let cost = 0;
+
+  if (monthly && remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost      += months * monthly;
+    remaining  = remaining % 30;
+  }
+  if (biweekly && remaining >= 14) {
+    const periods = Math.floor(remaining / 14);
+    cost      += periods * biweekly;
+    remaining  = remaining % 14;
+  }
+  if (weekly && remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost      += weeks * weekly;
+    remaining  = remaining % 7;
+  }
+  cost += remaining * daily;
+
+  return cost; // pre-tax, no deposit
 }

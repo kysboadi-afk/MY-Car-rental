@@ -210,9 +210,54 @@ test("list: returns object keyed by vehicle_id", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body.vehicles, {
-    slingshot: { vehicle_id: "slingshot",  status: "active" },
-    camry:     { vehicle_id: "camry",      status: "maintenance" },
+    slingshot: {
+      vehicle_id:               "slingshot",
+      status:                   "active",
+      bouncie_device_id:        null,
+      total_mileage:            0,
+      last_synced_at:           null,
+      last_oil_change_mileage:  null,
+      last_brake_check_mileage: null,
+      last_tire_change_mileage: null,
+      tracked:                  false,
+    },
+    camry: {
+      vehicle_id:               "camry",
+      status:                   "maintenance",
+      bouncie_device_id:        null,
+      total_mileage:            0,
+      last_synced_at:           null,
+      last_oil_change_mileage:  null,
+      last_brake_check_mileage: null,
+      last_tire_change_mileage: null,
+      tracked:                  false,
+    },
   });
+  setSecret(REAL_ADMIN_SECRET);
+});
+
+test("list: collapses duplicate camry rows to one UI vehicle id and keeps richer row", async () => {
+  setSecret("testSecret");
+  const rows = [
+    { vehicle_id: "camry", data: { vehicle_id: "camry", status: "active" } },
+    { vehicle_id: "camry", data: { vehicle_id: "camry", vehicle_name: "Camry 2012", cover_image: "images/car1.jpg", status: "active" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ body: { secret: "testSecret", action: "list" } });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.equal(Object.keys(res._body.vehicles).length, 1);
+  assert.ok(res._body.vehicles.camry);
+  assert.equal(res._body.vehicles.camry.vehicle_id, "camry");
+  assert.equal(res._body.vehicles.camry.vehicle_name, "Camry 2012");
+  assert.equal(res._body.vehicles.camry.cover_image, "/images/car1.jpg");
   setSecret(REAL_ADMIN_SECRET);
 });
 
@@ -486,6 +531,29 @@ test("GET: returns array of flattened vehicle objects", async () => {
   assert.equal(res._body[1].cover_image, "/images/car1.jpg");
 });
 
+test("GET: collapses duplicate camry rows to one UI vehicle id and keeps richer row", async () => {
+  const rows = [
+    { vehicle_id: "camry", data: { vehicle_id: "camry", status: "active" } },
+    { vehicle_id: "camry", data: { vehicle_id: "camry", vehicle_name: "Camry 2012", cover_image: "images/car1.jpg", status: "active" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  assert.ok(Array.isArray(res._body));
+  assert.equal(res._body.length, 1);
+  assert.equal(res._body[0].vehicle_id, "camry");
+  assert.equal(res._body[0].vehicle_name, "Camry 2012");
+  assert.equal(res._body[0].cover_image, "/images/car1.jpg");
+});
+
 test("GET: normalizes various cover_image path formats", async () => {
   const rows = [
     { vehicle_id: "v1", data: { cover_image: "../images/a.jpg" } },
@@ -567,6 +635,70 @@ test("GET: 500 when Supabase error AND GitHub fallback also fails", async () => 
 
   assert.equal(res._status, 500);
   vehiclesMockState.throwErr = null;
+});
+
+test("GET: sets Cache-Control: no-store to prevent stale vehicle lists", async () => {
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: [], error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._headers["Cache-Control"], "no-store");
+});
+
+test("GET: filters out inactive and maintenance vehicles from public listing (Supabase)", async () => {
+  const rows = [
+    { vehicle_id: "active-car",      data: { vehicle_id: "active-car",      status: "active" } },
+    { vehicle_id: "inactive-car",    data: { vehicle_id: "inactive-car",    status: "inactive" } },
+    { vehicle_id: "maintenance-car", data: { vehicle_id: "maintenance-car", status: "maintenance" } },
+    { vehicle_id: "no-status-car",   data: { vehicle_id: "no-status-car" } },
+  ];
+  supabaseMockState.client = {
+    from: () => ({
+      select: () => Promise.resolve({ data: rows, error: null }),
+    }),
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ids = res._body.map(v => v.vehicle_id);
+  assert.ok(ids.includes("active-car"),    "active vehicle should appear");
+  assert.ok(ids.includes("no-status-car"), "vehicle with no status should appear (treated as active)");
+  assert.ok(!ids.includes("inactive-car"),    "inactive vehicle must not appear publicly");
+  assert.ok(!ids.includes("maintenance-car"), "maintenance vehicle must not appear publicly");
+});
+
+test("GET: filters out inactive and maintenance vehicles from public listing (GitHub fallback)", async () => {
+  supabaseMockState.client = null;
+  vehiclesMockState.throwErr = null;
+  vehiclesMockState.result = {
+    data: {
+      "active-car":      { vehicle_id: "active-car",      status: "active" },
+      "inactive-car":    { vehicle_id: "inactive-car",    status: "inactive" },
+      "maintenance-car": { vehicle_id: "maintenance-car", status: "maintenance" },
+      "no-status-car":   { vehicle_id: "no-status-car" },
+    },
+    sha: null,
+  };
+
+  const req = makeReq({ method: "GET" });
+  const res = makeRes();
+  await handler(req, res);
+
+  assert.equal(res._status, 200);
+  const ids = res._body.map(v => v.vehicle_id);
+  assert.ok(ids.includes("active-car"),    "active vehicle should appear");
+  assert.ok(ids.includes("no-status-car"), "vehicle with no status should appear (treated as active)");
+  assert.ok(!ids.includes("inactive-car"),    "inactive vehicle must not appear publicly");
+  assert.ok(!ids.includes("maintenance-car"), "maintenance vehicle must not appear publicly");
 });
 
 // ─── create ───────────────────────────────────────────────────────────────────

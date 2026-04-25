@@ -65,11 +65,18 @@ mock.module("./_supabase.js", {
       }
 
       return {
-        from: (_table) => ({
+        from: (table) => ({
           select:  (...args) => makeQuery().select(...args),
           insert:  async (_row) => ({ data: [{ id: "sb-id-1" }], error: null }),
           upsert:  async (_rows, _opts) => ({ error: null }),
-          delete:  () => ({ eq: async () => ({ error: null }) }),
+          delete:  () => ({
+            eq: async (col, val) => {
+              if (table === "revenue_records" && col === "id" && Array.isArray(supabaseRecords)) {
+                supabaseRecords = supabaseRecords.filter((r) => r.id !== val);
+              }
+              return { error: null };
+            },
+          }),
           update:  (_u) => ({ eq: () => ({ select: () => ({ single: async () => ({ data: { id: "sb-id-1" }, error: null }) }) }) }),
         }),
       };
@@ -340,9 +347,120 @@ test("sync: skips already-synced bookings (idempotent)", async () => {
   assert.equal(res._body.skipped, 1);
 });
 
+test("delete: removes record from Supabase list results", async () => {
+  resetState();
+  supabaseRecords = [
+    { id: "sb-del-1", booking_id: "bk-del-1", vehicle_id: "camry", gross_amount: 50, payment_status: "paid" },
+  ];
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", id: "sb-del-1" }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body.success, true);
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.records.length, 0, "deleted Supabase record should not remain in list");
+});
+
+test("delete: removes record from GitHub fallback list results", async () => {
+  resetState();
+  supabaseRecords = null; // force GitHub fallback
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "gh-del-1", booking_id: "bk-gh-1", vehicle_id: "camry", gross_amount: 50, payment_status: "paid", created_at: "2026-03-01T00:00:00.000Z" },
+  ];
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", id: "gh-del-1" }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body.success, true);
+  assert.equal(ghRecords.length, 0, "deleted GitHub record should be removed from storage");
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.records.length, 0, "deleted GitHub record should not remain in list");
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// 7. AUTH
+// 8. RECORD EXTENSION FEE
 // ═══════════════════════════════════════════════════════════════════════════════
+test("record_extension_fee: 400 when required fields are missing", async () => {
+  resetState();
+  ghSha = "sha-existing";
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "record_extension_fee", vehicle_id: "camry", amount: 181.91 }), res);
+  assert.equal(res._status, 400, "should reject missing original_booking_id");
+});
+
+test("record_extension_fee: 400 when amount is zero or negative", async () => {
+  resetState();
+  ghSha = "sha-existing";
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret:              "test-admin-secret",
+    action:              "record_extension_fee",
+    original_booking_id: "d95643b10c87a02f1a510f7466b2bedf",
+    vehicle_id:          "camry",
+    amount:              -10,
+  }), res);
+  assert.equal(res._status, 400, "should reject non-positive amount");
+});
+
+test("record_extension_fee: saves to GitHub with synthetic booking_id when Supabase not configured", async () => {
+  resetState();
+  ghSha     = "sha-existing";
+  ghRecords = [];
+  // supabaseRecords = null → Supabase not configured
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret:              "test-admin-secret",
+    action:              "record_extension_fee",
+    original_booking_id: "d95643b10c87a02f1a510f7466b2bedf",
+    vehicle_id:          "camry",
+    amount:              181.91,
+    extension_label:     "+3 days",
+    payment_method:      "cash",
+  }), res);
+
+  assert.equal(res._status, 201, "should return 201 Created");
+  assert.ok(res._body.record, "should return the created record");
+  assert.ok(res._body.booking_id.startsWith("ext-d95643b10c87a02f1a510f7466b2bedf-"), "booking_id should use ext- prefix");
+  assert.equal(res._body.record.vehicle_id,     "camry");
+  assert.equal(res._body.record.gross_amount,   181.91);
+  assert.equal(res._body.record.payment_method, "cash");
+  assert.equal(res._body.record.payment_status, "paid");
+  assert.ok(res._body.record.notes.includes("d95643b10c87a02f1a510f7466b2bedf"), "notes should reference original booking");
+  assert.ok(res._body.record.notes.includes("+3 days"), "notes should include extension label");
+  assert.equal(ghRecords.length, 1, "record should be saved to GitHub");
+  assert.ok(ghRecords[0].booking_id.startsWith("ext-"), "GitHub record should use ext- prefix");
+});
+
+test("record_extension_fee: auto-generates notes when not provided", async () => {
+  resetState();
+  ghSha     = "sha-existing";
+  ghRecords = [];
+
+  const res = makeRes();
+  await handler(makeReq({
+    secret:              "test-admin-secret",
+    action:              "record_extension_fee",
+    original_booking_id: "abc123",
+    vehicle_id:          "slingshot",
+    amount:              75,
+  }), res);
+
+  assert.equal(res._status, 201);
+  assert.ok(res._body.record.notes.includes("abc123"), "auto-generated notes should reference original booking");
+  assert.ok(res._body.record.notes.toLowerCase().includes("extension"), "notes should mention extension");
+  assert.equal(res._body.record.payment_method, "external", "default payment_method should be 'external'");
+});
+
 test("auth: rejects wrong secret with 401", async () => {
   resetState();
   const res = makeRes();

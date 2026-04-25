@@ -103,6 +103,21 @@ export const WAITLIST_DECLINED =
 // 3. BOOKING / PAYMENT FLOW
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Sent when a slingshot security deposit is received and rental balance remains. */
+export const SLINGSHOT_DEPOSIT_RECEIVED =
+  "Your {vehicle} is reserved, {customer_name}.\n\n" +
+  "Complete your rental payment here:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/** Sent when an economy reservation deposit is received and rental balance remains. */
+export const RESERVATION_DEPOSIT_CONFIRMED =
+  "Deposit received for your {vehicle}, {customer_name}.\n\n" +
+  "Remaining balance: ${remaining_balance}\n\n" +
+  "Complete payment here:\n" +
+  "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent when the customer pays in full. */
 export const BOOKING_CONFIRMED =
   "Your {vehicle} is confirmed, {customer_name}.\n\n" +
@@ -215,12 +230,47 @@ export const EXTEND_OPTIONS_ECONOMY =
   "7 = +1 week\n\n" +
   "Reply STOP to opt out.";
 
+/**
+ * Sent to economy customers when they type EXTEND.
+ * Replaces the fixed-menu prompt with an open-ended day picker.
+ */
+export const EXTEND_FLEXIBLE_PROMPT =
+  "How many days would you like to extend?\n\n" +
+  "Just reply with a number — for example:\n" +
+  "  3 \u2022 7 \u2022 14 \u2022 30\n" +
+  "Or say: \u201c2 weeks\u201d, \u201cmonth\u201d\n\n" +
+  "Pricing: 1\u20136 days = $55/day \u2022 1 week = $350 \u2022 2 weeks = $650 \u2022 Month = $1,300\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when the customer\u2019s reply cannot be parsed or is invalid.
+ * Variable: {options} — human-readable description of valid inputs.
+ */
+export const EXTEND_INVALID_INPUT =
+  "Sorry, we couldn\u2019t understand your reply.\n\n" +
+  "Please reply with {options}.\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent after the customer selects an extension option (before payment). */
 export const EXTEND_SELECTED =
   "+{extra_time} added to your {vehicle}\n\n" +
   "Total: \${price}\n\n" +
   "Complete here:\n" +
   "{payment_link}\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Like EXTEND_SELECTED but includes a weekly upsell suggestion.
+ * Sent when the customer requests fewer than 7 days.
+ * Variables: extra_time, vehicle, price, payment_link, weekly_price.
+ */
+export const EXTEND_SELECTED_UPSELL =
+  "+{extra_time} added to your {vehicle}\n\n" +
+  "Total: \${price}\n\n" +
+  "Complete here:\n" +
+  "{payment_link}\n\n" +
+  "Tip: A full 7-day extension is only \${weekly_price}.\n" +
+  "Text EXTEND to switch.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent after a Slingshot extension payment succeeds. */
@@ -270,10 +320,65 @@ export const LATE_GRACE_EXPIRED =
 export const LATE_FEE_APPLIED =
   "A late fee has been applied.\n\n" +
   "Amount: \${late_fee}\n\n" +
+  "Questions? Call (213) 916-6606.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when a post-rental charge (damage, lost key, or other fee) is applied.
+ * Variables: charge_label, amount, reason (include trailing newline when set, or empty string)
+ */
+export const POST_RENTAL_CHARGE =
+  "A post-rental charge has been applied to your booking.\n\n" +
+  "Type: {charge_label}\n" +
+  "Amount: \${amount}\n" +
+  "{reason}" +
+  "\nQuestions? Call (213) 916-6606.\n\n" +
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. POST-RENTAL
+// 8. MAINTENANCE (customer-facing only — no technical details, no links)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sent when maintenance is first detected (80% threshold).
+ * Asks for the customer's availability — admin coordinates the appointment.
+ */
+export const MAINTENANCE_AVAILABILITY_REQUEST =
+  "Hey {customer_name}, we need to do a quick routine service on the vehicle. " +
+  "It\u2019s fully covered and only takes a short time. " +
+  "What time works best for you today or tomorrow?\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when maintenance is overdue (100% threshold) and the first message went unanswered.
+ */
+export const MAINTENANCE_AVAILABILITY_FOLLOWUP =
+  "Hey {customer_name}, just following up on the quick service we mentioned. " +
+  "It\u2019s fully covered and won\u2019t take long. " +
+  "What time works best for you today or tomorrow?\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent at the escalation stage — vehicle still in service without scheduling.
+ * Keeps a calm, professional tone. Admin handles all scheduling.
+ */
+export const MAINTENANCE_AVAILABILITY_URGENT =
+  "Hey {customer_name}, we need to schedule a quick service on the vehicle as soon as possible. " +
+  "It\u2019s fully covered. Please let us know your availability right away.\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent as a final follow-up when prior messages went unanswered.
+ * Slightly more pressing but still professional — admin handles all coordination.
+ */
+export const MAINTENANCE_AVAILABILITY_ESCALATION =
+  "Hey {customer_name}, we really need to schedule this quick service on the vehicle. " +
+  "It\u2019s fully covered and won\u2019t take long at all. " +
+  "Please reach out to us right away so we can get this taken care of.\n\n" +
+  "Reply STOP to opt out.";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. POST-RENTAL
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Sent immediately after the vehicle is returned / rental is marked complete. */
@@ -324,6 +429,8 @@ export const TEMPLATES = {
   waitlist_booking_reminder: WAITLIST_BOOKING_REMINDER,
   waitlist_declined:         WAITLIST_DECLINED,
   booking_confirmed:         BOOKING_CONFIRMED,
+  slingshot_deposit_received:   SLINGSHOT_DEPOSIT_RECEIVED,
+  reservation_deposit_confirmed: RESERVATION_DEPOSIT_CONFIRMED,
   unpaid_reminder_24h:       UNPAID_REMINDER_24H,
   unpaid_reminder_2h:        UNPAID_REMINDER_2H,
   unpaid_reminder_final:     UNPAID_REMINDER_FINAL,
@@ -337,7 +444,10 @@ export const TEMPLATES = {
   extend_limited:            EXTEND_LIMITED,
   extend_options_slingshot:  EXTEND_OPTIONS_SLINGSHOT,
   extend_options_economy:    EXTEND_OPTIONS_ECONOMY,
+  extend_flexible_prompt:    EXTEND_FLEXIBLE_PROMPT,
+  extend_invalid_input:      EXTEND_INVALID_INPUT,
   extend_selected:           EXTEND_SELECTED,
+  extend_selected_upsell:    EXTEND_SELECTED_UPSELL,
   extend_confirmed_slingshot: EXTEND_CONFIRMED_SLINGSHOT,
   extend_confirmed_economy:  EXTEND_CONFIRMED_ECONOMY,
   extend_payment_pending:    EXTEND_PAYMENT_PENDING,
@@ -345,6 +455,10 @@ export const TEMPLATES = {
   late_at_return_time:       LATE_AT_RETURN_TIME,
   late_grace_expired:        LATE_GRACE_EXPIRED,
   late_fee_applied:          LATE_FEE_APPLIED,
+  maintenance_availability_request:   MAINTENANCE_AVAILABILITY_REQUEST,
+  maintenance_availability_followup:  MAINTENANCE_AVAILABILITY_FOLLOWUP,
+  maintenance_availability_urgent:    MAINTENANCE_AVAILABILITY_URGENT,
+  maintenance_availability_escalation: MAINTENANCE_AVAILABILITY_ESCALATION,
   post_rental_thank_you:     POST_RENTAL_THANK_YOU,
   retention_day_1:           RETENTION_DAY_1,
   retention_day_3:           RETENTION_DAY_3,

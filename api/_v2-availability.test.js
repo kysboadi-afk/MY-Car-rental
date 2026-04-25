@@ -94,6 +94,7 @@ function makeSupabaseClient({ rows = [], error = null } = {}) {
         in()     { return this; },
         lte()    { return this; },
         gte()    { return this; },
+        limit()  { return this; },
         order()  { return this; },
         then: undefined,
         // Jest/node-test style: awaiting the chain resolves to { data, error }
@@ -202,6 +203,23 @@ test("single vehicle: unavailable when Supabase returns a conflicting booking", 
     assert.equal(res._status, 200);
     assert.equal(res._body.available, false);
     assert.equal(res._body.conflicts.length, 1);
+    assert.equal(res._body.source, "supabase");
+  } finally {
+    supabaseMock.client = null;
+    teardownFetchMock();
+  }
+});
+
+test("single vehicle: reserved status blocks availability", async () => {
+  setupFetchMock();
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ booking_ref: "res123", vehicle_id: "camry", pickup_date: "2026-05-03", return_date: "2026-05-09", status: "reserved" }],
+  });
+  try {
+    const res = makeRes();
+    await handler(makeReq({ query: { vehicleId: "camry", from: "2026-05-01", to: "2026-05-07" } }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.available, false);
     assert.equal(res._body.source, "supabase");
   } finally {
     supabaseMock.client = null;
@@ -329,6 +347,32 @@ test("POST: accepts params from body", async () => {
     assert.equal(res._status, 200);
     assert.equal(res._body.vehicleId, "slingshot");
     assert.equal(res._body.available, true);
+  } finally {
+    supabaseMock.client = null;
+    teardownFetchMock();
+  }
+});
+
+// ─── Active rental override ───────────────────────────────────────────────────
+// When a vehicle has an active_rental booking (even with a past return date),
+// it must be treated as unavailable regardless of the requested date range.
+
+test("active rental override: vehicle with active_rental is unavailable even for future dates", async () => {
+  setupFetchMock();
+  // Simulate an active_rental booking whose return date is in the past.
+  // The mock returns the same rows for all queries, so the active_rental
+  // override query sees this row and blocks the vehicle immediately.
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ booking_ref: "ar-001", return_date: "2026-04-18", return_time: "10:00:00" }],
+  });
+  try {
+    const res = makeRes();
+    // Request dates entirely after the stale return date — without the override
+    // these would appear available.
+    await handler(makeReq({ query: { vehicleId: "camry", from: "2026-04-22", to: "2026-04-25" } }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.available, false, "vehicle must be unavailable when active_rental exists");
+    assert.equal(res._body.source, "supabase");
   } finally {
     supabaseMock.client = null;
     teardownFetchMock();

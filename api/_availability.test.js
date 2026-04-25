@@ -1,9 +1,28 @@
 // Tests for api/_availability.js — parseDateTimeMs and hasDateTimeOverlap
 //
 // Run with: npm test
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { parseDateTimeMs, hasDateTimeOverlap, hasOverlap } from "./_availability.js";
+
+// ─── Supabase mock ────────────────────────────────────────────────────────────
+// Must be registered before _availability.js functions are called so the
+// dynamic import("./_supabase.js") inside isDatesAndTimesAvailable/isDatesAvailable
+// gets the mocked client.
+const supabaseMock = { client: null };
+
+mock.module("./_supabase.js", {
+  namedExports: {
+    getSupabaseAdmin: () => supabaseMock.client,
+  },
+});
+
+import {
+  parseDateTimeMs,
+  hasDateTimeOverlap,
+  hasOverlap,
+  isDatesAndTimesAvailable,
+  isDatesAvailable,
+} from "./_availability.js";
 
 // ─── parseDateTimeMs ─────────────────────────────────────────────────────────
 
@@ -56,10 +75,10 @@ test("parseDateTimeMs: returns NaN for missing date", () => {
 
 // ── Back-to-back bookings (no overlap) ──────────────────────────────────────
 
-test("hasDateTimeOverlap: back-to-back same day — no overlap", () => {
-  // Existing: 9 AM – 5 PM; New: 6 PM – 11 PM
+test("hasDateTimeOverlap: back-to-back same day — 1-hour gap blocked by 2-hour buffer", () => {
+  // Car returns at 5 PM; buffer end = 7 PM. New booking at 6 PM starts before 7 PM → blocked.
   const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "5:00 PM" }];
-  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "6:00 PM", "11:00 PM"), false);
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "6:00 PM", "11:00 PM"), true);
 });
 
 test("hasDateTimeOverlap: new booking ends exactly when existing starts — no overlap", () => {
@@ -67,9 +86,10 @@ test("hasDateTimeOverlap: new booking ends exactly when existing starts — no o
   assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "9:00 AM", "3:00 PM"), false);
 });
 
-test("hasDateTimeOverlap: new booking starts exactly when existing ends — no overlap", () => {
+test("hasDateTimeOverlap: new booking starts exactly when existing ends — blocked by 2-hour buffer", () => {
+  // Car returns at 3 PM; buffer end = 5 PM. New booking at 3 PM starts before 5 PM → blocked.
   const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "3:00 PM" }];
-  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "3:00 PM", "9:00 PM"), false);
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "3:00 PM", "9:00 PM"), true);
 });
 
 // ── Actual overlaps ──────────────────────────────────────────────────────────
@@ -120,6 +140,32 @@ test("hasDateTimeOverlap: multi-day with times — return and pickup overlap —
   assert.equal(hasDateTimeOverlap(ranges, "2026-03-07", "2026-03-14", "10:00 AM", "10:00 AM"), true);
 });
 
+// ── 2-hour buffer behaviour ───────────────────────────────────────────────────
+
+test("hasDateTimeOverlap: new booking starts exactly 2 hours after return — not blocked", () => {
+  // Car returns 3 PM; buffer end = 5 PM. New pickup at 5 PM is allowed.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "3:00 PM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "5:00 PM", "9:00 PM"), false);
+});
+
+test("hasDateTimeOverlap: new booking starts 2+ hours after return (same day) — no overlap", () => {
+  // Car returns 5 PM; buffer end = 7 PM. New pickup at 7 PM is exactly the boundary — allowed.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "9:00 AM", toTime: "5:00 PM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "7:00 PM", "11:00 PM"), false);
+});
+
+test("hasDateTimeOverlap: new booking starts within 2-hour buffer — blocked", () => {
+  // Car returns 10 AM; buffer end = 12 PM. New pickup at 11 AM is within buffer → blocked.
+  const ranges = [{ from: "2026-03-27", to: "2026-03-27", fromTime: "8:00 AM", toTime: "10:00 AM" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-27", "2026-03-27", "11:00 AM", "5:00 PM"), true);
+});
+
+test("hasDateTimeOverlap: buffer does NOT apply to date-only ranges — adjacent days allowed", () => {
+  // Legacy date-only range ends March 7; new starts March 8 → no overlap (no buffer added).
+  const ranges = [{ from: "2026-03-01", to: "2026-03-07" }];
+  assert.equal(hasDateTimeOverlap(ranges, "2026-03-08", "2026-03-14"), false);
+});
+
 // ── Empty / edge cases ────────────────────────────────────────────────────────
 
 test("hasDateTimeOverlap: empty ranges — no overlap", () => {
@@ -136,4 +182,92 @@ test("hasOverlap: completely non-overlapping ranges — false", () => {
 test("hasOverlap: ranges touch at endpoint — overlap", () => {
   const ranges = [{ from: "2026-03-01", to: "2026-03-07" }];
   assert.equal(hasOverlap(ranges, "2026-03-07", "2026-03-14"), true);
+});
+
+
+// ─── isDatesAndTimesAvailable: Supabase-based ────────────────────────────────
+
+// Helper: build a minimal Supabase client stub whose queries resolve to rows.
+// Each call to .then() resolves with the same { data, error } — good enough for
+// the chained builder pattern used in _availability.js.
+function makeSupabaseClient({ rows = [], error = null } = {}) {
+  return {
+    from() {
+      return {
+        select() { return this; },
+        eq()     { return this; },
+        in()     { return this; },
+        lte()    { return this; },
+        gte()    { return this; },
+        limit()  { return this; },
+        async then(resolve) { return resolve({ data: rows, error }); },
+      };
+    },
+  };
+}
+
+test("isDatesAndTimesAvailable: returns true when Supabase not configured (fail open)", async () => {
+  supabaseMock.client = null;
+  const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+  assert.equal(result, true);
+});
+
+test("isDatesAndTimesAvailable: camry available when Supabase returns no conflicts", async () => {
+  supabaseMock.client = makeSupabaseClient({ rows: [] });
+  try {
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAndTimesAvailable: camry blocked when Supabase returns overlapping booking", async () => {
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ pickup_date: "2026-04-20", return_date: "2026-04-25", pickup_time: "09:00:00", return_time: "10:00:00" }],
+  });
+  try {
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, false);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAndTimesAvailable: returns true (fail open) when Supabase query errors", async () => {
+  supabaseMock.client = makeSupabaseClient({ error: { message: "connection timeout" } });
+  try {
+    const result = await isDatesAndTimesAvailable("camry", "2026-04-20", "2026-04-22", "9:00 AM", "9:00 AM");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAvailable: returns true when Supabase not configured (fail open)", async () => {
+  supabaseMock.client = null;
+  const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+  assert.equal(result, true);
+});
+
+test("isDatesAvailable: camry available when Supabase returns no conflicts", async () => {
+  supabaseMock.client = makeSupabaseClient({ rows: [] });
+  try {
+    const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+    assert.equal(result, true);
+  } finally {
+    supabaseMock.client = null;
+  }
+});
+
+test("isDatesAvailable: camry blocked when Supabase returns an overlapping booking", async () => {
+  supabaseMock.client = makeSupabaseClient({
+    rows: [{ booking_ref: "bk-abc" }],
+  });
+  try {
+    const result = await isDatesAvailable("camry", "2026-04-20", "2026-04-22");
+    assert.equal(result, false);
+  } finally {
+    supabaseMock.client = null;
+  }
 });

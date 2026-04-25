@@ -311,7 +311,7 @@ export default async function handler(req, res) {
           await sendSms(normalizedPhone, render(APPLICATION_APPROVED, {
             customer_name: firstName,
             vehicle:       "",
-            waitlist_link: "https://www.slytrans.com/cars",
+            waitlist_link: "https://www.slytrans.com/cars.html",
           }));
         } else if (decision === "declined") {
           await sendSms(normalizedPhone, render(APPLICATION_DENIED, { customer_name: firstName }));

@@ -1,98 +1,65 @@
 {
   "functions": {
-    "api/upload-vehicle-image.js": {
-      "maxDuration": 30
-    },
-    "api/admin-site-settings.js": {
-      "maxDuration": 15
-    },
-    "api/admin-content-blocks.js": {
-      "maxDuration": 15
-    },
-    "api/admin-revisions.js": {
-      "maxDuration": 15
-    },
-    "api/admin-ai-assist.js": {
-      "maxDuration": 30
-    },
-    "api/admin-chat.js": {
-      "maxDuration": 60
-    },
-    "api/site-content.js": {
-      "maxDuration": 15
-    },
-    "api/v2-dashboard.js": {
-      "maxDuration": 15
-    },
-    "api/v2-bookings.js": {
-      "maxDuration": 30
-    },
-    "api/v2-vehicles.js": {
-      "maxDuration": 15
-    },
-    "api/v2-diagnostics.js": {
-      "maxDuration": 15
-    },
-    "api/v2-sms-templates.js": {
-      "maxDuration": 15
-    },
-    "api/send-contact-email.js": {
-      "maxDuration": 15
-    },
-    "api/send-application-email.js": {
-      "maxDuration": 15
-    },
-    "api/pay-balance.js": {
-      "maxDuration": 15
-    },
-    "api/send-reservation-email.js": {
-      "maxDuration": 30
-    },
-    "api/create-payment-intent.js": {
-      "maxDuration": 15
-    },
-    "api/verify-session.js": {
-      "maxDuration": 15
-    },
-    "api/stripe-webhook.js": {
-      "maxDuration": 30
-    },
-    "api/booked-dates.js": {
-      "maxDuration": 15
-    },
-    "api/open-dates.js": {
-      "maxDuration": 15
-    },
-    "api/block-dates.js": {
-      "maxDuration": 15
-    },
-    "api/fleet-status.js": {
-      "maxDuration": 15
-    },
-    "api/update-fleet-status.js": {
-      "maxDuration": 15
-    },
-    "api/add-manual-booking.js": {
-      "maxDuration": 15
-    },
-    "api/save-waitlist-entry.js": {
-      "maxDuration": 30
-    },
-    "api/waitlist-decision.js": {
-      "maxDuration": 30
-    },
-    "api/scheduled-reminders.js": {
-      "maxDuration": 60
-    },
-    "api/receive-textmagic-sms.js": {
-      "maxDuration": 30
-    }
+    "api/admin-chat.js":                    { "maxDuration": 60 },
+    "api/stripe-reconcile.js":              { "maxDuration": 60 },
+    "api/stripe-backfill.js":              { "maxDuration": 60 },
+    "api/stripe-replay.js":               { "maxDuration": 60 },
+    "api/send-reservation-email.js":        { "maxDuration": 60 },
+    "api/stripe-webhook.js":                { "maxDuration": 60 },
+    "api/store-booking-docs.js":            { "maxDuration": 20 },
+    "api/bouncie-sync.js":                  { "maxDuration": 30 },
+    "api/bouncie-webhook.js":               { "maxDuration": 20 },
+    "api/bouncie-location.js":              { "maxDuration": 20 },
+    "api/v2-mileage.js":                    { "maxDuration": 20 },
+    "api/send-extension-confirmation.js":   { "maxDuration": 25 },
+    "api/admin-resend-extension.js":        { "maxDuration": 25 },
+    "api/admin-resend-booking.js":          { "maxDuration": 30 },
+    "api/v2-customers.js":                  { "maxDuration": 25 },
+    "api/revenue-self-heal.js":             { "maxDuration": 60 },
+    "api/v2-system-health.js":              { "maxDuration": 30 }
   },
+  "headers": [
+    {
+      "source": "/api/:path*",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    }
+  ],
   "crons": [
     {
       "path": "/api/scheduled-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin-ai-auto",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/bouncie-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/maintenance-alerts",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/missed-maintenance",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/revenue-self-heal",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cleanup-blocked-dates",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/v2-system-health",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
-

@@ -5,17 +5,80 @@
 // (v2-bookings.js, add-manual-booking.js).
 //
 // All helpers are:
-//   • Non-fatal  — errors are logged but never propagate to the caller.
+//   • Non-fatal by default — errors are logged and do not propagate unless
+//     opts.strict=true is explicitly passed by the caller.
 //   • Idempotent — safe to call multiple times for the same booking.
 //   • Silent     — return immediately when Supabase is not configured.
 //
 // Exported helpers:
 //   autoCreateRevenueRecord  — writes to legacy revenue_records table
-//   autoUpsertCustomer       — upserts customer row (keyed by phone)
+//   autoUpsertCustomer       — upserts customer row (keyed by phone; falls back to email)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
-//   autoCreateBlockedDate    — inserts a blocked_dates row for a booking
+//   autoCreateBlockedDate        — inserts a blocked_dates row for a booking
+//   autoReleaseBlockedDateOnReturn — trims blocked_dates end_date on vehicle return
+//   writeAuditLog                — appends rows to booking_audit_log
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
+import { updateBooking, normalizePhone } from "./_bookings.js";
+import { loadBooleanSetting } from "./_settings.js";
+
+function formatSupabaseError(err) {
+  if (!err) return "Unknown Supabase error";
+  if (typeof err === "string") return err;
+  const parts = [];
+  if (err.message) parts.push(`message=${err.message}`);
+  if (err.code) parts.push(`code=${err.code}`);
+  if (err.details) parts.push(`details=${err.details}`);
+  if (err.hint) parts.push(`hint=${err.hint}`);
+  return parts.length > 0 ? parts.join(" | ") : JSON.stringify(err);
+}
+
+function normalizeEmail(email) {
+  if (typeof email !== "string") return null;
+  const normalized = email.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizeCustomerName(name) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+  return trimmed
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
+/**
+ * Appends one or more rows to the booking_audit_log table.
+ * Non-fatal — errors are logged and never propagate to the caller.
+ *
+ * @param {string} bookingRef  - booking_ref / bookingId
+ * @param {Array<{field:string, oldValue:string|null, newValue:string|null}>} changes
+ * @param {string} [changedBy] - actor label, e.g. "stripe-webhook", "admin"
+ */
+export async function writeAuditLog(bookingRef, changes, changedBy = "system") {
+  if (!bookingRef || !changes || changes.length === 0) return;
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  try {
+    const now = new Date().toISOString();
+    const rows = changes.map(({ field, oldValue, newValue }) => ({
+      booking_ref: bookingRef,
+      changed_by:  changedBy,
+      changed_at:  now,
+      field,
+      old_value:   oldValue != null ? String(oldValue) : null,
+      new_value:   newValue != null ? String(newValue) : null,
+    }));
+    const { error } = await sb.from("booking_audit_log").insert(rows);
+    if (error) {
+      console.error("_booking-automation writeAuditLog error (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.error("_booking-automation writeAuditLog error (non-fatal):", err.message);
+  }
+}
 
 /**
  * Auto-creates a revenue record in Supabase for a booking that is paid.
@@ -23,48 +86,156 @@ import { getSupabaseAdmin } from "./_supabase.js";
  *
  * @param {object} booking - booking record (bookingId, vehicleId, name, phone,
  *                           email, pickupDate, returnDate, amountPaid,
- *                           paymentMethod, notes, status)
+ *                           paymentMethod, notes, status, type, customerId,
+ *                           paymentIntentId)
+ *
+ * For extension records set:
+ *   type             = 'extension'
+ *   bookingId        = original booking_id  (groups all records per rental)
+ *   paymentIntentId  = extension PaymentIntent ID (stored in payment_intent_id)
+ *   customerId       = customers.id (looked up by caller)
  */
-export async function autoCreateRevenueRecord(booking) {
+export async function autoCreateRevenueRecord(booking, opts = {}) {
+  const strict = !!opts.strict;
+  const requireStripeFee = !!opts.requireStripeFee;
   const sb = getSupabaseAdmin();
-  if (!sb) return;
+  if (!sb) {
+    if (strict) throw new Error("Supabase admin client unavailable");
+    return;
+  }
 
   try {
-    // Idempotent: skip if a record already exists for this booking
-    const { data: existing } = await sb
-      .from("revenue_records")
+    const bookingRef = String(booking.bookingId || "").trim();
+    if (!bookingRef) {
+      throw new Error("missing bookingId for revenue record");
+    }
+
+    // Application-level guard: verify the booking row exists before writing revenue.
+    // This complements (rather than duplicates) the DB trigger added in migration 0060:
+    // the JS check runs before the INSERT/UPDATE reaches the DB, providing a cleaner
+    // error message and a traceable log line in the pipeline trace.  The trigger acts
+    // as the hard backstop if this check is ever bypassed (e.g., direct SQL writes).
+    const { data: bookingRow, error: bookingLookupErr } = await sb
+      .from("bookings")
       .select("id")
-      .eq("booking_id", booking.bookingId)
+      .eq("booking_ref", bookingRef)
       .maybeSingle();
-    if (existing) return;
+    if (bookingLookupErr) {
+      throw new Error(`bookings lookup failed: ${formatSupabaseError(bookingLookupErr)}`);
+    }
+    if (!bookingRow?.id) {
+      throw new Error(`missing booking for revenue booking_id=${bookingRef}`);
+    }
+
+    // Resolve the Stripe PaymentIntent ID.
+    // • Rental records:   booking.paymentIntentId or bookingId if it starts with "pi_".
+    // • Extension records: booking.paymentIntentId holds the extension PI;
+    //                      bookingId is the original booking ref (not a PI).
+    const piId = booking.paymentIntentId ||
+      (bookingRef.startsWith("pi_") ? bookingRef : null);
+
+    const recordType = booking.type || "rental";
+
+    // Idempotent:
+    // • Rental records are unique per booking_id (partial unique index).
+    // • All non-rental records (extension, reservation_deposit, rental_balance, etc.)
+    //   may share booking_id, so deduplicate only by payment_intent_id.
+    let existingRecord = null;
+
+    if (recordType === "rental") {
+      const { data: existingByBooking, error: existingByBookingErr } = await sb
+        .from("revenue_records")
+        .select("id, payment_intent_id")
+        .eq("booking_id", bookingRef)
+        .maybeSingle();
+      if (existingByBookingErr) {
+        throw new Error(`revenue_records booking_id lookup failed: ${formatSupabaseError(existingByBookingErr)}`);
+      }
+      existingRecord = existingByBooking || null;
+    }
+
+    if (!existingRecord && piId) {
+      const { data: existingByPI, error: existingByPIErr } = await sb
+        .from("revenue_records")
+        .select("id")
+        .eq("payment_intent_id", piId)
+        .maybeSingle();
+      if (existingByPIErr) {
+        throw new Error(`revenue_records payment_intent_id lookup failed: ${formatSupabaseError(existingByPIErr)}`);
+      }
+      existingRecord = existingByPI || null;
+    }
+
+    // For cash/non-Stripe payments: pre-fill fee=0, net=gross so analytics
+    // are accurate immediately without needing a Stripe reconciliation pass.
+    const isCash = ["cash", "zelle", "venmo", "manual", "external"].includes(booking.paymentMethod);
+    const gross  = Number(booking.amountPaid || 0);
+
+    const stripeFee = isCash ? 0 : (booking.stripeFee != null ? Number(booking.stripeFee) : null);
+    if (!isCash && requireStripeFee && stripeFee == null) {
+      throw new Error(`missing stripeFee for booking ${bookingRef || "<missing>"} paymentIntentId=${piId || "<missing>"}`);
+    }
 
     const record = {
-      booking_id:        booking.bookingId,
-      vehicle_id:        booking.vehicleId,
-      customer_name:     booking.name  || null,
-      customer_phone:    booking.phone || null,
-      customer_email:    booking.email || null,
-      pickup_date:       booking.pickupDate  || null,
-      return_date:       booking.returnDate  || null,
-      gross_amount:      Number(booking.amountPaid || 0),
-      deposit_amount:    0,
-      refund_amount:     0,
-      payment_method:    booking.paymentMethod || "stripe",
-      payment_status:    "paid",
-      notes:             booking.notes || null,
-      is_no_show:        false,
-      is_cancelled:      false,
-      override_by_admin: false,
+      booking_id:          bookingRef,
+      // original_booking_id is only set for manual extensions (v2-revenue.js)
+      // which use a synthetic booking_id (e.g. "ext-…").  Stripe-paid extensions
+      // use the original booking_id directly and leave this field null.
+      original_booking_id: booking.originalBookingId || null,
+      payment_intent_id:   piId || null,
+      vehicle_id:          normalizeVehicleId(booking.vehicleId),
+      customer_id:         booking.customerId        || null,
+      customer_name:       normalizeCustomerName(booking.name) || null,
+      customer_phone:      booking.phone || null,
+      customer_email:      normalizeEmail(booking.email),
+      pickup_date:         booking.pickupDate  || null,
+      return_date:         booking.returnDate  || null,
+      gross_amount:        gross,
+      deposit_amount:      0,
+      refund_amount:       0,
+      payment_method:      booking.paymentMethod || "stripe",
+      payment_status:      "paid",
+      type:                recordType,
+      notes:               booking.notes || null,
+      is_no_show:          false,
+      is_cancelled:        false,
+      override_by_admin:   false,
+      // Stripe fee data: cash bookings have no fee; Stripe bookings use the
+      // caller-provided fee data if available (e.g. a replay that already expanded
+      // balance_transaction and forwarded the values via booking.stripeFee/stripeNet),
+      // otherwise leave null so stripe-reconcile.js can fill them in later.
+      stripe_fee: stripeFee,
+      stripe_net: isCash ? gross : (booking.stripeNet != null ? Number(booking.stripeNet) : null),
     };
 
-    const { error } = await sb.from("revenue_records").insert(record);
-    if (error) {
-      console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", error.message);
+    if (existingRecord?.id) {
+      const updatePayload = {
+        gross_amount:      record.gross_amount,
+        stripe_fee:        record.stripe_fee,
+        stripe_net:        record.stripe_net,
+        payment_intent_id: record.payment_intent_id,
+        customer_id:       record.customer_id,
+        updated_at:        new Date().toISOString(),
+      };
+      const { error } = await sb
+        .from("revenue_records")
+        .update(updatePayload)
+        .eq("id", existingRecord.id);
+      if (error) {
+        throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+      }
+      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${bookingRef}`);
     } else {
-      console.log(`_booking-automation: created revenue record for booking ${booking.bookingId}`);
+      const { error } = await sb.from("revenue_records").insert(record);
+      if (error) {
+        throw new Error(`revenue_records insert failed: ${formatSupabaseError(error)}`);
+      }
+      console.log(`_booking-automation: created ${recordType} revenue record for booking ${bookingRef}`);
     }
   } catch (err) {
-    console.error("_booking-automation autoCreateRevenueRecord error (non-fatal):", err.message);
+    const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;
+    console.error(msg);
+    if (strict) throw new Error(msg);
   }
 }
 
@@ -83,22 +254,44 @@ export async function autoCreateRevenueRecord(booking) {
 export async function autoUpsertCustomer(booking, countStats = false, isNoShow = false) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
-  if (!booking.phone) return;
+
+  const hasPhone = !!booking.phone;
+  const email = normalizeEmail(booking.email);
+  const hasEmail = !!email;
+
+  // Need at least one of phone or email to key the customer record.
+  if (!hasPhone && !hasEmail) return;
 
   try {
-    const phone = String(booking.phone).trim();
+    const phone = hasPhone ? normalizePhone(String(booking.phone).trim()) : null;
+
     const record = {
-      name:       booking.name || "Unknown",
+      name:       normalizeCustomerName(booking.name) || "Unknown",
       phone,
-      email:      booking.email || null,
+      email,
       updated_at: new Date().toISOString(),
     };
 
-    const { data: existing } = await sb
-      .from("customers")
-      .select("total_bookings, total_spent, first_booking_date, no_show_count")
-      .eq("phone", phone)
-      .maybeSingle();
+    // ── Look up existing customer (email first; fall back to phone) ──────────
+    let existing = null;
+
+    if (email) {
+      const { data } = await sb
+        .from("customers")
+        .select("id, total_bookings, total_spent, first_booking_date, no_show_count")
+        .eq("email", email)
+        .maybeSingle();
+      if (data) { existing = data; }
+    }
+
+    if (!existing && phone) {
+      const { data } = await sb
+        .from("customers")
+        .select("id, phone, total_bookings, total_spent, first_booking_date, no_show_count")
+        .eq("phone", phone)
+        .maybeSingle();
+      if (data) { existing = data; }
+    }
 
     /**
      * Fetches revenue-record stats for a phone number.
@@ -121,12 +314,18 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
     }
 
     if (existing) {
-      const updates = { name: record.name, email: record.email, updated_at: record.updated_at };
+      const updates = {
+        name:       record.name,
+        email:      record.email,
+        updated_at: record.updated_at,
+        // If the existing row had no phone but we now have one, fill it in.
+        ...(phone && !existing.phone ? { phone } : {}),
+      };
       if (countStats) {
         // Use SET semantics: recompute totals from revenue_records so this
         // function is idempotent even when called multiple times for the same
         // customer (e.g. repeated scheduler runs or status re-transitions).
-        const stats = await fetchRrStats(phone);
+        const stats = phone ? await fetchRrStats(phone) : null;
         if (stats) {
           updates.total_bookings     = stats.totalBookings;
           updates.total_spent        = stats.totalSpent;
@@ -142,11 +341,11 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
       if (isNoShow) {
         updates.no_show_count = (existing.no_show_count || 0) + 1;
       }
-      await sb.from("customers").update(updates).eq("phone", phone);
+      await sb.from("customers").update(updates).eq("id", existing.id);
     } else {
       let totalBookings = 0, totalSpent = 0, firstDate = booking.pickupDate || null, lastDate = booking.pickupDate || null;
       if (countStats) {
-        const stats = await fetchRrStats(phone);
+        const stats = phone ? await fetchRrStats(phone) : null;
         if (stats) {
           totalBookings = stats.totalBookings;
           totalSpent    = stats.totalSpent;
@@ -166,7 +365,7 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
         last_booking_date:  lastDate,
       });
     }
-    console.log(`_booking-automation: upserted customer ${phone} (${record.name})`);
+    console.log(`_booking-automation: upserted customer ${phone || email} (${record.name})`);
   } catch (err) {
     console.error("_booking-automation autoUpsertCustomer error (non-fatal):", err.message);
   }
@@ -175,17 +374,17 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
 // ── Status mapping: old bookings.json values → new bookings table enum ────────
 const BOOKING_STATUS_MAP = {
   reserved_unpaid:  "pending",
-  booked_paid:      "approved",
+  booked_paid:      "pending",
   active_rental:    "active",
   completed_rental: "completed",
-  cancelled_rental: "cancelled",
+  cancelled_rental: "completed",
 };
 
 /**
  * Converts a pickup/return time string in "H:MM AM/PM" format to "HH:MM:SS"
  * PostgreSQL time format.  Returns null for unparseable input.
  */
-function parseTime12h(timeStr) {
+export function parseTime12h(timeStr) {
   if (!timeStr || typeof timeStr !== "string") return null;
   const m = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
   if (!m) return null;
@@ -216,24 +415,36 @@ function safeIso(value) {
  *
  * @param {object} booking  - booking record from bookings.json / admin forms
  */
-export async function autoUpsertBooking(booking) {
+export async function autoUpsertBooking(booking, opts = {}) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
   if (!booking.bookingId) return;
+  const strict = !!opts.strict;
 
   try {
-    // Resolve customer_id by phone
+    // Resolve customer_id — prefer email lookup; fall back to phone only when
+    // email is missing.
     let customerId = null;
-    if (booking.phone) {
+    const normalizedEmail = normalizeEmail(booking.email);
+    if (normalizedEmail) {
+      const { data: emailMatch, error: custErr } = await sb
+        .from("customers")
+        .select("id")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+      if (custErr) throw new Error(`customer email lookup failed: ${custErr.message}`);
+      customerId = emailMatch?.id ?? null;
+    }
+    if (!customerId && !normalizedEmail && booking.phone) {
       const phone = String(booking.phone).trim();
-      const { data: cust } = await sb
+      const { data: cust, error: custErr } = await sb
         .from("customers")
         .select("id")
         .eq("phone", phone)
         .maybeSingle();
+      if (custErr) throw new Error(`customer phone lookup failed: ${custErr.message}`);
       customerId = cust?.id ?? null;
     }
-
     const status = BOOKING_STATUS_MAP[booking.status] || booking.status || "pending";
     const amountPaid  = Number(booking.amountPaid  || 0);
     // Prefer an explicit totalPrice field if provided; fall back to amountPaid so
@@ -242,48 +453,93 @@ export async function autoUpsertBooking(booking) {
     const totalPrice  = Number(booking.totalPrice  || booking.total_price  || amountPaid);
     const remaining   = Math.max(0, totalPrice - amountPaid);
 
-    let paymentStatus = "unpaid";
-    if (amountPaid > 0) {
-      paymentStatus = remaining > 0 ? "partial" : "paid";
+    // Use the caller's explicit paymentStatus when provided (e.g. "partial" for
+    // reservation_deposit); fall back to deriving it from amounts.  Then enforce
+    // the DB constraint: status='reserved' always requires payment_status='partial'
+    // regardless of arithmetic (guards the edge case where totalPrice equals
+    // amountPaid, making remaining=0 and the derived value wrong).
+    let paymentStatus = booking.paymentStatus ||
+      (amountPaid > 0 ? (remaining > 0 ? "partial" : "paid") : "unpaid");
+    if (status === "reserved" && paymentStatus !== "partial") {
+      paymentStatus = "partial";
     }
 
     const record = {
-      customer_id:       customerId,
-      vehicle_id:        booking.vehicleId   || null,
-      pickup_date:       booking.pickupDate  || null,
-      return_date:       booking.returnDate  || null,
-      pickup_time:       parseTime12h(booking.pickupTime),
-      return_time:       parseTime12h(booking.returnTime),
+      customer_id:               customerId,
+      vehicle_id:                normalizeVehicleId(booking.vehicleId) || null,
+      pickup_date:               booking.pickupDate  || null,
+      return_date:               booking.returnDate  || null,
+      pickup_time:               parseTime12h(booking.pickupTime),
+      return_time:               parseTime12h(booking.returnTime),
       status,
-      total_price:       totalPrice,
-      deposit_paid:      amountPaid,
-      remaining_balance: remaining,
-      payment_status:    paymentStatus,
-      notes:             booking.notes          || null,
-      payment_method:    booking.paymentMethod  || null,
+      total_price:               totalPrice,
+      deposit_paid:              amountPaid,
+      remaining_balance:         remaining,
+      payment_status:            paymentStatus,
+      notes:                     booking.notes             || null,
+      payment_method:            booking.paymentMethod     || null,
+      payment_intent_id:         booking.paymentIntentId   || null,
+      stripe_customer_id:        booking.stripeCustomerId       || null,
+      stripe_payment_method_id:  booking.stripePaymentMethodId  || null,
+      customer_name:             normalizeCustomerName(booking.name) || null,
+      customer_email:            normalizedEmail                || null,
+      customer_phone:            booking.phone                  || null,
       // Mirror the JS-side auto-stamps so the Supabase row is consistent with
       // the bookings.json record.  The DB trigger on_booking_status_timestamps
       // will also stamp these automatically, but passing the JS value ensures
       // idempotent re-syncs preserve the original timestamp.
-      activated_at:      safeIso(booking.activatedAt),
-      completed_at:      safeIso(booking.completedAt),
+      activated_at:              safeIso(booking.activatedAt),
+      completed_at:              safeIso(booking.completedAt),
     };
 
-    // Check whether the booking already exists in Supabase
-    const { data: existing } = await sb
+    // Check whether the booking already exists in Supabase (primary: booking_ref)
+    const { data: byRef, error: byRefErr } = await sb
       .from("bookings")
-      .select("id")
+      .select("id, status, return_date, total_price")
       .eq("booking_ref", booking.bookingId)
       .maybeSingle();
+    if (byRefErr) throw new Error(`booking_ref lookup failed: ${byRefErr.message}`);
+    let existing = byRef;
+    let fixBookingRef = false;
+
+    // Fallback: look up by payment_intent_id when booking_ref didn't match.
+    // This handles Supabase rows that lack a booking_ref (e.g. created before
+    // the column was populated, or where the initial autoUpsertBooking failed).
+    // Using UPDATE instead of INSERT avoids the date-conflict check trigger.
+    if (!existing && booking.paymentIntentId) {
+      const { data: byPi, error: byPiErr } = await sb
+        .from("bookings")
+        .select("id, status, return_date, total_price, booking_ref")
+        .eq("payment_intent_id", booking.paymentIntentId)
+        .maybeSingle();
+      if (byPiErr) throw new Error(`payment_intent lookup failed: ${byPiErr.message}`);
+      if (byPi) {
+        existing = byPi;
+        fixBookingRef = !byPi.booking_ref; // repair null booking_ref in the update
+      }
+    }
 
     if (existing) {
       // UPDATE — no conflict-check trigger fires on plain UPDATE
+      const patchRecord = { ...record, updated_at: new Date().toISOString() };
+      if (fixBookingRef) patchRecord.booking_ref = booking.bookingId;
       const { error } = await sb
         .from("bookings")
-        .update({ ...record, updated_at: new Date().toISOString() })
+        .update(patchRecord)
         .eq("id", existing.id);
       if (error) {
-        console.error("_booking-automation autoUpsertBooking update error (non-fatal):", error.message);
+        const msg = `_booking-automation autoUpsertBooking update error${strict ? "" : " (non-fatal)"}: ${error.message}`;
+        console.error(msg);
+        if (strict) throw new Error(msg);
+      } else {
+        // Audit log: record fields that actually changed
+        const auditChanges = [];
+        if (record.status     !== existing.status)      auditChanges.push({ field: "status",      oldValue: existing.status,      newValue: record.status });
+        if (record.return_date !== existing.return_date) auditChanges.push({ field: "return_date", oldValue: existing.return_date,  newValue: record.return_date });
+        if (String(record.total_price) !== String(existing.total_price)) auditChanges.push({ field: "total_price", oldValue: existing.total_price, newValue: record.total_price });
+        if (auditChanges.length > 0) {
+          await writeAuditLog(booking.bookingId, auditChanges, booking._changedBy || "system");
+        }
       }
     } else {
       // INSERT — conflict-check trigger fires; will reject overlapping dates
@@ -291,13 +547,19 @@ export async function autoUpsertBooking(booking) {
         .from("bookings")
         .insert({ ...record, booking_ref: booking.bookingId });
       if (error) {
-        console.error("_booking-automation autoUpsertBooking insert error (non-fatal):", error.message);
+        const msg = `_booking-automation autoUpsertBooking insert error${strict ? "" : " (non-fatal)"}: ${error.message}`;
+        console.error(msg);
+        if (strict) throw new Error(msg);
       } else {
         console.log(`_booking-automation: synced booking ${booking.bookingId} → Supabase bookings table`);
+        // Audit log: initial insert
+        await writeAuditLog(booking.bookingId, [{ field: "status", oldValue: null, newValue: record.status }], booking._changedBy || "system");
       }
     }
   } catch (err) {
-    console.error("_booking-automation autoUpsertBooking error (non-fatal):", err.message);
+    const msg = `_booking-automation autoUpsertBooking error${strict ? "" : " (non-fatal)"}: ${err.message}`;
+    console.error(msg);
+    if (strict) throw new Error(msg);
   }
 }
 
@@ -305,27 +567,250 @@ export async function autoUpsertBooking(booking) {
  * Inserts a blocked_dates row for a booking period.
  * Skipped silently when Supabase is not configured.
  *
- * @param {string} vehicleId  - vehicle_id text key
- * @param {string} startDate  - YYYY-MM-DD
- * @param {string} endDate    - YYYY-MM-DD
- * @param {string} reason     - 'booking' | 'maintenance' | 'manual'
+ * @param {string} vehicleId   - vehicle_id text key
+ * @param {string} startDate   - YYYY-MM-DD
+ * @param {string} endDate     - YYYY-MM-DD
+ * @param {string} reason      - 'booking' | 'maintenance' | 'manual'
+ * @param {string} [bookingRef] - optional booking_ref foreign key (for 'booking' reason)
  */
-export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking") {
+export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking", bookingRef = null) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !startDate || !endDate) {
+    throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
+  }
+  if (new Date(startDate) > new Date(endDate)) {
+    throw new Error("Invalid date range: startDate must be on or before endDate");
+  }
   const sb = getSupabaseAdmin();
   if (!sb) return;
-  if (!vehicleId || !startDate || !endDate) return;
+
+  const row = { vehicle_id: normalizedVehicleId, start_date: startDate, end_date: endDate, reason };
+  if (bookingRef) row.booking_ref = bookingRef;
 
   try {
     const { error } = await sb
       .from("blocked_dates")
       .upsert(
-        { vehicle_id: vehicleId, start_date: startDate, end_date: endDate, reason },
+        row,
         { onConflict: "vehicle_id,start_date,end_date,reason", ignoreDuplicates: true }
       );
     if (error) {
       console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", error.message);
+    } else {
+      console.log("[BLOCKED_DATE_CREATED]", {
+        vehicle_id: normalizedVehicleId,
+        start: startDate,
+        end: endDate,
+        booking_ref: bookingRef || null,
+      });
     }
   } catch (err) {
     console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Trims or closes out a booking's blocked_dates entry when the vehicle is returned.
+ *
+ * If the vehicle is returned before the original end_date (early return), the
+ * blocked range is shortened to end on today so that subsequent date merges
+ * in /api/booked-dates reflect the actual occupancy period rather than the
+ * originally scheduled one.  When the return is on-time or late the row is
+ * left unchanged (it is already in the past or today).
+ *
+ * Logs [BLOCKED_DATE_UPDATED_AFTER_RETURN] in all cases.
+ * Non-fatal — errors are logged and never propagate to the caller.
+ *
+ * @param {string} vehicleId  - vehicle_id text key
+ * @param {string} bookingRef - booking_ref that owns the blocked_dates row
+ */
+export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !bookingRef) {
+    console.warn("_booking-automation autoReleaseBlockedDateOnReturn: missing vehicleId or bookingRef — skipped");
+    return;
+  }
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const { data: rows, error: findErr } = await sb
+      .from("blocked_dates")
+      .select("id, start_date, end_date")
+      .eq("vehicle_id", normalizedVehicleId)
+      .eq("booking_ref", bookingRef);
+
+    if (findErr) {
+      console.error("_booking-automation autoReleaseBlockedDateOnReturn find error (non-fatal):", findErr.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+        vehicle_id:  normalizedVehicleId,
+        booking_ref: bookingRef,
+        action:      "no_row_found",
+      });
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const todayDate = new Date(today);
+
+    for (const row of rows) {
+      if (todayDate < new Date(row.end_date)) {
+        // Early return: shrink the blocked range to end today.
+        const { error: updateErr } = await sb
+          .from("blocked_dates")
+          .update({ end_date: today })
+          .eq("id", row.id);
+
+        if (updateErr) {
+          console.error("_booking-automation autoReleaseBlockedDateOnReturn update error (non-fatal):", updateErr.message);
+        } else {
+          console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+            vehicle_id:   normalizedVehicleId,
+            booking_ref:  bookingRef,
+            original_end: row.end_date,
+            updated_end:  today,
+            action:       "trimmed_early_return",
+          });
+        }
+      } else {
+        // On-time or late return — existing end_date is correct, nothing to update.
+        console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
+          vehicle_id:   normalizedVehicleId,
+          booking_ref:  bookingRef,
+          original_end: row.end_date,
+          actual_return: today,
+          action:        "on_time_or_late_no_change",
+        });
+      }
+    }
+  } catch (err) {
+    console.error("_booking-automation autoReleaseBlockedDateOnReturn error (non-fatal):", err.message);
+  }
+}
+
+// ─── Pickup date/time parser (mirrors parseBookingDateTime in scheduled-reminders.js) ───
+
+/**
+ * Parses a booking pickup date + optional 12-h or 24-h time string into a Date.
+ * Falls back to midnight on the pickup date when the time cannot be parsed.
+ *
+ * @param {string} date  - YYYY-MM-DD
+ * @param {string} [time] - "3:00 PM" | "15:00"
+ * @returns {Date}
+ */
+function parsePickupDateTime(date, time) {
+  if (!date) return new Date(NaN);
+  const base = new Date(date + "T00:00:00"); // midnight local
+  if (time) {
+    const t = time.trim();
+    // Validate 12-hour format: hours 1–12, minutes 00–59
+    const ampmMatch = t.match(/^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM)$/i);
+    if (ampmMatch) {
+      let hours = parseInt(ampmMatch[1], 10);
+      const mins = parseInt(ampmMatch[2], 10);
+      const period = ampmMatch[3].toUpperCase();
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+      base.setHours(hours, mins, 0, 0);
+      return base;
+    }
+    // Validate 24-hour format: hours 0–23, minutes 00–59
+    const h24Match = t.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (h24Match) {
+      base.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
+      return base;
+    }
+  }
+  return base; // midnight if time can't be parsed
+}
+
+/**
+ * Auto-activates a booking if its pickup date/time has already arrived.
+ * Designed to be called immediately after a payment is confirmed, so that
+ * same-day pickups do not have to wait for the next 15-minute cron cycle.
+ *
+ * Behaviour:
+ *   • Skipped silently when the `auto_activate_on_pickup` system setting is false.
+ *   • Skipped when the booking status is not "booked_paid".
+ *   • Skipped when pickup date/time is in the future.
+ *   • Non-fatal — errors are logged but never propagate to the caller.
+ *   • Idempotent — safe to call multiple times; the underlying updateBooking
+ *     helper only writes when the record exists.
+ *
+ * @param {object} booking - booking record (bookingId/paymentIntentId, vehicleId,
+ *                           pickupDate, pickupTime, status are used)
+ * @returns {Promise<boolean>} true when the booking was transitioned to active_rental
+ */
+export async function autoActivateIfPickupArrived(booking) {
+  if (!booking || booking.status !== "booked_paid") return false;
+
+  const vehicleId = booking.vehicleId;
+  const id        = booking.bookingId || booking.paymentIntentId;
+  if (!vehicleId || !id) return false;
+
+  // Respect the admin toggle — default true when the setting cannot be read.
+  try {
+    const enabled = await loadBooleanSetting("auto_activate_on_pickup", true);
+    if (!enabled) {
+      console.log(
+        `_booking-automation: auto_activate_on_pickup is disabled — ` +
+        `skipping activation for ${vehicleId}/${id}`
+      );
+      return false;
+    }
+  } catch (err) {
+    console.warn(
+      "_booking-automation: failed to read auto_activate_on_pickup setting " +
+      `(defaulting to enabled): ${err.message}`
+    );
+  }
+
+  const now      = new Date();
+  const pickupDt = parsePickupDateTime(booking.pickupDate, booking.pickupTime);
+  if (isNaN(pickupDt.getTime())) {
+    console.warn(
+      `_booking-automation: autoActivateIfPickupArrived — invalid pickupDate ` +
+      `"${booking.pickupDate}" for ${vehicleId}/${id} — skipping activation`
+    );
+    return false;
+  }
+  if (now < pickupDt) return false;
+
+  const activatedAt = now.toISOString();
+
+  console.log(
+    `_booking-automation: auto-activating ${vehicleId}/${id} → active_rental ` +
+    `(pickup ${booking.pickupDate} ${booking.pickupTime || ""}, trigger: payment_confirmed)`
+  );
+
+  try {
+    await updateBooking(vehicleId, id, {
+      status:      "active_rental",
+      activatedAt,
+      updatedAt:   activatedAt,
+    });
+
+    const activatedBooking = {
+      ...booking,
+      status:      "active_rental",
+      activatedAt,
+      updatedAt:   activatedAt,
+    };
+    await autoUpsertBooking(activatedBooking);
+
+    console.log(
+      `_booking-automation: ${vehicleId}/${id} successfully transitioned to active_rental`
+    );
+    return true;
+  } catch (err) {
+    console.error(
+      `_booking-automation: auto-activation failed for ${vehicleId}/${id} (non-fatal):`,
+      err.message
+    );
+    return false;
   }
 }

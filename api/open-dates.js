@@ -14,14 +14,16 @@
 //     "to":        "YYYY-MM-DD"
 //   }
 //
-// The endpoint removes every stored range whose [from, to] exactly matches the
-// requested range.  It does NOT perform partial overlap removal.
+// The endpoint removes every stored range whose [from, to] overlaps the
+// requested range.
 
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 export default async function handler(req, res) {
@@ -76,7 +78,7 @@ export default async function handler(req, res) {
   };
 
   async function loadBookedDates() {
-    const resp = await fetch(apiUrl, { headers: ghHeaders });
+    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
     if (!resp.ok) {
       if (resp.status === 404) return { data: {}, sha: null };
       const text = await resp.text().catch(() => "");
@@ -93,7 +95,7 @@ export default async function handler(req, res) {
 
   async function saveBookedDates(data, sha, message) {
     const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content };
+    const body = { message, content, branch: GITHUB_DATA_BRANCH };
     if (sha) body.sha = sha;
     const resp = await fetch(apiUrl, {
       method: "PUT",
@@ -110,11 +112,11 @@ export default async function handler(req, res) {
     let removed = 0;
     await updateJsonFileWithRetry({
       load:    loadBookedDates,
-      // apply is idempotent: filter removes exact matches; if already gone, it's a no-op
+      // apply is idempotent: filter removes overlaps; if already gone, it's a no-op
       apply:   (data) => {
         const before = (data[vehicleId] || []).length;
         data[vehicleId] = (data[vehicleId] || []).filter(
-          (r) => !(r.from === from && r.to === to)
+          (r) => !(r.from <= to && r.to >= from)
         );
         removed = before - data[vehicleId].length;
       },
@@ -122,7 +124,40 @@ export default async function handler(req, res) {
       message: `Open dates for ${vehicleId}: ${from} to ${to}`,
     });
 
-    return res.status(200).json({ success: true, removed });
+    // Also remove from Supabase blocked_dates so both stores stay consistent.
+    // Booking-generated ranges are protected from manual unblocks.
+    // Non-fatal — a Supabase failure must not block the GitHub remove from succeeding.
+    let locked = 0;
+    if (removed > 0) {
+      try {
+        const sb = getSupabaseAdmin();
+        if (sb) {
+          const { count: lockedCount, error: countErr } = await sb
+            .from("blocked_dates")
+            .select("id", { head: true, count: "exact" })
+            .eq("vehicle_id", vehicleId)
+            .lte("start_date", to)
+            .gte("end_date", from)
+            .eq("reason", "booking");
+          if (!countErr) locked = Number(lockedCount || 0);
+
+          const { error: sbErr } = await sb
+            .from("blocked_dates")
+            .delete()
+            .eq("vehicle_id", vehicleId)
+            .lte("start_date", to)
+            .gte("end_date", from)
+            .or("reason.is.null,reason.neq.booking");
+          if (sbErr) {
+            console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
+          }
+        }
+      } catch (sbErr) {
+        console.warn("open-dates: Supabase sync failed (non-fatal):", sbErr.message);
+      }
+    }
+
+    return res.status(200).json({ success: true, removed, locked });
   } catch (err) {
     console.error("open-dates endpoint error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

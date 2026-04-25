@@ -2,72 +2,80 @@
 // Vercel cron serverless function — scans bookings.json and sends automated
 // SMS reminders based on booking status and timing.
 //
-// This endpoint is called by Vercel Cron on a frequent schedule (every 15 min).
+// This endpoint is called by Vercel Cron on a frequent schedule (every 5 min).
 // It is also callable manually from an admin panel via POST with an
 // Authorization: Bearer <CRON_SECRET> header.
 //
 // Reminder types fired per booking status:
 //
-//  reserved_unpaid  → UNPAID_REMINDER_24H, UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
-//  booked_paid      → PICKUP_REMINDER_24H, PICKUP_REMINDER_2H, PICKUP_REMINDER_30MIN
+//  reserved_unpaid  → UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
+//  booked_paid      → PICKUP_REMINDER_24H
 //                     + auto-activated → active_rental once pickup time arrives
-//  active_rental    → ACTIVE_RENTAL_MID, ACTIVE_RENTAL_1H_BEFORE_END,
-//                     ACTIVE_RENTAL_15MIN_BEFORE_END, LATE_WARNING_30MIN,
+//  active_rental    → LATE_WARNING_30MIN (30 min before return),
 //                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
 //                     + auto-completed → completed_rental after AUTO_COMPLETE_HOURS
-//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_1/3/7/14/30
+//  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_7
+//
+// Extension awareness:
+//   Return-time-based SMS (late_warning_30min, late_at_return, late_grace_expired,
+//   late_fee_pending) are deduplicated via the Supabase sms_logs table keyed on
+//   (booking_id, template_key, return_date_at_send).  When a rental is extended
+//   the booking's return_date changes, so the old sms_logs rows no longer match
+//   and the messages fire correctly for the new return date.
 //
 // Required environment variables:
 //   TEXTMAGIC_USERNAME, TEXTMAGIC_API_KEY
 //   GITHUB_TOKEN, GITHUB_REPO
 //   CRON_SECRET  — shared secret to authenticate manual trigger calls
 //   STRIPE_SECRET_KEY  — for auto-charging late fees
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  — for sms_logs deduplication
 //
 // Vercel cron configuration is in vercel.json.
 
-import Stripe from "stripe";
+import nodemailer from "nodemailer";
 import { sendSms } from "./_textmagic.js";
 import {
   render,
   DEFAULT_LOCATION,
-  UNPAID_REMINDER_24H,
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
-  PICKUP_REMINDER_2H,
-  PICKUP_REMINDER_30MIN,
-  ACTIVE_RENTAL_MID,
-  ACTIVE_RENTAL_1H_BEFORE_END,
-  ACTIVE_RENTAL_15MIN_BEFORE_END,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
   LATE_FEE_APPLIED,
   POST_RENTAL_THANK_YOU,
-  RETENTION_DAY_1,
-  RETENTION_DAY_3,
   RETENTION_DAY_7,
-  RETENTION_DAY_14,
-  RETENTION_DAY_30,
 } from "./_sms-templates.js";
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
 import { CARS } from "./_pricing.js";
 import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { buildLateFeeUrls } from "./_late-fee-token.js";
+import { loadBooleanSetting } from "./_settings.js";
+import { formatTime12h } from "./_time.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import Stripe from "stripe";
+import {
+  saveWebhookBookingRecord,
+  blockBookedDates,
+  markVehicleUnavailable,
+  sendWebhookNotificationEmails,
+  mapVehicleId,
+} from "./stripe-webhook.js";
 
-// ─── Grace periods (in minutes) per vehicle type ──────────────────────────────
-const GRACE_PERIODS = {
-  slingshot:  30,   // 30-minute grace, then $100/hour late fee
-  camry:      60,
-  camry2013:  60,
-};
-
-// ─── Late fee amounts ($) per vehicle type ────────────────────────────────────
+// ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
+// Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
+// return datetime vs. expected return datetime (HH:MM 24-hour).
+// The grace period gates when the fee is *assessed*, but the hourly count
+// starts from the scheduled return time (not from grace expiry).  The minimum
+// charge is always 1 hour, so a renter who is 1–59 minutes late is charged
+// the same as one who is exactly 1 hour late.
 const LATE_FEE_AMOUNTS = {
-  slingshot:  100,  // $100/hour after 30-min grace
-  camry:      50,   // $50 flat after 2h; full day after 4–6h (simplified to $50 here)
-  camry2013:  50,
+  slingshot:  100,  // $100/hour (rounded up, min 1 h)
+  camry:       50,  // $50/hour  (rounded up, min 1 h)
+  camry2013:   50,  // $50/hour  (rounded up, min 1 h)
 };
 
 // ─── Auto-completion threshold ────────────────────────────────────────────────
@@ -76,9 +84,102 @@ const LATE_FEE_AMOUNTS = {
 // the vehicle for new bookings without requiring manual admin intervention.
 const AUTO_COMPLETE_HOURS = 4;
 
-const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const BOOKED_DATES_PATH = "booked-dates.json";
-const FLEET_STATUS_PATH = "fleet-status.json";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+
+const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
+const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
+const BOOKED_DATES_PATH  = "booked-dates.json";
+const FLEET_STATUS_PATH  = "fleet-status.json";
+const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
+const GRACE_OFFSET_MS    = 60 * 60 * 1000;
+const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
+
+// Boundaries (in minutes) for the end-of-rental warning SMS window.
+// Cron runs every 5 min so a 15-min window ensures the message fires exactly once.
+// Window is (WARNING_BEFORE_END_LOWER_MIN, WARNING_BEFORE_END_UPPER_MIN]:
+//   minutesUntilReturn > 15 && minutesUntilReturn <= 30  →  fires once per return event
+const WARNING_BEFORE_END_UPPER_MIN = 30; // inclusive upper bound: fires when ≤ 30 min remain
+const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire when ≤ 15 min remain
+
+// Sentinel date used in sms_logs for SMS that are not tied to a specific
+// return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
+// non-null value lets the UNIQUE constraint (booking_id, template_key,
+// return_date_at_send) work correctly for those messages too.
+const SMS_LOGS_SENTINEL_DATE = "1970-01-01";
+
+// ─── Supabase sms_logs helpers ────────────────────────────────────────────────
+// These helpers provide extension-aware SMS deduplication.  Every return-time
+// SMS is recorded with the booking's current return_date so that if the booking
+// is extended the old log rows no longer match the new return_date, allowing the
+// correct messages to fire for the new schedule.
+//
+// Both functions are non-fatal: if Supabase is unavailable the caller falls
+// back to the bookings.json smsSentAt flags.
+
+/**
+ * Returns true when an SMS with this key has already been sent for the given
+ * return_date (or for any date when returnDateStr is falsy/sentinel).
+ * @param {string} bookingId      - booking_ref (bk-...)
+ * @param {string} templateKey    - e.g. 'late_at_return'
+ * @param {string} [returnDateStr] - YYYY-MM-DD return_date; omit for non-return-time messages
+ * @returns {Promise<boolean>}
+ */
+async function isSmsLogged(bookingId, templateKey, returnDateStr) {
+  const sb = getSupabaseAdmin();
+  if (!sb || !bookingId) return false;
+  try {
+    const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
+    const { data, error } = await sb
+      .from("sms_logs")
+      .select("id")
+      .eq("booking_id", bookingId)
+      .eq("template_key", templateKey)
+      .eq("return_date_at_send", date)
+      .maybeSingle();
+    if (error) {
+      console.warn("scheduled-reminders: sms_logs read error (non-fatal):", error.message);
+      return false;
+    }
+    return !!data;
+  } catch (err) {
+    console.warn("scheduled-reminders: sms_logs check failed (non-fatal):", err.message);
+    return false;
+  }
+}
+
+/**
+ * Persist a sent-SMS record to the sms_logs table.
+ * Uses upsert so duplicate calls are idempotent.
+ * @param {string} bookingId
+ * @param {string} templateKey
+ * @param {string} [returnDateStr] - YYYY-MM-DD; omit for non-return-time messages
+ * @param {object} [metadata]      - optional JSON payload (e.g. link validation result)
+ */
+async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata) {
+  const sb = getSupabaseAdmin();
+  if (!sb || !bookingId) return;
+  try {
+    const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
+    const row = {
+      booking_id:          bookingId,
+      template_key:        templateKey,
+      return_date_at_send: date,
+    };
+    if (metadata && typeof metadata === "object") row.metadata = metadata;
+    const { error } = await sb
+      .from("sms_logs")
+      .upsert(
+        row,
+        { onConflict: "booking_id,template_key,return_date_at_send" }
+      );
+    if (error) {
+      console.warn("scheduled-reminders: sms_logs write error (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.warn("scheduled-reminders: sms_logs write failed (non-fatal):", err.message);
+  }
+}
 
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
@@ -92,7 +193,7 @@ function ghHeaders() {
 
 async function loadBookedDates() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  const getResp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
   if (!getResp.ok) {
     if (getResp.status === 404) return { data: {}, sha: null };
     return { data: {}, sha: null };
@@ -109,7 +210,7 @@ async function loadBookedDates() {
 async function saveBookedDates(data, sha, message) {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
   const resp = await fetch(apiUrl, {
     method:  "PUT",
@@ -147,7 +248,7 @@ async function removeFromBookedDates(vehicleId, from, to) {
 
 async function loadFleetStatus() {
   const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const getResp = await fetch(apiUrl, { headers: ghHeaders() });
+  const getResp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders() });
   if (!getResp.ok) {
     if (getResp.status === 404) return { data: {}, sha: null };
     return { data: {}, sha: null };
@@ -164,7 +265,7 @@ async function loadFleetStatus() {
 async function saveFleetStatus(data, sha, message) {
   const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
   const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
+  const body = { message, content, branch: GITHUB_DATA_BRANCH };
   if (sha) body.sha = sha;
   const resp = await fetch(apiUrl, {
     method:  "PUT",
@@ -178,55 +279,112 @@ async function saveFleetStatus(data, sha, message) {
 }
 
 /**
- * Mark a vehicle as available in fleet-status.json (non-fatal).
- * Called after a booking is auto-completed and no other active_rental bookings
- * remain for this vehicle, so the website immediately shows it as bookable again.
+ * Previously wrote `available: true` to fleet-status.json on GitHub.
+ * Availability is now derived automatically from the Supabase bookings table
+ * by fleet-status.js — when a booking's status changes to `completed_rental`
+ * it leaves the ACTIVE_BOOKING_STATUSES set, and the vehicle is automatically
+ * shown as available again.  No manual flag write is needed.
  * @param {string} vehicleId
  */
 async function markVehicleAvailable(vehicleId) {
-  if (!process.env.GITHUB_TOKEN || !vehicleId) return;
-  try {
-    await updateJsonFileWithRetry({
-      load:    loadFleetStatus,
-      apply:   (data) => {
-        if (!data[vehicleId]) data[vehicleId] = {};
-        data[vehicleId].available = true;
-      },
-      save:    saveFleetStatus,
-      message: `Auto-complete: mark ${vehicleId} available`,
-    });
-  } catch (err) {
-    console.error("scheduled-reminders: markVehicleAvailable failed (non-fatal):", err.message);
+  // No-op: availability is derived from bookings, not a manual flag.
+  if (vehicleId) {
+    console.log(`scheduled-reminders: markVehicleAvailable(${vehicleId}) — skipped, availability is now bookings-driven`);
   }
+}
+
+const BUSINESS_TZ = "America/Los_Angeles";
+
+function normalizeTimeForLAIso(time) {
+  if (!time) return "00:00:00";
+  const t = String(time).trim();
+  const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const mins = parseInt(ampmMatch[2], 10);
+    const secs = parseInt(ampmMatch[3] || "0", 10);
+    const period = ampmMatch[4].toUpperCase();
+    if (period === "PM" && hours !== 12) hours += 12;
+    if (period === "AM" && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
+  const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (h24Match) {
+    return `${String(parseInt(h24Match[1], 10)).padStart(2, "0")}:${String(parseInt(h24Match[2], 10)).padStart(2, "0")}:${String(parseInt(h24Match[3] || "0", 10)).padStart(2, "0")}`;
+  }
+  return "00:00:00";
+}
+
+/**
+ * Centralized LA datetime builder for booking date+time fields.
+ * Returns an absolute Date for the provided Los Angeles wall-clock datetime.
+ * @param {string} date - YYYY-MM-DD
+ * @param {string} time - booking time (12h/24h)
+ * @returns {Date}
+ */
+function buildDateTimeLA(date, time) {
+  if (!date) return new Date(NaN);
+  const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
+  const timePart = normalizeTimeForLAIso(time);
+  const approxUtc = new Date(`${datePart}T${timePart}Z`);
+  let tzOffset = "-08:00"; // PST fallback when Intl offset extraction is unavailable
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(approxUtc).find((p) => p.type === "timeZoneName")?.value || "";
+    const match = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (match) tzOffset = match[1];
+  } catch {
+    // Keep fallback offset.
+  }
+  return new Date(`${datePart}T${timePart}${tzOffset}`);
+}
+
+function parseBookingDateTimeLA(date, time) {
+  return buildDateTimeLA(date, time);
 }
 
 /**
  * Parse a booking's pickup/return into a JS Date.
  * Date: YYYY-MM-DD  |  Time: "3:00 PM" or "15:00"
+ *
+ * NOTE: This function interprets times as server-local (UTC on Vercel).
+ * Use parseBookingDateTimeLA for SMS trigger comparisons where LA wall-clock
+ * time is required.
+ *
  * @param {string} date  - YYYY-MM-DD
  * @param {string} [time] - optional time string
  * @returns {Date}
  */
 function parseBookingDateTime(date, time) {
   if (!date) return new Date(NaN);
-  const base = new Date(date + "T00:00:00"); // midnight local
+  const normalizedDate = date instanceof Date ? date.toISOString() : String(date).trim();
+  const datePart = normalizedDate.split("T")[0];
+  const base = new Date(datePart + "T00:00:00"); // midnight local
   if (time) {
     const t = time.trim();
-    // "3:00 PM" or "3:00PM" format
-    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    // "3:00 PM", "3:00:00 PM", or "3:00PM" format
+    const ampmMatch = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
     if (ampmMatch) {
       let hours = parseInt(ampmMatch[1], 10);
       const mins = parseInt(ampmMatch[2], 10);
-      const period = ampmMatch[3].toUpperCase();
+      const secs = parseInt(ampmMatch[3] || "0", 10);
+      const period = ampmMatch[4].toUpperCase();
       if (period === "PM" && hours !== 12) hours += 12;
       if (period === "AM" && hours === 12) hours = 0;
-      base.setHours(hours, mins, 0, 0);
+      base.setHours(hours, mins, secs, 0);
       return base;
     }
-    // "15:00" format
-    const h24Match = t.match(/^(\d{1,2}):(\d{2})$/);
+    // "15:00" or "15:00:00" format
+    const h24Match = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (h24Match) {
-      base.setHours(parseInt(h24Match[1], 10), parseInt(h24Match[2], 10), 0, 0);
+      base.setHours(
+        parseInt(h24Match[1], 10),
+        parseInt(h24Match[2], 10),
+        parseInt(h24Match[3] || "0", 10),
+        0
+      );
       return base;
     }
   }
@@ -277,6 +435,10 @@ function alreadySent(booking, key) {
   return !!(booking.smsSentAt && booking.smsSentAt[key]);
 }
 
+function alreadySentAny(booking, keys) {
+  return keys.some((key) => alreadySent(booking, key));
+}
+
 /**
  * Build template variables for a booking.
  */
@@ -287,8 +449,8 @@ function vars(booking) {
     customer_name: booking.name || "Customer",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
-    pickup_time:   booking.pickupTime || "",
-    return_time:   booking.returnTime || "",
+    pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
+    return_time:   booking.returnTime ? (formatTime(returnDt) || formatTime12h(booking.returnTime)) : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
     payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",
@@ -296,43 +458,104 @@ function vars(booking) {
 }
 
 /**
- * Auto-charge a late fee via Stripe.
+ * Request admin approval before charging a late fee.
+ *
+ * Sends the owner:
+ *   1. An email with Approve / Decline buttons (HTML links).
+ *   2. An SMS with a short Approve link (if TEXTMAGIC is configured).
+ *
+ * The customer is notified that a late fee has been assessed (same
+ * LATE_FEE_APPLIED SMS that was sent before) so they are aware.
+ * The actual Stripe charge only happens when the admin clicks Approve.
+ *
  * @param {object} booking
- * @param {number} feeAmount - in dollars
- * @returns {Promise<boolean>} true if charge succeeded
+ * @param {number} feeAmount  — USD
+ * @returns {Promise<boolean>} true if at least one notification was sent
  */
-async function chargeLateFee(booking, feeAmount) {
-  if (!process.env.STRIPE_SECRET_KEY || !booking.paymentIntentId) return false;
-  try {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    // Retrieve the original PaymentIntent to get the customer / payment method
-    const pi = await stripe.paymentIntents.retrieve(booking.paymentIntentId);
-    const paymentMethod = pi.payment_method;
-    const customer = pi.customer;
-    if (!paymentMethod) {
-      console.warn(`scheduled-reminders: no payment method for PI ${booking.paymentIntentId}`);
-      return false;
+async function requestLateFeeApproval(booking, feeAmount) {
+  const bookingId  = booking.bookingId || booking.paymentIntentId;
+  const renterName = booking.name || "Customer";
+  const vehicle    = booking.vehicleName || booking.vehicleId || "";
+
+  let sent = false;
+
+  // Build HMAC-signed approve / adjust / decline URLs (24 h expiry)
+  const { approveUrl, declineUrl, adjustUrl } = buildLateFeeUrls(bookingId, feeAmount);
+
+  // ── Email to owner ──────────────────────────────────────────────────────
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host:   process.env.SMTP_HOST,
+        port:   parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_PORT === "465",
+        auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      });
+      const escStr = (s) => String(s || "")
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      await transporter.sendMail({
+        from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+        to:      OWNER_EMAIL,
+        subject: `[Action Required] Late Fee $${feeAmount} — ${renterName} (${vehicle})`,
+        html: `
+          <h2>⏰ Late Return — Approval Required</h2>
+          <p><strong>${escStr(renterName)}</strong> is overdue on their <strong>${escStr(vehicle)}</strong> rental.</p>
+          <table style="border-collapse:collapse;width:100%;margin:16px 0">
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(bookingId)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Customer</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(renterName)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(vehicle)}</td></tr>
+            <tr><td style="padding:8px;border:1px solid #ddd"><strong>Late Fee</strong></td><td style="padding:8px;border:1px solid #ddd;color:#e53935"><strong>$${escStr(String(feeAmount))}</strong></td></tr>
+          </table>
+          <p style="margin-top:24px">
+            <a href="${escStr(approveUrl)}" style="display:inline-block;padding:12px 24px;background:#4caf50;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:12px">
+              ✅ Approve &amp; Charge $${escStr(String(feeAmount))}
+            </a>
+            <a href="${escStr(adjustUrl)}" style="display:inline-block;padding:12px 24px;background:#1a73e8;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:12px">
+              ✏️ Adjust Amount
+            </a>
+            <a href="${escStr(declineUrl)}" style="display:inline-block;padding:12px 24px;background:#888;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold">
+              ❌ Decline — Do Not Charge
+            </a>
+          </p>
+          <p style="color:#888;font-size:12px;margin-top:16px">These links expire in 24 hours. You can also charge manually from the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>
+          <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+        `,
+        text: [
+          `Late Return — Approval Required`,
+          ``,
+          `${renterName} is overdue on their ${vehicle} rental.`,
+          `Booking ID : ${bookingId}`,
+          `Late Fee   : $${feeAmount}`,
+          ``,
+          `APPROVE & charge: ${approveUrl}`,
+          `ADJUST amount:    ${adjustUrl}`,
+          `DECLINE (no charge): ${declineUrl}`,
+          ``,
+          `Links expire in 24 hours. Or charge manually from https://www.slytrans.com/admin-v2/`,
+        ].join("\n"),
+      });
+      sent = true;
+    } catch (err) {
+      console.warn("scheduled-reminders: owner late-fee approval email failed:", err.message);
     }
-    await stripe.paymentIntents.create({
-      amount:         Math.round(feeAmount * 100),
-      currency:       "usd",
-      customer:       customer || undefined,
-      payment_method: paymentMethod,
-      confirm:        true,
-      off_session:    true,
-      description:    `Late fee — ${booking.vehicleName || booking.vehicleId} — ${booking.name}`,
-      metadata: {
-        payment_type:       "late_fee",
-        original_booking_id: booking.bookingId || booking.paymentIntentId,
-        vehicle_id:          booking.vehicleId,
-        renter_name:         booking.name || "",
-      },
-    });
-    return true;
-  } catch (err) {
-    console.error(`scheduled-reminders: late fee charge failed for ${booking.bookingId}:`, err.message);
-    return false;
   }
+
+  // ── SMS to owner (short approve link) ──────────────────────────────────
+  if (process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+    try {
+      const smsText =
+        `[SLY RIDES] Late fee alert: ${renterName} (${vehicle}) is overdue.\n` +
+        `Approve $${feeAmount} charge: ${approveUrl}\n` +
+        `Adjust amount: ${adjustUrl}\n` +
+        `Decline (no charge): ${declineUrl}`;
+      await sendSms(OWNER_PHONE, smsText);
+      sent = true;
+    } catch (err) {
+      console.warn("scheduled-reminders: owner late-fee approval SMS failed:", err.message);
+    }
+  }
+
+  return sent;
 }
 
 /**
@@ -344,18 +567,18 @@ async function processUnpaid(allBookings, now, sentMarks) {
       if (booking.status !== "reserved_unpaid") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
 
       const minutesUntilPickup = (pickupDt - now) / 60000;
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
 
-      // 24-hour reminder (window: 24h–23h)
-      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "unpaid_24h")) {
-        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_24H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_24h" });
-      }
+      console.log("[SMS_TRIGGER]", {
+        booking_ref: id, vehicleId, status: "reserved_unpaid",
+        pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
+      });
 
       // 2-hour reminder (window: 2h–90min)
       if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h")) {
@@ -381,109 +604,167 @@ async function processPaidBookings(allBookings, now, sentMarks) {
       if (booking.status !== "booked_paid") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
 
       const minutesUntilPickup = (pickupDt - now) / 60000;
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
 
+      console.log("[SMS_TRIGGER]", {
+        booking_ref: id, vehicleId, status: "booked_paid",
+        pickup_datetime: pickupDt.toISOString(), minutesUntilPickup: Math.round(minutesUntilPickup),
+      });
+
       // 24-hour reminder (window: 24h–23h)
       if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
         const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
       }
-
-      // 2-hour reminder (window: 2h–90min)
-      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "pickup_2h")) {
-        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_2H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_2h" });
-      }
-
-      // 30-minute reminder (window: 35–20 min)
-      if (minutesUntilPickup <= 35 && minutesUntilPickup > 20 && !alreadySent(booking, "pickup_30min")) {
-        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_30min" });
-      }
     }
   }
 }
 
+function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
+  console.log("[SMS_TRIGGER]", {
+    booking_ref: bookingRef || "",
+    return_datetime: returnDatetime || "",
+    current_time: currentTime || "",
+    trigger_type: triggerType || "",
+  });
+}
+
 /**
- * Process all active_rental bookings — mid-rental, end reminders, late fees.
+ * Process all active_rental bookings — end reminder, return-time messages, and late fees.
+ *
+ * SMS flow per booking (all keyed by return_date for extension awareness):
+ *   • 30 min before return   → LATE_WARNING_30MIN   (replaces TextMagic 1h/30min/15min automations)
+ *   • At return time         → LATE_AT_RETURN_TIME
+ *   • +1 h overdue           → LATE_GRACE_EXPIRED
+ *   • +2 h overdue           → LATE_FEE_APPLIED + owner approval request
+ *
+ * Extension awareness:
+ *   Every return-time SMS is logged to the Supabase sms_logs table with
+ *   return_date_at_send = booking.returnDate.  When a rental is extended the
+ *   return_date changes, so the old log rows no longer match and the messages
+ *   fire correctly for the new schedule.  The legacy smsSentAt flags in
+ *   bookings.json are still written for backwards compatibility.
  */
-async function processActiveRentals(allBookings, now, sentMarks) {
+export async function processActiveRentals(allBookings, now, sentMarks) {
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
-      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
-      if (isNaN(pickupDt.getTime()) || isNaN(returnDt.getTime())) continue;
+      // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
+      // wall-clock time in Los Angeles, not at UTC equivalents.
+      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
+      if (isNaN(returnDt.getTime())) continue;
 
       const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
-      const totalMinutes  = (returnDt - pickupDt) / 60000;
-      const elapsedMinutes = (now - pickupDt) / 60000;
       const minutesUntilReturn = (returnDt - now) / 60000;
-      const grace = GRACE_PERIODS[vehicleId] || 60;
-
-      // Mid-rental: at the halfway point (±15 min window)
-      const halfwayMinutes = totalMinutes / 2;
-      if (
-        elapsedMinutes >= halfwayMinutes - 15 &&
-        elapsedMinutes < halfwayMinutes + 15 &&
-        !alreadySent(booking, "active_mid")
-      ) {
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_mid" });
-      }
-
-      // 1 hour before end
-      if (minutesUntilReturn <= 60 && minutesUntilReturn > 45 && !alreadySent(booking, "active_1h")) {
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_1h" });
-      }
-
-      // 15 min before end
-      if (minutesUntilReturn <= 15 && minutesUntilReturn > 0 && !alreadySent(booking, "active_15min")) {
-        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_15MIN_BEFORE_END, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "active_15min" });
-      }
-
-      // 30-min late warning (sent before return time)
-      if (minutesUntilReturn <= 30 && minutesUntilReturn > 15 && !alreadySent(booking, "late_warning_30min")) {
-        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
-      }
-
-      // At return time (window: 0–5 min past)
       const minsOverdue = -minutesUntilReturn; // positive = overdue
-      if (minsOverdue >= 0 && minsOverdue < 5 && !alreadySent(booking, "late_at_return")) {
-        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "late_at_return" });
-      }
+      const graceAt   = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
+      const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
+      const nowIso    = now.toISOString();
+      const returnIso = returnDt.toISOString();
 
-      // After grace period expired (window: grace–grace+15 min overdue)
-      if (minsOverdue >= grace && minsOverdue < grace + 15 && !alreadySent(booking, "late_grace_expired")) {
-        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
-      }
+      // returnDateStr is stored in sms_logs so old triggers are invalidated when
+      // the booking is extended to a new return_date.
+      const returnDateStr = booking.returnDate;
 
-      // Late fee — after grace, only if not already charged, and no active extension
+      // ── 30 min before return ─────────────────────────────────────────────────
+      // Single consolidated end-of-rental reminder (replaces TextMagic automations
+      // that were sending separate 1h, 30min, and 15min messages).
       if (
-        minsOverdue >= grace &&
-        !alreadySent(booking, "late_fee_applied") &&
-        !booking.lateFeeApplied
+        minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN &&
+        !alreadySent(booking, "late_warning_30min") &&
+        !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
       ) {
-        const feeAmount = LATE_FEE_AMOUNTS[vehicleId] || 50;
-        const charged = await chargeLateFee(booking, feeAmount);
+        logSmsTrigger(id, returnIso, nowIso, "warning_30min");
+        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
+          await logSmsToSupabase(id, "late_warning_30min", returnDateStr);
+        }
+      }
+
+      // ── At return time (0–15 min window) ─────────────────────────────────────
+      if (
+        now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySent(booking, "late_at_return") &&
+        !(await isSmsLogged(id, "late_at_return", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "ended");
+        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "late_at_return" });
+          await logSmsToSupabase(id, "late_at_return", returnDateStr);
+        }
+      }
+
+      // ── Grace expired at return_datetime + 1 h (15 min window) ───────────────
+      if (
+        now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySent(booking, "late_grace_expired") &&
+        !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "grace");
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
+          await logSmsToSupabase(id, "late_grace_expired", returnDateStr);
+        }
+      }
+
+      // ── Late fee at return_datetime + 2 h (once per return_date) ─────────────
+      // The late_fee_pending key is scoped to the current return_date via
+      // isSmsLogged so that a new late fee can be assessed after an extension.
+      if (
+        now >= lateFeeAt &&
+        !alreadySent(booking, "late_fee_applied") &&
+        !alreadySent(booking, "late_fee_pending") &&
+        !booking.lateFeeApplied &&
+        !(await isSmsLogged(id, "late_fee_pending", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "late_fee");
+        // Calculate fee based on actual hours overdue:
+        //   expected = returnDt (LA-timezone aware)
+        //   actual   = now
+        //   lateHours = (actual - expected) / (1000 * 60 * 60)  [rounded up, min 1]
+        const hourlyRate = LATE_FEE_AMOUNTS[vehicleId] || 50;
+        const lateHours  = Math.max(1, Math.ceil(minsOverdue / 60));
+        const feeAmount  = Math.round(lateHours * hourlyRate);
         const feeVars = { ...v, late_fee: String(feeAmount) };
-        const sent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
-        if (sent || charged) {
-          sentMarks.push({ vehicleId, id, key: "late_fee_applied" });
+        // 1. Notify customer that a late fee has been assessed
+        const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+        // 2. Request owner approval before charging (email + SMS with Approve/Decline links)
+        const approvalSent = await requestLateFeeApproval(booking, feeAmount);
+        if (smsSent || approvalSent) {
+          // Mark as pending so we don't send the approval request again next cron tick
+          sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
           sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+          await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+
+          // Persist late_fee_status = 'pending_approval' to Supabase for audit trail.
+          // Non-fatal — the approval email/SMS is the authoritative delivery mechanism.
+          try {
+            const sbFee = getSupabaseAdmin();
+            if (sbFee && id) {
+              await sbFee
+                .from("bookings")
+                .update({
+                  late_fee_status: "pending_approval",
+                  late_fee_amount: feeAmount,
+                  updated_at:      new Date().toISOString(),
+                })
+                .eq("booking_ref", id);
+            }
+          } catch (sbFeeErr) {
+            console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+          }
         }
       }
     }
@@ -495,11 +776,7 @@ async function processActiveRentals(allBookings, now, sentMarks) {
  */
 async function processCompleted(allBookings, now, sentMarks) {
   const retentionSchedule = [
-    { days: 1,  key: "retention_1d",  template: RETENTION_DAY_1 },
-    { days: 3,  key: "retention_3d",  template: RETENTION_DAY_3 },
     { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
-    { days: 14, key: "retention_14d", template: RETENTION_DAY_14 },
-    { days: 30, key: "retention_30d", template: RETENTION_DAY_30 },
   ];
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
@@ -593,6 +870,13 @@ async function persistSentMarks(sentMarks) {
  */
 export async function processAutoActivations(allBookings, now) {
   if (!process.env.GITHUB_TOKEN) return;
+
+  // Respect the admin toggle — skip the entire cycle when disabled.
+  const enabled = await loadBooleanSetting("auto_activate_on_pickup", true);
+  if (!enabled) {
+    console.log("scheduled-reminders: auto_activate_on_pickup is disabled — skipping auto-activations");
+    return;
+  }
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
@@ -698,6 +982,84 @@ export async function processAutoCompletions(allBookings, now) {
         if (otherActiveRentals.length === 0) {
           await markVehicleAvailable(vehicleId);
         }
+
+        // Send rental-completed notification emails (non-fatal).
+        // Owner receives an alert so they know the rental has ended.
+        // Renter receives a thank-you email with return confirmation.
+        if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+          try {
+            const escStr = (s) => String(s || "")
+              .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+            const transporter = nodemailer.createTransport({
+              host:   process.env.SMTP_HOST,
+              port:   parseInt(process.env.SMTP_PORT || "587"),
+              secure: process.env.SMTP_PORT === "465",
+              auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            });
+
+            const completedDate = new Date(completedAt).toLocaleDateString("en-US", {
+              timeZone: "America/Los_Angeles",
+              weekday: "long", year: "numeric", month: "long", day: "numeric",
+            });
+            const renterName   = booking.name        || "Valued Customer";
+            const vehicleName  = booking.vehicleName || vehicleId;
+
+            // Owner alert
+            if (OWNER_EMAIL) {
+              await transporter.sendMail({
+                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                to:      OWNER_EMAIL,
+                subject: `[SLY RIDES] ✅ Rental Completed — ${escStr(renterName)} (${escStr(vehicleName)})`,
+                html: `
+                  <h2 style="color:#1a237e">Rental Completed</h2>
+                  <p><strong>${escStr(renterName)}</strong>'s rental of the <strong>${escStr(vehicleName)}</strong> has been automatically marked as completed.</p>
+                  <table style="border-collapse:collapse;width:100%;margin:16px 0">
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Booking ID</strong></td><td style="padding:8px;border:1px solid #ddd"><code>${escStr(id)}</code></td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(vehicleName)}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(renterName)}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.phone || "—")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.pickupDate || "—")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.returnDate || "—")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Completed At</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(completedDate)} (LA time)</td></tr>
+                    ${booking.extensionCount ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Extensions</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(String(booking.extensionCount))}</td></tr>` : ""}
+                  </table>
+                  <p style="color:#666;font-size:13px">This email was auto-generated by the SLY RIDES scheduler.</p>
+                `,
+              });
+            }
+
+            // Renter thank-you email
+            const renterEmail = booking.email;
+            if (renterEmail) {
+              const firstName = renterName.split(" ")[0];
+              await transporter.sendMail({
+                from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+                to:      renterEmail,
+                subject: "Thank you for renting with SLY RIDES!",
+                html: `
+                  <h2 style="color:#1a237e">Thank You for Renting with SLY RIDES!</h2>
+                  <p>Hi ${escStr(firstName)},</p>
+                  <p>Your rental of the <strong>${escStr(vehicleName)}</strong> has been completed on <strong>${escStr(completedDate)}</strong>.</p>
+                  <p>We hope you had a great experience! We'd love to have you back.</p>
+                  <table style="border-collapse:collapse;width:100%;margin:16px 0">
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(vehicleName)}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.pickupDate || "—")}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return</strong></td><td style="padding:8px;border:1px solid #ddd">${escStr(booking.returnDate || "—")}</td></tr>
+                  </table>
+                  <p>Ready to book again? Visit <a href="https://www.slytrans.com/cars.html">www.slytrans.com</a>.</p>
+                  <p>Questions? Call us at <a href="tel:+12139166606">(213) 916-6606</a> or email <a href="mailto:${escStr(OWNER_EMAIL)}">${escStr(OWNER_EMAIL)}</a>.</p>
+                  <p style="color:#666;font-size:13px">Sly Transportation Services LLC · Los Angeles, CA</p>
+                `,
+              });
+            }
+          } catch (emailErr) {
+            console.error(
+              `scheduled-reminders: rental-completed email failed for ${vehicleId}/${id} (non-fatal):`,
+              emailErr.message
+            );
+          }
+        }
       } catch (err) {
         console.error(
           `scheduled-reminders: auto-completion failed for ${vehicleId}/${id} (non-fatal):`,
@@ -705,6 +1067,315 @@ export async function processAutoCompletions(allBookings, now) {
         );
       }
     }
+  }
+}
+
+
+/**
+ * Returns true when all new-mismatch PIs have been handled (either auto-repaired
+ * or intentionally skipped because they are non-new-booking payment types).
+ */
+function areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, nonNewBookingTypes) {
+  if (failedPIIds.length > 0) return false;
+  return newMismatches.every(
+    (pi) => repairedPIIds.includes(pi.id) || nonNewBookingTypes.has((pi.metadata || {}).payment_type || "")
+  );
+}
+
+/**
+ * Reconciliation check — runs once per cron tick.
+ *
+ * Fetches the last 24 h of succeeded Stripe PaymentIntents and compares them
+ * against the `revenue_records` table.  Any PaymentIntent that has no matching
+ * revenue record (matched by payment_intent_id or booking_id column) is
+ * flagged as a mismatch and an alert is sent to the owner via email and SMS.
+ *
+ * Non-fatal — errors are caught and logged so the rest of the cron job is
+ * never blocked by a reconciliation failure.
+ */
+async function runReconciliation() {
+  if (!process.env.STRIPE_SECRET_KEY) return;
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+
+    // Fetch PaymentIntents succeeded in the last 24 hours
+    const since = Math.floor(Date.now() / 1000) - 86400;
+    const piList = await stripe.paymentIntents.list({
+      limit:  100,
+      created: { gte: since },
+    });
+
+    const succeededPIs = piList.data.filter((pi) => pi.status === "succeeded");
+    if (succeededPIs.length === 0) return;
+
+    // Fetch matching revenue_records by payment_intent_id
+    const piIds = succeededPIs.map((pi) => pi.id);
+    const { data: rrRows } = await sb
+      .from("revenue_records")
+      .select("payment_intent_id, booking_id")
+      .in("payment_intent_id", piIds);
+
+    const recordedPIIds = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+
+    // Also match extension rows that use the PI id as booking_id
+    const { data: extRows } = await sb
+      .from("revenue_records")
+      .select("booking_id")
+      .in("booking_id", piIds);
+
+    const recordedAsBookingId = new Set((extRows || []).map((r) => r.booking_id).filter(Boolean));
+
+    // For rental_extension PIs whose revenue record stores the original booking ref
+    // (not the PI id) as booking_id, perform an extra lookup by booking_id.
+    // This prevents extension payments that were already processed by the webhook
+    // from appearing as mismatches (and showing "⚠️ Skipped (manual)" in alerts).
+    // Fall back to metadata.original_booking_id for PIs created before extend-rental.js
+    // was updated to emit booking_id, preserving backward compatibility.
+    const extensionOriginalBookingIds = succeededPIs
+      .filter((pi) => (pi.metadata?.payment_type) === "rental_extension")
+      .map((pi) => pi.metadata?.booking_id || pi.metadata?.original_booking_id)
+      .filter(Boolean);
+
+    const handledExtensionPIIds = new Set();
+    if (extensionOriginalBookingIds.length > 0) {
+      const { data: extRevenueRows } = await sb
+        .from("revenue_records")
+        .select("payment_intent_id, booking_id")
+        .in("booking_id", extensionOriginalBookingIds);
+      const processedExtPIIds = new Set(
+        (extRevenueRows || []).map((r) => r.payment_intent_id).filter(Boolean)
+      );
+      for (const pi of succeededPIs) {
+        if ((pi.metadata?.payment_type) === "rental_extension" && processedExtPIIds.has(pi.id)) {
+          handledExtensionPIIds.add(pi.id);
+        }
+      }
+    }
+
+    const mismatches = succeededPIs.filter(
+      (pi) => !recordedPIIds.has(pi.id) && !recordedAsBookingId.has(pi.id) && !handledExtensionPIIds.has(pi.id)
+    );
+
+    if (mismatches.length === 0) {
+      console.log(`scheduled-reminders reconciliation: all ${succeededPIs.length} PI(s) have matching revenue records ✓`);
+      return;
+    }
+
+    // ── Deduplication: only alert once per PI ID per 25-hour window ─────────
+    // Without this guard the 15-minute cron re-alerts for the same payment up
+    // to 96 times before the PI falls out of the 24-hour look-back window.
+    const DEDUP_KEY = "reconciliation_alerted_pi_ids";
+    let alertedPIs = {}; // { [piId]: ISO timestamp of when first alerted }
+    try {
+      const { data: configRow } = await sb
+        .from("app_config")
+        .select("value")
+        .eq("key", DEDUP_KEY)
+        .maybeSingle();
+      if (configRow && configRow.value && typeof configRow.value === "object") {
+        alertedPIs = configRow.value;
+      }
+    } catch (readErr) {
+      console.warn("scheduled-reminders reconciliation: failed to read dedup state (non-fatal):", readErr.message);
+    }
+
+    // Prune entries older than 25 hours so the map doesn't grow unbounded
+    const cutoffMs = Date.now() - 25 * 60 * 60 * 1000;
+    for (const [piId, ts] of Object.entries(alertedPIs)) {
+      if (new Date(ts).getTime() < cutoffMs) delete alertedPIs[piId];
+    }
+
+    const newMismatches = mismatches.filter((pi) => !alertedPIs[pi.id]);
+    if (newMismatches.length === 0) {
+      console.log(`scheduled-reminders reconciliation: ${mismatches.length} mismatch(es) already alerted — skipping repeat notification`);
+      return;
+    }
+
+    console.warn(`scheduled-reminders reconciliation: ${newMismatches.length} PI(s) missing from revenue_records`, newMismatches.map((pi) => pi.id));
+
+    // ── Auto-repair: replay full booking pipeline for each unmatched PI ──────
+    // Uses the same pipeline as the Stripe webhook (stripe-webhook.js) so every
+    // step fires: customer upsert → booking upsert → revenue record → blocked
+    // dates → fleet-status update → owner + customer notification emails.
+    // All steps are idempotent — safe to call even if a partial record already exists.
+    //
+    // Payment types that mutate an existing booking (rental_extension,
+    // balance_payment, slingshot_balance_payment) are excluded — they must be
+    // reviewed manually if they appear here.
+    const NON_NEW_BOOKING_TYPES = new Set([
+      "rental_extension",
+      "balance_payment",
+      "slingshot_balance_payment",
+    ]);
+
+    const repairedPIIds = [];
+    const failedPIIds   = [];
+
+    for (const pi of newMismatches) {
+      const paymentType = (pi.metadata || {}).payment_type || "";
+      if (NON_NEW_BOOKING_TYPES.has(paymentType)) {
+        console.warn(
+          `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`
+        );
+        continue;
+      }
+
+      try {
+        // 1. Persist booking + revenue record (idempotent).
+        //    saveWebhookBookingRecord performs the canonical vehicle_id mapping
+        //    internally, so its result is authoritative for the vehicle key.
+        await saveWebhookBookingRecord(pi);
+
+        // 2. Block calendar dates and mark vehicle unavailable.
+        //    mapVehicleId derives the canonical ID from PI metadata so that
+        //    the GitHub JSON files always receive the correct key.
+        const meta = pi.metadata || {};
+        if (meta.pickup_date && meta.return_date) {
+          let reconVehicleId = "";
+          try {
+            reconVehicleId = mapVehicleId(meta);
+          } catch (mapErr) {
+            console.warn(
+              `scheduled-reminders reconciliation: vehicle_id mapping failed for PI ${pi.id}: ${mapErr.message}` +
+              " — skipping blockBookedDates/markVehicleUnavailable"
+            );
+          }
+          if (reconVehicleId) {
+            await blockBookedDates(
+              reconVehicleId,
+              meta.pickup_date,
+              meta.return_date,
+              meta.pickup_time  || "",
+              meta.return_time  || ""
+            );
+            await markVehicleUnavailable(reconVehicleId);
+          }
+        }
+
+        // 3. Send owner + customer notification emails
+        //    sendWebhookNotificationEmails checks the email_sent flag on
+        //    pending_booking_docs so the owner is never emailed twice.
+        await sendWebhookNotificationEmails(pi);
+
+        repairedPIIds.push(pi.id);
+        console.log(`scheduled-reminders reconciliation: auto-repaired PI ${pi.id} (${paymentType || "full_payment"})`);
+      } catch (repairErr) {
+        failedPIIds.push(pi.id);
+        console.error(
+          `scheduled-reminders reconciliation: auto-repair failed for PI ${pi.id}:`,
+          repairErr.message
+        );
+      }
+    }
+
+    const escStr = (s) => String(s || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    const rows = newMismatches.map((pi) => {
+      const meta      = pi.metadata || {};
+      const repaired  = repairedPIIds.includes(pi.id);
+      const failed    = failedPIIds.includes(pi.id);
+      const status    = repaired ? "✅ Auto-processed" : (failed ? "❌ Repair failed" : "⚠️ Skipped (manual)");
+      return `<tr>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(pi.id)}</td>
+        <td style="padding:6px;border:1px solid #ddd">$${(pi.amount / 100).toFixed(2)}</td>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(meta.original_booking_id || meta.booking_id || "—")}</td>
+        <td style="padding:6px;border:1px solid #ddd">${escStr(meta.payment_type || "—")}</td>
+        <td style="padding:6px;border:1px solid #ddd">${new Date(pi.created * 1000).toISOString()}</td>
+        <td style="padding:6px;border:1px solid #ddd">${status}</td>
+      </tr>`;
+    }).join("\n");
+
+    const allRepaired = areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, NON_NEW_BOOKING_TYPES);
+    const subject = allRepaired
+      ? `[SLY RIDES] ✅ ${repairedPIIds.length} Payment(s) Auto-Processed`
+      : `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Detected – ${repairedPIIds.length} Auto-Processed`;
+
+    // Email alert
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && OWNER_EMAIL) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host:   process.env.SMTP_HOST,
+          port:   parseInt(process.env.SMTP_PORT || "587"),
+          secure: process.env.SMTP_PORT === "465",
+          auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+        });
+        await transporter.sendMail({
+          from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
+          to:      OWNER_EMAIL,
+          subject,
+          html: `
+            <h2>${allRepaired ? "✅ Payments Auto-Processed" : "⚠️ Payment Recovery Summary"}</h2>
+            <p>${newMismatches.length} Stripe PaymentIntent(s) were detected without matching revenue records. The system automatically ran the booking pipeline for each one${repairedPIIds.length > 0 ? " — a separate booking confirmation email has been sent for each successfully processed payment" : ""}.</p>
+            <table style="border-collapse:collapse;width:100%;margin:16px 0">
+              <thead>
+                <tr style="background:#f5f5f5">
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">PaymentIntent ID</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Amount</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Booking ID</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Type</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Created</th>
+                  <th style="padding:8px;border:1px solid #ddd;text-align:left">Status</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+            ${failedPIIds.length > 0 ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>` : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`}
+            <p><strong>Sly Transportation Services LLC 🚗</strong></p>
+          `,
+          text: [
+            subject,
+            "",
+            allRepaired
+              ? `${repairedPIIds.length} payment(s) were auto-processed successfully.`
+              : `${repairedPIIds.length}/${newMismatches.length} payment(s) were auto-processed. ${failedPIIds.length} failed.`,
+            "",
+            ...newMismatches.map((pi) => {
+              const repaired = repairedPIIds.includes(pi.id);
+              const failed   = failedPIIds.includes(pi.id);
+              const st       = repaired ? "[PROCESSED]" : (failed ? "[FAILED]" : "[SKIPPED]");
+              return `  ${st} ${pi.id}  $${(pi.amount / 100).toFixed(2)}`;
+            }),
+            "",
+            "Admin Panel: https://www.slytrans.com/admin-v2/",
+          ].join("\n"),
+        });
+      } catch (emailErr) {
+        console.warn("scheduled-reminders reconciliation: alert email failed:", emailErr.message);
+      }
+    }
+
+    // SMS alert (brief — only when manual intervention is needed)
+    if (failedPIIds.length > 0 && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+      try {
+        const failedSummary = newMismatches
+          .filter((pi) => failedPIIds.includes(pi.id))
+          .slice(0, 3)
+          .map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`)
+          .join(", ");
+        const smsText = `[SLY RIDES] ⚠️ ${failedPIIds.length} payment(s) could not be auto-processed: ${failedSummary}${failedPIIds.length > 3 ? ` +${failedPIIds.length - 3} more` : ""}. Check email.`;
+        await sendSms(OWNER_PHONE, smsText);
+      } catch (smsErr) {
+        console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
+      }
+    }
+
+    // Persist the newly alerted PI IDs so we don't re-alert on the next cron tick
+    try {
+      const nowIso = new Date().toISOString();
+      for (const pi of newMismatches) alertedPIs[pi.id] = nowIso;
+      await sb.from("app_config").upsert(
+        { key: DEDUP_KEY, value: alertedPIs, updated_at: nowIso },
+        { onConflict: "key" }
+      );
+    } catch (dedupErr) {
+      console.warn("scheduled-reminders reconciliation: failed to persist dedup state (non-fatal):", dedupErr.message);
+    }
+  } catch (err) {
+    console.error("scheduled-reminders reconciliation: unexpected error (non-fatal):", err.message);
   }
 }
 
@@ -726,6 +1397,10 @@ export default async function handler(req, res) {
 
   let allBookings;
   try {
+    // TODO (Phase 3 — pending Supabase schema for smsSentAt): migrate primary
+    // booking read to Supabase once a smsSentAt column is added to the bookings
+    // table. Until then, bookings.json remains authoritative for smsSentAt
+    // deduplication markers used by all processAuto* and reminder functions.
     const loaded = await loadBookings();
     allBookings = loaded.data;
   } catch (err) {
@@ -739,6 +1414,9 @@ export default async function handler(req, res) {
   // These must run on every cron tick so overdue bookings never stay stuck.
   await processAutoActivations(allBookings, now);
   await processAutoCompletions(allBookings, now);
+
+  // Reconcile Stripe payments against revenue_records (runs every tick, non-fatal).
+  await runReconciliation();
 
   // SMS reminders require TextMagic credentials.
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {

@@ -5,22 +5,35 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-let _client = null;
-
 /**
- * Returns a singleton Supabase admin client (service role).
+ * Returns a fresh Supabase admin client (service role) on every call.
+ * Stateless — no singleton caching — so Vercel serverless functions always
+ * get a clean connection and are not affected by stale module-level state.
  * Returns null when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set,
  * so callers can gracefully fall back to default values.
  */
 export function getSupabaseAdmin() {
-  if (_client) return _client;
-
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
 
-  _client = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return _client;
+  console.log("SUPABASE_URL:", url ? "OK" : "MISSING");
+  console.log("SUPABASE_KEY:", key ? "OK" : "MISSING");
+
+  if (!url || !key) {
+    console.error("❌ Supabase env vars missing");
+    return null;
+  }
+
+  try {
+    const client = createClient(url, key, {
+      auth: {
+        persistSession: false,
+      },
+    });
+
+    return client;
+  } catch (err) {
+    console.error("❌ Supabase client init failed:", err);
+    return null;
+  }
 }

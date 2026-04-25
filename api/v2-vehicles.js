@@ -18,16 +18,19 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles, saveVehicles } from "./_vehicles.js";
 import { isSchemaError, adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { uiVehicleId } from "./_vehicle-id.js";
 
-const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["slingshot", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_TYPES         = ["slingshot", "car", "economy", "luxury", "suv", "truck", "van", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
-// ISO 8601 date strings are at most 10 chars (YYYY-MM-DD); allow 20 to be safe.
 const MAX_PURCHASE_DATE_LEN = 20;
 
 // vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores.
 const VEHICLE_ID_RE = /^[a-z0-9_-]{2,50}$/;
+
+// Bouncie IMEI: 15-digit numeric string, or empty string (to clear the mapping)
+const BOUNCIE_IMEI_RE = /^\d{15}$/;
 
 // Normalize cover_image paths to root-relative form so browsers can resolve
 // them correctly regardless of the page's location in the site hierarchy.
@@ -42,6 +45,30 @@ function normalizeCoverImage(val) {
   return "/" + val.replace(/^(\.\.\/)+/, "");
 }
 
+function vehicleCompletenessScore(v = {}) {
+  let score = 0;
+  const id = String(v.vehicle_id || "").trim();
+  const name = String(v.vehicle_name || "").trim();
+  if (name) score += 1;
+  if (name && id && name.toLowerCase() !== id.toLowerCase()) score += 3;
+  if (v.cover_image) score += 2;
+  if (v.bouncie_device_id) score += 2;
+  if (Number(v.total_mileage) > 0) score += 1;
+  if (v.last_synced_at) score += 1;
+  if (Number(v.purchase_price) > 0) score += 1;
+  return score;
+}
+
+function mergeVehicleRecords(existing, candidate) {
+  if (!existing) return candidate;
+  const existingScore = vehicleCompletenessScore(existing);
+  const candidateScore = vehicleCompletenessScore(candidate);
+  const candidateWins = candidateScore >= existingScore;
+  const preferred = candidateWins ? candidate : existing;
+  const fallback = candidateWins ? existing : candidate;
+  return { ...fallback, ...preferred, vehicle_id: preferred.vehicle_id };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -53,33 +80,83 @@ export default async function handler(req, res) {
 
   // ── GET — public listing (no secret required) ──────────────────────────────
   if (req.method === "GET") {
+    // Prevent CDN/browser caches from serving stale vehicle lists after creation.
+    res.setHeader("Cache-Control", "no-store");
+
+    // Optional scope filter: ?scope=car → exclude slingshots; ?scope=slingshot → only slingshots
+    const scope = (req.query?.scope || "").toLowerCase();
     const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data, rental_status");
-        if (!error) {
-          const vehicles = (rows || []).map((row) => {
-            const obj = { vehicle_id: row.vehicle_id, ...(row.data || {}), rental_status: row.rental_status || null };
-            if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
-            return obj;
-          });
-          return res.status(200).json(vehicles);
+          .select("*");
+
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
         }
-        // Schema error → fall through to GitHub fallback; any other Supabase error → log + fall through
-        console.warn("v2-vehicles GET: Supabase error, falling back to GitHub:", error.message);
+
+        const vehiclesById = {};
+        for (const row of rows || []) {
+          // Only expose active vehicles publicly; treat missing status as active
+          // for backward compatibility with records created before this field existed.
+          const status = row.data?.status;
+          if (status && status !== "active") continue;
+          const type = row.data?.type || row.data?.vehicle_type || "";
+          const vid = (row.vehicle_id || "").toLowerCase();
+          const vname = (row.data?.vehicle_name || row.data?.name || "").toLowerCase();
+          const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
+          if (scope === "cars" || scope === "car") {
+            if (isSlingshot) continue;
+          } else if (scope === "slingshot" && !isSlingshot) {
+            continue;
+          }
+
+          const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+          const obj = {
+            ...(row.data || {}),
+            rental_status:             row.rental_status             || null,
+            bouncie_device_id:         row.bouncie_device_id         || row.data?.bouncie_device_id || null,
+            total_mileage:             Number(row.mileage)           || 0,
+            last_synced_at:            row.last_synced_at            || null,
+            last_oil_change_mileage:   row.last_oil_change_mileage   != null ? Number(row.last_oil_change_mileage)   : null,
+            last_brake_check_mileage:  row.last_brake_check_mileage  != null ? Number(row.last_brake_check_mileage)  : null,
+            last_tire_change_mileage:  row.last_tire_change_mileage  != null ? Number(row.last_tire_change_mileage)  : null,
+            // tracked = true when a Bouncie IMEI is assigned (independent of rental status)
+            tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
+            vehicle_id: id,
+          };
+          if (obj.cover_image) obj.cover_image = normalizeCoverImage(obj.cover_image);
+          vehiclesById[id] = mergeVehicleRecords(vehiclesById[id], obj);
+        }
+        return res.status(200).json(Object.values(vehiclesById));
       } catch (err) {
         console.warn("v2-vehicles GET: Supabase threw, falling back to GitHub:", err.message);
       }
     }
-    // GitHub fallback — works even when Supabase is not configured
+    // GitHub fallback
     try {
       const { data: vehicles } = await loadVehicles();
-      const result = Object.values(vehicles).map((v) => {
-        if (v.cover_image) v = { ...v, cover_image: normalizeCoverImage(v.cover_image) };
-        return v;
-      });
+      const resultById = {};
+      for (const v of Object.values(vehicles)) {
+        const status = v.status;
+        if (status && status !== "active") continue;
+        const type = v.type || "";
+        const vid = (v.vehicle_id || "").toLowerCase();
+        const vname = (v.vehicle_name || v.name || "").toLowerCase();
+        const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
+        if (scope === "cars" || scope === "car") {
+          if (isSlingshot) continue;
+        } else if (scope === "slingshot" && !isSlingshot) {
+          continue;
+        }
+        const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
+        let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
+        if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        resultById[id] = mergeVehicleRecords(resultById[id], next);
+      }
+      const result = Object.values(resultById);
       return res.status(200).json(result);
     } catch (err) {
       console.error("v2-vehicles GET GitHub fallback error:", err);
@@ -109,15 +186,38 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
+      // scope: "car" → exclude slingshots; "slingshot" → slingshot only; omit → all
+      const scope = (body.scope || "").toLowerCase();
+      const scopeFilter = (type) => {
+        if (scope === "car" || scope === "cars") return type !== "slingshot";
+        if (scope === "slingshot") return type === "slingshot";
+        return true;
+      };
+
       if (supabase) {
         const { data: rows, error } = await supabase
           .from("vehicles")
-          .select("vehicle_id, data");
+          .select("vehicle_id, data, bouncie_device_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage");
 
         if (!error) {
           const vehicles = {};
           for (const row of rows || []) {
-            vehicles[row.vehicle_id] = row.data;
+            const type = row.data?.type || row.data?.vehicle_type || "";
+            if (!scopeFilter(type)) continue;
+            const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+            const next = {
+              ...(row.data || {}),
+              bouncie_device_id:        row.bouncie_device_id        || row.data?.bouncie_device_id || null,
+              total_mileage:            Number(row.mileage)          || 0,
+              last_synced_at:           row.last_synced_at           || null,
+              last_oil_change_mileage:  row.last_oil_change_mileage  != null ? Number(row.last_oil_change_mileage)  : null,
+              last_brake_check_mileage: row.last_brake_check_mileage != null ? Number(row.last_brake_check_mileage) : null,
+              last_tire_change_mileage: row.last_tire_change_mileage != null ? Number(row.last_tire_change_mileage) : null,
+              tracked: !!(row.bouncie_device_id || row.data?.bouncie_device_id),
+              vehicle_id: id,
+            };
+            if (next.cover_image) next.cover_image = normalizeCoverImage(next.cover_image);
+            vehicles[id] = mergeVehicleRecords(vehicles[id], next);
           }
           return res.status(200).json({ vehicles });
         }
@@ -125,7 +225,15 @@ export default async function handler(req, res) {
         console.warn("v2-vehicles list: Supabase error, falling back to GitHub:", error.message);
       }
       // GitHub fallback
-      const { data: vehicles } = await loadVehicles();
+      const { data: rawVehicles } = await loadVehicles();
+      const vehicles = {};
+      for (const [id, v] of Object.entries(rawVehicles)) {
+        if (!scopeFilter(v.type || "")) continue;
+        const uiId = uiVehicleId(v.vehicle_id || id) || (v.vehicle_id || id);
+        let next = { ...v, vehicle_id: uiId, tracked: !!v.bouncie_device_id };
+        if (next.cover_image) next = { ...next, cover_image: normalizeCoverImage(next.cover_image) };
+        vehicles[uiId] = mergeVehicleRecords(vehicles[uiId], next);
+      }
       return res.status(200).json({ vehicles });
     }
 
@@ -145,6 +253,7 @@ export default async function handler(req, res) {
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
         "vehicle_name", "vehicle_year", "type", "cover_image",
+        "bouncie_device_id",
       ];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
@@ -162,8 +271,14 @@ export default async function handler(req, res) {
             }
             safeUpdates[f] = Math.round(n * 100) / 100;
           } else if (f === "cover_image") {
-            // Allow URLs, root-relative paths, or empty string
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : "";
+          } else if (f === "bouncie_device_id") {
+            // Accept 15-digit IMEI or empty string (to remove mapping)
+            const trimmed = typeof val === "string" ? val.trim() : "";
+            if (trimmed !== "" && !BOUNCIE_IMEI_RE.test(trimmed)) {
+              return res.status(400).json({ error: "bouncie_device_id must be a 15-digit IMEI or empty" });
+            }
+            safeUpdates[f] = trimmed || null;
           } else {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 200) : val;
           }
@@ -179,22 +294,60 @@ export default async function handler(req, res) {
           .maybeSingle();
 
         if (!fetchErr && existing) {
-          // Merge safe updates into existing data and upsert atomically
-          const updatedData = { ...existing.data, ...safeUpdates };
+          // Separate column-level fields from JSONB fields
+          const { bouncie_device_id: newImei, ...jsonbUpdates } = safeUpdates;
+          const updatedData = { ...existing.data, ...jsonbUpdates };
+
+          // Build the upsert payload — include bouncie_device_id column if provided
+          const upsertPayload = {
+            vehicle_id:  vehicleId,
+            data:        updatedData,
+            updated_at:  new Date().toISOString(),
+          };
+          if (Object.prototype.hasOwnProperty.call(safeUpdates, "bouncie_device_id")) {
+            upsertPayload.bouncie_device_id = newImei;
+            // Automatically enable/disable tracking when IMEI is set/cleared
+            upsertPayload.is_tracked = newImei !== null;
+            // Mirror into JSONB too for the fallback path
+            updatedData.bouncie_device_id = newImei;
+          }
+
           const { data: upserted, error: upsertErr } = await supabase
             .from("vehicles")
+            .upsert(upsertPayload, { onConflict: "vehicle_id" })
+            .select("data, bouncie_device_id")
+            .single();
+
+          if (!upsertErr) {
+            // Return the same shape as the list action so the frontend cache
+            // always gets bouncie_device_id from the authoritative DB column.
+            return res.status(200).json({
+              success: true,
+              vehicle: {
+                ...(upserted.data || {}),
+                bouncie_device_id: upserted.bouncie_device_id || null,
+              },
+            });
+          }
+          if (!isSchemaError(upsertErr)) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
+          // Schema error on full upsert (e.g. bouncie_device_id column missing).
+          // Retry with only data + updated_at so at least the JSONB fields are saved.
+          const { data: upserted2, error: upsertErr2 } = await supabase
+            .from("vehicles")
             .upsert(
-              { vehicle_id: vehicleId, data: updatedData, updated_at: new Date().toISOString() },
+              { vehicle_id: vehicleId, data: updatedData, updated_at: upsertPayload.updated_at },
               { onConflict: "vehicle_id" }
             )
             .select("data")
             .single();
-
-          if (!upsertErr) {
-            return res.status(200).json({ success: true, vehicle: upserted.data });
+          if (!upsertErr2) {
+            return res.status(200).json({
+              success: true,
+              vehicle: { ...(upserted2.data || {}) },
+            });
           }
-          if (!isSchemaError(upsertErr)) throw new Error(`Supabase upsert failed: ${upsertErr.message}`);
-          console.warn("v2-vehicles update: Supabase schema error, falling back to GitHub:", upsertErr.message);
+          if (!isSchemaError(upsertErr2)) throw new Error(`Supabase upsert (retry) failed: ${upsertErr2.message}`);
+          console.warn("v2-vehicles update: Supabase schema error on retry, falling back to GitHub:", upsertErr2.message);
         } else if (fetchErr && !isSchemaError(fetchErr)) {
           throw new Error(`Supabase fetch failed: ${fetchErr.message}`);
         } else if (!fetchErr && !existing) {
@@ -226,7 +379,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, bouncieDeviceId } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -261,6 +414,16 @@ export default async function handler(req, res) {
         }
       }
 
+      // Validate bouncieDeviceId if provided (slingshots should not have one)
+      let safeBouncieId = null;
+      if (bouncieDeviceId !== undefined && bouncieDeviceId !== null && bouncieDeviceId !== "") {
+        const trimmed = String(bouncieDeviceId).trim();
+        if (!BOUNCIE_IMEI_RE.test(trimmed)) {
+          return res.status(400).json({ error: "bouncieDeviceId must be a 15-digit IMEI" });
+        }
+        safeBouncieId = trimmed;
+      }
+
       // Build the new vehicle data object
       const newData = {
         vehicle_id:     vehicleId,
@@ -271,6 +434,7 @@ export default async function handler(req, res) {
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
         cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
+        ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
       };
 
       if (supabase) {
@@ -288,12 +452,23 @@ export default async function handler(req, res) {
 
           const { data: inserted, error: insertErr } = await supabase
             .from("vehicles")
-            .insert({ vehicle_id: vehicleId, data: newData, updated_at: new Date().toISOString() })
-            .select("data")
+            .insert({
+              vehicle_id:        vehicleId,
+              data:              newData,
+              updated_at:        new Date().toISOString(),
+              ...(safeBouncieId ? { bouncie_device_id: safeBouncieId, is_tracked: true } : {}),
+            })
+            .select("data, bouncie_device_id")
             .single();
 
           if (!insertErr) {
-            return res.status(201).json({ success: true, vehicle: inserted.data });
+            return res.status(201).json({
+              success: true,
+              vehicle: {
+                ...(inserted.data || {}),
+                bouncie_device_id: inserted.bouncie_device_id || null,
+              },
+            });
           }
           if (!isSchemaError(insertErr)) throw new Error(`Supabase insert failed: ${insertErr.message}`);
           console.warn("v2-vehicles create: Supabase schema error, falling back to GitHub:", insertErr.message);

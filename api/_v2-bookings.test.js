@@ -44,7 +44,7 @@ function makeReq(body, origin = "https://www.slytrans.com") {
 // bookings.json in-memory store keyed by vehicleId
 const bookingsStore = {};
 // Automation call recorder
-const automationCalls = { revenue: [], customer: [], booking: [], blocked: [] };
+const automationCalls = { revenue: [], customer: [], booking: [], blocked: [], releaseBlocked: [] };
 // SMS calls
 const smsCalls = [];
 // Supabase mock — not used by these tests (automation is mocked out)
@@ -79,10 +79,23 @@ mock.module("./_github-retry.js", {
 
 mock.module("./_booking-automation.js", {
   namedExports: {
-    autoCreateRevenueRecord: async (b) => { automationCalls.revenue.push({ ...b }); },
-    autoUpsertCustomer:      async (b, s) => { automationCalls.customer.push({ ...b, countStats: s }); },
-    autoUpsertBooking:       async (b) => { automationCalls.booking.push({ ...b }); },
-    autoCreateBlockedDate:   async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
+    autoCreateRevenueRecord:        async (b) => { automationCalls.revenue.push({ ...b }); },
+    autoUpsertCustomer:             async (b, s) => { automationCalls.customer.push({ ...b, countStats: s }); },
+    autoUpsertBooking:              async (b) => { automationCalls.booking.push({ ...b }); },
+    autoCreateBlockedDate:          async (vid, s, e, r) => { automationCalls.blocked.push({ vehicleId: vid, start: s, end: e, reason: r }); },
+    autoReleaseBlockedDateOnReturn: async (vid, ref) => { automationCalls.releaseBlocked.push({ vehicleId: vid, bookingRef: ref }); },
+    parseTime12h:            (t) => {
+      if (!t) return null;
+      const m = String(t).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+      if (!m) return null;
+      let h = parseInt(m[1], 10);
+      const mn = parseInt(m[2], 10);
+      const s2 = m[3] ? parseInt(m[3], 10) : 0;
+      const ap = (m[4] || "").toUpperCase();
+      if (ap === "PM" && h !== 12) h += 12;
+      if (ap === "AM" && h === 12) h = 0;
+      return `${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}:${String(s2).padStart(2,"0")}`;
+    },
   },
 });
 
@@ -161,6 +174,37 @@ mock.module("./_sms-templates.js", {
 mock.module("./_error-helpers.js", {
   namedExports: {
     adminErrorMessage: (err) => err?.message || String(err),
+    isSchemaError:     () => false,
+  },
+});
+
+// Mock _booking-pipeline.js so persistBooking stores the booking in the
+// in-memory bookingsStore and populates automationCalls without hitting
+// real Supabase or GitHub.  Mirrors old v2-bookings.js create behavior:
+// revenue + customer only for paid bookings; booking + blocked for all.
+mock.module("./_booking-pipeline.js", {
+  namedExports: {
+    persistBooking: async (opts) => {
+      const booking = { smsSentAt: {}, createdAt: new Date().toISOString(), ...opts };
+      if (booking.status === "booked_paid") {
+        automationCalls.revenue.push({ ...booking });
+        automationCalls.customer.push({ ...booking, countStats: false });
+      }
+      automationCalls.booking.push({ ...booking });
+      if (opts.pickupDate && opts.returnDate) {
+        automationCalls.blocked.push({
+          vehicleId: opts.vehicleId,
+          start:     opts.pickupDate,
+          end:       opts.returnDate,
+          reason:    "booking",
+        });
+      }
+      if (!Array.isArray(bookingsStore[opts.vehicleId])) bookingsStore[opts.vehicleId] = [];
+      if (!bookingsStore[opts.vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+        bookingsStore[opts.vehicleId].push(booking);
+      }
+      return { ok: true, bookingId: booking.bookingId, booking, supabaseOk: true, errors: [] };
+    },
   },
 });
 
@@ -189,6 +233,7 @@ function resetCalls() {
   automationCalls.customer.length = 0;
   automationCalls.booking.length = 0;
   automationCalls.blocked.length = 0;
+  automationCalls.releaseBlocked.length = 0;
   smsCalls.length = 0;
 }
 
@@ -582,11 +627,20 @@ test("lifecycle: complete booking (active_rental → completed_rental) increment
   assert.ok(statsCall, "autoUpsertCustomer must be called with countStats=true on completion");
 });
 
-test("lifecycle: completing a booking auto-sets completedAt", async () => {
+test("lifecycle: completing a booking auto-sets completedAt and actualReturnTime", async () => {
   resetStore(); resetCalls();
   const r1 = makeRes();
   await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
   const { bookingId } = r1._body.booking;
+
+  // Must first activate before completing
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
 
   const r2 = makeRes();
   await handler(makeReq({
@@ -598,6 +652,7 @@ test("lifecycle: completing a booking auto-sets completedAt", async () => {
   }), r2);
   assert.equal(r2._status, 200);
   assert.ok(r2._body.booking.completedAt, "completedAt must be set automatically on completion");
+  assert.ok(r2._body.booking.actualReturnTime, "actualReturnTime must be set automatically on completion");
 });
 
 test("lifecycle: activating a booking auto-sets activatedAt", async () => {
@@ -638,6 +693,16 @@ test("lifecycle: completing a booking removes its date range from booked-dates.j
   await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
   const { bookingId } = r1._body.booking;
   githubPuts.length = 0; // clear setup calls
+
+  // Activate first (required by the safety guard)
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
+  githubPuts.length = 0; // clear activation calls
 
   await handler(makeReq({
     secret:    "test-admin-secret",
@@ -688,6 +753,59 @@ test("lifecycle: cancelling a booking removes its date range from booked-dates.j
 // ═══════════════════════════════════════════════════════════════════════════════
 // 9. PAYMENT FIELD COMPUTATION (via autoUpsertBooking args)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Safety guard + return flow ──────────────────────────────────────────────
+
+test("returned: completing a non-active booking returns 409", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+  // Booking is currently booked_paid — should NOT be completable without activating first
+
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), r2);
+  assert.equal(r2._status, 409, `Expected 409 when completing non-active booking, got ${r2._status}: ${JSON.stringify(r2._body)}`);
+  assert.ok(r2._body.error.includes("active"), "Error must mention active status requirement");
+});
+
+test("returned: completing an active booking calls autoReleaseBlockedDateOnReturn", async () => {
+  resetStore(); resetCalls();
+  const r1 = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 150, totalPrice: 150 })), r1);
+  const { bookingId } = r1._body.booking;
+
+  // Activate
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "active_rental" },
+  }), makeRes());
+  resetCalls();
+
+  // Complete (Return)
+  const r2 = makeRes();
+  await handler(makeReq({
+    secret:    "test-admin-secret",
+    action:    "update",
+    vehicleId: "camry",
+    bookingId,
+    updates:   { status: "completed_rental" },
+  }), r2);
+  assert.equal(r2._status, 200, `Expected 200 on return, got ${r2._status}: ${JSON.stringify(r2._body)}`);
+  assert.ok(
+    automationCalls.releaseBlocked.some((c) => c.vehicleId === "camry" && c.bookingRef === bookingId),
+    "autoReleaseBlockedDateOnReturn must be called with vehicleId and bookingId on completion"
+  );
+});
 
 test("payment: amountPaid=0, totalPrice=200 → Supabase sync has unpaid status", async () => {
   resetStore(); resetCalls();
@@ -883,6 +1001,81 @@ test("list: returns Supabase rows when client is available", async () => {
   }
 });
 
+test("list: aggregates revenue rows per booking for total collected display", async () => {
+  resetStore(); resetCalls();
+  const fakeRows = [
+    {
+      id: "uuid-agg-1", booking_ref: "ca8ee28ffb888c41", vehicle_id: "camry2013",
+      pickup_date: "2026-04-10", return_date: "2026-04-12",
+      pickup_time: "9:00 AM",    return_time: "9:00 AM",
+      status: "booked_paid",     deposit_paid: 121.28, total_price: 121.28,
+      remaining_balance: 0,      payment_status: "paid",
+      payment_method: "stripe",  payment_intent_id: "pi_base",
+      notes: "",                 created_at: "2026-04-10T09:00:00.000Z",
+      updated_at: null,
+      customers: { id: "cu-agg-1", name: "Brandon Bookhart", phone: "+15303285561", email: "brandon.bookhart@gmail.com" },
+    },
+  ];
+  const fakeRevenueRows = [
+    {
+      booking_id: "ca8ee28ffb888c41",
+      gross_amount: 121.28,
+      stripe_fee: 4.16,
+      stripe_net: 117.12,
+      payment_method: "stripe",
+      customer_name: "Brandon Bookhart",
+      customer_phone: "+15303285561",
+      customer_email: "brandon.bookhart@gmail.com",
+    },
+    {
+      booking_id: "ca8ee28ffb888c41",
+      gross_amount: 60.64,
+      stripe_fee: 2.06,
+      stripe_net: 58.58,
+      payment_method: "stripe",
+      customer_name: "Brandon Bookhart",
+      customer_phone: "+15303285561",
+      customer_email: "brandon.bookhart@gmail.com",
+    },
+  ];
+
+  const makeBookingsChain = (rows) => ({
+    select() { return this; },
+    eq()     { return this; },
+    in()     { return this; },
+    order()  { return Promise.resolve({ data: rows, error: null }); },
+  });
+
+  const makeRevenueChain = (rows) => ({
+    select() { return this; },
+    in()     { return this; },
+    then(resolve, reject) {
+      return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    },
+  });
+
+  supabaseMockState.client = {
+    from: (table) => {
+      if (table === "bookings") return makeBookingsChain(fakeRows);
+      if (table === "revenue_records_effective") return makeRevenueChain(fakeRevenueRows);
+      return makeBookingsChain([]);
+    },
+  };
+
+  try {
+    const res = makeRes();
+    await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
+    assert.equal(res._status, 200);
+    assert.equal(res._body.bookings.length, 1);
+    assert.equal(res._body.bookings[0].bookingId, "ca8ee28ffb888c41");
+    assert.equal(res._body.bookings[0].amountGross, 181.92);
+    assert.equal(res._body.bookings[0].stripeFee, 6.22);
+    assert.equal(res._body.bookings[0].amountNet, 175.7);
+  } finally {
+    supabaseMockState.client = null;
+  }
+});
+
 test("list: falls back to bookings.json when Supabase errors", async () => {
   resetStore(); resetCalls();
   await handler(makeReq(createPayload({ amountPaid: 100 })), makeRes()); // seed one booking
@@ -1012,4 +1205,31 @@ test("update: Supabase direct update is attempted before bookings.json write", a
   } finally {
     supabaseMockState.client = null;
   }
+});
+
+test("delete: removes booking from bookings.json by bookingId", async () => {
+  resetStore(); resetCalls();
+
+  const created = makeRes();
+  await handler(makeReq(createPayload({ amountPaid: 100, totalPrice: 100 })), created);
+  const bookingId = created._body?.booking?.bookingId;
+  assert.ok(bookingId, "create should return a bookingId");
+
+  const delRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete", bookingId }), delRes);
+  assert.equal(delRes._status, 200);
+  assert.equal(delRes._body?.success, true);
+
+  const listRes = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), listRes);
+  assert.equal(listRes._status, 200);
+  assert.equal(listRes._body.bookings.length, 0, "deleted booking should not remain in listing");
+});
+
+test("delete: returns 400 when bookingId is missing", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "delete" }), res);
+  assert.equal(res._status, 400);
+  assert.match(res._body?.error || "", /bookingId is required/);
 });

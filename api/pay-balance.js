@@ -11,15 +11,15 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import Stripe from "stripe";
 import {
-  CARS,
   computeRentalDays,
 } from "./_pricing.js";
 import {
   loadPricingSettings,
-  computeCamryAmountFromSettings,
+  computeCarAmountFromVehicleData,
   computeSlingshotAmountFromSettings,
   computeDppCostFromSettings,
 } from "./_settings.js";
+import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -46,19 +46,23 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration } = req.body;
+    const {
+      vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration,
+      bookingId, originalPaymentIntentId, depositPaymentIntentId,
+    } = req.body;
 
-    // Validate vehicleId against the server-side allowlist
-    if (!vehicleId || !CARS[vehicleId]) {
+    // Validate vehicleId against the live vehicle database (CARS → Supabase → vehicles.json)
+    const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
+    if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
 
-    const isSlingshotVehicle = !!CARS[vehicleId].hourlyTiers;
+    const isSlingshotVehicle = vehicleData.isSlingshot;
 
     // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
     if (isSlingshotVehicle) {
-      if (!slingshotDuration || ![3, 6, 24].includes(Number(slingshotDuration))) {
-        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3, 6, or 24 hours." });
+      if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
+        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
       }
     }
 
@@ -86,7 +90,7 @@ export default async function handler(req, res) {
     // Compute amounts server-side — never trust a client-supplied amount.
     const computedFullRental = isSlingshotVehicle
       ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
-      : computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
+      : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 
     const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
@@ -101,25 +105,28 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No balance due for this booking." });
     }
 
-    const carData = CARS[vehicleId];
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
       receipt_email: email,
-      description: `Sly Transportation Services LLC – ${carData.name} Balance Payment`,
+      description: `Sly Transportation Services LLC – ${vehicleData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
       // Stripe Tax calculates and adds the correct tax on top of the pre-tax balance
       // based on the customer's billing address collected by the Payment Element.
       automatic_tax: { enabled: true },
       metadata: {
+        booking_id:            bookingId || "",
+        original_booking_id:   bookingId || "",
         renter_name:           trimmedName,
         vehicle_id:            vehicleId,
-        vehicle_name:          carData.name,
+        vehicle_name:          vehicleData.name,
         pickup_date:           pickup,
         return_date:           returnDate,
         ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         payment_type:          "balance_payment",
+        original_payment_intent_id: originalPaymentIntentId || depositPaymentIntentId || "",
+        deposit_payment_intent_id:  depositPaymentIntentId || originalPaymentIntentId || "",
         deposit_already_paid:  depositPaid.toFixed(2),
         full_rental_amount:    (computedFullRental + protectionCost).toFixed(2),
         balance_paid:          balanceAmount.toFixed(2),

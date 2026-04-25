@@ -24,6 +24,11 @@
 //     tables: {
 //       [tableName]: "ok" | "missing" | "error"
 //     }
+//   },
+//   bookingTimeAudit: {
+//     checked: boolean,
+//     missingTimeCount: number,
+//     sampleMissingRefs: string[]
 //   }
 // }
 
@@ -110,7 +115,7 @@ export default async function handler(req, res) {
     TEXTMAGIC_USERNAME:        process.env.TEXTMAGIC_USERNAME        ? "ok" : "missing",
     // Optional — only needed for the AI assistant feature.
     OPENAI_API_KEY:            process.env.OPENAI_API_KEY            ? "ok" : "optional",
-    OPENAI_MODEL:              process.env.OPENAI_MODEL              || "gpt-5.4-mini (default)",
+    OPENAI_MODEL:              process.env.OPENAI_MODEL              || "gpt-4.1-mini (default)",
   };
 
   // ── Supabase connectivity and table checks ───────────────────────────────
@@ -118,6 +123,19 @@ export default async function handler(req, res) {
     connected: false,
     error:     null,
     tables:    {},
+  };
+  const bookingTimeAudit = {
+    checked: false,
+    missingTimeCount: 0,
+    sampleMissingRefs: [],
+  };
+
+  const chargesHealthCheck = {
+    checked: false,
+    orphanChargesCount: 0,
+    sampleOrphanChargeIds: [],
+    chargesWithoutRevenueCount: 0,
+    sampleChargesWithoutRevenue: [],
   };
 
   const sb = getSupabaseAdmin();
@@ -145,8 +163,75 @@ export default async function handler(req, res) {
       for (const table of OPTIONAL_TABLES) {
         supabaseResult.tables[table] = await checkTable(sb, table);
       }
+
+      // Booking datetime integrity audit: find rows missing pickup/return time.
+      try {
+        const { data: missingRows, error: missingErr } = await sb
+          .from("bookings")
+          .select("booking_ref, pickup_time, return_time")
+          .or("pickup_time.is.null,return_time.is.null")
+          .limit(25);
+        if (!missingErr) {
+          bookingTimeAudit.checked = true;
+          const rows = missingRows || [];
+          bookingTimeAudit.missingTimeCount = rows.length;
+          bookingTimeAudit.sampleMissingRefs = rows
+            .map((r) => r.booking_ref)
+            .filter(Boolean)
+            .slice(0, 10);
+        }
+      } catch {
+        // Non-fatal diagnostic helper only.
+      }
+
+      // Charges health check: flag post-rental charges that are missing a
+      // booking_ref link or have no corresponding revenue_records entry.
+      try {
+        const { data: chargesRows, error: chargesErr } = await sb
+          .from("charges")
+          .select("id, booking_id, stripe_payment_intent_id, status")
+          .eq("status", "succeeded")
+          .limit(200);
+
+        if (!chargesErr) {
+          const orphanChargeIds = (chargesRows || [])
+            .filter((r) => !r.booking_id || !String(r.booking_id).trim())
+            .map((r) => String(r.id))
+            .slice(0, 10);
+
+          // Charges with a Stripe PI but no revenue_records entry.
+          const succeededPiIds = (chargesRows || [])
+            .map((r) => r.stripe_payment_intent_id)
+            .filter(Boolean);
+
+          let chargesWithoutRevenue = 0;
+          let sampleChargesWithoutRevenue = [];
+          if (succeededPiIds.length > 0) {
+            const { data: rrRows, error: rrErr } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", succeededPiIds);
+            if (!rrErr) {
+              const trackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+              const untracked = (chargesRows || []).filter(
+                (r) => r.stripe_payment_intent_id && !trackedPis.has(r.stripe_payment_intent_id)
+              );
+              chargesWithoutRevenue = untracked.length;
+              sampleChargesWithoutRevenue = untracked.map((r) => r.stripe_payment_intent_id).slice(0, 5);
+            }
+          }
+
+          chargesHealthCheck.checked = true;
+          chargesHealthCheck.orphanChargesCount = orphanChargeIds.length;
+          chargesHealthCheck.sampleOrphanChargeIds = orphanChargeIds;
+          chargesHealthCheck.chargesWithoutRevenueCount = chargesWithoutRevenue;
+          chargesHealthCheck.sampleChargesWithoutRevenue = sampleChargesWithoutRevenue;
+        }
+      } catch {
+        // Non-fatal diagnostic helper only.
+      }
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult });
+  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck });
 }

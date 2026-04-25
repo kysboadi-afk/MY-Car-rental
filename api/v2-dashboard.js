@@ -4,15 +4,45 @@
 //
 // POST /api/v2-dashboard
 // Body: { "secret": "<ADMIN_SECRET>" }
+//
+// Financial source of truth: revenue_records (Supabase)
+//   Gross Revenue = SUM(gross_amount  WHERE payment_status='paid' AND !is_cancelled AND !is_no_show)
+//   Total Fees    = SUM(stripe_fee)   (null treated as 0 for unreconciled rows)
+//   Net Revenue   = SUM(stripe_net − refund_amount)   (null stripe_net treated as gross_amount − stripe_fee)
+//   Net Profit    = Net Revenue − Total Expenses
+//
+// Falls back to bookings.json when Supabase is unavailable or revenue_records
+// is empty, matching the same fallback behaviour as api/v2-revenue.js.
 
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
-import { loadBookings } from "./_bookings.js";
+import { loadBookings, isNetworkError } from "./_bookings.js";
 import { computeAmount } from "./_pricing.js";
-import { adminErrorMessage } from "./_error-helpers.js";
+import { normalizeClockTime } from "./_time.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
+import { getSupabaseAdmin } from "./_supabase.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2012", "camry2013"];
+const VEHICLE_NAMES    = {
+  slingshot:  "Slingshot R",
+  slingshot2: "Slingshot R (Unit 2)",
+  slingshot3: "Slingshot R (Unit 3)",
+  camry:      "Camry 2012",
+  camry2012:  "Camry 2012",
+  camry2013:  "Camry 2013 SE",
+};
+const DB_TO_APP_STATUS = {
+  pending:   "reserved_unpaid",
+  approved:  "booked_paid",
+  active:    "active_rental",
+  completed: "completed_rental",
+  cancelled: "cancelled_rental",
+};
+const DEFAULT_RETURN_TIME = "10:00";
 
+// Used only as a fallback when revenue_records is unavailable or empty.
 function bookingRevenue(booking) {
   if (typeof booking.amountPaid === "number" && booking.amountPaid > 0) {
     return booking.amountPaid;
@@ -22,6 +52,37 @@ function bookingRevenue(booking) {
     return computed || 0;
   }
   return 0;
+}
+
+// Builds an absolute Date from a date+time string in America/Los_Angeles timezone.
+// Stored times are LA wall-clock values, so we must apply the correct LA UTC
+// offset (PDT = UTC-7, PST = UTC-8) rather than treating them as bare UTC.
+function buildDateTimeLA(date, time) {
+  if (!date) return null;
+  const normalizedTime = normalizeClockTime(time || DEFAULT_RETURN_TIME);
+  if (!normalizedTime) return null;
+  // Interpret the stored LA wall-clock time as UTC momentarily to probe the
+  // correct LA offset at that calendar date (handles PDT/PST automatically).
+  const laAsUtcProbe = new Date(`${date}T${normalizedTime}:00Z`);
+  if (Number.isNaN(laAsUtcProbe.getTime())) return null;
+  let offset = "-08:00"; // PST fallback
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      timeZoneName: "longOffset",
+    }).formatToParts(laAsUtcProbe).find((p) => p.type === "timeZoneName")?.value || "";
+    const m = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (m) offset = m[1];
+  } catch {
+    // keep PST fallback
+  }
+  const dt = new Date(`${date}T${normalizedTime}:00${offset}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function parseReturnDateTime(returnDate, returnTime) {
+  if (!returnDate) return null;
+  return buildDateTimeLA(returnDate, returnTime || DEFAULT_RETURN_TIME);
 }
 
 export default async function handler(req, res) {
@@ -38,79 +99,425 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret } = req.body || {};
+  const { secret, scope } = req.body || {};
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {
-    const [{ data: vehicles }, { data: expenses }, { data: bookingsData }] = await Promise.all([
-      loadVehicles(),
-      loadExpenses(),
-      loadBookings(),
-    ]);
+    const sb = getSupabaseAdmin();
 
-    // Flatten all bookings
-    const allBookings = Object.values(bookingsData).flat();
+    // Load expenses: prefer Supabase (matches the write path in add-expense.js),
+    // fall back to GitHub expenses.json when Supabase is unavailable or errors.
+    async function fetchExpenses() {
+      if (sb) {
+        const { data, error } = await sb.from("expenses").select("*");
+        if (!error && data) {
+          return { data };
+        }
+        console.warn("v2-dashboard: Supabase expenses query failed, falling back to GitHub:", error?.message);
+      }
+      return loadExpenses();
+    }
 
-    // KPIs
-    const activeStatuses = new Set(["booked_paid", "active_rental", "reserved_unpaid"]);
-    const paidStatuses   = new Set(["booked_paid", "active_rental", "completed_rental"]);
+    // Load bookings for non-financial KPIs.
+    // Primary: Supabase bookings table. Fallback: bookings.json — only on network
+    // error (Supabase unreachable). Empty result sets are valid and are NOT
+    // grounds for fallback.
+    async function fetchBookingsKpis() {
+      if (sb) {
+        try {
+          const { data: rows, error } = await sb
+            .from("bookings")
+            .select(`
+              booking_ref, vehicle_id, status,
+              pickup_date, return_date, pickup_time, return_time,
+              deposit_paid, created_at,
+              customers ( name )
+            `)
+            .in("vehicle_id", ALLOWED_VEHICLES)
+            .order("created_at", { ascending: false });
+          if (error) throw error; // query error → propagate, do NOT fallback
+          return (rows || []).map((r) => ({
+            bookingId:   r.booking_ref || String(r.id),
+            vehicleId:   uiVehicleId(r.vehicle_id),
+            vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
+            name:        r.customers?.name || "",
+            status:      DB_TO_APP_STATUS[r.status] || r.status,
+            pickupDate:  r.pickup_date  || "",
+            returnDate:  r.return_date  || "",
+            returnTime:  r.return_time  || "",
+            amountPaid:  Number(r.deposit_paid || 0),
+            createdAt:   r.created_at,
+          }));
+        } catch (err) {
+          if (isNetworkError(err)) {
+            console.error("[FALLBACK] Supabase unreachable in v2-dashboard, using bookings.json:", err.message);
+            const { data } = await loadBookings();
+            return Object.values(data).flat();
+          }
+          throw err; // non-network Supabase errors propagate
+        }
+      }
+      // Supabase not configured — use bookings.json directly
+      const { data } = await loadBookings();
+      return Object.values(data).flat();
+    }
 
-    let totalRevenue     = 0;
-    let activeBookings   = 0;
-    let pendingApprovals = 0;
+    const metricsPromise = sb
+      ? sb.from("admin_metrics_v2").select("*").single()
+          .then((r) => r, (e) => {
+            console.warn("v2-dashboard: admin_metrics_v2 query failed (non-fatal), falling back to revenue_records loop:", e?.message);
+            return { data: null, error: e };
+          })
+      : Promise.resolve({ data: null });
 
-    const monthlyRevenue = {};
-    const bookingsPerVehicle = {};
+    const bookingsPromise = sb
+      ? sb.from("bookings")
+          .select(`
+            booking_ref, vehicle_id, status,
+            pickup_date, return_date, pickup_time, return_time,
+            deposit_paid, created_at,
+            customers ( name )
+          `)
+          .in("vehicle_id", ALLOWED_VEHICLES)
+          .order("created_at", { ascending: false })
+          .limit(20)
+          .then((r) => r, () => ({ data: null }))
+      : Promise.resolve({ data: null });
 
+    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult] =
+      await Promise.all([
+        loadVehicles(),
+        fetchExpenses(),
+        fetchBookingsKpis(),
+        metricsPromise,
+        bookingsPromise,
+      ]);
+
+    // admin_metrics_v2: pre-aggregated dashboard KPIs.
+    // When available it replaces the sequential revenue_records and charges queries.
+    const metricsView = metricsViewResult?.data ?? null;
+    const viewOk = !!metricsView && !metricsViewResult?.error;
+
+    // Scope prefix selects the right pre-aggregated column set:
+    //   "car"/"cars" → car_  prefix
+    //   "slingshot"  → slingshot_ prefix
+    //   (none)       → total_ prefix
+    const vp = scope === "slingshot"
+      ? "slingshot"
+      : (scope === "car" || scope === "cars") ? "car" : "total";
+
+    // Filter vehicles by scope: "car" → exclude slingshots; "slingshot" → only slingshots
+    const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
+      const type = v.type || "";
+      if (scope === "car" || scope === "cars") return type !== "slingshot";
+      if (scope === "slingshot") return type === "slingshot";
+      return true;
+    });
+    const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);
+    const filteredVehicleIds = new Set(Object.keys(filteredVehicles));
+
+    // All bookings limited to scoped vehicles (used for non-financial KPIs)
+    const allBookings = allBookingsRaw
+      .filter((b) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(b.vehicleId));
+
+    // Non-financial KPIs (from Supabase bookings, or bookings.json fallback)
+    const now = new Date();
+    // Anchor "today" to Los Angeles wall-clock time so the boundaries align with
+    // LA operations regardless of where the Vercel function runs.
+    // todayLA = LA midnight (start of current LA day).
+    const todayLA = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    todayLA.setHours(0, 0, 0, 0);
+    // ISO date string kept for the "returns today" check (date equality).
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
+    let activeBookings    = 0;
+    let pendingApprovals  = 0;
+    let overdueCount      = 0;
+    let returnsTodayCount = 0;
+    let pickupsTodayCount = 0;
+    const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status)) activeBookings++;
-
+      if (booking.status === "cancelled_rental") {
+        // Cancelled bookings never contribute to any active/overdue KPIs.
+        continue;
+      }
+      const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
+      // Overdue: either explicitly flagged by an admin (status === "overdue") OR the
+      // return datetime has provably passed. The explicit status check is intentional
+      // — it covers cases where an admin marks a rental overdue without a precise
+      // return time stored (returnDateTime would be null/invalid).
+      const bookingIsOverdue = booking.status === "overdue"
+        || (!!returnDateTime && now >= returnDateTime);
+      // Active rental = date range only, timezone-safe:
+      //   pickup midnight <= LA today  AND  return end-of-day >= LA today
+      // Status-agnostic so new statuses never break the count.
+      // Both dates must be present; missing dates do not inflate the KPI.
+      let bookingIsActive = false;
+      if (booking.pickupDate && booking.returnDate) {
+        const pickup = new Date(booking.pickupDate);
+        pickup.setHours(0, 0, 0, 0);
+        const returnD = new Date(booking.returnDate);
+        returnD.setHours(23, 59, 59, 999);
+        bookingIsActive = pickup <= todayLA
+          && returnD >= todayLA
+          && (!returnDateTime || now < returnDateTime);
+      }
+      if (bookingIsActive || bookingIsOverdue) {
+        activeBookings++;
+        activeOrOverdueBookings.push(booking);
+      }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
+      if (bookingIsOverdue) overdueCount++;
+      if (booking.returnDate === todayStr && bookingIsActive) {
+        returnsTodayCount++;
+      }
+      // Pickups today: booked/approved rentals whose pickup date is today (LA).
+      if (booking.pickupDate === todayStr
+          && (booking.status === "reserved_unpaid" || booking.status === "booked_paid")) {
+        pickupsTodayCount++;
+      }
+    }
 
-      if (paidStatuses.has(booking.status)) {
+    // Override booking-count KPIs with view values when the view is available.
+    // The view uses server-side timezone-aware SQL and covers all booking status
+    // variants (including newer 'reserved' / 'pending_verification'), making it
+    // more accurate than the JS loop above (which only checks legacy status names).
+    if (viewOk) {
+      activeBookings    = Number(metricsView[`${vp}_active_rentals`]    || 0);
+      pendingApprovals  = Number(metricsView[`${vp}_pending_approvals`] || 0);
+      overdueCount      = Number(metricsView[`${vp}_overdue_count`]     || 0);
+      returnsTodayCount = Number(metricsView[`${vp}_returns_today`]     || 0);
+      pickupsTodayCount = Number(metricsView[`${vp}_pickups_today`]     || 0);
+    }
+
+    // Total expenses (scoped)
+    const totalExpenses = expenses
+      .filter((e) => filteredVehicleIds.size === 0 || filteredVehicleIds.has(e.vehicle_id))
+      .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    // ── Financial KPIs: admin_metrics_v2 view (primary) or revenue_records loop (fallback) ─
+    // The view pre-aggregates revenue_records + supplemental charges in SQL,
+    // replacing the sequential revenue_records query and charges dedup loop below.
+    // Falls back to the revenue_records JS loop when the view is unavailable.
+
+    let totalRevenue    = 0;
+    let totalStripeFees = 0;
+    let netRevenue      = 0;
+    let reconciledCount = 0;
+    const monthlyRevenue     = {};
+    const bookingsPerVehicle = {};
+    // Per-vehicle revenue from revenue_records (keyed by vehicle_id)
+    const rrByVehicle = {}; // { [vehicleId]: { gross, net, count } }
+    // Per-booking revenue from revenue_records (for recentBookings display)
+    const rrByBookingId = {}; // { [bookingId]: gross_amount }
+    let financialsFromRevRecords = false;
+
+    if (viewOk) {
+      // Fast path: all financial totals come from the pre-aggregated view.
+      financialsFromRevRecords = true;
+      totalRevenue    = Number(metricsView[`${vp}_revenue`]          || 0);
+      totalStripeFees = Number(metricsView[`${vp}_stripe_fees`]      || 0);
+      netRevenue      = Number(metricsView[`${vp}_net_revenue`]      || 0);
+      reconciledCount = Number(metricsView[`${vp}_reconciled_count`] || 0);
+
+      // Populate per-vehicle revenue map (used by vehicleStats computation below).
+      // view includes both revenue_records and supplemental charges.
+      const vRevJson = metricsView.vehicle_revenue_json || {};
+      for (const [vid, vr] of Object.entries(vRevJson)) {
+        const normVid = uiVehicleId(vid);
+        rrByVehicle[normVid] = {
+          gross: Number(vr.gross || 0),
+          net:   Number(vr.net   || 0),
+          count: Number(vr.count || 0),
+        };
+        bookingsPerVehicle[normVid] = Number(vr.count || 0);
+      }
+    }
+
+    if (sb && !viewOk) {
+      try {
+        const { data: rrRows, error: rrErr } = await sb
+          .from("revenue_records_effective")
+          .select("booking_id, vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
+          .eq("payment_status", "paid");
+
+        if (rrErr) {
+          console.error("v2-dashboard: revenue records unavailable, falling back to bookings.json:", rrErr.message);
+        } else if ((rrRows || []).length > 0) {
+          financialsFromRevRecords = true;
+          for (const r of rrRows) {
+            if (r.is_cancelled || r.is_no_show) continue;
+            const vid = uiVehicleId(r.vehicle_id) || "unknown";
+            if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
+
+            const grossRaw = Number(r.gross_amount || 0);
+            const gross  = Number.isFinite(grossRaw) ? grossRaw : 0;
+            // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
+            // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
+            // When both are set (reconciled row): use exact Stripe values.
+            const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const refund = Number(r.refund_amount || 0);
+            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
+
+            totalRevenue    += gross;
+            totalStripeFees += fee;
+            netRevenue      += net;
+            if (r.stripe_fee != null) reconciledCount++;
+
+            const monthKey = (r.pickup_date || "").slice(0, 7);
+            if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + gross;
+
+            bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
+
+            if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, net: 0, count: 0 };
+            rrByVehicle[vid].gross += gross;
+            rrByVehicle[vid].net   += net;
+            rrByVehicle[vid].count += 1;
+
+            if (r.booking_id) rrByBookingId[r.booking_id] = (rrByBookingId[r.booking_id] || 0) + gross;
+          }
+        }
+        // If rrRows is empty (no paid records yet) we fall through to bookings.json.
+      } catch (rrEx) {
+        console.warn("v2-dashboard: revenue_records unavailable, falling back to bookings.json:", rrEx.message);
+      }
+    }
+
+    // Fallback: compute from bookings.json when Supabase unavailable or rev_records empty.
+    // Mirrors the same fallback used by api/v2-revenue.js.
+    if (!financialsFromRevRecords) {
+      const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      for (const booking of allBookings) {
+        if (!paidStatuses.has(booking.status)) continue;
         const amount = bookingRevenue(booking);
         totalRevenue += amount;
+        netRevenue   += amount; // No Stripe fee data available in fallback
 
-        const monthKey = (booking.createdAt || booking.pickupDate || "").slice(0, 7);
-        if (monthKey) {
-          monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
-        }
+        const monthKey = (booking.pickupDate || "").slice(0, 7);
+        if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
 
         const vid = booking.vehicleId || "unknown";
         bookingsPerVehicle[vid] = (bookingsPerVehicle[vid] || 0) + 1;
       }
     }
 
-    // Vehicles available
-    const vehicleList = Object.values(vehicles);
-    const availableVehicles = vehicleList.filter((v) => v.status === "active").length;
-
-    // Per-vehicle stats for alerts
+    // ── Per-vehicle stats ─────────────────────────────────────────────────────
+    const paidStatusesFallback = new Set(["booked_paid", "active_rental", "completed_rental"]);
     const vehicleStats = {};
-    for (const [vehicleId, vehicle] of Object.entries(vehicles)) {
-      const vBookings = (bookingsData[vehicleId] || []).filter((b) => paidStatuses.has(b.status));
-      const vRevenue  = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
-      const vExpenses = expenses.filter((e) => e.vehicle_id === vehicleId).reduce((s, e) => s + (e.amount || 0), 0);
+    for (const [vehicleId, vehicle] of Object.entries(filteredVehicles)) {
+      const vExpenses = expenses
+        .filter((e) => e.vehicle_id === vehicleId)
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
       const purchasePrice = vehicle.purchase_price || 0;
-      const netProfit = vRevenue - vExpenses;
 
+      let vGross, vNet, vBookingCount;
+      if (financialsFromRevRecords) {
+        const vr  = rrByVehicle[vehicleId] || { gross: 0, net: 0, count: 0 };
+        vGross        = vr.gross;
+        vNet          = vr.net;
+        vBookingCount = vr.count;
+      } else {
+        // Fallback from bookings data
+        const vBookings = allBookings.filter(
+          (b) => b.vehicleId === vehicleId && paidStatusesFallback.has(b.status)
+        );
+        vGross        = vBookings.reduce((s, b) => s + bookingRevenue(b), 0);
+        vNet          = vGross; // Assume zero fees when no Stripe data available
+        vBookingCount = vBookings.length;
+      }
+
+      const vNetProfit = vNet - vExpenses;
       vehicleStats[vehicleId] = {
-        name:          vehicle.vehicle_name,
-        status:        vehicle.status,
-        revenue:       Math.round(vRevenue   * 100) / 100,
-        expenses:      Math.round(vExpenses  * 100) / 100,
-        netProfit:     Math.round(netProfit  * 100) / 100,
+        name:             vehicle.vehicle_name,
+        status:           vehicle.status,
+        revenue:          Math.round(vGross     * 100) / 100,
+        expenses:         Math.round(vExpenses  * 100) / 100,
+        netProfit:        Math.round(vNetProfit * 100) / 100,
         purchasePrice,
-        roi: purchasePrice > 0 ? Math.round((netProfit / purchasePrice) * 10000) / 100 : null,
-        bookingCount:  vBookings.length,
+        roi:              purchasePrice > 0 ? Math.round((vNetProfit / purchasePrice) * 10000) / 100 : null,
+        operationalROI:   vExpenses > 0 ? Math.round((vNetProfit / vExpenses) * 10000) / 100 : null,
+        bookingCount:     vBookingCount,
       };
     }
 
-    // Alerts: negative-profit vehicles, upcoming bookings (next 7 days)
+    // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
+    // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
+    // fee handling) are excluded here to prevent double-counting revenue totals.
+    // Skipped when viewOk because the admin_metrics_v2 view already incorporates
+    // these supplemental charges via its charges_net CTE.
+    if (sb && !viewOk) {
+      const bookingVehicleMap = {};
+      for (const b of allBookings) {
+        if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
+      }
+      try {
+        const { data: chargesData } = await sb
+          .from("charges")
+          .select("booking_id, amount, created_at, stripe_payment_intent_id")
+          .eq("status", "succeeded");
+
+        // Find which charge PIs are already in revenue_records to avoid double-counting.
+        const chargePiIds = (chargesData || [])
+          .map((c) => c.stripe_payment_intent_id)
+          .filter(Boolean);
+        let revenueTrackedPis = new Set();
+        if (chargePiIds.length > 0) {
+          try {
+            const { data: rrRows } = await sb
+              .from("revenue_records")
+              .select("payment_intent_id")
+              .in("payment_intent_id", chargePiIds);
+            revenueTrackedPis = new Set((rrRows || []).map((r) => r.payment_intent_id).filter(Boolean));
+          } catch (piLookupErr) {
+            console.warn("v2-dashboard: charge PI dedup lookup failed (non-fatal):", piLookupErr.message);
+          }
+        }
+
+        for (const charge of (chargesData || [])) {
+          // Skip charges already recorded in revenue_records to avoid double-counting.
+          if (charge.stripe_payment_intent_id && revenueTrackedPis.has(charge.stripe_payment_intent_id)) continue;
+          const vid = bookingVehicleMap[charge.booking_id];
+          if (!vid) continue;
+          if (filteredVehicleIds.size > 0 && !filteredVehicleIds.has(vid)) continue;
+          const amount = Number(charge.amount || 0);
+          totalRevenue += amount;
+          netRevenue   += amount;
+          const monthKey = (charge.created_at || "").slice(0, 7);
+          if (monthKey) monthlyRevenue[monthKey] = (monthlyRevenue[monthKey] || 0) + amount;
+          if (vehicleStats[vid]) {
+            vehicleStats[vid].revenue   = Math.round((vehicleStats[vid].revenue   + amount) * 100) / 100;
+            vehicleStats[vid].netProfit = Math.round((vehicleStats[vid].netProfit + amount) * 100) / 100;
+            const pp  = vehicleStats[vid].purchasePrice || 0;
+            const exp = vehicleStats[vid].expenses      || 0;
+            vehicleStats[vid].roi = pp > 0
+              ? Math.round((vehicleStats[vid].netProfit / pp) * 10000) / 100
+              : null;
+            vehicleStats[vid].operationalROI = exp > 0
+              ? Math.round((vehicleStats[vid].netProfit / exp) * 10000) / 100
+              : null;
+          }
+        }
+      } catch (chargesErr) {
+        console.error("v2-dashboard: charges load error (non-fatal):", chargesErr.message);
+      }
+    }
+
+    // Vehicles available
+    // When the view is available, use its pre-computed count (scope-aware, server-side).
+    const vehicleList = Object.values(filteredVehicles);
+    const unavailableVehicleIds = new Set(
+      activeOrOverdueBookings
+        .map((b) => b.vehicleId)
+    );
+    const availableVehicles = viewOk
+      ? Number(metricsView[`${vp}_available_vehicles`] || 0)
+      : vehicleList.filter(
+          (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
+        ).length;
+
+    // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
-    const now  = new Date();
     const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     for (const [vehicleId, stats] of Object.entries(vehicleStats)) {
@@ -124,7 +531,7 @@ export default async function handler(req, res) {
     }
 
     for (const booking of allBookings) {
-      if (activeStatuses.has(booking.status) && booking.pickupDate) {
+      if (booking.status !== "cancelled_rental" && booking.pickupDate) {
         const pickup = new Date(booking.pickupDate);
         if (pickup >= now && pickup <= in7d) {
           alerts.push({
@@ -143,42 +550,88 @@ export default async function handler(req, res) {
       });
     }
 
-    // Revenue chart: last 12 months sorted
-    const revenueChart = Object.entries(monthlyRevenue)
-      .sort(([a], [b]) => (a > b ? 1 : -1))
-      .slice(-12)
-      .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    // Revenue chart: last 12 months sorted (gross revenue by month).
+    // When viewOk, use the pre-computed JSONB from the view (already sorted ASC).
+    const revenueChart = viewOk
+      ? (metricsView[`${vp}_revenue_chart`] || [])
+      : Object.entries(monthlyRevenue)
+          .sort(([a], [b]) => (a > b ? 1 : -1))
+          .slice(-12)
+          .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
 
-    // Recent bookings (last 10 across all vehicles)
-    const recentBookings = [...allBookings]
-      .filter((b) => b.createdAt)
-      .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
-      .slice(0, 10)
-      .map((b) => ({
-        bookingId:   b.bookingId,
-        name:        b.name,
-        vehicleId:   b.vehicleId,
-        vehicleName: b.vehicleName,
-        pickupDate:  b.pickupDate,
-        returnDate:  b.returnDate,
-        status:      b.status,
-        amountPaid:  bookingRevenue(b),
-        createdAt:   b.createdAt,
+    // Recent bookings (last 10 across all vehicles).
+    // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
+    // Otherwise slice from the full allBookings list.
+    //
+    // Note: amountPaid in the view path always reflects deposit_paid because
+    // rrByBookingId (which holds full Stripe gross amounts per booking) is only
+    // populated in the non-view (revenue_records loop) path.  Both paths surface
+    // the deposit amount in practice when the fallback also lacks rrByBookingId.
+    let recentBookings;
+    if (viewOk && recentBkResult?.data) {
+      recentBookings = recentBkResult.data.slice(0, 10).map((r) => ({
+        bookingId:   r.booking_ref || "",
+        name:        r.customers?.name || "",
+        vehicleId:   uiVehicleId(r.vehicle_id),
+        vehicleName: VEHICLE_NAMES[uiVehicleId(r.vehicle_id)] || r.vehicle_id,
+        pickupDate:  r.pickup_date  || "",
+        returnDate:  r.return_date  || "",
+        status:      DB_TO_APP_STATUS[r.status] || r.status,
+        amountPaid:  Number(r.deposit_paid || 0),
+        createdAt:   r.created_at,
       }));
+    } else {
+      recentBookings = [...allBookings]
+        .filter((b) => b.createdAt)
+        .sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1))
+        .slice(0, 10)
+        .map((b) => ({
+          bookingId:   b.bookingId,
+          name:        b.name,
+          vehicleId:   b.vehicleId,
+          vehicleName: b.vehicleName,
+          pickupDate:  b.pickupDate,
+          returnDate:  b.returnDate,
+          status:      b.status,
+          amountPaid:  financialsFromRevRecords && b.bookingId != null && rrByBookingId[b.bookingId] != null
+            ? rrByBookingId[b.bookingId]
+            : bookingRevenue(b),
+          createdAt:   b.createdAt,
+        }));
+    }
 
-    return res.status(200).json({
-      kpis: {
-        totalRevenue:     Math.round(totalRevenue * 100) / 100,
-        activeBookings,
-        availableVehicles,
-        pendingApprovals,
-      },
-      revenueChart,
-      bookingsPerVehicle,
-      vehicleStats,
-      alerts,
-      recentBookings,
-    });
+    // Net profit = net revenue − total expenses
+    const netProfit = netRevenue - totalExpenses;
+    // Operational ROI = profit / expenses * 100 (null when no expenses recorded)
+    const operationalROI = totalExpenses > 0
+      ? Math.round((netProfit / totalExpenses) * 10000) / 100
+      : null;
+    console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
+
+    return res.status(200)
+      .setHeader("Cache-Control", "no-store")
+      .json({
+        kpis: {
+          totalRevenue:    Math.round(totalRevenue    * 100) / 100,
+          totalExpenses:   Math.round(totalExpenses   * 100) / 100,
+          netRevenue:      Math.round(netRevenue      * 100) / 100,
+          netProfit:       Math.round(netProfit       * 100) / 100,
+          totalStripeFees: Math.round(totalStripeFees * 100) / 100,
+          operationalROI,
+          reconciledCount,
+          activeBookings,
+          availableVehicles,
+          pendingApprovals,
+          overdueCount,
+          returnsTodayCount,
+          pickupsTodayCount,
+        },
+        revenueChart,
+        bookingsPerVehicle,
+        vehicleStats,
+        alerts,
+        recentBookings,
+      });
   } catch (err) {
     console.error("v2-dashboard error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });

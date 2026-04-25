@@ -15,11 +15,12 @@
 //   Same as GET but accepts JSON body.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { hasOverlap } from "./_availability.js";
+import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
-const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 
 /**
@@ -46,23 +47,45 @@ async function fetchGitHubBookedDates() {
 /**
  * Check availability for one vehicle against the Supabase bookings table.
  * Falls back to booked-dates.json when Supabase is not configured.
+ * When fromTime/toTime are provided the check is time-aware so back-to-back
+ * bookings sharing a return/pickup date at the same time are correctly allowed.
  *
  * @param {object} sb         - Supabase admin client (may be null)
  * @param {object} fallback   - booked-dates.json data (fallback)
  * @param {string} vehicleId
  * @param {string} from       - YYYY-MM-DD
  * @param {string} to         - YYYY-MM-DD
+ * @param {string} [fromTime] - optional "H:MM AM/PM" pickup time
+ * @param {string} [toTime]   - optional "H:MM AM/PM" return time
  * @returns {{ available: boolean, conflicts: object[], source: string }}
  */
-async function checkVehicleAvailability(sb, fallback, vehicleId, from, to) {
+async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime) {
+  const dbVehicleId = normalizeVehicleId(vehicleId);
+  console.log("[VEHICLE_ID_LOOKUP]", JSON.stringify({ vehicleId_ui: vehicleId, vehicleId_db: dbVehicleId, from, to }));
   if (sb) {
     try {
+      // Active rental override: if the vehicle has ANY active_rental booking
+      // (regardless of return date), it is unavailable.  This ensures an overdue
+      // booking that has not yet been auto-completed still blocks new bookings even
+      // after returnDateTime + buffer has technically passed.
+      // Note: a composite index on (vehicle_id, status) in the bookings table is
+      // recommended so this single-row lookup stays fast as the table grows.
+      const { data: activeRentals, error: activeRentalError } = await sb
+        .from("bookings")
+        .select("booking_ref, return_date, return_time")
+        .eq("vehicle_id", dbVehicleId)
+        .eq("status", "active_rental")
+        .limit(1);
+      if (!activeRentalError && activeRentals && activeRentals.length > 0) {
+        return { available: false, conflicts: activeRentals, source: "supabase" };
+      }
+
       // Query Supabase bookings for any active booking that overlaps [from, to].
       // Overlap condition: pickup_date <= to AND return_date >= from
       const { data: rows, error } = await sb
         .from("bookings")
-        .select("booking_ref, vehicle_id, pickup_date, return_date, status, customer_id")
-        .eq("vehicle_id", vehicleId)
+        .select("booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, customer_id")
+        .eq("vehicle_id", dbVehicleId)
         .in("status", ACTIVE_STATUSES)
         .lte("pickup_date", to)
         .gte("return_date", from);
@@ -71,7 +94,24 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to) {
         console.error(`v2-availability: Supabase query error for ${vehicleId}:`, error.message);
         // Fall through to JSON fallback
       } else {
-        const conflicts = rows || [];
+        // If times were provided, refine the date-level hits with time-aware checking.
+        // Supabase stores times as "HH:MM:SS" (24-hour); convert them to "H:MM AM/PM"
+        // for hasDateTimeOverlap which uses parseDateTimeMs from _availability.js.
+        let conflicts = rows || [];
+        if (fromTime && toTime && conflicts.length > 0) {
+          // Build ranges array from Supabase rows and run the datetime overlap check.
+          const sbRanges = conflicts.map((r) => ({
+            from:     r.pickup_date,
+            to:       r.return_date,
+            fromTime: pgTimeTo12h(r.pickup_time),
+            toTime:   pgTimeTo12h(r.return_time),
+          }));
+          const overlaps = hasDateTimeOverlap(sbRanges, from, to, fromTime, toTime);
+          if (!overlaps) {
+            // Time-level check shows no actual overlap — vehicle is available.
+            return { available: true, conflicts: [], source: "supabase" };
+          }
+        }
         return {
           available: conflicts.length === 0,
           conflicts,
@@ -83,10 +123,31 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to) {
     }
   }
 
-  // Fallback: booked-dates.json
+  // Fallback: booked-dates.json (time-aware when both fromTime and toTime are provided)
   const ranges = (fallback[vehicleId] || []);
-  const available = !hasOverlap(ranges, from, to);
+  const available = (fromTime && toTime)
+    ? !hasDateTimeOverlap(ranges, from, to, fromTime, toTime)
+    : !hasOverlap(ranges, from, to);
   return { available, conflicts: available ? [] : ranges.filter((r) => from <= r.to && r.from <= to), source: "booked-dates-json" };
+}
+
+/**
+ * Convert a PostgreSQL time string "HH:MM:SS" to 12-hour "H:MM AM/PM" format.
+ * Returns null when the input is absent or unparseable.
+ *
+ * @param {string|null} pgTime - e.g. "09:00:00" or "13:30:00"
+ * @returns {string|null}
+ */
+function pgTimeTo12h(pgTime) {
+  if (!pgTime || typeof pgTime !== "string") return null;
+  const m = pgTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const mins = m[2];
+  const ampm = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mins} ${ampm}`;
 }
 
 export default async function handler(req, res) {
@@ -104,7 +165,7 @@ export default async function handler(req, res) {
 
   // Accept params from query string (GET) or JSON body (POST)
   const params = req.method === "GET" ? req.query : (req.body || {});
-  const { vehicleId, from, to } = params;
+  const { vehicleId, from, to, fromTime, toTime } = params;
 
   const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
   if (!from || !ISO_DATE.test(from)) {
@@ -128,7 +189,7 @@ export default async function handler(req, res) {
 
   if (vehicleId) {
     // Single vehicle check
-    const result = await checkVehicleAvailability(sb, fallback, vehicleId, from, to);
+    const result = await checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime);
     return res.status(200).json({
       vehicleId,
       from,
@@ -142,7 +203,7 @@ export default async function handler(req, res) {
   // All vehicles
   const results = {};
   for (const vid of ALLOWED_VEHICLES) {
-    const result = await checkVehicleAvailability(sb, fallback, vid, from, to);
+    const result = await checkVehicleAvailability(sb, fallback, vid, from, to, fromTime, toTime);
     results[vid] = {
       available: result.available,
       conflicts: result.conflicts,

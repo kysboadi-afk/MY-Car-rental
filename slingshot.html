@@ -989,7 +989,11 @@
 </footer>
 
 <script>
-  // ── Live availability badges ──────────────────────────────────────────────
+  // ── Live availability badge ───────────────────────────────────────────────
+  // All booking buttons always go to car.html?vehicle=slingshot — the server
+  // auto-assigns whichever physical unit is free at payment time.
+  // The badge shows AVAILABLE if ANY unit is free; BOOKED only when every unit
+  // is confirmed unavailable.
   (function() {
     function updateBadge(id, available) {
       var el = document.getElementById(id);
@@ -1007,24 +1011,13 @@
     fetch('/api/fleet-status')
       .then(function(r) { return r.json(); })
       .then(function(data) {
-        // All three Slingshot units are interchangeable from the customer's
-        // perspective. Show AVAILABLE if ANY unit is free; BOOKED only when
-        // every unit is confirmed unavailable.
         var unitIds = ['slingshot', 'slingshot2', 'slingshot3'];
-        var firstAvailable = unitIds.find(function(id) {
+        var anyAvailable = unitIds.some(function(id) {
           return !data[id] || data[id].available !== false;
         });
-        var anyAvailable = !!firstAvailable;
         updateBadge('sl-status-slingshot', anyAvailable);
-
-        // Point every booking button to the first available unit so customers
-        // can always complete their booking even when unit 1 is already taken.
-        var target = firstAvailable || 'slingshot';
-        document.querySelectorAll('a.sl-book-slingshot').forEach(function(link) {
-          link.href = 'car.html?vehicle=' + target;
-        });
       })
-      .catch(function() { /* keep default AVAILABLE / unit 1 href if fetch fails */ });
+      .catch(function() { /* keep default AVAILABLE badge if fetch fails */ });
   })();
 
   // ── FAQ accordion ────────────────────────────────────────────────────────
@@ -1089,6 +1082,7 @@
 </script>
 <!-- Slingshot-focused chatbot (only talks about the Slingshot) -->
 <script>window.slyChatbotMode = "slingshot";</script>
+<script src="la-date.js"></script>
 <script src="chatbot.js"></script>
 </body>
 </html>

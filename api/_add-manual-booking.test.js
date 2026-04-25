@@ -65,15 +65,46 @@ mock.module("./_booking-automation.js", {
   },
 });
 
+let nextAvailability = true;
+
 mock.module("./_availability.js", {
   namedExports: {
     hasOverlap: (ranges, from, to) => ranges.some((r) => from <= r.to && r.from <= to),
+    isDatesAndTimesAvailable: async () => nextAvailability,
   },
 });
 
 mock.module("./_error-helpers.js", {
   namedExports: {
     adminErrorMessage: (err) => err?.message || String(err),
+  },
+});
+
+// Mock _booking-pipeline.js so persistBooking stores the booking in the
+// in-memory bookingsStore and populates automationCalls without hitting
+// real Supabase or GitHub.  add-manual-booking always creates as booked_paid
+// so all four automation calls are expected.
+mock.module("./_booking-pipeline.js", {
+  namedExports: {
+    persistBooking: async (opts) => {
+      const booking = { smsSentAt: {}, createdAt: new Date().toISOString(), ...opts };
+      automationCalls.revenue.push({ ...booking });
+      automationCalls.customer.push({ ...booking, countStats: false });
+      automationCalls.booking.push({ ...booking });
+      if (opts.pickupDate && opts.returnDate) {
+        automationCalls.blocked.push({
+          vehicleId: opts.vehicleId,
+          start:     opts.pickupDate,
+          end:       opts.returnDate,
+          reason:    "booking",
+        });
+      }
+      if (!Array.isArray(bookingsStore[opts.vehicleId])) bookingsStore[opts.vehicleId] = [];
+      if (!bookingsStore[opts.vehicleId].some((b) => b.bookingId === booking.bookingId)) {
+        bookingsStore[opts.vehicleId].push(booking);
+      }
+      return { ok: true, bookingId: booking.bookingId, booking, supabaseOk: true, errors: [] };
+    },
   },
 });
 
@@ -108,7 +139,9 @@ function basePayload(overrides = {}) {
     phone:       "+13105550002",
     email:       "bob@example.com",
     pickupDate:  "2026-07-01",
+    pickupTime:  "10:00 AM",
     returnDate:  "2026-07-03",
+    returnTime:  "5:00 PM",
     amountPaid:  150,
     ...overrides,
   };
@@ -137,6 +170,18 @@ test("add-manual-booking: 400 for invalid vehicleId", async () => {
 test("add-manual-booking: 400 when returnDate before pickupDate", async () => {
   const res = makeRes();
   await handler(makeReq({ ...basePayload(), pickupDate: "2026-07-10", returnDate: "2026-07-05" }), res);
+  assert.equal(res._status, 400);
+});
+
+test("add-manual-booking: 400 for missing pickupTime", async () => {
+  const res = makeRes();
+  await handler(makeReq({ ...basePayload(), pickupTime: "" }), res);
+  assert.equal(res._status, 400);
+});
+
+test("add-manual-booking: 400 for missing returnTime", async () => {
+  const res = makeRes();
+  await handler(makeReq({ ...basePayload(), returnTime: "" }), res);
   assert.equal(res._status, 400);
 });
 
@@ -211,4 +256,19 @@ test("add-manual-booking: PREFLIGHT — all four Supabase helpers fire together"
   assert.ok(automationCalls.customer.length > 0, "customer upsert must fire");
   assert.ok(automationCalls.booking.length  > 0, "booking upsert must fire");
   assert.ok(automationCalls.blocked.length  > 0, "blocked date must fire");
+});
+
+test("add-manual-booking: 409 when dates conflict with an existing booking", async () => {
+  resetStore(); resetCalls();
+  nextAvailability = false;
+  try {
+    const res = makeRes();
+    await handler(makeReq(basePayload()), res);
+    assert.equal(res._status, 409);
+    assert.equal(res._body?.error, "conflict");
+    assert.equal(automationCalls.revenue.length,  0, "no revenue record should be created on conflict");
+    assert.equal(automationCalls.booking.length,  0, "no booking should be created on conflict");
+  } finally {
+    nextAvailability = true;
+  }
 });
