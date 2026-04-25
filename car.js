@@ -1502,9 +1502,25 @@ function showVehicleUnavailable(nextAvailableISO) {
       nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
     }
 
-    // Set minimum new return date in the extend form
+    // Set minimum new return date in the extend form to the current return date
+    // (i.e. the date the vehicle becomes available) so the customer cannot pick
+    // a date before the active rental ends.
     const extReturn = document.getElementById("extNewReturn");
-    if (extReturn) extReturn.setAttribute("min", SlyLA.todayISO());
+    if (extReturn) {
+      let minDate = SlyLA.todayISO();
+      if (hasTime) {
+        const d2 = new Date(nextAvailableISO);
+        if (Number.isFinite(d2.getTime())) {
+          // Compare LA-timezone date strings to avoid timezone/DST edge cases.
+          const returnDateISO = SlyLA.isoDateInLA(d2);
+          if (returnDateISO > minDate) minDate = returnDateISO;
+        }
+      } else {
+        // Date-only nextAvailableISO (from booked-dates.json fallback)
+        if (nextAvailableISO > minDate) minDate = nextAvailableISO;
+      }
+      extReturn.setAttribute("min", minDate);
+    }
   }
 
   notice.innerHTML = `
@@ -1557,7 +1573,7 @@ function showVehicleUnavailable(nextAvailableISO) {
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";
-    // Set minimum new return date to today
+    // Fallback: ensure min is set to at least today if not already set above.
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
       extReturn.setAttribute("min", SlyLA.todayISO());

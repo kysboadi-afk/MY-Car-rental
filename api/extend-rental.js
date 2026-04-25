@@ -21,6 +21,7 @@ import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -92,6 +93,95 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Supabase enrichment: get the most-current return date and find
+    //    active bookings that may have been activated without updating bookings.json ──
+    // The return date in bookings.json can become stale when a rental is extended
+    // via admin actions that only update Supabase.  Supabase is the authoritative
+    // source for the live return date; bookings.json is the fallback.
+    const sb = getSupabaseAdmin();
+    let sbReturnDate = null;    // YYYY-MM-DD from Supabase (may be more recent than bookings.json)
+    let sbReturnTime = null;    // HH:MM from Supabase
+
+    if (sb) {
+      try {
+        if (activeBooking) {
+          // Found in bookings.json — fetch fresh return date from Supabase so pricing
+          // reflects any admin-applied extensions that updated Supabase but not bookings.json.
+          const bookingRef = activeBooking.bookingId || activeBooking.paymentIntentId;
+          if (bookingRef) {
+            const { data: sbRow } = await sb
+              .from("bookings")
+              .select("return_date, return_time, status")
+              .eq("booking_ref", bookingRef)
+              .maybeSingle();
+            if (sbRow && (sbRow.status === "active" || sbRow.status === "overdue")) {
+              const sbDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
+              // Only use Supabase date when it is strictly later (guards against stale Supabase rows).
+              if (sbDate && sbDate > (activeBooking.returnDate || "")) {
+                sbReturnDate = sbDate;
+              }
+              // Supabase stores time as "HH:MM:SS"; normalise to "HH:MM" for parseDateTimeMs.
+              if (sbRow.return_time && !activeBooking.returnTime) {
+                sbReturnTime = String(sbRow.return_time).substring(0, 5);
+              }
+            }
+          }
+        } else {
+          // Not found in bookings.json (booking may have been created or activated via
+          // the admin panel without fully syncing to bookings.json).  Try Supabase
+          // directly, matching by vehicle_id + email or phone + active status.
+          const { data: sbActive } = await sb
+            .from("bookings")
+            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone")
+            .eq("vehicle_id", vehicleId)
+            .in("status", ["active", "overdue"]);
+
+          if (sbActive) {
+            for (const row of sbActive) {
+              const rowEmail = (row.customer_email || "").trim().toLowerCase();
+              const rowPhone = row.customer_phone ? normalizePhone(row.customer_phone) : null;
+              const emailMatch = trimmedEmail && rowEmail === trimmedEmail;
+              const phoneMatch = normalizedPhone && rowPhone && rowPhone === normalizedPhone;
+
+              if (emailMatch || phoneMatch) {
+                // Try to locate this booking in bookings.json by ref so we can
+                // write extensionPendingPayment back to it later.
+                const sbRef = row.booking_ref;
+                const jsonMatch = vehicleBookings.find(
+                  (b) => b.bookingId === sbRef || b.paymentIntentId === sbRef
+                );
+                if (jsonMatch) {
+                  activeBooking = jsonMatch;
+                } else {
+                  // Build a minimal booking object from Supabase data so the rest
+                  // of the flow can proceed; the extensionPendingPayment write will
+                  // be a no-op since no bookingId will match in bookings.json.
+                  // Fields not present in the Supabase query (pickupDate, status,
+                  // paymentIntentId) are set to safe empty defaults.
+                  activeBooking = {
+                    bookingId:        sbRef,
+                    paymentIntentId:  "",
+                    name:             row.customer_name  || "",
+                    email:            row.customer_email || "",
+                    phone:            row.customer_phone || "",
+                    returnDate:       row.return_date ? String(row.return_date).split("T")[0] : "",
+                    returnTime:       row.return_time ? String(row.return_time).substring(0, 5) : "",
+                    pickupDate:       "",
+                    status:           "active_rental",
+                  };
+                }
+                sbReturnDate = row.return_date ? String(row.return_date).split("T")[0] : null;
+                sbReturnTime = row.return_time  ? String(row.return_time).substring(0, 5) : null;
+                break;
+              }
+            }
+          }
+        }
+      } catch (sbErr) {
+        console.warn("extend-rental: Supabase booking lookup failed (non-fatal):", sbErr.message);
+      }
+    }
+
     if (!activeBooking) {
       return res.status(404).json({
         error: "No active rental found for this vehicle with the provided contact info. " +
@@ -99,15 +189,21 @@ export default async function handler(req, res) {
       });
     }
 
+    // Effective return date: prefer Supabase when it is more recent.  This corrects
+    // stale bookings.json return dates caused by admin-driven extensions.
+    const effectiveReturnDate = (sbReturnDate && sbReturnDate > (activeBooking.returnDate || ""))
+      ? sbReturnDate
+      : (activeBooking.returnDate || "");
+
     // Keep extension return_time fixed to the booking's existing return_time.
     // Legacy bookings without a return_time are normalized to the system
     // default so every booking has a valid HH:MM return time.
-    const existingReturnTime = normalizeClockTime(activeBooking.returnTime);
+    const existingReturnTime = normalizeClockTime(sbReturnTime || activeBooking.returnTime);
     const resolvedReturnTime = existingReturnTime || DEFAULT_RETURN_TIME;
     const needsReturnTimePersist = !activeBooking.returnTime || activeBooking.returnTime !== resolvedReturnTime;
 
     // ── Validate new return date is after current return date ───────────────
-    const currentReturnMs = parseDateTimeMs(activeBooking.returnDate, resolvedReturnTime);
+    const currentReturnMs = parseDateTimeMs(effectiveReturnDate, resolvedReturnTime);
     const newReturnMs     = parseDateTimeMs(newReturnDate, resolvedReturnTime);
 
     if (isNaN(newReturnMs)) {
@@ -117,7 +213,7 @@ export default async function handler(req, res) {
     if (newReturnMs <= currentReturnMs) {
       return res.status(400).json({
         error: "New return date/time must be after your current return date/time " +
-               `(${activeBooking.returnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
+               `(${effectiveReturnDate}${resolvedReturnTime ? " " + resolvedReturnTime : ""}).`,
       });
     }
 
@@ -125,7 +221,7 @@ export default async function handler(req, res) {
     // Use the same overlap helper as the booking flow so extension conflict
     // checks honor the same time parsing and buffer behavior.
     const extensionRange = [{
-      from: activeBooking.returnDate || newReturnDate,
+      from: effectiveReturnDate || newReturnDate,
       to: newReturnDate,
       fromTime: resolvedReturnTime,
       toTime: resolvedReturnTime,
@@ -152,6 +248,55 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Also check Supabase for future booking conflicts ────────────────────
+    // bookings.json may not contain all future reservations (e.g. admin-created
+    // bookings that are only in Supabase), so run a second conflict pass.
+    if (sb) {
+      try {
+        const activeBookingRef = activeBooking.bookingId || activeBooking.paymentIntentId || "";
+        // Floor the pickup_date filter at the effective return date so we catch
+        // all bookings that could overlap with the extension window.  Fall back
+        // to today if effectiveReturnDate is not set rather than newReturnDate,
+        // which is the end of the extension range and would miss earlier pickups.
+        const conflictFloorDate = effectiveReturnDate || new Date().toISOString().split("T")[0];
+        const { data: sbFuture } = await sb
+          .from("bookings")
+          .select("booking_ref, pickup_date, return_date, pickup_time, return_time")
+          .eq("vehicle_id", vehicleId)
+          .in("status", ["pending", "active", "overdue", "reserved"])
+          .gte("pickup_date", conflictFloorDate);
+
+        for (const fbk of (sbFuture || [])) {
+          if (fbk.booking_ref === activeBookingRef) continue;
+
+          const fbkPickupDate = String(fbk.pickup_date || "").split("T")[0];
+          // Skip bookings without a pickup date or without a return date.
+          if (!fbkPickupDate || !fbk.return_date) continue;
+          const fbkReturnDate = String(fbk.return_date).split("T")[0];
+          // Supabase stores times as "HH:MM:SS"; take first 5 chars → "HH:MM".
+          const fbkPickupTime = fbk.pickup_time ? String(fbk.pickup_time).substring(0, 5) : "";
+          const fbkReturnTime = fbk.return_time ? String(fbk.return_time).substring(0, 5) : "";
+
+          const hasConflict = hasDateTimeOverlap(
+            extensionRange,
+            fbkPickupDate,
+            fbkReturnDate,
+            fbkPickupTime,
+            fbkReturnTime
+          );
+          if (hasConflict) {
+            const fmtDate = new Date(fbkPickupDate + "T00:00:00")
+              .toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+            return res.status(409).json({
+              error: `The new return date conflicts with another booking starting on ${fmtDate}. ` +
+                     "Please choose an earlier return date.",
+            });
+          }
+        }
+      } catch (sbConflictErr) {
+        console.warn("extend-rental: Supabase conflict check failed (non-fatal):", sbConflictErr.message);
+      }
+    }
     // ── Compute extension price ────────────────────────────────────────────
     const settings = await loadPricingSettings();
     const isSlingshot = vehicleData.isSlingshot;
