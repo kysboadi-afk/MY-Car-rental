@@ -25,22 +25,25 @@ import { getSupabaseAdmin } from "./_supabase.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
 
+// TextMagic does not relay MMS media in inbound webhooks, so the outbound
+// messages must not instruct customers to send a photo — the webhook will
+// accept keyword-only replies and store oil_check_photo_url = null.
 const MSG_OIL_CHECK_REQUEST =
   "SLY RENTALS: Oil check required.\n\n" +
   "Park on level ground. Pull the engine dipstick, wipe it, reinsert, then check the oil level.\n\n" +
-  "Send a photo and reply:\n\n" +
+  "Reply:\n\n" +
   "FULL (near top line)\n" +
   "MID (between lines)\n" +
   "LOW (below safe line)";
 
 const MSG_OIL_CHECK_REMINDER =
   "Reminder: Oil check still required.\n\n" +
-  "Reply FULL, MID, or LOW with photo.\n\n" +
+  "Reply FULL, MID, or LOW.\n\n" +
   "This is required to keep your rental active.";
 
 const MSG_OIL_CHECK_FINAL =
   "Final notice: Oil check not confirmed.\n\n" +
-  "Reply FULL, MID, or LOW with photo now to avoid interruption.";
+  "Reply FULL, MID, or LOW now to avoid interruption.";
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 

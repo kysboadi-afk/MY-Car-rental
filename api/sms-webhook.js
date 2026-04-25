@@ -1,10 +1,16 @@
 // api/sms-webhook.js
 // Inbound SMS webhook — Oil Check Compliance reply handler.
 //
-// Customers reply FULL, MID, or LOW (with a photo) to confirm their oil level.
-// This endpoint accepts webhooks from:
-//   • Twilio  — application/x-www-form-urlencoded with Body/From/NumMedia/MediaUrl0
-//   • TextMagic — application/json with from/text and optional mediaUrl
+// Customers reply FULL, MID, or LOW to confirm their oil level.
+// This endpoint accepts webhooks from two providers:
+//
+//   • Twilio  — application/x-www-form-urlencoded (Body/From/NumMedia/MediaUrl0)
+//               Supports MMS: photo URL is captured and stored in oil_check_photo_url.
+//
+//   • TextMagic — application/json (from/text only)
+//               TextMagic does NOT relay MMS media in its inbound webhook — no
+//               media fields are forwarded.  For this provider the photo requirement
+//               is waived and oil_check_photo_url is stored as null.
 //
 // Outbound SMS is sent via the existing TextMagic sendSms helper.
 //
@@ -39,18 +45,27 @@ const REPLY_LOW  =
   "We will contact you shortly to schedule service.";
 const REPLY_NO_PHOTO =
   "Please attach a clear photo of the dipstick and reply FULL, MID, or LOW.";
-const REPLY_INVALID =
+const REPLY_INVALID_PHOTO =
   "Reply with:\n" +
   "FULL (top line)\n" +
   "MID (between lines)\n" +
   "LOW (below safe line)\n" +
   "and include a photo.";
 
+const REPLY_INVALID_TEXT_ONLY =
+  "Reply with:\n" +
+  "FULL (top line)\n" +
+  "MID (between lines)\n" +
+  "LOW (below safe line)";
+
 // ── Body parser ───────────────────────────────────────────────────────────────
 
 /**
  * Buffer the raw request body and detect content type.
- * Returns { from, text, numMedia, mediaUrl } regardless of the source provider.
+ *
+ * Returns { from, text, numMedia, mediaUrl, photoCapable } where:
+ *   photoCapable = true  — Twilio URL-encoded; MMS MediaUrl0 is forwarded.
+ *   photoCapable = false — TextMagic JSON; MMS media is never relayed.
  */
 async function parseWebhookBody(req) {
   const chunks = [];
@@ -64,28 +79,30 @@ async function parseWebhookBody(req) {
   const contentType = (req.headers["content-type"] || "").toLowerCase();
 
   if (contentType.includes("application/x-www-form-urlencoded")) {
-    // Twilio-style webhook
+    // Twilio — relays MMS attachments via NumMedia / MediaUrl0
     const params = new URLSearchParams(rawBody);
     const numMedia = parseInt(params.get("NumMedia") || "0", 10);
     return {
-      from:     params.get("From") || "",
-      text:     params.get("Body") || "",
+      from:         params.get("From") || "",
+      text:         params.get("Body") || "",
       numMedia,
-      mediaUrl: numMedia > 0 ? (params.get("MediaUrl0") || "") : "",
+      mediaUrl:     numMedia > 0 ? (params.get("MediaUrl0") || "") : "",
+      photoCapable: true,
     };
   }
 
-  // Default: JSON (TextMagic or generic)
+  // JSON path — TextMagic (and any other JSON provider).
+  // TextMagic does not forward MMS media in its inbound webhook payload,
+  // so we cannot capture a photo URL from this path.
   let body = {};
   try { body = rawBody ? JSON.parse(rawBody) : {}; } catch (_) { /* ignore */ }
 
-  const mediaUrl = body.mediaUrl || body.MediaUrl0 || body.media_url || "";
-  const numMedia = mediaUrl ? 1 : parseInt(body.NumMedia || "0", 10);
   return {
-    from:     body.from || body.From || "",
-    text:     body.text || body.Body || "",
-    numMedia,
-    mediaUrl,
+    from:         body.from || body.From || "",
+    text:         body.text || body.Body || "",
+    numMedia:     0,
+    mediaUrl:     "",
+    photoCapable: false,
   };
 }
 
@@ -143,7 +160,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Failed to read request body" });
   }
 
-  const { from: fromRaw, text: textRaw, numMedia, mediaUrl } = parsed;
+  const { from: fromRaw, text: textRaw, numMedia, mediaUrl, photoCapable } = parsed;
 
   if (!fromRaw) {
     return res.status(200).json({ ok: true }); // nothing to do
@@ -179,20 +196,23 @@ export default async function handler(req, res) {
   const { id: bookingId, booking_ref: bookingRef, vehicle_id: vehicleId } = booking;
 
   // ── Validate reply ────────────────────────────────────────────────────────
-  const hasPhoto = numMedia > 0 && !!mediaUrl;
+  // photoCapable = true  (Twilio): MMS is forwarded — require a photo.
+  // photoCapable = false (TextMagic): MMS is never relayed — accept keyword only.
+  const hasPhoto = photoCapable ? (numMedia > 0 && !!mediaUrl) : null;
 
   if (!VALID_LEVELS.has(keyword)) {
     // Unrecognised reply
+    const invalidReply = photoCapable ? REPLY_INVALID_PHOTO : REPLY_INVALID_TEXT_ONLY;
     try {
-      await sendSms(fromPhone, REPLY_INVALID);
+      await sendSms(fromPhone, invalidReply);
     } catch (smsErr) {
       console.error("sms-webhook: sendSms failed:", smsErr.message);
     }
     return res.status(200).json({ ok: true });
   }
 
-  if (!hasPhoto) {
-    // Valid keyword but no photo attached
+  if (photoCapable && !hasPhoto) {
+    // Twilio path — valid keyword but no MMS photo attached
     try {
       await sendSms(fromPhone, REPLY_NO_PHOTO);
     } catch (smsErr) {
@@ -201,7 +221,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
-  // ── Valid reply with photo — update DB ────────────────────────────────────
+  // ── Valid reply — update DB ───────────────────────────────────────────────
+  // mediaUrl is populated only for Twilio (photoCapable=true); null for TextMagic.
   const nowTs = new Date().toISOString();
 
   const bookingUpdate = {
@@ -209,7 +230,7 @@ export default async function handler(req, res) {
     oil_status:             keyword,
     oil_check_required:     false,
     oil_check_missed_count: 0,
-    oil_check_photo_url:    mediaUrl,
+    oil_check_photo_url:    mediaUrl || null,
     updated_at:             nowTs,
   };
 
@@ -237,7 +258,7 @@ export default async function handler(req, res) {
         vehicle_id:               vehicleId,
         last_oil_check_at:        nowTs,
         last_oil_status:          keyword,
-        last_oil_check_photo_url: mediaUrl,
+        last_oil_check_photo_url: mediaUrl || null,
         last_oil_check_mileage:   vState?.current_mileage ?? null,
         updated_at:               nowTs,
       },
