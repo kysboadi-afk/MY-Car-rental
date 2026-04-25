@@ -1299,6 +1299,32 @@ initDatePickers();
       // For Slingshot: the next available date is the earliest date when ANY
       // unit's current booking ends (that unit then becomes free).
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
+
+      // Prefer the pre-formatted next_available_display from fleet-status
+      // (sourced from Supabase return_date + return_time, LA timezone).
+      // Also read available_at (ISO timestamp) for the extend-form min-date.
+      // For Slingshot, pick the entry with the earliest available_at.
+      let availableAt = null;
+      let availableAtDisplay = null;
+      for (const id of idsToCheck) {
+        const entry = status[id];
+        if (entry && entry.available === false) {
+          if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
+            availableAt = entry.available_at;
+            availableAtDisplay = entry.next_available_display || null;
+          } else if (!availableAt && entry.next_available_display) {
+            availableAtDisplay = entry.next_available_display;
+          }
+        }
+      }
+      if (availableAt || availableAtDisplay) {
+        showVehicleUnavailable(availableAt, availableAtDisplay);
+        return;
+      }
+
+      // Last-resort fallback: use booked-dates.json when Supabase is not
+      // configured.  Show the actual return date (r.to) without shifting by
+      // +1 day — r.to is the rental's return date, not the night before.
       let nextAvail = null;
 
       for (const id of idsToCheck) {
@@ -1308,8 +1334,8 @@ initDatePickers();
         // 1. Preferred: find a range that covers today
         for (const r of ranges) {
           if (r.from <= today && today <= r.to) {
-            const candidate = SlyLA.addDaysToISO(r.to, 1);
-            // Keep the earliest "next available" across all units
+            const candidate = r.to;
+            // Keep the earliest return date across all units
             if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
             break;
           }
@@ -1324,20 +1350,20 @@ initDatePickers();
             }
           }
           if (latestExpired) {
-            const candidate = SlyLA.addDaysToISO(latestExpired.to, 1);
+            const candidate = latestExpired.to;
             if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
           }
         }
       }
 
-      showVehicleUnavailable(nextAvail);
+      showVehicleUnavailable(nextAvail, null);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable(nextAvailableISO) {
+function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
@@ -1351,11 +1377,20 @@ function showVehicleUnavailable(nextAvailableISO) {
   }
 
   let nextLine = "";
-  if (nextAvailableISO) {
+
+  if (nextAvailableDisplay) {
+    // Use the pre-formatted string from the backend (LA timezone, correct date and time).
+    nextLine = `<p>📅 Next available: <strong>${nextAvailableDisplay}</strong></p>`;
+  } else if (nextAvailableISO) {
+    // Fallback when nextAvailableDisplay is not available (GitHub fleet-status.json
+    // path or very old API response).  nextAvailableISO is the raw return date
+    // from booked-dates.json (no time component).
     const d = new Date(nextAvailableISO + "T00:00:00");
     const formatted = d.toLocaleDateString("en-US", { timeZone: SlyLA.tz, month: "long", day: "numeric", year: "numeric" });
     nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+  }
 
+  if (nextAvailableISO) {
     // Set minimum new return date in the extend form to the current return date
     // so the customer cannot pick a date before the active rental ends.
     const extReturn = document.getElementById("extNewReturn");

@@ -200,29 +200,33 @@ test("available vehicle does not get available_at from booking rows", async () =
   assert.equal(res._body.slingshot?.available_at, null);
 });
 
-test("missing return_time logs error and leaves available_at null", async () => {
+test("missing return_time logs warning, leaves available_at null, and sets next_available_display to date-only", async () => {
   resetMock();
   sbMock.activeBookingRows = [
     { vehicle_id: "camry", return_date: "2026-06-10", return_time: null, status: "active_rental" },
   ];
 
   const captured = [];
-  const originalError = console.error;
-  console.error = (...args) => { captured.push(args); };
+  const originalWarn = console.warn;
+  console.warn = (...args) => { captured.push(args); };
 
   try {
     const res = makeRes();
     await handler(makeReq(), res);
 
     assert.equal(res._status, 200);
+    // available_at must remain null — no synthetic timestamp should be exposed
     assert.equal(res._body.camry?.available_at, null);
+    // next_available_display should be set to just the date (no time)
+    assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
+    assert.ok(!res._body.camry.next_available_display.includes(" at "), "next_available_display should not include time when return_time is absent");
     assert.ok(captured.some((args) => args[0] === "[AVAILABLE_AT_RETURN_TIME_MISSING]"));
   } finally {
-    console.error = originalError;
+    console.warn = originalWarn;
   }
 });
 
-test("logs [AVAILABLE_AT_COMPUTED] with return_datetime", async () => {
+test("logs [AVAILABLE_AT_COMPUTED] with return_datetime and next_available_display", async () => {
   resetMock();
   sbMock.activeBookingRows = [
     { vehicle_id: "camry", return_date: "2026-06-10", return_time: "14:00:00", status: "active_rental" },
@@ -241,6 +245,9 @@ test("logs [AVAILABLE_AT_COMPUTED] with return_datetime", async () => {
     assert.ok(computedLog, "Expected [AVAILABLE_AT_COMPUTED] log entry");
     assert.equal(computedLog[1]?.vehicle_id, "camry");
     assert.equal(computedLog[1]?.return_datetime, "2026-06-10T14:00:00-07:00");
+    // next_available_display should be set and include time
+    assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
+    assert.ok(res._body.camry.next_available_display.includes(" at "), "next_available_display should include time");
   } finally {
     console.log = originalLog;
   }

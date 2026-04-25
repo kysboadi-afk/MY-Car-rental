@@ -110,6 +110,30 @@ function formatDateTimeLA(date) {
 }
 
 /**
+ * Format a Date object as a human-readable string in the LA timezone.
+ * Returns "Apr 25, 2026 at 8:00 AM" (with time) or "Apr 25, 2026" (date only).
+ * Used to populate `next_available_display` so the frontend never needs to
+ * reformat dates — it just renders the pre-built string.
+ */
+function formatForDisplay(dateObj, includeTime = true) {
+  if (!dateObj || !Number.isFinite(dateObj.getTime())) return null;
+  const dateStr = dateObj.toLocaleDateString("en-US", {
+    timeZone: BUSINESS_TZ,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  if (!includeTime) return dateStr;
+  const timeStr = dateObj.toLocaleTimeString("en-US", {
+    timeZone: BUSINESS_TZ,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${dateStr} at ${timeStr}`;
+}
+
+/**
  * Enriches each entry in `result` with an `available_at` ISO timestamp by
  * querying active bookings and selecting each vehicle's latest return datetime.
  *
@@ -139,46 +163,71 @@ async function enrichWithAvailableAt(sb, result) {
     for (const row of (activeRows || [])) {
       if (!row?.vehicle_id || !row?.return_date) continue;
 
+      let returnDateTime;
+      let hasTime = false;
+
       if (!row.return_time) {
-        console.error("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
+        // return_time is not set — we can still provide a date-only display
+        // string via next_available_display, but we cannot build a valid ISO
+        // timestamp so available_at must remain null for this booking.
+        console.warn("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
           vehicle_id: row.vehicle_id,
           status: row.status || null,
           return_date: row.return_date,
         });
-        continue;
+        // Use midnight so date ordering still works for "latest by vehicle"
+        // without exposing a fabricated time to callers.
+        returnDateTime = buildDateTimeLA(row.return_date, "00:00");
+      } else {
+        returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
+        hasTime = true;
       }
 
-      const returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
       const returnDateTimeMs = returnDateTime.getTime();
 
       if (!Number.isFinite(returnDateTimeMs)) {
         console.error("[AVAILABLE_AT_INVALID_RETURN_DATETIME]", {
           vehicle_id: row.vehicle_id,
           return_date: row.return_date,
-          return_time: row.return_time,
+          return_time: row.return_time || null,
         });
         continue;
       }
 
       const existing = latestByVehicle[row.vehicle_id];
       if (!existing || returnDateTimeMs > existing.returnDateTimeMs) {
-        latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime };
+        latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime, hasTime };
       }
     }
 
     for (const [vehicleId, vehicleStatus] of Object.entries(result)) {
       const latest = latestByVehicle[vehicleId];
       if (!vehicleStatus || vehicleStatus.available !== false || !latest) {
-        if (vehicleStatus) vehicleStatus.available_at = null;
+        if (vehicleStatus) {
+          vehicleStatus.available_at = null;
+          vehicleStatus.next_available_display = null;
+        }
         continue;
       }
 
-      const returnDateTime = formatDateTimeLA(latest.returnDateTime);
-      vehicleStatus.available_at = returnDateTime;
+      // available_at is only set when the booking has a real return_time so
+      // callers always receive a trustworthy ISO timestamp (never synthetic).
+      if (latest.hasTime) {
+        const returnDateTimeISO = formatDateTimeLA(latest.returnDateTime);
+        vehicleStatus.available_at = returnDateTimeISO;
+      } else {
+        vehicleStatus.available_at = null;
+      }
+
+      // next_available_display is always set: "Apr 25, 2026 at 8:00 AM" when
+      // return_time is known, "Apr 25, 2026" when it was absent.  This is the
+      // single pre-formatted string the frontend renders without any date math.
+      vehicleStatus.next_available_display = formatForDisplay(latest.returnDateTime, latest.hasTime);
 
       console.log("[AVAILABLE_AT_COMPUTED]", {
         vehicle_id: vehicleId,
-        return_datetime: returnDateTime,
+        return_datetime: vehicleStatus.available_at,
+        next_available_display: vehicleStatus.next_available_display,
       });
     }
   } catch (err) {

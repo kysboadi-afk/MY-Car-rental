@@ -150,56 +150,61 @@ function applyFleetStatus(fleetStatus, bookedDates) {
       badge.textContent = i18n.t(badgeKey);
       badge.className = "status-badge unavailable booked";
 
-      // Build the "Next Available" badge, using time-aware data when present.
-      // If fleet-status returned available_at (ISO timestamp):
-      //   • Same day  → "Available Today at HH:MM"
-      //   • Future day → "Next Available: [date]" using that date
-      // Else fall back to the date-only getNextAvailDate logic (blocked_dates).
+      // Build the "Next Available" badge.
+      // Prefer the pre-formatted next_available_display from fleet-status
+      // (single source of truth, LA timezone, no frontend date math).
+      // Falls back to the available_at timestamp path, then to date-only
+      // booked-dates.json data for environments without Supabase.
+      const nextAvailDisplay = status ? status.next_available_display : null;
       const availableAt = status ? status.available_at : null;
       const nextBadge = document.createElement("span");
       nextBadge.className = "next-available-badge";
+      const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
 
-      const availDate = availableAt ? new Date(availableAt) : null;
-      const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
+      if (nextAvailDisplay) {
+        // Backend pre-formatted the string; just render it.
+        nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
+      } else {
+        const availDate = availableAt ? new Date(availableAt) : null;
+        const hasValidAvailableAt = !!(availDate && Number.isFinite(availDate.getTime()));
 
-      if (hasValidAvailableAt) {
-        const nowMs = Date.now();
-        if (availDate.getTime() <= nowMs) {
-          // Return time is already in the past — just say "Available Today"
-          nextBadge.textContent = "Available Today";
-        } else {
-          const availDateISO = SlyLA.isoDateInLA(availDate);
-          const timeStr = availDate.toLocaleTimeString("en-US", {
-            timeZone: SlyLA.tz,
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true
-          });
-          if (availDateISO === today) {
-            nextBadge.textContent = "Available Today at " + timeStr;
+        if (hasValidAvailableAt) {
+          const nowMs = Date.now();
+          if (availDate.getTime() <= nowMs) {
+            // Return time is already in the past — just say "Available Today"
+            nextBadge.textContent = "Available Today";
           } else {
-            const formatted2 = availDate.toLocaleDateString("en-US", {
+            const availDateISO = SlyLA.isoDateInLA(availDate);
+            const timeStr = availDate.toLocaleTimeString("en-US", {
+              timeZone: SlyLA.tz,
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true
+            });
+            if (availDateISO === today) {
+              nextBadge.textContent = "Available Today at " + timeStr;
+            } else {
+              const formatted2 = availDate.toLocaleDateString("en-US", {
+                timeZone: SlyLA.tz,
+                month: "short",
+                day: "numeric",
+                year: "numeric"
+              });
+              nextBadge.textContent = tpl.replace("{date}", formatted2 + " at " + timeStr);
+            }
+          }
+        } else {
+          const nextISO = getNextAvailDate(vehicleId);
+          if (nextISO) {
+            const d = new Date(nextISO + "T00:00:00");
+            const formatted = d.toLocaleDateString("en-US", {
               timeZone: SlyLA.tz,
               month: "short",
               day: "numeric",
               year: "numeric"
             });
-            const tpl2 = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-            nextBadge.textContent = tpl2.replace("{date}", formatted2 + " at " + timeStr);
+            nextBadge.textContent = tpl.replace("{date}", formatted);
           }
-        }
-      } else {
-        const nextISO = getNextAvailDate(vehicleId);
-        if (nextISO) {
-          const d = new Date(nextISO + "T00:00:00");
-          const formatted = d.toLocaleDateString("en-US", {
-            timeZone: SlyLA.tz,
-            month: "short",
-            day: "numeric",
-            year: "numeric"
-          });
-          const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-          nextBadge.textContent = tpl.replace("{date}", formatted);
         }
       }
 
