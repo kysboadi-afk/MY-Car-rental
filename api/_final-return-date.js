@@ -3,16 +3,13 @@
 //
 // finalReturnDate = max(
 //   booking.return_date,
-//   latest paid, non-cancelled extension's return_date from revenue_records
+//   latest paid extension's new_return_date from booking_extensions
 // )
 //
-// Extensions are matched by:
-//   type            = 'extension'
-//   payment_status  = 'paid'
-//   is_cancelled    = false
-//   booking_id      = bookingRef   (Stripe-paid extensions)
-//   OR
-//   original_booking_id = bookingRef  (manually-created extensions via v2-revenue.js)
+// Extensions are matched by booking_id = bookingRef in booking_extensions.
+// The return time is taken from the extension row's new_return_time (which is
+// always copied from the booking's return_time at payment time, since the
+// extend flow has no time picker).
 //
 // All public helpers use America/Los_Angeles timezone so that return-time
 // comparisons are always anchored to Los Angeles wall-clock time.
@@ -120,15 +117,12 @@ export async function computeFinalReturnDate(sb, bookingRef, baseDate, baseTime)
 
   try {
     const { data: extRecords, error } = await sb
-      .from("revenue_records")
-      .select("return_date, return_time")
-      .or(`booking_id.eq.${bookingRef},original_booking_id.eq.${bookingRef}`)
-      .eq("type",           "extension")
-      .eq("payment_status", "paid")
-      .eq("is_cancelled",   false);
+      .from("booking_extensions")
+      .select("new_return_date, new_return_time")
+      .eq("booking_id", bookingRef);
 
     if (error) {
-      console.warn("computeFinalReturnDate: revenue_records query failed (non-fatal):", error.message);
+      console.warn("computeFinalReturnDate: booking_extensions query failed (non-fatal):", error.message);
       return fallback;
     }
 
@@ -136,9 +130,9 @@ export async function computeFinalReturnDate(sb, bookingRef, baseDate, baseTime)
     let maxTime = baseTime || "";
 
     for (const rec of (extRecords || [])) {
-      const rd = rec.return_date ? String(rec.return_date).split("T")[0] : "";
+      const rd = rec.new_return_date ? String(rec.new_return_date).split("T")[0] : "";
       if (!rd) continue;
-      const rt = rec.return_time ? String(rec.return_time).substring(0, 5) : maxTime;
+      const rt = rec.new_return_time ? String(rec.new_return_time).substring(0, 5) : maxTime;
       if (rd > maxDate) {
         maxDate = rd;
         maxTime = rt;

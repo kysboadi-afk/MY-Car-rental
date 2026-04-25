@@ -65,7 +65,6 @@ function makeSb(extRecords = [], error = null) {
     from() {
       const chain = {
         select() { return this; },
-        or()     { return this; },
         eq()     { return this; },
         async then(resolve) { return resolve({ data: extRecords, error }); },
       };
@@ -80,7 +79,7 @@ test("computeFinalReturnDate: returns base when sb is null", async () => {
 });
 
 test("computeFinalReturnDate: returns base when bookingRef is missing", async () => {
-  const sb = makeSb([{ return_date: "2026-05-20", return_time: "10:00:00" }]);
+  const sb = makeSb([{ new_return_date: "2026-05-20", new_return_time: "10:00:00" }]);
   const result = await computeFinalReturnDate(sb, null, "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-10", time: "10:00" });
 });
@@ -92,29 +91,29 @@ test("computeFinalReturnDate: returns base when no extensions exist", async () =
 });
 
 test("computeFinalReturnDate: returns extension date when it is later", async () => {
-  const sb = makeSb([{ return_date: "2026-05-17", return_time: "10:00:00" }]);
+  const sb = makeSb([{ new_return_date: "2026-05-17", new_return_time: "10:00:00" }]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-17", time: "10:00" });
 });
 
 test("computeFinalReturnDate: keeps base when extension date is earlier", async () => {
-  const sb = makeSb([{ return_date: "2026-05-05", return_time: "10:00:00" }]);
+  const sb = makeSb([{ new_return_date: "2026-05-05", new_return_time: "10:00:00" }]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-10", time: "10:00" });
 });
 
 test("computeFinalReturnDate: returns the latest among multiple extensions", async () => {
   const sb = makeSb([
-    { return_date: "2026-05-14", return_time: "10:00:00" },
-    { return_date: "2026-05-21", return_time: "10:00:00" },
-    { return_date: "2026-05-17", return_time: "10:00:00" },
+    { new_return_date: "2026-05-14", new_return_time: "10:00:00" },
+    { new_return_date: "2026-05-21", new_return_time: "10:00:00" },
+    { new_return_date: "2026-05-17", new_return_time: "10:00:00" },
   ]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-21", time: "10:00" });
 });
 
 test("computeFinalReturnDate: picks later time when extension date equals base date", async () => {
-  const sb = makeSb([{ return_date: "2026-05-10", return_time: "17:00:00" }]);
+  const sb = makeSb([{ new_return_date: "2026-05-10", new_return_time: "17:00:00" }]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   // Same date but later time — extension time wins
   assert.deepEqual(result, { date: "2026-05-10", time: "17:00" });
@@ -131,8 +130,7 @@ test("computeFinalReturnDate: returns base when Supabase throws", async () => {
     from() {
       return {
         select() { return this; },
-        or() { throw new Error("mock network error"); },
-        eq() { return this; },
+        eq() { throw new Error("mock network error"); },
         async then() { throw new Error("mock network error"); },
       };
     },
@@ -141,17 +139,17 @@ test("computeFinalReturnDate: returns base when Supabase throws", async () => {
   assert.deepEqual(result, { date: "2026-05-10", time: "10:00" });
 });
 
-test("computeFinalReturnDate: skips extension records with missing return_date", async () => {
+test("computeFinalReturnDate: skips extension records with missing new_return_date", async () => {
   const sb = makeSb([
-    { return_date: null,         return_time: "10:00:00" },
-    { return_date: "2026-05-17", return_time: "10:00:00" },
+    { new_return_date: null,         new_return_time: "10:00:00" },
+    { new_return_date: "2026-05-17", new_return_time: "10:00:00" },
   ]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-17", time: "10:00" });
 });
 
-test("computeFinalReturnDate: handles ISO timestamp return_date (trims to YYYY-MM-DD)", async () => {
-  const sb = makeSb([{ return_date: "2026-05-17T00:00:00.000Z", return_time: "10:00:00" }]);
+test("computeFinalReturnDate: handles ISO timestamp new_return_date (trims to YYYY-MM-DD)", async () => {
+  const sb = makeSb([{ new_return_date: "2026-05-17T00:00:00.000Z", new_return_time: "10:00:00" }]);
   const result = await computeFinalReturnDate(sb, "bk-001", "2026-05-10", "10:00");
   assert.deepEqual(result, { date: "2026-05-17", time: "10:00" });
 });
