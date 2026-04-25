@@ -1439,8 +1439,12 @@ async function runReconciliation() {
       </tr>`;
     }).join("\n");
 
-    const allRepaired = areAllPaymentsHandled(newMismatches, repairedPIIds, failedPIIds, NON_NEW_BOOKING_TYPES);
-    const subject = allRepaired
+    const skippedPIIds = newMismatches
+      .filter((pi) => !repairedPIIds.includes(pi.id) && !failedPIIds.includes(pi.id))
+      .map((pi) => pi.id);
+    // ✅ subject only when every mismatch was actually auto-processed (no failures, no skipped-for-manual-review)
+    const allAutoProcessed = failedPIIds.length === 0 && skippedPIIds.length === 0 && repairedPIIds.length > 0;
+    const subject = allAutoProcessed
       ? `[SLY RIDES] ✅ ${repairedPIIds.length} Payment(s) Auto-Processed`
       : `[SLY RIDES] ⚠️ ${newMismatches.length} Payment(s) Detected – ${repairedPIIds.length} Auto-Processed`;
 
@@ -1458,8 +1462,8 @@ async function runReconciliation() {
           to:      OWNER_EMAIL,
           subject,
           html: `
-            <h2>${allRepaired ? "✅ Payments Auto-Processed" : "⚠️ Payment Recovery Summary"}</h2>
-            <p>${newMismatches.length} Stripe PaymentIntent(s) were detected without matching revenue records. The system automatically ran the booking pipeline for each one${repairedPIIds.length > 0 ? " — a separate booking confirmation email has been sent for each successfully processed payment" : ""}.</p>
+            <h2>${allAutoProcessed ? "✅ Payments Auto-Processed" : "⚠️ Payment Recovery Summary"}</h2>
+            <p>${newMismatches.length} Stripe PaymentIntent(s) were detected without matching revenue records. The system attempted to process each one${repairedPIIds.length > 0 ? " — a separate booking confirmation email has been sent for each successfully processed payment" : ""}.</p>
             <table style="border-collapse:collapse;width:100%;margin:16px 0">
               <thead>
                 <tr style="background:#f5f5f5">
@@ -1473,15 +1477,19 @@ async function runReconciliation() {
               </thead>
               <tbody>${rows}</tbody>
             </table>
-            ${failedPIIds.length > 0 ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>` : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`}
+            ${failedPIIds.length > 0
+              ? `<p style="color:#d32f2f">⚠️ <strong>${failedPIIds.length} payment(s) could not be auto-processed.</strong> Please review them manually in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+              : skippedPIIds.length > 0
+                ? `<p style="color:#e65100">⚠️ <strong>${skippedPIIds.length} payment(s) require manual review</strong> (type not eligible for auto-processing). Please review them in the <a href="https://dashboard.stripe.com/payments">Stripe Dashboard</a> and the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`
+                : `<p>✅ All detected payments have been processed. Please verify them in the <a href="https://www.slytrans.com/admin-v2/">Admin Panel</a>.</p>`}
             <p><strong>Sly Transportation Services LLC 🚗</strong></p>
           `,
           text: [
             subject,
             "",
-            allRepaired
+            allAutoProcessed
               ? `${repairedPIIds.length} payment(s) were auto-processed successfully.`
-              : `${repairedPIIds.length}/${newMismatches.length} payment(s) were auto-processed. ${failedPIIds.length} failed.`,
+              : `${repairedPIIds.length}/${newMismatches.length} payment(s) were auto-processed. ${failedPIIds.length} failed. ${skippedPIIds.length} require manual review.`,
             "",
             ...newMismatches.map((pi) => {
               const repaired = repairedPIIds.includes(pi.id);
@@ -1499,14 +1507,15 @@ async function runReconciliation() {
     }
 
     // SMS alert (brief — only when manual intervention is needed)
-    if (failedPIIds.length > 0 && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
+    const manualPIIds = [...failedPIIds, ...skippedPIIds];
+    if (manualPIIds.length > 0 && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY && OWNER_PHONE) {
       try {
-        const failedSummary = newMismatches
-          .filter((pi) => failedPIIds.includes(pi.id))
+        const manualSummary = newMismatches
+          .filter((pi) => manualPIIds.includes(pi.id))
           .slice(0, 3)
           .map((pi) => `${pi.id} ($${(pi.amount / 100).toFixed(2)})`)
           .join(", ");
-        const smsText = `[SLY RIDES] ⚠️ ${failedPIIds.length} payment(s) could not be auto-processed: ${failedSummary}${failedPIIds.length > 3 ? ` +${failedPIIds.length - 3} more` : ""}. Check email.`;
+        const smsText = `[SLY RIDES] ⚠️ ${manualPIIds.length} payment(s) need manual review: ${manualSummary}${manualPIIds.length > 3 ? ` +${manualPIIds.length - 3} more` : ""}. Check email.`;
         await sendSms(OWNER_PHONE, smsText);
       } catch (smsErr) {
         console.warn("scheduled-reminders reconciliation: alert SMS failed:", smsErr.message);
