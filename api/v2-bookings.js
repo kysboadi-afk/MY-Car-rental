@@ -63,18 +63,36 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
 };
 
-// Mapping between app-level status values (used in bookings.json and the admin UI)
-// and database-level status values (used in the Supabase bookings table).
+// Mapping from app-level status values (used in bookings.json and the admin UI)
+// to database-level status values (used in the Supabase bookings table).
+// Migration 0081 expands the DB constraint to include all modern values so
+// every status here is directly accepted by Supabase without a constraint error.
 const APP_TO_DB_STATUS = {
   reserved_unpaid:  "pending",
-  booked_paid:      "approved",
-  active_rental:    "active",
-  completed_rental: "completed",
-  cancelled_rental: "cancelled",
+  booked_paid:      "booked_paid",
+  active_rental:    "active_rental",
+  overdue:          "overdue",
+  completed_rental: "completed_rental",
+  cancelled_rental: "cancelled_rental",
 };
-const DB_TO_APP_STATUS = Object.fromEntries(
-  Object.entries(APP_TO_DB_STATUS).map(([app, db]) => [db, app])
-);
+// Separate reverse mapping: explicitly covers ALL status values the DB may
+// contain (including legacy values written before migration 0081).
+const DB_TO_APP_STATUS = {
+  // Modern values — identity pass-through
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  booked_paid:          "booked_paid",
+  active_rental:        "active_rental",
+  overdue:              "overdue",
+  completed_rental:     "completed_rental",
+  cancelled_rental:     "cancelled_rental",
+  // Legacy values (may exist on older rows pre-0081)
+  approved:             "booked_paid",
+  active:               "active_rental",
+  completed:            "completed_rental",
+  cancelled:            "cancelled_rental",
+};
 
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";

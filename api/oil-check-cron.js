@@ -130,7 +130,7 @@ export default async function handler(req, res) {
       "pickup_date, return_date, " +
       "oil_check_required, oil_check_last_request, oil_check_missed_count"
     )
-    .eq("status", "active")
+    .in("status", ["active", "active_rental"])
     .not("customer_phone", "is", null);
 
   if (bookingsErr) {

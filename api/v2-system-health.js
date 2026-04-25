@@ -198,7 +198,7 @@ async function checkActiveRentalCount(sb) {
       sb
         .from("bookings")
         .select("booking_ref, pickup_date, return_date, vehicle_id, status", { count: "exact" })
-        .eq("status", "active")
+        .in("status", ["active", "active_rental"])
         .limit(200),
       sb
         .from("bookings")
