@@ -280,7 +280,7 @@ export default async function handler(req, res) {
       let activeBookingsQuery = sb
         .from("bookings")
         .select("booking_ref, vehicle_id, customer_name, customer_phone, activated_at");
-      activeBookingsQuery = activeBookingsQuery.eq("status", "active");
+      activeBookingsQuery = activeBookingsQuery.in("status", ["active", "active_rental"]);
       if (filterPhone) {
         activeBookingsQuery = activeBookingsQuery.eq("customer_phone", String(filterPhone).trim());
       }

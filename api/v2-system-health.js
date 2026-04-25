@@ -105,15 +105,15 @@ async function checkPaymentBookingRevenue(sb) {
 
     const { data: revRows, error: rErr } = await sb
       .from("revenue_records")
-      .select("booking_ref")
-      .in("booking_ref", refs);
+      .select("booking_id")
+      .in("booking_id", refs);
 
     if (rErr) {
       console.error("[v2-system-health] paymentBookingRevenue revenue query error:", rErr.message);
       return check("Payment → Booking → Revenue", "error", "Could not query revenue_records: " + rErr.message);
     }
 
-    const revenueRefs = new Set((revRows || []).map((r) => r.booking_ref));
+    const revenueRefs = new Set((revRows || []).map((r) => r.booking_id));
     const missingRevenue = (paidBookings || []).filter(
       (b) => b.booking_ref && !revenueRefs.has(b.booking_ref),
     );
@@ -198,7 +198,7 @@ async function checkActiveRentalCount(sb) {
       sb
         .from("bookings")
         .select("booking_ref, pickup_date, return_date, vehicle_id, status", { count: "exact" })
-        .eq("status", "active")
+        .in("status", ["active", "active_rental"])
         .limit(200),
       sb
         .from("bookings")

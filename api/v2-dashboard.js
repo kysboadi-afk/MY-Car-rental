@@ -285,17 +285,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // Override booking-count KPIs with view values when the view is available.
-    // The view uses server-side timezone-aware SQL and covers all booking status
-    // variants (including newer 'reserved' / 'pending_verification'), making it
-    // more accurate than the JS loop above (which only checks legacy status names).
-    if (viewOk) {
-      activeBookings    = Number(metricsView[`${vp}_active_rentals`]    || 0);
-      pendingApprovals  = Number(metricsView[`${vp}_pending_approvals`] || 0);
-      overdueCount      = Number(metricsView[`${vp}_overdue_count`]     || 0);
-      returnsTodayCount = Number(metricsView[`${vp}_returns_today`]     || 0);
-      pickupsTodayCount = Number(metricsView[`${vp}_pickups_today`]     || 0);
-    }
+    // Booking-count KPIs come exclusively from the JS loop above.
+    // The admin_metrics_v2 view's booking counts are intentionally NOT used here
+    // because the view schema may be behind code deployments: for example, if
+    // migration 0064 standardised booking statuses to 'active_rental' but
+    // migration 0079 (which adds 'active_rental' to the view's filter) has not
+    // yet been applied, the view returns 0 for every active-rental count while
+    // the JS loop above (which queries the live bookings table and is
+    // status-agnostic for the active-rental check) gives the correct result.
+    //
+    // Long-term: once migration 0079 is confirmed applied to all environments,
+    // it is safe to re-introduce the view override for additional accuracy (e.g.
+    // server-side timezone handling for returns/pickups today). Until then the
+    // JS loop is the single source of truth for these counts.
 
     // Total expenses (scoped)
     const totalExpenses = expenses
@@ -519,25 +521,30 @@ export default async function handler(req, res) {
       }
     }
 
-    // Vehicles available
-    // When the view is available, use its pre-computed count (scope-aware, server-side).
+    // Vehicles available: computed from the JS loop's activeOrOverdueBookings
+    // so it stays consistent with the booking counts above.
+    // Using v.vehicle_id (not v.id — vehicle objects don't have a plain `id` field).
     const vehicleList = Object.values(filteredVehicles);
     const unavailableVehicleIds = new Set(
       activeOrOverdueBookings
         .map((b) => b.vehicleId)
     );
-    const availableVehicles = viewOk
-      ? Number(metricsView[`${vp}_available_vehicles`] || 0)
-      : vehicleList.filter(
-          (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
-        ).length;
+    const availableVehicles = vehicleList.filter(
+      (v) => v.status === "active" && !unavailableVehicleIds.has(v.vehicle_id)
+    ).length;
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
     const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+    // Vehicles with at least one active or overdue rental right now.
+    // We suppress the negative-profit alert for these: their partial/deposit
+    // payments are not yet in revenue_records so the profit figure is
+    // temporarily understated until the booking is fully settled.
+    const vehiclesWithActiveRentals = new Set(activeOrOverdueBookings.map((b) => b.vehicleId));
+
     for (const [vehicleId, stats] of Object.entries(vehicleStats)) {
-      if (stats.netProfit < 0) {
+      if (stats.netProfit < 0 && !vehiclesWithActiveRentals.has(vehicleId)) {
         alerts.push({
           type:    "warning",
           message: `${stats.name} has negative net profit ($${stats.netProfit.toFixed(2)})`,
@@ -567,13 +574,34 @@ export default async function handler(req, res) {
     }
 
     // Revenue chart: last 12 months sorted (gross revenue by month).
-    // When viewOk, use the pre-computed JSONB from the view (already sorted ASC).
-    const revenueChart = viewOk
-      ? (metricsView[`${vp}_revenue_chart`] || [])
-      : Object.entries(monthlyRevenue)
+    // When viewOk, prefer the pre-computed JSONB from the view (already sorted ASC).
+    // Fall back to a booking-based approximation when the view chart is empty
+    // (common when revenue_records lack pickup_date for older/partially-paid records).
+    const viewChart = viewOk ? (metricsView[`${vp}_revenue_chart`] || []) : [];
+    let revenueChart;
+    if (viewChart.length > 0) {
+      revenueChart = viewChart;
+    } else if (monthlyRevenue && Object.keys(monthlyRevenue).length > 0) {
+      // Non-view path: monthlyRevenue was populated by the revenue_records loop.
+      revenueChart = Object.entries(monthlyRevenue)
           .sort(([a], [b]) => (a > b ? 1 : -1))
           .slice(-12)
           .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    } else {
+      // Booking-based fallback: uses allBookings deposit/total amounts per month.
+      // Less precise than revenue_records but guarantees a non-empty chart.
+      const chartStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      const bookingMonthly = {};
+      for (const b of allBookings) {
+        if (!chartStatuses.has(b.status)) continue;
+        const monthKey = (b.pickupDate || "").slice(0, 7);
+        if (monthKey) bookingMonthly[monthKey] = (bookingMonthly[monthKey] || 0) + bookingRevenue(b);
+      }
+      revenueChart = Object.entries(bookingMonthly)
+          .sort(([a], [b]) => (a > b ? 1 : -1))
+          .slice(-12)
+          .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    }
 
     // Recent bookings (last 10 across all vehicles).
     // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
