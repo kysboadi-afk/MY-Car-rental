@@ -185,9 +185,8 @@ export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, to
       .eq("vehicle_id", vehicleId)
       .eq("status", "active_rental")
       .limit(1);
-    if (!activeRentalError && activeRentals && activeRentals.length > 0) {
-      return false;
-    }
+    if (activeRentalError) return true; // fail open on query error
+    if (activeRentals && activeRentals.length > 0) return false;
 
     // Query for date-range overlaps: pickup_date <= to AND return_date >= from
     const { data: rows, error } = await sb
