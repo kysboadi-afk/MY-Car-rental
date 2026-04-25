@@ -262,6 +262,7 @@ export default async function handler(req, res) {
 
     for (const b of vehicleBookings) {
       if (b === activeBooking) continue;
+      if (b.bookingId === activeBooking.bookingId) continue;
       if (b.status === "cancelled" || b.status === "completed_rental") continue;
 
       const hasConflict = hasDateTimeOverlap(
