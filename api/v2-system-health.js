@@ -105,8 +105,7 @@ async function checkPaymentBookingRevenue(sb) {
     const { data: revRows, error: rErr } = await sb
       .from("revenue_records")
       .select("booking_id")
-      .in("booking_id", refs)
-      .eq("type", "rental");
+      .in("booking_id", refs);
 
     if (rErr) {
       console.error("[v2-system-health] paymentBookingRevenue revenue query error:", rErr.message);
@@ -475,8 +474,7 @@ async function fixPaymentBookingRevenue(sb) {
   const { data: revRows, error: rErr } = await sb
     .from("revenue_records")
     .select("booking_id")
-    .in("booking_id", refs)
-    .eq("type", "rental");
+    .in("booking_id", refs);
   if (rErr) throw new Error("Could not query revenue_records: " + rErr.message);
 
   const revenueRefs = new Set((revRows || []).map((r) => r.booking_id));
