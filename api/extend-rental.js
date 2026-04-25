@@ -115,7 +115,7 @@ export default async function handler(req, res) {
               .select("booking_ref, return_date, return_time, status")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
-            if (sbRow && (sbRow.status === "active" || sbRow.status === "overdue")) {
+            if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
               // Capture the canonical Supabase booking_ref so the conflict-check
               // loop can skip this booking even when activeBooking.bookingId is a
               // legacy Stripe PI ID that does not match booking_ref.
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
             .from("bookings")
             .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone")
             .eq("vehicle_id", vehicleId)
-            .in("status", ["active", "overdue"]);
+            .in("status", ["active", "active_rental", "overdue"]);
 
           if (sbActive) {
             for (const row of sbActive) {
@@ -207,7 +207,7 @@ export default async function handler(req, res) {
           .from("bookings")
           .select("booking_ref")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["active", "overdue"]);
+          .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
           refQuery = refQuery.eq("customer_email", trimmedEmail);
         } else if (normalizedPhone) {
@@ -300,7 +300,7 @@ export default async function handler(req, res) {
           .from("bookings")
           .select("booking_ref, pickup_date, return_date, pickup_time, return_time")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["pending", "active", "overdue", "reserved"])
+          .not("status", "in", "(cancelled,completed_rental)")
           .gte("pickup_date", conflictFloorDate);
         if (sbActiveBookingRef) {
           futureQuery = futureQuery.neq("booking_ref", sbActiveBookingRef);

@@ -128,14 +128,62 @@ function makeActiveBooking(overrides = {}) {
   };
 }
 
+// ─── Supabase client builder ─────────────────────────────────────────────────
+// Builds a chainable Supabase-style query stub.  `rows` is returned for ALL
+// queries; tests that need different rows per query use `queryMap` instead.
+
+function makeSupabaseClient({ rows = [], error = null, queryMap = null } = {}) {
+  // queryMap: array of { match: fn(tableName, filters), rows, error } checked
+  // in order.  First match wins; falls back to the default `rows`/`error`.
+  const resolveQuery = (tableName, filters) => {
+    if (queryMap) {
+      for (const entry of queryMap) {
+        if (entry.match(tableName, filters)) {
+          return { data: entry.rows || [], error: entry.error || null };
+        }
+      }
+    }
+    return { data: rows, error };
+  };
+
+  return {
+    _tableName: null,
+    _filters: {},
+    from(table) {
+      const ctx = { tableName: table, filters: {} };
+      const chain = {
+        select()     { return this; },
+        eq(k, v)     { ctx.filters[k] = v; return this; },
+        neq(k, v)    { ctx.filters[`neq_${k}`] = v; return this; },
+        in(k, v)     { ctx.filters[`in_${k}`] = v; return this; },
+        not(k, op, v){ ctx.filters[`not_${k}`] = v; return this; },
+        lte()        { return this; },
+        gte()        { return this; },
+        limit()      { return this; },
+        order()      { return this; },
+        update()     { return this; },
+        upsert()     { return this; },
+        async maybeSingle() {
+          const result = resolveQuery(ctx.tableName, ctx.filters);
+          const d = Array.isArray(result.data) ? result.data : [];
+          return { data: d.length === 1 ? d[0] : null, error: result.error };
+        },
+        async then(resolve) {
+          return resolve(resolveQuery(ctx.tableName, ctx.filters));
+        },
+      };
+      return chain;
+    },
+  };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-test("extend-rental: 200 when active booking is the ONLY booking (self-conflict guard)", async () => {
-  // This is the regression test for the false-conflict bug: the active booking's
-  // return date (Apr 30) sits exactly at the extension window start (Apr 30),
-  // which means hasDateTimeOverlap detects an overlap via the 2-hour buffer
-  // (rEnd = Apr 30 7 PM > newStart = Apr 30 5 PM).  The fix adds a bookingId
-  // equality guard so the active booking is never treated as a conflicting booking.
+test("extend-rental: 200 when active booking is the ONLY booking (self-conflict guard, no Supabase)", async () => {
+  // Regression test: the active booking's return date (Apr 30) sits exactly
+  // at the extension window start. hasDateTimeOverlap detects an overlap via
+  // the 2-hour buffer (rEnd = Apr 30 7 PM > newStart = Apr 30 5 PM).
+  // The bookingId equality guard must suppress this.
   const active = makeActiveBooking();
   mockBookings = { camry: [active] };
   sbClient     = null;
@@ -152,7 +200,43 @@ test("extend-rental: 200 when active booking is the ONLY booking (self-conflict 
   assert.ok(res._body?.clientSecret, "response must include clientSecret");
 });
 
-test("extend-rental: 409 when there is a genuine future booking conflict", async () => {
+test("extend-rental: 200 when active booking has 'active_rental' status in Supabase (enrichment fix)", async () => {
+  // The enrichment block previously only matched status 'active' | 'overdue'.
+  // With 'active_rental' status in Supabase, sbActiveBookingRef was never set.
+  // Now that 'active_rental' is included, the conflict query correctly uses
+  // .neq("booking_ref", sbActiveBookingRef) to exclude the current booking.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  // Supabase returns the active booking with status='active_rental' when
+  // queried by booking_ref, and returns no future conflicts.
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      // Enrichment: fetch by booking_ref → returns the active booking
+      {
+        match: (t) => t === "bookings",
+        rows: [{
+          booking_ref: "bk-camry-active-001",
+          return_date: "2026-04-30",
+          return_time: "17:00:00",
+          status:      "active_rental",
+        }],
+      },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.notEqual(res._status, 409, "active_rental Supabase booking must not block itself");
+  assert.equal(res._status, 200);
+});
+
+test("extend-rental: 409 when there is a genuine future booking conflict (bookings.json)", async () => {
   // A separate future booking starts on May 3, which falls within the
   // Apr 30 → May 7 extension window.  The handler must return 409.
   const active  = makeActiveBooking();
@@ -182,6 +266,56 @@ test("extend-rental: 409 when there is a genuine future booking conflict", async
   }), res);
 
   assert.equal(res._status, 409, "should return 409 when extension overlaps a future booking");
+});
+
+test("extend-rental: 409 when future booking has 'booked_paid' status in Supabase", async () => {
+  // Previously the Supabase conflict query only checked
+  // ["pending","active","overdue","reserved"] — missing "booked_paid".
+  // A paid reservation starting May 3 would NOT have been caught.
+  // After the fix (not.in cancelled,completed_rental) it IS caught.
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    queryMap: [
+      // All bookings queries return: active booking for enrichment, future booking for conflict
+      {
+        match: (t) => t === "bookings",
+        rows: [
+          // Active booking (used for enrichment and conflict check)
+          {
+            booking_ref:    "bk-camry-active-001",
+            return_date:    "2026-04-30",
+            return_time:    "17:00:00",
+            status:         "active_rental",
+            customer_email: "alice@example.com",
+            customer_phone: "2135550100",
+            customer_name:  "Alice Tester",
+            pickup_date:    "2026-04-15",
+            pickup_time:    "10:00:00",
+          },
+          // Future booking with "booked_paid" status — should trigger 409
+          {
+            booking_ref: "bk-camry-future-001",
+            pickup_date: "2026-05-03",
+            return_date: "2026-05-07",
+            pickup_time: "10:00:00",
+            return_time: "17:00:00",
+            status:      "booked_paid",
+          },
+        ],
+      },
+    ],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 409, "booked_paid future booking must block the extension");
 });
 
 test("extend-rental: 400 when new return date is not after current return date", async () => {
