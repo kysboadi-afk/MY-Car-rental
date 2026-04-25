@@ -48,7 +48,7 @@ async function fetchAllData() {
         .from("bookings")
         .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(500);
       if (!error && data) {
         allBookings = data.map((row) => ({
           bookingId:  row.booking_id || "",
@@ -71,6 +71,26 @@ async function fetchAllData() {
   if (allBookings.length === 0) {
     const { data: bookingsData } = await loadBookings();
     allBookings = Object.values(bookingsData).flat();
+  }
+
+  // ── Revenue records (source of truth for financial totals) ─────────────
+  // Fetch all paid, non-cancelled, non-no-show records from revenue_records_effective
+  // so computeInsights can produce accurate weekly/monthly revenue snapshots that
+  // match the Revenue page and Fleet Analytics instead of relying on the bookings table.
+  let revenueRecords = [];
+  if (sb) {
+    try {
+      const { data: rrData, error: rrErr } = await sb
+        .from("revenue_records_effective")
+        .select("vehicle_id, pickup_date, gross_amount, is_cancelled, is_no_show")
+        .eq("payment_status", "paid");
+      if (!rrErr && rrData && rrData.length > 0) {
+        revenueRecords = rrData.filter((r) => !r.is_cancelled && !r.is_no_show);
+      }
+    } catch (rrEx) {
+      // Non-fatal — computeInsights will fall back to the bookings array
+      console.warn("admin-ai-insights: revenue_records fetch failed, using bookings fallback:", rrEx.message);
+    }
   }
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
@@ -157,7 +177,13 @@ async function fetchAllData() {
     .map((b) => ({ ...b, vehicleId: uiVehicleId(b.vehicleId) }))
     .filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 
-  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };
+  // Filter revenue records to car vehicles only (same scope as filteredBookings).
+  const filteredRevenueRecords = revenueRecords.filter((r) => {
+    const vid = uiVehicleId(r.vehicle_id);
+    return !vid || carVehicleIds.has(vid);
+  });
+
+  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips, revenueRecords: filteredRevenueRecords };
 }
 
 export default async function handler(req, res) {
@@ -180,8 +206,8 @@ export default async function handler(req, res) {
   const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 5000;
 
   async function mainLogic() {
-    const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
-    const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
+    const { allBookings, vehicles, mileageData, recentTrips, revenueRecords } = await fetchAllData();
+    const insights = computeInsights({ allBookings, vehicles, revenueFromBooking, revenueRecords });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
     // Fraud summary (top 10 risks)
