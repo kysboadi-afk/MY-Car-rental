@@ -45,6 +45,12 @@ const DRIVER_MILEAGE_THRESHOLD_DAILY = Math.max(
   Number(process.env.DRIVER_MILEAGE_THRESHOLD_DAILY) || 200
 );
 
+// HIGH_DAILY_MILEAGE alert deduplication via sms_logs.
+// Max 2 alerts per booking, with a 60-minute cooldown between them.
+const TEMPLATE_KEY_HIGH_MILEAGE   = "HIGH_DAILY_MILEAGE";
+const MAX_HIGH_MILEAGE_ALERTS     = 2;
+const HIGH_MILEAGE_COOLDOWN_MS    = 60 * 60 * 1000; // 60 minutes
+
 // Service definitions — intervals match lib/ai/mileage.js
 const SERVICES = [
   {
@@ -114,6 +120,88 @@ async function sendOwnerAlertEmail(subject, html) {
   } catch (err) {
     console.warn("maintenance-alerts: owner email failed:", err.message);
     return false;
+  }
+}
+
+/**
+ * Check whether a HIGH_DAILY_MILEAGE alert is allowed for this booking.
+ * Returns { allowed: boolean, sentCount: number }.
+ * Enforces:
+ *   1. Hard cap: at most MAX_HIGH_MILEAGE_ALERTS total per booking.
+ *   2. Cooldown: at least HIGH_MILEAGE_COOLDOWN_MS between consecutive alerts.
+ * Fails open (allows the send) if Supabase is unavailable.
+ */
+async function checkHighMileageQuota(sb, bookingId) {
+  if (!sb || !bookingId) return { allowed: true, sentCount: 0 };
+  try {
+    const { count, error: countErr } = await sb
+      .from("sms_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("booking_id", bookingId)
+      .eq("template_key", TEMPLATE_KEY_HIGH_MILEAGE);
+
+    if (countErr) {
+      console.warn("maintenance-alerts: sms_logs count check failed (non-fatal):", countErr.message);
+      return { allowed: true, sentCount: 0 };
+    }
+
+    const sentCount = count || 0;
+    if (sentCount >= MAX_HIGH_MILEAGE_ALERTS) {
+      return { allowed: false, sentCount };
+    }
+
+    // Cooldown: ensure at least 60 min since last alert
+    const { data, error: latestErr } = await sb
+      .from("sms_logs")
+      .select("sent_at")
+      .eq("booking_id", bookingId)
+      .eq("template_key", TEMPLATE_KEY_HIGH_MILEAGE)
+      .order("sent_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestErr) {
+      console.warn("maintenance-alerts: sms_logs cooldown check failed (non-fatal):", latestErr.message);
+      return { allowed: true, sentCount };
+    }
+
+    if (data) {
+      const diffMs = Date.now() - new Date(data.sent_at).getTime();
+      if (diffMs < HIGH_MILEAGE_COOLDOWN_MS) {
+        return { allowed: false, sentCount };
+      }
+    }
+
+    return { allowed: true, sentCount };
+  } catch (err) {
+    console.warn("maintenance-alerts: high-mileage quota check failed (non-fatal):", err.message);
+    return { allowed: true, sentCount: 0 };
+  }
+}
+
+/**
+ * Record a sent HIGH_DAILY_MILEAGE alert in sms_logs.
+ * Uses fixed sentinel dates so the (booking_id, template_key, return_date_at_send)
+ * unique constraint accommodates up to MAX_HIGH_MILEAGE_ALERTS rows:
+ *   sentCount 0 → '1970-01-01'
+ *   sentCount 1 → '1970-01-02'
+ * Non-fatal: errors are logged but not propagated.
+ */
+async function logHighMileageAlert(sb, bookingId, sentCount) {
+  if (!sb || !bookingId) return;
+  try {
+    const sentinelDates = ["1970-01-01", "1970-01-02"];
+    const date = sentinelDates[sentCount] || sentinelDates[sentinelDates.length - 1];
+    const { error } = await sb.from("sms_logs").insert({
+      booking_id:          bookingId,
+      template_key:        TEMPLATE_KEY_HIGH_MILEAGE,
+      return_date_at_send: date,
+    });
+    if (error) {
+      console.warn("maintenance-alerts: sms_logs insert for HIGH_DAILY_MILEAGE failed (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.warn("maintenance-alerts: sms_logs insert for HIGH_DAILY_MILEAGE failed (non-fatal):", err.message);
   }
 }
 
@@ -326,8 +414,13 @@ export default async function handler(req, res) {
           const driverPhone = booking.phone || "N/A";
           const vehicleName = trackedVehicles.find((v) => v.vehicle_id === vid)?.data?.vehicle_name || vid;
 
-          // Dedup: only alert once per booking per 24-hour period
+          // Dedup: enforce max-2 cap and 60-min cooldown via sms_logs.
+          // Falls back to the 24h smsSentAt flag when Supabase is unavailable.
           const alertKey   = "driver_mileage_alert";
+          const { allowed, sentCount } = await checkHighMileageQuota(sb, bookingId);
+          if (!allowed) continue;
+
+          // Secondary fallback: legacy 24h smsSentAt guard (for when Supabase is down)
           const lastSentAt = booking.smsSentAt?.[alertKey];
           if (lastSentAt && (Date.now() - new Date(lastSentAt).getTime()) < 86400_000) continue;
 
@@ -350,6 +443,8 @@ export default async function handler(req, res) {
           );
 
           if (smsSent) {
+            // Log to sms_logs so the max-2 cap is enforced on the next cron run
+            await logHighMileageAlert(sb, bookingId, sentCount);
             sentMarks.push({ vehicleId: vid, id: bookingId, key: alertKey });
             alertsSent++;
           }
