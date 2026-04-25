@@ -48,7 +48,7 @@ async function fetchAllData() {
         .from("bookings")
         .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(50);
       if (!error && data) {
         allBookings = data.map((row) => ({
           bookingId:  row.booking_id || "",
@@ -177,7 +177,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  try {
+  const TIMEOUT_MS = 5000;
+
+  async function mainLogic() {
     const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
     const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
@@ -197,7 +199,7 @@ export default async function handler(req, res) {
       ).catch((err) => console.warn("admin-ai-insights: fraud persist failed:", err.message));
     }
 
-    return res.status(200).json({
+    return {
       insights,
       problems,
       fraud: {
@@ -205,8 +207,23 @@ export default async function handler(req, res) {
         flagged:  flagged.length,
         topRisks: flagged.slice(0, 10),
       },
-    });
+    };
+  }
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("AI timeout")), TIMEOUT_MS)
+  );
+
+  console.time("AI request");
+  try {
+    const result = await Promise.race([mainLogic(), timeoutPromise]);
+    console.timeEnd("AI request");
+    return res.status(200).json(result);
   } catch (err) {
+    console.timeEnd("AI request");
+    if (err.message === "AI timeout") {
+      return res.status(200).json({ message: "System is busy. Try a simpler question." });
+    }
     console.error("admin-ai-insights error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }

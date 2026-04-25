@@ -204,7 +204,7 @@ async function fetchAllData() {
         .from("bookings")
         .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(50);
       if (!error && data) {
         allBookings = data.map((row) => ({
           bookingId:  row.booking_id || "",
@@ -366,6 +366,8 @@ export default async function handler(req, res) {
 
   const autoMode = process.env.AUTO_MODE === "true";
 
+  console.time("AI request");
+
   try {
     const runStart = Date.now();
     const { allBookings, vehicles, mileageData, recentTrips, mileageStatMap, activeBookingByVehicle } = await fetchAllData();
@@ -409,8 +411,10 @@ export default async function handler(req, res) {
     // Log the auto-run to ai_logs
     await logAiAction("auto_run", { auto_mode: autoMode, booking_count: allBookings.length }, output, "cron");
 
+    console.timeEnd("AI request");
     return res.status(200).json(output);
   } catch (err) {
+    console.timeEnd("AI request");
     console.error("admin-ai-auto error:", err);
     return res.status(500).json({ error: adminErrorMessage(err) });
   }

@@ -125,7 +125,7 @@ async function loadAllBookings() {
         .from("bookings")
         .select(BOOKING_COLUMNS)
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(50);
       if (!error && data) {
         return data.map((row) => ({
           bookingId:  row.booking_ref || String(row.id),
@@ -760,6 +760,8 @@ async function toolSendSms({ phone, message }) {
 }
 
 async function toolGetInsights() {
+  console.time("AI request");
+  try {
   const sb = getSupabaseAdmin();
   const [allBookings, vehicles] = await Promise.all([
     loadAllBookings(),
@@ -809,7 +811,12 @@ async function toolGetInsights() {
   const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
   const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
+  console.timeEnd("AI request");
   return { insights, problems };
+  } catch (err) {
+    console.timeEnd("AI request");
+    throw err;
+  }
 }
 
 async function toolGetMileage() {
@@ -3896,9 +3903,9 @@ export async function loadAdminContext() {
     try {
       const { data, error } = await sb
         .from("blocked_dates")
-        .select("*")
+        .select("id, vehicle_id, start_date, end_date, reason, source")
         .order("start_date", { ascending: true })
-        .limit(500);
+        .limit(50);
       if (error) {
         const msg = error.message || "";
         if (!msg.includes("relation") && !msg.includes("does not exist")) {
@@ -3920,7 +3927,7 @@ export async function loadAdminContext() {
         .from("customers")
         .select("id, name, phone, email, total_bookings, total_spent, is_banned, no_show_count, created_at")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(50);
       if (error) {
         const msg = error.message || "";
         if (!msg.includes("relation") && !msg.includes("does not exist")) {
