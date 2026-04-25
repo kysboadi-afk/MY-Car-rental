@@ -56,6 +56,7 @@ import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
 import { formatTime12h } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { computeFinalReturnDate } from "./_final-return-date.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -79,6 +80,18 @@ const LATE_FEE_AMOUNTS = {
   camry:       50,  // $50/hour  (rounded up, min 1 h)
   camry2013:   50,  // $50/hour  (rounded up, min 1 h)
 };
+
+// Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
+// stale bookings.json entries that remain as "active_rental" for days/weeks.
+// Consistent with MAX_CHARGE_WARN_USD in approve-late-fee.js.
+const MAX_LATE_FEE_USD = 500;
+
+// Maximum hours-overdue window in which a late fee may be triggered.
+// AUTO_COMPLETE_HOURS (4 h) auto-closes the booking; the late fee window is
+// 2 h–8 h past the scheduled return.  If minsOverdue exceeds this threshold
+// the booking was never auto-completed (stale status, cron outage, etc.) and
+// firing a fee would produce unrealistic amounts.  Skip it and warn instead.
+const MAX_FEE_OVERDUE_HOURS = 8;
 
 // ─── Auto-completion threshold ────────────────────────────────────────────────
 // Active rentals that are still open this many hours past the scheduled return
@@ -296,6 +309,28 @@ async function markVehicleAvailable(vehicleId) {
 }
 
 const BUSINESS_TZ = "America/Los_Angeles";
+
+/**
+ * Format a Date as a human-readable Los Angeles wall-clock string.
+ * Used in debug logs so that timestamp comparisons are easy to reason about.
+ * e.g. "5/1/2026, 3:00:00 PM PDT"
+ * @param {Date} date
+ * @returns {string}
+ */
+function toLAString(date) {
+  if (!(date instanceof Date) || isNaN(date.getTime())) return String(date);
+  return date.toLocaleString("en-US", {
+    timeZone:     BUSINESS_TZ,
+    timeZoneName: "short",
+    year:         "numeric",
+    month:        "numeric",
+    day:          "numeric",
+    hour:         "numeric",
+    minute:       "2-digit",
+    second:       "2-digit",
+    hour12:       true,
+  });
+}
 
 function normalizeTimeForLAIso(time) {
   if (!time) return "00:00:00";
@@ -654,17 +689,25 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   bookings.json are still written for backwards compatibility.
  */
 export async function processActiveRentals(allBookings, now, sentMarks) {
+  const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
 
+      // Compute the final return date/time, incorporating any paid extensions
+      // recorded in revenue_records so that SMS triggers always fire against the
+      // renter's true (extended) return schedule, not a stale bookings.json date.
+      const id = booking.bookingId || booking.paymentIntentId;
+      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
+        sb, id, booking.returnDate, booking.returnTime
+      );
+
       // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
       // wall-clock time in Los Angeles, not at UTC equivalents.
-      const returnDt = parseBookingDateTimeLA(booking.returnDate, booking.returnTime);
+      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
       if (isNaN(returnDt.getTime())) continue;
 
-      const id = booking.bookingId || booking.paymentIntentId;
       const v = vars(booking);
       const minutesUntilReturn = (returnDt - now) / 60000;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
@@ -673,9 +716,20 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const nowIso    = now.toISOString();
       const returnIso = returnDt.toISOString();
 
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
+          timezone:          BUSINESS_TZ,
+          now_la:            toLAString(now),
+          return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_final:      `${finalDate} ${finalTime}`,
+          return_la:         toLAString(returnDt),
+          mins_until_return: Math.round(minutesUntilReturn),
+        });
+      }
+
       // returnDateStr is stored in sms_logs so old triggers are invalidated when
       // the booking is extended to a new return_date.
-      const returnDateStr = booking.returnDate;
+      const returnDateStr = finalDate;
 
       // ── 30 min before return ─────────────────────────────────────────────────
       // Single consolidated end-of-rental reminder (replaces TextMagic automations
@@ -731,41 +785,102 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         !booking.lateFeeApplied &&
         !(await isSmsLogged(id, "late_fee_pending", returnDateStr))
       ) {
-        logSmsTrigger(id, returnIso, nowIso, "late_fee");
-        // Calculate fee based on actual hours overdue:
-        //   expected = returnDt (LA-timezone aware)
-        //   actual   = now
-        //   lateHours = (actual - expected) / (1000 * 60 * 60)  [rounded up, min 1]
-        const hourlyRate = LATE_FEE_AMOUNTS[vehicleId] || 50;
-        const lateHours  = Math.max(1, Math.ceil(minsOverdue / 60));
-        const feeAmount  = Math.round(lateHours * hourlyRate);
-        const feeVars = { ...v, late_fee: String(feeAmount) };
-        // 1. Notify customer that a late fee has been assessed
-        const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
-        // 2. Request owner approval before charging (email + SMS with Approve/Decline links)
-        const approvalSent = await requestLateFeeApproval(booking, feeAmount);
-        if (smsSent || approvalSent) {
-          // Mark as pending so we don't send the approval request again next cron tick
-          sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
-          sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
-          await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+        const hoursOverdue = minsOverdue / 60;
 
-          // Persist late_fee_status = 'pending_approval' to Supabase for audit trail.
-          // Non-fatal — the approval email/SMS is the authoritative delivery mechanism.
-          try {
-            const sbFee = getSupabaseAdmin();
-            if (sbFee && id) {
-              await sbFee
+        // ── Guard 1: maximum overdue window ───────────────────────────────────
+        // The late fee may only fire within MAX_FEE_OVERDUE_HOURS of the
+        // scheduled return.  Beyond that threshold the booking should already
+        // have been auto-completed (AUTO_COMPLETE_HOURS = 4 h).  A booking
+        // that is still "active_rental" after 8+ hours has a stale status
+        // (cron outage, Supabase write failure, etc.) and must NOT generate
+        // a fee — doing so produced the $15,900 alert on bk-bb-2026-0407.
+        if (hoursOverdue > MAX_FEE_OVERDUE_HOURS) {
+          console.warn(
+            `[LATE_FEE] SKIPPED booking ${id}: ` +
+            `${hoursOverdue.toFixed(1)}h overdue exceeds MAX_FEE_OVERDUE_HOURS ` +
+            `(${MAX_FEE_OVERDUE_HOURS}h). Booking has stale active_rental status — ` +
+            `auto-complete should have closed this at ${AUTO_COMPLETE_HOURS}h. ` +
+            `No late-fee alert will be sent.`
+          );
+        } else {
+          // ── Guard 2: live Supabase status check ─────────────────────────────
+          // Verify the booking is STILL active_rental in Supabase before
+          // firing any alert.  A booking completed in Supabase but not yet
+          // flushed from bookings.json would otherwise send alerts to past
+          // renters.
+          let bookingStillActive = true;
+          if (sb) {
+            try {
+              const { data: sbStatusRow } = await sb
                 .from("bookings")
-                .update({
-                  late_fee_status: "pending_approval",
-                  late_fee_amount: feeAmount,
-                  updated_at:      new Date().toISOString(),
-                })
-                .eq("booking_ref", id);
+                .select("status")
+                .eq("booking_ref", id)
+                .maybeSingle();
+              if (sbStatusRow && sbStatusRow.status !== "active_rental") {
+                console.warn(
+                  `[LATE_FEE] SKIPPED booking ${id}: Supabase status is ` +
+                  `"${sbStatusRow.status}" (expected active_rental). ` +
+                  `This booking is no longer active; no alert will be sent.`
+                );
+                bookingStillActive = false;
+              }
+            } catch (statusCheckErr) {
+              console.warn(
+                `[LATE_FEE] Supabase status check failed (non-fatal, proceeding): ` +
+                statusCheckErr.message
+              );
             }
-          } catch (sbFeeErr) {
-            console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+          }
+
+          if (bookingStillActive) {
+            logSmsTrigger(id, returnIso, nowIso, "late_fee");
+            // Calculate fee based on actual hours overdue:
+            //   lateHours = ceil(minsOverdue / 60), minimum 1 hour
+            //   feeAmount = min(lateHours × hourlyRate, MAX_LATE_FEE_USD)
+            // Both the hourly calc and the hard cap prevent extreme values.
+            const hourlyRate   = LATE_FEE_AMOUNTS[vehicleId] || 50;
+            const lateHours    = Math.max(1, Math.ceil(minsOverdue / 60));
+            const rawFeeAmount = Math.round(lateHours * hourlyRate);
+            const feeAmount    = Math.min(rawFeeAmount, MAX_LATE_FEE_USD);
+
+            // Always log so any future anomaly is visible in Vercel logs.
+            console.log("[LATE_FEE]", {
+              booking_id:     id,
+              vehicle_id:     vehicleId,
+              hours_overdue:  lateHours,
+              rate_per_hour:  hourlyRate,
+              calculated_fee: rawFeeAmount,
+              capped_fee:     feeAmount,
+              capped:         rawFeeAmount > MAX_LATE_FEE_USD,
+            });
+
+            const feeVars = { ...v, late_fee: String(feeAmount) };
+            // 1. Notify customer that a late fee has been assessed
+            const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+            // 2. Request owner approval before charging
+            const approvalSent = await requestLateFeeApproval(booking, feeAmount);
+            if (smsSent || approvalSent) {
+              sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
+              sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+              await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+
+              // Persist late_fee_status to Supabase for audit trail (non-fatal).
+              try {
+                const sbFee = getSupabaseAdmin();
+                if (sbFee && id) {
+                  await sbFee
+                    .from("bookings")
+                    .update({
+                      late_fee_status: "pending_approval",
+                      late_fee_amount: feeAmount,
+                      updated_at:      new Date().toISOString(),
+                    })
+                    .eq("booking_ref", id);
+                }
+              } catch (sbFeeErr) {
+                console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+              }
+            }
           }
         }
       }
@@ -884,8 +999,19 @@ export async function processAutoActivations(allBookings, now) {
     for (const booking of bookings) {
       if (booking.status !== "booked_paid") continue;
 
-      const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
+      // Use LA-timezone pickup datetime so auto-activation fires at the correct
+      // wall-clock time in Los Angeles, not at the UTC equivalent.
+      const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
       if (isNaN(pickupDt.getTime())) continue;
+
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][AUTO_ACTIVATE]", {
+          timezone:        BUSINESS_TZ,
+          now_la:          toLAString(now),
+          pickup_raw:      `${booking.pickupDate} ${booking.pickupTime || ""}`,
+          pickup_la:       toLAString(pickupDt),
+        });
+      }
 
       // Only activate once pickup time has arrived (or passed)
       if (now < pickupDt) continue;
@@ -935,17 +1061,39 @@ export async function processAutoActivations(allBookings, now) {
 export async function processAutoCompletions(allBookings, now) {
   if (!process.env.GITHUB_TOKEN) return;
 
+  const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
 
-      const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+      // Compute the final return date/time, incorporating any paid extensions
+      // from revenue_records so auto-completion fires against the renter's true
+      // (possibly extended) return schedule — never against a stale base date.
+      const id = booking.bookingId || booking.paymentIntentId;
+      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
+        sb, id, booking.returnDate, booking.returnTime
+      );
+
+      // Use LA-timezone return datetime so the 4-hour auto-complete threshold is
+      // measured from the correct Los Angeles wall-clock return time, not UTC.
+      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
       if (isNaN(returnDt.getTime())) continue;
 
       const minsOverdue = (now - returnDt) / 60000;
+
+      if (process.env.DEBUG_TIMEZONE) {
+        console.log("[TZ_DEBUG][AUTO_COMPLETE]", {
+          timezone:       BUSINESS_TZ,
+          now_la:         toLAString(now),
+          return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
+          return_final:   `${finalDate} ${finalTime}`,
+          return_la:      toLAString(returnDt),
+          mins_overdue:   Math.round(minsOverdue),
+        });
+      }
+
       if (minsOverdue < AUTO_COMPLETE_HOURS * 60) continue;
 
-      const id          = booking.bookingId || booking.paymentIntentId;
       const completedAt = now.toISOString();
 
       console.log(
