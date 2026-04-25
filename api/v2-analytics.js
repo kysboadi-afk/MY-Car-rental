@@ -10,10 +10,12 @@
 //   revenue_trend — { secret, action:"revenue_trend", months? } — monthly revenue (last N months)
 //   bookings_heatmap — { secret, action:"bookings_heatmap", vehicleId? } — day-of-week patterns
 //
-// Financial source of truth: revenue_records (Supabase), identical to v2-dashboard.js
-//   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
-//   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled rows)
-//   net_revenue   = SUM(stripe_net − refund_amount)    (null stripe_net → gross − fee)
+// Financial source of truth: revenue_records (Supabase).
+//   gross_revenue = SUM(net_amount)    WHERE payment_status='paid' AND NOT cancelled/no-show
+//                   net_amount is the generated column gross_amount − refund_amount and
+//                   includes all payment methods (cash, manual, Stripe, etc.)
+//   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled/non-Stripe rows)
+//   net_revenue   = gross_revenue − total_fees
 //   profit        = net_revenue − total_expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records is empty.
@@ -141,7 +143,7 @@ export default async function handler(req, res) {
       try {
         let rrResult = await sb
           .from("revenue_reporting_base")
-          .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show");
+          .select("vehicle_id, pickup_date, net_amount, stripe_fee, is_cancelled, is_no_show");
 
         // If the canonical view is not deployed yet (migration pending), fall back to the
         // underlying revenue_records_effective view with the same filters applied server-side.
@@ -150,7 +152,7 @@ export default async function handler(req, res) {
           console.warn("v2-analytics: revenue_reporting_base not ready, trying revenue_records_effective:", rrResult.error.message);
           rrResult = await sb
             .from("revenue_records_effective")
-            .select("vehicle_id, pickup_date, gross_amount, stripe_fee, stripe_net, refund_amount, is_cancelled, is_no_show")
+            .select("vehicle_id, pickup_date, net_amount, stripe_fee, is_cancelled, is_no_show")
             .eq("payment_status", "paid");
         }
 
@@ -165,11 +167,12 @@ export default async function handler(req, res) {
           financialsFromRevRecords = true;
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
-            const vid    = uiVehicleId(r.vehicle_id) || "unknown";
-            const gross  = Number(r.gross_amount || 0);
-            const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-            const refund = Number(r.refund_amount || 0);
-            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
+            const vid   = uiVehicleId(r.vehicle_id) || "unknown";
+            // net_amount = gross_amount − refund_amount (GENERATED column).
+            // This is the "gross revenue" figure: total collected minus refunds, before fees.
+            const gross = Number(r.net_amount || 0);
+            const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
+            const net   = gross - fee;
             if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
             rrByVehicle[vid].gross += gross;
             rrByVehicle[vid].fees  += fee;
