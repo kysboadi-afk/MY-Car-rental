@@ -107,9 +107,8 @@ async function parseWebhookBody(req) {
 
 // ── Admin alert for LOW oil ───────────────────────────────────────────────────
 
-async function triggerLowOilAlert(bookingId, phone, vehicleId, photoUrl) {
-  const photoLine = photoUrl ? `\nPhoto: ${photoUrl}` : "";
-  const msg = `LOW OIL ALERT: ${bookingId} / ${phone} / ${vehicleId}${photoLine}`;
+async function triggerLowOilAlert(bookingId, phone, vehicleId) {
+  const msg = `LOW OIL ALERT: ${bookingId} / ${phone} / ${vehicleId}`;
   console.error(msg);
 
   // Slack alert (non-fatal)
@@ -133,21 +132,6 @@ async function triggerLowOilAlert(bookingId, phone, vehicleId, photoUrl) {
     } catch (err) {
       console.error("sms-webhook: owner SMS alert failed (non-fatal):", err.message);
     }
-  }
-}
-
-/**
- * Forward oil-check photo to owner for manual verification.
- * Called for FULL and MID levels (LOW uses triggerLowOilAlert instead).
- */
-async function notifyOwnerPhoto(bookingId, phone, vehicleId, level, photoUrl) {
-  if (!photoUrl || !OWNER_PHONE) return;
-  const msg =
-    `OIL CHECK (${level.toUpperCase()}): ${bookingId} / ${phone} / ${vehicleId}\nPhoto: ${photoUrl}`;
-  try {
-    await sendSms(OWNER_PHONE, msg);
-  } catch (err) {
-    console.error("sms-webhook: owner photo notify failed (non-fatal):", err.message);
   }
 }
 
@@ -299,12 +283,9 @@ export default async function handler(req, res) {
     console.error("sms-webhook: sendSms reply failed:", smsErr.message);
   }
 
-  // ── LOW oil — trigger admin alert (includes photo URL for manual review) ──
+  // ── LOW oil — trigger admin alert ────────────────────────────────────────
   if (keyword === "low") {
-    await triggerLowOilAlert(bookingRef || bookingId, fromPhone, vehicleId, mediaUrl || "");
-  } else if (mediaUrl) {
-    // FULL / MID — forward photo to owner for manual verification (non-escalating)
-    await notifyOwnerPhoto(bookingRef || bookingId, fromPhone, vehicleId, keyword, mediaUrl);
+    await triggerLowOilAlert(bookingRef || bookingId, fromPhone, vehicleId);
   }
 
   return res.status(200).json({ ok: true, level: keyword });
