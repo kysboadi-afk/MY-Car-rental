@@ -1704,7 +1704,6 @@ export default async function handler(req, res) {
                     amount:            extensionAmountDollars,
                     new_return_date:   new_return_date,
                     new_return_time:   updatedBooking.returnTime || null,
-                    created_at:        new Date().toISOString(),
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );
