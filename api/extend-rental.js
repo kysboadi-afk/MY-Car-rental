@@ -201,11 +201,13 @@ export default async function handler(req, res) {
     // was in bookings.json but its bookingId is a legacy Stripe PI ID that does not match
     // any booking_ref in Supabase), resolve it now via renter contact info.
     // This guarantees the conflict-check loop can always skip the active booking.
+    // Also fetches return_date/return_time so effectiveReturnDate reflects the live
+    // Supabase value even when the primary lookup failed due to a PI-ID mismatch.
     if (sb && !sbActiveBookingRef) {
       try {
         let refQuery = sb
           .from("bookings")
-          .select("booking_ref")
+          .select("booking_ref, return_date, return_time")
           .eq("vehicle_id", vehicleId)
           .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
@@ -216,6 +218,15 @@ export default async function handler(req, res) {
         const { data: refRow } = await refQuery.maybeSingle();
         if (refRow && refRow.booking_ref) {
           sbActiveBookingRef = refRow.booking_ref;
+          // Populate sbReturnDate/sbReturnTime if they weren't resolved by the
+          // primary lookup — this fixes stale bookings.json return dates for
+          // bookings whose bookingId is a legacy Stripe PI ID.
+          if (!sbReturnDate && refRow.return_date) {
+            sbReturnDate = String(refRow.return_date).split("T")[0];
+          }
+          if (!sbReturnTime && refRow.return_time) {
+            sbReturnTime = String(refRow.return_time).substring(0, 5);
+          }
         }
       } catch (refFallbackErr) {
         console.warn("extend-rental: canonical ref fallback lookup failed (non-fatal):", refFallbackErr.message);
@@ -400,6 +411,9 @@ export default async function handler(req, res) {
 
     let extensionAmountPreTax;
     let extensionLabel;
+    // Hoisted for debug logging below; only populated for economy vehicles.
+    let extensionDays = null;
+    let pricePerDay   = null;
 
     if (isSlingshot) {
       // Slingshot: bill by extra hours at daily rate ÷ 24
@@ -412,8 +426,9 @@ export default async function handler(req, res) {
     } else {
       // Economy/car vehicles: bill by extra days using the same tiered pricing as
       // the main booking flow (monthly → bi-weekly → weekly → daily).
-      // Use the vehicle's own stored rates so newly added vehicles are priced
-      // correctly (not at the hardcoded Camry rates).
+      // Extension days are counted from effectiveReturnDate (the authoritative
+      // current return date, preferring Supabase over bookings.json) to
+      // newReturnDate — never from today or pickup_date.
       const extraMs   = newReturnMs - currentReturnMs;
       const extraDays = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
       extensionLabel  = `+${extraDays} day${extraDays !== 1 ? "s" : ""}`;
@@ -444,6 +459,8 @@ export default async function handler(req, res) {
       cost += remaining * dailyRate;
 
       extensionAmountPreTax = cost;
+      extensionDays = extraDays;
+      pricePerDay   = dailyRate;
     }
 
     // Slingshot: no tax — consistent with the main booking flow which also charges no tax.
@@ -451,6 +468,19 @@ export default async function handler(req, res) {
     const extensionAmount = isSlingshot
       ? extensionAmountPreTax
       : applyTax(extensionAmountPreTax, settings);
+
+    // Temporary debug log — compare Camry 2012 vs Camry 2013 outputs to
+    // identify stale returnDate or rate mismatch.
+    console.log({
+      vehicle_id:      vehicleId,
+      booking_ref:     activeBooking?.bookingId,
+      current_return:  activeBooking?.returnDate,
+      effective_return: effectiveReturnDate,
+      requested_return: newReturnDate,
+      extension_days:  extensionDays,
+      daily_rate:      pricePerDay,
+      total_amount:    extensionAmount,
+    });
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);
