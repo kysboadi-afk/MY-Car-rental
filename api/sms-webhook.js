@@ -89,14 +89,6 @@ async function parseWebhookBody(req) {
   };
 }
 
-// ── LA-timezone helper ────────────────────────────────────────────────────────
-
-function nowLA() {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" })
-  ).toISOString();
-}
-
 // ── Admin alert for LOW oil ───────────────────────────────────────────────────
 
 async function triggerLowOilAlert(bookingId, phone, vehicleId) {
@@ -210,7 +202,7 @@ export default async function handler(req, res) {
   }
 
   // ── Valid reply with photo — update DB ────────────────────────────────────
-  const nowTs = nowLA();
+  const nowTs = new Date().toISOString();
 
   const bookingUpdate = {
     last_oil_check_at:      nowTs,
@@ -218,7 +210,7 @@ export default async function handler(req, res) {
     oil_check_required:     false,
     oil_check_missed_count: 0,
     oil_check_photo_url:    mediaUrl,
-    updated_at:             new Date().toISOString(),
+    updated_at:             nowTs,
   };
 
   const { error: updateErr } = await sb
@@ -247,7 +239,7 @@ export default async function handler(req, res) {
         last_oil_status:          keyword,
         last_oil_check_photo_url: mediaUrl,
         last_oil_check_mileage:   vState?.current_mileage ?? null,
-        updated_at:               new Date().toISOString(),
+        updated_at:               nowTs,
       },
       { onConflict: "vehicle_id" }
     );

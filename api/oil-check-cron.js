@@ -69,15 +69,6 @@ function laHour() {
 }
 
 /**
- * Returns now as an ISO string expressed in America/Los_Angeles.
- */
-function nowLA() {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" })
-  ).toISOString();
-}
-
-/**
  * Elapsed hours between two ISO timestamps.
  * @param {string} earlier
  * @param {string} later  defaults to now
@@ -253,12 +244,13 @@ export default async function handler(req, res) {
         phonesContactedThisRun.add(phone);
 
         const newMissedCount = missedCount + 1;
+        const nowTs = new Date().toISOString();
         await sb
           .from("bookings")
           .update({
-            oil_check_last_request:  nowLA(),
+            oil_check_last_request:  nowTs,
             oil_check_missed_count:  newMissedCount,
-            updated_at:              new Date().toISOString(),
+            updated_at:              nowTs,
           })
           .eq("id", bookingId);
 
@@ -298,12 +290,13 @@ export default async function handler(req, res) {
       await sendSms(phone, MSG_OIL_CHECK_REQUEST);
       phonesContactedThisRun.add(phone);
 
+      const nowTs = new Date().toISOString();
       await sb
         .from("bookings")
         .update({
           oil_check_required:     true,
-          oil_check_last_request: nowLA(),
-          updated_at:             new Date().toISOString(),
+          oil_check_last_request: nowTs,
+          updated_at:             nowTs,
         })
         .eq("id", bookingId);
 
