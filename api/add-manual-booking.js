@@ -23,7 +23,7 @@
 // }
 
 import crypto from "crypto";
-import { hasOverlap } from "./_availability.js";
+import { hasOverlap, isDatesAndTimesAvailable } from "./_availability.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -151,6 +151,12 @@ export default async function handler(req, res) {
   const trimmedReturnTime = typeof returnTime === "string" ? returnTime.trim() : "";
   if (!normalizeClockTime(trimmedReturnTime)) {
     return res.status(400).json({ error: "returnTime is required and must be a valid time" });
+  }
+
+  // Availability check — reject if the requested dates/times are already booked
+  const available = await isDatesAndTimesAvailable(vehicleId, pickupDate, returnDate, trimmedPickupTime, trimmedReturnTime);
+  if (!available) {
+    return res.status(409).json({ error: "conflict" });
   }
 
   try {

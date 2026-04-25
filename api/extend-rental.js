@@ -115,7 +115,7 @@ export default async function handler(req, res) {
               .select("booking_ref, return_date, return_time, status")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
-            if (sbRow && (sbRow.status === "active" || sbRow.status === "overdue")) {
+            if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
               // Capture the canonical Supabase booking_ref so the conflict-check
               // loop can skip this booking even when activeBooking.bookingId is a
               // legacy Stripe PI ID that does not match booking_ref.
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
             .from("bookings")
             .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone")
             .eq("vehicle_id", vehicleId)
-            .in("status", ["active", "overdue"]);
+            .in("status", ["active", "active_rental", "overdue"]);
 
           if (sbActive) {
             for (const row of sbActive) {
@@ -207,7 +207,7 @@ export default async function handler(req, res) {
           .from("bookings")
           .select("booking_ref")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["active", "overdue"]);
+          .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
           refQuery = refQuery.eq("customer_email", trimmedEmail);
         } else if (normalizedPhone) {
@@ -262,6 +262,7 @@ export default async function handler(req, res) {
 
     for (const b of vehicleBookings) {
       if (b === activeBooking) continue;
+      if (b.bookingId === activeBooking.bookingId) continue;
       if (b.status === "cancelled" || b.status === "completed_rental") continue;
 
       const hasConflict = hasDateTimeOverlap(
@@ -299,12 +300,43 @@ export default async function handler(req, res) {
           .from("bookings")
           .select("booking_ref, pickup_date, return_date, pickup_time, return_time")
           .eq("vehicle_id", vehicleId)
-          .in("status", ["pending", "active", "overdue", "reserved"])
+          .not("status", "in", "(cancelled,completed_rental)")
           .gte("pickup_date", conflictFloorDate);
         if (sbActiveBookingRef) {
           futureQuery = futureQuery.neq("booking_ref", sbActiveBookingRef);
         }
         const { data: sbFuture } = await futureQuery;
+
+        // Batch-fetch paid, non-cancelled extension revenue_records for this
+        // vehicle so we can compute the true finalReturnDate for each
+        // conflicting booking.  This guards against stale return_date values
+        // in the bookings table (e.g. extension recorded in revenue_records but
+        // not yet reflected in bookings.return_date).
+        // Only paid extensions with is_cancelled=false are counted — unpaid or
+        // cancelled extensions do NOT extend a booking's blocking window.
+        let extensionMaxReturnByRef = {};
+        if (sbFuture && sbFuture.length > 0) {
+          try {
+            const { data: extRecords } = await sb
+              .from("revenue_records")
+              .select("original_booking_id, return_date")
+              .eq("vehicle_id", vehicleId)
+              .eq("type", "extension")
+              .eq("payment_status", "paid")
+              .eq("is_cancelled", false)
+              .gte("return_date", conflictFloorDate);
+            for (const rec of (extRecords || [])) {
+              if (!rec.original_booking_id || !rec.return_date) continue;
+              const rd = String(rec.return_date).split("T")[0];
+              const key = rec.original_booking_id;
+              if (!extensionMaxReturnByRef[key] || rd > extensionMaxReturnByRef[key]) {
+                extensionMaxReturnByRef[key] = rd;
+              }
+            }
+          } catch (extErr) {
+            console.warn("extend-rental: revenue_records extension lookup failed (non-fatal):", extErr.message);
+          }
+        }
 
         for (const fbk of (sbFuture || [])) {
           // Skip the current renter's own booking.  activeBookingRef may be a
@@ -318,7 +350,26 @@ export default async function handler(req, res) {
           const fbkPickupDate = String(fbk.pickup_date || "").split("T")[0];
           // Skip bookings without a pickup date or without a return date.
           if (!fbkPickupDate || !fbk.return_date) continue;
-          const fbkReturnDate = String(fbk.return_date).split("T")[0];
+
+          // Compute finalReturnDate: take the maximum of the booking's own
+          // return_date and the latest paid extension return_date from
+          // revenue_records.  This ensures a booking that has been genuinely
+          // extended (and has a paid revenue_record) is not under-counted as a
+          // blocking future booking.
+          const bookingReturnDate = String(fbk.return_date).split("T")[0];
+          const extReturnDate = extensionMaxReturnByRef[fbk.booking_ref] || null;
+          const fbkReturnDate = (extReturnDate && extReturnDate > bookingReturnDate)
+            ? extReturnDate
+            : bookingReturnDate;
+
+          // Safety guard: skip any booking whose effective end date is on or
+          // before our current effective return date — such a booking cannot
+          // block the extension window.  This is the final line of defence
+          // against self-conflict in edge cases (e.g. same-day rentals) where
+          // sbActiveBookingRef was not resolved and the active booking appears
+          // in the query results.
+          if (fbkReturnDate <= effectiveReturnDate) continue;
+
           // Supabase stores times as "HH:MM:SS"; take first 5 chars → "HH:MM".
           const fbkPickupTime = fbk.pickup_time ? String(fbk.pickup_time).substring(0, 5) : "";
           const fbkReturnTime = fbk.return_time ? String(fbk.return_time).substring(0, 5) : "";

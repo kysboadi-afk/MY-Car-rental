@@ -116,12 +116,23 @@ function findExtendPending(allBookings, phone) {
  * the current return time for the given vehicle.
  * Returns the maximum available extension minutes (or Infinity if fully free).
  */
+// All booking statuses that represent a real, non-completed reservation.
+// "active" and "active_rental" are distinct statuses (the latter is set by
+// extend-rental.js). "reserved" and "reserved_unpaid" are also distinct:
+// the former is an admin-created reservation, the latter a customer-initiated
+// one without payment.  All eight statuses must be checked to correctly
+// detect future reservations in any state.
+const BLOCKING_SMS_STATUSES = new Set([
+  "booked_paid", "reserved_unpaid", "active_rental",
+  "reserved", "pending", "approved", "pending_verification", "active",
+]);
+
 function getAvailableExtensionMinutes(allBookings, vehicleId, currentReturnDate, currentReturnTime) {
   const returnDt = parseDateTime(currentReturnDate, currentReturnTime);
   if (isNaN(returnDt.getTime())) return Infinity;
 
   const vehicleBookings = (allBookings[vehicleId] || []).filter(
-    (b) => b.status === "booked_paid" || b.status === "reserved_unpaid" || b.status === "active_rental"
+    (b) => BLOCKING_SMS_STATUSES.has(b.status)
   );
 
   let nextStart = Infinity;
