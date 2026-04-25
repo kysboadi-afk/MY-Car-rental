@@ -81,6 +81,18 @@ const LATE_FEE_AMOUNTS = {
   camry2013:   50,  // $50/hour  (rounded up, min 1 h)
 };
 
+// Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
+// stale bookings.json entries that remain as "active_rental" for days/weeks.
+// Consistent with MAX_CHARGE_WARN_USD in approve-late-fee.js.
+const MAX_LATE_FEE_USD = 500;
+
+// Maximum hours-overdue window in which a late fee may be triggered.
+// AUTO_COMPLETE_HOURS (4 h) auto-closes the booking; the late fee window is
+// 2 h–8 h past the scheduled return.  If minsOverdue exceeds this threshold
+// the booking was never auto-completed (stale status, cron outage, etc.) and
+// firing a fee would produce unrealistic amounts.  Skip it and warn instead.
+const MAX_FEE_OVERDUE_HOURS = 8;
+
 // ─── Auto-completion threshold ────────────────────────────────────────────────
 // Active rentals that are still open this many hours past the scheduled return
 // time are automatically transitioned to "completed_rental".  This frees up
@@ -773,41 +785,102 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         !booking.lateFeeApplied &&
         !(await isSmsLogged(id, "late_fee_pending", returnDateStr))
       ) {
-        logSmsTrigger(id, returnIso, nowIso, "late_fee");
-        // Calculate fee based on actual hours overdue:
-        //   expected = returnDt (LA-timezone aware)
-        //   actual   = now
-        //   lateHours = (actual - expected) / (1000 * 60 * 60)  [rounded up, min 1]
-        const hourlyRate = LATE_FEE_AMOUNTS[vehicleId] || 50;
-        const lateHours  = Math.max(1, Math.ceil(minsOverdue / 60));
-        const feeAmount  = Math.round(lateHours * hourlyRate);
-        const feeVars = { ...v, late_fee: String(feeAmount) };
-        // 1. Notify customer that a late fee has been assessed
-        const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
-        // 2. Request owner approval before charging (email + SMS with Approve/Decline links)
-        const approvalSent = await requestLateFeeApproval(booking, feeAmount);
-        if (smsSent || approvalSent) {
-          // Mark as pending so we don't send the approval request again next cron tick
-          sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
-          sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
-          await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+        const hoursOverdue = minsOverdue / 60;
 
-          // Persist late_fee_status = 'pending_approval' to Supabase for audit trail.
-          // Non-fatal — the approval email/SMS is the authoritative delivery mechanism.
-          try {
-            const sbFee = getSupabaseAdmin();
-            if (sbFee && id) {
-              await sbFee
+        // ── Guard 1: maximum overdue window ───────────────────────────────────
+        // The late fee may only fire within MAX_FEE_OVERDUE_HOURS of the
+        // scheduled return.  Beyond that threshold the booking should already
+        // have been auto-completed (AUTO_COMPLETE_HOURS = 4 h).  A booking
+        // that is still "active_rental" after 8+ hours has a stale status
+        // (cron outage, Supabase write failure, etc.) and must NOT generate
+        // a fee — doing so produced the $15,900 alert on bk-bb-2026-0407.
+        if (hoursOverdue > MAX_FEE_OVERDUE_HOURS) {
+          console.warn(
+            `[LATE_FEE] SKIPPED booking ${id}: ` +
+            `${hoursOverdue.toFixed(1)}h overdue exceeds MAX_FEE_OVERDUE_HOURS ` +
+            `(${MAX_FEE_OVERDUE_HOURS}h). Booking has stale active_rental status — ` +
+            `auto-complete should have closed this at ${AUTO_COMPLETE_HOURS}h. ` +
+            `No late-fee alert will be sent.`
+          );
+        } else {
+          // ── Guard 2: live Supabase status check ─────────────────────────────
+          // Verify the booking is STILL active_rental in Supabase before
+          // firing any alert.  A booking completed in Supabase but not yet
+          // flushed from bookings.json would otherwise send alerts to past
+          // renters.
+          let bookingStillActive = true;
+          if (sb) {
+            try {
+              const { data: sbStatusRow } = await sb
                 .from("bookings")
-                .update({
-                  late_fee_status: "pending_approval",
-                  late_fee_amount: feeAmount,
-                  updated_at:      new Date().toISOString(),
-                })
-                .eq("booking_ref", id);
+                .select("status")
+                .eq("booking_ref", id)
+                .maybeSingle();
+              if (sbStatusRow && sbStatusRow.status !== "active_rental") {
+                console.warn(
+                  `[LATE_FEE] SKIPPED booking ${id}: Supabase status is ` +
+                  `"${sbStatusRow.status}" (expected active_rental). ` +
+                  `This booking is no longer active; no alert will be sent.`
+                );
+                bookingStillActive = false;
+              }
+            } catch (statusCheckErr) {
+              console.warn(
+                `[LATE_FEE] Supabase status check failed (non-fatal, proceeding): ` +
+                statusCheckErr.message
+              );
             }
-          } catch (sbFeeErr) {
-            console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+          }
+
+          if (bookingStillActive) {
+            logSmsTrigger(id, returnIso, nowIso, "late_fee");
+            // Calculate fee based on actual hours overdue:
+            //   lateHours = ceil(minsOverdue / 60), minimum 1 hour
+            //   feeAmount = min(lateHours × hourlyRate, MAX_LATE_FEE_USD)
+            // Both the hourly calc and the hard cap prevent extreme values.
+            const hourlyRate   = LATE_FEE_AMOUNTS[vehicleId] || 50;
+            const lateHours    = Math.max(1, Math.ceil(minsOverdue / 60));
+            const rawFeeAmount = Math.round(lateHours * hourlyRate);
+            const feeAmount    = Math.min(rawFeeAmount, MAX_LATE_FEE_USD);
+
+            // Always log so any future anomaly is visible in Vercel logs.
+            console.log("[LATE_FEE]", {
+              booking_id:     id,
+              vehicle_id:     vehicleId,
+              hours_overdue:  lateHours,
+              rate_per_hour:  hourlyRate,
+              calculated_fee: rawFeeAmount,
+              capped_fee:     feeAmount,
+              capped:         rawFeeAmount > MAX_LATE_FEE_USD,
+            });
+
+            const feeVars = { ...v, late_fee: String(feeAmount) };
+            // 1. Notify customer that a late fee has been assessed
+            const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+            // 2. Request owner approval before charging
+            const approvalSent = await requestLateFeeApproval(booking, feeAmount);
+            if (smsSent || approvalSent) {
+              sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
+              sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+              await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+
+              // Persist late_fee_status to Supabase for audit trail (non-fatal).
+              try {
+                const sbFee = getSupabaseAdmin();
+                if (sbFee && id) {
+                  await sbFee
+                    .from("bookings")
+                    .update({
+                      late_fee_status: "pending_approval",
+                      late_fee_amount: feeAmount,
+                      updated_at:      new Date().toISOString(),
+                    })
+                    .eq("booking_ref", id);
+                }
+              } catch (sbFeeErr) {
+                console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
+              }
+            }
           }
         }
       }

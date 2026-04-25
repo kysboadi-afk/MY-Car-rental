@@ -108,10 +108,13 @@ mock.module("./stripe-webhook.js", {
 });
 
 // Stub Supabase so sms_logs queries are no-ops in tests.
-// getSupabaseAdmin returns null → isSmsLogged returns false → smsSentAt gates behaviour.
+// testSbClient defaults to null → isSmsLogged returns false → smsSentAt gates behaviour.
+// Individual tests may set testSbClient to a mock object to exercise the live
+// status-check path in processActiveRentals' late-fee block.
+let testSbClient = null;
 mock.module("./_supabase.js", {
   namedExports: {
-    getSupabaseAdmin: () => null,
+    getSupabaseAdmin: () => testSbClient,
   },
 });
 
@@ -147,6 +150,7 @@ function reset() {
   bookingCalls.length    = 0;
   retryApplies.length    = 0;
   smsCalls.length        = 0;
+  testSbClient           = null;  // restore null Supabase between tests
 }
 
 /** Returns a Date that is `hoursAgo` hours before `now`. */
@@ -523,4 +527,90 @@ test("processActiveRentals: extension awareness — fires return-time SMS for ne
 
   assert.equal(sentMarks.some((m) => m.key === "late_at_return"), true,
     "late_at_return should fire for the new return_date after extension");
+});
+
+// ─── Late fee critical safeguards ────────────────────────────────────────────
+
+/**
+ * Minimal Supabase stub that returns a fixed booking status for .maybeSingle()
+ * and empty arrays for all other awaited queries.
+ */
+function makeSbWithStatus(status) {
+  return {
+    from() {
+      return {
+        select()      { return this; },
+        eq()          { return this; },
+        or()          { return this; },
+        update()      { return this; },
+        async maybeSingle() { return { data: { status }, error: null }; },
+        async then(resolve) { return resolve({ data: [], error: null }); },
+      };
+    },
+  };
+}
+
+test("processActiveRentals: does NOT send late fee when booking is more than MAX_FEE_OVERDUE_HOURS past return", async () => {
+  reset();
+  // Return was 2026-06-15 08:00 AM PDT.  Now = 06-16 08:00 AM (24 h overdue).
+  // MAX_FEE_OVERDUE_HOURS = 8, so this must be SKIPPED entirely.
+  const now = new Date("2026-06-16T08:00:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "late_fee_pending"),
+    false,
+    "late fee must NOT fire when booking is 24 h overdue (stale active_rental)"
+  );
+  assert.equal(smsCalls.length, 0, "no SMS must be sent for a stale booking");
+});
+
+test("processActiveRentals: does NOT send late fee when Supabase says booking is completed_rental", async () => {
+  reset();
+  // Return was 2026-06-15 08:00 AM.  Now = 06-15 10:05 AM (2 h 5 min overdue).
+  // Within the 8-hour window, but Supabase says completed_rental → skip.
+  const now = new Date("2026-06-15T10:05:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  testSbClient = makeSbWithStatus("completed_rental");
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "late_fee_pending"),
+    false,
+    "late fee must NOT fire when Supabase status is completed_rental"
+  );
+});
+
+test("processActiveRentals: caps late fee at MAX_LATE_FEE_USD even within overdue window", async () => {
+  reset();
+  // Return was 2026-06-15 08:00 AM.  Now = 06-15 4:00 PM (8 h overdue, at the limit).
+  // hourlyRate = $50, lateHours = 8, rawFee = $400 — under the $500 cap.
+  // But slingshot at $100/h for 6 h = $600 > $500 cap, so fee must be $500.
+  const now = new Date("2026-06-15T14:05:00-07:00"); // 6 h 5 min overdue
+  const allBookings = {
+    slingshot: [makeBooking({
+      vehicleId:  "slingshot",
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  const feeEntry = sentMarks.find((m) => m.key === "_late_fee_amount");
+  assert.ok(feeEntry, "late fee amount entry must exist in sentMarks");
+  assert.ok(
+    feeEntry.value <= 500,
+    `fee must be capped at $500, got $${feeEntry.value}`
+  );
 });

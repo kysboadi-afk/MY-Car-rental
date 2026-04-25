@@ -108,6 +108,38 @@ function makeSupabaseClient({ rows = [], error = null } = {}) {
   };
 }
 
+/**
+ * A mock Supabase client where the FIRST `.from()` call returns `rowsFirst`
+ * and every subsequent call returns `rowsRest` (default []).
+ *
+ * Used for active_rental-override tests where:
+ *   call 0  → active_rental lookup   (returns the stale booking row)
+ *   call 1  → computeFinalReturnDate (revenue_records, returns [])
+ *   call 2  → date-range overlap     (returns [])
+ */
+function makeSupabaseClientSeq({ rowsFirst = [], rowsRest = [], error = null } = {}) {
+  let callIndex = 0;
+  return {
+    from() {
+      const rows = callIndex++ === 0 ? rowsFirst : rowsRest;
+      return {
+        select() { return this; },
+        eq()     { return this; },
+        in()     { return this; },
+        lte()    { return this; },
+        gte()    { return this; },
+        limit()  { return this; },
+        order()  { return this; },
+        or()     { return this; },
+        then: undefined,
+        [Symbol.for("nodejs.rejection")]: undefined,
+        async maybeSingle() { return { data: rows[0] || null, error }; },
+        async then(resolve) { return resolve({ data: rows, error }); },
+      };
+    },
+  };
+}
+
 // Dynamically import the handler after mocks are in place
 const { default: handler } = await import("./v2-availability.js");
 
@@ -363,11 +395,14 @@ test("POST: accepts params from body", async () => {
 test("active rental override: available when requested dates start after final return + buffer", async () => {
   setupFetchMock();
   // Active rental whose return date is in the past (Apr 18, no extensions).
-  // The mock returns the same rows for all queries (including revenue_records),
-  // so computeFinalReturnDate also gets return_date=Apr 18 → no extension found.
-  // Requesting Apr 22–25 (start >> Apr 18 + 2 h) → should be AVAILABLE.
-  supabaseMock.client = makeSupabaseClient({
-    rows: [{ booking_ref: "ar-001", return_date: "2026-04-18", return_time: "10:00:00" }],
+  // Query sequence:
+  //   call 0 — active_rental lookup → returns the stale booking row
+  //   call 1 — computeFinalReturnDate (revenue_records) → returns [] (no extensions)
+  //   call 2 — date-range overlap check → returns [] (Apr 22 is after Apr 18)
+  // Requesting Apr 22–25 (start >> Apr 18 + 2 h prep buffer) → AVAILABLE.
+  supabaseMock.client = makeSupabaseClientSeq({
+    rowsFirst: [{ booking_ref: "ar-001", return_date: "2026-04-18", return_time: "10:00:00" }],
+    rowsRest:  [],
   });
   try {
     const res = makeRes();
