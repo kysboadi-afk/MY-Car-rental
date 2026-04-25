@@ -393,19 +393,31 @@ export default async function handler(req, res) {
       sb,
     });
 
+    // Fetch precomputed KPIs from the admin_metrics_v2 view (single DB round-trip).
+    let metrics = null;
+    if (sb) {
+      const { data, error: metricsErr } = await sb.from("admin_metrics_v2").select("*").single();
+      if (metricsErr) {
+        console.warn("admin-ai-auto: admin_metrics_v2 query failed:", metricsErr.message);
+      }
+      metrics = data;
+    }
+
     const runMs = Date.now() - runStart;
 
     const output = {
-      ran_at:            new Date().toISOString(),
-      auto_mode:         autoMode,
-      duration_ms:       runMs,
-      problems_found:    problems.length,
+      ran_at:             new Date().toISOString(),
+      auto_mode:          autoMode,
+      duration_ms:        runMs,
+      problems_found:     problems.length,
       problems,
       suggestions,
       actions_taken,
-      priority_alerts:   priorityAlerts,
-      revenue_this_week: insights.revenue?.thisWeek,
-      bookings_last_7d:  insights.bookings?.last7Days,
+      priority_alerts:    priorityAlerts,
+      revenue_this_week:  metrics?.revenue_this_week,
+      revenue_this_month: metrics?.revenue_this_month,
+      active_rentals:     metrics?.active_rentals,
+      bookings_last_7d:   insights.bookings?.last7Days,
     };
 
     // Log the auto-run to ai_logs
