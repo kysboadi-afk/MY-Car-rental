@@ -181,21 +181,20 @@ async function checkHighMileageQuota(sb, bookingId) {
 
 /**
  * Record a sent HIGH_DAILY_MILEAGE alert in sms_logs.
- * Uses fixed sentinel dates so the (booking_id, template_key, return_date_at_send)
- * unique constraint accommodates up to MAX_HIGH_MILEAGE_ALERTS rows:
- *   sentCount 0 → '1970-01-01'
- *   sentCount 1 → '1970-01-02'
+ * Stores the actual calendar date the alert was sent so logs are meaningful
+ * and easy to analyse.  The sms_logs_dedup unique constraint is excluded for
+ * this template key (see migration 0077), so multiple rows per booking are
+ * allowed; the max-2 cap is enforced by checkHighMileageQuota before each send.
  * Non-fatal: errors are logged but not propagated.
  */
-async function logHighMileageAlert(sb, bookingId, sentCount) {
+async function logHighMileageAlert(sb, bookingId) {
   if (!sb || !bookingId) return;
   try {
-    const sentinelDates = ["1970-01-01", "1970-01-02"];
-    const date = sentinelDates[sentCount] || sentinelDates[sentinelDates.length - 1];
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const { error } = await sb.from("sms_logs").insert({
       booking_id:          bookingId,
       template_key:        TEMPLATE_KEY_HIGH_MILEAGE,
-      return_date_at_send: date,
+      return_date_at_send: today,
     });
     if (error) {
       console.warn("maintenance-alerts: sms_logs insert for HIGH_DAILY_MILEAGE failed (non-fatal):", error.message);
@@ -417,7 +416,7 @@ export default async function handler(req, res) {
           // Dedup: enforce max-2 cap and 60-min cooldown via sms_logs.
           // Falls back to the 24h smsSentAt flag when Supabase is unavailable.
           const alertKey   = "driver_mileage_alert";
-          const { allowed, sentCount } = await checkHighMileageQuota(sb, bookingId);
+          const { allowed } = await checkHighMileageQuota(sb, bookingId);
           if (!allowed) continue;
 
           // Secondary fallback: legacy 24h smsSentAt guard (for when Supabase is down)
@@ -444,7 +443,7 @@ export default async function handler(req, res) {
 
           if (smsSent) {
             // Log to sms_logs so the max-2 cap is enforced on the next cron run
-            await logHighMileageAlert(sb, bookingId, sentCount);
+            await logHighMileageAlert(sb, bookingId);
             sentMarks.push({ vehicleId: vid, id: bookingId, key: alertKey });
             alertsSent++;
           }
