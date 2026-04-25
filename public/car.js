@@ -1259,29 +1259,24 @@ async function initDatePickers() {
 initDatePickers();
 
 // ----- Fleet Status Check -----
-// Fetch the vehicle's availability from fleet-status.json. If the vehicle is
-// globally marked unavailable (e.g. already rented or taken offline), show a
-// clear "Currently Rented" notice and replace the booking form with the
-// Extend Rental section.  Fails open on any API error so transient outages
-// do not lock out the form.
+// Fetch the vehicle's availability from the fleet-status API.  If the vehicle
+// is unavailable (active booking exists), show a "Currently Rented" notice and
+// replace the booking form with the Extend Rental section.
+// Fails open on any API error so transient outages do not lock out the form.
 //
 // For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
 // slingshot3).  The notice is shown only when ALL units are simultaneously
-// unavailable; the "next available" date is the earliest return date across all
-// currently-booked units.
+// unavailable.  For display, the earliest next_available_display (or available_at)
+// across booked units is used so the customer sees the soonest a unit frees up.
 (async function checkFleetStatus() {
   if (IS_TEST_MODE_OVERRIDE) return;
   try {
     const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
     const isSlingshot = vehicleId.startsWith("slingshot");
 
-    const [fleetResp, datesResp] = await Promise.all([
-      fetch(`${API_BASE}/api/fleet-status`),
-      fetch(`${API_BASE}/api/booked-dates`),
-    ]);
+    const fleetResp = await fetch(`${API_BASE}/api/fleet-status`);
     if (!fleetResp.ok) return;
-    const status      = await fleetResp.json();
-    const bookedDates = datesResp.ok ? await datesResp.json() : {};
+    const status = await fleetResp.json();
 
     let isUnavailable;
     if (isSlingshot) {
@@ -1295,49 +1290,34 @@ initDatePickers();
     }
 
     if (isUnavailable) {
-      const today = SlyLA.todayISO();
-      // For Slingshot: the next available date is the earliest date when ANY
-      // unit's current booking ends (that unit then becomes free).
+      // For Slingshot: pick the entry with the earliest available_at so the
+      // customer sees the soonest any unit becomes free.
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
-      let nextAvail = null;
 
+      let availableAt = null;
+      let availableAtDisplay = null;
       for (const id of idsToCheck) {
-        const ranges = ((bookedDates[id] || []).slice().sort((a, b) =>
-          a.from < b.from ? -1 : 1
-        ));
-        // 1. Preferred: find a range that covers today
-        for (const r of ranges) {
-          if (r.from <= today && today <= r.to) {
-            const candidate = SlyLA.addDaysToISO(r.to, 1);
-            // Keep the earliest "next available" across all units
-            if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
-            break;
-          }
-        }
-        // 2. Fallback: vehicle is unavailable but recorded range already expired
-        //    (rental extended past original return date). Use most recently ended range.
-        if (!nextAvail) {
-          let latestExpired = null;
-          for (const r of ranges) {
-            if (r.to < today) {
-              if (!latestExpired || r.to > latestExpired.to) latestExpired = r;
-            }
-          }
-          if (latestExpired) {
-            const candidate = SlyLA.addDaysToISO(latestExpired.to, 1);
-            if (!nextAvail || candidate < nextAvail) nextAvail = candidate;
+        const entry = status[id];
+        if (entry && entry.available === false) {
+          if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
+            availableAt = entry.available_at;
+            availableAtDisplay = entry.next_available_display || null;
+          } else if (!availableAt && entry.next_available_display) {
+            // next_available_display is set even when return_time was absent
+            // (date-only format); capture it so we still show the right date.
+            availableAtDisplay = entry.next_available_display;
           }
         }
       }
 
-      showVehicleUnavailable(nextAvail);
+      showVehicleUnavailable(availableAt, availableAtDisplay);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable(nextAvailableISO) {
+function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
@@ -1350,15 +1330,25 @@ function showVehicleUnavailable(nextAvailableISO) {
     bookingSection.insertBefore(notice, bookingSection.firstChild);
   }
 
-  let nextLine = "";
-  if (nextAvailableISO) {
-    const d = new Date(nextAvailableISO + "T00:00:00");
-    const formatted = d.toLocaleDateString("en-US", { timeZone: SlyLA.tz, month: "long", day: "numeric", year: "numeric" });
-    nextLine = `<p>📅 Next available: <strong>${formatted}</strong></p>`;
+  // Use the pre-formatted string from the backend (LA timezone, correct date and time).
+  // This is the single source of truth — no frontend date math needed.
+  const nextLine = nextAvailableDisplay
+    ? `<p>📅 Next available: <strong>${nextAvailableDisplay}</strong></p>`
+    : "";
 
-    // Set minimum new return date in the extend form
+  if (nextAvailableISO) {
+    // Set minimum new return date in the extend form to the current return date
+    // so the customer cannot pick a date before the active rental ends.
     const extReturn = document.getElementById("extNewReturn");
-    if (extReturn) extReturn.setAttribute("min", SlyLA.todayISO());
+    if (extReturn) {
+      let minDate = SlyLA.todayISO();
+      const d2 = new Date(nextAvailableISO);
+      if (Number.isFinite(d2.getTime())) {
+        const returnDateISO = SlyLA.isoDateInLA(d2);
+        if (returnDateISO > minDate) minDate = returnDateISO;
+      }
+      extReturn.setAttribute("min", minDate);
+    }
   }
 
   notice.innerHTML = `
@@ -1411,7 +1401,7 @@ function showVehicleUnavailable(nextAvailableISO) {
   const extendSection = document.getElementById("extendRentalSection");
   if (extendSection) {
     extendSection.style.display = "";
-    // Set minimum new return date to today
+    // Fallback: ensure min is set to at least today if not already set above.
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
       extReturn.setAttribute("min", SlyLA.todayISO());

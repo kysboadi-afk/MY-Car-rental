@@ -335,15 +335,17 @@ test("processAutoCompletions: no-ops when GITHUB_TOKEN is absent", async () => {
   assert.equal(updatedBookings.length, 0, "Without GITHUB_TOKEN, nothing should be updated");
 });
 
-test("processAutoCompletions: restores fleet-status.json to available after completion", async () => {
+test("processAutoCompletions: availability is now bookings-driven — no fleet-status.json write needed", async () => {
   reset();
   const now = new Date("2026-03-22T15:00:00"); // 5h past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
 
+  // The booking status update to "completed_rental" is the availability signal —
+  // fleet-status.json is no longer written.  markVehicleAvailable is a no-op.
   const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
-  assert.ok(restoreCall, "fleet-status.json restore must be attempted after completion");
+  assert.equal(restoreCall, undefined, "fleet-status.json must NOT be written — availability is now bookings-driven");
 });
 
 test("processAutoCompletions: does NOT restore fleet-status when another active_rental remains", async () => {
@@ -359,10 +361,10 @@ test("processAutoCompletions: does NOT restore fleet-status when another active_
   await processAutoCompletions(allBookings, now);
 
   const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
-  assert.equal(restoreCall, undefined, "Must NOT restore fleet-status when another active_rental exists");
+  assert.equal(restoreCall, undefined, "Must NOT write fleet-status.json — availability is now bookings-driven");
 });
 
-test("processAutoCompletions: restores fleet-status when completing the only active_rental", async () => {
+test("processAutoCompletions: fleet-status not written even when completing the only active_rental", async () => {
   reset();
   const now = new Date("2026-03-22T15:00:00");
   // One active_rental overdue, one completed_rental (already done)
@@ -375,11 +377,12 @@ test("processAutoCompletions: restores fleet-status when completing the only act
 
   await processAutoCompletions(allBookings, now);
 
+  // fleet-status.json is not involved — the booking status change drives availability
   const restoreCall = retryApplies.find((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
-  assert.ok(restoreCall, "Should restore fleet-status when the only active_rental is completed");
+  assert.equal(restoreCall, undefined, "fleet-status.json must NOT be written — availability is now bookings-driven");
 });
 
-test("processAutoCompletions: restores fleet-status for each vehicle independently", async () => {
+test("processAutoCompletions: fleet-status not written independently per vehicle (no-op)", async () => {
   reset();
   const now = new Date("2026-03-22T15:00:00");
   const allBookings = {
@@ -389,8 +392,9 @@ test("processAutoCompletions: restores fleet-status for each vehicle independent
 
   await processAutoCompletions(allBookings, now);
 
+  // Both completions drive availability via the bookings table, not fleet-status.json
   const restoreCalls = retryApplies.filter((c) => c.message && c.message.includes("mark") && c.message.includes("available"));
-  assert.equal(restoreCalls.length, 2, "Each vehicle should get its own fleet-status restore call");
+  assert.equal(restoreCalls.length, 0, "fleet-status.json must NOT be written for any vehicle");
 });
 
 test("processActiveRentals: sends ended at return_datetime", async () => {

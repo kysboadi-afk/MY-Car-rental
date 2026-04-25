@@ -2,40 +2,41 @@
 // Vercel serverless function — returns the current availability status of each
 // fleet vehicle.
 //
-// Data source priority:
-//   1. Supabase `vehicles` table  (rental_status: 'available' | 'reserved' |
-//                                  'rented' | 'maintenance')
-//   2. GitHub fleet-status.json   (legacy { vehicleId: { available: bool } } format)
-//   3. Hard-coded defaults        (all available)
+// Single source of truth: Supabase `bookings` table.
 //
-// Response: { vehicle_id: { available, rental_status, available_at }, ... }
+// A vehicle is unavailable if any booking with an ACTIVE_BOOKING_STATUS exists
+// for that vehicle.  availability is never read from fleet-status.json or
+// vehicles.rental_status — it is always derived from live bookings.
 //
-// available_at is computed from the latest active booking return datetime in
-// America/Los_Angeles for vehicles currently marked unavailable.
-// When no active booking applies, available_at is explicitly null.
+// vehicles.rental_status = 'maintenance' is still respected as a manual
+// override so the fleet manager can take a vehicle offline for servicing
+// even when it has no active bookings.
+//
+// Response: { vehicle_id: { available, rental_status, available_at,
+//                           next_available_display }, ... }
+//
+//   available_at          — ISO-8601 LA-offset timestamp of the latest active
+//                           booking's return datetime, or null when return_time
+//                           is unknown.
+//   next_available_display — human-readable LA-tz string, e.g.
+//                           "Apr 30, 2026 at 6:00 PM" (always set for
+//                           unavailable vehicles, even when return_time is absent).
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
-const GITHUB_REPO = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-const FLEET_STATUS_PATH = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
-// Keep aligned with booked-dates/v2 availability "active" statuses so vehicles
-// blocked by active reservations still surface next availability consistently.
+// All booking statuses that mean the vehicle is occupied / unavailable.
+// Keep aligned with v2-availability.js and booked-dates.js.
 const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
 function buildDefaultStatus() {
   const map = {};
   for (const vehicleId of FALLBACK_VEHICLE_IDS) {
-    map[vehicleId] = { available: true, rental_status: "available" };
+    map[vehicleId] = { available: true, rental_status: "available", available_at: null, next_available_display: null };
   }
   return map;
-}
-
-/** Convert Supabase rental_status → boolean available for backwards compat */
-function rentalStatusToAvailable(status) {
-  return status === "available";
 }
 
 function buildDateTimeLA(date, time) {
@@ -110,80 +111,79 @@ function formatDateTimeLA(date) {
 }
 
 /**
- * Enriches each entry in `result` with an `available_at` ISO timestamp by
- * querying active bookings and selecting each vehicle's latest return datetime.
- *
- * Rules:
- *   - If vehicle is currently booked (available=false) and has an active booking,
- *     available_at = latest booking return_date + return_time (LA)
- *   - If vehicle has no active booking, available_at = null
+ * Format a Date object as a human-readable string in the LA timezone.
+ * Returns "Apr 25, 2026 at 8:00 AM" (with time) or "Apr 25, 2026" (date only).
+ * Used to populate `next_available_display` so the frontend never needs to
+ * reformat dates — it just renders the pre-built string.
  */
-async function enrichWithAvailableAt(sb, result) {
-  try {
-    const vehicleIds = Object.keys(result || {});
-    if (!vehicleIds.length) return;
+function formatForDisplay(dateObj, includeTime = true) {
+  if (!dateObj || !Number.isFinite(dateObj.getTime())) return null;
+  const dateStr = dateObj.toLocaleDateString("en-US", {
+    timeZone: BUSINESS_TZ,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  if (!includeTime) return dateStr;
+  const timeStr = dateObj.toLocaleTimeString("en-US", {
+    timeZone: BUSINESS_TZ,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return `${dateStr} at ${timeStr}`;
+}
 
-    const { data: activeRows, error } = await sb
-      .from("bookings")
-      .select("vehicle_id, return_date, return_time, status")
-      .in("vehicle_id", vehicleIds)
-      .in("status", ACTIVE_BOOKING_STATUSES)
-      .not("return_date", "is", null)
-      .order("return_date", { ascending: false })
-      .order("return_time", { ascending: false });
+/**
+ * Build the latest-return-datetime lookup keyed by vehicle_id from a set of
+ * booking rows already filtered to ACTIVE_BOOKING_STATUSES.
+ * Logs a warning when return_time is absent.
+ *
+ * @param {object[]} rows - booking rows with vehicle_id, return_date, return_time, status
+ * @returns {{ [vehicleId]: { returnDateTime: Date, hasTime: boolean } }}
+ */
+function computeLatestByVehicle(rows) {
+  const latestByVehicle = {};
 
-    if (error) throw new Error(error.message || "bookings query failed");
+  for (const row of (rows || [])) {
+    if (!row?.vehicle_id || !row?.return_date) continue;
 
-    const latestByVehicle = {};
+    let returnDateTime;
+    let hasTime = false;
 
-    for (const row of (activeRows || [])) {
-      if (!row?.vehicle_id || !row?.return_date) continue;
-
-      if (!row.return_time) {
-        console.error("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
-          vehicle_id: row.vehicle_id,
-          status: row.status || null,
-          return_date: row.return_date,
-        });
-        continue;
-      }
-
-      const returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
-      const returnDateTimeMs = returnDateTime.getTime();
-
-      if (!Number.isFinite(returnDateTimeMs)) {
-        console.error("[AVAILABLE_AT_INVALID_RETURN_DATETIME]", {
-          vehicle_id: row.vehicle_id,
-          return_date: row.return_date,
-          return_time: row.return_time,
-        });
-        continue;
-      }
-
-      const existing = latestByVehicle[row.vehicle_id];
-      if (!existing || returnDateTimeMs > existing.returnDateTimeMs) {
-        latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime };
-      }
-    }
-
-    for (const [vehicleId, vehicleStatus] of Object.entries(result)) {
-      const latest = latestByVehicle[vehicleId];
-      if (!vehicleStatus || vehicleStatus.available !== false || !latest) {
-        if (vehicleStatus) vehicleStatus.available_at = null;
-        continue;
-      }
-
-      const returnDateTime = formatDateTimeLA(latest.returnDateTime);
-      vehicleStatus.available_at = returnDateTime;
-
-      console.log("[AVAILABLE_AT_COMPUTED]", {
-        vehicle_id: vehicleId,
-        return_datetime: returnDateTime,
+    if (!row.return_time) {
+      console.warn("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
+        vehicle_id: row.vehicle_id,
+        status: row.status || null,
+        return_date: row.return_date,
       });
+      // Midnight is used ONLY for internal date ordering so the latest booking
+      // per vehicle is still selected correctly.  hasTime = false ensures no
+      // time component is shown to customers via next_available_display, and
+      // available_at remains null (no synthetic timestamp is exposed).
+      returnDateTime = buildDateTimeLA(row.return_date, "00:00");
+    } else {
+      returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
+      hasTime = true;
     }
-  } catch (err) {
-    console.warn("fleet-status: available_at enrichment failed (non-fatal):", err.message);
+
+    const returnDateTimeMs = returnDateTime.getTime();
+    if (!Number.isFinite(returnDateTimeMs)) {
+      console.error("[AVAILABLE_AT_INVALID_RETURN_DATETIME]", {
+        vehicle_id: row.vehicle_id,
+        return_date: row.return_date,
+        return_time: row.return_time || null,
+      });
+      continue;
+    }
+
+    const existing = latestByVehicle[row.vehicle_id];
+    if (!existing || returnDateTimeMs > existing.returnDateTimeMs) {
+      latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime, hasTime };
+    }
   }
+
+  return latestByVehicle;
 }
 
 export default async function handler(req, res) {
@@ -199,70 +199,87 @@ export default async function handler(req, res) {
   // Never cache — we need fresh data so status changes appear immediately.
   res.setHeader("Cache-Control", "no-store");
 
-  // ── 1. Supabase (preferred) ─────────────────────────────────────────────
   const sb = getSupabaseAdmin();
   if (sb) {
     try {
-      const { data: rows, error } = await sb
+      // ── 1. Get vehicle IDs + maintenance flags from the vehicles table ────
+      // The vehicles table is queried ONLY to know which vehicles exist and
+      // whether any are in maintenance mode.  It is NOT used to determine
+      // booking-based availability.
+      const maintenanceVehicles = new Set();
+      const vehicleIds = [...FALLBACK_VEHICLE_IDS];
+
+      const { data: vehicleRows, error: vehicleError } = await sb
         .from("vehicles")
         .select("vehicle_id, rental_status");
 
-      if (!error && rows && rows.length > 0) {
-        const result = buildDefaultStatus();
-        for (const row of rows) {
-          if (row.vehicle_id) {
-            result[row.vehicle_id] = {
-              available: rentalStatusToAvailable(row.rental_status),
-              rental_status: row.rental_status || "available",
-            };
+      if (!vehicleError && vehicleRows && vehicleRows.length > 0) {
+        for (const row of vehicleRows) {
+          if (!row.vehicle_id) continue;
+          if (!vehicleIds.includes(row.vehicle_id)) vehicleIds.push(row.vehicle_id);
+          if (row.rental_status === "maintenance") maintenanceVehicles.add(row.vehicle_id);
+        }
+      } else if (vehicleError) {
+        console.warn("fleet-status: vehicles query error (non-fatal):", vehicleError.message);
+      }
+
+      // ── 2. Single bookings query — source of truth for availability ───────
+      const { data: bookingRows, error: bookingError } = await sb
+        .from("bookings")
+        .select("vehicle_id, return_date, return_time, status")
+        .in("vehicle_id", vehicleIds)
+        .in("status", ACTIVE_BOOKING_STATUSES)
+        .not("return_date", "is", null)
+        .order("return_date", { ascending: false })
+        .order("return_time", { ascending: false });
+
+      if (bookingError) throw new Error(bookingError.message || "bookings query failed");
+
+      // ── 3. Derive latest return datetime per vehicle ───────────────────────
+      const latestByVehicle = computeLatestByVehicle(bookingRows || []);
+
+      // ── 4. Build response ─────────────────────────────────────────────────
+      const result = {};
+      for (const vid of vehicleIds) {
+        const latest = latestByVehicle[vid];
+        const isMaintenance = maintenanceVehicles.has(vid);
+        const hasActiveBooking = !!latest;
+
+        // Availability: absent booking + not in maintenance = available.
+        const available = !hasActiveBooking && !isMaintenance;
+
+        const entry = {
+          available,
+          rental_status: isMaintenance ? "maintenance" : (hasActiveBooking ? "rented" : "available"),
+          available_at: null,
+          next_available_display: null,
+        };
+
+        if (!available && latest) {
+          // available_at is set only when return_time is known (trustworthy ISO timestamp).
+          if (latest.hasTime) {
+            entry.available_at = formatDateTimeLA(latest.returnDateTime);
           }
+          // next_available_display is always set for unavailable vehicles.
+          entry.next_available_display = formatForDisplay(latest.returnDateTime, latest.hasTime);
+
+          console.log("[AVAILABLE_AT_COMPUTED]", {
+            vehicle_id: vid,
+            return_datetime: entry.available_at,
+            next_available_display: entry.next_available_display,
+          });
         }
-        await enrichWithAvailableAt(sb, result);
-        return res.status(200).json(result);
+
+        result[vid] = entry;
       }
-      if (error) console.warn("fleet-status: Supabase error, falling back to GitHub:", error.message);
-    } catch (sbErr) {
-      console.warn("fleet-status: Supabase threw, falling back to GitHub:", sbErr.message);
+
+      return res.status(200).json(result);
+    } catch (err) {
+      console.warn("fleet-status: Supabase error, falling back to defaults:", err.message);
     }
   }
 
-  // ── 2. GitHub fleet-status.json fallback ────────────────────────────────
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${FLEET_STATUS_PATH}`;
-  const ghHeaders = {
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  if (process.env.GITHUB_TOKEN) {
-    ghHeaders.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
-
-  try {
-    const ghRes = await fetch(apiUrl, { headers: ghHeaders });
-    if (ghRes.ok) {
-      const fileData = await ghRes.json();
-      try {
-        const content = JSON.parse(
-          Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8")
-        );
-        // Merge GitHub data into default structure, adding rental_status field
-        const result = buildDefaultStatus();
-        for (const [vid, val] of Object.entries(content)) {
-          const vehicleData = val && typeof val === "object" ? val : {};
-          const avail = typeof vehicleData.available === "boolean" ? vehicleData.available : true;
-          result[vid] = {
-            available: avail,
-            rental_status: vehicleData.rental_status || (avail ? "available" : "maintenance"),
-          };
-        }
-        return res.status(200).json(result);
-      } catch (parseErr) {
-        console.error("fleet-status: malformed JSON in file:", parseErr);
-      }
-    }
-  } catch (ghErr) {
-    console.error("fleet-status: GitHub fetch error:", ghErr.message);
-  }
-
-  // ── 3. Hard-coded defaults ──────────────────────────────────────────────
+  // ── Hard-coded defaults (all available) — only reached when Supabase is
+  // not configured or throws during startup.
   return res.status(200).json(buildDefaultStatus());
 }

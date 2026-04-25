@@ -209,17 +209,25 @@ export async function findAvailableSlingshotUnit(pickup, returnDate, pickupTime,
 }
 
 /**
- * Returns true if the vehicle is currently marked available in fleet-status.json.
+ * Returns true if the vehicle is NOT in maintenance mode.
+ * Queries the Supabase `vehicles` table: rental_status = 'maintenance' → false.
+ * Booking-based availability is NOT checked here — that is handled by
+ * isDatesAndTimesAvailable / v2-availability.js.
  * Fails open (returns true) on any fetch error so transient issues do not
  * permanently block payments.
  */
 export async function isVehicleAvailable(vehicleId) {
   try {
-    const status = await fetchFleetStatus();
-    if (!status) return true; // can't verify — allow through
-    const entry = status[vehicleId];
-    if (!entry) return true; // vehicle not listed — assume available
-    return entry.available !== false;
+    const { getSupabaseAdmin } = await import("./_supabase.js");
+    const sb = getSupabaseAdmin();
+    if (!sb) return true; // Supabase not configured — fail open
+    const { data, error } = await sb
+      .from("vehicles")
+      .select("rental_status")
+      .eq("vehicle_id", vehicleId)
+      .single();
+    if (error) return true; // fail open on query error
+    return data?.rental_status !== "maintenance";
   } catch {
     return true; // fail open on transient errors
   }
