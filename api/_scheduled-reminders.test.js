@@ -81,6 +81,7 @@ mock.module("./_sms-templates.js", {
     UNPAID_REMINDER_2H:              "",
     UNPAID_REMINDER_FINAL:           "",
     PICKUP_REMINDER_24H:             "",
+    ACTIVE_RENTAL_1H_BEFORE_END:     "",
     LATE_WARNING_30MIN:              "",
     LATE_AT_RETURN_TIME:             "",
     LATE_GRACE_EXPIRED:              "",
@@ -614,3 +615,96 @@ test("processActiveRentals: caps late fee at MAX_LATE_FEE_USD even within overdu
     `fee must be capped at $500, got $${feeEntry.value}`
   );
 });
+
+// ─── Extension reminder (1 h before return) ───────────────────────────────────
+
+test("processActiveRentals: sends 1h-before-end extension invitation in 45–60 min window", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 7:10 AM (50 min before, inside 45–60 min window)
+  const now = new Date("2026-06-15T07:10:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    true,
+    "extension invitation should fire when ~50 min remain"
+  );
+  // The 30-min warning must NOT also fire in the same tick
+  assert.equal(
+    sentMarks.some((m) => m.key === "late_warning_30min"),
+    false,
+    "30-min warning must not fire simultaneously with 1h reminder"
+  );
+});
+
+test("processActiveRentals: does NOT send 1h-before-end extension invitation too early", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 6:30 AM (90 min before, outside 45–60 min window)
+  const now = new Date("2026-06-15T06:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    false,
+    "extension invitation must NOT fire 90 min before return"
+  );
+});
+
+test("processActiveRentals: does NOT send 1h-before-end when already sent (smsSentAt flag)", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:10:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+      smsSentAt:  { active_rental_1h_before_end: "2026-06-15T07:05:00.000Z" },
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    false,
+    "extension invitation must not be resent when smsSentAt flag is already set"
+  );
+});
+
+// ─── Per-renter-per-run dedup ─────────────────────────────────────────────────
+
+test("processActiveRentals: sends only one SMS when two active bookings share the same phone", async () => {
+  reset();
+  // Both bookings have the same phone and both return at 8:00 AM.
+  // The first booking's return-time SMS fires; the second must be skipped.
+  const now = new Date("2026-06-15T08:00:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({ bookingId: "bk-001", phone: "+13105550001",
+                    returnDate: "2026-06-15", returnTime: "8:00 AM" }),
+      makeBooking({ bookingId: "bk-002", phone: "+13105550001",
+                    returnDate: "2026-06-15", returnTime: "8:00 AM" }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  // Only one late_at_return should be recorded (for the first booking)
+  const returnMarks = sentMarks.filter((m) => m.key === "late_at_return");
+  assert.equal(returnMarks.length, 1,
+    "only one late_at_return SMS must be sent per phone per run");
+  assert.equal(smsCalls.length, 1,
+    "only one outbound SMS must be sent when two bookings share a phone");
+});
+

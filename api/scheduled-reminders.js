@@ -40,6 +40,7 @@ import {
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
+  ACTIVE_RENTAL_1H_BEFORE_END,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
@@ -54,9 +55,14 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { formatTime12h } from "./_time.js";
+import { formatTime12h, laHour } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
+import {
+  getSmsPriority,
+  checkSmsCooldown,
+  TIME_CRITICAL_KEYS,
+} from "./_sms-priority.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -117,6 +123,17 @@ const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 const WARNING_BEFORE_END_UPPER_MIN = 30; // inclusive upper bound: fires when ≤ 30 min remain
 const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire when ≤ 15 min remain
 
+// Boundaries (in minutes) for the 1-hour-before-return extension invitation window.
+// Fires once in the 45–60 min window ("about 1 hour"), well clear of the 15–30 min
+// return-obligation warning so renters never receive both in the same cron tick.
+const EXT_REMINDER_UPPER_MIN = 60; // inclusive upper bound: fires when ≤ 60 min remain
+const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when ≤ 45 min remain
+
+// SMS send-window boundaries — messages are only delivered between these hours
+// in America/Los_Angeles time to avoid waking renters outside business hours.
+const SMS_WINDOW_START_HOUR = 8;  // 8:00 AM LA
+const SMS_WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
+
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
 // non-null value lets the UNIQUE constraint (booking_id, template_key,
@@ -166,6 +183,8 @@ async function isSmsLogged(bookingId, templateKey, returnDateStr) {
 /**
  * Persist a sent-SMS record to the sms_logs table.
  * Uses upsert so duplicate calls are idempotent.
+ * Always stores `{ priority }` in metadata so the cross-cron cooldown gate
+ * can compare priorities of messages from different cron jobs.
  * @param {string} bookingId
  * @param {string} templateKey
  * @param {string} [returnDateStr] - YYYY-MM-DD; omit for non-return-time messages
@@ -180,8 +199,12 @@ async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata)
       booking_id:          bookingId,
       template_key:        templateKey,
       return_date_at_send: date,
+      // Always include priority so cross-cron cooldown queries are accurate.
+      metadata: {
+        priority: getSmsPriority(templateKey),
+        ...(metadata && typeof metadata === "object" ? metadata : {}),
+      },
     };
-    if (metadata && typeof metadata === "object") row.metadata = metadata;
     const { error } = await sb
       .from("sms_logs")
       .upsert(
@@ -681,11 +704,29 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
 /**
  * Process all active_rental bookings — end reminder, return-time messages, and late fees.
  *
- * SMS flow per booking (all keyed by return_date for extension awareness):
- *   • 30 min before return   → LATE_WARNING_30MIN   (replaces TextMagic 1h/30min/15min automations)
- *   • At return time         → LATE_AT_RETURN_TIME
- *   • +1 h overdue           → LATE_GRACE_EXPIRED
- *   • +2 h overdue           → LATE_FEE_APPLIED + owner approval request
+ * SMS flow per booking (ordered by priority, highest first):
+ *
+ *   P1 — CRITICAL (always deliver, bypass cross-cron cooldown):
+ *     • +2 h overdue           → LATE_FEE_APPLIED + owner approval request
+ *     • +1 h overdue           → LATE_GRACE_EXPIRED
+ *
+ *   P2 — IMPORTANT (time-critical narrow windows, bypass cross-cron cooldown):
+ *     • At return time         → LATE_AT_RETURN_TIME
+ *     • 30 min before return   → LATE_WARNING_30MIN
+ *
+ *   P3 — STANDARD (cross-cron cooldown applies):
+ *     • ~1 h before return     → ACTIVE_RENTAL_1H_BEFORE_END (extension invitation)
+ *
+ * Priority ordering:
+ *   Triggers are evaluated from highest to lowest priority.  The `sentThisBooking`
+ *   flag ensures at most ONE SMS fires per booking per cron tick — if a higher-
+ *   priority trigger fires, all lower-priority triggers are skipped.
+ *
+ *   Time-critical keys (P1-P2) bypass the global cross-cron cooldown because
+ *   their trigger windows (≤15 min) are shorter than any cooldown period and they
+ *   carry their own smsSentAt + sms_logs deduplication.  The P3 extension invite
+ *   goes through checkSmsCooldown so it is suppressed if maintenance-alerts or
+ *   oil-check-cron already contacted the renter recently.
  *
  * Extension awareness:
  *   Every return-time SMS is logged to the Supabase sms_logs table with
@@ -693,13 +734,28 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   return_date changes, so the old log rows no longer match and the messages
  *   fire correctly for the new schedule.  The legacy smsSentAt flags in
  *   bookings.json are still written for backwards compatibility.
+ *
+ * Anti-spam:
+ *   phonesContactedThisRun tracks every phone number that received any SMS
+ *   during this invocation.  If the same phone number appears on a second
+ *   active booking (e.g. overlapping rentals) it is silently skipped so that
+ *   no renter ever receives more than one message per cron tick.
  */
 export async function processActiveRentals(allBookings, now, sentMarks) {
   const sb = getSupabaseAdmin();
+  // Per-run dedup: max 1 SMS per phone number per cron invocation.
+  const phonesContactedThisRun = new Set();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
+
+      // Per-run anti-spam: skip if we already sent to this phone this run.
+      if (phonesContactedThisRun.has(booking.phone)) {
+        const skipId = booking.bookingId || booking.paymentIntentId;
+        console.log(`[SMS_SKIP] ${skipId}: phone ${booking.phone} already contacted this run`);
+        continue;
+      }
 
       // Compute the final return date/time, incorporating any paid extensions
       // recorded in revenue_records so that SMS triggers always fire against the
@@ -728,6 +784,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         return_la:         toLAString(returnDt),
         mins_until_return: Math.round(minutesUntilReturn),
         sent: {
+          active_rental_1h_before_end: alreadySent(booking, "active_rental_1h_before_end"),
           late_warning_30min: alreadySent(booking, "late_warning_30min"),
           late_at_return:     alreadySent(booking, "late_at_return"),
           late_grace_expired: alreadySent(booking, "late_grace_expired"),
@@ -750,60 +807,23 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // the booking is extended to a new return_date.
       const returnDateStr = finalDate;
 
-      // ── 30 min before return ─────────────────────────────────────────────────
-      // Single consolidated end-of-rental reminder (replaces TextMagic automations
-      // that were sending separate 1h, 30min, and 15min messages).
-      if (
-        minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN &&
-        !alreadySent(booking, "late_warning_30min") &&
-        !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "warning_30min");
-        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
-        if (sent) {
-          sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
-          await logSmsToSupabase(id, "late_warning_30min", returnDateStr);
-        }
-      } else if (minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN) {
-        console.log(`[SMS_SKIP] ${id} late_warning_30min: already sent (dedup)`);
-      }
+      // Track sentMarks count before processing this booking so we can detect
+      // whether any SMS was sent and mark the phone as contacted.
+      const marksBeforeBooking = sentMarks.length;
 
-      // ── At return time (0–15 min window) ─────────────────────────────────────
-      if (
-        now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) &&
-        !alreadySent(booking, "late_at_return") &&
-        !(await isSmsLogged(id, "late_at_return", returnDateStr))
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "ended");
-        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
-        if (sent) {
-          sentMarks.push({ vehicleId, id, key: "late_at_return" });
-          await logSmsToSupabase(id, "late_at_return", returnDateStr);
-        }
-      } else if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS)) {
-        console.log(`[SMS_SKIP] ${id} late_at_return: already sent (dedup)`);
-      }
+      // `sentThisBooking` is set to true the moment any SMS fires for this
+      // booking.  All lower-priority trigger blocks check it first so that at
+      // most ONE message is sent per booking per cron tick.  Triggers are
+      // evaluated in priority order: P1 (CRITICAL) → P4 (MARKETING).
+      let sentThisBooking = false;
 
-      // ── Grace expired at return_datetime + 1 h (15 min window) ───────────────
-      if (
-        now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) &&
-        !alreadySent(booking, "late_grace_expired") &&
-        !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "grace");
-        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
-        if (sent) {
-          sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
-          await logSmsToSupabase(id, "late_grace_expired", returnDateStr);
-        }
-      } else if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS)) {
-        console.log(`[SMS_SKIP] ${id} late_grace_expired: already sent (dedup)`);
-      }
-
-      // ── Late fee at return_datetime + 2 h (once per return_date) ─────────────
+      // ── P1: Late fee at return_datetime + 2 h (once per return_date) ─────────
+      // Evaluated FIRST so that if a stale booking is overdue on both the grace
+      // and late-fee windows simultaneously, the more critical fee fires.
       // The late_fee_pending key is scoped to the current return_date via
       // isSmsLogged so that a new late fee can be assessed after an extension.
       if (
+        !sentThisBooking &&
         now >= lateFeeAt &&
         !alreadySent(booking, "late_fee_applied") &&
         !alreadySent(booking, "late_fee_pending") &&
@@ -885,6 +905,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
             // 2. Request owner approval before charging
             const approvalSent = await requestLateFeeApproval(booking, feeAmount);
             if (smsSent || approvalSent) {
+              sentThisBooking = true;
               sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
               sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
               await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
@@ -908,6 +929,95 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
             }
           }
         }
+      }
+
+      // ── P1: Grace expired at return_datetime + 1 h (15 min window) ───────────
+      if (
+        !sentThisBooking &&
+        now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySent(booking, "late_grace_expired") &&
+        !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "grace");
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
+        if (sent) {
+          sentThisBooking = true;
+          sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
+          await logSmsToSupabase(id, "late_grace_expired", returnDateStr);
+        }
+      } else if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS)) {
+        console.log(`[SMS_SKIP] ${id} late_grace_expired: already sent (dedup)`);
+      }
+
+      // ── P2: At return time (0–15 min window) ──────────────────────────────────
+      if (
+        !sentThisBooking &&
+        now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) &&
+        !alreadySent(booking, "late_at_return") &&
+        !(await isSmsLogged(id, "late_at_return", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "ended");
+        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
+        if (sent) {
+          sentThisBooking = true;
+          sentMarks.push({ vehicleId, id, key: "late_at_return" });
+          await logSmsToSupabase(id, "late_at_return", returnDateStr);
+        }
+      } else if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS)) {
+        console.log(`[SMS_SKIP] ${id} late_at_return: already sent (dedup)`);
+      }
+
+      // ── P2: 30 min before return ───────────────────────────────────────────────
+      // Single consolidated end-of-rental reminder (replaces TextMagic automations
+      // that were sending separate 1h, 30min, and 15min messages).
+      if (
+        !sentThisBooking &&
+        minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN &&
+        !alreadySent(booking, "late_warning_30min") &&
+        !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "warning_30min");
+        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
+        if (sent) {
+          sentThisBooking = true;
+          sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
+          await logSmsToSupabase(id, "late_warning_30min", returnDateStr);
+        }
+      } else if (minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} late_warning_30min: already sent (dedup)`);
+      }
+
+      // ── P3: ~1 hour before return — extension invitation ──────────────────────
+      // Fires once in the 45–60 min window (well clear of the 15–30 min return-
+      // obligation window below) so renters never receive both in the same tick.
+      // Cross-cron cooldown applies: if maintenance-alerts or oil-check-cron
+      // already contacted this renter recently, this low-urgency invite is skipped.
+      if (
+        !sentThisBooking &&
+        minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN &&
+        !alreadySent(booking, "active_rental_1h_before_end") &&
+        !(await isSmsLogged(id, "active_rental_1h_before_end", returnDateStr))
+      ) {
+        const cooldown = await checkSmsCooldown(sb, id, "active_rental_1h_before_end");
+        if (!cooldown.allowed) {
+          console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: cross-cron cooldown (${cooldown.reason})`);
+        } else {
+          logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
+          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
+          if (sent) {
+            sentThisBooking = true;
+            sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
+            await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr);
+          }
+        }
+      } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
+      }
+
+      // Per-run dedup: if any SMS was sent for this booking, mark the phone so
+      // a second active booking on the same number is skipped this run.
+      if (sentMarks.length > marksBeforeBooking) {
+        phonesContactedThisRun.add(booking.phone);
       }
     }
   }
@@ -1607,6 +1717,20 @@ export default async function handler(req, res) {
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
     console.warn("scheduled-reminders: TextMagic credentials not set — SMS will not be sent");
     return res.status(200).json({ skipped: true, reason: "TextMagic not configured" });
+  }
+
+  // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
+  // Manual POST bypasses the window to allow out-of-hours testing.
+  // Auto-activations, auto-completions, and reconciliation already ran above
+  // and are always executed regardless of the SMS window.
+  if (req.method === "GET") {
+    const hour = laHour();
+    if (hour < SMS_WINDOW_START_HOUR || hour >= SMS_WINDOW_END_HOUR) {
+      return res.status(200).json({
+        skipped: true,
+        reason:  `Outside SMS send window (${SMS_WINDOW_START_HOUR}:00–${SMS_WINDOW_END_HOUR}:00 LA). Current LA hour: ${hour}.`,
+      });
+    }
   }
 
   const sentMarks = [];
