@@ -189,9 +189,11 @@ function applyFleetStatus(fleetStatus) {
       badge.textContent = i18n.t(badgeKey);
       badge.className   = "status-badge unavailable booked";
 
-      // Use the pre-formatted next_available_display from fleet-status.
-      // This is the single source of truth — LA timezone, no frontend date math.
-      const nextAvailDisplay = status ? status.next_available_display : null;
+      // Prefer next_available_at (timestamp with time) when available;
+      // fall back to the date-only next_available_display string.
+      const nextAvailDisplay = status
+        ? (SlyLA.formatTimestamp(status.next_available_at) || status.next_available_display || null)
+        : null;
       if (nextAvailDisplay) {
         const nextBadge = document.createElement("span");
         nextBadge.className = "next-available-badge";

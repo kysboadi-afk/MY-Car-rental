@@ -1266,8 +1266,9 @@ initDatePickers();
 //
 // For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
 // slingshot3).  The notice is shown only when ALL units are simultaneously
-// unavailable.  For display, the earliest next_available_display (or available_at)
+// unavailable.  For display, the earliest next_available_at (or available_at)
 // across booked units is used so the customer sees the soonest a unit frees up.
+
 (async function checkFleetStatus() {
   if (IS_TEST_MODE_OVERRIDE) return;
   try {
@@ -1299,9 +1300,14 @@ initDatePickers();
       for (const id of idsToCheck) {
         const entry = status[id];
         if (entry && entry.available === false) {
-          if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
-            availableAt = entry.available_at;
-            availableAtDisplay = entry.next_available_display || null;
+          // Prefer next_available_at (timestamp with time) over available_at.
+          const tsField = entry.next_available_at || entry.available_at;
+          if (tsField && (!availableAt || tsField < availableAt)) {
+            availableAt = tsField;
+            // Format with time when next_available_at is present; else use pre-built string.
+            availableAtDisplay = entry.next_available_at
+              ? (SlyLA.formatTimestamp(entry.next_available_at) || entry.next_available_display || null)
+              : (entry.next_available_display || null);
           } else if (!availableAt && entry.next_available_display) {
             // next_available_display is set even when return_time was absent
             // (date-only format); capture it so we still show the right date.
