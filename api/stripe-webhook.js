@@ -48,6 +48,8 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
+// Pre-parsed default return time used when a booking has no return_time set.
+const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 
 /**
  * Read booked-dates.json from GitHub and block the given date range.
@@ -662,7 +664,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       pickup_date:               pickup_date  || null,
       return_date:               return_date  || null,
       pickup_time:               parseTime12h(pickup_time  || "") || null,
-      return_time:               parseTime12h(return_time  || "") || parseTime12h(DEFAULT_RETURN_TIME),
+      return_time:               parseTime12h(return_time  || "") || DEFAULT_RETURN_TIME_PG,
       // status='reserved' requires payment_status='partial' (DB constraint).
       // Full_payment writes status='pending' + payment_status='paid'.
       status:                    isDepositPayment ? "reserved" : "pending",
