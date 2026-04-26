@@ -23,6 +23,7 @@
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { laHour } from "./_time.js";
+import { getSmsPriority, checkSmsCooldown } from "./_sms-priority.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,32 @@ const ESCALATE_AFTER_HOURS = 24;   // hours of no-reply before escalating
  */
 function hoursSince(earlier, later = new Date().toISOString()) {
   return (new Date(later) - new Date(earlier)) / 3_600_000;
+}
+
+/**
+ * Log a sent oil-check SMS to sms_logs so other crons (scheduled-reminders,
+ * maintenance-alerts) can see it via the cross-cron cooldown check.
+ * Uses the real calendar date as return_date_at_send so logs are auditable.
+ * Non-fatal: errors are only logged.
+ */
+async function logOilCheckToSupabase(sb, bookingRef, templateKey) {
+  if (!sb || !bookingRef) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const { error } = await sb
+      .from("sms_logs")
+      .insert({
+        booking_id:          bookingRef,
+        template_key:        templateKey,
+        return_date_at_send: today,
+        metadata:            { priority: getSmsPriority(templateKey) },
+      });
+    if (error) {
+      console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.warn("oil-check-cron: sms_logs write failed (non-fatal):", err.message);
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -258,6 +285,17 @@ export default async function handler(req, res) {
       const escalateMsg = missedCount === 0
         ? MSG_OIL_CHECK_REMINDER
         : MSG_OIL_CHECK_FINAL;
+      const escalateKey = missedCount === 0 ? "OIL_CHECK_REMINDER" : "OIL_CHECK_FINAL";
+
+      // Cross-cron cooldown: escalation messages are P2 (IMPORTANT) and bypass the
+      // cooldown for time-critical keys, but we still respect the global gate in
+      // case a higher-priority (P1) send occurred recently.
+      const escalateCooldown = await checkSmsCooldown(sb, bookingRef, escalateKey);
+      if (!escalateCooldown.allowed) {
+        results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cross-cron cooldown for escalation (${escalateCooldown.reason})`);
+        continue;
+      }
 
       try {
         await sendSms(phone, escalateMsg);
@@ -273,6 +311,9 @@ export default async function handler(req, res) {
             updated_at:              nowTs,
           })
           .eq("id", bookingId);
+
+        // Log to sms_logs so other crons can see this send via cross-cron cooldown.
+        await logOilCheckToSupabase(sb, bookingRef, escalateKey);
 
         results.escalated++;
         console.log(`oil-check-cron: escalated booking ${bookingRef || bookingId} (missed=${newMissedCount})`);
@@ -324,7 +365,17 @@ export default async function handler(req, res) {
       : null;
     const mileageMaintenanceDue = milesSinceOilChange != null && milesSinceOilChange >= 3000;
 
-    const msgToSend = mileageMaintenanceDue ? MSG_OIL_CHECK_MERGED : MSG_OIL_CHECK_REQUEST;
+    const msgToSend   = mileageMaintenanceDue ? MSG_OIL_CHECK_MERGED : MSG_OIL_CHECK_REQUEST;
+    const triggerKey  = mileageMaintenanceDue ? "OIL_CHECK_MERGED"   : "OIL_CHECK_REQUEST";
+
+    // Cross-cron cooldown: skip if a higher-or-equal-priority SMS was sent
+    // to this booking recently (e.g. maintenance-alerts fired a P3 warn today).
+    const triggerCooldown = await checkSmsCooldown(sb, bookingRef, triggerKey);
+    if (!triggerCooldown.allowed) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cross-cron cooldown (${triggerCooldown.reason})`);
+      continue;
+    }
 
     // Send initial oil check request
     try {
@@ -340,6 +391,9 @@ export default async function handler(req, res) {
           updated_at:             nowTs,
         })
         .eq("id", bookingId);
+
+      // Log to sms_logs so other crons can see this send via cross-cron cooldown.
+      await logOilCheckToSupabase(sb, bookingRef, triggerKey);
 
       results.triggered++;
       console.log(

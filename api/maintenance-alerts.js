@@ -27,6 +27,7 @@ import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_b
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { laHour } from "./_time.js";
+import { getSmsPriority, checkSmsCooldown } from "./_sms-priority.js";
 import {
   render,
   MAINTENANCE_AVAILABILITY_REQUEST,
@@ -96,6 +97,34 @@ async function safeSendSms(phone, body) {
   } catch (err) {
     console.warn(`maintenance-alerts: SMS to ${phone} failed:`, err.message);
     return false;
+  }
+}
+
+/**
+ * Log a sent service-alert SMS to sms_logs so other crons can see it via
+ * the cross-cron cooldown check.  Uses the sentinel return date (1970-01-01)
+ * for service alerts since they are not tied to a specific return date.
+ * Non-fatal: errors are only logged.
+ */
+async function logServiceAlertToSupabase(sb, bookingId, templateKey) {
+  if (!sb || !bookingId) return;
+  try {
+    const { error } = await sb
+      .from("sms_logs")
+      .upsert(
+        {
+          booking_id:          bookingId,
+          template_key:        templateKey,
+          return_date_at_send: "1970-01-01",
+          metadata:            { priority: getSmsPriority(templateKey) },
+        },
+        { onConflict: "booking_id,template_key,return_date_at_send" }
+      );
+    if (error) {
+      console.warn("maintenance-alerts: sms_logs write failed (non-fatal):", error.message);
+    }
+  } catch (err) {
+    console.warn("maintenance-alerts: sms_logs write failed (non-fatal):", err.message);
   }
 }
 
@@ -387,6 +416,13 @@ export default async function handler(req, res) {
       const bookingId = booking.bookingId || booking.paymentIntentId;
       const phone     = booking.phone;
 
+      // ── Collect all eligible service alert candidates ──────────────────────
+      // Multiple services (oil, brakes, tires) may be due at the same time.
+      // Instead of sending one message per service, collect all eligible ones,
+      // sort by priority (urgents before warns), and send only the TOP candidate.
+      // This prevents multiple maintenance messages stacking in the same cron tick.
+      const candidates = [];
+
       for (const svc of SERVICES) {
         // Resolve last-service mileage for this specific service type
         const lastMi  = row[svc.col] != null
@@ -401,34 +437,61 @@ export default async function handler(req, res) {
         const kUrgent = keyUrgent(svc.type);
 
         if (pct >= 1.0) {
-          // ── Overdue (100%+) ──────────────────────────────────────────────
+          // Overdue (100%+) — high priority
           if (!alreadySent(booking, kUrgent)) {
-            // Send urgent notification — friendly tone, no technical details or links
-            const customerName = booking.name || "there";
-            const sent = await safeSendSms(phone,
-              render(MAINTENANCE_AVAILABILITY_URGENT, { customer_name: customerName })
-            );
-            if (sent) {
-              sentMarks.push({ vehicleId: vid, id: bookingId, key: kUrgent });
-              alertsSent++;
-            }
+            candidates.push({
+              key:      kUrgent,
+              priority: getSmsPriority(kUrgent),
+              template: MAINTENANCE_AVAILABILITY_URGENT,
+            });
           } else {
             console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ${svc.type} urgent already sent`);
           }
         } else {
-          // ── Due Soon (80%–100%) ──────────────────────────────────────────
+          // Due soon (80%–100%) — standard priority
           if (!alreadySent(booking, kWarn)) {
-            // Friendly first-contact message — no service type, no links
-            const customerName = booking.name || "there";
-            const sent = await safeSendSms(phone,
-              render(MAINTENANCE_AVAILABILITY_REQUEST, { customer_name: customerName })
-            );
-            if (sent) {
-              sentMarks.push({ vehicleId: vid, id: bookingId, key: kWarn });
-              alertsSent++;
-            }
+            candidates.push({
+              key:      kWarn,
+              priority: getSmsPriority(kWarn),
+              template: MAINTENANCE_AVAILABILITY_REQUEST,
+            });
           } else {
             console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ${svc.type} warn already sent`);
+          }
+        }
+      }
+
+      // Sort ascending by priority number (lower = more critical) so the most
+      // important message surfaces to position 0.
+      candidates.sort((a, b) => a.priority - b.priority);
+
+      const topCandidate = candidates[0];
+      if (topCandidate) {
+        // Cross-cron cooldown: skip if a higher-or-equal-priority SMS was
+        // already sent to this booking recently (e.g. oil-check-cron fired today).
+        const cooldownResult = await checkSmsCooldown(sb, bookingId, topCandidate.key);
+        if (!cooldownResult.allowed) {
+          console.log(
+            `maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ` +
+            `cross-cron cooldown (${cooldownResult.reason})`
+          );
+        } else {
+          const customerName = booking.name || "there";
+          const sent = await safeSendSms(phone,
+            render(topCandidate.template, { customer_name: customerName })
+          );
+          if (sent) {
+            sentMarks.push({ vehicleId: vid, id: bookingId, key: topCandidate.key });
+            alertsSent++;
+            // Log to sms_logs so scheduled-reminders and oil-check-cron see this send.
+            await logServiceAlertToSupabase(sb, bookingId, topCandidate.key);
+          }
+          if (candidates.length > 1) {
+            const skipped = candidates.slice(1).map((c) => c.key).join(", ");
+            console.log(
+              `maintenance-alerts: PRIORITY SUPPRESSED ${candidates.length - 1} lower-priority ` +
+              `candidate(s) for booking ${bookingId}: [${skipped}] — only highest priority sent`
+            );
           }
         }
       }
