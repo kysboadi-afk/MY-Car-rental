@@ -55,7 +55,7 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { formatTime12h } from "./_time.js";
+import { formatTime12h, laHour } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 import Stripe from "stripe";
@@ -128,20 +128,6 @@ const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when 
 // in America/Los_Angeles time to avoid waking renters outside business hours.
 const SMS_WINDOW_START_HOUR = 8;  // 8:00 AM LA
 const SMS_WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
-
-/**
- * Returns the current hour (0–23) in America/Los_Angeles.
- */
-function laHour() {
-  return parseInt(
-    new Date().toLocaleString("en-US", {
-      timeZone: BUSINESS_TZ,
-      hour:     "numeric",
-      hour12:   false,
-    }),
-    10
-  );
-}
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed

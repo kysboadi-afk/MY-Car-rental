@@ -1,5 +1,25 @@
 export const DEFAULT_RETURN_TIME = "10:00";
 
+// Canonical business timezone — used by laHour() and any caller that needs
+// America/Los_Angeles wall-clock comparisons.
+export const BUSINESS_TZ = "America/Los_Angeles";
+
+/**
+ * Returns the current hour (0–23) in America/Los_Angeles.
+ * Used by cron handlers to enforce the 8 AM – 7 PM send window.
+ * @returns {number}
+ */
+export function laHour() {
+  return parseInt(
+    new Date().toLocaleString("en-US", {
+      timeZone: BUSINESS_TZ,
+      hour:     "numeric",
+      hour12:   false,
+    }),
+    10
+  );
+}
+
 /**
  * Convert an HH:MM (24-hour) or "HH:MM:SS" time string to a human-readable
  * 12-hour format suitable for SMS templates (e.g. "16:00" → "4:00 PM").

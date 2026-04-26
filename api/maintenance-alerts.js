@@ -26,6 +26,7 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
+import { laHour } from "./_time.js";
 import {
   render,
   MAINTENANCE_AVAILABILITY_REQUEST,
@@ -208,20 +209,6 @@ async function logHighMileageAlert(sb, bookingId) {
 
 const WINDOW_START_HOUR = 8;  // 8:00 AM LA
 const WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
-
-/**
- * Returns the current hour (0–23) in America/Los_Angeles.
- */
-function laHour() {
-  return parseInt(
-    new Date().toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour:     "numeric",
-      hour12:   false,
-    }),
-    10
-  );
-}
 
 // ── Main Handler ──────────────────────────────────────────────────────────────
 

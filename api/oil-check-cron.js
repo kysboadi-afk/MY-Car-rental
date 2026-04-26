@@ -22,6 +22,7 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { laHour } from "./_time.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
 
@@ -64,20 +65,6 @@ const WINDOW_END_HOUR      = 19;   // 7:00 PM LA — end of send window (exclusi
 const ESCALATE_AFTER_HOURS = 24;   // hours of no-reply before escalating
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Returns the current hour (0–23) in America/Los_Angeles.
- */
-function laHour() {
-  return parseInt(
-    new Date().toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour:     "numeric",
-      hour12:   false,
-    }),
-    10
-  );
-}
 
 /**
  * Elapsed hours between two ISO timestamps.
