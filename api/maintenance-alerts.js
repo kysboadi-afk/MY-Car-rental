@@ -335,23 +335,35 @@ export default async function handler(req, res) {
       const name    = row.data?.vehicle_name || vid;
       const booking = activeBookingByVehicle[vid];
 
-      if (!booking) continue; // No active rental — no driver to notify
+      if (!booking) {
+        console.log(`maintenance-alerts: SKIP vehicle ${vid}: no active rental`);
+        continue; // No active rental — no driver to notify
+      }
 
       // ── SMS priority suppression ───────────────────────────────────────────
       // HIGH: oil_status = 'low' → owner is aware and handling it; suppress all
       //   renter-facing mileage maintenance messages until oil issue is resolved.
-      if (booking.oilStatus === "low") continue;
+      if (booking.oilStatus === "low") {
+        console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${booking.bookingId || vid}: oil_status=low, suppressing maintenance alerts`);
+        continue;
+      }
 
       // MEDIUM: oil_check_required = true → an oil-check request is pending a
       //   renter reply. Do not layer additional maintenance messages on top.
-      if (booking.oilCheckRequired) continue;
+      if (booking.oilCheckRequired) {
+        console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${booking.bookingId || vid}: oil_check_required=true, pending renter reply`);
+        continue;
+      }
 
       // Cooldown: if oil-check-cron sent a system message within the last 24 h,
       //   wait to avoid back-to-back messages from different automation systems.
       if (
         booking.oilCheckLastRequest &&
         Date.now() - new Date(booking.oilCheckLastRequest).getTime() < 86_400_000
-      ) continue;
+      ) {
+        console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${booking.bookingId || vid}: oil-check-cron cooldown active (last=${booking.oilCheckLastRequest})`);
+        continue;
+      }
       // ── End suppression ────────────────────────────────────────────────────
 
       const bookingId = booking.bookingId || booking.paymentIntentId;
@@ -382,6 +394,8 @@ export default async function handler(req, res) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kUrgent });
               alertsSent++;
             }
+          } else {
+            console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ${svc.type} urgent already sent`);
           }
         } else {
           // ── Due Soon (80%–100%) ──────────────────────────────────────────
@@ -395,6 +409,8 @@ export default async function handler(req, res) {
               sentMarks.push({ vehicleId: vid, id: bookingId, key: kWarn });
               alertsSent++;
             }
+          } else {
+            console.log(`maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ${svc.type} warn already sent`);
           }
         }
       }

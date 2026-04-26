@@ -219,17 +219,23 @@ export default async function handler(req, res) {
       oil_check_missed_count: missedCount,
     } = booking;
 
-    if (!phone || !vehicleId) continue;
+    if (!phone || !vehicleId) {
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: missing phone or vehicleId (phone=${!!phone}, vehicleId=${!!vehicleId})`);
+      continue;
+    }
 
     // ── Anti-spam: skip if already contacted this run ──────────────────────
     if (phonesContactedThisRun.has(phone)) {
       results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: already contacted this run`);
       continue;
     }
 
     // ── Anti-spam: skip if last message was < 24 h ago ────────────────────
     if (lastRequest && hoursSince(lastRequest) < COOLDOWN_HOURS) {
       results.skipped_spam++;
+      const hrsSince = hoursSince(lastRequest);
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cooldown active (last request ${hrsSince.toFixed(1)}h ago, cooldown=${COOLDOWN_HOURS}h)`);
       continue;
     }
 
@@ -240,6 +246,7 @@ export default async function handler(req, res) {
 
     if (rentalDays < MIN_RENTAL_DAYS) {
       results.skipped_no_trigger++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: rental_days=${rentalDays} < MIN_RENTAL_DAYS=${MIN_RENTAL_DAYS}`);
       continue;
     }
 
@@ -250,12 +257,14 @@ export default async function handler(req, res) {
       if (missedCount >= 2) {
         // Already sent final notice — stop messaging
         results.skipped_no_trigger++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation ceiling reached (missed_count=${missedCount})`);
         continue;
       }
 
       // Check if enough time has passed since the last request to escalate
       if (!lastRequest || hoursSince(lastRequest) < ESCALATE_AFTER_HOURS) {
         results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation window not elapsed (last=${lastRequest || "never"}, need ${ESCALATE_AFTER_HOURS}h)`);
         continue;
       }
 
@@ -306,6 +315,12 @@ export default async function handler(req, res) {
 
     if (!triggerByDays && !triggerByMiles) {
       results.skipped_no_trigger++;
+      const daysDisplay  = daysSinceCheck  === Infinity ? "N/A" : daysSinceCheck.toFixed(1);
+      const milesDisplay = milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0);
+      console.log(
+        `oil-check-cron: SKIP ${bookingRef || bookingId}: threshold not met ` +
+        `(days_since=${daysDisplay}/${DAYS_SINCE_CHECK}, miles_since=${milesDisplay}/${MILES_SINCE_CHECK})`
+      );
       continue;
     }
 

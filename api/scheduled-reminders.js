@@ -621,12 +621,16 @@ async function processUnpaid(allBookings, now, sentMarks) {
       if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h")) {
         const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_2H, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_2h" });
+      } else if (minutesUntilPickup <= 120 && minutesUntilPickup > 90) {
+        console.log(`[SMS_SKIP] ${id} unpaid_2h: already sent`);
       }
 
       // Final reminder (window: 30–15 min)
       if (minutesUntilPickup <= 30 && minutesUntilPickup > 15 && !alreadySent(booking, "unpaid_final")) {
         const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_FINAL, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_final" });
+      } else if (minutesUntilPickup <= 30 && minutesUntilPickup > 15) {
+        console.log(`[SMS_SKIP] ${id} unpaid_final: already sent`);
       }
     }
   }
@@ -658,6 +662,8 @@ async function processPaidBookings(allBookings, now, sentMarks) {
       if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
         const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
         if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
+      } else if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60) {
+        console.log(`[SMS_SKIP] ${id} pickup_24h: already sent`);
       }
     }
   }
@@ -716,6 +722,19 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const nowIso    = now.toISOString();
       const returnIso = returnDt.toISOString();
 
+      console.log("[SMS_ACTIVE]", {
+        booking_ref:       id,
+        vehicleId,
+        return_la:         toLAString(returnDt),
+        mins_until_return: Math.round(minutesUntilReturn),
+        sent: {
+          late_warning_30min: alreadySent(booking, "late_warning_30min"),
+          late_at_return:     alreadySent(booking, "late_at_return"),
+          late_grace_expired: alreadySent(booking, "late_grace_expired"),
+          late_fee_pending:   alreadySent(booking, "late_fee_pending"),
+        },
+      });
+
       if (process.env.DEBUG_TIMEZONE) {
         console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
           timezone:          BUSINESS_TZ,
@@ -745,6 +764,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
           await logSmsToSupabase(id, "late_warning_30min", returnDateStr);
         }
+      } else if (minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} late_warning_30min: already sent (dedup)`);
       }
 
       // ── At return time (0–15 min window) ─────────────────────────────────────
@@ -759,6 +780,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           sentMarks.push({ vehicleId, id, key: "late_at_return" });
           await logSmsToSupabase(id, "late_at_return", returnDateStr);
         }
+      } else if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS)) {
+        console.log(`[SMS_SKIP] ${id} late_at_return: already sent (dedup)`);
       }
 
       // ── Grace expired at return_datetime + 1 h (15 min window) ───────────────
@@ -773,6 +796,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
           await logSmsToSupabase(id, "late_grace_expired", returnDateStr);
         }
+      } else if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS)) {
+        console.log(`[SMS_SKIP] ${id} late_grace_expired: already sent (dedup)`);
       }
 
       // ── Late fee at return_datetime + 2 h (once per return_date) ─────────────
