@@ -124,7 +124,7 @@ export default async function handler(req, res) {
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
-          let q = sb.from("revenue_records_effective").select("*").order("created_at", { ascending: false });
+          let q = sb.from("revenue_records_effective").select("*").eq("is_orphan", false).order("created_at", { ascending: false });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
@@ -145,7 +145,7 @@ export default async function handler(req, res) {
       }
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      let records = ghRecords.filter((r) => !r.sync_excluded);
+      let records = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
       if (body.vehicleId)  records = records.filter((r) => r.vehicle_id    === body.vehicleId);
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
