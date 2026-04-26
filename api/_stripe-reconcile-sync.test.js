@@ -120,7 +120,8 @@ function buildFakeSupabase() {
 const updatePayloads = {};
 
 function buildTable(table) {
-  let filterPiId   = null;
+  let filterPiId      = null;
+  let filterBookingRef = null;
   let updateBuf    = null;
   let filterId     = null;
   let excludeFlag  = null;
@@ -128,9 +129,10 @@ function buildTable(table) {
   const chain = {
     select()      { return this; },
     eq(col, val) {
-      if (col === "payment_intent_id") filterPiId = val;
-      if (col === "id")               filterId   = val;
-      if (col === "sync_excluded")    excludeFlag = val;
+      if (col === "payment_intent_id") filterPiId       = val;
+      if (col === "booking_ref")       filterBookingRef = val;
+      if (col === "id")               filterId         = val;
+      if (col === "sync_excluded")    excludeFlag      = val;
       return this;
     },
     update(payload) {
@@ -138,6 +140,14 @@ function buildTable(table) {
       return this;
     },
     maybeSingle() {
+      // bookings table: return a found booking for any "bk-…" ref so
+      // resolveBookingId succeeds in deposit-recovery tests.
+      if (table === "bookings") {
+        const data = filterBookingRef && filterBookingRef.startsWith("bk-")
+          ? { booking_ref: filterBookingRef }
+          : null;
+        return Promise.resolve({ data, error: null });
+      }
       if (table !== "revenue_records") return Promise.resolve({ data: null, error: null });
       // Simulate a lookup error if requested.
       if (nextLookupError) {
@@ -170,7 +180,7 @@ function buildTable(table) {
         }
         return Promise.resolve({ error: null }).then(resolve, reject);
       }
-      // bookings lookup (resolveBookingId)
+      // bookings lookup (resolveBookingId) — legacy .then() path
       if (table === "bookings") {
         return Promise.resolve({ data: null, error: null }).then(resolve, reject);
       }
