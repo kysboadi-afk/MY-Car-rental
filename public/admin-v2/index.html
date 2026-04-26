@@ -4833,11 +4833,13 @@ function applyRevenueFilters() {
     }, 0);
 
     // Summary date: earliest pickup → latest return across all records.
-    const pickupDate  = allRecs.map((r) => r.pickup_date).filter(Boolean)
-      .reduce((mn, d) => (d < mn ? d : mn), '');
+    const pickupDates = allRecs.map((r) => r.pickup_date).filter(Boolean).sort();
+    const pickupDate  = pickupDates[0] || '';
     const finalReturn = allRecs.map((r) => r.return_date).filter(Boolean)
       .reduce((mx, d) => (d > mx ? d : mx), '');
-    const dateCell = (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–');
+    const dateCell = pickupDate
+      ? (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–')
+      : (fmtRevDate(finalReturn) || '–');
 
     // Worst status across the group.
     const statusRank = { paid: 0, partial: 1, pending: 2, refunded: 3 };
