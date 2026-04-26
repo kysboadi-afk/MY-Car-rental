@@ -932,6 +932,7 @@ export default async function handler(req, res) {
   const MAX_ROUND_TIMEOUT      = 20000; // cap per-round OpenAI timeout at 20 s
   const MIN_RESPONSE_BUFFER_MS =  3000; // reserve 3 s for JSON serialisation
   const MIN_TOOL_EXECUTION_MS  =  1000; // bail if < 1 s remains before starting a tool call
+  const PREFETCH_WAIT_MS       =  1000; // max time to wait for prefetch result before live call
   // Max messages to send to OpenAI (system prompt excluded).  Long conversation
   // histories increase token count and latency — trimming prevents "Failed to
   // fetch" timeouts caused by the OpenAI call taking too long.
@@ -1008,7 +1009,7 @@ export default async function handler(req, res) {
   // before the AI returns its tool-call decision, eliminating a full extra
   // OpenAI round-trip from the critical path for insight-based queries.
   const insightsPrefetch = executeAction("get_insights", {}, { requireConfirmation: false })
-    .catch(() => null); // never let a prefetch error propagate
+    .catch((err) => { console.warn("admin-chat: insights prefetch failed:", err.message); return null; });
 
   // ── Agentic loop ─────────────────────────────────────────────────────────
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -1129,7 +1130,7 @@ export default async function handler(req, res) {
         if (toolName === "get_insights") {
           const prefetched = await Promise.race([
             insightsPrefetch,
-            new Promise((resolve) => setTimeout(() => resolve(null), 1000)),
+            new Promise((resolve) => setTimeout(() => resolve(null), PREFETCH_WAIT_MS)),
           ]);
           if (prefetched && !prefetched.error) {
             toolResult = prefetched;

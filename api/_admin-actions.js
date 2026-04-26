@@ -771,7 +771,6 @@ async function toolGetInsights() {
     ? sb.from("vehicles")
         .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
         .not("bouncie_device_id", "is", null)
-        .then((r) => r)
         .catch(() => ({ data: [] }))
     : Promise.resolve({ data: [] });
 
@@ -779,7 +778,6 @@ async function toolGetInsights() {
     ? sb.from("trip_log")
         .select("vehicle_id, trip_distance, trip_at")
         .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
-        .then((r) => r)
         .catch(() => ({ data: [] }))
     : Promise.resolve({ data: [] });
 
