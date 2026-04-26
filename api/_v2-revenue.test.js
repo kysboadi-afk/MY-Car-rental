@@ -505,16 +505,16 @@ test("list_by_booking: filters out sync_excluded=true rows (GitHub fallback)", a
   assert.equal(res._body.groups[0].booking_id, "bk-001");
 });
 
-test("list_by_booking: excludes type='rental' gross from sum when extension rows exist", async () => {
+test("list_by_booking: includes ALL gross amounts (rental + extension) in sum", async () => {
   resetState();
   ghSha = "sha-existing";
   ghRecords = [
-    // Base rental row — its gross should be excluded from total because extensions exist
-    { id: "r1", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 300, payment_status: "paid",
+    // Base rental row — counted because every distinct Stripe charge must be included
+    { id: "r1", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 200, payment_status: "paid",
       type: "rental", original_booking_id: null, is_orphan: false, sync_excluded: false,
-      pickup_date: "2026-04-20", return_date: "2026-04-27" },
-    // Extension row — its gross SHOULD be included in total
-    { id: "r2", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 300, payment_status: "paid",
+      pickup_date: "2026-04-20", return_date: "2026-04-24" },
+    // Extension row — also counted
+    { id: "r2", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 120, payment_status: "paid",
       type: "extension", original_booking_id: "bk-ext-1", is_orphan: false, sync_excluded: false,
       pickup_date: "2026-04-24", return_date: "2026-04-27" },
   ];
@@ -526,7 +526,7 @@ test("list_by_booking: excludes type='rental' gross from sum when extension rows
   const g = res._body.groups[0];
   assert.equal(g.booking_id, "bk-ext-1");
   assert.equal(g.record_count, 2, "both records should be present in group.records");
-  assert.equal(g.total_gross, 300, "total_gross should only count extension row (not rental row) when extensions exist");
+  assert.equal(g.total_gross, 320, "total_gross should sum rental + extension (200 + 120 = 320)");
 });
 
 test("list_by_booking: includes rental gross when no extension rows exist", async () => {
@@ -566,7 +566,7 @@ test("list_by_booking: groups extension rows under parent via original_booking_i
   assert.equal(res._body.groups.length, 1, "all rows should collapse into one group");
   const g = res._body.groups[0];
   assert.equal(g.record_count, 3);
-  assert.equal(g.total_gross, 600, "sum of both extension rows only (300+300), rental excluded");
+  assert.equal(g.total_gross, 1200, "total_gross should sum rental + both extensions (600+300+300=1200)");
   assert.equal(g.min_pickup_date, "2026-04-10");
   assert.equal(g.max_return_date, "2026-04-19");
 });
