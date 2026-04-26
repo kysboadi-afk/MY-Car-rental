@@ -1556,41 +1556,112 @@ async function toolGetSmsTemplates() {
 
 async function toolGetBlockedDates({ vehicleId } = {}) {
   const sb = getSupabaseAdmin();
-  let blockedDates = null;
 
-  // Try Supabase blocked_dates table first
+  // ── 1. Booking timeline from vehicle_blocking_ranges (single source of truth)
+  //       Returns one row per segment (base rental + each extension) with
+  //       source = 'base' | 'extension' so the timeline is always correct.
+  let timelineByVehicle = null;
   if (sb) {
     try {
-      let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date");
+      let q = sb
+        .from("vehicle_blocking_ranges")
+        .select("vehicle_id, booking_ref, start_date, end_date, source")
+        .order("start_date", { ascending: true });
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
       const { data, error } = await q;
       if (!error && data) {
-        const byVehicle = {};
-        for (const row of (data || [])) {
+        timelineByVehicle = {};
+        for (const row of data) {
           const vid = row.vehicle_id;
-          if (!byVehicle[vid]) byVehicle[vid] = [];
-          byVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
+          if (!timelineByVehicle[vid]) timelineByVehicle[vid] = [];
+          timelineByVehicle[vid].push({
+            from:        row.start_date,
+            to:          row.end_date,
+            source:      row.source,
+            booking_ref: row.booking_ref || undefined,
+          });
         }
-        blockedDates = byVehicle;
       }
     } catch {
-      // fall through
+      // fall through to manual/maintenance blocks only
     }
   }
 
-  if (!blockedDates) {
-    return { blocked_dates: {}, note: "Could not retrieve blocked dates — Supabase unavailable." };
+  // ── 2. Manual / maintenance blocks from blocked_dates (non-booking rows)
+  //       These cover 'manual' and 'maintenance' reasons and are NOT included
+  //       in vehicle_blocking_ranges (which only tracks booking segments).
+  let manualBlocksByVehicle = {};
+  if (sb) {
+    try {
+      let q = sb
+        .from("blocked_dates")
+        .select("vehicle_id, start_date, end_date, reason")
+        .neq("reason", "booking")
+        .order("start_date", { ascending: true });
+      if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+      const { data, error } = await q;
+      if (!error && data) {
+        for (const row of data) {
+          const vid = row.vehicle_id;
+          if (!manualBlocksByVehicle[vid]) manualBlocksByVehicle[vid] = [];
+          manualBlocksByVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason });
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
+  // ── 3. If vehicle_blocking_ranges is unavailable, fall back to flat blocked_dates.
+  if (!timelineByVehicle) {
+    let blockedDates = null;
+    if (sb) {
+      try {
+        let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date", { ascending: true });
+        if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+        const { data, error } = await q;
+        if (!error && data) {
+          blockedDates = {};
+          for (const row of data) {
+            const vid = row.vehicle_id;
+            if (!blockedDates[vid]) blockedDates[vid] = [];
+            blockedDates[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
+          }
+        }
+      } catch {
+        // fall through
+      }
+    }
+    if (!blockedDates) {
+      return { blocked_dates: {}, note: "Could not retrieve blocked dates — Supabase unavailable." };
+    }
+    const summary = {};
+    let total = 0;
+    for (const [vid, ranges] of Object.entries(blockedDates)) {
+      const arr = Array.isArray(ranges) ? ranges : [];
+      summary[vid] = arr;
+      total += arr.length;
+    }
+    return { total_ranges: total, blocked_dates: summary };
+  }
+
+  // ── 4. Merge timeline segments + manual blocks per vehicle ────────────────
+  const allVehicleIds = new Set([
+    ...Object.keys(timelineByVehicle),
+    ...Object.keys(manualBlocksByVehicle),
+  ]);
   const summary = {};
   let total = 0;
-  for (const [vid, ranges] of Object.entries(blockedDates)) {
-    const arr = Array.isArray(ranges) ? ranges : [];
-    summary[vid] = arr;
-    total += arr.length;
+  for (const vid of allVehicleIds) {
+    const segments = (timelineByVehicle[vid] || []).concat(
+      (manualBlocksByVehicle[vid] || []).map((b) => ({ ...b, source: "manual" }))
+    );
+    segments.sort((a, b) => (a.from || "").localeCompare(b.from || ""));
+    summary[vid] = segments;
+    total += segments.length;
   }
 
-  return { total_ranges: total, blocked_dates: summary };
+  return { total_ranges: total, blocked_dates: summary, source: "vehicle_blocking_ranges" };
 }
 
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {

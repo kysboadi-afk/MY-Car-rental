@@ -22,7 +22,8 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { laHour, buildDateTimeLA } from "./_time.js";
+import { laHour } from "./_time.js";
+import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
   computeSmsScoreWithBreakdown,
@@ -268,10 +269,9 @@ export default async function handler(req, res) {
       : 0;
 
     // ── Compute time proximity for scoring ────────────────────────────────
-    const returnDt        = buildDateTimeLA(returnDate, returnTime);
-    const minutesToReturn = isNaN(returnDt.getTime())
-      ? undefined
-      : (returnDt - new Date()) / 60_000;
+    const { end_datetime: returnDt, minutesToReturn: rawMinutesToReturn } =
+      await getRentalState(sb, bookingRef);
+    const minutesToReturn = rawMinutesToReturn !== null ? rawMinutesToReturn : undefined;
 
     if (rentalDays < MIN_RENTAL_DAYS) {
       results.skipped_no_trigger++;

@@ -543,6 +543,8 @@ function makeSbWithStatus(status) {
         select()      { return this; },
         eq()          { return this; },
         or()          { return this; },
+        order()       { return this; },
+        limit()       { return this; },
         update()      { return this; },
         async maybeSingle() { return { data: { status }, error: null }; },
         async then(resolve) { return resolve({ data: [], error: null }); },

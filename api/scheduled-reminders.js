@@ -55,9 +55,9 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { formatTime12h, laHour } from "./_time.js";
+import { DEFAULT_RETURN_TIME, formatTime12h, laHour } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { computeFinalReturnDate } from "./_final-return-date.js";
+import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
   computeSmsScoreWithBreakdown,
@@ -771,17 +771,21 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         continue;
       }
 
-      // Compute the final return date/time, incorporating any paid extensions
-      // recorded in revenue_records so that SMS triggers always fire against the
-      // renter's true (extended) return schedule, not a stale bookings.json date.
+      // Compute the final return date/time from vehicle_blocking_ranges — the
+      // single source of truth for the per-segment blocking timeline.  This
+      // automatically incorporates paid extensions without separate joins.
+      // Falls back to the booking's own returnDate/returnTime when Supabase is
+      // unavailable (e.g. null client in test environments).
       const id = booking.bookingId || booking.paymentIntentId;
-      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
-        sb, id, booking.returnDate, booking.returnTime
-      );
-
-      // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
-      // wall-clock time in Los Angeles, not at UTC equivalents.
-      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
+      let { endDate: finalDate, returnTime: resolvedFinalTime, end_datetime: returnDt } =
+        await getRentalState(sb, id);
+      if (isNaN(returnDt.getTime())) {
+        const fbDate = booking.returnDate || "";
+        const fbTime = booking.returnTime || DEFAULT_RETURN_TIME;
+        returnDt = buildDateTimeLA(fbDate, fbTime);
+        finalDate = fbDate;
+        resolvedFinalTime = fbTime;
+      }
       if (isNaN(returnDt.getTime())) continue;
 
       const v = vars(booking);
@@ -798,6 +802,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       console.log("[SMS_ACTIVE]", {
         booking_ref:       id,
         vehicleId,
+        return_date_raw:   booking.returnDate,
+        return_time_raw:   booking.returnTime || null,
         return_la:         toLAString(returnDt),
         mins_until_return: Math.round(minutesUntilReturn),
         sent: {
@@ -808,13 +814,14 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           late_fee_pending:   alreadySent(booking, "late_fee_pending"),
         },
       });
+      console.log("minutesToReturn:", minutesUntilReturn);
 
       if (process.env.DEBUG_TIMEZONE) {
         console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {
           timezone:          BUSINESS_TZ,
           now_la:            toLAString(now),
           return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
-          return_final:      `${finalDate} ${finalTime}`,
+          return_final:      `${finalDate} ${resolvedFinalTime}`,
           return_la:         toLAString(returnDt),
           mins_until_return: Math.round(minutesUntilReturn),
         });
@@ -1234,17 +1241,21 @@ export async function processAutoCompletions(allBookings, now) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
 
-      // Compute the final return date/time, incorporating any paid extensions
-      // from revenue_records so auto-completion fires against the renter's true
-      // (possibly extended) return schedule — never against a stale base date.
+      // Compute the final return date/time from vehicle_blocking_ranges so
+      // auto-completion fires against the renter's true (possibly extended)
+      // return schedule — never against a stale base date.
+      // Falls back to the booking's own returnDate/returnTime when Supabase is
+      // unavailable (e.g. null client in test environments).
       const id = booking.bookingId || booking.paymentIntentId;
-      const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
-        sb, id, booking.returnDate, booking.returnTime
-      );
-
-      // Use LA-timezone return datetime so the 4-hour auto-complete threshold is
-      // measured from the correct Los Angeles wall-clock return time, not UTC.
-      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
+      let { endDate: finalDate, returnTime: resolvedFinalTime, end_datetime: returnDt } =
+        await getRentalState(sb, id);
+      if (isNaN(returnDt.getTime())) {
+        const fbDate = booking.returnDate || "";
+        const fbTime = booking.returnTime || DEFAULT_RETURN_TIME;
+        returnDt = buildDateTimeLA(fbDate, fbTime);
+        finalDate = fbDate;
+        resolvedFinalTime = fbTime;
+      }
       if (isNaN(returnDt.getTime())) continue;
 
       const minsOverdue = (now - returnDt) / 60000;
@@ -1254,7 +1265,7 @@ export async function processAutoCompletions(allBookings, now) {
           timezone:       BUSINESS_TZ,
           now_la:         toLAString(now),
           return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
-          return_final:   `${finalDate} ${finalTime}`,
+          return_final:   `${finalDate} ${resolvedFinalTime}`,
           return_la:      toLAString(returnDt),
           mins_overdue:   Math.round(minsOverdue),
         });
