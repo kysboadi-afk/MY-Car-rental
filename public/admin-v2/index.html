@@ -4790,14 +4790,14 @@ function applyRevenueFilters() {
 
   // Group all revenue records by effective booking ID so extensions collapse
   // under their parent booking row.
-  function getEffId(r) {
+  function getEffectiveBookingId(r) {
     return (r.type === 'extension' && r.original_booking_id) ? r.original_booking_id : r.booking_id;
   }
 
   const groupMap = new Map();
   const groupOrder = [];
   allRevenueRecords.forEach((r) => {
-    const id = getEffId(r);
+    const id = getEffectiveBookingId(r);
     if (!id) return;
     if (!groupMap.has(id)) { groupMap.set(id, { base: null, exts: [] }); groupOrder.push(id); }
     const g = groupMap.get(id);
@@ -4805,7 +4805,7 @@ function applyRevenueFilters() {
   });
 
   // Only show groups that have at least one record surviving the current filters.
-  const filteredIds = new Set(filtered.map(getEffId));
+  const filteredIds = new Set(filtered.map(getEffectiveBookingId));
   const visibleGroups = groupOrder.filter((id) => filteredIds.has(id));
 
   if (!visibleGroups.length) {
@@ -4856,7 +4856,7 @@ function applyRevenueFilters() {
       : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
 
     const toggleBtn = hasExts
-      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(id)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup('${esc(id)}')" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
+      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(id)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup(this.getAttribute('data-rev-toggle'))" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
       : '';
 
     // ── Summary row ──────────────────────────────────────────────────────────
