@@ -1,7 +1,7 @@
 // api/_fleet-status.test.js
 // Tests for GET /api/fleet-status.
 //
-// Availability is now derived ONLY from the Supabase `bookings` table.
+// Availability is now derived ONLY from the Supabase `blocked_dates` table.
 // vehicles.rental_status is used only for maintenance mode (not for
 // booking-based availability).  fleet-status.json is no longer used.
 
@@ -38,14 +38,13 @@ const sbMock = {
     { vehicle_id: "slingshot3", rental_status: "available" },
   ],
   vehiclesError: null,
-  activeBookingRows: [],
-  bookingsError: null,
+  blockedDateRows: [],
+  blockedError: null,
 };
 
 function buildSbClient() {
   return {
     from(table) {
-      let statusInFilter = null;
       const chain = {
         select() { return this; },
         eq()     { return this; },
@@ -54,19 +53,13 @@ function buildSbClient() {
         lte()    { return this; },
         limit()  { return this; },
         order()  { return this; },
-        in(col, val) {
-          if (table === "bookings" && col === "status") statusInFilter = val;
-          return this;
-        },
+        in()     { return this; },
         async then(resolve) {
           if (table === "vehicles") {
             return resolve({ data: sbMock.vehiclesRows, error: sbMock.vehiclesError });
           }
-          if (table === "bookings") {
-            if (!Array.isArray(statusInFilter) || statusInFilter.length === 0) {
-              return resolve({ data: [], error: null });
-            }
-            return resolve({ data: sbMock.activeBookingRows, error: sbMock.bookingsError });
+          if (table === "blocked_dates") {
+            return resolve({ data: sbMock.blockedDateRows, error: sbMock.blockedError });
           }
           return resolve({ data: [], error: null });
         },
@@ -97,8 +90,8 @@ function resetMock() {
     { vehicle_id: "slingshot3", rental_status: "available" },
   ];
   sbMock.vehiclesError  = null;
-  sbMock.activeBookingRows = [];
-  sbMock.bookingsError  = null;
+  sbMock.blockedDateRows = [];
+  sbMock.blockedError   = null;
   sbMock.client = buildSbClient();
 }
 
@@ -126,23 +119,23 @@ test("no Supabase: returns hard-coded defaults with all vehicles available", asy
   }
 });
 
-test("Supabase vehicles error: uses fallback IDs, still queries bookings, all available when no active bookings", async () => {
+test("Supabase vehicles error: uses fallback IDs, still queries blocked_dates, all available when no active blocks", async () => {
   resetMock();
   sbMock.vehiclesError = { message: "db timeout" };
   sbMock.vehiclesRows  = null;
   const res = makeRes();
   await handler(makeReq(), res);
   assert.equal(res._status, 200);
-  // No active bookings → all vehicles should be available
+  // No blocked dates → all vehicles should be available
   for (const vid of ["camry", "slingshot"]) {
-    assert.equal(res._body[vid]?.available, true, `${vid} should be available with no active bookings`);
+    assert.equal(res._body[vid]?.available, true, `${vid} should be available with no active blocks`);
     assert.equal(res._body[vid]?.available_at, null);
   }
 });
 
-test("no active bookings: all vehicles available and available_at is null", async () => {
+test("no active blocks: all vehicles available and available_at is null", async () => {
   resetMock();
-  sbMock.activeBookingRows = [];
+  sbMock.blockedDateRows = [];
   const res = makeRes();
   await handler(makeReq(), res);
 
@@ -153,59 +146,48 @@ test("no active bookings: all vehicles available and available_at is null", asyn
   }
 });
 
-test("active booking makes vehicle unavailable and derives available_at from return_date + return_time in LA", async () => {
+test("active blocked_dates row makes vehicle unavailable with date-only next_available_display", async () => {
   resetMock();
-  sbMock.activeBookingRows = [
-    { vehicle_id: "camry", return_date: "2026-06-10", return_time: "14:00:00", status: "active_rental" },
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: "2026-06-10" },
   ];
 
   const res = makeRes();
   await handler(makeReq(), res);
 
   assert.equal(res._status, 200);
-  // Booking drives unavailability — regardless of vehicles.rental_status
+  // blocked_dates row drives unavailability — regardless of vehicles.rental_status
   assert.equal(res._body.camry?.available, false);
-  const availAt = res._body.camry?.available_at;
-  assert.equal(availAt, "2026-06-10T14:00:00-07:00");
-  assert.equal(new Date(availAt).toISOString(), "2026-06-10T21:00:00.000Z");
+  // available_at is always null (blocked_dates has no time column)
+  assert.equal(res._body.camry?.available_at, null);
+  // next_available_display is set to date only (no time component)
+  assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
+  assert.ok(!res._body.camry.next_available_display.includes(" at "), "next_available_display must not include time");
+  assert.ok(res._body.camry.next_available_display.includes("Jun"), "next_available_display should contain the month");
 });
 
-test("vehicle with active booking is unavailable even when rental_status=available", async () => {
+test("vehicle with active block is unavailable even when rental_status=available", async () => {
   resetMock();
-  // vehicles table says slingshot is "available" — but there is an active booking
-  sbMock.activeBookingRows = [
-    { vehicle_id: "slingshot", return_date: "2026-06-11", return_time: "10:00:00", status: "booked_paid" },
+  // vehicles table says slingshot is "available" — but there is an active block
+  sbMock.blockedDateRows = [
+    { vehicle_id: "slingshot", end_date: "2026-06-11" },
   ];
 
   const res = makeRes();
   await handler(makeReq(), res);
 
   assert.equal(res._status, 200);
-  // Booking overrides the vehicles.rental_status value — vehicle is unavailable
-  assert.equal(res._body.slingshot?.available, false, "slingshot should be unavailable due to active booking");
-  assert.ok(res._body.slingshot?.available_at, "slingshot should have available_at set");
+  // Block overrides the vehicles.rental_status value — vehicle is unavailable
+  assert.equal(res._body.slingshot?.available, false, "slingshot should be unavailable due to active block");
+  assert.ok(res._body.slingshot?.next_available_display, "slingshot should have next_available_display set");
 });
 
-test("latest active booking return datetime wins per vehicle", async () => {
+test("latest blocked end_date wins per vehicle", async () => {
   resetMock();
-  sbMock.activeBookingRows = [
-    { vehicle_id: "camry", return_date: "2026-06-10", return_time: "09:00:00", status: "active_rental" },
-    { vehicle_id: "camry", return_date: "2026-06-10", return_time: "16:30:00", status: "booked_paid" },
-    { vehicle_id: "camry", return_date: "2026-06-09", return_time: "20:00:00", status: "active_rental" },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq(), res);
-
-  assert.equal(res._status, 200);
-  assert.equal(res._body.camry?.available, false);
-  assert.equal(res._body.camry?.available_at, "2026-06-10T16:30:00-07:00");
-});
-
-test("reserved booking status is treated as active for availability computation", async () => {
-  resetMock();
-  sbMock.activeBookingRows = [
-    { vehicle_id: "camry", return_date: "2026-06-12", return_time: "11:00:00", status: "reserved" },
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: "2026-06-09" },
+    { vehicle_id: "camry", end_date: "2026-06-10" },
+    { vehicle_id: "camry", end_date: "2026-06-08" },
   ];
 
   const res = makeRes();
@@ -213,10 +195,11 @@ test("reserved booking status is treated as active for availability computation"
 
   assert.equal(res._status, 200);
   assert.equal(res._body.camry?.available, false);
-  assert.equal(res._body.camry?.available_at, "2026-06-12T11:00:00-07:00");
+  // next_available_display should reflect the latest end_date (Jun 10)
+  assert.ok(res._body.camry?.next_available_display?.includes("10"), "display should show day 10");
 });
 
-test("maintenance vehicle is unavailable even with no active bookings", async () => {
+test("maintenance vehicle is unavailable even with no active blocks", async () => {
   resetMock();
   sbMock.vehiclesRows = [
     { vehicle_id: "camry",      rental_status: "maintenance" },
@@ -225,7 +208,7 @@ test("maintenance vehicle is unavailable even with no active bookings", async ()
     { vehicle_id: "slingshot2", rental_status: "available"   },
     { vehicle_id: "slingshot3", rental_status: "available"   },
   ];
-  sbMock.activeBookingRows = []; // no bookings
+  sbMock.blockedDateRows = []; // no blocks
 
   const res = makeRes();
   await handler(makeReq(), res);
@@ -233,41 +216,14 @@ test("maintenance vehicle is unavailable even with no active bookings", async ()
   assert.equal(res._status, 200);
   assert.equal(res._body.camry?.available, false, "maintenance vehicle should be unavailable");
   assert.equal(res._body.camry?.rental_status, "maintenance");
-  assert.equal(res._body.camry?.available_at, null, "no booking = no available_at");
+  assert.equal(res._body.camry?.available_at, null, "no block = no available_at");
   assert.equal(res._body.slingshot?.available, true, "non-maintenance vehicle should still be available");
 });
 
-test("missing return_time logs warning, leaves available_at null, and sets next_available_display to date-only", async () => {
+test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_available_display", async () => {
   resetMock();
-  sbMock.activeBookingRows = [
-    { vehicle_id: "camry", return_date: "2026-06-10", return_time: null, status: "active_rental" },
-  ];
-
-  const captured = [];
-  const originalWarn = console.warn;
-  console.warn = (...args) => { captured.push(args); };
-
-  try {
-    const res = makeRes();
-    await handler(makeReq(), res);
-
-    assert.equal(res._status, 200);
-    assert.equal(res._body.camry?.available, false);
-    // available_at must remain null — no synthetic timestamp should be exposed
-    assert.equal(res._body.camry?.available_at, null);
-    // next_available_display should be set to just the date (no time)
-    assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
-    assert.ok(!res._body.camry.next_available_display.includes(" at "), "next_available_display should not include time when return_time is absent");
-    assert.ok(captured.some((args) => args[0] === "[AVAILABLE_AT_RETURN_TIME_MISSING]"));
-  } finally {
-    console.warn = originalWarn;
-  }
-});
-
-test("logs [AVAILABLE_AT_COMPUTED] with return_datetime and next_available_display", async () => {
-  resetMock();
-  sbMock.activeBookingRows = [
-    { vehicle_id: "camry", return_date: "2026-06-10", return_time: "14:00:00", status: "active_rental" },
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: "2026-06-10" },
   ];
 
   const captured = [];
@@ -282,10 +238,11 @@ test("logs [AVAILABLE_AT_COMPUTED] with return_datetime and next_available_displ
     const computedLog = captured.find((args) => args[0] === "[AVAILABLE_AT_COMPUTED]");
     assert.ok(computedLog, "Expected [AVAILABLE_AT_COMPUTED] log entry");
     assert.equal(computedLog[1]?.vehicle_id, "camry");
-    assert.equal(computedLog[1]?.return_datetime, "2026-06-10T14:00:00-07:00");
-    // next_available_display should be set and include time
+    // return_datetime is null — blocked_dates has no time column
+    assert.equal(computedLog[1]?.return_datetime, null);
+    // next_available_display is date-only
     assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
-    assert.ok(res._body.camry.next_available_display.includes(" at "), "next_available_display should include time");
+    assert.ok(!res._body.camry.next_available_display.includes(" at "), "next_available_display must not include time");
   } finally {
     console.log = originalLog;
   }

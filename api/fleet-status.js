@@ -2,34 +2,28 @@
 // Vercel serverless function — returns the current availability status of each
 // fleet vehicle.
 //
-// Single source of truth: Supabase `bookings` table.
+// Single source of truth: Supabase `blocked_dates` table.
 //
-// A vehicle is unavailable if any booking with an ACTIVE_BOOKING_STATUS exists
-// for that vehicle.  availability is never read from fleet-status.json or
-// vehicles.rental_status — it is always derived from live bookings.
+// A vehicle is unavailable if it has a blocked_dates row whose end_date is
+// today or in the future.  availability is never read from fleet-status.json,
+// vehicles.rental_status, or the bookings table directly.
 //
 // vehicles.rental_status = 'maintenance' is still respected as a manual
 // override so the fleet manager can take a vehicle offline for servicing
-// even when it has no active bookings.
+// even when it has no active blocks.
 //
 // Response: { vehicle_id: { available, rental_status, available_at,
 //                           next_available_display }, ... }
 //
-//   available_at          — ISO-8601 LA-offset timestamp of the latest active
-//                           booking's return datetime, or null when return_time
-//                           is unknown.
-//   next_available_display — human-readable LA-tz string, e.g.
-//                           "Apr 30, 2026 at 6:00 PM" (always set for
-//                           unavailable vehicles, even when return_time is absent).
+//   available_at          — always null (blocked_dates has no time column).
+//   next_available_display — human-readable date string, e.g. "Apr 27, 2026"
+//                           (always set for unavailable vehicles).
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
-// All booking statuses that mean the vehicle is occupied / unavailable.
-// Keep aligned with v2-availability.js and booked-dates.js.
-const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
 
 function buildDefaultStatus() {
   const map = {};
@@ -135,55 +129,22 @@ function formatForDisplay(dateObj, includeTime = true) {
 }
 
 /**
- * Build the latest-return-datetime lookup keyed by vehicle_id from a set of
- * booking rows already filtered to ACTIVE_BOOKING_STATUSES.
- * Logs a warning when return_time is absent.
+ * Build a lookup of the maximum blocked end_date per vehicle_id from a set of
+ * blocked_dates rows already filtered to end_date >= today.
  *
- * @param {object[]} rows - booking rows with vehicle_id, return_date, return_time, status
- * @returns {{ [vehicleId]: { returnDateTime: Date, hasTime: boolean } }}
+ * @param {object[]} rows - blocked_dates rows with vehicle_id and end_date
+ * @returns {{ [vehicleId]: string }} vehicleId → YYYY-MM-DD string
  */
-function computeLatestByVehicle(rows) {
-  const latestByVehicle = {};
-
+function computeMaxEndByVehicle(rows) {
+  const maxEndByVehicle = {};
   for (const row of (rows || [])) {
-    if (!row?.vehicle_id || !row?.return_date) continue;
-
-    let returnDateTime;
-    let hasTime = false;
-
-    if (!row.return_time) {
-      console.warn("[AVAILABLE_AT_RETURN_TIME_MISSING]", {
-        vehicle_id: row.vehicle_id,
-        status: row.status || null,
-        return_date: row.return_date,
-      });
-      // Midnight is used ONLY for internal date ordering so the latest booking
-      // per vehicle is still selected correctly.  hasTime = false ensures no
-      // time component is shown to customers via next_available_display, and
-      // available_at remains null (no synthetic timestamp is exposed).
-      returnDateTime = buildDateTimeLA(row.return_date, "00:00");
-    } else {
-      returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
-      hasTime = true;
-    }
-
-    const returnDateTimeMs = returnDateTime.getTime();
-    if (!Number.isFinite(returnDateTimeMs)) {
-      console.error("[AVAILABLE_AT_INVALID_RETURN_DATETIME]", {
-        vehicle_id: row.vehicle_id,
-        return_date: row.return_date,
-        return_time: row.return_time || null,
-      });
-      continue;
-    }
-
-    const existing = latestByVehicle[row.vehicle_id];
-    if (!existing || returnDateTimeMs > existing.returnDateTimeMs) {
-      latestByVehicle[row.vehicle_id] = { returnDateTimeMs, returnDateTime, hasTime };
+    if (!row?.vehicle_id || !row?.end_date) continue;
+    const existing = maxEndByVehicle[row.vehicle_id];
+    if (!existing || row.end_date > existing) {
+      maxEndByVehicle[row.vehicle_id] = row.end_date;
     }
   }
-
-  return latestByVehicle;
+  return maxEndByVehicle;
 }
 
 export default async function handler(req, res) {
@@ -223,49 +184,59 @@ export default async function handler(req, res) {
         console.warn("fleet-status: vehicles query error (non-fatal):", vehicleError.message);
       }
 
-      // ── 2. Single bookings query — source of truth for availability ───────
-      const { data: bookingRows, error: bookingError } = await sb
-        .from("bookings")
-        .select("vehicle_id, return_date, return_time, status")
+      // ── 2. Query blocked_dates — source of truth for availability ────────
+      // Use MAX(end_date) per vehicle to determine if a vehicle has an active
+      // or upcoming block.  Only rows with end_date >= today are considered;
+      // expired rows are cleaned up by the cleanup-blocked-dates cron.
+      //
+      // Use LA timezone for "today" to match how end_date is interpreted: a
+      // booking that returns on Apr 27 LA time should remain blocked until the
+      // LA calendar date rolls to Apr 28, not until UTC midnight.
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: BUSINESS_TZ,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date()); // YYYY-MM-DD in LA timezone
+      const { data: blockedRows, error: blockedError } = await sb
+        .from("blocked_dates")
+        .select("vehicle_id, end_date")
         .in("vehicle_id", vehicleIds)
-        .in("status", ACTIVE_BOOKING_STATUSES)
-        .not("return_date", "is", null)
-        .order("return_date", { ascending: false })
-        .order("return_time", { ascending: false });
+        .gte("end_date", today);
 
-      if (bookingError) throw new Error(bookingError.message || "bookings query failed");
+      if (blockedError) throw new Error(blockedError.message || "blocked_dates query failed");
 
-      // ── 3. Derive latest return datetime per vehicle ───────────────────────
-      const latestByVehicle = computeLatestByVehicle(bookingRows || []);
+      // ── 3. Derive max end_date per vehicle ────────────────────────────────
+      const maxEndByVehicle = computeMaxEndByVehicle(blockedRows || []);
 
       // ── 4. Build response ─────────────────────────────────────────────────
       const result = {};
       for (const vid of vehicleIds) {
-        const latest = latestByVehicle[vid];
+        const maxEnd = maxEndByVehicle[vid]; // YYYY-MM-DD or undefined
         const isMaintenance = maintenanceVehicles.has(vid);
-        const hasActiveBooking = !!latest;
+        const hasActiveBlock = !!maxEnd;
 
-        // Availability: absent booking + not in maintenance = available.
-        const available = !hasActiveBooking && !isMaintenance;
+        // Availability: no active block + not in maintenance = available.
+        const available = !hasActiveBlock && !isMaintenance;
 
         const entry = {
           available,
-          rental_status: isMaintenance ? "maintenance" : (hasActiveBooking ? "rented" : "available"),
+          rental_status: isMaintenance ? "maintenance" : (hasActiveBlock ? "rented" : "available"),
+          // blocked_dates has no time column — available_at is always null.
           available_at: null,
           next_available_display: null,
         };
 
-        if (!available && latest) {
-          // available_at is set only when return_time is known (trustworthy ISO timestamp).
-          if (latest.hasTime) {
-            entry.available_at = formatDateTimeLA(latest.returnDateTime);
-          }
-          // next_available_display is always set for unavailable vehicles.
-          entry.next_available_display = formatForDisplay(latest.returnDateTime, latest.hasTime);
+        if (!available && maxEnd) {
+          // Format the end date as "Apr 27, 2026" (date only — no time component).
+          // buildDateTimeLA is called with 12:00 (noon LA) so that toLocaleDateString
+          // never crosses a date boundary due to the UTC-to-LA timezone offset.
+          const endDateObj = buildDateTimeLA(maxEnd, "12:00");
+          entry.next_available_display = formatForDisplay(endDateObj, false);
 
           console.log("[AVAILABLE_AT_COMPUTED]", {
             vehicle_id: vid,
-            return_datetime: entry.available_at,
+            return_datetime: null,
             next_available_display: entry.next_available_display,
           });
         }
