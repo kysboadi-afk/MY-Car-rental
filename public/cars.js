@@ -41,6 +41,27 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
+// Format an ISO timestamp as "Apr 27, 2026 at 8:00 AM" in LA timezone.
+// Returns null if the value is falsy or unparseable.
+function formatNextAvailableAt(isoTimestamp) {
+  if (!isoTimestamp) return null;
+  var d = new Date(isoTimestamp);
+  if (!isFinite(d.getTime())) return null;
+  var dateStr = d.toLocaleDateString("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  var timeStr = d.toLocaleTimeString("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return dateStr + " at " + timeStr;
+}
+
 // Capture the original data-i18n key for each vehicle's button so that
 // re-applying "available" restores the correct per-vehicle label in any language.
 const originalBtnI18nKey = {};
@@ -100,9 +121,11 @@ function applyFleetStatus(fleetStatus) {
       badge.textContent = i18n.t(badgeKey);
       badge.className = "status-badge unavailable booked";
 
-      // Use the pre-formatted next_available_display from fleet-status.
-      // This is the single source of truth — LA timezone, no frontend date math.
-      const nextAvailDisplay = status ? status.next_available_display : null;
+      // Prefer next_available_at (timestamp with time) when available;
+      // fall back to the date-only next_available_display string.
+      var nextAvailDisplay = status
+        ? (formatNextAvailableAt(status.next_available_at) || status.next_available_display || null)
+        : null;
       if (nextAvailDisplay) {
         const nextBadge = document.createElement("span");
         nextBadge.className = "next-available-badge";
