@@ -37,7 +37,7 @@ const MSG_OIL_CHECK_REQUEST =
   "LOW (below safe line)";
 
 // Merged message — sent when the oil-check trigger fires AND the vehicle is
-// also due for a 3 000-mile oil change service.  Combines both requests into a
+// also due for a 3000-mile oil change service.  Combines both requests into a
 // single SMS so the renter receives only one message.
 const MSG_OIL_CHECK_MERGED =
   "Quick vehicle check required.\n\n" +
@@ -182,7 +182,7 @@ export default async function handler(req, res) {
   }
 
   // ── Load vehicle service-mileage data (for merged-message detection) ───────
-  // Used to determine whether a 3 000-mile oil change is also due at the time
+  // Used to determine whether a 3000-mile oil change is also due at the time
   // of the oil-check trigger so that both requests can be merged into one SMS.
   const { data: vehicleRows } = await sb
     .from("vehicles")
@@ -310,7 +310,7 @@ export default async function handler(req, res) {
     }
 
     // Determine whether to send the merged message.
-    // If the vehicle is also due for a 3 000-mile oil change service, combine
+    // If the vehicle is also due for a 3000-mile oil change service, combine
     // both requests into a single SMS to avoid sending two separate messages.
     const vData          = vehicleByVehicle[vehicleId];
     const vehicleMileage = vData?.mileage != null ? Number(vData.mileage) : null;
