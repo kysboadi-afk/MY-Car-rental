@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -2402,6 +2402,33 @@ export default async function handler(req, res) {
         const resolved = await resolveBookingId(bookingRef);
         if (!resolved) {
           console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
+          // Booking not found — still record the payment so it is visible in
+          // admin.  The row is flagged is_orphan=true and booking_id=NULL so it
+          // is excluded from financial aggregation until manually linked.
+          const unlinkedAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+          try {
+            let feeFields = { stripeFee: null, stripeNet: null };
+            try {
+              feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+            } catch (feeErr) {
+              console.warn(`stripe-webhook: ${paymentType} orphan fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
+            }
+            await createOrphanRevenueRecord({
+              paymentIntentId: paymentIntent.id,
+              vehicleId:       vehicle_id,
+              name:            meta.renter_name || "",
+              phone:           meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
+              email:           meta.email || "",
+              pickupDate:      meta.pickup_date || "",
+              returnDate:      meta.return_date || "",
+              amountPaid:      unlinkedAmount,
+              type:            "deposit",
+              notes:           `unresolved booking_ref=${bookingRef} paymentType=${paymentType}`,
+              ...feeFields,
+            });
+          } catch (orphanErr) {
+            console.error(`stripe-webhook: ${paymentType} orphan revenue record failed for PI ${paymentIntent.id} (non-fatal):`, orphanErr.message);
+          }
           return res.status(200).json({ received: true });
         }
         bookingRef = resolved;

@@ -12,6 +12,7 @@
 //
 // Exported helpers:
 //   autoCreateRevenueRecord  — writes to legacy revenue_records table
+//   createOrphanRevenueRecord — writes an unlinked revenue row (booking_id=NULL, is_orphan=true)
 //   autoUpsertCustomer       — upserts customer row (keyed by phone; falls back to email)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
 //   autoCreateBlockedDate        — inserts a blocked_dates row for a booking
@@ -234,6 +235,96 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;
     console.error(msg);
     if (strict) throw new Error(msg);
+  }
+}
+
+/**
+ * Writes an orphan revenue record when a Stripe payment cannot be matched to a
+ * booking row.  The row is flagged is_orphan=true so the DB trigger in migration
+ * 0060 (check_revenue_booking_ref) skips the booking_ref integrity check, and
+ * it is excluded from financial aggregation views until an admin resolves the
+ * linkage.  booking_id is stored as NULL (requires migration 0082 which drops
+ * the NOT NULL constraint on that column).
+ *
+ * Idempotent: deduplicates by payment_intent_id; silently no-ops if a record
+ * with the same PI already exists.  Never throws — errors are logged only.
+ *
+ * @param {object} opts
+ * @param {string} opts.paymentIntentId  - Stripe PaymentIntent ID (required)
+ * @param {string} opts.vehicleId        - vehicle key (e.g. "camry", "slingshot")
+ * @param {string} [opts.name]           - renter name
+ * @param {string} [opts.phone]          - renter phone
+ * @param {string} [opts.email]          - renter email
+ * @param {string} [opts.pickupDate]     - ISO date string
+ * @param {string} [opts.returnDate]     - ISO date string
+ * @param {number} opts.amountPaid       - gross amount in dollars
+ * @param {string} [opts.type]           - revenue record type (default: "deposit")
+ * @param {string} [opts.notes]          - freeform notes
+ * @param {number|null} [opts.stripeFee] - Stripe fee in dollars (null = unknown)
+ * @param {number|null} [opts.stripeNet] - Stripe net in dollars (null = unknown)
+ */
+export async function createOrphanRevenueRecord({
+  paymentIntentId,
+  vehicleId,
+  name,
+  phone,
+  email,
+  pickupDate,
+  returnDate,
+  amountPaid,
+  type = "deposit",
+  notes,
+  stripeFee = null,
+  stripeNet = null,
+}) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  if (!paymentIntentId) {
+    console.error("_booking-automation createOrphanRevenueRecord: paymentIntentId is required");
+    return;
+  }
+
+  try {
+    // Idempotency check: skip if a record with this PI already exists.
+    const { data: existing, error: lookupErr } = await sb
+      .from("revenue_records")
+      .select("id")
+      .eq("payment_intent_id", paymentIntentId)
+      .maybeSingle();
+    if (lookupErr) throw new Error(`revenue_records PI lookup failed: ${formatSupabaseError(lookupErr)}`);
+    if (existing?.id) {
+      console.log(`_booking-automation createOrphanRevenueRecord: record for PI ${paymentIntentId} already exists (id=${existing.id}), skipping`);
+      return;
+    }
+
+    const gross = Number(amountPaid || 0);
+    const { error: insertErr } = await sb.from("revenue_records").insert({
+      booking_id:       null,
+      payment_intent_id: paymentIntentId,
+      vehicle_id:       normalizeVehicleId(vehicleId) || "unknown",
+      customer_name:    normalizeCustomerName(name) || null,
+      customer_phone:   phone || null,
+      customer_email:   normalizeEmail(email),
+      pickup_date:      pickupDate || null,
+      return_date:      returnDate || null,
+      gross_amount:     gross,
+      deposit_amount:   type === "deposit" ? gross : 0,
+      refund_amount:    0,
+      payment_method:   "stripe",
+      payment_status:   "paid",
+      type,
+      notes:            notes || `unresolved booking_ref for PI ${paymentIntentId}`,
+      is_no_show:       false,
+      is_cancelled:     false,
+      override_by_admin: false,
+      stripe_fee:       stripeFee,
+      stripe_net:       stripeNet,
+      is_orphan:        true,
+    });
+    if (insertErr) throw new Error(`revenue_records orphan insert failed: ${formatSupabaseError(insertErr)}`);
+    console.log(`_booking-automation createOrphanRevenueRecord: created orphan revenue record for PI ${paymentIntentId} type=${type} amount=${gross}`);
+  } catch (err) {
+    console.error(`_booking-automation createOrphanRevenueRecord error (non-fatal): ${err.message}`);
   }
 }
 

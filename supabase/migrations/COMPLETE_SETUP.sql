@@ -256,7 +256,7 @@ ON CONFLICT (key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS revenue_records (
   id                 uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id         text          NOT NULL,
+  booking_id         text          DEFAULT NULL,
   original_booking_id text         DEFAULT NULL,
   payment_intent_id  text          DEFAULT NULL,
   vehicle_id         text          NOT NULL,
