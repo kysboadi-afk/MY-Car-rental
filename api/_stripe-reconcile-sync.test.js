@@ -530,3 +530,67 @@ test("sync_recent: unauthorized request returns 401", async () => {
   await handler(makeReq({ secret: "wrong-secret", action: "sync_recent" }), res);
   assert.equal(res._status, 401);
 });
+
+test("sync_recent: slingshot_security_deposit classified as deposit → reservation_deposit type", async () => {
+  reset();
+  const piId = "pi_sling_dep_1";
+  stripeListPage = [{
+    id:              piId,
+    status:          "succeeded",
+    amount_received: 15000,       // $150
+    created:         Math.floor(Date.now() / 1000) - 60,
+    receipt_email:   null,
+    metadata: {
+      payment_type: "slingshot_security_deposit",
+      booking_id:   "bk-sling-1",
+    },
+    latest_charge: {
+      id: "ch_sling1",
+      billing_details: {},
+      balance_transaction: { fee: 480, net: 14520 },
+    },
+  }];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-secret", action: "sync_recent" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.recovered, 1);
+  assert.equal(res._body.details.recovered[0].classification, "deposit");
+  assert.equal(createCalls[0].type, "reservation_deposit");
+});
+
+test("sync_recent: alert email contains PI id and classification in subject and body", async () => {
+  reset();
+  const piId = "pi_alert_content_1";
+  stripeListPage = [{
+    id:              piId,
+    status:          "succeeded",
+    amount_received: 30000,
+    created:         Math.floor(Date.now() / 1000) - 60,
+    receipt_email:   "customer@example.com",
+    metadata: {
+      payment_type: "full_payment",
+      booking_id:   "bk-alert-1",
+    },
+    latest_charge: {
+      id: "ch_alert1",
+      billing_details: { email: "customer@example.com" },
+      balance_transaction: { fee: 900, net: 29100 },
+    },
+  }];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-secret", action: "sync_recent" }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(mailsSent.length, 1);
+  const mail = mailsSent[0];
+  // Subject must mention the counts and the lookback window.
+  assert.match(mail.subject, /Stripe Reconcile Alert/);
+  assert.match(mail.subject, /mismatch/);
+  // HTML body must contain the PI id and classification.
+  assert.ok(mail.html.includes(piId),   "email HTML contains PI id");
+  assert.ok(mail.html.includes("rental"), "email HTML contains classification");
+  assert.ok(mail.html.includes("recovered"), "email HTML contains status label");
+});
