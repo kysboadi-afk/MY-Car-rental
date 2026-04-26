@@ -22,8 +22,15 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { laHour } from "./_time.js";
-import { getSmsPriority, checkSmsCooldown } from "./_sms-priority.js";
+import { laHour, buildDateTimeLA } from "./_time.js";
+import { getSmsPriority } from "./_sms-priority.js";
+import {
+  computeSmsScore,
+  isSuppressedByProximity,
+  fetchRecentSmsLogs,
+  buildSmsContext,
+  SCORE_THRESHOLD,
+} from "./_sms-scoring.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
 
@@ -81,8 +88,9 @@ function hoursSince(earlier, later = new Date().toISOString()) {
  * maintenance-alerts) can see it via the cross-cron cooldown check.
  * Uses the real calendar date as return_date_at_send so logs are auditable.
  * Non-fatal: errors are only logged.
+ * @param {object} extraMetadata - optional additional fields (e.g. { score })
  */
-async function logOilCheckToSupabase(sb, bookingRef, templateKey) {
+async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata = {}) {
   if (!sb || !bookingRef) return;
   try {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -92,7 +100,7 @@ async function logOilCheckToSupabase(sb, bookingRef, templateKey) {
         booking_id:          bookingRef,
         template_key:        templateKey,
         return_date_at_send: today,
-        metadata:            { priority: getSmsPriority(templateKey) },
+        metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
       });
     if (error) {
       console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
@@ -149,7 +157,7 @@ export default async function handler(req, res) {
     .from("bookings")
     .select(
       "id, booking_ref, vehicle_id, customer_phone, " +
-      "pickup_date, return_date, " +
+      "pickup_date, return_date, return_time, " +
       "oil_check_required, oil_check_last_request, oil_check_missed_count"
     )
     .in("status", ["active", "active_rental"])
@@ -228,6 +236,7 @@ export default async function handler(req, res) {
       customer_phone:         phone,
       pickup_date:            pickupDate,
       return_date:            returnDate,
+      return_time:            returnTime,
       oil_check_required:     oilCheckRequired,
       oil_check_last_request: lastRequest,
       oil_check_missed_count: missedCount,
@@ -258,6 +267,12 @@ export default async function handler(req, res) {
       ? Math.round((new Date(returnDate) - new Date(pickupDate)) / 86_400_000)
       : 0;
 
+    // ── Compute time proximity for scoring ────────────────────────────────
+    const returnDt        = buildDateTimeLA(returnDate, returnTime);
+    const minutesToReturn = isNaN(returnDt.getTime())
+      ? undefined
+      : (returnDt - new Date()) / 60_000;
+
     if (rentalDays < MIN_RENTAL_DAYS) {
       results.skipped_no_trigger++;
       console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: rental_days=${rentalDays} < MIN_RENTAL_DAYS=${MIN_RENTAL_DAYS}`);
@@ -287,13 +302,20 @@ export default async function handler(req, res) {
         : MSG_OIL_CHECK_FINAL;
       const escalateKey = missedCount === 0 ? "OIL_CHECK_REMINDER" : "OIL_CHECK_FINAL";
 
-      // Cross-cron cooldown: escalation messages are P2 (IMPORTANT) and bypass the
-      // cooldown for time-critical keys, but we still respect the global gate in
-      // case a higher-priority (P1) send occurred recently.
-      const escalateCooldown = await checkSmsCooldown(sb, bookingRef, escalateKey);
-      if (!escalateCooldown.allowed) {
+      // Score-based gate: escalation messages are P2 (IMPORTANT).
+      // Compute score with real-time context before sending.
+      const escalateRecentRows = await fetchRecentSmsLogs(sb, bookingRef);
+      const escalateCtx = buildSmsContext(escalateKey, escalateRecentRows, { minutesToReturn });
+      if (isSuppressedByProximity(escalateKey, escalateCtx)) {
         results.skipped_spam++;
-        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cross-cron cooldown for escalation (${escalateCooldown.reason})`);
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for escalation (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
+        continue;
+      }
+      const escalateScore = computeSmsScore(escalateKey, escalateCtx);
+      console.log(`oil-check-cron: SCORE escalation ${bookingRef || bookingId}: key=${escalateKey} score=${escalateScore.toFixed(1)}`);
+      if (escalateScore <= SCORE_THRESHOLD) {
+        results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation score ${escalateScore.toFixed(1)} ≤ ${SCORE_THRESHOLD}`);
         continue;
       }
 
@@ -313,7 +335,7 @@ export default async function handler(req, res) {
           .eq("id", bookingId);
 
         // Log to sms_logs so other crons can see this send via cross-cron cooldown.
-        await logOilCheckToSupabase(sb, bookingRef, escalateKey);
+        await logOilCheckToSupabase(sb, bookingRef, escalateKey, { score: escalateScore });
 
         results.escalated++;
         console.log(`oil-check-cron: escalated booking ${bookingRef || bookingId} (missed=${newMissedCount})`);
@@ -368,12 +390,19 @@ export default async function handler(req, res) {
     const msgToSend   = mileageMaintenanceDue ? MSG_OIL_CHECK_MERGED : MSG_OIL_CHECK_REQUEST;
     const triggerKey  = mileageMaintenanceDue ? "OIL_CHECK_MERGED"   : "OIL_CHECK_REQUEST";
 
-    // Cross-cron cooldown: skip if a higher-or-equal-priority SMS was sent
-    // to this booking recently (e.g. maintenance-alerts fired a P3 warn today).
-    const triggerCooldown = await checkSmsCooldown(sb, bookingRef, triggerKey);
-    if (!triggerCooldown.allowed) {
+    // Score-based gate: use real-time context to decide whether to send.
+    const triggerRecentRows = await fetchRecentSmsLogs(sb, bookingRef);
+    const triggerCtx = buildSmsContext(triggerKey, triggerRecentRows, { minutesToReturn });
+    if (isSuppressedByProximity(triggerKey, triggerCtx)) {
       results.skipped_spam++;
-      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cross-cron cooldown (${triggerCooldown.reason})`);
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for trigger (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
+      continue;
+    }
+    const triggerScore = computeSmsScore(triggerKey, triggerCtx);
+    console.log(`oil-check-cron: SCORE trigger ${bookingRef || bookingId}: key=${triggerKey} score=${triggerScore.toFixed(1)}`);
+    if (triggerScore <= SCORE_THRESHOLD) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: trigger score ${triggerScore.toFixed(1)} ≤ ${SCORE_THRESHOLD}`);
       continue;
     }
 
@@ -393,7 +422,7 @@ export default async function handler(req, res) {
         .eq("id", bookingId);
 
       // Log to sms_logs so other crons can see this send via cross-cron cooldown.
-      await logOilCheckToSupabase(sb, bookingRef, triggerKey);
+      await logOilCheckToSupabase(sb, bookingRef, triggerKey, { score: triggerScore });
 
       results.triggered++;
       console.log(

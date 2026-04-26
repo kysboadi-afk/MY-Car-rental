@@ -63,6 +63,38 @@ export function normalizeClockTime(rawTime) {
   return "";
 }
 
+/**
+ * Build an absolute Date for the provided Los Angeles wall-clock datetime.
+ * Uses Intl.DateTimeFormat to determine the correct UTC offset (handles DST).
+ * Falls back to "-08:00" (PST) if Intl is unavailable.
+ *
+ * Accepts time in HH:MM (24-hour) or "H:MM AM/PM" format.
+ * Defaults to midnight when `time` is absent or unparseable.
+ *
+ * @param {string} date  - YYYY-MM-DD
+ * @param {string} [time]
+ * @returns {Date}
+ */
+export function buildDateTimeLA(date, time) {
+  if (!date) return new Date(NaN);
+  const datePart = String(date instanceof Date ? date.toISOString() : date).trim().split("T")[0];
+  const normalizedHHMM = normalizeClockTime(time) || "00:00";
+  const timePart = `${normalizedHHMM}:00`;
+  const approxUtc = new Date(`${datePart}T${timePart}Z`);
+  let tzOffset = "-08:00"; // PST fallback
+  try {
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: BUSINESS_TZ,
+      timeZoneName: "longOffset",
+    }).formatToParts(approxUtc).find((p) => p.type === "timeZoneName")?.value || "";
+    const match = tzPart.match(/GMT([+-]\d{1,2}:\d{2})/);
+    if (match) tzOffset = match[1];
+  } catch {
+    // Keep fallback offset.
+  }
+  return new Date(`${datePart}T${timePart}${tzOffset}`);
+}
+
 export function deriveReturnTime(pickupDate, pickupTime, returnTime, durationHours) {
   const normalizedReturnTime = normalizeClockTime(returnTime);
   if (normalizedReturnTime) return normalizedReturnTime;

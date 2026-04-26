@@ -26,8 +26,16 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
-import { laHour } from "./_time.js";
-import { getSmsPriority, checkSmsCooldown } from "./_sms-priority.js";
+import { laHour, buildDateTimeLA } from "./_time.js";
+import { getSmsPriority } from "./_sms-priority.js";
+import {
+  computeSmsScore,
+  isSuppressedByProximity,
+  fetchRecentSmsLogs,
+  buildSmsContext,
+  selectTopCandidate,
+  SCORE_THRESHOLD,
+} from "./_sms-scoring.js";
 import {
   render,
   MAINTENANCE_AVAILABILITY_REQUEST,
@@ -105,8 +113,9 @@ async function safeSendSms(phone, body) {
  * the cross-cron cooldown check.  Uses the sentinel return date (1970-01-01)
  * for service alerts since they are not tied to a specific return date.
  * Non-fatal: errors are only logged.
+ * @param {object} extraMetadata - optional additional fields (e.g. { score })
  */
-async function logServiceAlertToSupabase(sb, bookingId, templateKey) {
+async function logServiceAlertToSupabase(sb, bookingId, templateKey, extraMetadata = {}) {
   if (!sb || !bookingId) return;
   try {
     const { error } = await sb
@@ -116,7 +125,7 @@ async function logServiceAlertToSupabase(sb, bookingId, templateKey) {
           booking_id:          bookingId,
           template_key:        templateKey,
           return_date_at_send: "1970-01-01",
-          metadata:            { priority: getSmsPriority(templateKey) },
+          metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
         },
         { onConflict: "booking_id,template_key,return_date_at_send" }
       );
@@ -312,7 +321,7 @@ export default async function handler(req, res) {
     try {
       const { data: activeRows, error: activeErr } = await sb
         .from("bookings")
-        .select("booking_ref, vehicle_id, oil_check_required, oil_status, oil_check_last_request, customers ( name, phone )")
+        .select("booking_ref, vehicle_id, return_date, return_time, oil_check_required, oil_status, oil_check_last_request, customers ( name, phone )")
         .in("status", ["active", "active_rental"])
         .in("vehicle_id", trackedIds);
       if (activeErr) throw activeErr; // query error → propagate, do NOT fallback
@@ -324,6 +333,8 @@ export default async function handler(req, res) {
           vehicleName:         r.vehicle_id,  // filled from trackedVehicles below
           name:                r.customers?.name  || "",
           phone:               r.customers?.phone || "",
+          returnDate:          r.return_date  || null,
+          returnTime:          r.return_time  || null,
           smsSentAt:           {},  // overlaid from bookings.json below
           oilCheckRequired:    r.oil_check_required    || false,
           oilStatus:           r.oil_status            || null,
@@ -416,11 +427,16 @@ export default async function handler(req, res) {
       const bookingId = booking.bookingId || booking.paymentIntentId;
       const phone     = booking.phone;
 
+      // ── Compute time-proximity context ────────────────────────────────────
+      const returnDt       = buildDateTimeLA(booking.returnDate, booking.returnTime);
+      const minutesToReturn = isNaN(returnDt.getTime())
+        ? undefined
+        : (returnDt - new Date()) / 60_000;
+
       // ── Collect all eligible service alert candidates ──────────────────────
       // Multiple services (oil, brakes, tires) may be due at the same time.
-      // Instead of sending one message per service, collect all eligible ones,
-      // sort by priority (urgents before warns), and send only the TOP candidate.
-      // This prevents multiple maintenance messages stacking in the same cron tick.
+      // Each candidate is scored independently; the highest-scoring one above
+      // SCORE_THRESHOLD is sent — replacing the previous fixed-priority sort.
       const candidates = [];
 
       for (const svc of SERVICES) {
@@ -441,7 +457,6 @@ export default async function handler(req, res) {
           if (!alreadySent(booking, kUrgent)) {
             candidates.push({
               key:      kUrgent,
-              priority: getSmsPriority(kUrgent),
               template: MAINTENANCE_AVAILABILITY_URGENT,
             });
           } else {
@@ -452,7 +467,6 @@ export default async function handler(req, res) {
           if (!alreadySent(booking, kWarn)) {
             candidates.push({
               key:      kWarn,
-              priority: getSmsPriority(kWarn),
               template: MAINTENANCE_AVAILABILITY_REQUEST,
             });
           } else {
@@ -461,39 +475,64 @@ export default async function handler(req, res) {
         }
       }
 
-      // Sort ascending by priority number (lower = more critical) so the most
-      // important message surfaces to position 0.
-      candidates.sort((a, b) => a.priority - b.priority);
+      if (candidates.length === 0) continue;
 
-      const topCandidate = candidates[0];
-      if (topCandidate) {
-        // Cross-cron cooldown: skip if a higher-or-equal-priority SMS was
-        // already sent to this booking recently (e.g. oil-check-cron fired today).
-        const cooldownResult = await checkSmsCooldown(sb, bookingId, topCandidate.key);
-        if (!cooldownResult.allowed) {
-          console.log(
-            `maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ` +
-            `cross-cron cooldown (${cooldownResult.reason})`
-          );
-        } else {
-          const customerName = booking.name || "there";
-          const sent = await safeSendSms(phone,
-            render(topCandidate.template, { customer_name: customerName })
-          );
-          if (sent) {
-            sentMarks.push({ vehicleId: vid, id: bookingId, key: topCandidate.key });
-            alertsSent++;
-            // Log to sms_logs so scheduled-reminders and oil-check-cron see this send.
-            await logServiceAlertToSupabase(sb, bookingId, topCandidate.key);
-          }
-          if (candidates.length > 1) {
-            const skipped = candidates.slice(1).map((c) => c.key).join(", ");
-            console.log(
-              `maintenance-alerts: PRIORITY SUPPRESSED ${candidates.length - 1} lower-priority ` +
-              `candidate(s) for booking ${bookingId}: [${skipped}] — only highest priority sent`
-            );
-          }
-        }
+      // ── Score each candidate and select the top one ────────────────────────
+      // Fetch sms_logs once per booking; buildSmsContext is a pure function.
+      const recentRows = await fetchRecentSmsLogs(sb, bookingId);
+      const baseCtx    = { minutesToReturn };
+
+      const scoredCandidates = candidates.map((c) => {
+        const ctx   = buildSmsContext(c.key, recentRows, baseCtx);
+        const score = computeSmsScore(c.key, ctx);
+        return { ...c, score, ctx };
+      });
+
+      const winner = selectTopCandidate(scoredCandidates);
+
+      if (!winner) {
+        const topScore = scoredCandidates.reduce((m, c) => Math.max(m, c.score), -Infinity);
+        console.log(
+          `maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ` +
+          `no candidate above score threshold (top score: ${isFinite(topScore) ? topScore.toFixed(1) : topScore})`
+        );
+        continue;
+      }
+
+      // Proximity suppression: no maintenance messages near return time
+      if (isSuppressedByProximity(winner.key, winner.ctx)) {
+        console.log(
+          `maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ` +
+          `proximity suppressed (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"} min to return)`
+        );
+        continue;
+      }
+
+      console.log(
+        `maintenance-alerts: SCORE vehicle ${vid} booking ${bookingId}: ` +
+        `winner=${winner.key} score=${winner.score.toFixed(1)} ` +
+        `(${scoredCandidates.length} candidate(s) evaluated)`
+      );
+
+      const customerName = booking.name || "there";
+      const sent = await safeSendSms(phone,
+        render(winner.template, { customer_name: customerName })
+      );
+      if (sent) {
+        sentMarks.push({ vehicleId: vid, id: bookingId, key: winner.key });
+        alertsSent++;
+        // Log to sms_logs with score so other crons and dashboards see this send.
+        await logServiceAlertToSupabase(sb, bookingId, winner.key, { score: winner.score });
+      }
+      if (scoredCandidates.length > 1) {
+        const suppressed = scoredCandidates
+          .filter((c) => c.key !== winner.key)
+          .map((c) => `${c.key}(${c.score.toFixed(1)})`)
+          .join(", ");
+        console.log(
+          `maintenance-alerts: SCORE SUPPRESSED ${scoredCandidates.length - 1} lower-scoring ` +
+          `candidate(s) for booking ${bookingId}: [${suppressed}]`
+        );
       }
     }
 
