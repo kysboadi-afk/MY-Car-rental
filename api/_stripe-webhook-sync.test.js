@@ -818,6 +818,10 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
     "extension paymentIntentId must be the Stripe PaymentIntent ID"
   );
   assert.equal(extRev.amountPaid, 110, "extension revenue record must carry only the extension amount, not the combined total");
+  // Extension date range must represent the extension window, not the full booking window.
+  // pickup_date = previous return date (extension start); return_date = new return date (extension end).
+  assert.equal(extRev.pickupDate, "2026-12-12", "extension pickupDate must equal the previous return date (extension start)");
+  assert.equal(extRev.returnDate, "2026-12-14", "extension returnDate must equal the new return date (extension end)");
 
   // The original revenue_records row must NOT be mutated (no gross_amount update).
   const revUpdate = supabaseDirectUpdates.find(

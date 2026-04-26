@@ -1457,6 +1457,7 @@ export default async function handler(req, res) {
         extension_label,
         new_return_date,
         new_return_time,
+        previous_return_date,                   // return date before this extension (set by extend-rental.js)
       } = paymentIntent.metadata || {};
 
       // Use canonical booking_id; fall back to original_booking_id for PIs
@@ -1659,8 +1660,10 @@ export default async function handler(req, res) {
                 name:            updatedBooking.name || renter_name || "",
                 phone:           updatedBooking.phone || "",
                 email:           updatedBooking.email || renter_email || "",
-                pickupDate:      updatedBooking.pickupDate || "",
-                returnDate:      updatedBooking.returnDate || new_return_date || "",
+                // Use previous_return_date from PI metadata as extension start.
+                // Fall back to the booking's original pickupDate only when unavailable.
+                pickupDate:      previous_return_date || updatedBooking.pickupDate || "",
+                returnDate:      new_return_date || updatedBooking.returnDate || "",
                 amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                 paymentMethod:   "stripe",
                 type:            "extension",
@@ -1785,8 +1788,11 @@ export default async function handler(req, res) {
               name:            updatedBooking.name || renter_name || "",
               phone:           updatedBooking.phone || "",
               email:           updatedBooking.email || renter_email || "",
-              pickupDate:      updatedBooking.pickupDate || "",
-              returnDate:      updatedBooking.returnDate || "",
+              // Extension date range: pickup_date = previous return date (extension start),
+              // return_date = new return date (extension end).  This lets the admin UI
+              // compute "+N days" correctly for each extension row.
+              pickupDate:      oldReturnDate || "",
+              returnDate:      new_return_date || updatedBooking.returnDate || "",
               amountPaid:      extensionAmountDollars,
               paymentMethod:   "stripe",
               type:            "extension",

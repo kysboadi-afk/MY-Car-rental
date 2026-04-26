@@ -531,13 +531,16 @@ export default async function handler(req, res) {
         // original paymentIntentId for historical bookings.
         booking_id:   sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId || "",
         vehicle_id:   vehicleId,
-        vehicle_name:        vehicleData.name  || "",
-        renter_name:         activeBooking.name  || "",
-        renter_email:        activeBooking.email || "",
-        renter_phone:        activeBooking.phone || "",
-        extension_label:     extensionLabel,
-        new_return_date:     newReturnDate,
-        new_return_time:     resolvedReturnTime,
+        vehicle_name:          vehicleData.name  || "",
+        renter_name:           activeBooking.name  || "",
+        renter_email:          activeBooking.email || "",
+        renter_phone:          activeBooking.phone || "",
+        extension_label:       extensionLabel,
+        new_return_date:       newReturnDate,
+        new_return_time:       resolvedReturnTime,
+        // Return date in effect before this extension — used by the webhook to set
+        // the correct pickup_date on the extension revenue record (extension start).
+        previous_return_date:  effectiveReturnDate || "",
       },
     });
 
