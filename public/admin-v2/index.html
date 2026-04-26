@@ -4832,8 +4832,9 @@ function applyRevenueFilters() {
       return s + norm.amount_net - Number(r.refund_amount || 0);
     }, 0);
 
-    // Summary date: original pickup → latest return across all records.
-    const pickupDate  = base?.pickup_date || exts[0]?.pickup_date || '';
+    // Summary date: earliest pickup → latest return across all records.
+    const pickupDate  = allRecs.map((r) => r.pickup_date).filter(Boolean)
+      .reduce((mn, d) => (d < mn ? d : mn), '');
     const finalReturn = allRecs.map((r) => r.return_date).filter(Boolean)
       .reduce((mx, d) => (d > mx ? d : mx), '');
     const dateCell = (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–');
