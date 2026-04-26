@@ -1433,13 +1433,11 @@ export default async function handler(req, res) {
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
+    const piMeta = paymentIntent.metadata || {};
     // "payment_type" is the legacy field; "type" is the canonical field added to
     // all new extension PaymentIntents.  Accept either so that PIs created before
     // the migration (payment_type only) and after (both fields) are handled.
-    const paymentType =
-      (paymentIntent.metadata || {}).payment_type ||
-      (paymentIntent.metadata || {}).type ||
-      "";
+    const paymentType = piMeta.payment_type || piMeta.type || "";
     const isTestMode = event.livemode === false;
     logPaymentIntentReceived(event, paymentIntent);
     if (isTestMode) {

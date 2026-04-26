@@ -1365,7 +1365,8 @@ async function runReconciliation() {
     const failedPIIds   = [];
 
     for (const pi of newMismatches) {
-      const paymentType = (pi.metadata || {}).payment_type || (pi.metadata || {}).type || "";
+      const piMetaReconcile = pi.metadata || {};
+      const paymentType = piMetaReconcile.payment_type || piMetaReconcile.type || "";
       if (NON_NEW_BOOKING_TYPES.has(paymentType)) {
         console.warn(
           `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`
