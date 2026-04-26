@@ -16,7 +16,7 @@
 //   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
 //                   includes all payment methods (cash, manual, Stripe, etc.)
 //   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled/non-Stripe rows)
-//   net_revenue   = SUM(stripe_net ?? gross − fee) − SUM(refund_amount)
+//   net_revenue   = SUM(gross_amount − stripe_fee − refund_amount)
 //   profit        = net_revenue − total_expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records is empty.
@@ -198,13 +198,11 @@ export default async function handler(req, res) {
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
             const vid    = uiVehicleId(r.vehicle_id) || "unknown";
-            // Use gross_amount (total collected before refunds or fees) as the gross
-            // figure — matching the Revenue Tracker and Dashboard formulas exactly.
             const gross  = Number(r.gross_amount  || 0);
             const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
             const refund = Number(r.refund_amount || 0);
-            // net = (stripe_net ?? gross − fee) − refund_amount, matching Revenue Tracker.
-            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
+            // Net = Gross − Stripe Fees − Refunds (strict formula, no stripe_net).
+            const net    = gross - fee - refund;
             if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
             rrByVehicle[vid].gross += gross;
             rrByVehicle[vid].fees  += fee;
