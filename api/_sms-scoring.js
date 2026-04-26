@@ -39,6 +39,9 @@ export const PROXIMITY_SUPPRESS_MIN = 60;
  */
 export const DAILY_SMS_CAP = 3;
 
+/** Lookback window for recent sms_logs queries and anti-spam context (24 h in ms). */
+export const LOOKBACK_WINDOW_MS = 24 * 3_600_000;
+
 /**
  * Messages directly tied to the return event.  These are exempt from the
  * proximity-suppression rule and must never be blocked when the renter is
@@ -372,7 +375,7 @@ export function buildSmsContext(templateKey, recentRows, baseCtx = {}) {
 export async function fetchRecentSmsLogs(sb, bookingId) {
   if (!sb || !bookingId) return [];
   try {
-    const since24h = new Date(Date.now() - 24 * 3_600_000).toISOString();
+    const since24h = new Date(Date.now() - LOOKBACK_WINDOW_MS).toISOString();
     const { data, error } = await sb
       .from("sms_logs")
       .select("template_key, sent_at")

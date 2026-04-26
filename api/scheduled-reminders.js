@@ -776,7 +776,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const v = vars(booking);
       const minutesUntilReturn = (returnDt - now) / 60000;
       const daysSincePickup = booking.pickupDate
-        ? (now - new Date(booking.pickupDate).getTime()) / 86_400_000
+        ? (now.getTime() - new Date(booking.pickupDate).getTime()) / 86_400_000
         : undefined;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
       const graceAt   = new Date(returnDt.getTime() + GRACE_OFFSET_MS);

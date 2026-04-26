@@ -9,6 +9,7 @@ import {
   SCORE_THRESHOLD,
   PROXIMITY_SUPPRESS_MIN,
   DAILY_SMS_CAP,
+  LOOKBACK_WINDOW_MS,
   RETURN_RELATED_KEYS,
   computeUrgencyScore,
   computeContextScore,
@@ -34,6 +35,10 @@ test("PROXIMITY_SUPPRESS_MIN is 60", () => {
 
 test("DAILY_SMS_CAP is 3", () => {
   assert.equal(DAILY_SMS_CAP, 3);
+});
+
+test("LOOKBACK_WINDOW_MS is 24 hours in milliseconds", () => {
+  assert.equal(LOOKBACK_WINDOW_MS, 24 * 3_600_000);
 });
 
 test("RETURN_RELATED_KEYS includes all TIME_CRITICAL_KEYS", () => {
