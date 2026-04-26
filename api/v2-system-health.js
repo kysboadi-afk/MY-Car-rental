@@ -115,8 +115,27 @@ async function checkPaymentBookingRevenue(sb) {
     }
 
     const revenueRefs = new Set((revRows || []).map((r) => r.booking_id));
+
+    // Secondary check: also consider bookings covered by a revenue record linked
+    // via payment_intent_id (e.g. orphan records created by stripe-reconcile with
+    // a "stripe-pi_xxx" booking_id before the real booking_ref was known).
+    const piIds = (paidBookings || []).map((b) => b.payment_intent_id).filter(Boolean);
+    let coveredByPI = new Set();
+    if (piIds.length > 0) {
+      const { data: revByPI, error: piErr } = await sb
+        .from("revenue_records")
+        .select("payment_intent_id")
+        .in("payment_intent_id", piIds);
+      if (!piErr) {
+        coveredByPI = new Set((revByPI || []).map((r) => r.payment_intent_id).filter(Boolean));
+      }
+    }
+
     const missingRevenue = (paidBookings || []).filter(
-      (b) => b.booking_ref && !revenueRefs.has(b.booking_ref),
+      (b) =>
+        b.booking_ref &&
+        !revenueRefs.has(b.booking_ref) &&
+        !(b.payment_intent_id && coveredByPI.has(b.payment_intent_id)),
     );
 
     if (missingRevenue.length === 0) {
@@ -587,8 +606,28 @@ async function fixPaymentBookingRevenue(sb) {
   if (rErr) throw new Error("Could not query revenue_records: " + rErr.message);
 
   const revenueRefs = new Set((revRows || []).map((r) => r.booking_id));
-  const missing     = (paidBookings || []).filter(
-    (b) => b.booking_ref && !revenueRefs.has(b.booking_ref),
+
+  // Also check by payment_intent_id to detect revenue records (e.g. orphan records
+  // created by stripe-reconcile with a "stripe-pi_xxx" booking_id) that already
+  // cover the payment — these bookings are considered handled and excluded from the
+  // missing list so Fix Now does not attempt a duplicate insert.
+  const piIds = (paidBookings || []).map((b) => b.payment_intent_id).filter(Boolean);
+  let coveredByPI = new Set(); // payment_intent_ids already linked in revenue_records
+  if (piIds.length > 0) {
+    const { data: revByPI, error: piErr } = await sb
+      .from("revenue_records")
+      .select("payment_intent_id")
+      .in("payment_intent_id", piIds);
+    if (!piErr) {
+      coveredByPI = new Set((revByPI || []).map((r) => r.payment_intent_id).filter(Boolean));
+    }
+  }
+
+  const missing = (paidBookings || []).filter(
+    (b) =>
+      b.booking_ref &&
+      !revenueRefs.has(b.booking_ref) &&
+      !(b.payment_intent_id && coveredByPI.has(b.payment_intent_id)),
   );
   if (missing.length === 0) return { fixed: 0, message: "No missing revenue records found." };
 
