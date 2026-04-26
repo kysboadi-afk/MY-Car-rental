@@ -604,6 +604,7 @@ export default async function handler(req, res) {
           let q = sb
             .from("revenue_records_effective")
             .select("*")
+            .eq("is_orphan", false)
             .order("created_at", { ascending: true });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
@@ -617,7 +618,7 @@ export default async function handler(req, res) {
 
       if (!allRows) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
-        allRows = ghRecords.filter((r) => !r.sync_excluded);
+        allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
       }
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
@@ -650,12 +651,23 @@ export default async function handler(req, res) {
         if (r.return_date && (!g.max_return_date || r.return_date > g.max_return_date)) {
           g.max_return_date = r.return_date;
         }
-        // SUM(gross_amount) — skip cancelled/no-show rows
-        if (!r.is_cancelled && !r.is_no_show) {
-          g.total_gross = Math.round((g.total_gross + Number(r.gross_amount || 0)) * 100) / 100;
-        }
         g.record_count += 1;
         g.records.push(r);
+      }
+
+      // Compute total_gross after all records are collected.
+      // When a group has extension rows, exclude the base type='rental' row from
+      // the sum — the extension rows represent the incremental charges and the
+      // rental row's amount would otherwise be double-counted.
+      for (const g of Object.values(groups)) {
+        const hasExtensions = g.records.some((r) => r.type === "extension");
+        let total = 0;
+        for (const r of g.records) {
+          if (r.is_cancelled || r.is_no_show) continue;
+          if (hasExtensions && r.type === "rental") continue;
+          total = Math.round((total + Number(r.gross_amount || 0)) * 100) / 100;
+        }
+        g.total_gross = total;
       }
 
       // Sort groups: most recent pickup first
