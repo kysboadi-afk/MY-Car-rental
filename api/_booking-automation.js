@@ -853,7 +853,8 @@ export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndD
     }
 
     // Use the row with the earliest start_date (the original booking window).
-    const row = rows.reduce((best, r) => (!best || r.start_date < best.start_date) ? r : best, null);
+    // Dates are stored as YYYY-MM-DD strings, so lexicographic comparison is correct.
+    const row = rows.reduce((best, r) => (r.start_date < best.start_date ? r : best), rows[0]);
     const currentEnd = row.end_date ? String(row.end_date).split("T")[0] : null;
 
     if (currentEnd && currentEnd >= newEndDate) {

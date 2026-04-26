@@ -318,7 +318,7 @@ export default async function handler(req, res) {
       }
       try {
         await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedReturnDate);
-        console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: → ${updatedReturnDate}`);
+        console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
       } catch (sbBlockErr) {
         console.error("send-extension-confirmation: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
       }
