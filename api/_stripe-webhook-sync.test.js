@@ -152,6 +152,7 @@ mock.module("./_booking-automation.js", {
         };
       }
     },
+    createOrphanRevenueRecord:  async ()            => {},
     autoCreateBlockedDate:      async (v, s, e, r) => { automationCalls.blocked.push({ vehicleId: v, start: s, end: e, reason: r }); },
     autoActivateIfPickupArrived: async (b)         => { automationCalls.activated.push({ ...b }); return false; },
     parseTime12h: (timeStr) => {
