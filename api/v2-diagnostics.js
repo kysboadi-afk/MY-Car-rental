@@ -93,6 +93,9 @@ const OPTIONAL_TABLES = [
   "site_settings",
   "content_blocks",
   "content_revisions",
+  // View — migration 0087. Single source of truth for per-segment vehicle
+  // blocking timeline (base rental + each extension).
+  "vehicle_blocking_ranges",
 ];
 
 /**

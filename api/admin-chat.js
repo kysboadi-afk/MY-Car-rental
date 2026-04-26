@@ -62,8 +62,8 @@ You have access to real-time business data through tools. Use them to answer adm
 - get_gps_tracking calls the Bouncie API directly and returns live data for every tracked vehicle — it is always preferred over get_mileage for location or movement questions.
 - Use get_mileage (not get_gps_tracking) for odometer history, maintenance alerts, and usage trends.
 
-**Block Dates**
-- Use get_blocked_dates to see which date ranges are blocked per vehicle (manual blocks + booking-based blocks).
+**Block Dates / Rental Timeline**
+- Use get_blocked_dates to see the full per-segment blocking timeline for a vehicle. Each booking appears as a 'base' segment (original rental) plus one 'extension' segment per paid extension, with correct start/end dates. Also shows manual and maintenance blocks. Use this — NOT get_revenue — whenever the admin asks about rental dates, extension chains, or why a vehicle is blocked.
 - Use **block_dates** to manually block a date range for a vehicle (e.g. vehicle is unavailable for maintenance or personal use). Requires confirmation.
 - Use **open_dates** to remove a manual block and make dates available again. Requires confirmation.
 
