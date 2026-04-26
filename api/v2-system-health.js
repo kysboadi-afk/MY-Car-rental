@@ -131,6 +131,20 @@ async function checkPaymentBookingRevenue(sb) {
       }
     }
 
+    // Tertiary check: also consider bookings covered by a revenue record linked
+    // via original_booking_id (e.g. manual extension fees recorded via
+    // "Record Extension Fee" produce records with booking_id="ext-..." and
+    // original_booking_id=<booking_ref>).
+    const { data: revByOrigRef, error: origRefErr } = await sb
+      .from("revenue_records")
+      .select("original_booking_id")
+      .in("original_booking_id", refs);
+    if (!origRefErr) {
+      for (const r of revByOrigRef || []) {
+        if (r.original_booking_id) revenueRefs.add(r.original_booking_id);
+      }
+    }
+
     const missingRevenue = (paidBookings || []).filter(
       (b) =>
         b.booking_ref &&
@@ -620,6 +634,18 @@ async function fixPaymentBookingRevenue(sb) {
       .in("payment_intent_id", piIds);
     if (!piErr) {
       coveredByPI = new Set((revByPI || []).map((r) => r.payment_intent_id).filter(Boolean));
+    }
+  }
+
+  // Also check via original_booking_id for manual extension fee records
+  // (booking_id="ext-..." records where original_booking_id=<booking_ref>).
+  const { data: revByOrigRef, error: origRefErr } = await sb
+    .from("revenue_records")
+    .select("original_booking_id")
+    .in("original_booking_id", refs);
+  if (!origRefErr) {
+    for (const r of revByOrigRef || []) {
+      if (r.original_booking_id) revenueRefs.add(r.original_booking_id);
     }
   }
 
