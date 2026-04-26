@@ -2637,7 +2637,7 @@ function renderDashboard(data) {
       <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
       <div class="kpi-label">Net Revenue</div>
       <div class="kpi-value">$${formatMoney(fin.amount_net)}</div>
-      <div class="kpi-change" style="font-size:10px;">After Stripe fees</div>
+      <div class="kpi-change" style="font-size:10px;">After Stripe fees &amp; refunds</div>
     </div>
     <div class="kpi-card" onclick="navigate('expenses')" style="cursor:pointer;" title="View Expenses">
       <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
@@ -4412,7 +4412,8 @@ function calcFinancials(records, label, opts = {}) {
 function normalizeRevenueRecord(r) {
   const amount_gross = Number(r.gross_amount || 0);
   const stripe_fee   = Number(r.stripe_fee   || 0);
-  const amount_net   = r.stripe_net != null ? Number(r.stripe_net) : amount_gross - stripe_fee;
+  // Net = Gross − Stripe Fees. Refunds are tracked separately and subtracted by callers.
+  const amount_net   = amount_gross - stripe_fee;
   return { amount_gross, stripe_fee, amount_net, expenses: 0 };
 }
 
@@ -5026,7 +5027,7 @@ function renderAnalytics(fleet, trend) {
     kpiGrid.innerHTML = [
       { label: 'Gross Revenue',   value: '$' + formatMoney(fin.amount_gross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',     value: '$' + formatMoney(fin.stripe_fee),   icon: '💳', sub: 'Total processing fees' },
-      { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees' },
+      { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees & refunds' },
       { label: 'Avg Utilization', value: avgUtil + '%',                       icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
       { label: 'Operational ROI', value: roiDisplay,                          icon: '📈', sub: 'Fleet profit ÷ expenses' },
     ].map((k) => `

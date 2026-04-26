@@ -491,22 +491,17 @@ export default async function handler(req, res) {
               const valid       = cust.records.filter((r) => !r.is_cancelled && !r.is_no_show);
               const pickupDates = cust.records.map((r) => r.pickup_date).filter(Boolean).sort();
 
-              // Financial totals — canonical formula matching dashboard & analytics:
-              //   net per record = (stripe_net ?? gross − fee) − refund_amount
+              // Financial totals — canonical formula: Net = Gross − Stripe Fees − Refunds
               const grossRevenue  = valid.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
               const stripeFees    = valid.reduce((s, r) => s + Number(r.stripe_fee    || 0), 0);
               const refunds       = valid.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
               const netRevenue    = valid.reduce((s, r) => {
                 const gross = Number(r.gross_amount || 0);
                 const fee   = Number(r.stripe_fee   || 0);
-                const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
-                return s + net - Number(r.refund_amount || 0);
+                const refund = Number(r.refund_amount || 0);
+                return s + (gross - fee - refund);
               }, 0);
-              const stripeNetSum  = valid.reduce((s, r) => {
-                const gross = Number(r.gross_amount || 0);
-                const fee   = Number(r.stripe_fee   || 0);
-                return s + (r.stripe_net != null ? Number(r.stripe_net) : gross - fee);
-              }, 0);
+              const stripeNetSum  = grossRevenue - stripeFees;
               // total_spent kept for backwards compatibility (= gross after refunds, no Stripe fee deduction)
               const totalSpent    = Math.round((grossRevenue - refunds) * 100) / 100;
 

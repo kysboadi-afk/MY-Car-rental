@@ -251,7 +251,8 @@ async function toolGetRevenue({ month } = {}) {
           if (r.is_cancelled || r.is_no_show) continue;
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+          const net   = gross - fee;
           const vid   = r.vehicle_id || "unknown";
 
           total     += gross;
@@ -1124,7 +1125,8 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
           const vid   = r.vehicle_id || "unknown";
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+          const net   = gross - fee;
           if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
           rrByVehicle[vid].gross += gross;
           rrByVehicle[vid].fees  += fee;

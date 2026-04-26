@@ -341,12 +341,9 @@ export default async function handler(req, res) {
       // v2-analytics.js so all three pages report identical totals:
       //   gross   = SUM(gross_amount)
       //   fees    = SUM(stripe_fee)          (null → 0 for unreconciled rows)
-      //   net     = SUM(stripe_net ?? gross − fee)
+      //   net     = SUM(gross − fee)         (fees deducted; refunds tracked separately)
       //   refunds = SUM(refund_amount)
-      //
-      // NOTE: The vehicle_revenue_summary Supabase view is intentionally NOT used here
-      // because it computes net via the generated net_amount column (gross − refunds)
-      // which differs from the stripe_net-based formula used by the dashboard and analytics.
+      //   net_after_refunds = net − refunds  (= Gross − Fees − Refunds)
       function aggregateRecords(recs) {
         const summary = {};
         const totals = { gross: 0, fees: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
@@ -360,7 +357,8 @@ export default async function handler(req, res) {
           if (r.is_no_show)   { s.no_show_count++;   continue; }
           const gross  = Number(r.gross_amount   || 0);
           const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net    = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net after fees only (refunds tracked separately in total_refunds).
+          const net    = gross - fee;
           const refund = Number(r.refund_amount  || 0);
           const dep    = Number(r.deposit_amount || 0);
           s.booking_count++;
@@ -606,7 +604,8 @@ export default async function handler(req, res) {
         if (r.is_cancelled || r.is_no_show) continue;
         const gross   = Number(r.gross_amount  || 0);
         const fee     = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-        const net     = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+        // Net after fees only; refunds tracked separately (net_after_refunds = net − refunds).
+        const net     = gross - fee;
         const refund  = Number(r.refund_amount || 0);
 
         totalGross   += gross;
