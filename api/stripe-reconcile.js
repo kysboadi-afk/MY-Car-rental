@@ -86,6 +86,46 @@ async function updateBookingStatusIfNeeded(sb, bookingRef, expectedStatus, nextS
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
+/**
+ * Advances bookings.return_date to newReturnDate when the new date is strictly
+ * later than the current stored value.  Called after an extension revenue record
+ * is recovered so the booking stays consistent with its payments.
+ * Non-fatal: logs errors but never throws.
+ *
+ * @param {object} sb          - Supabase admin client
+ * @param {string} bookingRef  - bookings.booking_ref value
+ * @param {string|null} newReturnDate - YYYY-MM-DD target date
+ */
+async function applyExtensionReturnDateToBooking(sb, bookingRef, newReturnDate) {
+  if (!sb || !bookingRef || !newReturnDate) return;
+  try {
+    const { data: row, error: lookupErr } = await sb
+      .from("bookings")
+      .select("return_date")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+    if (lookupErr) {
+      console.warn(`stripe-reconcile: applyExtensionReturnDateToBooking lookup error: ${lookupErr.message}`);
+      return;
+    }
+    const currentDate = row?.return_date ? String(row.return_date).split("T")[0] : null;
+    if (currentDate && currentDate >= newReturnDate) {
+      console.log(
+        `stripe-reconcile: bookings.return_date already at ${currentDate} ≥ ${newReturnDate} for ${bookingRef} — no update needed`
+      );
+      return;
+    }
+    const { error: updateErr } = await sb
+      .from("bookings")
+      .update({ return_date: newReturnDate, updated_at: new Date().toISOString() })
+      .eq("booking_ref", bookingRef);
+    if (updateErr) throw new Error(updateErr.message);
+    console.log(`stripe-reconcile: advanced bookings.return_date to ${newReturnDate} for ${bookingRef}`);
+  } catch (err) {
+    console.warn(`stripe-reconcile: applyExtensionReturnDateToBooking error (non-fatal): ${err.message}`);
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** HTML-escape a string for use in email templates. */
@@ -234,6 +274,10 @@ function extractFields(pi) {
     metadata_booking_id:          metadataBookingId,
     metadata_original_booking_id: metadataOriginalBookingId,
     payment_type:                 paymentType,
+    // Extension-specific: new return date and the previous return date before extension.
+    // Present only on rental_extension PIs created by extend-rental.js.
+    new_return_date:              pi.metadata?.new_return_date      || null,
+    previous_return_date:         pi.metadata?.previous_return_date || null,
   };
 }
 
@@ -467,14 +511,28 @@ export async function runSyncRecent(sb, lookbackHours) {
           name:            pi.metadata?.renter_name || null,
           phone:           pi.metadata?.renter_phone || null,
           email:           fields.customer_email,
-          pickupDate:      pi.metadata?.pickup_date || null,
-          returnDate:      pi.metadata?.return_date || null,
+          // For extension PIs: use the extension window dates from PI metadata so
+          // each extension row stores its own date range (extension_start → extension_end)
+          // rather than the full booking window.  Non-extension PIs use the
+          // standard pickup_date / return_date fields.
+          pickupDate:      recType === "extension"
+            ? (pi.metadata?.previous_return_date || null)
+            : (pi.metadata?.pickup_date || null),
+          returnDate:      recType === "extension"
+            ? (pi.metadata?.new_return_date || null)
+            : (pi.metadata?.return_date || null),
           amountPaid:      fields.amount_gross,
           paymentMethod:   "stripe",
           type:            recType,
           stripeFee:       fields.stripe_fee,
           stripeNet:       fields.stripe_net,
         }, { strict: true, requireStripeFee: false });
+
+        // For extension recoveries, also advance bookings.return_date so the
+        // booking record stays consistent with the revenue record.
+        if (recType === "extension" && resolvedRef) {
+          await applyExtensionReturnDateToBooking(sb, resolvedRef, pi.metadata?.new_return_date || null);
+        }
 
         console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });
         recoveredItems.push({ pi_id: piId, classification, reason: "missing from DB — inserted" });
@@ -946,8 +1004,10 @@ export default async function handler(req, res) {
               name:            resolvedBooking?.name || null,
               phone:           resolvedBooking?.phone || null,
               email:           payment.customer_email || resolvedBooking?.email || null,
-              pickupDate:      resolvedBooking?.pickupDate || null,
-              returnDate:      resolvedBooking?.returnDate || null,
+              // Use extension window dates from PI metadata when available.
+              // previous_return_date = extension start; new_return_date = extension end.
+              pickupDate:      payment.previous_return_date || resolvedBooking?.pickupDate || null,
+              returnDate:      payment.new_return_date      || resolvedBooking?.returnDate || null,
               amountPaid:      payment.amount_gross,
               paymentMethod:   "stripe",
               type:            "extension",
@@ -956,6 +1016,10 @@ export default async function handler(req, res) {
             }, { strict: false, requireStripeFee: false });
             console.log("[RECOVERY_CREATED_EXTENSION]", payment.payment_intent_id);
             results.created++;
+            // Also advance bookings.return_date so the booking stays consistent.
+            if (payment.new_return_date) {
+              await applyExtensionReturnDateToBooking(sb, resolvedBookingId, payment.new_return_date);
+            }
           } catch (recoveryErr) {
             console.error(
               "stripe-reconcile extension recovery error for PI",

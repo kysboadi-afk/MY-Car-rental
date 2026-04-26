@@ -1060,7 +1060,59 @@ test("webhook rental_extension: returnTime is preserved from existing booking an
   assert.equal(automationCalls.booking.length, 0, "invalid status must not upsert booking");
 });
 
-// ─── 7. customer_details fallback for missing contact info ────────────────────
+// ─── 6b. rental_extension: Supabase-only booking fallback ────────────────────
+
+test("webhook rental_extension: Supabase-only booking — updates bookings.return_date and creates revenue record", async () => {
+  // Simulates a booking that exists only in Supabase (not in bookings.json).
+  // The webhook must fall back to a direct Supabase update so the extension is applied.
+  resetStore(); resetCalls();
+  const bookingId = "bk-supabase-only-fallback";
+
+  // Booking only in Supabase — bookingsStore is intentionally empty.
+  supabaseBookingsStore[bookingId] = {
+    id:                "sb_supabase_only",
+    booking_ref:       bookingId,
+    status:            "active_rental",
+    return_date:       "2026-04-24",
+    return_time:       "15:00",
+    vehicle_id:        "camry",
+    customer_name:     "Supabase Only Renter",
+    customer_phone:    "+13105551234",
+    customer_email:    "sbonly@example.com",
+    pickup_date:       "2026-04-20",
+  };
+
+  const event = piSucceededEvent({
+    payment_type:         "rental_extension",
+    vehicle_id:           "camry",
+    booking_id:           bookingId,
+    new_return_date:      "2026-04-25",
+    new_return_time:      "3:00 PM",
+    previous_return_date: "2026-04-24",
+    extension_label:      "+1 day",
+  }, 5000);   // $50 extension
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  // bookings.return_date must have been advanced to 2026-04-25.
+  const returnDateUpdate = supabaseDirectUpdates.find(
+    (u) => u.table === "bookings" && u.payload.return_date === "2026-04-25"
+  );
+  assert.ok(returnDateUpdate, "Supabase bookings.return_date must be updated to new_return_date");
+
+  // Extension revenue record must have been created.
+  assert.ok(automationCalls.revenue.length > 0, "extension revenue record must be created");
+  const rev = automationCalls.revenue[0];
+  assert.equal(rev.type,            "extension",  "revenue type must be extension");
+  assert.equal(rev.bookingId,       bookingId,    "revenue booking_id must equal the original booking_ref");
+  assert.equal(rev.pickupDate,      "2026-04-24", "extension pickupDate must equal previous_return_date");
+  assert.equal(rev.returnDate,      "2026-04-25", "extension returnDate must equal new_return_date");
+
+  // autoUpsertBooking must NOT be called (booking.json was not updated).
+  assert.equal(automationCalls.booking.length, 0, "Supabase fallback must not call autoUpsertBooking");
+});
 
 test("webhook reservation_deposit: uses customer_details.phone when renter_phone absent from metadata", async () => {
   resetStore(); resetCalls();

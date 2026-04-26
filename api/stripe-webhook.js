@@ -1616,9 +1616,133 @@ export default async function handler(req, res) {
           });
 
           if (!foundBooking) {
-            console.error(
-              `stripe-webhook: rental_extension booking not found vehicle_id=${vehicle_id} booking_id=${bookingRef}`
+            // Booking not found in bookings.json.  Attempt a direct Supabase update so
+            // extensions for Supabase-only bookings (records that were never mirrored
+            // back to the JSON file) are still applied correctly.
+            console.warn(
+              `stripe-webhook: rental_extension booking not found in bookings.json — ` +
+              `attempting Supabase-only fallback vehicle_id=${vehicle_id} booking_id=${bookingRef}`
             );
+            try {
+              const sbFallback = getSupabaseAdmin();
+              if (!sbFallback) {
+                console.error("stripe-webhook: Supabase not available for extension fallback");
+                return res.status(200).json({ received: true });
+              }
+              const { data: sbRow, error: sbRowErr } = await sbFallback
+                .from("bookings")
+                .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date")
+                .eq("booking_ref", bookingRef)
+                .maybeSingle();
+              if (sbRowErr || !sbRow) {
+                console.error(
+                  `stripe-webhook: rental_extension Supabase fallback — booking not found: ${bookingRef}`
+                );
+                return res.status(200).json({ received: true });
+              }
+              const sbStatus = sbRow.status;
+              const isValidStatus = sbStatus === "active_rental" || sbStatus === "active" || sbStatus === "reserved";
+              if (!isValidStatus) {
+                console.error(
+                  `stripe-webhook: rental_extension Supabase fallback invalid status "${sbStatus}" for ${bookingRef}`
+                );
+                return res.status(200).json({ received: true });
+              }
+              const sbCurrentReturnDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
+              const fallbackOldReturnDate = sbCurrentReturnDate || "";
+              const fallbackExtAmount = Math.round(paymentIntent.amount / 100 * 100) / 100;
+              if (sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date) {
+                // Already applied in Supabase — attempt idempotent revenue recovery.
+                console.log(
+                  `stripe-webhook: rental_extension Supabase fallback already applied for ${bookingRef} ` +
+                  `current=${sbCurrentReturnDate} >= new=${new_return_date}`
+                );
+              } else {
+                // Advance bookings.return_date.
+                const { error: sbUpdateErr } = await sbFallback
+                  .from("bookings")
+                  .update({ return_date: new_return_date, updated_at: new Date().toISOString() })
+                  .eq("booking_ref", bookingRef);
+                if (sbUpdateErr) {
+                  console.error(
+                    `stripe-webhook: rental_extension Supabase fallback update failed: ${sbUpdateErr.message}`
+                  );
+                  return res.status(500).json({
+                    received: false,
+                    error: `extension fallback booking update failed for ${paymentIntent.id}`,
+                  });
+                }
+                // Insert booking_extensions row.
+                try {
+                  const { error: beErr } = await sbFallback
+                    .from("booking_extensions")
+                    .upsert(
+                      {
+                        booking_id:        resolvedBookingId,
+                        payment_intent_id: paymentIntent.id,
+                        amount:            fallbackExtAmount,
+                        new_return_date:   new_return_date,
+                        new_return_time:   sbRow.return_time || null,
+                      },
+                      { onConflict: "payment_intent_id", ignoreDuplicates: true }
+                    );
+                  if (beErr) {
+                    console.error(
+                      "stripe-webhook: Supabase fallback booking_extensions upsert failed:",
+                      beErr.message, { resolvedBookingId, paymentIntentId: paymentIntent.id }
+                    );
+                  }
+                } catch (beErr) {
+                  console.warn(
+                    "stripe-webhook: Supabase fallback booking_extensions error (non-fatal):",
+                    beErr.message
+                  );
+                }
+                console.log("EXTENSION_APPLIED_SUPABASE_FALLBACK", {
+                  booking_id: bookingRef,
+                  old_return: fallbackOldReturnDate,
+                  new_return: new_return_date,
+                  payment_intent_id: paymentIntent.id,
+                });
+              }
+              // Create extension revenue record (idempotent via payment_intent_id).
+              try {
+                const fallbackFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+                const fallbackCustomerId = await resolveCustomerIdFromSupabase(
+                  sbRow.customer_phone || "",
+                  sbRow.customer_email || renter_email || "",
+                );
+                await autoCreateRevenueRecord({
+                  bookingId:       resolvedBookingId,
+                  paymentIntentId: paymentIntent.id,
+                  vehicleId:       vehicle_id,
+                  customerId:      fallbackCustomerId,
+                  name:            sbRow.customer_name || renter_name || "",
+                  phone:           sbRow.customer_phone || "",
+                  email:           sbRow.customer_email || renter_email || "",
+                  pickupDate:      previous_return_date || fallbackOldReturnDate || "",
+                  returnDate:      new_return_date || "",
+                  amountPaid:      fallbackExtAmount,
+                  paymentMethod:   "stripe",
+                  type:            "extension",
+                  ...fallbackFeeFields,
+                }, { strict: true, requireStripeFee: true });
+              } catch (revErr) {
+                console.error(
+                  "stripe-webhook: Supabase fallback extension revenue error:",
+                  revErr.message
+                );
+                return res.status(500).json({
+                  received: false,
+                  error: `extension fallback revenue persistence failed for ${paymentIntent.id}`,
+                });
+              }
+            } catch (fallbackErr) {
+              console.error(
+                "stripe-webhook: rental_extension Supabase fallback error:",
+                fallbackErr.message
+              );
+            }
             return res.status(200).json({ received: true });
           }
 
