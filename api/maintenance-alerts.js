@@ -265,19 +265,22 @@ export default async function handler(req, res) {
     try {
       const { data: activeRows, error: activeErr } = await sb
         .from("bookings")
-        .select("booking_ref, vehicle_id, customers ( name, phone )")
+        .select("booking_ref, vehicle_id, oil_check_required, oil_status, oil_check_last_request, customers ( name, phone )")
         .in("status", ["active", "active_rental"])
         .in("vehicle_id", trackedIds);
       if (activeErr) throw activeErr; // query error → propagate, do NOT fallback
       usedSupabase = true;
       for (const r of (activeRows || [])) {
         activeBookingByVehicle[r.vehicle_id] = {
-          bookingId:   r.booking_ref || null,
-          vehicleId:   r.vehicle_id,
-          vehicleName: r.vehicle_id,  // filled from trackedVehicles below
-          name:        r.customers?.name  || "",
-          phone:       r.customers?.phone || "",
-          smsSentAt:   {},  // overlaid from bookings.json below
+          bookingId:           r.booking_ref || null,
+          vehicleId:           r.vehicle_id,
+          vehicleName:         r.vehicle_id,  // filled from trackedVehicles below
+          name:                r.customers?.name  || "",
+          phone:               r.customers?.phone || "",
+          smsSentAt:           {},  // overlaid from bookings.json below
+          oilCheckRequired:    r.oil_check_required    || false,
+          oilStatus:           r.oil_status            || null,
+          oilCheckLastRequest: r.oil_check_last_request || null,
         };
       }
     } catch (err) {
@@ -333,6 +336,23 @@ export default async function handler(req, res) {
       const booking = activeBookingByVehicle[vid];
 
       if (!booking) continue; // No active rental — no driver to notify
+
+      // ── SMS priority suppression ───────────────────────────────────────────
+      // HIGH: oil_status = 'low' → owner is aware and handling it; suppress all
+      //   renter-facing mileage maintenance messages until oil issue is resolved.
+      if (booking.oilStatus === "low") continue;
+
+      // MEDIUM: oil_check_required = true → an oil-check request is pending a
+      //   renter reply. Do not layer additional maintenance messages on top.
+      if (booking.oilCheckRequired) continue;
+
+      // Cooldown: if oil-check-cron sent a system message within the last 24 h,
+      //   wait to avoid back-to-back messages from different automation systems.
+      if (
+        booking.oilCheckLastRequest &&
+        Date.now() - new Date(booking.oilCheckLastRequest).getTime() < 86_400_000
+      ) continue;
+      // ── End suppression ────────────────────────────────────────────────────
 
       const bookingId = booking.bookingId || booking.paymentIntentId;
       const phone     = booking.phone;
