@@ -1,0 +1,23 @@
+-- Migration 0082: allow NULL booking_id on revenue_records
+--
+-- Background:
+--   revenue_records.booking_id was declared NOT NULL, which prevented creating
+--   an "orphan" revenue record for a Stripe payment that could not be matched to
+--   a booking row (e.g. when booking_ref resolution fails during a balance_payment
+--   or rental_balance webhook).  The DB trigger added in migration 0060 already
+--   contains an `is_orphan = true` escape hatch that bypasses the booking_ref
+--   integrity check — but the NOT NULL column constraint blocked the NULL write
+--   before the trigger even ran.
+--
+-- This migration:
+--   1. Drops the NOT NULL constraint so booking_id = NULL is accepted.
+--   2. The existing trigger (check_revenue_booking_ref) continues to enforce
+--      booking_ref integrity for all rows where is_orphan = false:
+--        • If booking_id IS NULL and is_orphan = false  → trigger raises exception.
+--        • If booking_id IS NULL and is_orphan = true   → trigger returns NEW (allowed).
+--   3. No data changes: all existing rows keep their non-null booking_id values.
+--
+-- Safe to re-run: ALTER COLUMN ... DROP NOT NULL is idempotent when the
+-- constraint is already absent.
+
+ALTER TABLE revenue_records ALTER COLUMN booking_id DROP NOT NULL;
