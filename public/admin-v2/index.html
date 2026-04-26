@@ -6017,6 +6017,38 @@ function renderDiagnostics(data) {
     </div>`;
   }
 
+  // ── OpenAI connectivity result ──────────────────────────────────────────
+  const oai = data.openaiCheck || {};
+  let openaiRow = '';
+  if (oai.checked) {
+    const oaiOk = oai.status === 'ok';
+    const oaiColor = oaiOk ? 'var(--success)' : 'var(--danger)';
+    const oaiIcon  = oaiOk ? '✅' : '❌';
+    const oaiLabel = oaiOk ? 'ok — API key valid and reachable' : `${oai.status}${oai.error ? ' — ' + oai.error : ''}`;
+    openaiRow = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;margin-top:4px;">
+        <thead>
+          <tr><th style="text-align:left;padding:5px 8px;color:var(--text-sub);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);" colspan="2">OpenAI Connectivity</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:5px 8px;font-family:monospace;font-size:12px;">OPENAI_API_KEY</td>
+            <td style="padding:5px 8px;color:${oaiColor};font-weight:500;">${oaiIcon} ${esc(oaiLabel)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+    if (!oaiOk) {
+      guidance = `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+        <strong style="color:var(--danger);">❌ OpenAI API key problem — AI Assistant will not work</strong><br>
+        ${esc(oai.error || 'Unknown error')}<br>
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--primary);">Generate a new API key at platform.openai.com/api-keys</a>,
+        then update <code>OPENAI_API_KEY</code> in
+        <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
+        and redeploy.
+      </div>` + guidance;
+    }
+  }
+
   out.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
       <thead>
@@ -6035,6 +6067,7 @@ function renderDiagnostics(data) {
       </thead>
       ${sbConnected && tableRows ? `<tbody>${tableRows}</tbody>` : ''}
     </table>
+    ${openaiRow}
     ${guidance}
   `;
 }

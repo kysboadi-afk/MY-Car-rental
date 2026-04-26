@@ -353,7 +353,12 @@ export default async function handler(req, res) {
       }
     }
 
-    if (sb && !viewOk) {
+    // Run the direct revenue_records_effective loop when:
+    //   a) the admin_metrics_v2 view is unavailable (!viewOk), OR
+    //   b) the view is available but returned no financial data — this happens when
+    //      revenue_reporting_base is empty (e.g. all paid records have is_orphan=true),
+    //      which would otherwise cause the dashboard to fall back to booking deposits.
+    if (sb && (!viewOk || !financialsFromRevRecords)) {
       try {
         const { data: rrRows, error: rrErr } = await sb
           .from("revenue_records_effective")
@@ -462,9 +467,10 @@ export default async function handler(req, res) {
     // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
     // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
     // fee handling) are excluded here to prevent double-counting revenue totals.
-    // Skipped when viewOk because the admin_metrics_v2 view already incorporates
-    // these supplemental charges via its charges_net CTE.
-    if (sb && !viewOk) {
+    // Skipped when the admin_metrics_v2 view already provided financial data
+    // (viewOk && financialsFromRevRecords) because the view's charges_net CTE
+    // already incorporates these supplemental charges.
+    if (sb && (!viewOk || !financialsFromRevRecords)) {
       const bookingVehicleMap = {};
       for (const b of allBookings) {
         if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
