@@ -1022,11 +1022,13 @@ export default async function handler(req, res) {
 
     let completion;
     let openAiTimeoutId;
+    // AbortController lets us immediately close the underlying HTTP socket when
+    // our timer fires.  Relying solely on the SDK { timeout } option is not
+    // enough on Vercel: the option schedules an abort signal but the socket can
+    // linger until the 60 s maxDuration kills the function, which drops the
+    // TCP connection mid-response and the browser sees "Failed to fetch".
+    const roundAbortController = new AbortController();
     try {
-      // The Promise.race fires at roundTimeout ms and returns a clean JSON
-      // response.  The SDK-level timeout (set 1 s later) ensures the underlying
-      // HTTP connection is also properly aborted so it doesn't keep consuming
-      // resources until Vercel's 60 s maxDuration kills the function.
       completion = await Promise.race([
         client.chat.completions.create(
           {
@@ -1035,28 +1037,30 @@ export default async function handler(req, res) {
             tools: TOOL_DEFINITIONS,
             tool_choice: "auto",
           },
-          { timeout: roundTimeout + 1000 }, // SDK aborts HTTP 1 s after our race fires
+          { signal: roundAbortController.signal }, // hard-abort via AbortController
         ),
         new Promise((_resolve, reject) => {
-          openAiTimeoutId = setTimeout(
-            () => reject(new OpenAiRoundTimeoutError(roundTimeout)),
-            roundTimeout
-          );
+          openAiTimeoutId = setTimeout(() => {
+            roundAbortController.abort(); // immediately close the HTTP socket
+            reject(new OpenAiRoundTimeoutError(roundTimeout));
+          }, roundTimeout);
         }),
       ]);
     } catch (err) {
-      console.error("admin-chat: OpenAI error:", err);
       if (
         err?.isTimeout === true ||
         err?.name === "OpenAiRoundTimeoutError" ||
-        err?.name === "APIConnectionTimeoutError" // SDK-level timeout
+        err?.name === "APIConnectionTimeoutError" || // SDK-level timeout
+        err?.name === "AbortError"                   // AbortController fired
       ) {
+        console.warn(`admin-chat: OpenAI round timed out after ${roundTimeout} ms`);
         return res.status(200).json({
           reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
           tool_calls: toolCallsMade,
           messages:   messages.slice(1),
         });
       }
+      console.error("admin-chat: OpenAI error:", err);
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });
     } finally {
       if (openAiTimeoutId) clearTimeout(openAiTimeoutId);

@@ -35,6 +35,7 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import OpenAI from "openai";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -267,5 +268,39 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck });
+  // ── OpenAI connectivity check ────────────────────────────────────────────
+  // Only run when OPENAI_API_KEY is present.  Makes a minimal models list call
+  // (no tokens consumed) to verify the key is valid and the API is reachable.
+  const openaiCheck = { checked: false, status: "skipped", error: null };
+  if (process.env.OPENAI_API_KEY) {
+    openaiCheck.checked = true;
+    try {
+      const oaClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const abortCtrl = new AbortController();
+      const timer = setTimeout(() => abortCtrl.abort(), 8000); // 8 s hard limit
+      try {
+        await oaClient.models.list({ signal: abortCtrl.signal });
+        openaiCheck.status = "ok";
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (err?.name === "AbortError" || err?.name === "APIConnectionTimeoutError") {
+        openaiCheck.status = "timeout";
+        openaiCheck.error  = "OpenAI API did not respond within 8 seconds — network issue or API outage.";
+      } else if (err?.status === 401 || /invalid api key|incorrect api key|auth/i.test(msg)) {
+        openaiCheck.status = "invalid_key";
+        openaiCheck.error  = "API key is set but rejected by OpenAI — it may be expired or revoked. Generate a new key at platform.openai.com.";
+      } else if (err?.status === 429) {
+        openaiCheck.status = "rate_limited";
+        openaiCheck.error  = "OpenAI returned 429 (rate limit / quota exceeded). Check your usage at platform.openai.com/usage.";
+      } else {
+        openaiCheck.status = "error";
+        openaiCheck.error  = msg;
+      }
+    }
+  }
+
+  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck, openaiCheck });
 }
