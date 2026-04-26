@@ -34,8 +34,7 @@ ALTER TABLE bookings
   ADD COLUMN IF NOT EXISTS original_return_date date;
 
 COMMENT ON COLUMN bookings.original_return_date
-  IS 'Return date of the base rental before any extension was applied. '
-     'Set from return_date on INSERT and never changed by extension processing.';
+  IS 'Return date of the base rental before any extension was applied. Set from return_date on INSERT and never changed by extension processing.';
 
 -- ── 2. Backfill original_return_date ─────────────────────────────────────────
 --
@@ -133,6 +132,4 @@ WHERE es.start_date IS NOT NULL
   AND es.end_date   IS NOT NULL;
 
 COMMENT ON VIEW public.vehicle_blocking_ranges
-  IS 'Per-segment vehicle blocking timeline. '
-     'Each base rental and each paid extension appears as a separate row. '
-     'Query by vehicle_id ORDER BY start_date ASC to get the full chain.';
+  IS 'Per-segment vehicle blocking timeline. Each base rental and each paid extension appears as a separate row. Query by vehicle_id ORDER BY start_date ASC to get the full chain.';

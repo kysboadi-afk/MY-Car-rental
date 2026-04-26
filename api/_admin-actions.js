@@ -1618,7 +1618,7 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
     let blockedDates = null;
     if (sb) {
       try {
-        let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date");
+        let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date", { ascending: true });
         if (vehicleId) q = q.eq("vehicle_id", vehicleId);
         const { data, error } = await q;
         if (!error && data) {
