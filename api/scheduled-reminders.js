@@ -748,9 +748,20 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
   const sb = getSupabaseAdmin();
   // Per-run dedup: max 1 SMS per phone number per cron invocation.
   const phonesContactedThisRun = new Set();
+  const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const activeRentals = Object.values(allBookings)
+    .flat()
+    .filter((b) => {
+      const isActiveStatus = b.status === "active_rental" || b.status === "active";
+      const hasFutureReturn = b.returnDate && b.returnDate >= todayStr;
+      return isActiveStatus || hasFutureReturn;
+    });
+  console.log("active rentals:", activeRentals.length);
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      if (booking.status !== "active_rental") continue;
+      const isActiveStatus = booking.status === "active_rental" || booking.status === "active";
+      const hasFutureReturn = booking.returnDate && booking.returnDate >= todayStr;
+      if (!isActiveStatus && !hasFutureReturn) continue;
       if (!booking.phone) continue;
 
       // Per-run anti-spam: skip if we already sent to this phone this run.
