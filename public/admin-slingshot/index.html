@@ -3966,6 +3966,12 @@ function renderRevenueSummary() {
   }
 }
 
+function fmtRevDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function applyRevenueFilters() {
   const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
   const status  = document.getElementById('rev-filter-status')?.value  || '';
@@ -3995,10 +4001,29 @@ function applyRevenueFilters() {
     }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
 
     const net = (Number(r.gross_amount || 0) - Number(r.refund_amount || 0)).toFixed(2);
+
+    // Compute the date display: extensions show "+N day extension on [date]";
+    // base bookings show the full rental period including any extensions.
+    const _effId = (r.type === 'extension' && r.original_booking_id) ? r.original_booking_id : r.booking_id;
+    const _siblings = allRevenueRecords.filter((s) => ((s.type === 'extension' && s.original_booking_id) ? s.original_booking_id : s.booking_id) === _effId);
+    let _dateCell;
+    if (r.type === 'extension') {
+      const _sorted = _siblings.filter((s) => s.return_date).sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+      const _myIdx  = _sorted.findIndex((s) => s.id === r.id);
+      const _prevReturn = _myIdx > 0 ? _sorted[_myIdx - 1].return_date : r.pickup_date;
+      const _nDays  = (_prevReturn && r.return_date)
+        ? Math.round((new Date(r.return_date + 'T00:00:00') - new Date(_prevReturn + 'T00:00:00')) / 86400000)
+        : 0;
+      _dateCell = '+' + _nDays + ' day' + (_nDays === 1 ? '' : 's') + ' extension on ' + (fmtRevDate(_prevReturn) || '–');
+    } else {
+      const _finalReturn = _siblings.reduce((mx, s) => (!s.return_date ? mx : (!mx || s.return_date > mx) ? s.return_date : mx), r.return_date || '');
+      _dateCell = (fmtRevDate(r.pickup_date) || '–') + ' → ' + (fmtRevDate(_finalReturn) || '–');
+    }
+
     return `<tr>
       <td>${esc(r.customer_name || '–')}</td>
       <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
-      <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
+      <td style="font-size:12px;">${esc(_dateCell)}</td>
       <td>$${formatMoney(r.gross_amount  || 0)}</td>
       <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
       <td style="font-weight:700;">$${formatMoney(net)}</td>
