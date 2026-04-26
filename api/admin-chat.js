@@ -1002,6 +1002,14 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── Background pre-fetch of get_insights ─────────────────────────────────
+  // toolGetInsights now runs 4 Supabase queries in parallel (~3-7 s total).
+  // The first OpenAI round takes ~10-20 s, so the prefetch finishes well
+  // before the AI returns its tool-call decision, eliminating a full extra
+  // OpenAI round-trip from the critical path for insight-based queries.
+  const insightsPrefetch = executeAction("get_insights", {}, { requireConfirmation: false })
+    .catch(() => null); // never let a prefetch error propagate
+
   // ── Agentic loop ─────────────────────────────────────────────────────────
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Calculate remaining budget; reserve 3 s for response serialisation.
@@ -1050,8 +1058,10 @@ export default async function handler(req, res) {
       if (
         err?.isTimeout === true ||
         err?.name === "OpenAiRoundTimeoutError" ||
-        err?.name === "APIConnectionTimeoutError" || // SDK-level timeout
-        err?.name === "AbortError"                   // AbortController fired
+        err?.name === "APIConnectionTimeoutError" || // SDK-level timeout (name property)
+        err?.name === "AbortError" ||                // Web AbortController fired
+        err?.constructor?.name === "APIUserAbortError" ||        // OpenAI SDK v4 abort
+        err?.constructor?.name === "APIConnectionTimeoutError"   // OpenAI SDK v4 timeout
       ) {
         console.warn(`admin-chat: OpenAI round timed out after ${roundTimeout} ms`);
         return res.status(200).json({
@@ -1112,12 +1122,28 @@ export default async function handler(req, res) {
         // Pass requireConfirmation=true unless autoMode is explicitly on.
         // Race against a budget-aware timeout so a hanging tool cannot block
         // until Vercel kills the function at maxDuration.
-        toolResult = await Promise.race([
-          executeAction(toolName, args, { requireConfirmation: !autoMode }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
-          ),
-        ]);
+        //
+        // Special case: get_insights was pre-fetched in the background.
+        // Wait up to 1 s for the prefetch to settle before falling back to a
+        // live call so the Supabase queries are never duplicated.
+        if (toolName === "get_insights") {
+          const prefetched = await Promise.race([
+            insightsPrefetch,
+            new Promise((resolve) => setTimeout(() => resolve(null), 1000)),
+          ]);
+          if (prefetched && !prefetched.error) {
+            toolResult = prefetched;
+          }
+        }
+
+        if (!toolResult) {
+          toolResult = await Promise.race([
+            executeAction(toolName, args, { requireConfirmation: !autoMode }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
+            ),
+          ]);
+        }
       } catch (err) {
         toolResult = { error: err.message };
       }
