@@ -580,11 +580,11 @@ async function fixPaymentBookingRevenue(sb) {
 
   const { data: revRows, error: rErr } = await sb
     .from("revenue_records")
-    .select("booking_ref")
-    .in("booking_ref", refs);
+    .select("booking_id")
+    .in("booking_id", refs);
   if (rErr) throw new Error("Could not query revenue_records: " + rErr.message);
 
-  const revenueRefs = new Set((revRows || []).map((r) => r.booking_ref));
+  const revenueRefs = new Set((revRows || []).map((r) => r.booking_id));
   const missing     = (paidBookings || []).filter(
     (b) => b.booking_ref && !revenueRefs.has(b.booking_ref),
   );
@@ -602,7 +602,7 @@ async function fixPaymentBookingRevenue(sb) {
       const { data: existing, error: existErr } = await sb
         .from("revenue_records")
         .select("id")
-        .eq("booking_ref", b.booking_ref)
+        .eq("booking_id", b.booking_ref)
         .maybeSingle();
       if (existErr) {
         throw new Error(`pre-insert check failed for ${b.booking_ref}: ${existErr.message}`);
