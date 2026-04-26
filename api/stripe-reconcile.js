@@ -137,7 +137,7 @@ async function sendReconcileAlertEmail(recovered, errors, lookbackHours) {
         `<tr>
           <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.pi_id)}</td>
           <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.classification)}</td>
-          <td style="padding:4px 8px;border:1px solid #ddd;">${statusLabel}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(statusLabel)}</td>
           <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.reason || "")}</td>
         </tr>`
       ).join("");
