@@ -58,11 +58,14 @@ import { loadBooleanSetting } from "./_settings.js";
 import { formatTime12h, laHour } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
+import { getSmsPriority } from "./_sms-priority.js";
 import {
-  getSmsPriority,
-  checkSmsCooldown,
-  TIME_CRITICAL_KEYS,
-} from "./_sms-priority.js";
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
+  isSuppressedByProximity,
+  fetchRecentSmsLogs,
+  buildSmsContext,
+} from "./_sms-scoring.js";
 import Stripe from "stripe";
 import {
   saveWebhookBookingRecord,
@@ -772,6 +775,9 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 
       const v = vars(booking);
       const minutesUntilReturn = (returnDt - now) / 60000;
+      const daysSincePickup = booking.pickupDate
+        ? (now.getTime() - new Date(booking.pickupDate).getTime()) / 86_400_000
+        : undefined;
       const minsOverdue = -minutesUntilReturn; // positive = overdue
       const graceAt   = new Date(returnDt.getTime() + GRACE_OFFSET_MS);
       const lateFeeAt = new Date(returnDt.getTime() + LATE_FEE_OFFSET_MS);
@@ -998,16 +1004,32 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         !alreadySent(booking, "active_rental_1h_before_end") &&
         !(await isSmsLogged(id, "active_rental_1h_before_end", returnDateStr))
       ) {
-        const cooldown = await checkSmsCooldown(sb, id, "active_rental_1h_before_end");
-        if (!cooldown.allowed) {
-          console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: cross-cron cooldown (${cooldown.reason})`);
+        const recentRows = await fetchRecentSmsLogs(sb, id);
+        const scoringCtx = buildSmsContext(
+          "active_rental_1h_before_end",
+          recentRows,
+          { minutesToReturn: minutesUntilReturn, daysSincePickup }
+        );
+        if (isSuppressedByProximity("active_rental_1h_before_end", scoringCtx)) {
+          console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: proximity suppressed (${Math.round(minutesUntilReturn)} min to return)`);
         } else {
-          logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
-          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
-          if (sent) {
-            sentThisBooking = true;
-            sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
-            await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr);
+          const { score, breakdown } = computeSmsScoreWithBreakdown("active_rental_1h_before_end", scoringCtx);
+          const effectiveThreshold   = computeEffectiveThreshold(scoringCtx);
+          console.log(
+            `[SMS_SCORE] ${id} active_rental_1h_before_end:` +
+            ` score=${score} threshold=${effectiveThreshold}` +
+            ` breakdown=${JSON.stringify(breakdown)}`
+          );
+          if (score <= effectiveThreshold) {
+            console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: score ${score} ≤ ${effectiveThreshold}`);
+          } else {
+            logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
+            const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
+            if (sent) {
+              sentThisBooking = true;
+              sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
+              await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr, { score, breakdown });
+            }
           }
         }
       } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
