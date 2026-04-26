@@ -763,50 +763,52 @@ async function toolGetInsights() {
   console.time("toolGetInsights execution");
   try {
   const sb = getSupabaseAdmin();
-  const [allBookings, vehicles] = await Promise.all([
+
+  // Run all 4 Supabase queries in parallel instead of two sequential batches.
+  // Previously: batch-1 (bookings + vehicles) then batch-2 (mileage + trips).
+  // Now: all 4 fire simultaneously, cutting total query time roughly in half.
+  const mileageQuery = sb
+    ? sb.from("vehicles")
+        .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+        .not("bouncie_device_id", "is", null)
+        .catch(() => ({ data: [] }))
+    : Promise.resolve({ data: [] });
+
+  const tripQuery = sb
+    ? sb.from("trip_log")
+        .select("vehicle_id, trip_distance, trip_at")
+        .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+        .catch(() => ({ data: [] }))
+    : Promise.resolve({ data: [] });
+
+  const [allBookings, vehicles, mileageResult, tripResult] = await Promise.all([
     loadAllBookings(),
     loadAllVehicles(),
+    mileageQuery,
+    tripQuery,
   ]);
 
-  // Fetch Bouncie mileage and recent trips so detectProblems can include
-  // maintenance/idle alerts.  These use bouncie_device_id as source of truth —
-  // rental_status is intentionally ignored when deciding what to track.
-  let mileageData = [];
-  let recentTrips = [];
-  if (sb) {
-    try {
-      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
-        sb.from("vehicles")
-          .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
-          .not("bouncie_device_id", "is", null),
-        sb.from("trip_log")
-          .select("vehicle_id, trip_distance, trip_at")
-          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
-      ]);
-      mileageData = (vehicleRows || [])
-        .filter((r) => {
-          const type = r.data?.type || r.data?.vehicle_type || "";
-          return type !== "slingshot";
-        })
-        .map((r) => ({
-          vehicle_id:               r.vehicle_id,
-          vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
-          total_mileage:            Number(r.mileage) || 0,
-          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
-          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
-          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
-          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
-          last_synced_at:           r.last_synced_at,
-        }));
-      recentTrips = (tripRows || []).map((r) => ({
-        vehicle_id:    r.vehicle_id,
-        trip_distance: r.trip_distance,
-        trip_at:       r.trip_at,
-      }));
-    } catch {
-      // mileage data unavailable — detectProblems will skip mileage section
-    }
-  }
+  const mileageData = (mileageResult.data || [])
+    .filter((r) => {
+      const type = r.data?.type || r.data?.vehicle_type || "";
+      return type !== "slingshot";
+    })
+    .map((r) => ({
+      vehicle_id:               r.vehicle_id,
+      vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+      total_mileage:            Number(r.mileage) || 0,
+      last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+      last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+      last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+      last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+      last_synced_at:           r.last_synced_at,
+    }));
+
+  const recentTrips = (tripResult.data || []).map((r) => ({
+    vehicle_id:    r.vehicle_id,
+    trip_distance: r.trip_distance,
+    trip_at:       r.trip_at,
+  }));
 
   const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
   const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
