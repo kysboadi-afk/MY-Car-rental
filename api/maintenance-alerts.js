@@ -204,6 +204,25 @@ async function logHighMileageAlert(sb, bookingId) {
   }
 }
 
+// ── LA time window ────────────────────────────────────────────────────────────
+
+const WINDOW_START_HOUR = 8;  // 8:00 AM LA
+const WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
+
+/**
+ * Returns the current hour (0–23) in America/Los_Angeles.
+ */
+function laHour() {
+  return parseInt(
+    new Date().toLocaleString("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour:     "numeric",
+      hour12:   false,
+    }),
+    10
+  );
+}
+
 // ── Main Handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -219,6 +238,18 @@ export default async function handler(req, res) {
     }
   } else if (req.method !== "GET") {
     return res.status(405).send("Method Not Allowed");
+  }
+
+  // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
+  // Manual POST bypasses the window to allow out-of-hours testing.
+  if (req.method === "GET") {
+    const hour = laHour();
+    if (hour < WINDOW_START_HOUR || hour >= WINDOW_END_HOUR) {
+      return res.status(200).json({
+        skipped: true,
+        reason:  `Outside send window (${WINDOW_START_HOUR}:00–${WINDOW_END_HOUR}:00 LA). Current LA hour: ${hour}.`,
+      });
+    }
   }
 
   const sb = getSupabaseAdmin();

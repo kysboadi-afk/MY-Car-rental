@@ -40,6 +40,7 @@ import {
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
+  ACTIVE_RENTAL_1H_BEFORE_END,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
@@ -116,6 +117,31 @@ const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
 //   minutesUntilReturn > 15 && minutesUntilReturn <= 30  →  fires once per return event
 const WARNING_BEFORE_END_UPPER_MIN = 30; // inclusive upper bound: fires when ≤ 30 min remain
 const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire when ≤ 15 min remain
+
+// Boundaries (in minutes) for the 1-hour-before-return extension invitation window.
+// Fires once in the 45–60 min window ("about 1 hour"), well clear of the 15–30 min
+// return-obligation warning so renters never receive both in the same cron tick.
+const EXT_REMINDER_UPPER_MIN = 60; // inclusive upper bound: fires when ≤ 60 min remain
+const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when ≤ 45 min remain
+
+// SMS send-window boundaries — messages are only delivered between these hours
+// in America/Los_Angeles time to avoid waking renters outside business hours.
+const SMS_WINDOW_START_HOUR = 8;  // 8:00 AM LA
+const SMS_WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
+
+/**
+ * Returns the current hour (0–23) in America/Los_Angeles.
+ */
+function laHour() {
+  return parseInt(
+    new Date().toLocaleString("en-US", {
+      timeZone: BUSINESS_TZ,
+      hour:     "numeric",
+      hour12:   false,
+    }),
+    10
+  );
+}
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
@@ -693,13 +719,28 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   return_date changes, so the old log rows no longer match and the messages
  *   fire correctly for the new schedule.  The legacy smsSentAt flags in
  *   bookings.json are still written for backwards compatibility.
+ *
+ * Anti-spam:
+ *   phonesContactedThisRun tracks every phone number that received any SMS
+ *   during this invocation.  If the same phone number appears on a second
+ *   active booking (e.g. overlapping rentals) it is silently skipped so that
+ *   no renter ever receives more than one message per cron tick.
  */
 export async function processActiveRentals(allBookings, now, sentMarks) {
   const sb = getSupabaseAdmin();
+  // Per-run dedup: max 1 SMS per phone number per cron invocation.
+  const phonesContactedThisRun = new Set();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "active_rental") continue;
       if (!booking.phone) continue;
+
+      // Per-run anti-spam: skip if we already sent to this phone this run.
+      if (phonesContactedThisRun.has(booking.phone)) {
+        const skipId = booking.bookingId || booking.paymentIntentId;
+        console.log(`[SMS_SKIP] ${skipId}: phone ${booking.phone} already contacted this run`);
+        continue;
+      }
 
       // Compute the final return date/time, incorporating any paid extensions
       // recorded in revenue_records so that SMS triggers always fire against the
@@ -728,6 +769,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         return_la:         toLAString(returnDt),
         mins_until_return: Math.round(minutesUntilReturn),
         sent: {
+          active_rental_1h_before_end: alreadySent(booking, "active_rental_1h_before_end"),
           late_warning_30min: alreadySent(booking, "late_warning_30min"),
           late_at_return:     alreadySent(booking, "late_at_return"),
           late_grace_expired: alreadySent(booking, "late_grace_expired"),
@@ -749,6 +791,28 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // returnDateStr is stored in sms_logs so old triggers are invalidated when
       // the booking is extended to a new return_date.
       const returnDateStr = finalDate;
+
+      // Track sentMarks count before processing this booking so we can detect
+      // whether any SMS was sent and mark the phone as contacted.
+      const marksBeforeBooking = sentMarks.length;
+
+      // ── ~1 hour before return — extension invitation ──────────────────────────
+      // Fires once in the 45–60 min window (well clear of the 15–30 min return-
+      // obligation window below) so renters never receive both in the same tick.
+      if (
+        minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN &&
+        !alreadySent(booking, "active_rental_1h_before_end") &&
+        !(await isSmsLogged(id, "active_rental_1h_before_end", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
+        const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
+          await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr);
+        }
+      } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
+      }
 
       // ── 30 min before return ─────────────────────────────────────────────────
       // Single consolidated end-of-rental reminder (replaces TextMagic automations
@@ -908,6 +972,12 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
             }
           }
         }
+      }
+
+      // Per-run dedup: if any SMS was sent for this booking, mark the phone so
+      // a second active booking on the same number is skipped this run.
+      if (sentMarks.length > marksBeforeBooking) {
+        phonesContactedThisRun.add(booking.phone);
       }
     }
   }
@@ -1607,6 +1677,20 @@ export default async function handler(req, res) {
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
     console.warn("scheduled-reminders: TextMagic credentials not set — SMS will not be sent");
     return res.status(200).json({ skipped: true, reason: "TextMagic not configured" });
+  }
+
+  // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
+  // Manual POST bypasses the window to allow out-of-hours testing.
+  // Auto-activations, auto-completions, and reconciliation already ran above
+  // and are always executed regardless of the SMS window.
+  if (req.method === "GET") {
+    const hour = laHour();
+    if (hour < SMS_WINDOW_START_HOUR || hour >= SMS_WINDOW_END_HOUR) {
+      return res.status(200).json({
+        skipped: true,
+        reason:  `Outside SMS send window (${SMS_WINDOW_START_HOUR}:00–${SMS_WINDOW_END_HOUR}:00 LA). Current LA hour: ${hour}.`,
+      });
+    }
   }
 
   const sentMarks = [];
