@@ -350,7 +350,8 @@ function buildAnalytics(rows) {
 
     const gross = Number(r.gross_amount || 0);
     const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-    const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+    // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+    const net   = gross - fee;
 
     totalGross += gross;
     totalFees  += fee;
