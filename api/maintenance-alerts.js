@@ -26,7 +26,8 @@ import { sendSms } from "./_textmagic.js";
 import { loadBookings, saveBookings, normalizePhone, isNetworkError } from "./_bookings.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { adminErrorMessage } from "./_error-helpers.js";
-import { laHour, buildDateTimeLA, DEFAULT_RETURN_TIME } from "./_time.js";
+import { laHour } from "./_time.js";
+import { getRentalState } from "./_rental-state.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
   computeSmsScoreWithBreakdown,
@@ -428,10 +429,9 @@ export default async function handler(req, res) {
       const phone     = booking.phone;
 
       // ── Compute time-proximity context ────────────────────────────────────
-      const returnDt       = buildDateTimeLA(booking.returnDate, booking.returnTime || DEFAULT_RETURN_TIME);
-      const minutesToReturn = isNaN(returnDt.getTime())
-        ? undefined
-        : (returnDt - new Date()) / 60_000;
+      const { end_datetime: returnDt, minutesToReturn: rawMinutesToReturn } =
+        await getRentalState(sb, bookingId);
+      const minutesToReturn = rawMinutesToReturn !== null ? rawMinutesToReturn : undefined;
       console.log("minutesToReturn:", minutesToReturn, {
         booking_ref: bookingId,
         return_date: booking.returnDate,
