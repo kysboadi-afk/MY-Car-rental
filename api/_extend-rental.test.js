@@ -92,15 +92,21 @@ mock.module("./_supabase.js", {
 });
 
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
+// capturedStripeParams stores the last params passed to paymentIntents.create so
+// metadata-content tests can assert on what was sent to Stripe.
+let capturedStripeParams = null;
 mock.module("stripe", {
   defaultExport: class FakeStripe {
     constructor() {}
     paymentIntents = {
-      create: async (params) => ({
-        id:            "pi_fake_123",
-        client_secret: "pi_fake_123_secret_abc",
-        amount:        params.amount,
-      }),
+      create: async (params) => {
+        capturedStripeParams = params;
+        return {
+          id:            "pi_fake_123",
+          client_secret: "pi_fake_123_secret_abc",
+          amount:        params.amount,
+        };
+      },
     };
   },
 });
@@ -505,4 +511,64 @@ test("extend-rental: 404 when no active booking matches the provided email", asy
   }), res);
 
   assert.equal(res._status, 404);
+});
+
+// ── Metadata ──────────────────────────────────────────────────────────────────
+
+test("extend-rental: PaymentIntent is created with type=rental_extension metadata", async () => {
+  // Regression guard: ensures the Stripe PI always carries the 'type' and
+  // 'payment_type' metadata fields so the webhook can identify extension payments.
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+  sbClient     = null;
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200, "handler must return 200");
+  assert.ok(capturedStripeParams, "stripe.paymentIntents.create must have been called");
+
+  const meta = capturedStripeParams.metadata;
+  assert.ok(meta,                          "metadata must be present on the PaymentIntent");
+  assert.equal(meta.type,         "rental_extension", "metadata.type must equal 'rental_extension'");
+  assert.equal(meta.payment_type, "rental_extension", "metadata.payment_type must equal 'rental_extension'");
+  assert.ok(meta.booking_id,               "metadata.booking_id must be set");
+  assert.ok(meta.vehicle_id,               "metadata.vehicle_id must be set");
+  assert.ok(meta.new_return_date,          "metadata.new_return_date must be set");
+});
+
+test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over bookingId", async () => {
+  // When the Supabase lookup resolves a canonical booking_ref, it should be used
+  // as metadata.booking_id so the webhook can find the booking via booking_ref.
+  capturedStripeParams = null;
+  const active = makeActiveBooking({ bookingId: "pi_legacy_original_xxx" });
+  mockBookings = { camry: [active] };
+
+  // Return a Supabase row whose booking_ref is the canonical bk-... identifier.
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref: "bk-camry-canonical-001",
+      return_date: "2026-04-30",
+      return_time: "17:00:00",
+      status:      "active_rental",
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200);
+  const meta = capturedStripeParams?.metadata;
+  assert.ok(meta, "metadata must be present");
+  assert.equal(meta.booking_id, "bk-camry-canonical-001",
+    "booking_id must be the canonical Supabase booking_ref, not the legacy PI id");
 });

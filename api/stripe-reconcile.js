@@ -127,7 +127,7 @@ function extractFields(pi) {
   const metadataBookingId = pi.metadata?.booking_id || null;
   // original_booking_id is the legacy field; kept for backward compat with historical PIs
   const metadataOriginalBookingId = pi.metadata?.original_booking_id || null;
-  const paymentType = pi.metadata?.payment_type || null;
+  const paymentType = pi.metadata?.payment_type || pi.metadata?.type || null;
 
   return {
     payment_intent_id:            pi.id,

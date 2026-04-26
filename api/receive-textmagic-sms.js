@@ -313,10 +313,13 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
       description: `Rental extension — ${booking.vehicleName || vehicleId} — ${label} — ${booking.name}`,
       automatic_payment_methods: { enabled: true },
       metadata: {
+        // "type" is the canonical field read by the webhook and booking_extensions pipeline.
+        // "payment_type" is kept for backward compatibility with reconcile / scheduled-reminders.
+        type:         "rental_extension",
         payment_type: "rental_extension",
-        booking_id:   booking.bookingId || booking.paymentIntentId,
+        booking_id:   booking.bookingId || booking.paymentIntentId || "",
         vehicle_id:          vehicleId,
-        vehicle_name:        booking.vehicleName || vehicleId,
+        vehicle_name:        booking.vehicleName || vehicleId || "",
         renter_name:         booking.name  || "",
         renter_email:        booking.email || "",
         renter_phone:        booking.phone || "",
