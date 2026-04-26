@@ -4791,7 +4791,8 @@ function applyRevenueFilters() {
   // Group all revenue records by effective booking ID so extensions collapse
   // under their parent booking row.
   function getEffectiveBookingId(r) {
-    return (r.type === 'extension' && r.original_booking_id) ? r.original_booking_id : r.booking_id;
+    if (r.type === 'extension' && r.original_booking_id) return r.original_booking_id;
+    return r.booking_id || r.id;
   }
 
   const groupMap = new Map();
@@ -4839,7 +4840,7 @@ function applyRevenueFilters() {
     // Worst status across the group.
     const statusRank = { paid: 0, partial: 1, pending: 2, refunded: 3 };
     const worstRec   = allRecs.reduce((mx, r) =>
-      (statusRank[r.payment_status] ?? 99) > (statusRank[mx?.payment_status] ?? 99) ? r : mx, null);
+      (statusRank[r.payment_status] ?? 99) > (statusRank[mx.payment_status] ?? 99) ? r : mx, allRecs[0]);
     const summaryStatus = worstRec?.payment_status || 'paid';
     const payBadge = {
       paid:     '<span class="badge badge-success">Paid</span>',
