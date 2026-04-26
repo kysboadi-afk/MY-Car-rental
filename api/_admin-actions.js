@@ -31,7 +31,7 @@ import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeFleetAlerts } from "../lib/ai/maintenance.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { TEMPLATES } from "./_sms-templates.js";
-import { fetchBookedDates, hasOverlap } from "./_availability.js";
+import { hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, parseTime12h } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
@@ -1578,22 +1578,8 @@ async function toolGetBlockedDates({ vehicleId } = {}) {
     }
   }
 
-  // Fall back to booked-dates.json from GitHub
   if (!blockedDates) {
-    try {
-      const data = await fetchBookedDates();
-      if (data) {
-        blockedDates = vehicleId
-          ? { [vehicleId]: data[vehicleId] || [] }
-          : data;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!blockedDates) {
-    return { blocked_dates: {}, note: "Could not retrieve blocked dates — GitHub or Supabase unavailable." };
+    return { blocked_dates: {}, note: "Could not retrieve blocked dates — Supabase unavailable." };
   }
 
   const summary = {};
