@@ -35,6 +35,9 @@
 -- by the EXISTS sub-select guard in each statement.
 
 -- ── Pass 1: fix synthetic "ext-…" booking_ids ────────────────────────────────
+-- Note: booking_id LIKE 'ext-%' requires a sequential scan of the table.
+-- This is a one-time data repair migration and the table is not expected to be
+-- large enough to warrant a specialised index for this single run.
 UPDATE revenue_records
 SET    booking_id  = original_booking_id,
        type        = 'extension',

@@ -572,7 +572,10 @@ export default async function handler(req, res) {
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue record_extension_fee: Supabase unavailable, falling back to GitHub");
       }
-      // GitHub fallback
+      // GitHub fallback — insert without deduplication.
+      // Multiple extensions for the same booking are legitimate (a booking can
+      // be extended more than once), so there is no stable unique key to dedup
+      // on.  Each call generates a fresh UUID, matching Supabase's INSERT behaviour.
       const ghRecord = { id: crypto.randomUUID(), ...commonFields };
       let created;
       await updateJsonFileWithRetry({
