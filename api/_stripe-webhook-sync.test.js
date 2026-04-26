@@ -128,6 +128,9 @@ mock.module("./_booking-automation.js", {
         stripe_fee: b.stripeFee ?? null,
       };
     },
+    createOrphanRevenueRecord:  async (b)         => {
+      automationCalls.revenue.push({ ...b, _orphan: true });
+    },
     autoUpsertCustomer:         async (b, s)       => { automationCalls.customer.push({ ...b, countStats: s }); },
     autoUpsertBooking:          async (b)          => {
       automationCalls.booking.push({ ...b });
