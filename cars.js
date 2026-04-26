@@ -28,27 +28,6 @@ function fmtMoney(n) {
   return "$" + num.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-// Format an ISO timestamp as "Apr 27, 2026 at 8:00 AM" in LA timezone.
-// Returns null if the value is falsy or unparseable.
-function formatNextAvailableAt(isoTimestamp) {
-  if (!isoTimestamp) return null;
-  const d = new Date(isoTimestamp);
-  if (!isFinite(d.getTime())) return null;
-  const dateStr = d.toLocaleDateString("en-US", {
-    timeZone: "America/Los_Angeles",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  const timeStr = d.toLocaleTimeString("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-  return dateStr + " at " + timeStr;
-}
-
 // ─── Card builders ────────────────────────────────────────────────────────────
 
 function buildEconomyCard(v, pricing) {
@@ -213,7 +192,7 @@ function applyFleetStatus(fleetStatus) {
       // Prefer next_available_at (timestamp with time) when available;
       // fall back to the date-only next_available_display string.
       const nextAvailDisplay = status
-        ? (formatNextAvailableAt(status.next_available_at) || status.next_available_display || null)
+        ? (SlyLA.formatTimestamp(status.next_available_at) || status.next_available_display || null)
         : null;
       if (nextAvailDisplay) {
         const nextBadge = document.createElement("span");

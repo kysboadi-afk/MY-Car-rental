@@ -1269,27 +1269,6 @@ initDatePickers();
 // unavailable.  For display, the earliest next_available_at (or available_at)
 // across booked units is used so the customer sees the soonest a unit frees up.
 
-// Format an ISO timestamp as "Apr 27, 2026 at 8:00 AM" in LA timezone.
-// Returns null if the value is falsy or unparseable.
-function formatNextAvailableAt(isoTimestamp) {
-  if (!isoTimestamp) return null;
-  var d = new Date(isoTimestamp);
-  if (!isFinite(d.getTime())) return null;
-  var dateStr = d.toLocaleDateString("en-US", {
-    timeZone: "America/Los_Angeles",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  var timeStr = d.toLocaleTimeString("en-US", {
-    timeZone: "America/Los_Angeles",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-  return dateStr + " at " + timeStr;
-}
-
 (async function checkFleetStatus() {
   if (IS_TEST_MODE_OVERRIDE) return;
   try {
@@ -1327,7 +1306,7 @@ function formatNextAvailableAt(isoTimestamp) {
             availableAt = tsField;
             // Format with time when next_available_at is present; else use pre-built string.
             availableAtDisplay = entry.next_available_at
-              ? (formatNextAvailableAt(entry.next_available_at) || entry.next_available_display || null)
+              ? (SlyLA.formatTimestamp(entry.next_available_at) || entry.next_available_display || null)
               : (entry.next_available_display || null);
           } else if (!availableAt && entry.next_available_display) {
             // next_available_display is set even when return_time was absent
