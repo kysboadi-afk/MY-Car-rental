@@ -188,7 +188,16 @@ export default async function handler(req, res) {
       // Use MAX(end_date) per vehicle to determine if a vehicle has an active
       // or upcoming block.  Only rows with end_date >= today are considered;
       // expired rows are cleaned up by the cleanup-blocked-dates cron.
-      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD (UTC)
+      //
+      // Use LA timezone for "today" to match how end_date is interpreted: a
+      // booking that returns on Apr 27 LA time should remain blocked until the
+      // LA calendar date rolls to Apr 28, not until UTC midnight.
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: BUSINESS_TZ,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date()); // YYYY-MM-DD in LA timezone
       const { data: blockedRows, error: blockedError } = await sb
         .from("blocked_dates")
         .select("vehicle_id, end_date")
@@ -220,6 +229,8 @@ export default async function handler(req, res) {
 
         if (!available && maxEnd) {
           // Format the end date as "Apr 27, 2026" (date only — no time component).
+          // buildDateTimeLA is called with 12:00 (noon LA) so that toLocaleDateString
+          // never crosses a date boundary due to the UTC-to-LA timezone offset.
           const endDateObj = buildDateTimeLA(maxEnd, "12:00");
           entry.next_available_display = formatForDisplay(endDateObj, false);
 

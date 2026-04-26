@@ -36,7 +36,7 @@ SET    original_booking_id = rr.booking_id,
 WHERE  rr.type              = 'extension'
   AND  rr.sync_excluded     = false
   AND  rr.booking_id        IS NOT NULL
-  AND  rr.original_booking_id IS DISTINCT FROM rr.booking_id
+  AND  (rr.original_booking_id IS NULL OR rr.original_booking_id != rr.booking_id)
   AND  EXISTS (
          SELECT 1 FROM bookings b WHERE b.booking_ref = rr.booking_id
        );
@@ -53,6 +53,9 @@ WHERE  rr.type              = 'extension'
 -- updated (IS DISTINCT FROM handles NULLs safely).
 
 WITH ext_sequence AS (
+  -- Order extensions by new_return_date ASC (primary) and created_at ASC (tiebreaker).
+  -- In normal operation each extension increases new_return_date, so this order
+  -- correctly reconstructs the chronological chain of extensions per booking.
   SELECT
     be.booking_id,
     be.payment_intent_id,
