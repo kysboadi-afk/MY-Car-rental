@@ -184,7 +184,6 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       original_booking_id: booking.originalBookingId || null,
       payment_intent_id:   piId || null,
       vehicle_id:          normalizeVehicleId(booking.vehicleId),
-      customer_id:         booking.customerId        || null,
       customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
       customer_email:      normalizeEmail(booking.email),
@@ -214,7 +213,6 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
         stripe_fee:        record.stripe_fee,
         stripe_net:        record.stripe_net,
         payment_intent_id: record.payment_intent_id,
-        customer_id:       record.customer_id,
         updated_at:        new Date().toISOString(),
       };
       const { error } = await sb

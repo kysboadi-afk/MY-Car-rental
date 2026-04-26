@@ -443,6 +443,16 @@ export async function runSyncRecent(sb, lookbackHours) {
         // ── MISSING: insert a new revenue record ────────────────────────
         const rawRef      = fields.metadata_booking_id || fields.metadata_original_booking_id;
         const resolvedRef = rawRef ? await resolveBookingId(sb, rawRef) : null;
+
+        // Deposit PIs must link to a real booking — never use a synthetic "stripe-pi_xxx"
+        // booking_id for them as the DB trigger will reject it.
+        if (classification === "deposit" && !resolvedRef) {
+          const reason = `deposit PI has no resolvable booking_ref (rawRef=${rawRef || "<missing>"})`;
+          console.error("[BOOKING_RESOLVE_FAILED]", { pi_id: piId, classification, reason });
+          errorItems.push({ pi_id: piId, classification, reason });
+          continue;
+        }
+
         // Map classification to the internal type used by autoCreateRevenueRecord.
         const recType =
           classification === "rental_extension" ? "extension"
@@ -956,7 +966,7 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!matchedRecord && payment.payment_type === "reservation_deposit") {
+      if (!matchedRecord && (payment.payment_type === "reservation_deposit" || payment.payment_type === "slingshot_security_deposit")) {
         const bookingRef = payment.metadata_booking_id;
         if (!bookingRef) {
           console.error("[BOOKING_RESOLVE_FAILED]", {
