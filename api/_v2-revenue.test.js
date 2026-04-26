@@ -411,7 +411,7 @@ test("record_extension_fee: 400 when amount is zero or negative", async () => {
   assert.equal(res._status, 400, "should reject non-positive amount");
 });
 
-test("record_extension_fee: saves to GitHub with synthetic booking_id when Supabase not configured", async () => {
+test("record_extension_fee: saves to GitHub with booking_id = original_booking_id when Supabase not configured", async () => {
   resetState();
   ghSha     = "sha-existing";
   ghRecords = [];
@@ -430,7 +430,10 @@ test("record_extension_fee: saves to GitHub with synthetic booking_id when Supab
 
   assert.equal(res._status, 201, "should return 201 Created");
   assert.ok(res._body.record, "should return the created record");
-  assert.ok(res._body.booking_id.startsWith("ext-d95643b10c87a02f1a510f7466b2bedf-"), "booking_id should use ext- prefix");
+  assert.equal(res._body.booking_id, "d95643b10c87a02f1a510f7466b2bedf", "booking_id should equal original_booking_id");
+  assert.equal(res._body.record.booking_id, "d95643b10c87a02f1a510f7466b2bedf", "record.booking_id should equal original_booking_id");
+  assert.equal(res._body.record.original_booking_id, "d95643b10c87a02f1a510f7466b2bedf", "original_booking_id should match");
+  assert.equal(res._body.record.type, "extension", "record type should be 'extension'");
   assert.equal(res._body.record.vehicle_id,     "camry");
   assert.equal(res._body.record.gross_amount,   181.91);
   assert.equal(res._body.record.payment_method, "cash");
@@ -438,7 +441,8 @@ test("record_extension_fee: saves to GitHub with synthetic booking_id when Supab
   assert.ok(res._body.record.notes.includes("d95643b10c87a02f1a510f7466b2bedf"), "notes should reference original booking");
   assert.ok(res._body.record.notes.includes("+3 days"), "notes should include extension label");
   assert.equal(ghRecords.length, 1, "record should be saved to GitHub");
-  assert.ok(ghRecords[0].booking_id.startsWith("ext-"), "GitHub record should use ext- prefix");
+  assert.equal(ghRecords[0].booking_id, "d95643b10c87a02f1a510f7466b2bedf", "GitHub record should use original_booking_id");
+  assert.equal(ghRecords[0].type, "extension", "GitHub record should have type=extension");
 });
 
 test("record_extension_fee: auto-generates notes when not provided", async () => {
@@ -459,6 +463,8 @@ test("record_extension_fee: auto-generates notes when not provided", async () =>
   assert.ok(res._body.record.notes.includes("abc123"), "auto-generated notes should reference original booking");
   assert.ok(res._body.record.notes.toLowerCase().includes("extension"), "notes should mention extension");
   assert.equal(res._body.record.payment_method, "external", "default payment_method should be 'external'");
+  assert.equal(res._body.record.type, "extension", "type should be 'extension'");
+  assert.equal(res._body.record.booking_id, "abc123", "booking_id should equal original_booking_id");
 });
 
 test("auth: rejects wrong secret with 401", async () => {

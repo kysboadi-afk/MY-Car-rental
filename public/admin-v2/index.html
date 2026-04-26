@@ -4791,9 +4791,17 @@ function applyRevenueFilters() {
 
   // Group all revenue records by effective booking ID so extensions collapse
   // under their parent booking row.
+  //
+  // booking_id is always the canonical booking_ref (bk-xxx) for every record —
+  // enforced by the DB trigger and by the server-side write paths.  Any record
+  // whose booking_id looks malformed (pi_ or ext- prefix) is a data integrity
+  // issue that should be fixed at the source, not silently corrected here.
   function getEffectiveBookingId(r) {
-    if (r.type === 'extension' && r.original_booking_id) return r.original_booking_id;
-    return r.booking_id || r.id;
+    const bid = r.booking_id;
+    if (bid && (bid.startsWith('pi_') || bid.startsWith('ext-'))) {
+      console.warn('[revenue] malformed booking_id detected — run migration 0084 to repair:', bid, 'record id:', r.id);
+    }
+    return bid || r.id;
   }
 
   const groupMap = new Map();

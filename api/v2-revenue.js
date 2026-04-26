@@ -530,9 +530,12 @@ export default async function handler(req, res) {
     // ── RECORD EXTENSION FEE ────────────────────────────────────────────────
     // Convenience action for recording an external or manual extension fee that
     // was NOT processed through the Stripe rental-extension flow (e.g. cash,
-    // Zelle, or a phone-agreed payment).  Generates a unique synthetic booking_id
-    // (prefix "ext-") so it is picked up by the dashboard as supplemental revenue
-    // without conflicting with the original booking's record.
+    // Zelle, or a phone-agreed payment).
+    //
+    // booking_id is set to original_booking_id (the canonical booking_ref) so
+    // all records for the same booking share the same booking_id and group
+    // correctly in the admin revenue view.  original_booking_id is set to the
+    // same value for consistency and to make the parent link explicit.
     if (action === "record_extension_fee") {
       const { original_booking_id, vehicle_id, amount, extension_label, payment_method, notes } = body;
       if (!original_booking_id || !vehicle_id || amount == null)
@@ -542,12 +545,11 @@ export default async function handler(req, res) {
       if (isNaN(resolvedAmount) || resolvedAmount <= 0)
         return res.status(400).json({ error: "amount must be a positive number" });
 
-      const syntheticBookingId = `ext-${original_booking_id}-${Date.now()}`;
-      const label   = extension_label ? ` (${extension_label})` : "";
+      const label    = extension_label ? ` (${extension_label})` : "";
       const noteText = notes || `Extension${label} for booking ${original_booking_id} — external payment`;
 
       const commonFields = {
-        booking_id:          syntheticBookingId,
+        booking_id:          original_booking_id,
         original_booking_id: original_booking_id,
         vehicle_id,
         gross_amount:        resolvedAmount,
@@ -555,6 +557,7 @@ export default async function handler(req, res) {
         refund_amount:       0,
         payment_method:      payment_method || "external",
         payment_status:      "paid",
+        type:                "extension",
         notes:               noteText,
         is_no_show:          false,
         is_cancelled:        false,
@@ -565,23 +568,26 @@ export default async function handler(req, res) {
 
       if (sb) {
         const { data, error } = await sb.from("revenue_records").insert(commonFields).select().single();
-        if (!error) return res.status(201).json({ record: data, booking_id: syntheticBookingId });
+        if (!error) return res.status(201).json({ record: data, booking_id: original_booking_id });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue record_extension_fee: Supabase unavailable, falling back to GitHub");
       }
-      // GitHub fallback
+      // GitHub fallback — insert without deduplication.
+      // Multiple extensions for the same booking are legitimate (a booking can
+      // be extended more than once), so there is no stable unique key to dedup
+      // on.  Each call generates a fresh UUID, matching Supabase's INSERT behaviour.
       const ghRecord = { id: crypto.randomUUID(), ...commonFields };
       let created;
       await updateJsonFileWithRetry({
         load:    loadRecordsFromGitHub,
         apply:   (data) => {
-          if (!data.some((r) => r.booking_id === ghRecord.booking_id)) data.push(ghRecord);
+          data.push(ghRecord);
           created = ghRecord;
         },
         save:    saveRecordsToGitHub,
         message: `v2: Record extension fee for booking ${original_booking_id}`,
       });
-      return res.status(201).json({ record: created, booking_id: syntheticBookingId });
+      return res.status(201).json({ record: created, booking_id: original_booking_id });
     }
 
     // ── REBUILD ANALYTICS ───────────────────────────────────────────────────
