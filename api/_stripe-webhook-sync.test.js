@@ -22,6 +22,10 @@ import assert from "node:assert/strict";
 // ─── Environment setup ────────────────────────────────────────────────────────
 process.env.STRIPE_SECRET_KEY     = "sk_live_fake";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_fake";
+// GITHUB_TOKEN must be set so blockBookedDates proceeds past its early-exit
+// guard and calls global.fetch (which is mocked below).  Without it the
+// function returns before updating booked-dates.json in the test store.
+process.env.GITHUB_TOKEN          = "ghs_fake_for_tests";
 
 // ─── Mutable state ────────────────────────────────────────────────────────────
 const bookingsStore = {};                     // in-memory bookings.json

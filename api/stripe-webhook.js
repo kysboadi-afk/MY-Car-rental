@@ -1447,6 +1447,7 @@ export default async function handler(req, res) {
 
     // Handle rental extension payment confirmations.
     if (paymentType === "rental_extension") {
+      console.log("EXTENSION TRIGGERED", paymentType, paymentIntent.metadata?.booking_id || paymentIntent.metadata?.original_booking_id || "<missing>");
       const {
         vehicle_id,
         booking_id:          meta_booking_id,   // canonical booking_ref (primary, set by extend-rental.js)
@@ -1634,7 +1635,7 @@ export default async function handler(req, res) {
               try {
                 const sbBErecov = getSupabaseAdmin();
                 if (sbBErecov && resolvedBookingId && new_return_date) {
-                  await sbBErecov
+                  const { data: beRecovData, error: beRecovError } = await sbBErecov
                     .from("booking_extensions")
                     .upsert(
                       {
@@ -1646,6 +1647,13 @@ export default async function handler(req, res) {
                       },
                       { onConflict: "payment_intent_id", ignoreDuplicates: true }
                     );
+                  if (beRecovError) {
+                    console.error("stripe-webhook: alreadyApplied booking_extensions recovery upsert failed:", beRecovError.message, beRecovError.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+                  } else {
+                    console.log("stripe-webhook: alreadyApplied booking_extensions recovery upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beRecovData?.length ?? "(no data)" });
+                  }
+                } else {
+                  console.warn("stripe-webhook: alreadyApplied booking_extensions recovery skipped — missing sbBErecov, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
                 }
               } catch (beRecovErr) {
                 console.warn("stripe-webhook: alreadyApplied booking_extensions recovery failed (non-fatal):", beRecovErr.message);
@@ -1699,7 +1707,7 @@ export default async function handler(req, res) {
           try {
             const sbBE = getSupabaseAdmin();
             if (sbBE && resolvedBookingId && new_return_date) {
-              await sbBE
+              const { data: beData, error: beError } = await sbBE
                 .from("booking_extensions")
                 .upsert(
                   {
@@ -1711,6 +1719,13 @@ export default async function handler(req, res) {
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );
+              if (beError) {
+                console.error("stripe-webhook: booking_extensions upsert failed:", beError.message, beError.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+              } else {
+                console.log("stripe-webhook: booking_extensions upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beData?.length ?? "(no data)" });
+              }
+            } else {
+              console.warn("stripe-webhook: booking_extensions upsert skipped — missing sbBE, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
             }
           } catch (beErr) {
             console.error("stripe-webhook: booking_extensions insert error (non-fatal):", beErr.message);
