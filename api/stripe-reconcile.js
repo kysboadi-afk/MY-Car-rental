@@ -24,6 +24,7 @@
 // "analytics"   — recompute totals from revenue_records (no Stripe call)
 
 import Stripe from "stripe";
+import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
@@ -83,8 +84,100 @@ async function updateBookingStatusIfNeeded(sb, bookingRef, expectedStatus, nextS
 }
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** HTML-escape a string for use in email templates. */
+function escHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Classify a Stripe PI payment_type into one of three canonical categories:
+ *   "deposit"           — partial/security deposit only (balance still owed)
+ *   "rental_extension"  — extension of an existing rental
+ *   "rental"            — standard full/balance rental payment (default)
+ */
+function classifyPaymentType(rawType) {
+  if (rawType === "rental_extension") return "rental_extension";
+  if (rawType === "reservation_deposit" || rawType === "slingshot_security_deposit") return "deposit";
+  return "rental";
+}
+
+/**
+ * Send an admin alert email when the reconciler detects mismatches.
+ * Non-fatal: logs and returns on any error.
+ *
+ * @param {Array<{pi_id,classification,reason}>} recovered
+ * @param {Array<{pi_id,classification,reason}>} errors
+ * @param {number} lookbackHours
+ */
+async function sendReconcileAlertEmail(recovered, errors, lookbackHours) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !OWNER_EMAIL) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host:   process.env.SMTP_HOST,
+      port:   Number(process.env.SMTP_PORT || 587),
+      secure: Number(process.env.SMTP_PORT) === 465,
+      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+    const total     = recovered.length + errors.length;
+    const subject   = `[SLY RIDES] Stripe Reconcile Alert — ${total} mismatch(es) found (last ${lookbackHours}h)`;
+    const checkedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+    const buildRows = (items, statusLabel) =>
+      items.map((item) =>
+        `<tr>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.pi_id)}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.classification)}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${statusLabel}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.reason || "")}</td>
+        </tr>`
+      ).join("");
+
+    const html = `
+      <h2 style="color:#c0392b;">⚠️ Stripe Reconciliation Alert</h2>
+      <p>The <strong>sync_recent</strong> reconciler detected mismatches while scanning the last <strong>${lookbackHours} hours</strong> of Stripe PaymentIntents.</p>
+      <p><strong>Checked at:</strong> ${escHtml(checkedAt)} (LA time)</p>
+      <table style="border-collapse:collapse;width:100%;font-size:13px;">
+        <thead>
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">PaymentIntent ID</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Classification</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Status</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${buildRows(recovered, "recovered")}
+          ${buildRows(errors, "error")}
+        </tbody>
+      </table>
+      <p style="margin-top:16px;color:#555;">
+        <strong>recovered</strong> — record was missing or incorrect in the DB; the reconciler fixed it.<br>
+        <strong>error</strong> — the reconciler could not process this payment; manual review required.
+      </p>
+      <p>Visit the Admin Panel → Revenue → Reconcile to review and take action.</p>
+    `;
+
+    await transporter.sendMail({
+      from:    process.env.SMTP_USER,
+      to:      OWNER_EMAIL,
+      subject,
+      html,
+    });
+    console.log(`[stripe-reconcile] reconcile alert email sent to ${OWNER_EMAIL} (${recovered.length} recovered, ${errors.length} errors)`);
+  } catch (alertErr) {
+    console.error("[stripe-reconcile] alert email failed (non-fatal):", alertErr.message);
+  }
+}
 
 /** Fetch ALL PaymentIntents from Stripe (auto-paginated). */
 async function fetchAllPaymentIntents(stripe) {
@@ -481,6 +574,166 @@ export default async function handler(req, res) {
         return res.status(503).json({ error: "Database schema is missing columns required for Stripe cash update. Please apply all Supabase migrations (run migration 0046 or use COMPLETE_SETUP.sql)." });
       }
       console.error("stripe-reconcile cash_update error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
+    }
+  }
+
+  // ── SYNC_RECENT — time-windowed reconcile with per-PI status tracking ────────
+  // action: "sync_recent"
+  // Body: { secret, action: "sync_recent", lookback_hours?: number }
+  //   lookback_hours — how far back to look in Stripe (1–168, default 72).
+  //
+  // For each succeeded PI in the window:
+  //   • "processed"  — already in DB and financials are correct (no action needed).
+  //   • "recovered"  — was missing from DB or had incorrect data; the reconciler
+  //                    inserted/updated the record automatically.
+  //   • "error"      — could not be reconciled; manual review required.
+  //
+  // Sends an admin alert email whenever any "recovered" or "error" items are found.
+  if (action === "sync_recent") {
+    if (!process.env.STRIPE_SECRET_KEY)
+      return res.status(503).json({ error: "STRIPE_SECRET_KEY is not configured." });
+
+    try {
+      const rawHours      = body.lookback_hours != null ? Number(body.lookback_hours) : 72;
+      const lookbackHours = Math.max(1, Math.min(168, Number.isFinite(rawHours) ? rawHours : 72));
+      const sinceUnix     = Math.floor(Date.now() / 1000) - lookbackHours * 3600;
+
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+
+      // Fetch only PIs created within the time window (Stripe created filter).
+      const recentPIs = [];
+      let startingAfter;
+      for (;;) {
+        const params = {
+          limit:   100,
+          created: { gte: sinceUnix },
+          expand:  ["data.latest_charge.balance_transaction"],
+        };
+        if (startingAfter) params.starting_after = startingAfter;
+        const page = await stripe.paymentIntents.list(params);
+        recentPIs.push(...page.data.filter((pi) => pi.status === "succeeded"));
+        if (!page.has_more || page.data.length === 0) break;
+        startingAfter = page.data[page.data.length - 1].id;
+      }
+
+      /** @type {Array<{pi_id:string, classification:string}>} */
+      const processedItems = [];
+      /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+      const recoveredItems = [];
+      /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+      const errorItems     = [];
+
+      for (const pi of recentPIs) {
+        const fields         = extractFields(pi);
+        const classification = classifyPaymentType(fields.payment_type);
+        const piId           = pi.id;
+
+        try {
+          // Check DB for an existing record keyed by payment_intent_id.
+          const { data: existing, error: lookupErr } = await sb
+            .from("revenue_records")
+            .select("id, gross_amount, stripe_fee, stripe_net, stripe_charge_id, payment_status, payment_intent_id")
+            .eq("payment_intent_id", piId)
+            .eq("sync_excluded", false)
+            .maybeSingle();
+
+          if (lookupErr) throw new Error(`DB lookup failed: ${lookupErr.message}`);
+
+          if (!existing) {
+            // ── MISSING: insert a new revenue record ────────────────────────
+            const rawRef        = fields.metadata_booking_id || fields.metadata_original_booking_id;
+            const resolvedRef   = rawRef ? await resolveBookingId(sb, rawRef) : null;
+            // Map classification to the internal type used by autoCreateRevenueRecord.
+            const recType =
+              classification === "rental_extension" ? "extension"
+              : classification === "deposit"        ? "reservation_deposit"
+              :                                       "rental";
+
+            await autoCreateRevenueRecord({
+              bookingId:       resolvedRef || ("stripe-" + piId),
+              paymentIntentId: piId,
+              vehicleId:       pi.metadata?.vehicle_id || null,
+              name:            pi.metadata?.renter_name || null,
+              phone:           pi.metadata?.renter_phone || null,
+              email:           fields.customer_email,
+              pickupDate:      pi.metadata?.pickup_date || null,
+              returnDate:      pi.metadata?.return_date || null,
+              amountPaid:      fields.amount_gross,
+              paymentMethod:   "stripe",
+              type:            recType,
+              stripeFee:       fields.stripe_fee,
+              stripeNet:       fields.stripe_net,
+            }, { strict: true, requireStripeFee: false });
+
+            console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });
+            recoveredItems.push({ pi_id: piId, classification, reason: "missing from DB — inserted" });
+
+          } else {
+            // ── EXISTS: check if financials are correct ──────────────────────
+            const amountDiff  = Math.abs(Number(existing.gross_amount) - fields.amount_gross);
+            const feeMissing  = existing.stripe_fee == null && fields.stripe_fee != null;
+            const wrongStatus = existing.payment_status !== "paid";
+            const chargeMissing = !existing.stripe_charge_id && fields.stripe_charge_id;
+
+            if (amountDiff > 0.01 || feeMissing || wrongStatus || chargeMissing) {
+              // ── INCORRECT: patch the record ────────────────────────────────
+              // Snapshot mutable fields before the async update so the reason
+              // string reflects the original (wrong) DB values, not the patched ones.
+              const origGrossAmount   = existing.gross_amount;
+              const origPaymentStatus = existing.payment_status;
+              const updates = { updated_at: new Date().toISOString(), payment_status: "paid" };
+              if (amountDiff > 0.01)                                  updates.gross_amount      = fields.amount_gross;
+              if ((feeMissing || wrongStatus) && fields.stripe_fee != null) {
+                updates.stripe_fee = fields.stripe_fee;
+                updates.stripe_net = fields.stripe_net;
+              }
+              if (chargeMissing)                                       updates.stripe_charge_id  = fields.stripe_charge_id;
+              if (!existing.payment_intent_id)                         updates.payment_intent_id = piId;
+
+              const { error: upErr } = await sb
+                .from("revenue_records")
+                .update(updates)
+                .eq("id", existing.id);
+              if (upErr) throw new Error(`DB update failed: ${upErr.message}`);
+
+              const reason = [
+                amountDiff > 0.01    ? `amount mismatch (DB: ${origGrossAmount}, Stripe: ${fields.amount_gross})` : null,
+                feeMissing           ? "stripe_fee was missing"                                                    : null,
+                wrongStatus          ? `payment_status was "${origPaymentStatus}"`                                 : null,
+                chargeMissing        ? "stripe_charge_id was missing"                                              : null,
+              ].filter(Boolean).join("; ");
+
+              console.warn("[RECONCILE_RECOVERED_MISMATCH]", { pi_id: piId, classification, reason });
+              recoveredItems.push({ pi_id: piId, classification, reason });
+
+            } else {
+              // ── CORRECT: nothing to do ─────────────────────────────────────
+              processedItems.push({ pi_id: piId, classification });
+            }
+          }
+        } catch (err) {
+          console.error("[RECONCILE_ERROR]", { pi_id: piId, classification, error: err.message });
+          errorItems.push({ pi_id: piId, classification, reason: err.message });
+        }
+      }
+
+      // Alert the admin whenever there are mismatches or errors.
+      if (recoveredItems.length > 0 || errorItems.length > 0) {
+        await sendReconcileAlertEmail(recoveredItems, errorItems, lookbackHours);
+      }
+
+      return res.status(200).json({
+        ok:             errorItems.length === 0,
+        lookback_hours: lookbackHours,
+        total:          recentPIs.length,
+        processed:      processedItems.length,
+        recovered:      recoveredItems.length,
+        errors:         errorItems.length,
+        details:        { processed: processedItems, recovered: recoveredItems, errors: errorItems },
+      });
+    } catch (err) {
+      console.error("stripe-reconcile sync_recent error:", err);
       return res.status(500).json({ error: adminErrorMessage(err) });
     }
   }
