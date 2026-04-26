@@ -157,7 +157,31 @@ export default async function handler(req, res) {
     const rrByVehicle = {};
     let financialsFromRevRecords = false;
 
+    // ── Live active bookings: vehicles currently on rental (from Supabase) ────
+    // activeVehicleIds: Set of vehicle_ids that have an active booking right now.
+    // This is loaded from Supabase (not bookings.json) so it always reflects the
+    // live state rather than a potentially-stale GitHub JSON snapshot.
+    const activeVehicleIds = new Set();
+
     const sb = getSupabaseAdmin();
+    if (sb) {
+      try {
+        const { data: activeRows, error: activeErr } = await sb
+          .from("bookings")
+          .select("vehicle_id")
+          .in("status", ["active", "active_rental", "overdue"]);
+        if (!activeErr && activeRows) {
+          for (const row of activeRows) {
+            if (row.vehicle_id) activeVehicleIds.add(uiVehicleId(row.vehicle_id) || row.vehicle_id);
+          }
+        } else if (activeErr) {
+          console.warn("v2-analytics: active bookings query failed (non-fatal):", activeErr.message);
+        }
+      } catch (activeEx) {
+        console.warn("v2-analytics: active bookings query error (non-fatal):", activeEx.message);
+      }
+    }
+
     if (sb) {
       try {
         const rrResult = await sb
@@ -233,13 +257,16 @@ export default async function handler(req, res) {
         const totalDays  = Math.max(MIN_UTILIZATION_WINDOW_DAYS, Math.round((now - firstDate) / 86400000));
         const utilizationRate = Math.min(100, Math.round((rentedDays / totalDays) * 100 * 10) / 10);
 
-        // Active booking right now (from bookings.json)
-        const activeNow = vBookings.some((b) => {
-          if (!activeStatuses.has(b.status)) return false;
-          const pick = b.pickupDate ? new Date(b.pickupDate) : null;
-          const ret  = b.returnDate ? new Date(b.returnDate) : null;
-          return pick && ret && pick <= now && ret >= now;
-        });
+        // Active booking right now: prefer Supabase live query (activeVehicleIds),
+        // fall back to bookings.json date-range check when Supabase is unavailable.
+        const activeNow = activeVehicleIds.size > 0
+          ? activeVehicleIds.has(vehicleId)
+          : vBookings.some((b) => {
+              if (!activeStatuses.has(b.status)) return false;
+              const pick = b.pickupDate ? new Date(b.pickupDate) : null;
+              const ret  = b.returnDate ? new Date(b.returnDate) : null;
+              return pick && ret && pick <= now && ret >= now;
+            });
 
         const vProfit        = Math.round((net - vExpenses) * 100) / 100;
         const purchasePrice  = Number(vehicle.purchase_price || 0);
