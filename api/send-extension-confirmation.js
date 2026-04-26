@@ -116,7 +116,7 @@ export default async function handler(req, res) {
     }
 
     const meta = pi.metadata || {};
-    if (meta.payment_type !== "rental_extension") {
+    if (meta.payment_type !== "rental_extension" && meta.type !== "rental_extension") {
       return res.status(400).json({ error: "Not a rental extension payment." });
     }
 

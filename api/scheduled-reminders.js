@@ -1285,7 +1285,7 @@ async function runReconciliation() {
     // Fall back to metadata.original_booking_id for PIs created before extend-rental.js
     // was updated to emit booking_id, preserving backward compatibility.
     const extensionOriginalBookingIds = succeededPIs
-      .filter((pi) => (pi.metadata?.payment_type) === "rental_extension")
+      .filter((pi) => (pi.metadata?.payment_type || pi.metadata?.type) === "rental_extension")
       .map((pi) => pi.metadata?.booking_id || pi.metadata?.original_booking_id)
       .filter(Boolean);
 
@@ -1299,7 +1299,7 @@ async function runReconciliation() {
         (extRevenueRows || []).map((r) => r.payment_intent_id).filter(Boolean)
       );
       for (const pi of succeededPIs) {
-        if ((pi.metadata?.payment_type) === "rental_extension" && processedExtPIIds.has(pi.id)) {
+        if ((pi.metadata?.payment_type || pi.metadata?.type) === "rental_extension" && processedExtPIIds.has(pi.id)) {
           handledExtensionPIIds.add(pi.id);
         }
       }
@@ -1365,7 +1365,8 @@ async function runReconciliation() {
     const failedPIIds   = [];
 
     for (const pi of newMismatches) {
-      const paymentType = (pi.metadata || {}).payment_type || "";
+      const piMetaReconcile = pi.metadata || {};
+      const paymentType = piMetaReconcile.payment_type || piMetaReconcile.type || "";
       if (NON_NEW_BOOKING_TYPES.has(paymentType)) {
         console.warn(
           `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`

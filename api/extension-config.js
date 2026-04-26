@@ -48,7 +48,7 @@ export default async function handler(req, res) {
   try {
     const pi = await stripe.paymentIntents.retrieve(piId);
 
-    if ((pi.metadata || {}).payment_type !== "rental_extension") {
+    if ((pi.metadata || {}).payment_type !== "rental_extension" && (pi.metadata || {}).type !== "rental_extension") {
       return res.status(400).json({ error: "This link is not valid for a rental extension." });
     }
 
