@@ -118,6 +118,10 @@ function buildFakeSupabase() {
 
 // Track update payloads for verification
 const updatePayloads = {};
+// Track bookings.return_date updates from applyExtensionReturnDateToBooking
+const bookingReturnDateUpdates = [];
+// Simulated bookings store (keyed by booking_ref) for applyExtensionReturnDateToBooking reads
+const bookingsStore = {};
 
 function buildTable(table) {
   let filterPiId      = null;
@@ -143,10 +147,11 @@ function buildTable(table) {
       // bookings table: return a found booking for any "bk-…" ref so
       // resolveBookingId succeeds in deposit-recovery tests.
       if (table === "bookings") {
-        const data = filterBookingRef && filterBookingRef.startsWith("bk-")
-          ? { booking_ref: filterBookingRef }
-          : null;
-        return Promise.resolve({ data, error: null });
+        if (filterBookingRef && filterBookingRef.startsWith("bk-")) {
+          const stored = bookingsStore[filterBookingRef] || {};
+          return Promise.resolve({ data: { booking_ref: filterBookingRef, ...stored }, error: null });
+        }
+        return Promise.resolve({ data: null, error: null });
       }
       if (table !== "revenue_records") return Promise.resolve({ data: null, error: null });
       // Simulate a lookup error if requested.
@@ -176,6 +181,16 @@ function buildTable(table) {
               Object.assign(rrByPI[piKey], updateBuf);
               updatePayloads[filterId] = { ...updateBuf };
             }
+          }
+        }
+        return Promise.resolve({ error: null }).then(resolve, reject);
+      }
+      // bookings update (applyExtensionReturnDateToBooking)
+      if (updateBuf && table === "bookings") {
+        if (filterBookingRef && updateBuf.return_date) {
+          bookingReturnDateUpdates.push({ booking_ref: filterBookingRef, return_date: updateBuf.return_date });
+          if (bookingsStore[filterBookingRef]) {
+            bookingsStore[filterBookingRef].return_date = updateBuf.return_date;
           }
         }
         return Promise.resolve({ error: null }).then(resolve, reject);
@@ -216,8 +231,10 @@ function makeRes() {
 function reset() {
   for (const k of Object.keys(rrByPI))       delete rrByPI[k];
   for (const k of Object.keys(updatePayloads)) delete updatePayloads[k];
-  createCalls.length  = 0;
-  mailsSent.length    = 0;
+  for (const k of Object.keys(bookingsStore))  delete bookingsStore[k];
+  createCalls.length              = 0;
+  mailsSent.length                = 0;
+  bookingReturnDateUpdates.length = 0;
   stripeListPage      = [];
   nextLookupError     = null;
   nextUpdateError     = null;
@@ -304,7 +321,7 @@ test("sync_recent: PI missing from DB → recovered (inserted)", async () => {
   assert.match(mailsSent[0].subject, /Stripe Reconcile Alert/);
 });
 
-test("sync_recent: rental_extension PI missing from DB → recovered with extension type", async () => {
+test("sync_recent: rental_extension PI missing from DB → recovered with extension type and booking.return_date updated", async () => {
   reset();
   const piId = "pi_ext_1";
   stripeListPage = [{
@@ -314,9 +331,11 @@ test("sync_recent: rental_extension PI missing from DB → recovered with extens
     created:         Math.floor(Date.now() / 1000) - 60,
     receipt_email:   "renter@example.com",
     metadata: {
-      payment_type:  "rental_extension",
-      booking_id:    "bk-original-1",
-      vehicle_id:    "camry",
+      payment_type:         "rental_extension",
+      booking_id:           "bk-original-1",
+      vehicle_id:           "camry",
+      previous_return_date: "2026-05-10",
+      new_return_date:      "2026-05-11",
     },
     latest_charge: {
       id: "ch_ext1",
@@ -331,7 +350,15 @@ test("sync_recent: rental_extension PI missing from DB → recovered with extens
   assert.equal(res._status, 200);
   assert.equal(res._body.recovered, 1);
   assert.equal(createCalls.length,  1);
-  assert.equal(createCalls[0].type, "extension");
+  const extCall = createCalls[0];
+  assert.equal(extCall.type, "extension");
+  // Extension revenue record must use the extension window dates.
+  assert.equal(extCall.pickupDate, "2026-05-10", "extension pickupDate must equal previous_return_date");
+  assert.equal(extCall.returnDate, "2026-05-11", "extension returnDate must equal new_return_date");
+  // bookings.return_date must be advanced to new_return_date.
+  assert.equal(bookingReturnDateUpdates.length, 1, "bookings.return_date must be updated after extension recovery");
+  assert.equal(bookingReturnDateUpdates[0].booking_ref, "bk-original-1");
+  assert.equal(bookingReturnDateUpdates[0].return_date, "2026-05-11");
   assert.equal(mailsSent.length, 1);
 });
 
