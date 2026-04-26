@@ -36,6 +36,14 @@ const MSG_OIL_CHECK_REQUEST =
   "MID (between lines)\n" +
   "LOW (below safe line)";
 
+// Merged message — sent when the oil-check trigger fires AND the vehicle is
+// also due for a 3 000-mile oil change service.  Combines both requests into a
+// single SMS so the renter receives only one message.
+const MSG_OIL_CHECK_MERGED =
+  "Quick vehicle check required.\n\n" +
+  "Please check oil level (dipstick) and note vehicle condition.\n\n" +
+  "Reply FULL, MID, or LOW.";
+
 const MSG_OIL_CHECK_REMINDER =
   "Reminder: Oil check still required.\n\n" +
   "Reply FULL, MID, or LOW.\n\n" +
@@ -173,6 +181,19 @@ export default async function handler(req, res) {
     stateByVehicle[vs.vehicle_id] = vs;
   }
 
+  // ── Load vehicle service-mileage data (for merged-message detection) ───────
+  // Used to determine whether a 3 000-mile oil change is also due at the time
+  // of the oil-check trigger so that both requests can be merged into one SMS.
+  const { data: vehicleRows } = await sb
+    .from("vehicles")
+    .select("vehicle_id, mileage, last_oil_change_mileage")
+    .in("vehicle_id", vehicleIds);
+
+  const vehicleByVehicle = {};
+  for (const v of vehicleRows || []) {
+    vehicleByVehicle[v.vehicle_id] = v;
+  }
+
   // ── Dedup: track phones contacted this run (max 1 SMS per phone per 24 h) ─
   const phonesContactedThisRun = new Set();
 
@@ -288,9 +309,24 @@ export default async function handler(req, res) {
       continue;
     }
 
+    // Determine whether to send the merged message.
+    // If the vehicle is also due for a 3 000-mile oil change service, combine
+    // both requests into a single SMS to avoid sending two separate messages.
+    const vData          = vehicleByVehicle[vehicleId];
+    const vehicleMileage = vData?.mileage != null ? Number(vData.mileage) : null;
+    const lastOilChangeMi = vData?.last_oil_change_mileage != null
+      ? Number(vData.last_oil_change_mileage)
+      : null;
+    const milesSinceOilChange = vehicleMileage != null && lastOilChangeMi != null
+      ? vehicleMileage - lastOilChangeMi
+      : null;
+    const mileageMaintenanceDue = milesSinceOilChange != null && milesSinceOilChange >= 3000;
+
+    const msgToSend = mileageMaintenanceDue ? MSG_OIL_CHECK_MERGED : MSG_OIL_CHECK_REQUEST;
+
     // Send initial oil check request
     try {
-      await sendSms(phone, MSG_OIL_CHECK_REQUEST);
+      await sendSms(phone, msgToSend);
       phonesContactedThisRun.add(phone);
 
       const nowTs = new Date().toISOString();
@@ -306,7 +342,7 @@ export default async function handler(req, res) {
       results.triggered++;
       console.log(
         `oil-check-cron: triggered booking ${bookingRef || bookingId} ` +
-        `(days_since=${daysSinceCheck.toFixed(1)}, miles_since=${milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0)})`
+        `(days_since=${daysSinceCheck.toFixed(1)}, miles_since=${milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0)}, merged=${mileageMaintenanceDue})`
       );
     } catch (err) {
       results.errors.push(`${bookingRef || bookingId}: ${err.message}`);
