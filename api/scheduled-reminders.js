@@ -798,6 +798,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       console.log("[SMS_ACTIVE]", {
         booking_ref:       id,
         vehicleId,
+        return_date_raw:   booking.returnDate,
+        return_time_raw:   booking.returnTime || null,
         return_la:         toLAString(returnDt),
         mins_until_return: Math.round(minutesUntilReturn),
         sent: {
@@ -808,6 +810,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           late_fee_pending:   alreadySent(booking, "late_fee_pending"),
         },
       });
+      console.log("minutesToReturn:", minutesUntilReturn);
 
       if (process.env.DEBUG_TIMEZONE) {
         console.log("[TZ_DEBUG][ACTIVE_RENTAL]", {

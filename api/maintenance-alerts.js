@@ -432,6 +432,11 @@ export default async function handler(req, res) {
       const minutesToReturn = isNaN(returnDt.getTime())
         ? undefined
         : (returnDt - new Date()) / 60_000;
+      console.log("minutesToReturn:", minutesToReturn, {
+        booking_ref: bookingId,
+        return_date: booking.returnDate,
+        return_time: booking.returnTime,
+      });
 
       // ── Collect all eligible service alert candidates ──────────────────────
       // Multiple services (oil, brakes, tires) may be due at the same time.
