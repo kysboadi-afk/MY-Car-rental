@@ -91,6 +91,7 @@ async function checkPaymentBookingRevenue(sb) {
       .from("bookings")
       .select("booking_ref, status, total_price, payment_status, created_at, payment_intent_id")
       .eq("payment_status", "paid")
+      .not("status", "in", '("cancelled","cancelled_rental")')
       .limit(500);
 
     if (bErr) {
@@ -572,6 +573,7 @@ async function fixPaymentBookingRevenue(sb) {
       "payment_intent_id, payment_method, vehicle_id, pickup_date, return_date",
     )
     .eq("payment_status", "paid")
+    .not("status", "in", '("cancelled","cancelled_rental")')
     .limit(500);
   if (bErr) throw new Error("Could not query bookings: " + bErr.message);
 
