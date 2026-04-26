@@ -379,6 +379,160 @@ function buildAnalytics(rows) {
   };
 }
 
+/**
+ * Core sync_recent logic: fetches succeeded Stripe PaymentIntents from the
+ * last `lookbackHours` hours, compares each against revenue_records, and
+ * inserts/updates any that are missing or incorrect.
+ *
+ * Designed to be called both by the HTTP handler (action="sync_recent") and
+ * the automated cron handler (api/stripe-reconcile-cron.js).
+ *
+ * Requires STRIPE_SECRET_KEY to be set; throws if it is missing.
+ *
+ * @param {object} sb            - Supabase admin client
+ * @param {number} lookbackHours - Window size (1–168)
+ * @returns {Promise<{ok, lookback_hours, total, processed, recovered, errors, details}>}
+ */
+export async function runSyncRecent(sb, lookbackHours) {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+  const stripe    = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+  const sinceUnix = Math.floor(Date.now() / 1000) - lookbackHours * 3600;
+
+  // Fetch only PIs created within the time window (Stripe created filter).
+  const recentPIs = [];
+  let startingAfter;
+  for (;;) {
+    const params = {
+      limit:   100,
+      created: { gte: sinceUnix },
+      expand:  ["data.latest_charge.balance_transaction"],
+    };
+    if (startingAfter) params.starting_after = startingAfter;
+    const page = await stripe.paymentIntents.list(params);
+    recentPIs.push(...page.data.filter((pi) => pi.status === "succeeded"));
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+
+  /** @type {Array<{pi_id:string, classification:string}>} */
+  const processedItems = [];
+  /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+  const recoveredItems = [];
+  /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+  const errorItems     = [];
+
+  for (const pi of recentPIs) {
+    const fields         = extractFields(pi);
+    const classification = classifyPaymentType(fields.payment_type);
+    const piId           = pi.id;
+
+    try {
+      // Check DB for an existing record keyed by payment_intent_id.
+      const { data: existing, error: lookupErr } = await sb
+        .from("revenue_records")
+        .select("id, gross_amount, stripe_fee, stripe_net, stripe_charge_id, payment_status, payment_intent_id")
+        .eq("payment_intent_id", piId)
+        .eq("sync_excluded", false)
+        .maybeSingle();
+
+      if (lookupErr) throw new Error(`DB lookup failed: ${lookupErr.message}`);
+
+      if (!existing) {
+        // ── MISSING: insert a new revenue record ────────────────────────
+        const rawRef      = fields.metadata_booking_id || fields.metadata_original_booking_id;
+        const resolvedRef = rawRef ? await resolveBookingId(sb, rawRef) : null;
+        // Map classification to the internal type used by autoCreateRevenueRecord.
+        const recType =
+          classification === "rental_extension" ? "extension"
+          : classification === "deposit"        ? "reservation_deposit"
+          :                                       "rental";
+
+        await autoCreateRevenueRecord({
+          bookingId:       resolvedRef || ("stripe-" + piId),
+          paymentIntentId: piId,
+          vehicleId:       pi.metadata?.vehicle_id || null,
+          name:            pi.metadata?.renter_name || null,
+          phone:           pi.metadata?.renter_phone || null,
+          email:           fields.customer_email,
+          pickupDate:      pi.metadata?.pickup_date || null,
+          returnDate:      pi.metadata?.return_date || null,
+          amountPaid:      fields.amount_gross,
+          paymentMethod:   "stripe",
+          type:            recType,
+          stripeFee:       fields.stripe_fee,
+          stripeNet:       fields.stripe_net,
+        }, { strict: true, requireStripeFee: false });
+
+        console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });
+        recoveredItems.push({ pi_id: piId, classification, reason: "missing from DB — inserted" });
+
+      } else {
+        // ── EXISTS: check if financials are correct ──────────────────────
+        const amountDiff    = Math.abs(Number(existing.gross_amount) - fields.amount_gross);
+        const feeMissing    = existing.stripe_fee == null && fields.stripe_fee != null;
+        const wrongStatus   = existing.payment_status !== "paid";
+        const chargeMissing = !existing.stripe_charge_id && fields.stripe_charge_id;
+
+        if (amountDiff > 0.01 || feeMissing || wrongStatus || chargeMissing) {
+          // ── INCORRECT: patch the record ────────────────────────────────
+          // Snapshot mutable fields before the async update so the reason
+          // string reflects the original (wrong) DB values, not the patched ones.
+          const origGrossAmount   = existing.gross_amount;
+          const origPaymentStatus = existing.payment_status;
+          const updates = { updated_at: new Date().toISOString(), payment_status: "paid" };
+          if (amountDiff > 0.01)                                       updates.gross_amount      = fields.amount_gross;
+          if ((feeMissing || wrongStatus) && fields.stripe_fee != null) {
+            updates.stripe_fee = fields.stripe_fee;
+            updates.stripe_net = fields.stripe_net;
+          }
+          if (chargeMissing)                                            updates.stripe_charge_id  = fields.stripe_charge_id;
+          if (!existing.payment_intent_id)                              updates.payment_intent_id = piId;
+
+          const { error: upErr } = await sb
+            .from("revenue_records")
+            .update(updates)
+            .eq("id", existing.id);
+          if (upErr) throw new Error(`DB update failed: ${upErr.message}`);
+
+          const reason = [
+            amountDiff > 0.01  ? `amount mismatch (DB: ${origGrossAmount}, Stripe: ${fields.amount_gross})` : null,
+            feeMissing         ? "stripe_fee was missing"                                                    : null,
+            wrongStatus        ? `payment_status was "${origPaymentStatus}"`                                 : null,
+            chargeMissing      ? "stripe_charge_id was missing"                                              : null,
+          ].filter(Boolean).join("; ");
+
+          console.warn("[RECONCILE_RECOVERED_MISMATCH]", { pi_id: piId, classification, reason });
+          recoveredItems.push({ pi_id: piId, classification, reason });
+
+        } else {
+          // ── CORRECT: nothing to do ─────────────────────────────────────
+          processedItems.push({ pi_id: piId, classification });
+        }
+      }
+    } catch (err) {
+      console.error("[RECONCILE_ERROR]", { pi_id: piId, classification, error: err.message });
+      errorItems.push({ pi_id: piId, classification, reason: err.message });
+    }
+  }
+
+  // Alert the admin whenever there are mismatches or errors.
+  if (recoveredItems.length > 0 || errorItems.length > 0) {
+    await sendReconcileAlertEmail(recoveredItems, errorItems, lookbackHours);
+  }
+
+  return {
+    ok:             errorItems.length === 0,
+    lookback_hours: lookbackHours,
+    total:          recentPIs.length,
+    processed:      processedItems.length,
+    recovered:      recoveredItems.length,
+    errors:         errorItems.length,
+    details:        { processed: processedItems, recovered: recoveredItems, errors: errorItems },
+  };
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
@@ -597,141 +751,8 @@ export default async function handler(req, res) {
     try {
       const rawHours      = body.lookback_hours != null ? Number(body.lookback_hours) : 72;
       const lookbackHours = Math.max(1, Math.min(168, Number.isFinite(rawHours) ? rawHours : 72));
-      const sinceUnix     = Math.floor(Date.now() / 1000) - lookbackHours * 3600;
-
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
-
-      // Fetch only PIs created within the time window (Stripe created filter).
-      const recentPIs = [];
-      let startingAfter;
-      for (;;) {
-        const params = {
-          limit:   100,
-          created: { gte: sinceUnix },
-          expand:  ["data.latest_charge.balance_transaction"],
-        };
-        if (startingAfter) params.starting_after = startingAfter;
-        const page = await stripe.paymentIntents.list(params);
-        recentPIs.push(...page.data.filter((pi) => pi.status === "succeeded"));
-        if (!page.has_more || page.data.length === 0) break;
-        startingAfter = page.data[page.data.length - 1].id;
-      }
-
-      /** @type {Array<{pi_id:string, classification:string}>} */
-      const processedItems = [];
-      /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
-      const recoveredItems = [];
-      /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
-      const errorItems     = [];
-
-      for (const pi of recentPIs) {
-        const fields         = extractFields(pi);
-        const classification = classifyPaymentType(fields.payment_type);
-        const piId           = pi.id;
-
-        try {
-          // Check DB for an existing record keyed by payment_intent_id.
-          const { data: existing, error: lookupErr } = await sb
-            .from("revenue_records")
-            .select("id, gross_amount, stripe_fee, stripe_net, stripe_charge_id, payment_status, payment_intent_id")
-            .eq("payment_intent_id", piId)
-            .eq("sync_excluded", false)
-            .maybeSingle();
-
-          if (lookupErr) throw new Error(`DB lookup failed: ${lookupErr.message}`);
-
-          if (!existing) {
-            // ── MISSING: insert a new revenue record ────────────────────────
-            const rawRef        = fields.metadata_booking_id || fields.metadata_original_booking_id;
-            const resolvedRef   = rawRef ? await resolveBookingId(sb, rawRef) : null;
-            // Map classification to the internal type used by autoCreateRevenueRecord.
-            const recType =
-              classification === "rental_extension" ? "extension"
-              : classification === "deposit"        ? "reservation_deposit"
-              :                                       "rental";
-
-            await autoCreateRevenueRecord({
-              bookingId:       resolvedRef || ("stripe-" + piId),
-              paymentIntentId: piId,
-              vehicleId:       pi.metadata?.vehicle_id || null,
-              name:            pi.metadata?.renter_name || null,
-              phone:           pi.metadata?.renter_phone || null,
-              email:           fields.customer_email,
-              pickupDate:      pi.metadata?.pickup_date || null,
-              returnDate:      pi.metadata?.return_date || null,
-              amountPaid:      fields.amount_gross,
-              paymentMethod:   "stripe",
-              type:            recType,
-              stripeFee:       fields.stripe_fee,
-              stripeNet:       fields.stripe_net,
-            }, { strict: true, requireStripeFee: false });
-
-            console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });
-            recoveredItems.push({ pi_id: piId, classification, reason: "missing from DB — inserted" });
-
-          } else {
-            // ── EXISTS: check if financials are correct ──────────────────────
-            const amountDiff  = Math.abs(Number(existing.gross_amount) - fields.amount_gross);
-            const feeMissing  = existing.stripe_fee == null && fields.stripe_fee != null;
-            const wrongStatus = existing.payment_status !== "paid";
-            const chargeMissing = !existing.stripe_charge_id && fields.stripe_charge_id;
-
-            if (amountDiff > 0.01 || feeMissing || wrongStatus || chargeMissing) {
-              // ── INCORRECT: patch the record ────────────────────────────────
-              // Snapshot mutable fields before the async update so the reason
-              // string reflects the original (wrong) DB values, not the patched ones.
-              const origGrossAmount   = existing.gross_amount;
-              const origPaymentStatus = existing.payment_status;
-              const updates = { updated_at: new Date().toISOString(), payment_status: "paid" };
-              if (amountDiff > 0.01)                                  updates.gross_amount      = fields.amount_gross;
-              if ((feeMissing || wrongStatus) && fields.stripe_fee != null) {
-                updates.stripe_fee = fields.stripe_fee;
-                updates.stripe_net = fields.stripe_net;
-              }
-              if (chargeMissing)                                       updates.stripe_charge_id  = fields.stripe_charge_id;
-              if (!existing.payment_intent_id)                         updates.payment_intent_id = piId;
-
-              const { error: upErr } = await sb
-                .from("revenue_records")
-                .update(updates)
-                .eq("id", existing.id);
-              if (upErr) throw new Error(`DB update failed: ${upErr.message}`);
-
-              const reason = [
-                amountDiff > 0.01    ? `amount mismatch (DB: ${origGrossAmount}, Stripe: ${fields.amount_gross})` : null,
-                feeMissing           ? "stripe_fee was missing"                                                    : null,
-                wrongStatus          ? `payment_status was "${origPaymentStatus}"`                                 : null,
-                chargeMissing        ? "stripe_charge_id was missing"                                              : null,
-              ].filter(Boolean).join("; ");
-
-              console.warn("[RECONCILE_RECOVERED_MISMATCH]", { pi_id: piId, classification, reason });
-              recoveredItems.push({ pi_id: piId, classification, reason });
-
-            } else {
-              // ── CORRECT: nothing to do ─────────────────────────────────────
-              processedItems.push({ pi_id: piId, classification });
-            }
-          }
-        } catch (err) {
-          console.error("[RECONCILE_ERROR]", { pi_id: piId, classification, error: err.message });
-          errorItems.push({ pi_id: piId, classification, reason: err.message });
-        }
-      }
-
-      // Alert the admin whenever there are mismatches or errors.
-      if (recoveredItems.length > 0 || errorItems.length > 0) {
-        await sendReconcileAlertEmail(recoveredItems, errorItems, lookbackHours);
-      }
-
-      return res.status(200).json({
-        ok:             errorItems.length === 0,
-        lookback_hours: lookbackHours,
-        total:          recentPIs.length,
-        processed:      processedItems.length,
-        recovered:      recoveredItems.length,
-        errors:         errorItems.length,
-        details:        { processed: processedItems, recovered: recoveredItems, errors: errorItems },
-      });
+      const result        = await runSyncRecent(sb, lookbackHours);
+      return res.status(200).json(result);
     } catch (err) {
       console.error("stripe-reconcile sync_recent error:", err);
       return res.status(500).json({ error: adminErrorMessage(err) });

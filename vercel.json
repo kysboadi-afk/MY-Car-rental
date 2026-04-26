@@ -5,6 +5,7 @@
     "api/bouncie-sync-cron.js":             { "maxDuration": 30 },
     "api/oil-check-cron.js":               { "maxDuration": 60 },
     "api/stripe-reconcile.js":              { "maxDuration": 60 },
+    "api/stripe-reconcile-cron.js":         { "maxDuration": 60 },
     "api/stripe-backfill.js":              { "maxDuration": 60 },
     "api/stripe-replay.js":               { "maxDuration": 60 },
     "api/send-reservation-email.js":        { "maxDuration": 60 },
@@ -61,6 +62,10 @@
     {
       "path": "/api/oil-check-cron",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/stripe-reconcile-cron",
+      "schedule": "0 */8 * * *"
     }
   ]
 }
