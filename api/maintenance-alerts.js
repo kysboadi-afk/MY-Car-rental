@@ -29,12 +29,12 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { laHour, buildDateTimeLA } from "./_time.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
-  computeSmsScore,
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
   isSuppressedByProximity,
   fetchRecentSmsLogs,
   buildSmsContext,
   selectTopCandidate,
-  SCORE_THRESHOLD,
 } from "./_sms-scoring.js";
 import {
   render,
@@ -483,18 +483,19 @@ export default async function handler(req, res) {
       const baseCtx    = { minutesToReturn };
 
       const scoredCandidates = candidates.map((c) => {
-        const ctx   = buildSmsContext(c.key, recentRows, baseCtx);
-        const score = computeSmsScore(c.key, ctx);
-        return { ...c, score, ctx };
+        const ctx                  = buildSmsContext(c.key, recentRows, baseCtx);
+        const { score, breakdown } = computeSmsScoreWithBreakdown(c.key, ctx);
+        return { ...c, score, breakdown, ctx };
       });
 
-      const winner = selectTopCandidate(scoredCandidates);
+      const effectiveThreshold = computeEffectiveThreshold(baseCtx);
+      const winner = selectTopCandidate(scoredCandidates, effectiveThreshold);
 
       if (!winner) {
         const topScore = scoredCandidates.reduce((m, c) => Math.max(m, c.score), -Infinity);
         console.log(
           `maintenance-alerts: SKIP vehicle ${vid} booking ${bookingId}: ` +
-          `no candidate above score threshold (top score: ${isFinite(topScore) ? topScore.toFixed(1) : topScore})`
+          `no candidate above score threshold=${effectiveThreshold} (top score: ${isFinite(topScore) ? topScore.toFixed(1) : topScore})`
         );
         continue;
       }
@@ -510,7 +511,8 @@ export default async function handler(req, res) {
 
       console.log(
         `maintenance-alerts: SCORE vehicle ${vid} booking ${bookingId}: ` +
-        `winner=${winner.key} score=${winner.score.toFixed(1)} ` +
+        `winner=${winner.key} score=${winner.score} threshold=${effectiveThreshold} ` +
+        `breakdown=${JSON.stringify(winner.breakdown)} ` +
         `(${scoredCandidates.length} candidate(s) evaluated)`
       );
 
@@ -522,12 +524,12 @@ export default async function handler(req, res) {
         sentMarks.push({ vehicleId: vid, id: bookingId, key: winner.key });
         alertsSent++;
         // Log to sms_logs with score so other crons and dashboards see this send.
-        await logServiceAlertToSupabase(sb, bookingId, winner.key, { score: winner.score });
+        await logServiceAlertToSupabase(sb, bookingId, winner.key, { score: winner.score, breakdown: winner.breakdown });
       }
       if (scoredCandidates.length > 1) {
         const suppressed = scoredCandidates
           .filter((c) => c.key !== winner.key)
-          .map((c) => `${c.key}(${c.score.toFixed(1)})`)
+          .map((c) => `${c.key}(${c.score})`)
           .join(", ");
         console.log(
           `maintenance-alerts: SCORE SUPPRESSED ${scoredCandidates.length - 1} lower-scoring ` +

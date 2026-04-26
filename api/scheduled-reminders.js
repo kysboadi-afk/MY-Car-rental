@@ -60,11 +60,11 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
-  computeSmsScore,
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
   isSuppressedByProximity,
   fetchRecentSmsLogs,
   buildSmsContext,
-  SCORE_THRESHOLD,
 } from "./_sms-scoring.js";
 import Stripe from "stripe";
 import {
@@ -1013,17 +1013,22 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         if (isSuppressedByProximity("active_rental_1h_before_end", scoringCtx)) {
           console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: proximity suppressed (${Math.round(minutesUntilReturn)} min to return)`);
         } else {
-          const score = computeSmsScore("active_rental_1h_before_end", scoringCtx);
-          console.log(`[SMS_SCORE] ${id} active_rental_1h_before_end: score=${score.toFixed(1)} threshold=${SCORE_THRESHOLD}`);
-          if (score <= SCORE_THRESHOLD) {
-            console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: score ${score.toFixed(1)} ≤ ${SCORE_THRESHOLD}`);
+          const { score, breakdown } = computeSmsScoreWithBreakdown("active_rental_1h_before_end", scoringCtx);
+          const effectiveThreshold   = computeEffectiveThreshold(scoringCtx);
+          console.log(
+            `[SMS_SCORE] ${id} active_rental_1h_before_end:` +
+            ` score=${score} threshold=${effectiveThreshold}` +
+            ` breakdown=${JSON.stringify(breakdown)}`
+          );
+          if (score <= effectiveThreshold) {
+            console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: score ${score} ≤ ${effectiveThreshold}`);
           } else {
             logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
             const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
             if (sent) {
               sentThisBooking = true;
               sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
-              await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr, { score });
+              await logSmsToSupabase(id, "active_rental_1h_before_end", returnDateStr, { score, breakdown });
             }
           }
         }

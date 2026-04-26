@@ -25,11 +25,11 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { laHour, buildDateTimeLA } from "./_time.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
-  computeSmsScore,
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
   isSuppressedByProximity,
   fetchRecentSmsLogs,
   buildSmsContext,
-  SCORE_THRESHOLD,
 } from "./_sms-scoring.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
@@ -311,11 +311,12 @@ export default async function handler(req, res) {
         console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for escalation (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
         continue;
       }
-      const escalateScore = computeSmsScore(escalateKey, escalateCtx);
-      console.log(`oil-check-cron: SCORE escalation ${bookingRef || bookingId}: key=${escalateKey} score=${escalateScore.toFixed(1)}`);
-      if (escalateScore <= SCORE_THRESHOLD) {
+      const { score: escalateScore, breakdown: escalateBreakdown } = computeSmsScoreWithBreakdown(escalateKey, escalateCtx);
+      const escalateThreshold = computeEffectiveThreshold(escalateCtx);
+      console.log(`oil-check-cron: SCORE escalation ${bookingRef || bookingId}: key=${escalateKey} score=${escalateScore} threshold=${escalateThreshold} breakdown=${JSON.stringify(escalateBreakdown)}`);
+      if (escalateScore <= escalateThreshold) {
         results.skipped_spam++;
-        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation score ${escalateScore.toFixed(1)} ≤ ${SCORE_THRESHOLD}`);
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation score ${escalateScore} ≤ ${escalateThreshold}`);
         continue;
       }
 
@@ -335,7 +336,7 @@ export default async function handler(req, res) {
           .eq("id", bookingId);
 
         // Log to sms_logs so other crons can see this send via cross-cron cooldown.
-        await logOilCheckToSupabase(sb, bookingRef, escalateKey, { score: escalateScore });
+        await logOilCheckToSupabase(sb, bookingRef, escalateKey, { score: escalateScore, breakdown: escalateBreakdown });
 
         results.escalated++;
         console.log(`oil-check-cron: escalated booking ${bookingRef || bookingId} (missed=${newMissedCount})`);
@@ -398,11 +399,12 @@ export default async function handler(req, res) {
       console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for trigger (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
       continue;
     }
-    const triggerScore = computeSmsScore(triggerKey, triggerCtx);
-    console.log(`oil-check-cron: SCORE trigger ${bookingRef || bookingId}: key=${triggerKey} score=${triggerScore.toFixed(1)}`);
-    if (triggerScore <= SCORE_THRESHOLD) {
+    const { score: triggerScore, breakdown: triggerBreakdown } = computeSmsScoreWithBreakdown(triggerKey, triggerCtx);
+    const triggerThreshold = computeEffectiveThreshold(triggerCtx);
+    console.log(`oil-check-cron: SCORE trigger ${bookingRef || bookingId}: key=${triggerKey} score=${triggerScore} threshold=${triggerThreshold} breakdown=${JSON.stringify(triggerBreakdown)}`);
+    if (triggerScore <= triggerThreshold) {
       results.skipped_spam++;
-      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: trigger score ${triggerScore.toFixed(1)} ≤ ${SCORE_THRESHOLD}`);
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: trigger score ${triggerScore} ≤ ${triggerThreshold}`);
       continue;
     }
 
@@ -422,7 +424,7 @@ export default async function handler(req, res) {
         .eq("id", bookingId);
 
       // Log to sms_logs so other crons can see this send via cross-cron cooldown.
-      await logOilCheckToSupabase(sb, bookingRef, triggerKey, { score: triggerScore });
+      await logOilCheckToSupabase(sb, bookingRef, triggerKey, { score: triggerScore, breakdown: triggerBreakdown });
 
       results.triggered++;
       console.log(

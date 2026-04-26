@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   SCORE_THRESHOLD,
+  CRITICAL_SCORE,
   PROXIMITY_SUPPRESS_MIN,
   DAILY_SMS_CAP,
   LOOKBACK_WINDOW_MS,
@@ -16,6 +17,8 @@ import {
   computeTimeProximityScore,
   computeAntiSpamPenalty,
   computeSmsScore,
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
   isSuppressedByProximity,
   selectTopCandidate,
   buildSmsContext,
@@ -27,6 +30,10 @@ import { TIME_CRITICAL_KEYS, PRIORITY } from "./_sms-priority.js";
 
 test("SCORE_THRESHOLD is 40", () => {
   assert.equal(SCORE_THRESHOLD, 40);
+});
+
+test("CRITICAL_SCORE is 100", () => {
+  assert.equal(CRITICAL_SCORE, 100);
 });
 
 test("PROXIMITY_SUPPRESS_MIN is 60", () => {
@@ -114,30 +121,30 @@ test("computeUrgencyScore: all mapped keys return values in range 1–50", () =>
 
 // ── computeContextScore ───────────────────────────────────────────────────────
 
-test("computeContextScore: late_fee_pending returns 15", () => {
-  assert.equal(computeContextScore("late_fee_pending"), 15);
+test("computeContextScore: late_fee_pending returns 20", () => {
+  assert.equal(computeContextScore("late_fee_pending"), 20);
 });
 
-test("computeContextScore: OIL_CHECK_REQUEST returns 11", () => {
-  assert.equal(computeContextScore("OIL_CHECK_REQUEST"), 11);
+test("computeContextScore: OIL_CHECK_REQUEST returns 14", () => {
+  assert.equal(computeContextScore("OIL_CHECK_REQUEST"), 14);
 });
 
-test("computeContextScore: retention_7d returns 3 (low relevance)", () => {
-  assert.equal(computeContextScore("retention_7d"), 3);
+test("computeContextScore: retention_7d returns 4 (low relevance)", () => {
+  assert.equal(computeContextScore("retention_7d"), 4);
 });
 
-test("computeContextScore: unknown key returns 9 (default)", () => {
-  assert.equal(computeContextScore("unknown_template_xyz"), 9);
+test("computeContextScore: unknown key returns 12 (default)", () => {
+  assert.equal(computeContextScore("unknown_template_xyz"), 12);
 });
 
-test("computeContextScore: all values are in range 1–15", () => {
+test("computeContextScore: all values are in range 1–20", () => {
   const keys = [
     "late_fee_pending", "maint_oil_urgent", "active_rental_1h_before_end",
     "OIL_CHECK_REQUEST", "HIGH_DAILY_MILEAGE", "post_thank_you", "retention_7d",
   ];
   for (const key of keys) {
     const score = computeContextScore(key);
-    assert.ok(score >= 1 && score <= 15, `Context score for "${key}" = ${score} out of range 1–15`);
+    assert.ok(score >= 1 && score <= 20, `Context score for "${key}" = ${score} out of range 1–20`);
   }
 });
 
@@ -258,22 +265,22 @@ test("computeAntiSpamPenalty: result never below −30", () => {
 
 // ── computeSmsScore ───────────────────────────────────────────────────────────
 
-test("computeSmsScore: TIME_CRITICAL_KEYS return Infinity", () => {
+test("computeSmsScore: TIME_CRITICAL_KEYS return CRITICAL_SCORE", () => {
   for (const key of TIME_CRITICAL_KEYS) {
-    assert.equal(computeSmsScore(key, {}), Infinity,
-      `Expected Infinity for TIME_CRITICAL_KEY "${key}"`);
+    assert.equal(computeSmsScore(key, {}), CRITICAL_SCORE,
+      `Expected CRITICAL_SCORE for TIME_CRITICAL_KEY "${key}"`);
   }
 });
 
-test("computeSmsScore: CRITICAL priority key returns Infinity", () => {
-  // late_fee_pending is both TIME_CRITICAL and P1 — confirm Infinity
-  assert.equal(computeSmsScore("late_fee_pending", {}), Infinity);
+test("computeSmsScore: CRITICAL priority key returns CRITICAL_SCORE", () => {
+  // late_fee_pending is both TIME_CRITICAL and P1 — confirm capped score
+  assert.equal(computeSmsScore("late_fee_pending", {}), CRITICAL_SCORE);
 });
 
 test("computeSmsScore: OIL_CHECK_REQUEST with no context returns correct base sum", () => {
-  // urgency=32, proximity=0, context=11, spam=0  → 43
+  // urgency=32, proximity=0, context=14, spam=0  → 46
   const score = computeSmsScore("OIL_CHECK_REQUEST", {});
-  assert.equal(score, 43);
+  assert.equal(score, 46);
 });
 
 test("computeSmsScore: OIL_CHECK_REQUEST with return in 2h returns > SCORE_THRESHOLD", () => {
@@ -296,18 +303,21 @@ test("computeSmsScore: maint_oil_warn with daily cap hit returns < SCORE_THRESHO
 
 test("computeSmsScore: active_rental_1h_before_end within 1h returns well above threshold", () => {
   const score = computeSmsScore("active_rental_1h_before_end", { minutesToReturn: 50 });
-  // 36 + 20 + 12 + 0 = 68
+  // near return (50 < 60) + RETURN_RELATED_KEY → anti-spam zeroed
+  // 36 + 20 + 16 + 0 = 72
   assert.ok(score > SCORE_THRESHOLD);
-  assert.equal(score, 68);
+  assert.equal(score, 72);
 });
 
-test("computeSmsScore: active_rental_1h_before_end with daily cap hit returns below threshold", () => {
+test("computeSmsScore: active_rental_1h_before_end near return ignores daily cap (anti-spam exempted)", () => {
+  // RETURN_RELATED_KEYS are immune to anti-spam when minutesToReturn < PROXIMITY_SUPPRESS_MIN
   const score = computeSmsScore("active_rental_1h_before_end", {
     minutesToReturn: 50,
-    recentSmsCount24h: 3,
+    recentSmsCount24h: 3,   // would normally trigger max anti-spam penalty
   });
-  // 36 + 20 + 12 − 30 = 38
-  assert.ok(score <= SCORE_THRESHOLD);
+  // anti-spam zeroed because near return + RETURN_RELATED_KEY: 36 + 20 + 16 + 0 = 72
+  assert.ok(score > SCORE_THRESHOLD, `Expected score ${score} > ${SCORE_THRESHOLD}`);
+  assert.equal(score, 72);
 });
 
 test("computeSmsScore: post_thank_you returns below threshold without proximity", () => {
@@ -318,9 +328,9 @@ test("computeSmsScore: post_thank_you returns below threshold without proximity"
 
 test("computeSmsScore: maint_oil_urgent returns far above threshold (P2 urgent)", () => {
   const score = computeSmsScore("maint_oil_urgent", {});
-  // 45 + 0 + 14 + 0 = 59
+  // 45 + 0 + 18 + 0 = 63
   assert.ok(score > SCORE_THRESHOLD);
-  assert.equal(score, 59);
+  assert.equal(score, 63);
 });
 
 test("computeSmsScore: score is sum of four components (non-critical key)", () => {
@@ -328,10 +338,101 @@ test("computeSmsScore: score is sum of four components (non-critical key)", () =
   const ctx = { minutesToReturn: 1200, recentSmsCount24h: 1 };
   const expectedUrgency   = 35;
   const expectedProximity = 5;    // 1200 > 240 and ≤ 1440 → 5
-  const expectedContext   = 11;
+  const expectedContext   = 14;
   const expectedSpam      = -5;   // 1 recent SMS
   const expected = expectedUrgency + expectedProximity + expectedContext + expectedSpam;
   assert.equal(computeSmsScore(templateKey, ctx), expected);
+});
+
+// ── computeSmsScoreWithBreakdown ──────────────────────────────────────────────
+
+test("computeSmsScoreWithBreakdown: returns score and breakdown for normal key", () => {
+  const { score, breakdown } = computeSmsScoreWithBreakdown("maint_oil_urgent", {});
+  assert.equal(score, 63);  // 45 + 0 + 18 + 0
+  assert.equal(breakdown.urgency,   45);
+  assert.equal(breakdown.proximity,  0);
+  assert.equal(breakdown.context,   18);
+  assert.equal(breakdown.spam,       0);
+  assert.equal(breakdown.isCritical, false);
+});
+
+test("computeSmsScoreWithBreakdown: CRITICAL key returns CRITICAL_SCORE with isCritical=true", () => {
+  const { score, breakdown } = computeSmsScoreWithBreakdown("late_fee_pending", {});
+  assert.equal(score, CRITICAL_SCORE);
+  assert.equal(breakdown.isCritical, true);
+  assert.equal(breakdown.urgency, CRITICAL_SCORE);
+  assert.equal(breakdown.spam, 0);
+});
+
+test("computeSmsScoreWithBreakdown: breakdown components sum to score for non-critical key", () => {
+  const ctx = { minutesToReturn: 300, recentSmsCount24h: 1 };
+  const { score, breakdown } = computeSmsScoreWithBreakdown("OIL_CHECK_REQUEST", ctx);
+  const componentSum = breakdown.urgency + breakdown.proximity + breakdown.context + breakdown.spam;
+  assert.equal(score, componentSum);
+});
+
+test("computeSmsScoreWithBreakdown: anti-spam zeroed for RETURN_RELATED_KEY near return", () => {
+  const { score, breakdown } = computeSmsScoreWithBreakdown("active_rental_1h_before_end", {
+    minutesToReturn: 50,
+    recentSmsCount24h: 3,  // would normally cause max penalty
+  });
+  assert.equal(breakdown.spam, 0);
+  assert.equal(score, 72);  // 36 + 20 + 16 + 0
+});
+
+test("computeSmsScoreWithBreakdown: anti-spam applies for RETURN_RELATED_KEY NOT near return", () => {
+  const { breakdown } = computeSmsScoreWithBreakdown("active_rental_1h_before_end", {
+    minutesToReturn: 300,   // far from return → anti-spam applies
+    recentSmsCount24h: 3,
+  });
+  assert.equal(breakdown.spam, -30);  // daily cap penalty
+});
+
+// ── computeEffectiveThreshold ─────────────────────────────────────────────────
+
+test("computeEffectiveThreshold: near return (< 60 min) → 30", () => {
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 30 }), 30);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 59 }), 30);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 0  }), 30);
+});
+
+test("computeEffectiveThreshold: approaching return (60–119 min) → 35", () => {
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 60  }), 35);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 119 }), 35);
+});
+
+test("computeEffectiveThreshold: active rental (120–1439 min) → SCORE_THRESHOLD (40)", () => {
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 120  }), SCORE_THRESHOLD);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 500  }), SCORE_THRESHOLD);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 1439 }), SCORE_THRESHOLD);
+});
+
+test("computeEffectiveThreshold: early rental (≥ 1440 min) → 50", () => {
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 1440 }), 50);
+  assert.equal(computeEffectiveThreshold({ minutesToReturn: 5000 }), 50);
+});
+
+test("computeEffectiveThreshold: minutesToReturn undefined → SCORE_THRESHOLD (40)", () => {
+  assert.equal(computeEffectiveThreshold({}), SCORE_THRESHOLD);
+  assert.equal(computeEffectiveThreshold(),   SCORE_THRESHOLD);
+});
+
+test("computeEffectiveThreshold: threshold lowers as return approaches", () => {
+  const far      = computeEffectiveThreshold({ minutesToReturn: 2000 });
+  const mid      = computeEffectiveThreshold({ minutesToReturn: 200  });
+  const near     = computeEffectiveThreshold({ minutesToReturn: 45   });
+  assert.ok(far > mid,  `Far (${far}) should be stricter than mid (${mid})`);
+  assert.ok(mid > near, `Mid (${mid}) should be stricter than near (${near})`);
+});
+
+test("computeSmsScore: non-RETURN_RELATED_KEY applies anti-spam even near return", () => {
+  // maint_oil_warn is NOT in RETURN_RELATED_KEYS so anti-spam still applies near return
+  const score = computeSmsScore("maint_oil_warn", {
+    minutesToReturn: 50,
+    recentSmsCount24h: 3,
+  });
+  // 32 + 20 + 14 − 30 = 36 ≤ 40
+  assert.ok(score <= SCORE_THRESHOLD, `Expected score ${score} ≤ ${SCORE_THRESHOLD}`);
 });
 
 // ── isSuppressedByProximity ───────────────────────────────────────────────────
@@ -393,15 +494,15 @@ test("selectTopCandidate: single candidate above threshold is returned", () => {
   assert.equal(result.score, 43);
 });
 
-test("selectTopCandidate: CRITICAL (Infinity) wins over all other candidates", () => {
+test("selectTopCandidate: CRITICAL (CRITICAL_SCORE) wins over all other candidates", () => {
   const candidates = [
     { templateKey: "OIL_CHECK_REQUEST", score: 70 },
-    { templateKey: "late_fee_pending",  score: Infinity },
+    { templateKey: "late_fee_pending",  score: CRITICAL_SCORE },
     { templateKey: "maint_oil_warn",    score: 55 },
   ];
   const result = selectTopCandidate(candidates);
   assert.equal(result.templateKey, "late_fee_pending");
-  assert.equal(result.score, Infinity);
+  assert.equal(result.score, CRITICAL_SCORE);
 });
 
 test("selectTopCandidate: highest non-critical score wins when no CRITICAL", () => {
@@ -425,11 +526,11 @@ test("selectTopCandidate: all below threshold returns null", () => {
 
 test("selectTopCandidate: multiple CRITICAL picks first (stable sort tie)", () => {
   const candidates = [
-    { templateKey: "late_fee_pending",   score: Infinity },
-    { templateKey: "late_grace_expired", score: Infinity },
+    { templateKey: "late_fee_pending",   score: CRITICAL_SCORE },
+    { templateKey: "late_grace_expired", score: CRITICAL_SCORE },
   ];
   const result = selectTopCandidate(candidates);
-  assert.equal(result.score, Infinity);
+  assert.equal(result.score, CRITICAL_SCORE);
   // Both are valid winners — just verify one of them was picked
   assert.ok(
     result.templateKey === "late_fee_pending" ||
@@ -438,10 +539,27 @@ test("selectTopCandidate: multiple CRITICAL picks first (stable sort tie)", () =
 });
 
 test("selectTopCandidate: preserves all original fields on winner", () => {
-  const candidate = { templateKey: "maint_oil_urgent", score: 59, template: "TEMPLATE_OBJ", ctx: { minutesToReturn: 300 } };
+  const candidate = { templateKey: "maint_oil_urgent", score: 63, template: "TEMPLATE_OBJ", ctx: { minutesToReturn: 300 } };
   const result = selectTopCandidate([candidate]);
   assert.equal(result.template, "TEMPLATE_OBJ");
   assert.deepEqual(result.ctx, { minutesToReturn: 300 });
+});
+
+test("selectTopCandidate: uses provided threshold instead of default", () => {
+  // Score of 35 is below default SCORE_THRESHOLD=40 but above threshold=30
+  const candidates = [{ templateKey: "maint_oil_warn", score: 35 }];
+  assert.equal(selectTopCandidate(candidates),      null);   // below default (40)
+  assert.ok(selectTopCandidate(candidates, 30) !== null);    // above custom (30)
+});
+
+test("selectTopCandidate: CRITICAL_SCORE candidate wins regardless of custom threshold", () => {
+  const candidates = [
+    { templateKey: "OIL_CHECK_REQUEST", score: 70 },
+    { templateKey: "late_fee_pending",  score: CRITICAL_SCORE },
+  ];
+  // Even with a very high threshold, CRITICAL always wins
+  const result = selectTopCandidate(candidates, 99);
+  assert.equal(result.templateKey, "late_fee_pending");
 });
 
 // ── buildSmsContext ───────────────────────────────────────────────────────────
@@ -545,7 +663,7 @@ test("E2E: oil check with no recent activity exceeds threshold", () => {
   const baseCtx = { minutesToReturn: 300 };  // 5h to return
   const ctx = buildSmsContext("OIL_CHECK_REQUEST", rows, baseCtx);
   const score = computeSmsScore("OIL_CHECK_REQUEST", ctx);
-  // urgency=32 + proximity=10 + context=11 + spam=0 = 53
+  // urgency=32 + proximity=10 + context=14 + spam=0 = 56
   assert.ok(score > SCORE_THRESHOLD, `score=${score} should be > ${SCORE_THRESHOLD}`);
 });
 
@@ -558,7 +676,8 @@ test("E2E: oil check with 3 recent messages today is suppressed by anti-spam", (
   ];
   const ctx = buildSmsContext("OIL_CHECK_REQUEST", rows, { minutesToReturn: 300 });
   const score = computeSmsScore("OIL_CHECK_REQUEST", ctx);
-  // 32 + 10 + 11 − 30 (daily cap) − 15 (burst < 30min) = 8 — well below threshold
+  // OIL_CHECK_REQUEST NOT in RETURN_RELATED_KEYS, far from return → anti-spam applies
+  // 32 + 10 + 14 − 30 (daily cap, capped) = 26 — well below threshold
   assert.ok(score <= SCORE_THRESHOLD, `score=${score} should be ≤ ${SCORE_THRESHOLD}`);
 });
 
@@ -570,7 +689,7 @@ test("E2E: maintenance urgent overcomes 2 recent messages (high urgency wins)", 
   ];
   const ctx = buildSmsContext("maint_oil_urgent", rows, { minutesToReturn: 240 });
   const score = computeSmsScore("maint_oil_urgent", ctx);
-  // urgency=45 + proximity=10 + context=14 − 15 (2 SMS) = 54
+  // urgency=45 + proximity=10 + context=18 − 15 (2 SMS, no burst) = 58
   assert.ok(score > SCORE_THRESHOLD, `score=${score} should be > ${SCORE_THRESHOLD}`);
 });
 
@@ -585,11 +704,20 @@ test("E2E: selectTopCandidate picks urgent over warn when both eligible", () => 
 
 test("E2E: CRITICAL message selected even when competing against high-scoring P3", () => {
   const candidates = [
-    { templateKey: "maint_oil_urgent", score: 59 },
-    { templateKey: "late_fee_pending", score: Infinity },  // CRITICAL
+    { templateKey: "maint_oil_urgent", score: 63 },
+    { templateKey: "late_fee_pending", score: CRITICAL_SCORE },  // CRITICAL
   ];
   const winner = selectTopCandidate(candidates);
   assert.equal(winner.templateKey, "late_fee_pending");
+});
+
+test("E2E: dynamic threshold lowers send barrier near return time", () => {
+  // A score of 35 is below default threshold (40) but above near-return threshold (30)
+  const candidates = [{ templateKey: "maint_oil_warn", score: 35 }];
+  const nearCtx     = { minutesToReturn: 45 };
+  const threshold   = computeEffectiveThreshold(nearCtx);
+  const winner      = selectTopCandidate(candidates, threshold);
+  assert.ok(winner !== null, `Expected score 35 to pass near-return threshold ${threshold}`);
 });
 
 // ── helpers ───────────────────────────────────────────────────────────────────

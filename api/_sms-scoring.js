@@ -4,16 +4,19 @@
 // Replaces the fixed-priority cooldown gate for P3+ messages with a
 // multi-factor composite score that reflects real-time booking context.
 //
-// SCORE COMPONENTS (approximate range: −30 to 90)
+// SCORE COMPONENTS (approximate range: −30 to 95)
 //   URGENCY        (0–50)  How operationally critical is this message type?
 //   TIME_PROXIMITY (0–25)  How close is the booking to a key event?
-//   CONTEXT        (0–15)  How directly is this message tied to current booking state?
+//   CONTEXT        (0–20)  How directly is this message tied to current booking state?
 //   ANTI_SPAM      (−30–0) Penalty for recent sends to the same booking.
+//                          Not applied to RETURN_RELATED_KEYS when near return.
 //
 // SEND DECISION
-//   computeSmsScore()   → number (or Infinity for CRITICAL)
-//   selectTopCandidate() → picks highest-scoring candidate above SCORE_THRESHOLD
-//   isSuppressedByProximity() → true when a non-return message fires < 60 min from return
+//   computeSmsScore()            → number (or CRITICAL_SCORE for CRITICAL messages)
+//   computeSmsScoreWithBreakdown() → { score, breakdown } for logging/debugging
+//   computeEffectiveThreshold()  → dynamic threshold based on minutesToReturn
+//   selectTopCandidate()         → picks highest-scoring candidate above threshold
+//   isSuppressedByProximity()    → true when a non-return message fires < 60 min from return
 //
 // CONTEXT BUILDING
 //   fetchRecentSmsLogs()  — one Supabase query per booking; returns last-24h rows
@@ -25,6 +28,14 @@ import { PRIORITY, getSmsPriority, TIME_CRITICAL_KEYS } from "./_sms-priority.js
 
 /** A candidate must score strictly above this threshold to be sent. */
 export const SCORE_THRESHOLD = 40;
+
+/**
+ * Score assigned to CRITICAL messages (TIME_CRITICAL_KEYS or PRIORITY.CRITICAL).
+ * A finite high value instead of Infinity keeps logs and serialised metadata
+ * readable while still guaranteeing these messages always override the threshold.
+ * `selectTopCandidate` treats any score ≥ CRITICAL_SCORE as critical.
+ */
+export const CRITICAL_SCORE = 100;
 
 /**
  * When minutes_to_return is below this value, only return-related messages
@@ -93,41 +104,42 @@ const URGENCY_SCORE = {
 
 const DEFAULT_URGENCY_SCORE = 25;
 
-// ── Context relevance scores (0–15) ───────────────────────────────────────────
+// ── Context relevance scores (0–20) ───────────────────────────────────────────
 // How directly is this message tied to the current booking state?
+// Raised cap (15 → 20) to give context stronger relative weight against urgency.
 
 const CONTEXT_SCORE = {
-  // Directly tied to current critical booking state
-  late_fee_pending:                   15,
-  late_grace_expired:                 15,
-  late_at_return:                     15,
-  maint_oil_urgent:                   14,
-  OIL_CHECK_FINAL:                    14,
-  late_warning_30min:                 13,
-  maint_brakes_urgent:                13,
-  OIL_CHECK_REMINDER:                 13,
-  unpaid_final:                       13,
-  maint_tires_urgent:                 12,
-  MAINTENANCE_AVAILABILITY_URGENT:    12,
+  // Directly tied to current critical booking state (top tier: 17–20)
+  late_fee_pending:                   20,
+  late_grace_expired:                 20,
+  late_at_return:                     20,
+  maint_oil_urgent:                   18,
+  OIL_CHECK_FINAL:                    18,
+  late_warning_30min:                 17,
+  maint_brakes_urgent:                17,
+  OIL_CHECK_REMINDER:                 17,
+  unpaid_final:                       17,
+  maint_tires_urgent:                 16,
+  MAINTENANCE_AVAILABILITY_URGENT:    16,
 
-  // Tied to booking timeline
-  active_rental_1h_before_end:        12,
-  OIL_CHECK_MERGED:                   12,
-  pickup_24h:                         11,
-  unpaid_2h:                          11,
-  maint_oil_warn:                     11,
-  OIL_CHECK_REQUEST:                  11,
-  MAINTENANCE_AVAILABILITY_REQUEST:   10,
-  maint_brakes_warn:                  10,
-  maint_tires_warn:                    9,
-  HIGH_DAILY_MILEAGE:                  8,
+  // Tied to booking timeline (mid tier: 12–16)
+  active_rental_1h_before_end:        16,
+  OIL_CHECK_MERGED:                   15,
+  pickup_24h:                         14,
+  unpaid_2h:                          14,
+  maint_oil_warn:                     14,
+  OIL_CHECK_REQUEST:                  14,
+  MAINTENANCE_AVAILABILITY_REQUEST:   13,
+  maint_brakes_warn:                  13,
+  maint_tires_warn:                   12,
+  HIGH_DAILY_MILEAGE:                 10,
 
-  // Low direct relevance to current state
-  post_thank_you:                      6,
-  retention_7d:                        3,
+  // Low direct relevance to current state (low tier: 4–8)
+  post_thank_you:                      8,
+  retention_7d:                        4,
 };
 
-const DEFAULT_CONTEXT_SCORE = 9;
+const DEFAULT_CONTEXT_SCORE = 12;
 
 // ── Scoring component functions ───────────────────────────────────────────────
 
@@ -142,7 +154,7 @@ export function computeUrgencyScore(templateKey) {
 }
 
 /**
- * Context relevance component (0–15).
+ * Context relevance component (0–20).
  * Reflects how directly this message is tied to the current booking state.
  * @param {string} templateKey
  * @returns {number}
@@ -237,32 +249,85 @@ export function computeAntiSpamPenalty(ctx = {}) {
 // ── Composite score ───────────────────────────────────────────────────────────
 
 /**
- * Compute the full composite score for a candidate message.
+ * Compute the full composite score and a component breakdown for a candidate
+ * message.  Prefer this over computeSmsScore() when the breakdown is needed
+ * for logging or debugging — the score field is identical to computeSmsScore().
  *
- * CRITICAL messages (TIME_CRITICAL_KEYS or PRIORITY.CRITICAL priority) always
- * return Infinity so they override the threshold check in selectTopCandidate.
+ * CRITICAL messages return `{ score: CRITICAL_SCORE, breakdown: { isCritical: true, … } }`.
+ * Using a finite capped value instead of Infinity keeps sms_logs.metadata readable.
  *
- * Score = urgency + timeProximity + contextRelevance + antiSpamPenalty
- * Approximate range: −30 to 90.
- *
- * The score is intentionally stored in sms_logs.metadata.score for operational
- * debugging and future threshold tuning.
+ * Anti-spam safety: the spam penalty is zeroed for RETURN_RELATED_KEYS when the
+ * booking is near its return time (minutesToReturn < PROXIMITY_SUPPRESS_MIN).
+ * CRITICAL messages and return-related messages must never be suppressed by spam volume.
  *
  * @param {string} templateKey
  * @param {object} ctx          - context from buildSmsContext() + caller-supplied fields
- * @returns {number}            - composite score, or Infinity for CRITICAL
+ * @returns {{ score: number, breakdown: { urgency: number, proximity: number, context: number, spam: number, isCritical: boolean } }}
  */
-export function computeSmsScore(templateKey, ctx = {}) {
-  // CRITICAL messages always bypass scoring — they must always deliver.
-  if (TIME_CRITICAL_KEYS.has(templateKey)) return Infinity;
-  if (getSmsPriority(templateKey) === PRIORITY.CRITICAL) return Infinity;
+export function computeSmsScoreWithBreakdown(templateKey, ctx = {}) {
+  const isCritical = TIME_CRITICAL_KEYS.has(templateKey) ||
+    getSmsPriority(templateKey) === PRIORITY.CRITICAL;
+
+  if (isCritical) {
+    return {
+      score:     CRITICAL_SCORE,
+      breakdown: { urgency: CRITICAL_SCORE, proximity: 0, context: 0, spam: 0, isCritical: true },
+    };
+  }
 
   const urgency   = computeUrgencyScore(templateKey);
   const proximity = computeTimeProximityScore(ctx);
   const context   = computeContextScore(templateKey);
-  const spam      = computeAntiSpamPenalty(ctx);
 
-  return urgency + proximity + context + spam;
+  // Anti-spam must not suppress return-related messages when the booking is
+  // close to its return time — those messages must always remain eligible.
+  const isNearReturn = ctx.minutesToReturn !== undefined &&
+    ctx.minutesToReturn < PROXIMITY_SUPPRESS_MIN;
+  const spam = (RETURN_RELATED_KEYS.has(templateKey) && isNearReturn)
+    ? 0
+    : computeAntiSpamPenalty(ctx);
+
+  const score = urgency + proximity + context + spam;
+  return { score, breakdown: { urgency, proximity, context, spam, isCritical: false } };
+}
+
+/**
+ * Compute the composite score for a candidate message.
+ * For per-decision logging with component details, use computeSmsScoreWithBreakdown().
+ *
+ * @param {string} templateKey
+ * @param {object} ctx          - context from buildSmsContext() + caller-supplied fields
+ * @returns {number}            - composite score, or CRITICAL_SCORE for CRITICAL messages
+ */
+export function computeSmsScore(templateKey, ctx = {}) {
+  return computeSmsScoreWithBreakdown(templateKey, ctx).score;
+}
+
+/**
+ * Compute the effective send threshold for a booking based on its time context.
+ *
+ * A lower threshold is used when the booking is near its return time (increasing
+ * the chance of relevant messages getting through), while an early-rental booking
+ * uses a stricter threshold to reduce non-urgent sends.
+ *
+ * minutesToReturn thresholds:
+ *   < 60 min (near return)      → 30
+ *   < 120 min (approaching)     → 35
+ *   < 1440 min (active rental)  → 40  (default SCORE_THRESHOLD)
+ *   ≥ 1440 min (early rental)   → 50
+ *   undefined                   → 40  (default SCORE_THRESHOLD)
+ *
+ * @param {object} ctx
+ * @param {number} [ctx.minutesToReturn]
+ * @returns {number}
+ */
+export function computeEffectiveThreshold(ctx = {}) {
+  const { minutesToReturn } = ctx;
+  if (minutesToReturn === undefined) return SCORE_THRESHOLD;
+  if (minutesToReturn <   60)        return 30;
+  if (minutesToReturn <  120)        return 35;
+  if (minutesToReturn < 1440)        return SCORE_THRESHOLD;
+  return 50; // early rental — stricter gate
 }
 
 // ── Safety check ──────────────────────────────────────────────────────────────
@@ -297,25 +362,24 @@ export function isSuppressedByProximity(templateKey, ctx = {}) {
  * Given a list of scored candidates, return the single best one to send.
  *
  * Rules:
- *   1. CRITICAL candidates (score === Infinity) always win regardless of others.
- *   2. Among non-critical candidates, the highest score wins if score > SCORE_THRESHOLD.
+ *   1. CRITICAL candidates (score ≥ CRITICAL_SCORE) always win regardless of others.
+ *   2. Among non-critical candidates, the highest score wins if score > threshold.
  *   3. Returns null when no candidate passes the threshold.
  *
+ * The `threshold` parameter is optional and defaults to SCORE_THRESHOLD.
+ * Pass the result of computeEffectiveThreshold(ctx) for context-aware filtering.
+ *
  * @param {Array<{templateKey: string, score: number, [key: string]: *}>} candidates
+ * @param {number} [threshold=SCORE_THRESHOLD]
  * @returns {{ templateKey: string, score: number } | null}
  */
-export function selectTopCandidate(candidates) {
+export function selectTopCandidate(candidates, threshold = SCORE_THRESHOLD) {
   if (!candidates || candidates.length === 0) return null;
 
-  const sorted = [...candidates].sort((a, b) => {
-    if (a.score === Infinity && b.score === Infinity) return 0;
-    if (a.score === Infinity) return -1;
-    if (b.score === Infinity) return  1;
-    return b.score - a.score;
-  });
+  const sorted = [...candidates].sort((a, b) => b.score - a.score);
 
   const top = sorted[0];
-  if (top.score === Infinity || top.score > SCORE_THRESHOLD) return top;
+  if (top.score >= CRITICAL_SCORE || top.score > threshold) return top;
   return null;
 }
 
