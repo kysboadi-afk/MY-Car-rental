@@ -662,7 +662,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       pickup_date:               pickup_date  || null,
       return_date:               return_date  || null,
       pickup_time:               parseTime12h(pickup_time  || "") || null,
-      return_time:               parseTime12h(return_time  || "") || null,
+      return_time:               parseTime12h(return_time  || "") || parseTime12h(DEFAULT_RETURN_TIME),
       // status='reserved' requires payment_status='partial' (DB constraint).
       // Full_payment writes status='pending' + payment_status='paid'.
       status:                    isDepositPayment ? "reserved" : "pending",

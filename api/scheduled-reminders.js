@@ -55,7 +55,7 @@ import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js"
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
-import { formatTime12h, laHour } from "./_time.js";
+import { formatTime12h, laHour, DEFAULT_RETURN_TIME } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 import { getSmsPriority } from "./_sms-priority.js";
@@ -778,10 +778,11 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
         sb, id, booking.returnDate, booking.returnTime
       );
+      const resolvedFinalTime = finalTime || DEFAULT_RETURN_TIME;
 
       // Use LA-timezone return datetime so return-time SMS triggers fire at the correct
       // wall-clock time in Los Angeles, not at UTC equivalents.
-      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
+      const returnDt = parseBookingDateTimeLA(finalDate, resolvedFinalTime);
       if (isNaN(returnDt.getTime())) continue;
 
       const v = vars(booking);
@@ -817,7 +818,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
           timezone:          BUSINESS_TZ,
           now_la:            toLAString(now),
           return_raw:        `${booking.returnDate} ${booking.returnTime || ""}`,
-          return_final:      `${finalDate} ${finalTime}`,
+          return_final:      `${finalDate} ${resolvedFinalTime}`,
           return_la:         toLAString(returnDt),
           mins_until_return: Math.round(minutesUntilReturn),
         });
@@ -1244,10 +1245,11 @@ export async function processAutoCompletions(allBookings, now) {
       const { date: finalDate, time: finalTime } = await computeFinalReturnDate(
         sb, id, booking.returnDate, booking.returnTime
       );
+      const resolvedFinalTime = finalTime || DEFAULT_RETURN_TIME;
 
       // Use LA-timezone return datetime so the 4-hour auto-complete threshold is
       // measured from the correct Los Angeles wall-clock return time, not UTC.
-      const returnDt = parseBookingDateTimeLA(finalDate, finalTime);
+      const returnDt = parseBookingDateTimeLA(finalDate, resolvedFinalTime);
       if (isNaN(returnDt.getTime())) continue;
 
       const minsOverdue = (now - returnDt) / 60000;
@@ -1257,7 +1259,7 @@ export async function processAutoCompletions(allBookings, now) {
           timezone:       BUSINESS_TZ,
           now_la:         toLAString(now),
           return_raw:     `${booking.returnDate} ${booking.returnTime || ""}`,
-          return_final:   `${finalDate} ${finalTime}`,
+          return_final:   `${finalDate} ${resolvedFinalTime}`,
           return_la:      toLAString(returnDt),
           mins_overdue:   Math.round(minsOverdue),
         });

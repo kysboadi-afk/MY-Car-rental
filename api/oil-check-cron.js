@@ -22,7 +22,7 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { laHour, buildDateTimeLA } from "./_time.js";
+import { laHour, buildDateTimeLA, DEFAULT_RETURN_TIME } from "./_time.js";
 import { getSmsPriority } from "./_sms-priority.js";
 import {
   computeSmsScoreWithBreakdown,
@@ -268,7 +268,7 @@ export default async function handler(req, res) {
       : 0;
 
     // ── Compute time proximity for scoring ────────────────────────────────
-    const returnDt        = buildDateTimeLA(returnDate, returnTime);
+    const returnDt        = buildDateTimeLA(returnDate, returnTime || DEFAULT_RETURN_TIME);
     const minutesToReturn = isNaN(returnDt.getTime())
       ? undefined
       : (returnDt - new Date()) / 60_000;
