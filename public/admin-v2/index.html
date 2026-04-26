@@ -4803,9 +4803,9 @@ function applyRevenueFilters() {
     const _siblings = allRevenueRecords.filter((s) => ((s.type === 'extension' && s.original_booking_id) ? s.original_booking_id : s.booking_id) === _effId);
     let _dateCell;
     if (r.type === 'extension') {
-      const _sorted = _siblings.filter((s) => s.return_date).sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
-      const _myIdx  = _sorted.findIndex((s) => s.id === r.id);
-      const _prevReturn = _myIdx > 0 ? _sorted[_myIdx - 1].return_date : r.pickup_date;
+      const _sortedByReturnDate = _siblings.filter((s) => s.return_date).sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+      const _myIdx  = _sortedByReturnDate.findIndex((s) => s.id === r.id);
+      const _prevReturn = _myIdx > 0 ? _sortedByReturnDate[_myIdx - 1].return_date : r.pickup_date;
       const _nDays  = (_prevReturn && r.return_date)
         ? Math.round((new Date(r.return_date + 'T00:00:00') - new Date(_prevReturn + 'T00:00:00')) / 86400000)
         : 0;
