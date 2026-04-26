@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -1737,6 +1737,14 @@ export default async function handler(req, res) {
                   error: `extension fallback revenue persistence failed for ${paymentIntent.id}`,
                 });
               }
+              // Update blocked_dates to reflect the new return date.
+              if (vehicle_id && new_return_date) {
+                try {
+                  await extendBlockedDateForBooking(vehicle_id, bookingRef, new_return_date);
+                } catch (sbBlockErr) {
+                  console.error("stripe-webhook: Supabase fallback blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
+                }
+              }
             } catch (fallbackErr) {
               console.error(
                 "stripe-webhook: rental_extension Supabase fallback error:",
@@ -1967,9 +1975,11 @@ export default async function handler(req, res) {
           }
 
           // Update Supabase blocked_dates availability.
-          if (updatedBooking.pickupDate && updatedBooking.returnDate) {
+          // Extend the existing row's end_date rather than inserting a new overlapping row —
+          // the no-overlap DB trigger would reject an INSERT that covers the same range.
+          if (vehicle_id && updatedBooking.returnDate) {
             try {
-              await autoCreateBlockedDate(vehicle_id, updatedBooking.pickupDate, updatedBooking.returnDate, "booking", original_booking_id || null);
+              await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedBooking.returnDate);
             } catch (sbBlockErr) {
               console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
             }

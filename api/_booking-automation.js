@@ -803,6 +803,89 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
   }
 }
 
+/**
+ * Extends an existing blocked_dates row for a booking to a later end_date.
+ * Called after a rental extension so that public availability stays in sync
+ * with the updated return date.
+ *
+ * Behaviour:
+ *  - Finds the blocked_dates row(s) with the given vehicle_id + booking_ref.
+ *  - Updates end_date to newEndDate only when newEndDate > current end_date
+ *    (never shrinks the range).
+ *  - Falls back to a warning when no row is found (e.g. the initial block was
+ *    never created); callers should not treat this as an error.
+ *
+ * Non-fatal — errors are logged and never propagate to the caller.
+ * Idempotent — safe to call multiple times for the same extension.
+ *
+ * @param {string} vehicleId  - vehicle_id text key
+ * @param {string} bookingRef - booking_ref that owns the blocked_dates row
+ * @param {string} newEndDate - YYYY-MM-DD target end date (must be >= existing)
+ */
+export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndDate) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !bookingRef || !newEndDate) {
+    console.warn("_booking-automation extendBlockedDateForBooking: missing required args — skipped");
+    return;
+  }
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const { data: rows, error: findErr } = await sb
+      .from("blocked_dates")
+      .select("id, start_date, end_date")
+      .eq("vehicle_id", normalizedVehicleId)
+      .eq("booking_ref", bookingRef)
+      .eq("reason", "booking");
+
+    if (findErr) {
+      console.error("_booking-automation extendBlockedDateForBooking find error (non-fatal):", findErr.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      console.warn(
+        `_booking-automation extendBlockedDateForBooking: no blocked_dates row found for ` +
+        `vehicle=${normalizedVehicleId} booking_ref=${bookingRef} — skipped`
+      );
+      return;
+    }
+
+    // Use the row with the earliest start_date (the original booking window).
+    // Dates are stored as YYYY-MM-DD strings, so lexicographic comparison is correct.
+    const row = rows.reduce((best, r) => (r.start_date < best.start_date ? r : best), rows[0]);
+    const currentEnd = row.end_date ? String(row.end_date).split("T")[0] : null;
+
+    if (currentEnd && currentEnd >= newEndDate) {
+      console.log(
+        `_booking-automation extendBlockedDateForBooking: end_date already at ${currentEnd} >= ${newEndDate} ` +
+        `for booking_ref=${bookingRef} — no update needed`
+      );
+      return;
+    }
+
+    const { error: updateErr } = await sb
+      .from("blocked_dates")
+      .update({ end_date: newEndDate })
+      .eq("id", row.id);
+
+    if (updateErr) {
+      console.error("_booking-automation extendBlockedDateForBooking update error (non-fatal):", updateErr.message);
+      return;
+    }
+
+    console.log("[BLOCKED_DATE_EXTENDED]", {
+      vehicle_id:  normalizedVehicleId,
+      booking_ref: bookingRef,
+      old_end:     currentEnd,
+      new_end:     newEndDate,
+    });
+  } catch (err) {
+    console.error("_booking-automation extendBlockedDateForBooking error (non-fatal):", err.message);
+  }
+}
+
 // ─── Pickup date/time parser (mirrors parseBookingDateTime in scheduled-reminders.js) ───
 
 /**

@@ -24,7 +24,7 @@
 import Stripe from "stripe";
 import { loadBookings, saveBookings } from "./_bookings.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
-import { autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
+import { autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, parseTime12h } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
@@ -317,7 +317,7 @@ export default async function handler(req, res) {
         console.error("send-extension-confirmation: booked-dates.json extension update failed (non-fatal):", bdErr.message);
       }
       try {
-        await autoCreateBlockedDate(vehicle_id, booking.pickupDate, updatedReturnDate, "booking", bookingRef || null);
+        await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedReturnDate);
         console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
       } catch (sbBlockErr) {
         console.error("send-extension-confirmation: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);

@@ -620,10 +620,13 @@ export default async function handler(req, res) {
         allRows = ghRecords.filter((r) => !r.sync_excluded);
       }
 
-      // Aggregate: group by booking_id, MIN(pickup_date), MAX(return_date), SUM
+      // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
+      // Use original_booking_id when set so that extension records created with a
+      // different booking_id (e.g. legacy "pi_xxx" or "ext-..." keys) still collapse
+      // under their parent rental row.
       const groups = {};
       for (const r of allRows) {
-        const key = r.booking_id || r.id;
+        const key = r.original_booking_id ?? r.booking_id ?? r.id;
         if (!groups[key]) {
           groups[key] = {
             booking_id:     key,

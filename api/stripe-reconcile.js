@@ -28,7 +28,7 @@ import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { autoCreateRevenueRecord } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
 
 /**
  * Resolves a raw booking reference to the canonical booking_ref confirmed in
@@ -528,10 +528,14 @@ export async function runSyncRecent(sb, lookbackHours) {
           stripeNet:       fields.stripe_net,
         }, { strict: true, requireStripeFee: false });
 
-        // For extension recoveries, also advance bookings.return_date so the
-        // booking record stays consistent with the revenue record.
+        // For extension recoveries, also advance bookings.return_date and
+        // extend blocked_dates so booking state and availability stay in sync.
         if (recType === "extension" && resolvedRef) {
           await applyExtensionReturnDateToBooking(sb, resolvedRef, pi.metadata?.new_return_date || null);
+          const extVehicleId = pi.metadata?.vehicle_id || null;
+          if (extVehicleId && pi.metadata?.new_return_date) {
+            await extendBlockedDateForBooking(extVehicleId, resolvedRef, pi.metadata.new_return_date);
+          }
         }
 
         console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });

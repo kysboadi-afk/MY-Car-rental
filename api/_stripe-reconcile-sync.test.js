@@ -100,6 +100,7 @@ mock.module("./_booking-automation.js", {
         };
       }
     },
+    extendBlockedDateForBooking: async () => {},
   },
 });
 
