@@ -1650,7 +1650,7 @@ export default async function handler(req, res) {
               }
               const sbCurrentReturnDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
               const fallbackOldReturnDate = sbCurrentReturnDate || "";
-              const fallbackExtAmount = Math.round(paymentIntent.amount / 100 * 100) / 100;
+              const fallbackExtAmount = Math.round(paymentIntent.amount) / 100;
               if (sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date) {
                 // Already applied in Supabase — attempt idempotent revenue recovery.
                 console.log(
@@ -1785,8 +1785,19 @@ export default async function handler(req, res) {
                 phone:           updatedBooking.phone || "",
                 email:           updatedBooking.email || renter_email || "",
                 // Use previous_return_date from PI metadata as extension start.
-                // Fall back to the booking's original pickupDate only when unavailable.
-                pickupDate:      previous_return_date || updatedBooking.pickupDate || "",
+                // Warn when falling back to original pickupDate so unexpected cases
+                // are visible in logs and can be investigated.
+                pickupDate:      (() => {
+                  if (previous_return_date) return previous_return_date;
+                  if (updatedBooking.pickupDate) {
+                    console.warn(
+                      `stripe-webhook: alreadyApplied extension previous_return_date missing — ` +
+                      `falling back to pickupDate for booking ${bookingRef}`
+                    );
+                    return updatedBooking.pickupDate;
+                  }
+                  return "";
+                })(),
                 returnDate:      new_return_date || updatedBooking.returnDate || "",
                 amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                 paymentMethod:   "stripe",
