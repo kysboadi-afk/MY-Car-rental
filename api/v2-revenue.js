@@ -604,6 +604,7 @@ export default async function handler(req, res) {
           let q = sb
             .from("revenue_records_effective")
             .select("*")
+            .eq("is_orphan", false)
             .order("created_at", { ascending: true });
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
@@ -617,7 +618,7 @@ export default async function handler(req, res) {
 
       if (!allRows) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
-        allRows = ghRecords.filter((r) => !r.sync_excluded);
+        allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
       }
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
