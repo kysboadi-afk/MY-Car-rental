@@ -33,7 +33,7 @@ import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION
 import { TEMPLATES } from "./_sms-templates.js";
 import { fetchBookedDates, hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, parseTime12h } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
@@ -2069,7 +2069,7 @@ async function toolRecordExtensionPayment({
   // ── 4. Update blocked dates ────────────────────────────────────────────────
   if (foundBooking.pickupDate && newReturnDate) {
     try {
-      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking", bookingId || null);
+      await extendBlockedDateForBooking(foundVehicleId, bookingId, newReturnDate);
     } catch (bdErr) {
       console.warn("toolRecordExtensionPayment: blocked_dates update error (non-fatal):", bdErr.message);
     }
