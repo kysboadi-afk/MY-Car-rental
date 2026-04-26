@@ -1463,6 +1463,18 @@ export default async function handler(req, res) {
       // created before extend-rental.js was updated to emit booking_id.
       const bookingRef = meta_booking_id || original_booking_id;
 
+      // HARD RULE: booking_id must start with 'bk-'.
+      // Reject any extension PI whose booking reference is a Stripe PI ID or
+      // any other non-canonical format — these cannot be reliably matched to a
+      // bookings row and must never produce a revenue record.
+      if (!bookingRef || !bookingRef.startsWith("bk-")) {
+        console.error(
+          `stripe-webhook: rental_extension rejected — booking_id "${bookingRef || "<missing>"}" ` +
+          `does not start with 'bk-' for PI ${paymentIntent.id}`
+        );
+        return res.status(200).json({ received: true });
+      }
+
       if (vehicle_id && bookingRef) {
         try {
           if (!new_return_date) {
@@ -1479,6 +1491,32 @@ export default async function handler(req, res) {
           if (!resolvedBookingId) {
             console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
             return res.status(200).json({ received: true });
+          }
+
+          // DUPLICATE CHECK: every Stripe PaymentIntent maps to exactly one
+          // revenue row.  If this PI already has a record (e.g. a prior
+          // successful delivery), exit immediately — there is nothing to do.
+          try {
+            const sbDup = getSupabaseAdmin();
+            if (sbDup) {
+              const { data: existingRev } = await sbDup
+                .from("revenue_records")
+                .select("id")
+                .eq("payment_intent_id", paymentIntent.id)
+                .eq("sync_excluded", false)
+                .maybeSingle();
+              if (existingRev?.id) {
+                console.log(
+                  `stripe-webhook: rental_extension PI ${paymentIntent.id} already in revenue_records ` +
+                  `(id=${existingRev.id}) — skipping duplicate`
+                );
+                return res.status(200).json({ received: true });
+              }
+            }
+          } catch (dupCheckErr) {
+            console.warn(
+              `stripe-webhook: duplicate PI check failed (non-fatal, proceeding): ${dupCheckErr.message}`
+            );
           }
 
           let foundBooking = false;

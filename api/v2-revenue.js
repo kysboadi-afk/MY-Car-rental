@@ -590,6 +590,83 @@ export default async function handler(req, res) {
       return res.status(201).json({ record: created, booking_id: original_booking_id });
     }
 
+    // ── LIST BY BOOKING (aggregated UI view) ────────────────────────────────
+    // Groups revenue_records by booking_id and returns one entry per booking
+    // showing MIN(pickup_date), MAX(return_date), SUM(gross_amount) together
+    // with the individual child rows so the UI can expand the base + extension
+    // detail.  Extension records share booking_id with their parent rental row,
+    // so they aggregate correctly without any joins.
+    if (action === "list_by_booking") {
+      let allRows = null;
+
+      if (sb) {
+        try {
+          let q = sb
+            .from("revenue_records_effective")
+            .select("*")
+            .order("created_at", { ascending: true });
+          if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
+          if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
+          if (body.endDate)    q = q.lte("return_date",  body.endDate);
+          const { data, error } = await q;
+          if (!error) allRows = data || [];
+        } catch (qErr) {
+          console.error("v2-revenue list_by_booking query error:", qErr);
+        }
+      }
+
+      if (!allRows) {
+        const { data: ghRecords } = await loadRecordsFromGitHub();
+        allRows = ghRecords.filter((r) => !r.sync_excluded);
+      }
+
+      // Aggregate: group by booking_id, MIN(pickup_date), MAX(return_date), SUM
+      const groups = {};
+      for (const r of allRows) {
+        const key = r.booking_id || r.id;
+        if (!groups[key]) {
+          groups[key] = {
+            booking_id:     key,
+            vehicle_id:     r.vehicle_id     || null,
+            customer_name:  r.customer_name  || null,
+            customer_phone: r.customer_phone || null,
+            customer_email: r.customer_email || null,
+            min_pickup_date: r.pickup_date   || null,
+            max_return_date: r.return_date   || null,
+            total_gross:    0,
+            record_count:   0,
+            records:        [],
+          };
+        }
+        const g = groups[key];
+        // MIN(pickup_date)
+        if (r.pickup_date && (!g.min_pickup_date || r.pickup_date < g.min_pickup_date)) {
+          g.min_pickup_date = r.pickup_date;
+        }
+        // MAX(return_date)
+        if (r.return_date && (!g.max_return_date || r.return_date > g.max_return_date)) {
+          g.max_return_date = r.return_date;
+        }
+        // SUM(gross_amount) — skip cancelled/no-show rows
+        if (!r.is_cancelled && !r.is_no_show) {
+          g.total_gross = Math.round((g.total_gross + Number(r.gross_amount || 0)) * 100) / 100;
+        }
+        g.record_count += 1;
+        g.records.push(r);
+      }
+
+      // Sort groups: most recent pickup first
+      const sorted = Object.values(groups).sort((a, b) => {
+        const da = a.min_pickup_date || "";
+        const db = b.min_pickup_date || "";
+        return da > db ? -1 : da < db ? 1 : 0;
+      });
+
+      if (body.limit) sorted.splice(Number(body.limit));
+
+      return res.status(200).json({ groups: sorted });
+    }
+
     // ── REBUILD ANALYTICS ───────────────────────────────────────────────────
     // Recomputes total gross / stripe fees / net revenue and per-vehicle profit
     // from the revenue_records table.  Requires Supabase.

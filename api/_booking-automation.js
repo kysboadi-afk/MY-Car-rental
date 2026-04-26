@@ -146,7 +146,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (recordType === "rental") {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
-        .select("id, payment_intent_id")
+        .select("id, payment_intent_id, stripe_fee, stripe_net")
         .eq("booking_id", bookingRef)
         .maybeSingle();
       if (existingByBookingErr) {
@@ -158,7 +158,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (!existingRecord && piId) {
       const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
-        .select("id")
+        .select("id, stripe_fee, stripe_net")
         .eq("payment_intent_id", piId)
         .maybeSingle();
       if (existingByPIErr) {
@@ -210,21 +210,42 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     };
 
     if (existingRecord?.id) {
-      const updatePayload = {
-        gross_amount:      record.gross_amount,
-        stripe_fee:        record.stripe_fee,
-        stripe_net:        record.stripe_net,
-        payment_intent_id: record.payment_intent_id,
-        updated_at:        new Date().toISOString(),
-      };
-      const { error } = await sb
-        .from("revenue_records")
-        .update(updatePayload)
-        .eq("id", existingRecord.id);
-      if (error) {
-        throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+      // SOURCE OF TRUTH RULE: never overwrite gross_amount — the original write
+      // is authoritative.  Extension records are deduplicated by payment_intent_id
+      // so finding one here means the record is already complete; skip entirely.
+      // For rental records, only backfill stripe fee data that was missing on the
+      // initial write (e.g. webhook fired before balance_transaction was settled).
+      if (recordType === "extension") {
+        console.log(
+          `_booking-automation: extension revenue record for PI ${piId} already exists (id=${existingRecord.id}) — skipping`
+        );
+        return;
       }
-      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${bookingRef}`);
+
+      // Rental: only fill in stripe fee/net and PI id when they were absent.
+      // gross_amount is intentionally excluded — it must not be overwritten.
+      const updatePayload = { updated_at: new Date().toISOString() };
+      if (record.stripe_fee != null && existingRecord.stripe_fee == null) {
+        updatePayload.stripe_fee = record.stripe_fee;
+      }
+      if (record.stripe_net != null && existingRecord.stripe_net == null) {
+        updatePayload.stripe_net = record.stripe_net;
+      }
+      if (record.payment_intent_id && !existingRecord.payment_intent_id) {
+        updatePayload.payment_intent_id = record.payment_intent_id;
+      }
+      if (Object.keys(updatePayload).length > 1) {
+        const { error } = await sb
+          .from("revenue_records")
+          .update(updatePayload)
+          .eq("id", existingRecord.id);
+        if (error) {
+          throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+        }
+        console.log(`_booking-automation: backfilled stripe data on ${recordType} revenue record for booking ${bookingRef}`);
+      } else {
+        console.log(`_booking-automation: ${recordType} revenue record for booking ${bookingRef} already complete — no update needed`);
+      }
     } else {
       const { error } = await sb.from("revenue_records").insert(record);
       if (error) {
