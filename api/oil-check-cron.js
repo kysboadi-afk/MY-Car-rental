@@ -118,7 +118,7 @@ function hoursSince(earlier, later = new Date().toISOString()) {
  * @param {{ sentinelDate?: boolean }} opts
  */
 async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata = {}, opts = {}) {
-  if (!sb || !bookingRef) return;
+  if (!sb || !bookingRef) return { inserted: true };
   try {
     const returnDateAtSend = opts.sentinelDate
       ? "1970-01-01"
@@ -129,14 +129,29 @@ async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata 
       return_date_at_send: returnDateAtSend,
       metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
     };
-    const { error } = opts.sentinelDate
-      ? await sb.from("sms_logs").upsert(row, { onConflict: "booking_id,template_key,return_date_at_send" })
-      : await sb.from("sms_logs").insert(row);
-    if (error) {
-      console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+    if (opts.sentinelDate) {
+      // ignoreDuplicates: true → DB does nothing on conflict and returns no rows.
+      // Returning { inserted: false } lets the caller treat a conflict as a
+      // successful no-op (already sent) rather than re-sending.
+      const { data, error } = await sb
+        .from("sms_logs")
+        .upsert(row, { onConflict: "booking_id,template_key,return_date_at_send", ignoreDuplicates: true })
+        .select("id");
+      if (error) {
+        console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+        return { inserted: true }; // fail open
+      }
+      return { inserted: !!(data && data.length > 0) };
+    } else {
+      const { error } = await sb.from("sms_logs").insert(row);
+      if (error) {
+        console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+      }
+      return { inserted: true };
     }
   } catch (err) {
     console.warn("oil-check-cron: sms_logs write failed (non-fatal):", err.message);
+    return { inserted: true }; // fail open
   }
 }
 
@@ -599,14 +614,26 @@ export default async function handler(req, res) {
       continue;
     }
 
+    // Claim the send slot atomically before sending.  ignoreDuplicates:true means
+    // the DB does nothing on conflict and returns no rows → inserted=false.
+    // This makes the DB constraint the final authority under concurrency: only
+    // the run that wins the INSERT proceeds to send; the other treats it as a
+    // no-op (already sent) without re-sending.
+    const { inserted } = await logOilCheckToSupabase(sb, bookingRef, templateKey, {
+      score:             mileageScore,
+      breakdown:         mileageBreakdown,
+      avg_miles_per_day: Math.round(avgMilesPerDay),
+    }, { sentinelDate: true });
+
+    if (!inserted) {
+      results.skipped_no_trigger++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: ${templateKey} already claimed by concurrent run`);
+      continue;
+    }
+
     try {
       await sendSms(phone, msgToSend);
       phonesContactedThisRun.add(phone);
-      await logOilCheckToSupabase(sb, bookingRef, templateKey, {
-        score:             mileageScore,
-        breakdown:         mileageBreakdown,
-        avg_miles_per_day: Math.round(avgMilesPerDay),
-      }, { sentinelDate: true });
       results.triggered++;
       console.log(`oil-check-cron (mileage): triggered booking ${bookingRef || bookingId} (key=${templateKey}, avg=${avgMilesPerDay.toFixed(1)} mi/day)`);
     } catch (err) {
