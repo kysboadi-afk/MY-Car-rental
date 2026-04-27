@@ -6316,11 +6316,14 @@ function renderSystemHealth(data) {
 
     const itemsHtml = (c.items || []).length > 0
       ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
-          ${(c.items || []).map((item) => `
+          ${(c.items || []).map((item) => {
+            const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
+            return `
             <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
               <code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>
-              <span style="color:var(--text-sub);">${esc(item.info)}</span>
-            </div>`).join('')}
+              <span style="color:var(--text-sub);">${esc(displayInfo)}</span>
+            </div>`;
+          }).join('')}
         </div>`
       : '';
 

@@ -87,19 +87,42 @@ function escHtml(str) {
 // Check 1 — Payment → Booking → Revenue consistency
 async function checkPaymentBookingRevenue(sb) {
   try {
-    const { data: paidBookings, error: bErr } = await sb
-      .from("bookings")
-      .select("booking_ref, status, total_price, payment_status, created_at, payment_intent_id")
-      .eq("payment_status", "paid")
-      .not("status", "in", '("cancelled","cancelled_rental")')
-      .limit(500);
+    // Fetch bookings that represent received payments using two complementary
+    // filters so that legacy rows with NULL/partial payment_status are also caught:
+    //   • payment_status = 'paid'   — normal path (Stripe + manual with correct sync)
+    //   • deposit_paid > 0          — money was collected regardless of status column
+    //     combined with a meaningful status — catches legacy rows written before the
+    //     payment_status column was reliably populated.
+    const [byStatusResult, byDepositResult] = await Promise.all([
+      sb.from("bookings")
+        .select("booking_ref, status, total_price, deposit_paid, payment_status, created_at, payment_intent_id")
+        .eq("payment_status", "paid")
+        .not("status", "in", '("cancelled","cancelled_rental")')
+        .limit(500),
+      sb.from("bookings")
+        .select("booking_ref, status, total_price, deposit_paid, payment_status, created_at, payment_intent_id")
+        .gt("deposit_paid", 0)
+        .not("status", "in", '("cancelled","cancelled_rental")')
+        .in("status", ["booked_paid", "active_rental", "completed_rental", "completed", "active", "overdue"])
+        .limit(500),
+    ]);
 
-    if (bErr) {
-      console.error("[v2-system-health] paymentBookingRevenue query error:", bErr.message);
-      return check("Payment → Booking → Revenue", "error", "Could not query bookings: " + bErr.message);
+    if (byStatusResult.error) {
+      console.error("[v2-system-health] paymentBookingRevenue query error:", byStatusResult.error.message);
+      return check("Payment → Booking → Revenue", "error", "Could not query bookings: " + byStatusResult.error.message);
     }
 
-    const refs = (paidBookings || []).map((b) => b.booking_ref).filter(Boolean);
+    // Merge both result sets, deduplicating by booking_ref.
+    const seen = new Set();
+    const paidBookings = [];
+    for (const b of [...(byStatusResult.data || []), ...(byDepositResult.data || [])]) {
+      if (b.booking_ref && !seen.has(b.booking_ref)) {
+        seen.add(b.booking_ref);
+        paidBookings.push(b);
+      }
+    }
+
+    const refs = paidBookings.map((b) => b.booking_ref).filter(Boolean);
     if (refs.length === 0) {
       return check("Payment → Booking → Revenue", "ok", "No paid bookings found to check.");
     }
@@ -119,7 +142,7 @@ async function checkPaymentBookingRevenue(sb) {
     // Secondary check: also consider bookings covered by a revenue record linked
     // via payment_intent_id (e.g. orphan records created by stripe-reconcile with
     // a "stripe-pi_xxx" booking_id before the real booking_ref was known).
-    const piIds = (paidBookings || []).map((b) => b.payment_intent_id).filter(Boolean);
+    const piIds = paidBookings.map((b) => b.payment_intent_id).filter(Boolean);
     let coveredByPI = new Set();
     if (piIds.length > 0) {
       const { data: revByPI, error: piErr } = await sb
@@ -145,7 +168,7 @@ async function checkPaymentBookingRevenue(sb) {
       }
     }
 
-    const missingRevenue = (paidBookings || []).filter(
+    const missingRevenue = paidBookings.filter(
       (b) =>
         b.booking_ref &&
         !revenueRefs.has(b.booking_ref) &&
@@ -599,18 +622,40 @@ async function runAllChecks(sb) {
 
 // Fix 1: create missing revenue records for paid bookings
 async function fixPaymentBookingRevenue(sb) {
-  const { data: paidBookings, error: bErr } = await sb
-    .from("bookings")
-    .select(
-      "booking_ref, status, total_price, deposit_paid, payment_status, " +
-      "payment_intent_id, payment_method, vehicle_id, pickup_date, return_date",
-    )
-    .eq("payment_status", "paid")
-    .not("status", "in", '("cancelled","cancelled_rental")')
-    .limit(500);
-  if (bErr) throw new Error("Could not query bookings: " + bErr.message);
+  // Use the same two-query strategy as checkPaymentBookingRevenue so that legacy
+  // rows with NULL/partial payment_status are also repaired by Fix Now.
+  const [byStatusResult, byDepositResult] = await Promise.all([
+    sb.from("bookings")
+      .select(
+        "booking_ref, status, total_price, deposit_paid, payment_status, " +
+        "payment_intent_id, payment_method, vehicle_id, pickup_date, return_date",
+      )
+      .eq("payment_status", "paid")
+      .not("status", "in", '("cancelled","cancelled_rental")')
+      .limit(500),
+    sb.from("bookings")
+      .select(
+        "booking_ref, status, total_price, deposit_paid, payment_status, " +
+        "payment_intent_id, payment_method, vehicle_id, pickup_date, return_date",
+      )
+      .gt("deposit_paid", 0)
+      .not("status", "in", '("cancelled","cancelled_rental")')
+      .in("status", ["booked_paid", "active_rental", "completed_rental", "completed", "active", "overdue"])
+      .limit(500),
+  ]);
+  if (byStatusResult.error) throw new Error("Could not query bookings: " + byStatusResult.error.message);
 
-  const refs = (paidBookings || []).map((b) => b.booking_ref).filter(Boolean);
+  // Merge and deduplicate by booking_ref
+  const seen = new Set();
+  const paidBookings = [];
+  for (const b of [...(byStatusResult.data || []), ...(byDepositResult.data || [])]) {
+    if (b.booking_ref && !seen.has(b.booking_ref)) {
+      seen.add(b.booking_ref);
+      paidBookings.push(b);
+    }
+  }
+
+  const refs = paidBookings.map((b) => b.booking_ref).filter(Boolean);
   if (refs.length === 0) return { fixed: 0, message: "No paid bookings found." };
 
   const { data: revRows, error: rErr } = await sb
@@ -625,7 +670,7 @@ async function fixPaymentBookingRevenue(sb) {
   // created by stripe-reconcile with a "stripe-pi_xxx" booking_id) that already
   // cover the payment — these bookings are considered handled and excluded from the
   // missing list so Fix Now does not attempt a duplicate insert.
-  const piIds = (paidBookings || []).map((b) => b.payment_intent_id).filter(Boolean);
+  const piIds = paidBookings.map((b) => b.payment_intent_id).filter(Boolean);
   let coveredByPI = new Set(); // payment_intent_ids already linked in revenue_records
   if (piIds.length > 0) {
     const { data: revByPI, error: piErr } = await sb
@@ -649,7 +694,7 @@ async function fixPaymentBookingRevenue(sb) {
     }
   }
 
-  const missing = (paidBookings || []).filter(
+  const missing = paidBookings.filter(
     (b) =>
       b.booking_ref &&
       !revenueRefs.has(b.booking_ref) &&
@@ -684,8 +729,12 @@ async function fixPaymentBookingRevenue(sb) {
       await autoCreateRevenueRecord({
         bookingId:       b.booking_ref,
         vehicleId:       b.vehicle_id,
-        amountPaid:      Number(b.total_price || 0),
-        totalPrice:      Number(b.total_price || 0),
+        // Use deposit_paid as the actual collected amount (gross_amount in revenue_records).
+        // Fall back to total_price only when deposit_paid is absent (e.g. very old rows).
+        amountPaid:      Number(b.deposit_paid || b.total_price || 0),
+        // totalPrice tracks the full rental cost for metadata; prefers total_price over
+        // deposit_paid because partial deposits don't represent the full booking value.
+        totalPrice:      Number(b.total_price || b.deposit_paid || 0),
         paymentIntentId: b.payment_intent_id || null,
         paymentMethod:   b.payment_method || "stripe",
         pickupDate:      b.pickup_date || null,
