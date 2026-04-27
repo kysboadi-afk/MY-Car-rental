@@ -20,7 +20,7 @@ import { getVehicleById } from "./_vehicles.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
-import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 
@@ -537,7 +537,7 @@ export default async function handler(req, res) {
         renter_phone:          activeBooking.phone || "",
         extension_label:       extensionLabel,
         new_return_date:       newReturnDate,
-        new_return_time:       resolvedReturnTime,
+        new_return_time:       formatTime12h(resolvedReturnTime),
         // Return date in effect before this extension — used by the webhook to set
         // the correct pickup_date on the extension revenue record (extension start).
         previous_return_date:  effectiveReturnDate || "",

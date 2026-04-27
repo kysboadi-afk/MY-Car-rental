@@ -11,7 +11,7 @@ import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_
 import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
 import { isDatesAndTimesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
-import { normalizeClockTime, deriveReturnTime } from "./_time.js";
+import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -299,8 +299,8 @@ export default async function handler(req, res) {
         vehicle_name: vehicleData.name,
         pickup_date:  pickup,
         return_date:  returnDate,
-        pickup_time:  trimmedPickupTime,
-        return_time:  derivedReturnTime,
+        pickup_time:  formatTime12h(trimmedPickupTime),
+        return_time:  formatTime12h(derivedReturnTime),
         email,
         ...(isSlingshotVehicle ? {
           rental_duration: Number(slingshotDuration) >= 48
