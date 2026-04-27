@@ -602,7 +602,8 @@ async function checkExtensionReturnDateSync(sb) {
 async function checkSmsDeliveryHealth(sb) {
   try {
     const today     = new Date().toISOString().slice(0, 10);
-    const cutoff48h = new Date(Date.now() - 48 * 3_600_000).toISOString().slice(0, 10);
+    // Look back 48 h for recently-past-return bookings that may have missed critical SMS.
+    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const ACTIVE_STATUSES = ["active_rental", "active", "overdue"];
 
     const { data: activeRows, error: activeErr } = await sb
