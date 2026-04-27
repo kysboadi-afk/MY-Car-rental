@@ -341,10 +341,10 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
       if (status) {
         const APP_TO_DB = {
           reserved_unpaid:  "pending",
-          booked_paid:      "approved",
-          active_rental:    "active",
-          completed_rental: "completed",
-          cancelled_rental: "cancelled",
+          booked_paid:      "booked_paid",
+          active_rental:    "active_rental",
+          completed_rental: "completed_rental",
+          cancelled_rental: "cancelled_rental",
         };
         const dbStatus = APP_TO_DB[status] || status;
         query = query.eq("status", dbStatus);
@@ -1949,10 +1949,10 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
 
   const APP_TO_DB_STATUS = {
     reserved_unpaid:  "pending",
-    booked_paid:      "approved",
-    active_rental:    "active",
-    completed_rental: "completed",
-    cancelled_rental: "cancelled",
+    booked_paid:      "booked_paid",
+    active_rental:    "active_rental",
+    completed_rental: "completed_rental",
+    cancelled_rental: "cancelled_rental",
   };
   const validStatuses = Object.keys(APP_TO_DB_STATUS);
   if (!validStatuses.includes(status)) {

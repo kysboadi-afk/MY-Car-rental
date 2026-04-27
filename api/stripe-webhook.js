@@ -2725,7 +2725,7 @@ export default async function handler(req, res) {
         try {
           const lookupId = bookingRef || originalPiId;
           await updateBooking(vehicle_id, lookupId, {
-            status: "active",
+            status: "active_rental",
             paymentStatus: "paid",
           });
           const { data: updatedData } = await loadBookings();
@@ -2738,12 +2738,12 @@ export default async function handler(req, res) {
               ...updatedBooking,
               amountPaid: Math.round((baseAmount + paidAmount) * 100) / 100,
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             };
             await updateBooking(vehicle_id, lookupId, {
               amountPaid: bookingPatch.amountPaid,
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             });
             await autoUpsertBooking(bookingPatch, { strict: true });
             const customerId = await resolveCustomerIdFromSupabase(
@@ -2787,7 +2787,7 @@ export default async function handler(req, res) {
               amountPaid: paidAmount,
               totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             };
             await autoUpsertBooking(fallbackBooking, { strict: true });
             const customerId = await resolveCustomerIdFromSupabase(

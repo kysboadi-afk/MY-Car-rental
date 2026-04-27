@@ -21,7 +21,7 @@ import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_fina
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
-const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 
 /**
@@ -76,7 +76,7 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
         .from("bookings")
         .select("booking_ref, return_date, return_time")
         .eq("vehicle_id", dbVehicleId)
-        .eq("status", "active_rental")
+        .in("status", ["active_rental", "overdue"])
         .limit(1);
       if (!activeRentalError && activeRentals && activeRentals.length > 0) {
         const ar         = activeRentals[0];
