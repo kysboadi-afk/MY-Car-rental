@@ -6390,6 +6390,10 @@ async function fixHealthCheck(checkKey, btn) {
       // SMS repair runs through its own dedicated endpoint which reuses the
       // exact same processActiveRentals logic as the cron (repairMode: true).
       result = await apiPost('/api/system-health-fix-sms', { secret: adminSecret });
+    } else if (checkKey === 'availabilitySyncHealth') {
+      // Availability sync repair rebuilds missing/stale blocked_dates rows from
+      // active bookings so vehicles are never incorrectly shown as available.
+      result = await apiPost('/api/system-health-fix-availability', { secret: adminSecret });
     } else {
       result = await apiPost('/api/v2-system-health', {
         secret: adminSecret,
