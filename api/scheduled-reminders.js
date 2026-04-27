@@ -1,6 +1,6 @@
 // api/scheduled-reminders.js
-// Vercel cron serverless function — scans bookings.json and sends automated
-// SMS reminders based on booking status and timing.
+// Vercel cron serverless function — reads bookings from Supabase (primary) and
+// sends automated SMS reminders based on booking status and timing.
 //
 // This endpoint is called by Vercel Cron on a frequent schedule (every 5 min).
 // It is also callable manually from an admin panel via POST with an
@@ -101,17 +101,17 @@ const LATE_FEE_AMOUNTS = {
 const MAX_LATE_FEE_USD = 500;
 
 // Maximum hours-overdue window in which a late fee may be triggered.
-// AUTO_COMPLETE_HOURS (4 h) auto-closes the booking; the late fee window is
-// 2 h–8 h past the scheduled return.  If minsOverdue exceeds this threshold
-// the booking was never auto-completed (stale status, cron outage, etc.) and
-// firing a fee would produce unrealistic amounts.  Skip it and warn instead.
+// If minsOverdue exceeds this threshold the booking was never auto-completed
+// (stale status, cron outage, etc.) and firing a fee would produce unrealistic
+// amounts.  Skip it and warn instead.
 const MAX_FEE_OVERDUE_HOURS = 8;
 
 // ─── Auto-completion threshold ────────────────────────────────────────────────
 // Active rentals that are still open this many hours past the scheduled return
 // time are automatically transitioned to "completed_rental".  This frees up
 // the vehicle for new bookings without requiring manual admin intervention.
-const AUTO_COMPLETE_HOURS = 4;
+// Spec section 2: auto-clean fires at now > return_date + 24 h.
+const AUTO_COMPLETE_HOURS = 24;
 
 const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -664,17 +664,25 @@ async function processUnpaid(allBookings, now, sentMarks) {
       });
 
       // 2-hour reminder (window: 2h–90min)
-      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h")) {
+      if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h") &&
+          !(await isSmsLogged(id, "unpaid_2h"))) {
         const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_2H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_2h" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "unpaid_2h" });
+          await logSmsToSupabase(id, "unpaid_2h");
+        }
       } else if (minutesUntilPickup <= 120 && minutesUntilPickup > 90) {
         console.log(`[SMS_SKIP] ${id} unpaid_2h: already sent`);
       }
 
       // Final reminder (window: 30–15 min)
-      if (minutesUntilPickup <= 30 && minutesUntilPickup > 15 && !alreadySent(booking, "unpaid_final")) {
+      if (minutesUntilPickup <= 30 && minutesUntilPickup > 15 && !alreadySent(booking, "unpaid_final") &&
+          !(await isSmsLogged(id, "unpaid_final"))) {
         const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_FINAL, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "unpaid_final" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "unpaid_final" });
+          await logSmsToSupabase(id, "unpaid_final");
+        }
       } else if (minutesUntilPickup <= 30 && minutesUntilPickup > 15) {
         console.log(`[SMS_SKIP] ${id} unpaid_final: already sent`);
       }
@@ -705,9 +713,13 @@ async function processPaidBookings(allBookings, now, sentMarks) {
       });
 
       // 24-hour reminder (window: 24h–23h)
-      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h")) {
+      if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h") &&
+          !(await isSmsLogged(id, "pickup_24h"))) {
         const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
-        if (sent) sentMarks.push({ vehicleId, id, key: "pickup_24h" });
+        if (sent) {
+          sentMarks.push({ vehicleId, id, key: "pickup_24h" });
+          await logSmsToSupabase(id, "pickup_24h");
+        }
       } else if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60) {
         console.log(`[SMS_SKIP] ${id} pickup_24h: already sent`);
       }
@@ -764,7 +776,7 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   active booking (e.g. overlapping rentals) it is silently skipped so that
  *   no renter ever receives more than one message per cron tick.
  */
-export async function processActiveRentals(allBookings, now, sentMarks) {
+export async function processActiveRentals(allBookings, now, sentMarks, criticalOnly = false) {
   const sb = getSupabaseAdmin();
   // Per-run dedup: max 1 SMS per phone number per cron invocation.
   const phonesContactedThisRun = new Set();
@@ -1102,7 +1114,9 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // Fires once in the 420–480 min window (7–8 h before return), bridging
       // the gap between the 24h return reminder and the 1h extension invite.
       // Uses the same scoring / cooldown path as the other P3 reminders.
+      // Skipped in criticalOnly mode (outside SMS send window).
       if (
+        !criticalOnly &&
         !sentThisBooking &&
         minutesUntilReturn <= SAME_DAY_REMINDER_UPPER_MIN && minutesUntilReturn > SAME_DAY_REMINDER_LOWER_MIN &&
         !alreadySent(booking, "active_rental_mid") &&
@@ -1141,7 +1155,9 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // Uses the same scoring / cooldown path as the 1h extension invite so that
       // cross-cron spam protection applies.  sms_logs dedup prevents a second
       // send if the cron fires multiple times during the 60-min window.
+      // Skipped in criticalOnly mode (outside SMS send window).
       if (
+        !criticalOnly &&
         !sentThisBooking &&
         minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN &&
         !alreadySent(booking, "return_reminder_24h") &&
@@ -1203,10 +1219,12 @@ async function processCompleted(allBookings, now, sentMarks) {
       const hoursSinceComplete = (now - completedAt) / 3600000;
 
       // Thank-you immediately on completion (within 1 hour)
-      if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you")) {
+      if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you") &&
+          !(await isSmsLogged(id, "post_thank_you"))) {
         const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v));
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "post_thank_you" });
+          await logSmsToSupabase(id, "post_thank_you");
           // Promote to past_customer in TextMagic contact database
           if (booking.phone) {
             try {
@@ -1227,10 +1245,14 @@ async function processCompleted(allBookings, now, sentMarks) {
         if (
           hoursSinceComplete >= targetHours &&
           hoursSinceComplete < targetHours + 24 &&
-          !alreadySent(booking, item.key)
+          !alreadySent(booking, item.key) &&
+          !(await isSmsLogged(id, item.key))
         ) {
           const sent = await safeSend(booking.phone, render(item.template, v));
-          if (sent) sentMarks.push({ vehicleId, id, key: item.key });
+          if (sent) {
+            sentMarks.push({ vehicleId, id, key: item.key });
+            await logSmsToSupabase(id, item.key);
+          }
         }
       }
     }
@@ -1274,7 +1296,141 @@ async function persistSentMarks(sentMarks) {
 }
 
 /**
- * Auto-activate booked_paid bookings whose pickup date/time has arrived.
+ * Load active and recently-completed bookings from Supabase (primary source).
+ *
+ * Returns data in the same allBookings format used by all process* functions
+ * ({ [vehicleId]: booking[] }).  smsSentAt for once-per-booking SMS types is
+ * pre-populated from sms_logs sentinel rows so alreadySent() continues to work.
+ *
+ * Returns null on query error so the caller can fall back to bookings.json.
+ * Returns an empty object {} when Supabase has no relevant bookings.
+ *
+ * @param {object} sb - Supabase admin client
+ * @returns {Promise<object|null>}
+ */
+async function loadBookingsFromSupabase(sb) {
+  try {
+    const SELECT_COLS =
+      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
+      "pickup_date, return_date, pickup_time, return_time, status, " +
+      "payment_intent_id, completed_at, extension_count, " +
+      "late_fee_status, late_fee_amount, created_at";
+
+    // Recently completed = last 9 days (covers 7-day retention + buffer)
+    const cutoffDate = new Date(Date.now() - 9 * 24 * 3600_000).toISOString();
+
+    const [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
+      await Promise.all([
+        sb
+          .from("bookings")
+          .select(SELECT_COLS)
+          .in("status", ["pending", "booked_paid", "active", "active_rental", "overdue"])
+          .order("created_at", { ascending: false }),
+        sb
+          .from("bookings")
+          .select(SELECT_COLS)
+          .in("status", ["completed", "completed_rental"])
+          .gte("completed_at", cutoffDate)
+          .order("completed_at", { ascending: false }),
+      ]);
+
+    if (activeErr) {
+      console.error("scheduled-reminders loadBookingsFromSupabase: active query failed:", activeErr.message);
+      return null;
+    }
+    if (completedErr) {
+      console.warn("scheduled-reminders loadBookingsFromSupabase: completed query failed (non-fatal):", completedErr.message);
+    }
+
+    const allRows = [...(activeRows || []), ...(completedRows || [])];
+    if (allRows.length === 0) {
+      console.log("scheduled-reminders: no active bookings in Supabase");
+      return {};
+    }
+
+    // Supabase status → legacy status used by process* functions
+    const REVERSE_STATUS = {
+      pending:          "reserved_unpaid",
+      booked_paid:      "booked_paid",
+      active:           "active_rental",
+      active_rental:    "active_rental",
+      overdue:          "active_rental",
+      completed:        "completed_rental",
+      completed_rental: "completed_rental",
+      cancelled_rental: "cancelled_rental",
+    };
+
+    // Group by vehicle_id
+    const allBookings = {};
+    for (const row of allRows) {
+      const vehicleId = row.vehicle_id || "unknown";
+      if (!allBookings[vehicleId]) allBookings[vehicleId] = [];
+      allBookings[vehicleId].push({
+        bookingId:      row.booking_ref         || "",
+        paymentIntentId: row.payment_intent_id  || "",
+        vehicleId,
+        vehicleName:    vehicleId,
+        name:           row.customer_name       || "",
+        email:          row.customer_email      || "",
+        phone:          row.customer_phone      || "",
+        pickupDate:     row.pickup_date  ? String(row.pickup_date).split("T")[0]  : "",
+        pickupTime:     row.pickup_time  ? String(row.pickup_time).substring(0, 5) : "",
+        returnDate:     row.return_date  ? String(row.return_date).split("T")[0]  : "",
+        returnTime:     row.return_time  ? String(row.return_time).substring(0, 5) : "",
+        status:         REVERSE_STATUS[row.status] || row.status || "reserved_unpaid",
+        completedAt:    row.completed_at || null,
+        extensionCount: row.extension_count || 0,
+        lateFeeApplied: row.late_fee_status === "approved" ? (row.late_fee_amount || undefined) : undefined,
+        paymentLink:    "https://www.slytrans.com/balance.html",
+        smsSentAt:      {},   // populated below from sms_logs
+        createdAt:      row.created_at || null,
+      });
+    }
+
+    // Pre-populate smsSentAt from sms_logs sentinel rows (once-per-booking SMS
+    // types logged without a return date).  Return-time keys are intentionally
+    // excluded so alreadySent() never blocks a re-fire after an extension.
+    const bookingRefs = allRows.map((r) => r.booking_ref).filter(Boolean);
+    if (bookingRefs.length > 0) {
+      try {
+        const { data: smsRows, error: smsErr } = await sb
+          .from("sms_logs")
+          .select("booking_id, template_key, sent_at")
+          .in("booking_id", bookingRefs)
+          .eq("return_date_at_send", SMS_LOGS_SENTINEL_DATE);
+        if (smsErr) {
+          console.warn("scheduled-reminders loadBookingsFromSupabase: sms_logs lookup failed (non-fatal):", smsErr.message);
+        } else {
+          const smsByRef = {};
+          for (const log of smsRows || []) {
+            if (!smsByRef[log.booking_id]) smsByRef[log.booking_id] = {};
+            const existing = smsByRef[log.booking_id][log.template_key];
+            if (!existing || new Date(log.sent_at) > new Date(existing)) {
+              smsByRef[log.booking_id][log.template_key] = log.sent_at;
+            }
+          }
+          for (const bookings of Object.values(allBookings)) {
+            for (const booking of bookings) {
+              if (smsByRef[booking.bookingId]) {
+                booking.smsSentAt = smsByRef[booking.bookingId];
+              }
+            }
+          }
+        }
+      } catch (smsLookupErr) {
+        console.warn("scheduled-reminders loadBookingsFromSupabase: sms_logs lookup failed (non-fatal):", smsLookupErr.message);
+      }
+    }
+
+    console.log(`scheduled-reminders: loaded ${allRows.length} booking(s) from Supabase`);
+    return allBookings;
+  } catch (err) {
+    console.error("scheduled-reminders loadBookingsFromSupabase: unexpected error:", err.message);
+    return null;
+  }
+}
+
+/**
  * Transitions status from "booked_paid" → "active_rental" in bookings.json
  * and syncs to Supabase.  Non-fatal: errors are logged and never propagate.
  *
@@ -1856,16 +2012,26 @@ export default async function handler(req, res) {
   }
 
   let allBookings;
-  try {
-    // TODO (Phase 3 — pending Supabase schema for smsSentAt): migrate primary
-    // booking read to Supabase once a smsSentAt column is added to the bookings
-    // table. Until then, bookings.json remains authoritative for smsSentAt
-    // deduplication markers used by all processAuto* and reminder functions.
-    const loaded = await loadBookings();
-    allBookings = loaded.data;
-  } catch (err) {
-    console.error("scheduled-reminders: failed to load bookings:", err);
-    return res.status(500).json({ error: "Failed to load bookings" });
+
+  // Load bookings from Supabase (primary source).  All decisions must be based
+  // on fresh Supabase data, not bookings.json.  Falls back to bookings.json only
+  // when Supabase is unavailable (e.g. missing credentials, network error).
+  const sbClient = getSupabaseAdmin();
+  if (sbClient) {
+    allBookings = await loadBookingsFromSupabase(sbClient);
+    if (allBookings === null) {
+      console.warn("scheduled-reminders: Supabase load failed — falling back to bookings.json");
+      allBookings = undefined;
+    }
+  }
+  if (allBookings === undefined) {
+    try {
+      const loaded = await loadBookings();
+      allBookings = loaded.data;
+    } catch (err) {
+      console.error("scheduled-reminders: failed to load bookings:", err);
+      return res.status(500).json({ error: "Failed to load bookings" });
+    }
   }
 
   const now = new Date();
@@ -1886,14 +2052,21 @@ export default async function handler(req, res) {
 
   // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
   // Manual POST bypasses the window to allow out-of-hours testing.
-  // Auto-activations, auto-completions, and reconciliation already ran above
-  // and are always executed regardless of the SMS window.
+  // P1/P2 critical messages (late_warning_30min, late_at_return, late_grace_expired,
+  // late_fee_pending) and the named P3 active_rental_1h_before_end bypass the
+  // window restriction and fire even during off-hours (criticalOnly=true).
   if (req.method === "GET") {
     const hour = laHour();
     if (hour < SMS_WINDOW_START_HOUR || hour >= SMS_WINDOW_END_HOUR) {
+      const sentMarks = [];
+      await processActiveRentals(allBookings, now, sentMarks, true);
+      await persistSentMarks(sentMarks);
       return res.status(200).json({
-        skipped: true,
-        reason:  `Outside SMS send window (${SMS_WINDOW_START_HOUR}:00–${SMS_WINDOW_END_HOUR}:00 LA). Current LA hour: ${hour}.`,
+        ok:             true,
+        outsideWindow:  true,
+        criticalOnly:   true,
+        remindersSent:  sentMarks.filter((m) => !m.key.startsWith("_")).length,
+        reason: `Outside SMS send window (${SMS_WINDOW_START_HOUR}:00–${SMS_WINDOW_END_HOUR}:00 LA). Current LA hour: ${hour}. Critical SMS still fired.`,
       });
     }
   }

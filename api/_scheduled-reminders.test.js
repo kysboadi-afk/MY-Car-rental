@@ -212,14 +212,14 @@ test("processAutoCompletions: does not touch bookings that are only 1 hour overd
   assert.equal(updatedBookings.length, 0, "Not yet 4 hours overdue — should not auto-complete");
 });
 
-test("processAutoCompletions: does not touch bookings that are 3.9 hours overdue", async () => {
+test("processAutoCompletions: does not touch bookings that are 23.9 hours overdue", async () => {
   reset();
-  const now = new Date("2026-03-22T13:54:00-07:00"); // 3h54m past return
+  const now = new Date("2026-03-23T09:54:00-07:00"); // 23h54m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
 
-  assert.equal(updatedBookings.length, 0, "3.9 hours overdue — still below 4h threshold");
+  assert.equal(updatedBookings.length, 0, "23.9 hours overdue — still below 24h threshold");
 });
 
 test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
@@ -232,9 +232,9 @@ test("processAutoCompletions: respects 24-hour return times with seconds", async
   assert.equal(updatedBookings.length, 0, "HH:MM:SS return times must not default to midnight");
 });
 
-test("processAutoCompletions: auto-completes booking that is 4+ hours past return time", async () => {
+test("processAutoCompletions: auto-completes booking that is 24+ hours past return time", async () => {
   reset();
-  const now = new Date("2026-03-22T14:05:00-07:00"); // 4h5m past 10:00 AM return
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -250,7 +250,7 @@ test("processAutoCompletions: auto-completes booking that is 4+ hours past retur
 
 test("processAutoCompletions: sets completedAt to now.toISOString()", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T11:00:00-07:00"); // 25h past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -260,7 +260,7 @@ test("processAutoCompletions: sets completedAt to now.toISOString()", async () =
 
 test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -271,7 +271,7 @@ test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", as
 
 test("processAutoCompletions: calls autoUpsertBooking", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -304,11 +304,11 @@ test("processAutoCompletions: skips cancelled bookings", async () => {
 
 test("processAutoCompletions: handles multiple vehicles independently", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00"); // 5h past 10:00 AM return
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM on 2026-03-22
   const allBookings = {
     camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
     slingshot: [makeBooking({ bookingId: "bk-slingshot", vehicleId: "slingshot",
-                              returnDate: "2026-03-22", returnTime: "1:00 PM" })], // only 2h overdue
+                              returnDate: "2026-03-23", returnTime: "9:00 AM" })], // only 1h5m overdue
   };
 
   await processAutoCompletions(allBookings, now);
@@ -319,7 +319,7 @@ test("processAutoCompletions: handles multiple vehicles independently", async ()
 
 test("processAutoCompletions: removes booking from booked-dates.json", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
