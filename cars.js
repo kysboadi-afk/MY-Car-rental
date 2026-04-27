@@ -7,6 +7,25 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
+// ─── Fleet-status API contract ────────────────────────────────────────────────
+// Canonical fields returned per vehicle by api/fleet-status.js.
+// If this list drifts from the actual API response, loadFleetStatus() will
+// log a console.error immediately so the mismatch is caught during development.
+const FLEET_STATUS_EXPECTED_KEYS = ["available", "rental_status", "available_at", "next_available_display"];
+
+function validateFleetStatusShape(fleetStatus) {
+  const entries = Object.values(fleetStatus);
+  if (!entries.length) return;
+  const first = entries[0];
+  const missing = FLEET_STATUS_EXPECTED_KEYS.filter(k => !(k in first));
+  if (missing.length) {
+    console.error(
+      "[fleet-status] API response is missing expected fields:", missing,
+      "— verify api/fleet-status.js response shape matches FLEET_STATUS_EXPECTED_KEYS in cars.js"
+    );
+  }
+}
+
 // ─── i18n helper ─────────────────────────────────────────────────────────────
 function t(key, fallback) {
   try {
@@ -223,6 +242,7 @@ async function loadFleetStatus() {
   try {
     const fleetRes = await fetch(API_BASE + "/api/fleet-status");
     const fleetStatus = fleetRes.ok ? await fleetRes.json() : {};
+    validateFleetStatusShape(fleetStatus);
     applyFleetStatus(fleetStatus);
   } catch (err) {
     console.warn("Could not load fleet status:", err);
