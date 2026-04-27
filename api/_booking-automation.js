@@ -766,35 +766,29 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const todayDate = new Date(today);
 
     for (const row of rows) {
-      if (todayDate < new Date(row.end_date)) {
-        // Early return: shrink the blocked range to end today.
-        const { error: updateErr } = await sb
-          .from("blocked_dates")
-          .update({ end_date: today })
-          .eq("id", row.id);
+      // Delete the blocked_dates row so fleet-status immediately shows the
+      // vehicle as available after an admin marks the rental as returned.
+      // Previously the row was only trimmed to today, but fleet-status queries
+      // `end_date >= today` so the car remained blocked for the rest of the day.
+      const { error: deleteErr } = await sb
+        .from("blocked_dates")
+        .delete()
+        .eq("id", row.id);
 
-        if (updateErr) {
-          console.error("_booking-automation autoReleaseBlockedDateOnReturn update error (non-fatal):", updateErr.message);
-        } else {
-          console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
-            vehicle_id:   normalizedVehicleId,
-            booking_ref:  bookingRef,
-            original_end: row.end_date,
-            updated_end:  today,
-            action:       "trimmed_early_return",
-          });
-        }
+      if (deleteErr) {
+        console.error("_booking-automation autoReleaseBlockedDateOnReturn delete error (non-fatal):", deleteErr.message);
       } else {
-        // On-time or late return — existing end_date is correct, nothing to update.
+        const action = today < row.end_date ? "deleted_early_return"
+          : today === row.end_date ? "deleted_on_time_return"
+          : "deleted_late_return";
         console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
           vehicle_id:   normalizedVehicleId,
           booking_ref:  bookingRef,
           original_end: row.end_date,
           actual_return: today,
-          action:        "on_time_or_late_no_change",
+          action,
         });
       }
     }

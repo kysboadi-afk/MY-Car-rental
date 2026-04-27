@@ -873,10 +873,11 @@ export default async function handler(req, res) {
         }
 
         // ── Release blocked_dates row + structured return log ─────────────
-        // Trim the Supabase blocked_dates range to end today so that
-        // /api/booked-dates reflects the actual occupancy period after an
-        // early return (original end_date stays unchanged only when the vehicle
-        // was returned on time or late).
+        // Delete the Supabase blocked_dates row so that fleet-status.js
+        // immediately reports the vehicle as available.  fleet-status queries
+        // end_date >= today, so merely trimming to today still blocks the car
+        // for the rest of the day.  Deletion is safe: the booking record in
+        // the bookings table is the authoritative history.
         try {
           await autoReleaseBlockedDateOnReturn(
             updatedBooking.vehicleId,
