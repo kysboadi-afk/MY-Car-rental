@@ -1388,23 +1388,30 @@ initDatePickers();
       const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
 
       let availableAt = null;
+      let nextAvailableDisplay = null;
       for (const id of idsToCheck) {
         const entry = status[id];
         if (entry && entry.available === false) {
-          if (entry.available_at && (!availableAt || entry.available_at < availableAt)) {
-            availableAt = entry.available_at;
+          if (entry.available_at) {
+            if (!availableAt || entry.available_at < availableAt) {
+              availableAt = entry.available_at;
+              nextAvailableDisplay = entry.next_available_display || null;
+            }
+          } else if (!nextAvailableDisplay && entry.next_available_display) {
+            // Date-only block (no end_time): capture display string for date-only unavailability.
+            nextAvailableDisplay = entry.next_available_display;
           }
         }
       }
 
-      showVehicleUnavailable(availableAt);
+      showVehicleUnavailable(availableAt, nextAvailableDisplay);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
   }
 })();
 
-function showVehicleUnavailable(nextAvailableISO) {
+function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
   const bookingSection = document.querySelector(".booking");
   if (!bookingSection) return;
 
@@ -1474,6 +1481,15 @@ function showVehicleUnavailable(nextAvailableISO) {
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
       extReturn.setAttribute("min", SlyLA.todayISO());
+    }
+    // Update subtitle to show when the car is next available, if known.
+    const subtitle = extendSection.querySelector(".waitlist-subtitle");
+    if (subtitle) {
+      if (nextAvailableDisplay) {
+        subtitle.textContent = `This vehicle is currently rented \u2014 available again: ${nextAvailableDisplay}. If you are the current renter, enter your contact info below to extend your rental period.`;
+      } else {
+        subtitle.textContent = "This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.";
+      }
     }
     // Initialize the extend rental form interactions
     initExtendRentalForm();

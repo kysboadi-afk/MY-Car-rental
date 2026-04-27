@@ -32,7 +32,9 @@ const BUSINESS_TZ = "America/Los_Angeles";
 const BOOKING_BUFFER_HOURS = 2;
 
 // Active booking statuses that keep a vehicle blocked.
-const ACTIVE_BOOKING_STATUSES = ["active_rental", "overdue"];
+// Used in the fallback query when no blocked_dates row exists for a vehicle.
+// Includes all statuses where a confirmed booking should prevent new reservations.
+const ACTIVE_BOOKING_STATUSES = ["booked_paid", "approved", "active", "reserved", "active_rental", "overdue"];
 
 
 function buildDefaultStatus() {
