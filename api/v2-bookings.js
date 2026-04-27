@@ -63,18 +63,36 @@ const VEHICLE_NAMES    = {
   camry2013:  "Camry 2013 SE",
 };
 
-// Mapping between app-level status values (used in bookings.json and the admin UI)
-// and database-level status values (used in the Supabase bookings table).
+// Mapping from app-level status values (used in bookings.json and the admin UI)
+// to database-level status values (used in the Supabase bookings table).
+// Migration 0081 expands the DB constraint to include all modern values so
+// every status here is directly accepted by Supabase without a constraint error.
 const APP_TO_DB_STATUS = {
   reserved_unpaid:  "pending",
-  booked_paid:      "approved",
-  active_rental:    "active",
-  completed_rental: "completed",
-  cancelled_rental: "cancelled",
+  booked_paid:      "booked_paid",
+  active_rental:    "active_rental",
+  overdue:          "overdue",
+  completed_rental: "completed_rental",
+  cancelled_rental: "cancelled_rental",
 };
-const DB_TO_APP_STATUS = Object.fromEntries(
-  Object.entries(APP_TO_DB_STATUS).map(([app, db]) => [db, app])
-);
+// Separate reverse mapping: explicitly covers ALL status values the DB may
+// contain (including legacy values written before migration 0081).
+const DB_TO_APP_STATUS = {
+  // Modern values — identity pass-through
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  booked_paid:          "booked_paid",
+  active_rental:        "active_rental",
+  overdue:              "overdue",
+  completed_rental:     "completed_rental",
+  cancelled_rental:     "cancelled_rental",
+  // Legacy values (may exist on older rows pre-0081)
+  approved:             "booked_paid",
+  active:               "active_rental",
+  completed:            "completed_rental",
+  cancelled:            "cancelled_rental",
+};
 
 const GITHUB_REPO       = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const BOOKED_DATES_PATH = "booked-dates.json";
@@ -487,7 +505,7 @@ export default async function handler(req, res) {
         safeUpdates.activatedAt = safeUpdates.updatedAt;
       }
       // Auto-stamp completedAt and actualReturnTime when an admin marks the rental as returned.
-      // Safety guard: only allow this transition when the booking is currently active.
+      // Safety guard: only allow this transition when the booking is currently active or overdue.
       if (safeUpdates.status === "completed_rental") {
         let currentStatus = null;
         if (sbOnlyRow) {
@@ -498,9 +516,9 @@ export default async function handler(req, res) {
           );
           currentStatus = currentBooking?.status || null;
         }
-        if (currentStatus && currentStatus !== "active_rental") {
+        if (currentStatus && currentStatus !== "active_rental" && currentStatus !== "overdue") {
           return res.status(409).json({
-            error: `Cannot mark as returned: booking must be active (current status: ${currentStatus})`,
+            error: `Cannot mark as returned: booking must be active or overdue (current status: ${currentStatus})`,
           });
         }
         if (!safeUpdates.completedAt) {
@@ -521,6 +539,7 @@ export default async function handler(req, res) {
       // correcting a return date or processing a manual extension) so Supabase-
       // only bookings stay consistent with the updated dates.
       let sbUpdateSuccess = false;
+      let sbOnlyRowUpdateError = null;
       const sbInstance = getSupabaseAdmin();
       const hasReturnUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
       if (sbInstance && (safeUpdates.status || hasReturnUpdate)) {
@@ -549,7 +568,9 @@ export default async function handler(req, res) {
               if (!soErr) {
                 sbUpdateSuccess = true;
               } else {
-                console.error("v2-bookings: Supabase-only booking update error (non-fatal):", soErr.message);
+                sbOnlyRowUpdateError = soErr;
+                console.error("RETURN UPDATE ERROR:", soErr);
+                console.error("v2-bookings: Supabase-only booking update error:", soErr.message, "| details:", soErr.details, "| code:", soErr.code, "| hint:", soErr.hint);
               }
             } else {
               const { data: sbRow, error: sbErr } = await sbInstance
@@ -584,12 +605,12 @@ export default async function handler(req, res) {
                     if (!piErr) {
                       sbUpdateSuccess = true;
                     } else {
-                      console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message);
+                      console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message, "| details:", piErr.details, "| code:", piErr.code, "| hint:", piErr.hint);
                     }
                   }
                 }
               } else if (sbErr) {
-                console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
+                console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message, "| details:", sbErr.details, "| code:", sbErr.code, "| hint:", sbErr.hint);
               }
             }
           } catch (sbCatchErr) {
@@ -647,7 +668,8 @@ export default async function handler(req, res) {
       if (sbOnlyRow) {
         if (!sbUpdateSuccess) {
           // The Supabase update failed and there is no bookings.json to fall back on.
-          return res.status(500).json({ error: "Failed to update booking in database" });
+          const errMsg = sbOnlyRowUpdateError ? sbOnlyRowUpdateError.message : "Failed to update booking in database";
+          return res.status(500).json({ error: errMsg, details: sbOnlyRowUpdateError });
         }
         updatedBooking = {
           bookingId,
@@ -851,10 +873,11 @@ export default async function handler(req, res) {
         }
 
         // ── Release blocked_dates row + structured return log ─────────────
-        // Trim the Supabase blocked_dates range to end today so that
-        // /api/booked-dates reflects the actual occupancy period after an
-        // early return (original end_date stays unchanged only when the vehicle
-        // was returned on time or late).
+        // Delete the Supabase blocked_dates row so that fleet-status.js
+        // immediately reports the vehicle as available.  fleet-status queries
+        // end_date >= today, so merely trimming to today still blocks the car
+        // for the rest of the day.  Deletion is safe: the booking record in
+        // the bookings table is the authoritative history.
         try {
           await autoReleaseBlockedDateOnReturn(
             updatedBooking.vehicleId,
@@ -1094,6 +1117,12 @@ export default async function handler(req, res) {
       const parsedTotal  = typeof totalPrice === "number" ? totalPrice  : parseFloat(totalPrice)  || 0;
       const bookingId    = crypto.randomBytes(8).toString("hex");
 
+      // Ensure every manual booking has a stable payment_intent_id for revenue
+      // deduplication.  When the admin doesn't supply one (cash/offline bookings),
+      // generate a "manual_" prefixed ID, matching add-manual-booking.js behaviour.
+      const trimmedPI = typeof paymentIntentId === "string" ? paymentIntentId.trim() : "";
+      const resolvedPaymentIntentId = trimmedPI || "manual_" + crypto.randomBytes(6).toString("hex");
+
       // Persist booking through the unified pipeline (Supabase + bookings.json).
       // bookingId is stable across retries for idempotency.
       const result = await persistBooking({
@@ -1110,7 +1139,7 @@ export default async function handler(req, res) {
         amountPaid:     Math.round(parsedAmount * 100) / 100,
         totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
         paymentMethod:  typeof paymentMethod    === "string" ? paymentMethod.trim()    : "cash",
-        paymentIntentId: typeof paymentIntentId  === "string" ? paymentIntentId.trim()  : "",
+        paymentIntentId: resolvedPaymentIntentId,
         status:         parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
         notes:          typeof notes === "string" ? notes.trim().slice(0, 500) : "",
         source:         "admin_v2",

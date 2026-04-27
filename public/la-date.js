@@ -89,6 +89,32 @@
     });
   }
 
+  /**
+   * Format an ISO timestamp string as "Apr 27, 2026 at 8:00 AM" in LA timezone.
+   * Returns null when the value is falsy or unparseable.
+   *
+   * @param {string} isoTimestamp - ISO 8601 string, e.g. "2026-04-27T08:00:00-07:00"
+   * @returns {string|null}
+   */
+  function formatTimestamp(isoTimestamp) {
+    if (!isoTimestamp) return null;
+    var d = new Date(isoTimestamp);
+    if (!isFinite(d.getTime())) return null;
+    var dateStr = d.toLocaleDateString("en-US", {
+      timeZone: BUSINESS_TZ,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    var timeStr = d.toLocaleTimeString("en-US", {
+      timeZone: BUSINESS_TZ,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return dateStr + " at " + timeStr;
+  }
+
   window.SlyLA = {
     /** IANA timezone identifier used throughout the frontend. */
     tz: BUSINESS_TZ,
@@ -108,6 +134,14 @@
      * @param {string} [timeStr] - "HH:MM" (24-hour)
      * @returns {string} e.g. "Jun 15, 2024, 8:00 AM"
      */
-    formatLocalDateTime: formatLocalDateTime
+    formatLocalDateTime: formatLocalDateTime,
+
+    /**
+     * Format an ISO timestamp as "Apr 27, 2026 at 8:00 AM" in LA timezone.
+     * Returns null when the value is falsy or unparseable.
+     * @param {string} isoTimestamp - ISO 8601 string
+     * @returns {string|null}
+     */
+    formatTimestamp: formatTimestamp
   };
 }());

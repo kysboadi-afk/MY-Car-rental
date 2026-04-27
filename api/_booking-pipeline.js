@@ -91,9 +91,9 @@ async function runStep(traceId, stepName, fn, payload = null) {
 const BOOKING_STATUS_MAP = {
   reserved_unpaid:  "pending",
   booked_paid:      "pending",
-  active_rental:    "active",
-  completed_rental: "completed",
-  cancelled_rental: "completed",
+  active_rental:    "active_rental",
+  completed_rental: "completed_rental",
+  cancelled_rental: "cancelled_rental",
 };
 
 function normalizeEmail(email) {

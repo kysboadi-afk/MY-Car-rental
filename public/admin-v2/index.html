@@ -227,6 +227,9 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f9fafb; }
     .td-actions { display: flex; gap: 6px; align-items: center; }
+    .rev-sub-row td { background: #f8f9fa; font-size: 12px; padding: 8px 12px; border-bottom: 1px solid #eef0f2; color: var(--text-sub); }
+    .rev-sub-row:hover td { background: #f1f3f5; }
+    .rev-group-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 11px; padding: 2px 7px; color: var(--text-sub); white-space: nowrap; }
 
     /* ── Status Badges ──────────────────────────────────────────── */
     .badge {
@@ -2446,6 +2449,7 @@ function logout() {
   editingVehicleId = null;
   editingSmsKey = null;
   allRevenueRecords = [];
+  revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
@@ -2544,6 +2548,7 @@ function refreshCurrentPage() {
   allExpenses = [];
   smsTemplates = [];
   allRevenueRecords = [];
+  revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
@@ -2637,7 +2642,7 @@ function renderDashboard(data) {
       <div class="kpi-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
       <div class="kpi-label">Net Revenue</div>
       <div class="kpi-value">$${formatMoney(fin.amount_net)}</div>
-      <div class="kpi-change" style="font-size:10px;">After Stripe fees</div>
+      <div class="kpi-change" style="font-size:10px;">After Stripe fees &amp; refunds</div>
     </div>
     <div class="kpi-card" onclick="navigate('expenses')" style="cursor:pointer;" title="View Expenses">
       <div class="kpi-icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
@@ -4412,7 +4417,8 @@ function calcFinancials(records, label, opts = {}) {
 function normalizeRevenueRecord(r) {
   const amount_gross = Number(r.gross_amount || 0);
   const stripe_fee   = Number(r.stripe_fee   || 0);
-  const amount_net   = r.stripe_net != null ? Number(r.stripe_net) : amount_gross - stripe_fee;
+  // Net = Gross − Stripe Fees. Refunds are tracked separately and subtracted by callers.
+  const amount_net   = amount_gross - stripe_fee;
   return { amount_gross, stripe_fee, amount_net, expenses: 0 };
 }
 
@@ -4648,6 +4654,7 @@ if (_origRenderDashboard) {
 
 // ── Revenue ───────────────────────────────────────────────────────────────
 let allRevenueRecords = [];
+let revenueKpiTotal   = null; // Total Revenue from total_revenue_kpi view (ledger-based)
 
 function loadRevenue() {
   document.getElementById('revenue-loading').style.display = '';
@@ -4657,20 +4664,23 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  // Fetch revenue records and expenses in parallel so renderRevenueSummary()
-  // can include real expenses in calcFinancials (matching Dashboard/Fleet).
-  // If allExpenses is already populated (user visited Expenses page first) we
-  // skip the extra round-trip.
+  // Fetch grouped bookings (list_by_booking), the ledger-based KPI total,
+  // and expenses in parallel.  allRevenueRecords is populated by flattening
+  // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
     expensesPromise,
   ])
-    .then(([revData, expData]) => {
-      allRevenueRecords = revData.records || [];
+    .then(([revData, kpiData, expData]) => {
+      // Flatten all per-group records into allRevenueRecords for modal operations.
+      const groups = revData.groups || [];
+      allRevenueRecords = groups.flatMap((g) => g.records || []);
+      revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
       applyRevenueFilters();
@@ -4701,7 +4711,12 @@ function renderRevenueSummary() {
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
-      { label: 'Gross Revenue',    value: '$' + formatMoney(fin.amount_gross),           icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
+      // Note: revenueKpiTotal (from total_revenue_kpi view) sums ALL non-cancelled
+      // records including sync_excluded rows, matching the SQL spec.  fin.amount_gross
+      // (calculated from allRevenueRecords via revenue_records_effective) excludes
+      // sync_excluded rows. The revenueKpiTotal value is preferred when available;
+      // fin.amount_gross acts as a best-effort fallback when Supabase is unavailable.
+      { label: 'Total Revenue',    value: '$' + formatMoney(revenueKpiTotal ?? fin.amount_gross), icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',      value: '$' + formatMoney(fin.stripe_fee),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
       { label: 'Net (after fees)', value: '$' + formatMoney(fin.amount_net - refunds),   icon: '✅', sub: 'After fees & refunds' },
       { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                    icon: '↩️', sub: '' },
@@ -4759,6 +4774,12 @@ function renderRevenueSummary() {
   }
 }
 
+function fmtRevDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function applyRevenueFilters() {
   const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
   const status  = document.getElementById('rev-filter-status')?.value  || '';
@@ -4779,33 +4800,168 @@ function applyRevenueFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
-  tbody.innerHTML = filtered.map((r) => {
+  // Group all revenue records by effective booking ID so extensions collapse
+  // under their parent booking row.
+  //
+  // All records in a booking group share the same canonical booking_ref (bk-xxx).
+  // Extension rows store it in original_booking_id; the base rental uses booking_id.
+  // Use original_booking_id ?? booking_id so extension rows always collapse under
+  // their parent rental even if their booking_id is stale (run migration 0084/0085
+  // to fully normalise the data).
+  function getEffectiveBookingId(r) {
+    const effective = r.original_booking_id ?? r.booking_id;
+    if (effective && (effective.startsWith('pi_') || effective.startsWith('ext-'))) {
+      console.warn('[revenue] malformed booking_id detected — run migration 0084/0085 to repair:', effective, 'record id:', r.id);
+    }
+    return effective || r.id;
+  }
+
+  const groupMap = new Map();
+  const groupOrder = [];
+  allRevenueRecords.forEach((r) => {
+    const id = getEffectiveBookingId(r);
+    if (!id) return;
+    if (!groupMap.has(id)) { groupMap.set(id, { base: null, exts: [] }); groupOrder.push(id); }
+    const g = groupMap.get(id);
+    if (r.type === 'extension') g.exts.push(r); else g.base = r;
+  });
+
+  // Only show groups that have at least one record surviving the current filters.
+  const filteredIds = new Set(filtered.map(getEffectiveBookingId));
+  const visibleGroups = groupOrder.filter((id) => filteredIds.has(id));
+
+  if (!visibleGroups.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  tbody.innerHTML = visibleGroups.map((id) => {
+    const g    = groupMap.get(id);
+    const base = g.base;
+    const exts = g.exts.slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+    const hasExts = exts.length > 0;
+    const allRecs = [base, ...exts].filter(Boolean);
+
+    // Summary financials (all records in this booking group).
+    const totalGross     = allRecs.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
+    const totalRefund    = allRecs.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
+    const totalStripeFee = allRecs.reduce((s, r) => s + Number(r.stripe_fee   || 0), 0);
+    const totalNet       = allRecs.reduce((s, r) => {
+      const norm = normalizeRevenueRecord(r);
+      return s + norm.amount_net - Number(r.refund_amount || 0);
+    }, 0);
+
+    // Summary date: earliest pickup → latest return across all records.
+    const pickupDates = allRecs.map((r) => r.pickup_date).filter(Boolean).sort();
+    const pickupDate  = pickupDates[0] || '';
+    const finalReturn = allRecs.map((r) => r.return_date).filter(Boolean)
+      .reduce((mx, d) => (d > mx ? d : mx), '');
+    const dateCell = pickupDate
+      ? (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–')
+      : (fmtRevDate(finalReturn) || '–');
+
+    // Worst status across the group.
+    const statusRank = { paid: 0, partial: 1, pending: 2, refunded: 3 };
+    const worstRec   = allRecs.reduce((mx, r) =>
+      (statusRank[r.payment_status] ?? 99) > (statusRank[mx.payment_status] ?? 99) ? r : mx, allRecs[0]);
+    const summaryStatus = worstRec?.payment_status || 'paid';
     const payBadge = {
       paid:     '<span class="badge badge-success">Paid</span>',
       pending:  '<span class="badge badge-warning">Pending</span>',
       partial:  '<span class="badge" style="background:#ede9fe;color:#7c3aed;">Partial</span>',
       refunded: '<span class="badge badge-danger">Refunded</span>',
-    }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
+    }[summaryStatus] || `<span class="badge">${esc(summaryStatus)}</span>`;
 
-    const stripeFee = r.stripe_fee != null ? '$' + formatMoney(r.stripe_fee) : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
-    const norm = normalizeRevenueRecord(r);
-    const netAfterFees = (norm.amount_net - Number(r.refund_amount || 0)).toFixed(2);
-    return `<tr>
-      <td>${esc(r.customer_name || '–')}</td>
-      <td>${esc(getVehicleLabel(r.vehicle_id) || '–')}</td>
-      <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
-      <td>$${formatMoney(r.gross_amount  || 0)}</td>
-      <td style="color:var(--danger);font-size:12px;">${stripeFee}</td>
-      <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
-      <td style="font-weight:700;">$${formatMoney(netAfterFees)}</td>
-      <td style="font-size:12px;">${esc(r.payment_method || '–')}</td>
+    const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || '';
+    const customer_name  = base?.customer_name  || exts[0]?.customer_name  || '–';
+    const payment_method = base?.payment_method || '–';
+    const stripeFeeCell  = allRecs.some((r) => r.stripe_fee != null)
+      ? '$' + formatMoney(totalStripeFee)
+      : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
+
+    const toggleBtn = hasExts
+      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(id)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup(this.getAttribute('data-rev-toggle'))" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
+      : '';
+
+    // ── Summary row ──────────────────────────────────────────────────────────
+    let html = `<tr class="rev-summary-row" data-rev-summary="${esc(id)}">
+      <td>${esc(customer_name)}</td>
+      <td>${esc(getVehicleLabel(vehicle_id) || '–')}</td>
+      <td style="font-size:12px;">${esc(dateCell)}</td>
+      <td>$${formatMoney(totalGross)}</td>
+      <td style="color:var(--danger);font-size:12px;">${stripeFeeCell}</td>
+      <td style="color:var(--danger);">$${formatMoney(totalRefund)}</td>
+      <td style="font-weight:700;">$${formatMoney(totalNet)}</td>
+      <td style="font-size:12px;">${esc(payment_method)}</td>
       <td>${payBadge}</td>
       <td class="td-actions">
-        <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(r.id)}')">Edit</button>
-        <button class="btn btn-danger btn-sm"    onclick="deleteRevenueRecord('${esc(r.id)}')">Delete</button>
+        ${toggleBtn}
+        ${base ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>` : ''}
+        ${base ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>` : ''}
       </td>
     </tr>`;
+
+    if (hasExts) {
+      // ── Base detail sub-row ────────────────────────────────────────────────
+      if (base) {
+        const baseNorm = normalizeRevenueRecord(base);
+        const baseNet  = (baseNorm.amount_net - Number(base.refund_amount || 0)).toFixed(2);
+        const baseFee  = base.stripe_fee != null ? '$' + formatMoney(base.stripe_fee) : '<span style="font-size:11px;">—</span>';
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+          <td colspan="2" style="padding-left:28px;">📋 Base rental</td>
+          <td>${esc((fmtRevDate(base.pickup_date) || '–') + ' → ' + (fmtRevDate(base.return_date) || '–'))}</td>
+          <td>$${formatMoney(base.gross_amount || 0)}</td>
+          <td>${baseFee}</td>
+          <td style="color:var(--danger);">$${formatMoney(base.refund_amount || 0)}</td>
+          <td>$${formatMoney(baseNet)}</td>
+          <td>${esc(base.payment_method || '–')}</td>
+          <td></td>
+          <td class="td-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>
+          </td>
+        </tr>`;
+      }
+      // ── Extension sub-rows ─────────────────────────────────────────────────
+      exts.forEach((ext, idx) => {
+        const prevReturn = idx === 0 ? (base?.return_date || ext.pickup_date) : exts[idx - 1].return_date;
+        const nDays = (prevReturn && ext.return_date)
+          ? Math.round((new Date(ext.return_date + 'T00:00:00') - new Date(prevReturn + 'T00:00:00')) / 86400000)
+          : 0;
+        const extLabel  = '+' + nDays + ' day' + (nDays === 1 ? '' : 's') + ' — ' + (fmtRevDate(prevReturn) || '–');
+        const extNorm   = normalizeRevenueRecord(ext);
+        const extNet    = (extNorm.amount_net - Number(ext.refund_amount || 0)).toFixed(2);
+        const extFee    = ext.stripe_fee != null ? '$' + formatMoney(ext.stripe_fee) : '<span style="font-size:11px;">—</span>';
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+          <td colspan="2" style="padding-left:28px;">🔄 ${esc(extLabel)}</td>
+          <td>→ ${esc(fmtRevDate(ext.return_date) || '–')}</td>
+          <td>$${formatMoney(ext.gross_amount || 0)}</td>
+          <td>${extFee}</td>
+          <td style="color:var(--danger);">$${formatMoney(ext.refund_amount || 0)}</td>
+          <td>$${formatMoney(extNet)}</td>
+          <td>${esc(ext.payment_method || '–')}</td>
+          <td></td>
+          <td class="td-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(ext.id)}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(ext.id)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+    }
+    return html;
   }).join('');
+}
+
+function toggleRevenueGroup(groupId) {
+  const rows = document.querySelectorAll(`[data-rev-group="${CSS.escape(groupId)}"]`);
+  const btn  = document.querySelector(`[data-rev-toggle="${CSS.escape(groupId)}"]`);
+  const open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach((r) => { r.style.display = open ? 'none' : ''; });
+  if (btn) {
+    const n = btn.getAttribute('data-rev-count') || rows.length;
+    btn.textContent = open ? ('▶ ' + n + ' ext.') : ('▼ ' + n + ' ext.');
+  }
 }
 
 function openAddRevenueModal() {
@@ -4909,6 +5065,7 @@ function syncRevenue(btn) {
     .then((data) => {
       showToast(data.message || 'Sync complete.', 'success');
       allRevenueRecords = [];
+      revenueKpiTotal   = null;
       loadRevenue();
     })
     .catch((err) => showToast('Sync error: ' + err.message, 'error'))
@@ -4935,6 +5092,7 @@ async function runStripeReconcile(btn) {
     await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
     // Refresh all finance views so they show updated data
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     // Refresh dashboard KPIs to reflect new Stripe net/fees
     dashboardData = null;
@@ -4957,6 +5115,7 @@ async function runDedup(btn) {
       : '✅ No duplicates found.';
     showToast(msg, 'success');
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
     refreshDashboard();
@@ -4974,6 +5133,7 @@ async function runCleanupOrphans(btn) {
     const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
     showToast(data.message || '✅ Cleanup complete.', 'success');
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
     refreshDashboard();
@@ -4993,10 +5153,10 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
   ]).then(([fleetData, trendData]) => {
-    renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
+    renderAnalytics(fleetData.fleet || {}, trendData.trend || [], fleetData.kpi_total_revenue ?? null);
     document.getElementById('analytics-loading').style.display = 'none';
     document.getElementById('analytics-content').style.display = '';
   }).catch((err) => {
@@ -5005,7 +5165,7 @@ function loadAnalytics() {
   });
 }
 
-function renderAnalytics(fleet, trend) {
+function renderAnalytics(fleet, trend, kpiTotalRevenue) {
   // KPI grid — all totals via the shared financial engine.
   const vehicles = Object.values(fleet);
   const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle), 'Fleet');
@@ -5018,15 +5178,20 @@ function renderAnalytics(fleet, trend) {
   const kpiGrid = document.getElementById('analytics-kpi-grid');
   if (kpiGrid) {
     const totalExpenses = vehicles.reduce((s, v) => s + (v.expenses || 0), 0);
+    // Use canonical total_revenue_kpi value when available (same source as Revenue page).
+    // Fall back to the per-vehicle sum from analytics when the view is unavailable.
+    const grossRevenue = kpiTotalRevenue !== null && kpiTotalRevenue !== undefined
+      ? kpiTotalRevenue
+      : fin.amount_gross;
     const totalProfit   = fin.amount_net - totalExpenses;
     const fleetROI      = totalExpenses > 0
       ? Math.round((totalProfit / totalExpenses) * 10000) / 100
       : null;
     const roiDisplay = fleetROI === null ? 'N/A' : fleetROI.toFixed(1) + '%';
     kpiGrid.innerHTML = [
-      { label: 'Gross Revenue',   value: '$' + formatMoney(fin.amount_gross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
+      { label: 'Gross Revenue',   value: '$' + formatMoney(grossRevenue), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',     value: '$' + formatMoney(fin.stripe_fee),   icon: '💳', sub: 'Total processing fees' },
-      { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees' },
+      { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees & refunds' },
       { label: 'Avg Utilization', value: avgUtil + '%',                       icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },
       { label: 'Operational ROI', value: roiDisplay,                          icon: '📈', sub: 'Fleet profit ÷ expenses' },
     ].map((k) => `
@@ -5938,10 +6103,11 @@ function renderDiagnostics(data) {
 
   // ── Environment variables ──────────────────────────────────────────────
   const envRows = Object.entries(data.env || {}).map(([key, status]) => {
-    const ok       = status === 'ok';
+    const ok       = status === 'ok' || status.startsWith('ok (');
     const optional = status === 'optional' || status === 'not required';
-    const color = ok ? 'var(--success)' : (optional ? 'var(--text-sub)' : 'var(--danger)');
-    const icon  = ok ? '✅' : (optional ? '⚪' : '❌');
+    const warning  = status.startsWith('warning:');
+    const color = ok ? 'var(--success)' : (optional ? 'var(--text-sub)' : (warning ? 'var(--warning, #d97706)' : 'var(--danger)'));
+    const icon  = ok ? '✅' : (optional ? '⚪' : (warning ? '⚠️' : '❌'));
     return `<tr>
       <td style="padding:5px 8px;font-family:monospace;font-size:12px;">${esc(key)}</td>
       <td style="padding:5px 8px;color:${color};font-weight:500;">${icon} ${esc(status)}</td>
@@ -5967,7 +6133,8 @@ function renderDiagnostics(data) {
   }
 
   // ── Actionable fix guidance ────────────────────────────────────────────
-  const envMissing = Object.entries(data.env || {}).filter(([, v]) => v === 'missing').map(([k]) => k);
+  const envMissing  = Object.entries(data.env || {}).filter(([, v]) => v === 'missing').map(([k]) => k);
+  const envWarnings = Object.entries(data.env || {}).filter(([, v]) => v.startsWith('warning:')).map(([k, v]) => ({ key: k, msg: v }));
   const tablesMissing = sbConnected
     ? Object.entries(sb.tables || {}).filter(([, v]) => v === 'missing' || v === 'error').map(([k]) => k)
     : [];
@@ -5988,6 +6155,17 @@ function renderDiagnostics(data) {
       and a new deployment triggered.
     </div>`;
   }
+  if (envWarnings.length > 0) {
+    guidance += envWarnings.map(({ key, msg }) =>
+      `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+        <strong style="color:var(--warning, #d97706);">⚠ Configuration warning — <code>${esc(key)}</code></strong><br>
+        ${esc(msg)}<br>
+        Update <code>${esc(key)}</code> in
+        <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
+        and redeploy.
+      </div>`
+    ).join('');
+  }
   if (tablesMissing.length > 0) {
     guidance += `<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
       <strong style="color:var(--warning);">⚠ Missing Supabase table${tablesMissing.length > 1 ? 's' : ''}</strong><br>
@@ -6002,6 +6180,38 @@ function renderDiagnostics(data) {
     guidance = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
       <strong style="color:var(--success);">✅ All systems operational</strong> — Supabase is connected and all required tables exist.
     </div>`;
+  }
+
+  // ── OpenAI connectivity result ──────────────────────────────────────────
+  const oai = data.openaiCheck || {};
+  let openaiRow = '';
+  if (oai.checked) {
+    const oaiOk = oai.status === 'ok';
+    const oaiColor = oaiOk ? 'var(--success)' : 'var(--danger)';
+    const oaiIcon  = oaiOk ? '✅' : '❌';
+    const oaiLabel = oaiOk ? 'ok — API key valid and reachable' : `${oai.status}${oai.error ? ' — ' + oai.error : ''}`;
+    openaiRow = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;margin-top:4px;">
+        <thead>
+          <tr><th style="text-align:left;padding:5px 8px;color:var(--text-sub);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);" colspan="2">OpenAI Connectivity</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:5px 8px;font-family:monospace;font-size:12px;">OPENAI_API_KEY</td>
+            <td style="padding:5px 8px;color:${oaiColor};font-weight:500;">${oaiIcon} ${esc(oaiLabel)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+    if (!oaiOk) {
+      guidance = `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+        <strong style="color:var(--danger);">❌ OpenAI API key problem — AI Assistant will not work</strong><br>
+        ${esc(oai.error || 'Unknown error')}<br>
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color:var(--primary);">Generate a new API key at platform.openai.com/api-keys</a>,
+        then update <code>OPENAI_API_KEY</code> in
+        <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" style="color:var(--primary);">Vercel → Project → Settings → Environment Variables</a>
+        and redeploy.
+      </div>` + guidance;
+    }
   }
 
   out.innerHTML = `
@@ -6022,6 +6232,7 @@ function renderDiagnostics(data) {
       </thead>
       ${sbConnected && tableRows ? `<tbody>${tableRows}</tbody>` : ''}
     </table>
+    ${openaiRow}
     ${guidance}
   `;
 }
@@ -6125,11 +6336,14 @@ function renderSystemHealth(data) {
 
     const itemsHtml = (c.items || []).length > 0
       ? `<div style="margin-top:10px;max-height:180px;overflow-y:auto;border-radius:6px;border:1px solid var(--border);">
-          ${(c.items || []).map((item) => `
+          ${(c.items || []).map((item) => {
+            const displayInfo = (item.info || '').replace(/\bvehicle=(\S+)/g, (_, id) => `vehicle=${getVehicleLabel(id)}`);
+            return `
             <div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:8px;align-items:flex-start;">
               <code style="color:var(--primary);font-size:11px;flex-shrink:0;padding-top:1px;">${esc(item.id)}</code>
-              <span style="color:var(--text-sub);">${esc(item.info)}</span>
-            </div>`).join('')}
+              <span style="color:var(--text-sub);">${esc(displayInfo)}</span>
+            </div>`;
+          }).join('')}
         </div>`
       : '';
 

@@ -243,6 +243,15 @@ export default async function handler(req, res) {
 
     // ── DRIVER REPORT ─────────────────────────────────────────────────────────
     if (action === "driver_report") {
+      // Normalize a phone string to a canonical 10-digit form (US) so that
+      // "+15303285561" and "5303285561" are treated as the same driver.
+      const normalizePhone = (phone) => {
+        if (!phone) return null;
+        const digits = String(phone).replace(/\D/g, "");
+        if (digits.length === 0) return null;
+        return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+      };
+
       const { start_date, end_date, driver_phone: filterPhone } = body;
 
       // Default lookback window — 30 days when no dates provided
@@ -280,7 +289,7 @@ export default async function handler(req, res) {
       let activeBookingsQuery = sb
         .from("bookings")
         .select("booking_ref, vehicle_id, customer_name, customer_phone, activated_at");
-      activeBookingsQuery = activeBookingsQuery.eq("status", "active");
+      activeBookingsQuery = activeBookingsQuery.in("status", ["active", "active_rental"]);
       if (filterPhone) {
         activeBookingsQuery = activeBookingsQuery.eq("customer_phone", String(filterPhone).trim());
       }
@@ -322,18 +331,21 @@ export default async function handler(req, res) {
         } else if (row.end_mileage != null && row.start_mileage != null) {
           miles = Math.max(0, Number(row.end_mileage) - Number(row.start_mileage));
         } else if (isActive && row.start_mileage != null) {
-          // In-progress rental: compute live miles as current_odometer − start_mileage
+          // In-progress rental: compute live miles as current_odometer − start_mileage.
+          // Subtract a 10-mile tolerance buffer to absorb Bouncie sync delay and
+          // prevent early false triggers for high-usage renters.
           const currentOdo = vehicleOdoMap[row.vehicle_id] || 0;
-          miles = Math.max(0, currentOdo - Number(row.start_mileage));
+          miles = Math.max(0, currentOdo - Number(row.start_mileage) - 10);
         } else {
           miles = 0;
         }
 
-        const key = row.driver_phone || row.driver_name || "unknown";
+        const normPhone = normalizePhone(row.driver_phone);
+        const key = normPhone || row.driver_name || "unknown";
         if (!driverMap[key]) {
           driverMap[key] = {
             driver_name:   row.driver_name  || null,
-            driver_phone:  row.driver_phone || null,
+            driver_phone:  normPhone || null,
             total_miles:   0,
             trip_count:    0,
             vehicle_ids:   new Set(),
@@ -345,6 +357,8 @@ export default async function handler(req, res) {
         const entry = driverMap[key];
         entry.total_miles  += miles;
         entry.trip_count   += 1;
+        // Backfill missing driver name if this row has one
+        if (!entry.driver_name && row.driver_name) entry.driver_name = row.driver_name;
         if (row.vehicle_id) entry.vehicle_ids.add(row.vehicle_id);
         if (!entry.last_trip_at || row.created_at > entry.last_trip_at) {
           entry.last_trip_at = row.created_at;
@@ -361,11 +375,12 @@ export default async function handler(req, res) {
       for (const ab of activeBookings || []) {
         if (tripBookingIds.has(ab.booking_ref)) continue; // already in driverMap via trips
 
-        const key = ab.customer_phone || ab.customer_name || "unknown";
+        const normPhone = normalizePhone(ab.customer_phone);
+        const key = normPhone || ab.customer_name || "unknown";
         if (!driverMap[key]) {
           driverMap[key] = {
             driver_name:  ab.customer_name  || null,
-            driver_phone: ab.customer_phone || null,
+            driver_phone: normPhone || null,
             total_miles:  0,
             trip_count:   0,
             vehicle_ids:  new Set(),
@@ -376,6 +391,8 @@ export default async function handler(req, res) {
         }
         const entry = driverMap[key];
         entry.is_active = true;
+        // Backfill missing driver name from the booking's customer name
+        if (!entry.driver_name && ab.customer_name) entry.driver_name = ab.customer_name;
         if (ab.vehicle_id) entry.vehicle_ids.add(ab.vehicle_id);
         if (!entry.last_trip_at || (ab.activated_at && ab.activated_at > entry.last_trip_at)) {
           entry.last_trip_at = ab.activated_at || null;

@@ -20,8 +20,10 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
+import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { normalizeVehicleId, vehicleIdFamily } from "./_vehicle-id.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -103,15 +105,33 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (!action || action === "list") {
+      // When a scope filter is requested, resolve the matching vehicle IDs first.
+      // scope='car' → non-slingshot vehicles; scope='slingshot' → slingshot vehicles only.
+      let scopedVehicleIds = null;
+      if (body.scope) {
+        try {
+          const { data: vData } = await loadVehicles();
+          scopedVehicleIds = Object.values(vData || {})
+            .filter((v) => body.scope === "slingshot"
+              ? (v.type || "") === "slingshot"
+              : (v.type || "") !== "slingshot")
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-revenue: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
       // Try Supabase first; fall back to GitHub when not configured or table missing.
       if (sb) {
         try {
-          let q = sb.from("revenue_records_effective").select("*").order("created_at", { ascending: false });
-          if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
+          let q = sb.from("revenue_records_effective").select("*").eq("is_orphan", false).order("created_at", { ascending: false });
+          if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
           if (body.limit)      q = q.limit(Number(body.limit));
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
           const { data, error } = await q;
           if (!error) {
             // If Supabase has records, return them directly.
@@ -126,11 +146,12 @@ export default async function handler(req, res) {
       }
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
-      let records = ghRecords.filter((r) => !r.sync_excluded);
-      if (body.vehicleId)  records = records.filter((r) => r.vehicle_id    === body.vehicleId);
+      let records = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
+      if (body.vehicleId)  records = records.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
+      if (scopedVehicleIds) records = records.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
       records.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
       if (body.limit) records = records.slice(0, Number(body.limit));
       if (records.length > 0) return res.status(200).json({ records });
@@ -165,10 +186,11 @@ export default async function handler(req, res) {
             updated_at:     b.updatedAt   || null,
             _derived:       true,
           }));
-        if (body.vehicleId) derived = derived.filter((r) => r.vehicle_id    === body.vehicleId);
+        if (body.vehicleId) derived = derived.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
         if (body.status)    derived = derived.filter((r) => r.payment_status === body.status);
         if (body.startDate) derived = derived.filter((r) => r.pickup_date   >= body.startDate);
         if (body.endDate)   derived = derived.filter((r) => r.return_date   <= body.endDate);
+        if (scopedVehicleIds) derived = derived.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
         derived.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
         if (body.limit) derived = derived.slice(0, Number(body.limit));
         return res.status(200).json({ records: derived, _source: "bookings_derived" });
@@ -195,7 +217,10 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicle_id, gross_amount } = body;
+      const { gross_amount } = body;
+      // Normalize vehicle_id to canonical form (e.g. "camry2012" → "camry") so
+      // manually-inserted records are always grouped with their vehicle's history.
+      const vehicle_id = normalizeVehicleId(body.vehicle_id);
       // booking_id is optional for manual entries; auto-generate a unique id if not supplied
       const booking_id = body.booking_id || ("manual-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex"));
       if (!vehicle_id || gross_amount == null)
@@ -263,8 +288,12 @@ export default async function handler(req, res) {
       }
       if (!Object.keys(updates).length)
         return res.status(400).json({ error: "No valid update fields provided" });
-      if ("vehicle_id" in updates && !updates.vehicle_id) {
-        console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
+      if ("vehicle_id" in updates) {
+        if (!updates.vehicle_id) {
+          console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
+        } else {
+          updates.vehicle_id = normalizeVehicleId(updates.vehicle_id);
+        }
       }
 
       if (sb) {
@@ -320,17 +349,14 @@ export default async function handler(req, res) {
       // v2-analytics.js so all three pages report identical totals:
       //   gross   = SUM(gross_amount)
       //   fees    = SUM(stripe_fee)          (null → 0 for unreconciled rows)
-      //   net     = SUM(stripe_net ?? gross − fee)
+      //   net     = SUM(gross − fee)         (fees deducted; refunds tracked separately)
       //   refunds = SUM(refund_amount)
-      //
-      // NOTE: The vehicle_revenue_summary Supabase view is intentionally NOT used here
-      // because it computes net via the generated net_amount column (gross − refunds)
-      // which differs from the stripe_net-based formula used by the dashboard and analytics.
+      //   net_after_refunds = net − refunds  (= Gross − Fees − Refunds)
       function aggregateRecords(recs) {
         const summary = {};
         const totals = { gross: 0, fees: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
         for (const r of (recs || [])) {
-          const vid = r.vehicle_id || "unknown";
+          const vid = normalizeVehicleId(r.vehicle_id) || "unknown";
           if (!summary[vid]) {
             summary[vid] = { vehicle_id: vid, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_fees:0, total_refunds:0, total_net:0, total_deposits:0 };
           }
@@ -339,7 +365,8 @@ export default async function handler(req, res) {
           if (r.is_no_show)   { s.no_show_count++;   continue; }
           const gross  = Number(r.gross_amount   || 0);
           const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net    = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net after fees only (refunds tracked separately in total_refunds).
+          const net    = gross - fee;
           const refund = Number(r.refund_amount  || 0);
           const dep    = Number(r.deposit_amount || 0);
           s.booking_count++;
@@ -511,9 +538,12 @@ export default async function handler(req, res) {
     // ── RECORD EXTENSION FEE ────────────────────────────────────────────────
     // Convenience action for recording an external or manual extension fee that
     // was NOT processed through the Stripe rental-extension flow (e.g. cash,
-    // Zelle, or a phone-agreed payment).  Generates a unique synthetic booking_id
-    // (prefix "ext-") so it is picked up by the dashboard as supplemental revenue
-    // without conflicting with the original booking's record.
+    // Zelle, or a phone-agreed payment).
+    //
+    // booking_id is set to original_booking_id (the canonical booking_ref) so
+    // all records for the same booking share the same booking_id and group
+    // correctly in the admin revenue view.  original_booking_id is set to the
+    // same value for consistency and to make the parent link explicit.
     if (action === "record_extension_fee") {
       const { original_booking_id, vehicle_id, amount, extension_label, payment_method, notes } = body;
       if (!original_booking_id || !vehicle_id || amount == null)
@@ -523,12 +553,11 @@ export default async function handler(req, res) {
       if (isNaN(resolvedAmount) || resolvedAmount <= 0)
         return res.status(400).json({ error: "amount must be a positive number" });
 
-      const syntheticBookingId = `ext-${original_booking_id}-${Date.now()}`;
-      const label   = extension_label ? ` (${extension_label})` : "";
+      const label    = extension_label ? ` (${extension_label})` : "";
       const noteText = notes || `Extension${label} for booking ${original_booking_id} — external payment`;
 
       const commonFields = {
-        booking_id:          syntheticBookingId,
+        booking_id:          original_booking_id,
         original_booking_id: original_booking_id,
         vehicle_id,
         gross_amount:        resolvedAmount,
@@ -536,6 +565,7 @@ export default async function handler(req, res) {
         refund_amount:       0,
         payment_method:      payment_method || "external",
         payment_status:      "paid",
+        type:                "extension",
         notes:               noteText,
         is_no_show:          false,
         is_cancelled:        false,
@@ -546,23 +576,191 @@ export default async function handler(req, res) {
 
       if (sb) {
         const { data, error } = await sb.from("revenue_records").insert(commonFields).select().single();
-        if (!error) return res.status(201).json({ record: data, booking_id: syntheticBookingId });
+        if (!error) return res.status(201).json({ record: data, booking_id: original_booking_id });
         if (!isSchemaError(error)) throw error;
         console.warn("v2-revenue record_extension_fee: Supabase unavailable, falling back to GitHub");
       }
-      // GitHub fallback
+      // GitHub fallback — insert without deduplication.
+      // Multiple extensions for the same booking are legitimate (a booking can
+      // be extended more than once), so there is no stable unique key to dedup
+      // on.  Each call generates a fresh UUID, matching Supabase's INSERT behaviour.
       const ghRecord = { id: crypto.randomUUID(), ...commonFields };
       let created;
       await updateJsonFileWithRetry({
         load:    loadRecordsFromGitHub,
         apply:   (data) => {
-          if (!data.some((r) => r.booking_id === ghRecord.booking_id)) data.push(ghRecord);
+          data.push(ghRecord);
           created = ghRecord;
         },
         save:    saveRecordsToGitHub,
         message: `v2: Record extension fee for booking ${original_booking_id}`,
       });
-      return res.status(201).json({ record: created, booking_id: syntheticBookingId });
+      return res.status(201).json({ record: created, booking_id: original_booking_id });
+    }
+
+    // ── KPI — total revenue from the ledger view ─────────────────────────────
+    // Returns { total_revenue } from the total_revenue_kpi Supabase view, which
+    // sums gross_amount from revenue_records WHERE is_cancelled = false.  This
+    // is the canonical, ledger-based KPI — independent of payment_intent_id or
+    // any Stripe-specific aggregation.
+    if (action === "kpi") {
+      if (sb) {
+        try {
+          const { data, error } = await sb
+            .from("total_revenue_kpi")
+            .select("total_revenue")
+            .single();
+          if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
+          if (!isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+        } catch (kpiErr) {
+          console.error("v2-revenue kpi error:", kpiErr);
+        }
+      }
+      // GitHub fallback: compute from revenue-records.json
+      const { data: ghRecords } = await loadRecordsFromGitHub();
+      const total = ghRecords
+        .filter((r) => !r.is_cancelled)
+        .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
+      return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
+    }
+
+    // ── LIST BY BOOKING (aggregated UI view) ────────────────────────────────
+    // Returns one entry per booking: MIN(pickup_date), MAX(return_date),
+    // SUM(gross_amount WHERE is_cancelled = false), plus the individual child
+    // rows so the UI can expand base + extension detail.
+    //
+    // Primary path: queries the booking_revenue_grouped Supabase view (which
+    // does the grouping in SQL).  Falls back to loading all rows and grouping
+    // in JavaScript when the view is unavailable (schema migration not yet run).
+    if (action === "list_by_booking") {
+      // Resolve scope → vehicle IDs (same logic as the list action).
+      let scopedVehicleIds = null;
+      if (body.scope) {
+        try {
+          const { data: vData } = await loadVehicles();
+          scopedVehicleIds = Object.values(vData || {})
+            .filter((v) => body.scope === "slingshot"
+              ? (v.type || "") === "slingshot"
+              : (v.type || "") !== "slingshot")
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-revenue list_by_booking: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
+      // ── Try booking_revenue_grouped view ────────────────────────────────
+      if (sb) {
+        try {
+          let q = sb
+            .from("booking_revenue_grouped")
+            .select("*")
+            .order("min_pickup_date", { ascending: false });
+          if (body.vehicleId) q = q.in("vehicle_id", vehicleIdFamily(body.vehicleId));
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          const { data, error } = await q;
+          if (!error) {
+            let groups = (data || []).map((g) => ({
+              booking_id:      g.booking_group_id,
+              vehicle_id:      g.vehicle_id     || null,
+              customer_name:   g.customer_name  || null,
+              customer_phone:  g.customer_phone || null,
+              customer_email:  g.customer_email || null,
+              min_pickup_date: g.min_pickup_date || null,
+              max_return_date: g.max_return_date || null,
+              total_gross:     Number(g.gross_total || 0),
+              record_count:    Number(g.record_count || 0),
+              records:         (g.records || []).filter(Boolean),
+            }));
+            // Groups with a null start or end date are included intentionally —
+            // they represent bookings missing date info and are still valid revenue.
+            if (body.startDate) groups = groups.filter((g) => !g.max_return_date || g.max_return_date >= body.startDate);
+            if (body.endDate)   groups = groups.filter((g) => !g.min_pickup_date || g.min_pickup_date <= body.endDate);
+            if (body.limit)     groups.splice(Number(body.limit));
+            return res.status(200).json({ groups });
+          }
+          // Schema error means the view doesn't exist yet — fall through to JS grouping.
+          if (!isSchemaError(error)) console.error("v2-revenue list_by_booking view error:", error.message);
+        } catch (viewErr) {
+          console.warn("v2-revenue list_by_booking: view unavailable, falling back to JS grouping:", viewErr.message);
+        }
+      }
+
+      let allRows = null;
+
+      if (sb) {
+        try {
+          let q = sb
+            .from("revenue_records_effective")
+            .select("*")
+            .eq("is_orphan", false)
+            .order("created_at", { ascending: true });
+          if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
+          if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
+          if (body.endDate)    q = q.lte("return_date",  body.endDate);
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          const { data, error } = await q;
+          if (!error) allRows = data || [];
+        } catch (qErr) {
+          console.error("v2-revenue list_by_booking query error:", qErr);
+        }
+      }
+
+      if (!allRows) {
+        const { data: ghRecords } = await loadRecordsFromGitHub();
+        allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
+        if (scopedVehicleIds) allRows = allRows.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
+        if (body.vehicleId) allRows = allRows.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
+      }
+
+      // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
+      // Use original_booking_id when set so that extension records created with a
+      // different booking_id (e.g. legacy "pi_xxx" or "ext-..." keys) still collapse
+      // under their parent rental row.
+      const groups = {};
+      for (const r of allRows) {
+        const key = r.original_booking_id ?? r.booking_id ?? r.id;
+        if (!groups[key]) {
+          groups[key] = {
+            booking_id:     key,
+            vehicle_id:     r.vehicle_id     || null,
+            customer_name:  r.customer_name  || null,
+            customer_phone: r.customer_phone || null,
+            customer_email: r.customer_email || null,
+            min_pickup_date: r.pickup_date   || null,
+            max_return_date: r.return_date   || null,
+            total_gross:    0,
+            record_count:   0,
+            records:        [],
+          };
+        }
+        const g = groups[key];
+        // MIN(pickup_date)
+        if (r.pickup_date && (!g.min_pickup_date || r.pickup_date < g.min_pickup_date)) {
+          g.min_pickup_date = r.pickup_date;
+        }
+        // MAX(return_date)
+        if (r.return_date && (!g.max_return_date || r.return_date > g.max_return_date)) {
+          g.max_return_date = r.return_date;
+        }
+        // SUM(gross_amount) — skip cancelled/no-show rows
+        if (!r.is_cancelled && !r.is_no_show) {
+          g.total_gross = Math.round((g.total_gross + Number(r.gross_amount || 0)) * 100) / 100;
+        }
+        g.record_count += 1;
+        g.records.push(r);
+      }
+
+      // Sort groups: most recent pickup first
+      const sorted = Object.values(groups).sort((a, b) => {
+        const da = a.min_pickup_date || "";
+        const db = b.min_pickup_date || "";
+        return da > db ? -1 : da < db ? 1 : 0;
+      });
+
+      if (body.limit) sorted.splice(Number(body.limit));
+
+      return res.status(200).json({ groups: sorted });
     }
 
     // ── REBUILD ANALYTICS ───────────────────────────────────────────────────
@@ -585,7 +783,8 @@ export default async function handler(req, res) {
         if (r.is_cancelled || r.is_no_show) continue;
         const gross   = Number(r.gross_amount  || 0);
         const fee     = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-        const net     = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+        // Net after fees only; refunds tracked separately (net_after_refunds = net − refunds).
+        const net     = gross - fee;
         const refund  = Number(r.refund_amount || 0);
 
         totalGross   += gross;

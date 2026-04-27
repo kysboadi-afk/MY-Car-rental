@@ -22,6 +22,16 @@
 
 import { sendSms } from "./_textmagic.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { laHour } from "./_time.js";
+import { getRentalState } from "./_rental-state.js";
+import { getSmsPriority } from "./_sms-priority.js";
+import {
+  computeSmsScoreWithBreakdown,
+  computeEffectiveThreshold,
+  isSuppressedByProximity,
+  fetchRecentSmsLogs,
+  buildSmsContext,
+} from "./_sms-scoring.js";
 
 // ── SMS copy ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +46,14 @@ const MSG_OIL_CHECK_REQUEST =
   "MID (between lines)\n" +
   "LOW (below safe line)";
 
+// Merged message — sent when the oil-check trigger fires AND the vehicle is
+// also due for a 3000-mile oil change service.  Combines both requests into a
+// single SMS so the renter receives only one message.
+const MSG_OIL_CHECK_MERGED =
+  "Quick vehicle check required.\n\n" +
+  "Please check oil level (dipstick) and note vehicle condition.\n\n" +
+  "Reply FULL, MID, or LOW.";
+
 const MSG_OIL_CHECK_REMINDER =
   "Reminder: Oil check still required.\n\n" +
   "Reply FULL, MID, or LOW.\n\n" +
@@ -44,6 +62,16 @@ const MSG_OIL_CHECK_REMINDER =
 const MSG_OIL_CHECK_FINAL =
   "Final notice: Oil check not confirmed.\n\n" +
   "Reply FULL, MID, or LOW now to avoid interruption.";
+
+// Messages for mileage-based triggers (avg miles/day thresholds).
+const MSG_OIL_CHECK_RISK =
+  "SLY RENTALS: High daily mileage detected on your rental.\n\n" +
+  "Please check the oil level — pull the dipstick, wipe, reinsert, then check.\n\n" +
+  "Reply FULL, MID, or LOW.";
+
+const MSG_MAINTENANCE_REQUIRED =
+  "SLY RENTALS: Maintenance required due to high vehicle usage.\n\n" +
+  "Please check the oil immediately (reply FULL, MID, or LOW) and contact us for next steps.";
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 
@@ -55,21 +83,12 @@ const WINDOW_START_HOUR    = 8;    // 8:00 AM LA — start of send window
 const WINDOW_END_HOUR      = 19;   // 7:00 PM LA — end of send window (exclusive)
 const ESCALATE_AFTER_HOURS = 24;   // hours of no-reply before escalating
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Avg miles/day thresholds for mileage-based SMS triggers.
+const AVG_MILES_OIL_RISK_THRESHOLD  = 150; // >= 150 mi/day → OIL_CHECK_RISK
+const AVG_MILES_MAINT_REQ_THRESHOLD = 250; // >= 250 mi/day → MAINTENANCE_REQUIRED
+const MS_PER_DAY                    = 86_400_000;
 
-/**
- * Returns the current hour (0–23) in America/Los_Angeles.
- */
-function laHour() {
-  return parseInt(
-    new Date().toLocaleString("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour:     "numeric",
-      hour12:   false,
-    }),
-    10
-  );
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
  * Elapsed hours between two ISO timestamps.
@@ -78,6 +97,97 @@ function laHour() {
  */
 function hoursSince(earlier, later = new Date().toISOString()) {
   return (new Date(later) - new Date(earlier)) / 3_600_000;
+}
+
+/**
+ * Log a sent oil-check SMS to sms_logs so other crons (scheduled-reminders,
+ * maintenance-alerts) can see it via the cross-cron cooldown check.
+ *
+ * opts.sentinelDate = true  → upsert with return_date_at_send='1970-01-01'.
+ *   Use this for once-per-booking alert types (OIL_CHECK_RISK,
+ *   MAINTENANCE_REQUIRED) so the DB-level unique constraint prevents duplicate
+ *   rows across cron runs.
+ *
+ * opts.sentinelDate = false (default) → insert with today's real calendar date.
+ *   Use this for compliance escalation keys (OIL_CHECK_REQUEST,
+ *   OIL_CHECK_REMINDER, OIL_CHECK_FINAL) where multiple rows per booking are
+ *   expected and auditable.
+ *
+ * Non-fatal: errors are only logged.
+ * @param {object} extraMetadata - optional additional fields (e.g. { score })
+ * @param {{ sentinelDate?: boolean }} opts
+ */
+async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata = {}, opts = {}) {
+  if (!sb || !bookingRef) return { inserted: true };
+  try {
+    const returnDateAtSend = opts.sentinelDate
+      ? "1970-01-01"
+      : new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const row = {
+      booking_id:          bookingRef,
+      template_key:        templateKey,
+      return_date_at_send: returnDateAtSend,
+      metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
+    };
+    if (opts.sentinelDate) {
+      // ignoreDuplicates: true → DB does nothing on conflict and returns no rows.
+      // Returning { inserted: false } lets the caller treat a conflict as a
+      // successful no-op (already sent) rather than re-sending.
+      const { data, error } = await sb
+        .from("sms_logs")
+        .upsert(row, { onConflict: "booking_id,template_key,return_date_at_send", ignoreDuplicates: true })
+        .select("id");
+      if (error) {
+        console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+        return { inserted: true }; // fail open
+      }
+      return { inserted: !!(data && data.length > 0) };
+    } else {
+      const { error } = await sb.from("sms_logs").insert(row);
+      if (error) {
+        console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
+      }
+      return { inserted: true };
+    }
+  } catch (err) {
+    console.warn("oil-check-cron: sms_logs write failed (non-fatal):", err.message);
+    return { inserted: true }; // fail open
+  }
+}
+
+/**
+ * Returns true if a mileage-based alert (OIL_CHECK_RISK or MAINTENANCE_REQUIRED)
+ * has already been sent for this booking.  These alerts use the sentinel
+ * return_date_at_send='1970-01-01' so they fire at most once per booking
+ * regardless of how many cron runs occur.
+ *
+ * Fails open: if the DB query errors, returns false so the caller can proceed
+ * with its own scoring/spam guards rather than silently suppressing the send.
+ *
+ * @param {object} sb          - Supabase admin client
+ * @param {string} bookingRef  - booking_ref (bk-...)
+ * @param {string} templateKey - 'OIL_CHECK_RISK' | 'MAINTENANCE_REQUIRED'
+ * @returns {Promise<boolean>}
+ */
+async function hasMileageAlertBeenSent(sb, bookingRef, templateKey) {
+  if (!sb || !bookingRef) return false;
+  try {
+    const { data, error } = await sb
+      .from("sms_logs")
+      .select("id")
+      .eq("booking_id", bookingRef)
+      .eq("template_key", templateKey)
+      .eq("return_date_at_send", "1970-01-01")
+      .maybeSingle();
+    if (error) {
+      console.warn("oil-check-cron: sms_logs dedup check failed (non-fatal):", error.message);
+      return false;
+    }
+    return !!data;
+  } catch (err) {
+    console.warn("oil-check-cron: sms_logs dedup check failed (non-fatal):", err.message);
+    return false;
+  }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -127,10 +237,10 @@ export default async function handler(req, res) {
     .from("bookings")
     .select(
       "id, booking_ref, vehicle_id, customer_phone, " +
-      "pickup_date, return_date, " +
+      "pickup_date, return_date, return_time, " +
       "oil_check_required, oil_check_last_request, oil_check_missed_count"
     )
-    .eq("status", "active")
+    .in("status", ["active", "active_rental"])
     .not("customer_phone", "is", null);
 
   if (bookingsErr) {
@@ -173,6 +283,37 @@ export default async function handler(req, res) {
     stateByVehicle[vs.vehicle_id] = vs;
   }
 
+  // ── Load vehicle service-mileage data (for merged-message detection) ───────
+  // Used to determine whether a 3000-mile oil change is also due at the time
+  // of the oil-check trigger so that both requests can be merged into one SMS.
+  const { data: vehicleRows } = await sb
+    .from("vehicles")
+    .select("vehicle_id, mileage, last_oil_change_mileage")
+    .in("vehicle_id", vehicleIds);
+
+  const vehicleByVehicle = {};
+  for (const v of vehicleRows || []) {
+    vehicleByVehicle[v.vehicle_id] = v;
+  }
+
+  // ── Load start_mileage for open trips (mileage-based trigger) ────────────
+  // Each active booking may have an open trips row (end_mileage IS NULL) that
+  // records the odometer reading at rental activation.  Combined with the live
+  // current_mileage from vehicle_state this gives us avgMilesPerDay.
+  const bookingRefs = bookings.map((b) => b.booking_ref).filter(Boolean);
+  const { data: activeTrips } = await sb
+    .from("trips")
+    .select("booking_id, start_mileage")
+    .in("booking_id", bookingRefs)
+    .is("end_mileage", null);
+
+  const startMileageByRef = {};
+  for (const t of activeTrips || []) {
+    if (t.booking_id && t.start_mileage != null) {
+      startMileageByRef[t.booking_id] = Number(t.start_mileage);
+    }
+  }
+
   // ── Dedup: track phones contacted this run (max 1 SMS per phone per 24 h) ─
   const phonesContactedThisRun = new Set();
 
@@ -193,22 +334,29 @@ export default async function handler(req, res) {
       customer_phone:         phone,
       pickup_date:            pickupDate,
       return_date:            returnDate,
+      return_time:            returnTime,
       oil_check_required:     oilCheckRequired,
       oil_check_last_request: lastRequest,
       oil_check_missed_count: missedCount,
     } = booking;
 
-    if (!phone || !vehicleId) continue;
+    if (!phone || !vehicleId) {
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: missing phone or vehicleId (phone=${!!phone}, vehicleId=${!!vehicleId})`);
+      continue;
+    }
 
     // ── Anti-spam: skip if already contacted this run ──────────────────────
     if (phonesContactedThisRun.has(phone)) {
       results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: already contacted this run`);
       continue;
     }
 
     // ── Anti-spam: skip if last message was < 24 h ago ────────────────────
     if (lastRequest && hoursSince(lastRequest) < COOLDOWN_HOURS) {
       results.skipped_spam++;
+      const hrsSince = hoursSince(lastRequest);
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: cooldown active (last request ${hrsSince.toFixed(1)}h ago, cooldown=${COOLDOWN_HOURS}h)`);
       continue;
     }
 
@@ -217,8 +365,14 @@ export default async function handler(req, res) {
       ? Math.round((new Date(returnDate) - new Date(pickupDate)) / 86_400_000)
       : 0;
 
+    // ── Compute time proximity for scoring ────────────────────────────────
+    const { end_datetime: returnDt, minutesToReturn: rawMinutesToReturn } =
+      await getRentalState(sb, bookingRef);
+    const minutesToReturn = rawMinutesToReturn !== null ? rawMinutesToReturn : undefined;
+
     if (rentalDays < MIN_RENTAL_DAYS) {
       results.skipped_no_trigger++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: rental_days=${rentalDays} < MIN_RENTAL_DAYS=${MIN_RENTAL_DAYS}`);
       continue;
     }
 
@@ -229,18 +383,39 @@ export default async function handler(req, res) {
       if (missedCount >= 2) {
         // Already sent final notice — stop messaging
         results.skipped_no_trigger++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation ceiling reached (missed_count=${missedCount})`);
         continue;
       }
 
       // Check if enough time has passed since the last request to escalate
       if (!lastRequest || hoursSince(lastRequest) < ESCALATE_AFTER_HOURS) {
         results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation window not elapsed (last=${lastRequest || "never"}, need ${ESCALATE_AFTER_HOURS}h)`);
         continue;
       }
 
       const escalateMsg = missedCount === 0
         ? MSG_OIL_CHECK_REMINDER
         : MSG_OIL_CHECK_FINAL;
+      const escalateKey = missedCount === 0 ? "OIL_CHECK_REMINDER" : "OIL_CHECK_FINAL";
+
+      // Score-based gate: escalation messages are P2 (IMPORTANT).
+      // Compute score with real-time context before sending.
+      const escalateRecentRows = await fetchRecentSmsLogs(sb, bookingRef);
+      const escalateCtx = buildSmsContext(escalateKey, escalateRecentRows, { minutesToReturn });
+      if (isSuppressedByProximity(escalateKey, escalateCtx)) {
+        results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for escalation (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
+        continue;
+      }
+      const { score: escalateScore, breakdown: escalateBreakdown } = computeSmsScoreWithBreakdown(escalateKey, escalateCtx);
+      const escalateThreshold = computeEffectiveThreshold(escalateCtx);
+      console.log(`oil-check-cron: SCORE escalation ${bookingRef || bookingId}: key=${escalateKey} score=${escalateScore} threshold=${escalateThreshold} breakdown=${JSON.stringify(escalateBreakdown)}`);
+      if (escalateScore <= escalateThreshold) {
+        results.skipped_spam++;
+        console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: escalation score ${escalateScore} ≤ ${escalateThreshold}`);
+        continue;
+      }
 
       try {
         await sendSms(phone, escalateMsg);
@@ -256,6 +431,9 @@ export default async function handler(req, res) {
             updated_at:              nowTs,
           })
           .eq("id", bookingId);
+
+        // Log to sms_logs so other crons can see this send via cross-cron cooldown.
+        await logOilCheckToSupabase(sb, bookingRef, escalateKey, { score: escalateScore, breakdown: escalateBreakdown });
 
         results.escalated++;
         console.log(`oil-check-cron: escalated booking ${bookingRef || bookingId} (missed=${newMissedCount})`);
@@ -285,12 +463,51 @@ export default async function handler(req, res) {
 
     if (!triggerByDays && !triggerByMiles) {
       results.skipped_no_trigger++;
+      const daysDisplay  = daysSinceCheck  === Infinity ? "N/A" : daysSinceCheck.toFixed(1);
+      const milesDisplay = milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0);
+      console.log(
+        `oil-check-cron: SKIP ${bookingRef || bookingId}: threshold not met ` +
+        `(days_since=${daysDisplay}/${DAYS_SINCE_CHECK}, miles_since=${milesDisplay}/${MILES_SINCE_CHECK})`
+      );
+      continue;
+    }
+
+    // Determine whether to send the merged message.
+    // If the vehicle is also due for a 3000-mile oil change service, combine
+    // both requests into a single SMS to avoid sending two separate messages.
+    const vData          = vehicleByVehicle[vehicleId];
+    const vehicleMileage = vData?.mileage != null ? Number(vData.mileage) : null;
+    const lastOilChangeMi = vData?.last_oil_change_mileage != null
+      ? Number(vData.last_oil_change_mileage)
+      : null;
+    const milesSinceOilChange = vehicleMileage != null && lastOilChangeMi != null
+      ? vehicleMileage - lastOilChangeMi
+      : null;
+    const mileageMaintenanceDue = milesSinceOilChange != null && milesSinceOilChange >= 3000;
+
+    const msgToSend   = mileageMaintenanceDue ? MSG_OIL_CHECK_MERGED : MSG_OIL_CHECK_REQUEST;
+    const triggerKey  = mileageMaintenanceDue ? "OIL_CHECK_MERGED"   : "OIL_CHECK_REQUEST";
+
+    // Score-based gate: use real-time context to decide whether to send.
+    const triggerRecentRows = await fetchRecentSmsLogs(sb, bookingRef);
+    const triggerCtx = buildSmsContext(triggerKey, triggerRecentRows, { minutesToReturn });
+    if (isSuppressedByProximity(triggerKey, triggerCtx)) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: proximity suppressed for trigger (${minutesToReturn !== undefined ? Math.round(minutesToReturn) : "?"}min to return)`);
+      continue;
+    }
+    const { score: triggerScore, breakdown: triggerBreakdown } = computeSmsScoreWithBreakdown(triggerKey, triggerCtx);
+    const triggerThreshold = computeEffectiveThreshold(triggerCtx);
+    console.log(`oil-check-cron: SCORE trigger ${bookingRef || bookingId}: key=${triggerKey} score=${triggerScore} threshold=${triggerThreshold} breakdown=${JSON.stringify(triggerBreakdown)}`);
+    if (triggerScore <= triggerThreshold) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron: SKIP ${bookingRef || bookingId}: trigger score ${triggerScore} ≤ ${triggerThreshold}`);
       continue;
     }
 
     // Send initial oil check request
     try {
-      await sendSms(phone, MSG_OIL_CHECK_REQUEST);
+      await sendSms(phone, msgToSend);
       phonesContactedThisRun.add(phone);
 
       const nowTs = new Date().toISOString();
@@ -303,14 +520,125 @@ export default async function handler(req, res) {
         })
         .eq("id", bookingId);
 
+      // Log to sms_logs so other crons can see this send via cross-cron cooldown.
+      await logOilCheckToSupabase(sb, bookingRef, triggerKey, { score: triggerScore, breakdown: triggerBreakdown });
+
       results.triggered++;
       console.log(
         `oil-check-cron: triggered booking ${bookingRef || bookingId} ` +
-        `(days_since=${daysSinceCheck.toFixed(1)}, miles_since=${milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0)})`
+        `(days_since=${daysSinceCheck.toFixed(1)}, miles_since=${milesSinceCheck === Infinity ? "N/A" : milesSinceCheck.toFixed(0)}, merged=${mileageMaintenanceDue})`
       );
     } catch (err) {
       results.errors.push(`${bookingRef || bookingId}: ${err.message}`);
       console.error("oil-check-cron: trigger SMS failed:", err.message);
+    }
+  }
+
+  // ── Mileage-based triggers ────────────────────────────────────────────────
+  // Independently scan each active rental for high avg miles/day.
+  // These fire regardless of the oil-check compliance state above.
+  // Hard dedup: hasMileageAlertBeenSent() guards each key to once per booking.
+  const nowMs = Date.now();
+  for (const booking of bookings) {
+    const {
+      id:             bookingId,
+      booking_ref:    bookingRef,
+      vehicle_id:     vehicleId,
+      customer_phone: phone,
+      pickup_date:    pickupDate,
+    } = booking;
+
+    if (!phone || !vehicleId || !pickupDate) continue;
+
+    // In-run dedup: skip if this phone was already contacted in this cron run.
+    if (phonesContactedThisRun.has(phone)) {
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: already contacted this run`);
+      continue;
+    }
+
+    const startMileage   = startMileageByRef[bookingRef];
+    const vs             = stateByVehicle[vehicleId];
+    const currentMileage = vs?.current_mileage ?? null;
+
+    if (startMileage == null || currentMileage == null) {
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: missing start_mileage or current_mileage`);
+      continue;
+    }
+
+    const daysSincePickup = Math.max(1, (nowMs - new Date(pickupDate).getTime()) / MS_PER_DAY);
+    // Apply the same 10-mile Bouncie sync tolerance buffer used in v2-mileage.js.
+    const milesDriven     = Math.max(0, Number(currentMileage) - startMileage - 10);
+    const avgMilesPerDay  = milesDriven / daysSincePickup;
+
+    let templateKey, msgToSend;
+    if (avgMilesPerDay >= AVG_MILES_MAINT_REQ_THRESHOLD) {
+      templateKey = "MAINTENANCE_REQUIRED";
+      msgToSend   = MSG_MAINTENANCE_REQUIRED;
+    } else if (avgMilesPerDay >= AVG_MILES_OIL_RISK_THRESHOLD) {
+      templateKey = "OIL_CHECK_RISK";
+      msgToSend   = MSG_OIL_CHECK_RISK;
+    } else {
+      results.skipped_no_trigger++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: avg=${avgMilesPerDay.toFixed(1)} mi/day below thresholds`);
+      continue;
+    }
+
+    // Hard dedup: each mileage alert type fires at most once per booking,
+    // across all cron runs and across extensions (same booking_ref throughout).
+    if (await hasMileageAlertBeenSent(sb, bookingRef, templateKey)) {
+      results.skipped_no_trigger++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: ${templateKey} already sent for this booking`);
+      continue;
+    }
+
+    // Compute time-proximity context for scoring.
+    const { minutesToReturn: rawMinutesToReturnMileage } = await getRentalState(sb, bookingRef);
+    const mileageMinutesToReturn = rawMinutesToReturnMileage !== null ? rawMinutesToReturnMileage : undefined;
+
+    const mileageRecentRows = await fetchRecentSmsLogs(sb, bookingRef);
+    const mileageCtx = buildSmsContext(templateKey, mileageRecentRows, { minutesToReturn: mileageMinutesToReturn });
+
+    if (isSuppressedByProximity(templateKey, mileageCtx)) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: proximity suppressed (${mileageMinutesToReturn !== undefined ? Math.round(mileageMinutesToReturn) : "?"}min to return)`);
+      continue;
+    }
+
+    const { score: mileageScore, breakdown: mileageBreakdown } = computeSmsScoreWithBreakdown(templateKey, mileageCtx);
+    const mileageThreshold = computeEffectiveThreshold(mileageCtx);
+    console.log(`oil-check-cron (mileage): SCORE ${bookingRef || bookingId}: key=${templateKey} avg=${avgMilesPerDay.toFixed(1)} score=${mileageScore} threshold=${mileageThreshold} breakdown=${JSON.stringify(mileageBreakdown)}`);
+
+    if (mileageScore <= mileageThreshold) {
+      results.skipped_spam++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: score ${mileageScore} ≤ ${mileageThreshold}`);
+      continue;
+    }
+
+    // Claim the send slot atomically before sending.  ignoreDuplicates:true means
+    // the DB does nothing on conflict and returns no rows → inserted=false.
+    // This makes the DB constraint the final authority under concurrency: only
+    // the run that wins the INSERT proceeds to send; the other treats it as a
+    // no-op (already sent) without re-sending.
+    const { inserted } = await logOilCheckToSupabase(sb, bookingRef, templateKey, {
+      score:             mileageScore,
+      breakdown:         mileageBreakdown,
+      avg_miles_per_day: Math.round(avgMilesPerDay),
+    }, { sentinelDate: true });
+
+    if (!inserted) {
+      results.skipped_no_trigger++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: ${templateKey} already claimed by concurrent run`);
+      continue;
+    }
+
+    try {
+      await sendSms(phone, msgToSend);
+      phonesContactedThisRun.add(phone);
+      results.triggered++;
+      console.log(`oil-check-cron (mileage): triggered booking ${bookingRef || bookingId} (key=${templateKey}, avg=${avgMilesPerDay.toFixed(1)} mi/day)`);
+    } catch (err) {
+      results.errors.push(`${bookingRef || bookingId}: ${err.message}`);
+      console.error("oil-check-cron: mileage SMS failed:", err.message);
     }
   }
 

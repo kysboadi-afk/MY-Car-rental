@@ -9,7 +9,7 @@
 
 // All booking statuses that mean the vehicle is occupied / unavailable.
 // Keep aligned with fleet-status.js and v2-availability.js.
-const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 
 /**
  * Convert a PostgreSQL time string "HH:MM:SS" to 12-hour "H:MM AM/PM" format.
@@ -177,13 +177,13 @@ export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, to
     const sb = getSupabaseAdmin();
     if (!sb) return true; // Supabase not configured — fail open
 
-    // Active rental override: if the vehicle has ANY active_rental booking it is
-    // unavailable regardless of dates (overdue bookings must still block new ones).
+    // Active rental override: if the vehicle has ANY active_rental or overdue booking
+    // it is unavailable regardless of dates.
     const { data: activeRentals, error: activeRentalError } = await sb
       .from("bookings")
       .select("booking_ref")
       .eq("vehicle_id", vehicleId)
-      .eq("status", "active_rental")
+      .in("status", ["active_rental", "overdue"])
       .limit(1);
     if (activeRentalError) return true; // fail open on query error
     if (activeRentals && activeRentals.length > 0) return false;

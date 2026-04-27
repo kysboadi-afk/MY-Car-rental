@@ -8,7 +8,7 @@
 // Financial source of truth: revenue_records (Supabase)
 //   Gross Revenue = SUM(gross_amount  WHERE payment_status='paid' AND !is_cancelled AND !is_no_show)
 //   Total Fees    = SUM(stripe_fee)   (null treated as 0 for unreconciled rows)
-//   Net Revenue   = SUM(stripe_net − refund_amount)   (null stripe_net treated as gross_amount − stripe_fee)
+//   Net Revenue   = SUM(gross_amount − stripe_fee − refund_amount)
 //   Net Profit    = Net Revenue − Total Expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records
@@ -192,13 +192,23 @@ export default async function handler(req, res) {
           .then((r) => r, () => ({ data: null }))
       : Promise.resolve({ data: null });
 
-    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult] =
+    // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
+    const kpiPromise = sb
+      ? sb.from("total_revenue_kpi").select("total_revenue").single()
+          .then((r) => r, (e) => {
+            console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
+            return { data: null, error: e };
+          })
+      : Promise.resolve({ data: null });
+
+    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult, kpiResult] =
       await Promise.all([
         loadVehicles(),
         fetchExpenses(),
         fetchBookingsKpis(),
         metricsPromise,
         bookingsPromise,
+        kpiPromise,
       ]);
 
     // admin_metrics_v2: pre-aggregated dashboard KPIs.
@@ -244,8 +254,11 @@ export default async function handler(req, res) {
     let pickupsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      if (booking.status === "cancelled_rental") {
-        // Cancelled bookings never contribute to any active/overdue KPIs.
+      if (booking.status === "cancelled_rental" || booking.status === "completed_rental") {
+        // Completed and cancelled bookings never contribute to active/overdue KPIs.
+        // A completed_rental whose return date is in the past would otherwise be
+        // incorrectly counted as overdue (now >= returnDateTime is true for any
+        // past booking).  Only the revenue fallback loop below needs completed_rental.
         continue;
       }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
@@ -275,7 +288,8 @@ export default async function handler(req, res) {
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (booking.returnDate === todayStr && bookingIsActive) {
+      if (booking.returnDate === todayStr && bookingIsActive
+          && booking.status !== "completed_rental") {
         returnsTodayCount++;
       }
       // Pickups today: booked/approved rentals whose pickup date is today (LA).
@@ -285,17 +299,19 @@ export default async function handler(req, res) {
       }
     }
 
-    // Override booking-count KPIs with view values when the view is available.
-    // The view uses server-side timezone-aware SQL and covers all booking status
-    // variants (including newer 'reserved' / 'pending_verification'), making it
-    // more accurate than the JS loop above (which only checks legacy status names).
-    if (viewOk) {
-      activeBookings    = Number(metricsView[`${vp}_active_rentals`]    || 0);
-      pendingApprovals  = Number(metricsView[`${vp}_pending_approvals`] || 0);
-      overdueCount      = Number(metricsView[`${vp}_overdue_count`]     || 0);
-      returnsTodayCount = Number(metricsView[`${vp}_returns_today`]     || 0);
-      pickupsTodayCount = Number(metricsView[`${vp}_pickups_today`]     || 0);
-    }
+    // Booking-count KPIs come exclusively from the JS loop above.
+    // The admin_metrics_v2 view's booking counts are intentionally NOT used here
+    // because the view schema may be behind code deployments: for example, if
+    // migration 0064 standardised booking statuses to 'active_rental' but
+    // migration 0079 (which adds 'active_rental' to the view's filter) has not
+    // yet been applied, the view returns 0 for every active-rental count while
+    // the JS loop above (which queries the live bookings table and is
+    // status-agnostic for the active-rental check) gives the correct result.
+    //
+    // Long-term: once migration 0079 is confirmed applied to all environments,
+    // it is safe to re-introduce the view override for additional accuracy (e.g.
+    // server-side timezone handling for returns/pickups today). Until then the
+    // JS loop is the single source of truth for these counts.
 
     // Total expenses (scoped)
     const totalExpenses = expenses
@@ -351,7 +367,12 @@ export default async function handler(req, res) {
       }
     }
 
-    if (sb && !viewOk) {
+    // Run the direct revenue_records_effective loop when:
+    //   a) the admin_metrics_v2 view is unavailable (!viewOk), OR
+    //   b) the view is available but returned no financial data — this happens when
+    //      revenue_reporting_base is empty (e.g. all paid records have is_orphan=true),
+    //      which would otherwise cause the dashboard to fall back to booking deposits.
+    if (sb && (!viewOk || !financialsFromRevRecords)) {
       try {
         const { data: rrRows, error: rrErr } = await sb
           .from("revenue_records_effective")
@@ -369,12 +390,10 @@ export default async function handler(req, res) {
 
             const grossRaw = Number(r.gross_amount || 0);
             const gross  = Number.isFinite(grossRaw) ? grossRaw : 0;
-            // stripe_fee and stripe_net are always populated together by stripe-reconcile.js.
-            // When both are null (unreconciled row): fee=0, net=gross (conservative estimate).
-            // When both are set (reconciled row): use exact Stripe values.
             const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
             const refund = Number(r.refund_amount || 0);
-            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
+            // Net = Gross − Stripe Fees − Refunds (strict formula, no stripe_net).
+            const net    = gross - fee - refund;
 
             totalRevenue    += gross;
             totalStripeFees += fee;
@@ -460,9 +479,10 @@ export default async function handler(req, res) {
     // ── Supplemental: succeeded extra charges (damages, late fees, etc.) ──────
     // Charges already tracked in revenue_records (via stripe-webhook.js post-rental
     // fee handling) are excluded here to prevent double-counting revenue totals.
-    // Skipped when viewOk because the admin_metrics_v2 view already incorporates
-    // these supplemental charges via its charges_net CTE.
-    if (sb && !viewOk) {
+    // Skipped when the admin_metrics_v2 view already provided financial data
+    // (viewOk && financialsFromRevRecords) because the view's charges_net CTE
+    // already incorporates these supplemental charges.
+    if (sb && (!viewOk || !financialsFromRevRecords)) {
       const bookingVehicleMap = {};
       for (const b of allBookings) {
         if (b.bookingId) bookingVehicleMap[b.bookingId] = b.vehicleId;
@@ -519,25 +539,30 @@ export default async function handler(req, res) {
       }
     }
 
-    // Vehicles available
-    // When the view is available, use its pre-computed count (scope-aware, server-side).
+    // Vehicles available: computed from the JS loop's activeOrOverdueBookings
+    // so it stays consistent with the booking counts above.
+    // Using v.vehicle_id (not v.id — vehicle objects don't have a plain `id` field).
     const vehicleList = Object.values(filteredVehicles);
     const unavailableVehicleIds = new Set(
       activeOrOverdueBookings
         .map((b) => b.vehicleId)
     );
-    const availableVehicles = viewOk
-      ? Number(metricsView[`${vp}_available_vehicles`] || 0)
-      : vehicleList.filter(
-          (v) => v.status === "active" && !unavailableVehicleIds.has(v.id)
-        ).length;
+    const availableVehicles = vehicleList.filter(
+      (v) => v.status === "active" && !unavailableVehicleIds.has(v.vehicle_id)
+    ).length;
 
     // ── Alerts ────────────────────────────────────────────────────────────────
     const alerts = [];
     const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+    // Vehicles with at least one active or overdue rental right now.
+    // We suppress the negative-profit alert for these: their partial/deposit
+    // payments are not yet in revenue_records so the profit figure is
+    // temporarily understated until the booking is fully settled.
+    const vehiclesWithActiveRentals = new Set(activeOrOverdueBookings.map((b) => b.vehicleId));
+
     for (const [vehicleId, stats] of Object.entries(vehicleStats)) {
-      if (stats.netProfit < 0) {
+      if (stats.netProfit < 0 && !vehiclesWithActiveRentals.has(vehicleId)) {
         alerts.push({
           type:    "warning",
           message: `${stats.name} has negative net profit ($${stats.netProfit.toFixed(2)})`,
@@ -567,13 +592,34 @@ export default async function handler(req, res) {
     }
 
     // Revenue chart: last 12 months sorted (gross revenue by month).
-    // When viewOk, use the pre-computed JSONB from the view (already sorted ASC).
-    const revenueChart = viewOk
-      ? (metricsView[`${vp}_revenue_chart`] || [])
-      : Object.entries(monthlyRevenue)
+    // When viewOk, prefer the pre-computed JSONB from the view (already sorted ASC).
+    // Fall back to a booking-based approximation when the view chart is empty
+    // (common when revenue_records lack pickup_date for older/partially-paid records).
+    const viewChart = viewOk ? (metricsView[`${vp}_revenue_chart`] || []) : [];
+    let revenueChart;
+    if (viewChart.length > 0) {
+      revenueChart = viewChart;
+    } else if (monthlyRevenue && Object.keys(monthlyRevenue).length > 0) {
+      // Non-view path: monthlyRevenue was populated by the revenue_records loop.
+      revenueChart = Object.entries(monthlyRevenue)
           .sort(([a], [b]) => (a > b ? 1 : -1))
           .slice(-12)
           .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    } else {
+      // Booking-based fallback: uses allBookings deposit/total amounts per month.
+      // Less precise than revenue_records but guarantees a non-empty chart.
+      const chartStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
+      const bookingMonthly = {};
+      for (const b of allBookings) {
+        if (!chartStatuses.has(b.status)) continue;
+        const monthKey = (b.pickupDate || "").slice(0, 7);
+        if (monthKey) bookingMonthly[monthKey] = (bookingMonthly[monthKey] || 0) + bookingRevenue(b);
+      }
+      revenueChart = Object.entries(bookingMonthly)
+          .sort(([a], [b]) => (a > b ? 1 : -1))
+          .slice(-12)
+          .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
+    }
 
     // Recent bookings (last 10 across all vehicles).
     // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
@@ -624,11 +670,20 @@ export default async function handler(req, res) {
       : null;
     console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
 
+    // Override totalRevenue with the canonical total_revenue_kpi value when
+    // available — same source used by the Revenue Tracker page KPI card.
+    const kpiRevenue = kpiResult?.data?.total_revenue != null
+      ? Number(kpiResult.data.total_revenue)
+      : null;
+    const finalTotalRevenue = kpiRevenue !== null
+      ? Math.round(kpiRevenue * 100) / 100
+      : Math.round(totalRevenue * 100) / 100;
+
     return res.status(200)
       .setHeader("Cache-Control", "no-store")
       .json({
         kpis: {
-          totalRevenue:    Math.round(totalRevenue    * 100) / 100,
+          totalRevenue:    finalTotalRevenue,
           totalExpenses:   Math.round(totalExpenses   * 100) / 100,
           netRevenue:      Math.round(netRevenue      * 100) / 100,
           netProfit:       Math.round(netProfit       * 100) / 100,

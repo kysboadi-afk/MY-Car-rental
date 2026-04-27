@@ -17,6 +17,7 @@
 //     SMTP_HOST:                "ok" | "missing",
 //     TEXTMAGIC_USERNAME:       "ok" | "missing",
 //     OPENAI_API_KEY:           "ok" | "missing" | "not required",
+//     OPENAI_MODEL:             "ok" | "optional" | "ok (...)" | "warning: ...",
 //   },
 //   supabase: {
 //     connected: boolean,
@@ -34,8 +35,42 @@
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
+import OpenAI from "openai";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+
+// OpenAI model validation.
+// Fast models work well within the 45 s budget. Slow/reasoning models regularly
+// exceed it and produce "Connection timed out" errors in the AI assistant.
+const FAST_OPENAI_MODELS = new Set([
+  "gpt-4.1-mini",    // default — recommended
+  "gpt-4.1-nano",
+  "gpt-4.1",
+  "gpt-4o-mini",
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-0125",
+]);
+const SLOW_OPENAI_MODELS = new Set([
+  "gpt-4o",          // high latency, causes timeouts on multi-tool queries
+  "gpt-4-turbo",
+  "gpt-4-turbo-preview",
+  "gpt-4",
+  "o1",
+  "o1-mini",
+  "o1-preview",
+  "o3",
+  "o3-mini",
+]);
+
+function validateOpenAiModel(modelEnv) {
+  if (!modelEnv) return "optional";                          // default gpt-4.1-mini will be used
+  if (FAST_OPENAI_MODELS.has(modelEnv)) return "ok";
+  if (SLOW_OPENAI_MODELS.has(modelEnv)) {
+    return `warning: ${modelEnv} is too slow for multi-tool queries — change to gpt-4.1-mini in Vercel`;
+  }
+  // Unknown model — still set, just flag it so the admin knows to verify it.
+  return `ok (${modelEnv})`;
+}
 
 // All tables that the v2 admin panel reads from or writes to.
 const REQUIRED_TABLES = [
@@ -58,6 +93,9 @@ const OPTIONAL_TABLES = [
   "site_settings",
   "content_blocks",
   "content_revisions",
+  // View — migration 0087. Single source of truth for per-segment vehicle
+  // blocking timeline (base rental + each extension).
+  "vehicle_blocking_ranges",
 ];
 
 /**
@@ -115,7 +153,7 @@ export default async function handler(req, res) {
     TEXTMAGIC_USERNAME:        process.env.TEXTMAGIC_USERNAME        ? "ok" : "missing",
     // Optional — only needed for the AI assistant feature.
     OPENAI_API_KEY:            process.env.OPENAI_API_KEY            ? "ok" : "optional",
-    OPENAI_MODEL:              process.env.OPENAI_MODEL              || "gpt-4.1-mini (default)",
+    OPENAI_MODEL:              validateOpenAiModel(process.env.OPENAI_MODEL),
   };
 
   // ── Supabase connectivity and table checks ───────────────────────────────
@@ -233,5 +271,39 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck });
+  // ── OpenAI connectivity check ────────────────────────────────────────────
+  // Only run when OPENAI_API_KEY is present.  Makes a minimal models list call
+  // (no tokens consumed) to verify the key is valid and the API is reachable.
+  const openaiCheck = { checked: false, status: "skipped", error: null };
+  if (process.env.OPENAI_API_KEY) {
+    openaiCheck.checked = true;
+    try {
+      const oaClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const abortCtrl = new AbortController();
+      const timer = setTimeout(() => abortCtrl.abort(), 8000); // 8 s hard limit
+      try {
+        await oaClient.models.list({ signal: abortCtrl.signal });
+        openaiCheck.status = "ok";
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (err?.name === "AbortError" || err?.name === "APIConnectionTimeoutError") {
+        openaiCheck.status = "timeout";
+        openaiCheck.error  = "OpenAI API did not respond within 8 seconds — network issue or API outage.";
+      } else if (err?.status === 401 || /invalid api key|incorrect api key|auth/i.test(msg)) {
+        openaiCheck.status = "invalid_key";
+        openaiCheck.error  = "API key is set but rejected by OpenAI — it may be expired or revoked. Generate a new key at platform.openai.com.";
+      } else if (err?.status === 429) {
+        openaiCheck.status = "rate_limited";
+        openaiCheck.error  = "OpenAI returned 429 (rate limit / quota exceeded). Check your usage at platform.openai.com/usage.";
+      } else {
+        openaiCheck.status = "error";
+        openaiCheck.error  = msg;
+      }
+    }
+  }
+
+  return res.status(200).json({ env, supabase: supabaseResult, bookingTimeAudit, chargesHealthCheck, openaiCheck });
 }

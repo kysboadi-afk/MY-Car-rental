@@ -256,7 +256,7 @@ ON CONFLICT (key) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS revenue_records (
   id                 uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
-  booking_id         text          NOT NULL,
+  booking_id         text          DEFAULT NULL,
   original_booking_id text         DEFAULT NULL,
   payment_intent_id  text          DEFAULT NULL,
   vehicle_id         text          NOT NULL,
@@ -664,9 +664,15 @@ CREATE TABLE IF NOT EXISTS bookings (
   updated_at        timestamptz   NOT NULL DEFAULT now()
 );
 
-DO $$ BEGIN ALTER TABLE bookings ADD CONSTRAINT bookings_status_check
-  CHECK (status IN ('pending','active','overdue','completed'));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_status_check;
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+ALTER TABLE bookings ADD CONSTRAINT bookings_status_check
+  CHECK (status IN (
+    'pending', 'approved', 'active', 'overdue', 'completed', 'cancelled',
+    'reserved', 'pending_verification',
+    'active_rental', 'booked_paid', 'completed_rental', 'cancelled_rental'
+  ));
 
 DO $$ BEGIN ALTER TABLE bookings ADD CONSTRAINT bookings_payment_status_check
   CHECK (payment_status IN ('unpaid','partial','paid'));

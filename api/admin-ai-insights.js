@@ -22,11 +22,18 @@ import { uiVehicleId } from "./_vehicle-id.js";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
 const DB_TO_APP_STATUS = {
-  pending:   "reserved_unpaid",
-  approved:  "booked_paid",
-  active:    "active_rental",
-  completed: "completed_rental",
-  cancelled: "cancelled_rental",
+  pending:              "reserved_unpaid",
+  reserved:             "reserved_unpaid",
+  pending_verification: "reserved_unpaid",
+  approved:             "booked_paid",
+  booked_paid:          "booked_paid",
+  active:               "active_rental",
+  active_rental:        "active_rental",
+  overdue:              "overdue",
+  completed:            "completed_rental",
+  completed_rental:     "completed_rental",
+  cancelled:            "cancelled_rental",
+  cancelled_rental:     "cancelled_rental",
 };
 
 function revenueFromBooking(booking) {
@@ -46,20 +53,20 @@ async function fetchAllData() {
     try {
       const { data, error } = await sb
         .from("bookings")
-        .select("booking_id, vehicle_id, customer_name, phone, email, pickup_date, return_date, status, amount_paid, total_price, created_at")
+        .select("booking_ref, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date, status, deposit_paid, total_price, created_at")
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(500);
       if (!error && data) {
         allBookings = data.map((row) => ({
-          bookingId:  row.booking_id || "",
+          bookingId:  row.booking_ref || "",
           name:       row.customer_name || "",
-          phone:      row.phone || "",
-          email:      row.email || "",
+          phone:      row.customer_phone || "",
+          email:      row.customer_email || "",
           vehicleId:  row.vehicle_id || "",
           pickupDate: row.pickup_date || "",
           returnDate: row.return_date || "",
           status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.amount_paid || row.total_price || 0,
+          amountPaid: Number(row.deposit_paid || row.total_price || 0),
           createdAt:  row.created_at || "",
         }));
       }
@@ -71,6 +78,26 @@ async function fetchAllData() {
   if (allBookings.length === 0) {
     const { data: bookingsData } = await loadBookings();
     allBookings = Object.values(bookingsData).flat();
+  }
+
+  // ── Revenue records (source of truth for financial totals) ─────────────
+  // Fetch all paid, non-cancelled, non-no-show records from revenue_records_effective
+  // so computeInsights can produce accurate weekly/monthly revenue snapshots that
+  // match the Revenue page and Fleet Analytics instead of relying on the bookings table.
+  let revenueRecords = [];
+  if (sb) {
+    try {
+      const { data: rrData, error: rrErr } = await sb
+        .from("revenue_records_effective")
+        .select("vehicle_id, pickup_date, gross_amount, is_cancelled, is_no_show")
+        .eq("payment_status", "paid");
+      if (!rrErr && rrData && rrData.length > 0) {
+        revenueRecords = rrData.filter((r) => !r.is_cancelled && !r.is_no_show);
+      }
+    } catch (rrEx) {
+      // Non-fatal — computeInsights will fall back to the bookings array
+      console.warn("admin-ai-insights: revenue_records fetch failed, using bookings fallback:", rrEx.message);
+    }
   }
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
@@ -157,7 +184,13 @@ async function fetchAllData() {
     .map((b) => ({ ...b, vehicleId: uiVehicleId(b.vehicleId) }))
     .filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 
-  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips };
+  // Filter revenue records to car vehicles only (same scope as filteredBookings).
+  const filteredRevenueRecords = revenueRecords.filter((r) => {
+    const vid = uiVehicleId(r.vehicle_id);
+    return !vid || carVehicleIds.has(vid);
+  });
+
+  return { allBookings: filteredBookings, vehicles, mileageData, recentTrips, revenueRecords: filteredRevenueRecords };
 }
 
 export default async function handler(req, res) {
@@ -177,11 +210,15 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 5000;
+  // Default 10 s budget: ~3 s Supabase cold-start + 3 s for parallel queries
+  // (bookings, vehicles, revenue_records_effective) + 4 s buffer for computation.
+  // 5 s was too tight after revenue_records_effective was added to fetchAllData
+  // and caused spurious "System is busy" responses on first load.
+  const TIMEOUT_MS = Number(process.env.AI_INSIGHTS_TIMEOUT_MS) || 10000;
 
   async function mainLogic() {
-    const { allBookings, vehicles, mileageData, recentTrips } = await fetchAllData();
-    const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
+    const { allBookings, vehicles, mileageData, recentTrips, revenueRecords } = await fetchAllData();
+    const insights = computeInsights({ allBookings, vehicles, revenueFromBooking, revenueRecords });
     const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
 
     // Fraud summary (top 10 risks)

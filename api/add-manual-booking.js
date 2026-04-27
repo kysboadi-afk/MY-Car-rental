@@ -28,6 +28,7 @@ import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeClockTime } from "./_time.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
@@ -164,7 +165,12 @@ export default async function handler(req, res) {
     //    reservation before the booking record is persisted.
     await blockBookedDates(vehicleId, pickupDate, returnDate);
 
+    const now = new Date().toISOString();
+
     // 2. Persist booking through the unified pipeline (Supabase + bookings.json).
+    //    Manual (cash) bookings are created directly as active_rental so they
+    //    participate in the SMS automation, mileage tracking, and extension flows
+    //    identically to Stripe bookings that have been activated by the admin.
     const { booking } = await persistBooking({
       bookingId:       crypto.randomBytes(8).toString("hex"),
       vehicleId,
@@ -177,7 +183,9 @@ export default async function handler(req, res) {
       returnDate,
       returnTime:      trimmedReturnTime,
       location:        "",
-      status:          "booked_paid",
+      status:          "active_rental",
+      activatedAt:     now,
+      paymentStatus:   "paid",
       paymentIntentId: "manual_" + crypto.randomBytes(6).toString("hex"),
       amountPaid:      typeof amountPaid === "number" && amountPaid > 0
                          ? Math.round(amountPaid * 100) / 100
@@ -186,6 +194,51 @@ export default async function handler(req, res) {
       paymentMethod:   "cash",
       source:          "admin_manual",
     });
+
+    // 3. Capture start odometer (non-fatal) so oil-check-cron and mileage
+    //    analytics can compute avg miles/day from the moment of pickup.
+    //    Mirrors the same logic in v2-bookings.js when status → active_rental.
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb && booking.vehicleId) {
+        // Only insert when no placeholder trips row exists for this booking yet
+        // (guards against double-inserts on idempotent re-calls).
+        const { data: existingTrip } = await sb
+          .from("trips")
+          .select("id")
+          .eq("booking_id", booking.bookingId)
+          .is("end_mileage", null)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingTrip) {
+          const { data: vRow } = await sb
+            .from("vehicles")
+            .select("mileage")
+            .eq("vehicle_id", booking.vehicleId)
+            .maybeSingle();
+
+          const startOdo = vRow?.mileage != null ? Number(vRow.mileage) : null;
+
+          const { error: tripErr } = await sb.from("trips").insert({
+            vehicle_id:    booking.vehicleId,
+            booking_id:    booking.bookingId,
+            start_mileage: startOdo,
+            end_mileage:   null,
+            distance:      null,
+            driver_name:   booking.name  || null,
+            driver_phone:  booking.phone || null,
+          });
+          if (tripErr) {
+            console.warn("add-manual-booking: start mileage trips insert failed (non-fatal):", tripErr.message);
+          } else {
+            console.log(`add-manual-booking: captured start odometer ${startOdo ?? "n/a"} mi for booking ${booking.bookingId}`);
+          }
+        }
+      }
+    } catch (tripCatchErr) {
+      console.error("add-manual-booking: start mileage capture failed (non-fatal):", tripCatchErr.message);
+    }
 
     return res.status(200).json({ success: true, booking });
   } catch (err) {

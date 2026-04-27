@@ -272,3 +272,31 @@ test("add-manual-booking: 409 when dates conflict with an existing booking", asy
     nextAvailability = true;
   }
 });
+
+test("add-manual-booking: booking is created with status active_rental", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(makeReq(basePayload()), res);
+  assert.equal(res._status, 200);
+  assert.equal(
+    res._body.booking.status,
+    "active_rental",
+    "manual bookings must start as active_rental so they participate in SMS and mileage automation immediately"
+  );
+});
+
+test("add-manual-booking: booking has activatedAt stamped on creation", async () => {
+  resetStore(); resetCalls();
+  const res = makeRes();
+  await handler(makeReq(basePayload()), res);
+  assert.equal(res._status, 200);
+  assert.ok(
+    res._body.booking.activatedAt,
+    "activatedAt must be set so the activated_at column is populated in Supabase"
+  );
+  // Verify it is a valid ISO timestamp
+  assert.ok(
+    !isNaN(new Date(res._body.booking.activatedAt).getTime()),
+    "activatedAt must be a valid ISO timestamp"
+  );
+});

@@ -24,7 +24,7 @@ import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { CARS, computeRentalDays } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
@@ -48,6 +48,8 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const MAX_ALERT_SMS_LENGTH = 900;
+// Pre-parsed default return time used when a booking has no return_time set.
+const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
 
 /**
  * Read booked-dates.json from GitHub and block the given date range.
@@ -662,7 +664,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       pickup_date:               pickup_date  || null,
       return_date:               return_date  || null,
       pickup_time:               parseTime12h(pickup_time  || "") || null,
-      return_time:               parseTime12h(return_time  || DEFAULT_RETURN_TIME) || null,
+      return_time:               parseTime12h(return_time  || "") || DEFAULT_RETURN_TIME_PG,
       // status='reserved' requires payment_status='partial' (DB constraint).
       // Full_payment writes status='pending' + payment_status='paid'.
       status:                    isDepositPayment ? "reserved" : "pending",
@@ -1433,7 +1435,11 @@ export default async function handler(req, res) {
 
   if (event.type === "payment_intent.succeeded") {
     const paymentIntent = event.data.object;
-    const paymentType = (paymentIntent.metadata || {}).payment_type || "";
+    const piMeta = paymentIntent.metadata || {};
+    // "payment_type" is the legacy field; "type" is the canonical field added to
+    // all new extension PaymentIntents.  Accept either so that PIs created before
+    // the migration (payment_type only) and after (both fields) are handled.
+    const paymentType = piMeta.payment_type || piMeta.type || "";
     const isTestMode = event.livemode === false;
     logPaymentIntentReceived(event, paymentIntent);
     if (isTestMode) {
@@ -1443,6 +1449,7 @@ export default async function handler(req, res) {
 
     // Handle rental extension payment confirmations.
     if (paymentType === "rental_extension") {
+      console.log("EXTENSION TRIGGERED", paymentType, paymentIntent.metadata?.booking_id || paymentIntent.metadata?.original_booking_id || "<missing>");
       const {
         vehicle_id,
         booking_id:          meta_booking_id,   // canonical booking_ref (primary, set by extend-rental.js)
@@ -1452,11 +1459,24 @@ export default async function handler(req, res) {
         extension_label,
         new_return_date,
         new_return_time,
+        previous_return_date,                   // return date before this extension (set by extend-rental.js)
       } = paymentIntent.metadata || {};
 
       // Use canonical booking_id; fall back to original_booking_id for PIs
       // created before extend-rental.js was updated to emit booking_id.
       const bookingRef = meta_booking_id || original_booking_id;
+
+      // HARD RULE: booking_id must start with 'bk-'.
+      // Reject any extension PI whose booking reference is a Stripe PI ID or
+      // any other non-canonical format — these cannot be reliably matched to a
+      // bookings row and must never produce a revenue record.
+      if (!bookingRef || !bookingRef.startsWith("bk-")) {
+        console.error(
+          `stripe-webhook: rental_extension rejected — booking_id "${bookingRef || "<missing>"}" ` +
+          `does not start with 'bk-' for PI ${paymentIntent.id}`
+        );
+        return res.status(200).json({ received: true });
+      }
 
       if (vehicle_id && bookingRef) {
         try {
@@ -1474,6 +1494,32 @@ export default async function handler(req, res) {
           if (!resolvedBookingId) {
             console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
             return res.status(200).json({ received: true });
+          }
+
+          // DUPLICATE CHECK: every Stripe PaymentIntent maps to exactly one
+          // revenue row.  If this PI already has a record (e.g. a prior
+          // successful delivery), exit immediately — there is nothing to do.
+          try {
+            const sbDup = getSupabaseAdmin();
+            if (sbDup) {
+              const { data: existingRev } = await sbDup
+                .from("revenue_records")
+                .select("id")
+                .eq("payment_intent_id", paymentIntent.id)
+                .eq("sync_excluded", false)
+                .maybeSingle();
+              if (existingRev?.id) {
+                console.log(
+                  `stripe-webhook: rental_extension PI ${paymentIntent.id} already in revenue_records ` +
+                  `(id=${existingRev.id}) — skipping duplicate`
+                );
+                return res.status(200).json({ received: true });
+              }
+            }
+          } catch (dupCheckErr) {
+            console.warn(
+              `stripe-webhook: duplicate PI check failed (non-fatal, proceeding): ${dupCheckErr.message}`
+            );
           }
 
           let foundBooking = false;
@@ -1572,9 +1618,141 @@ export default async function handler(req, res) {
           });
 
           if (!foundBooking) {
-            console.error(
-              `stripe-webhook: rental_extension booking not found vehicle_id=${vehicle_id} booking_id=${bookingRef}`
+            // Booking not found in bookings.json.  Attempt a direct Supabase update so
+            // extensions for Supabase-only bookings (records that were never mirrored
+            // back to the JSON file) are still applied correctly.
+            console.warn(
+              `stripe-webhook: rental_extension booking not found in bookings.json — ` +
+              `attempting Supabase-only fallback vehicle_id=${vehicle_id} booking_id=${bookingRef}`
             );
+            try {
+              const sbFallback = getSupabaseAdmin();
+              if (!sbFallback) {
+                console.error("stripe-webhook: Supabase not available for extension fallback");
+                return res.status(200).json({ received: true });
+              }
+              const { data: sbRow, error: sbRowErr } = await sbFallback
+                .from("bookings")
+                .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date")
+                .eq("booking_ref", bookingRef)
+                .maybeSingle();
+              if (sbRowErr || !sbRow) {
+                console.error(
+                  `stripe-webhook: rental_extension Supabase fallback — booking not found: ${bookingRef}`
+                );
+                return res.status(200).json({ received: true });
+              }
+              const sbStatus = sbRow.status;
+              const isValidStatus = sbStatus === "active_rental" || sbStatus === "active" || sbStatus === "reserved";
+              if (!isValidStatus) {
+                console.error(
+                  `stripe-webhook: rental_extension Supabase fallback invalid status "${sbStatus}" for ${bookingRef}`
+                );
+                return res.status(200).json({ received: true });
+              }
+              const sbCurrentReturnDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
+              const fallbackOldReturnDate = sbCurrentReturnDate || "";
+              const fallbackExtAmount = Math.round(paymentIntent.amount) / 100;
+              if (sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date) {
+                // Already applied in Supabase — attempt idempotent revenue recovery.
+                console.log(
+                  `stripe-webhook: rental_extension Supabase fallback already applied for ${bookingRef} ` +
+                  `current=${sbCurrentReturnDate} >= new=${new_return_date}`
+                );
+              } else {
+                // Advance bookings.return_date.
+                const { error: sbUpdateErr } = await sbFallback
+                  .from("bookings")
+                  .update({ return_date: new_return_date, updated_at: new Date().toISOString() })
+                  .eq("booking_ref", bookingRef);
+                if (sbUpdateErr) {
+                  console.error(
+                    `stripe-webhook: rental_extension Supabase fallback update failed: ${sbUpdateErr.message}`
+                  );
+                  return res.status(500).json({
+                    received: false,
+                    error: `extension fallback booking update failed for ${paymentIntent.id}`,
+                  });
+                }
+                // Insert booking_extensions row.
+                try {
+                  const { error: beErr } = await sbFallback
+                    .from("booking_extensions")
+                    .upsert(
+                      {
+                        booking_id:        resolvedBookingId,
+                        payment_intent_id: paymentIntent.id,
+                        amount:            fallbackExtAmount,
+                        new_return_date:   new_return_date,
+                        new_return_time:   sbRow.return_time || null,
+                      },
+                      { onConflict: "payment_intent_id", ignoreDuplicates: true }
+                    );
+                  if (beErr) {
+                    console.error(
+                      "stripe-webhook: Supabase fallback booking_extensions upsert failed:",
+                      beErr.message, { resolvedBookingId, paymentIntentId: paymentIntent.id }
+                    );
+                  }
+                } catch (beErr) {
+                  console.warn(
+                    "stripe-webhook: Supabase fallback booking_extensions error (non-fatal):",
+                    beErr.message
+                  );
+                }
+                console.log("EXTENSION_APPLIED_SUPABASE_FALLBACK", {
+                  booking_id: bookingRef,
+                  old_return: fallbackOldReturnDate,
+                  new_return: new_return_date,
+                  payment_intent_id: paymentIntent.id,
+                });
+              }
+              // Create extension revenue record (idempotent via payment_intent_id).
+              try {
+                const fallbackFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+                const fallbackCustomerId = await resolveCustomerIdFromSupabase(
+                  sbRow.customer_phone || "",
+                  sbRow.customer_email || renter_email || "",
+                );
+                await autoCreateRevenueRecord({
+                  bookingId:       resolvedBookingId,
+                  paymentIntentId: paymentIntent.id,
+                  vehicleId:       vehicle_id,
+                  customerId:      fallbackCustomerId,
+                  name:            sbRow.customer_name || renter_name || "",
+                  phone:           sbRow.customer_phone || "",
+                  email:           sbRow.customer_email || renter_email || "",
+                  pickupDate:      previous_return_date || fallbackOldReturnDate || "",
+                  returnDate:      new_return_date || "",
+                  amountPaid:      fallbackExtAmount,
+                  paymentMethod:   "stripe",
+                  type:            "extension",
+                  ...fallbackFeeFields,
+                }, { strict: true, requireStripeFee: true });
+              } catch (revErr) {
+                console.error(
+                  "stripe-webhook: Supabase fallback extension revenue error:",
+                  revErr.message
+                );
+                return res.status(500).json({
+                  received: false,
+                  error: `extension fallback revenue persistence failed for ${paymentIntent.id}`,
+                });
+              }
+              // Update blocked_dates to reflect the new return date.
+              if (vehicle_id && new_return_date) {
+                try {
+                  await extendBlockedDateForBooking(vehicle_id, bookingRef, new_return_date);
+                } catch (sbBlockErr) {
+                  console.error("stripe-webhook: Supabase fallback blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
+                }
+              }
+            } catch (fallbackErr) {
+              console.error(
+                "stripe-webhook: rental_extension Supabase fallback error:",
+                fallbackErr.message
+              );
+            }
             return res.status(200).json({ received: true });
           }
 
@@ -1616,8 +1794,21 @@ export default async function handler(req, res) {
                 name:            updatedBooking.name || renter_name || "",
                 phone:           updatedBooking.phone || "",
                 email:           updatedBooking.email || renter_email || "",
-                pickupDate:      updatedBooking.pickupDate || "",
-                returnDate:      updatedBooking.returnDate || new_return_date || "",
+                // Use previous_return_date from PI metadata as extension start.
+                // Warn when falling back to original pickupDate so unexpected cases
+                // are visible in logs and can be investigated.
+                pickupDate:      (() => {
+                  if (previous_return_date) return previous_return_date;
+                  if (updatedBooking.pickupDate) {
+                    console.warn(
+                      `stripe-webhook: alreadyApplied extension previous_return_date missing — ` +
+                      `falling back to pickupDate for booking ${bookingRef}`
+                    );
+                    return updatedBooking.pickupDate;
+                  }
+                  return "";
+                })(),
+                returnDate:      new_return_date || updatedBooking.returnDate || "",
                 amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                 paymentMethod:   "stripe",
                 type:            "extension",
@@ -1630,7 +1821,7 @@ export default async function handler(req, res) {
               try {
                 const sbBErecov = getSupabaseAdmin();
                 if (sbBErecov && resolvedBookingId && new_return_date) {
-                  await sbBErecov
+                  const { data: beRecovData, error: beRecovError } = await sbBErecov
                     .from("booking_extensions")
                     .upsert(
                       {
@@ -1642,6 +1833,13 @@ export default async function handler(req, res) {
                       },
                       { onConflict: "payment_intent_id", ignoreDuplicates: true }
                     );
+                  if (beRecovError) {
+                    console.error("stripe-webhook: alreadyApplied booking_extensions recovery upsert failed:", beRecovError.message, beRecovError.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+                  } else {
+                    console.log("stripe-webhook: alreadyApplied booking_extensions recovery upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beRecovData?.length ?? "(no data)" });
+                  }
+                } else {
+                  console.warn("stripe-webhook: alreadyApplied booking_extensions recovery skipped — missing sbBErecov, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
                 }
               } catch (beRecovErr) {
                 console.warn("stripe-webhook: alreadyApplied booking_extensions recovery failed (non-fatal):", beRecovErr.message);
@@ -1696,7 +1894,7 @@ export default async function handler(req, res) {
           try {
             const sbBE = getSupabaseAdmin();
             if (sbBE && resolvedBookingId && new_return_date) {
-              const { error: beUpsertErr } = await sbBE
+              const { data: beData, error: beUpsertErr } = await sbBE
                 .from("booking_extensions")
                 .upsert(
                   {
@@ -1708,16 +1906,14 @@ export default async function handler(req, res) {
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );
-              if (beUpsertErr) throw beUpsertErr;
-
-              // Verify the row is actually readable after the upsert (catches silent
-              // RLS / replication failures that return no error but persist nothing).
-              const { error: beCheckErr } = await sbBE
-                .from("booking_extensions")
-                .select("id")
-                .eq("payment_intent_id", paymentIntent.id)
-                .single();
-              if (beCheckErr) throw new Error(`booking_extensions post-write check failed for PI ${paymentIntent.id}: ${beCheckErr.message}`);
+              if (beUpsertErr) {
+                console.error("stripe-webhook: booking_extensions upsert failed:", beUpsertErr.message, beUpsertErr.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+                throw beUpsertErr;
+              } else {
+                console.log("stripe-webhook: booking_extensions upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beData?.length ?? "(no data)" });
+              }
+            } else {
+              console.warn("stripe-webhook: booking_extensions upsert skipped — missing sbBE, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
             }
           } catch (beErr) {
             console.error("stripe-webhook: booking_extensions insert error:", beErr.message);
@@ -1743,8 +1939,11 @@ export default async function handler(req, res) {
               name:            updatedBooking.name || renter_name || "",
               phone:           updatedBooking.phone || "",
               email:           updatedBooking.email || renter_email || "",
-              pickupDate:      updatedBooking.pickupDate || "",
-              returnDate:      updatedBooking.returnDate || "",
+              // Extension date range: pickup_date = previous return date (extension start),
+              // return_date = new return date (extension end).  This lets the admin UI
+              // compute "+N days" correctly for each extension row.
+              pickupDate:      oldReturnDate || "",
+              returnDate:      new_return_date || updatedBooking.returnDate || "",
               amountPaid:      extensionAmountDollars,
               paymentMethod:   "stripe",
               type:            "extension",
@@ -1784,9 +1983,11 @@ export default async function handler(req, res) {
           }
 
           // Update Supabase blocked_dates availability.
-          if (updatedBooking.pickupDate && updatedBooking.returnDate) {
+          // Extend the existing row's end_date rather than inserting a new overlapping row —
+          // the no-overlap DB trigger would reject an INSERT that covers the same range.
+          if (vehicle_id && updatedBooking.returnDate) {
             try {
-              await autoCreateBlockedDate(vehicle_id, updatedBooking.pickupDate, updatedBooking.returnDate, "booking", original_booking_id || null);
+              await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedBooking.returnDate);
             } catch (sbBlockErr) {
               console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
             }
@@ -2398,6 +2599,33 @@ export default async function handler(req, res) {
         const resolved = await resolveBookingId(bookingRef);
         if (!resolved) {
           console.error("[BOOKING_RESOLVE_FAILED]", { bookingRef, paymentIntentId: paymentIntent.id });
+          // Booking not found — still record the payment so it is visible in
+          // admin.  The row is flagged is_orphan=true and booking_id=NULL so it
+          // is excluded from financial aggregation until manually linked.
+          const unlinkedAmount = Math.round(Number(paymentIntent.amount_received || paymentIntent.amount || 0)) / 100;
+          try {
+            let feeFields = { stripeFee: null, stripeNet: null };
+            try {
+              feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+            } catch (feeErr) {
+              console.warn(`stripe-webhook: ${paymentType} orphan fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
+            }
+            await createOrphanRevenueRecord({
+              paymentIntentId: paymentIntent.id,
+              vehicleId:       vehicle_id,
+              name:            meta.renter_name || "",
+              phone:           meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
+              email:           meta.email || "",
+              pickupDate:      meta.pickup_date || "",
+              returnDate:      meta.return_date || "",
+              amountPaid:      unlinkedAmount,
+              type:            "deposit",
+              notes:           `unresolved booking_ref=${bookingRef} paymentType=${paymentType}`,
+              ...feeFields,
+            });
+          } catch (orphanErr) {
+            console.error(`stripe-webhook: ${paymentType} orphan revenue record failed for PI ${paymentIntent.id} (non-fatal):`, orphanErr.message);
+          }
           return res.status(200).json({ received: true });
         }
         bookingRef = resolved;
@@ -2503,7 +2731,7 @@ export default async function handler(req, res) {
         try {
           const lookupId = bookingRef || originalPiId;
           await updateBooking(vehicle_id, lookupId, {
-            status: "active",
+            status: "active_rental",
             paymentStatus: "paid",
           });
           const { data: updatedData } = await loadBookings();
@@ -2516,12 +2744,12 @@ export default async function handler(req, res) {
               ...updatedBooking,
               amountPaid: Math.round((baseAmount + paidAmount) * 100) / 100,
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             };
             await updateBooking(vehicle_id, lookupId, {
               amountPaid: bookingPatch.amountPaid,
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             });
             await autoUpsertBooking(bookingPatch, { strict: true });
             const customerId = await resolveCustomerIdFromSupabase(
@@ -2564,7 +2792,7 @@ export default async function handler(req, res) {
               amountPaid: paidAmount,
               totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
               paymentStatus: "paid",
-              status: "active",
+              status: "active_rental",
             };
             await autoUpsertBooking(fallbackBooking, { strict: true });
             const customerId = await resolveCustomerIdFromSupabase(

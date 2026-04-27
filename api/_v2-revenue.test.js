@@ -411,7 +411,7 @@ test("record_extension_fee: 400 when amount is zero or negative", async () => {
   assert.equal(res._status, 400, "should reject non-positive amount");
 });
 
-test("record_extension_fee: saves to GitHub with synthetic booking_id when Supabase not configured", async () => {
+test("record_extension_fee: saves to GitHub with booking_id = original_booking_id when Supabase not configured", async () => {
   resetState();
   ghSha     = "sha-existing";
   ghRecords = [];
@@ -430,7 +430,10 @@ test("record_extension_fee: saves to GitHub with synthetic booking_id when Supab
 
   assert.equal(res._status, 201, "should return 201 Created");
   assert.ok(res._body.record, "should return the created record");
-  assert.ok(res._body.booking_id.startsWith("ext-d95643b10c87a02f1a510f7466b2bedf-"), "booking_id should use ext- prefix");
+  assert.equal(res._body.booking_id, "d95643b10c87a02f1a510f7466b2bedf", "booking_id should equal original_booking_id");
+  assert.equal(res._body.record.booking_id, "d95643b10c87a02f1a510f7466b2bedf", "record.booking_id should equal original_booking_id");
+  assert.equal(res._body.record.original_booking_id, "d95643b10c87a02f1a510f7466b2bedf", "original_booking_id should match");
+  assert.equal(res._body.record.type, "extension", "record type should be 'extension'");
   assert.equal(res._body.record.vehicle_id,     "camry");
   assert.equal(res._body.record.gross_amount,   181.91);
   assert.equal(res._body.record.payment_method, "cash");
@@ -438,7 +441,8 @@ test("record_extension_fee: saves to GitHub with synthetic booking_id when Supab
   assert.ok(res._body.record.notes.includes("d95643b10c87a02f1a510f7466b2bedf"), "notes should reference original booking");
   assert.ok(res._body.record.notes.includes("+3 days"), "notes should include extension label");
   assert.equal(ghRecords.length, 1, "record should be saved to GitHub");
-  assert.ok(ghRecords[0].booking_id.startsWith("ext-"), "GitHub record should use ext- prefix");
+  assert.equal(ghRecords[0].booking_id, "d95643b10c87a02f1a510f7466b2bedf", "GitHub record should use original_booking_id");
+  assert.equal(ghRecords[0].type, "extension", "GitHub record should have type=extension");
 });
 
 test("record_extension_fee: auto-generates notes when not provided", async () => {
@@ -459,6 +463,157 @@ test("record_extension_fee: auto-generates notes when not provided", async () =>
   assert.ok(res._body.record.notes.includes("abc123"), "auto-generated notes should reference original booking");
   assert.ok(res._body.record.notes.toLowerCase().includes("extension"), "notes should mention extension");
   assert.equal(res._body.record.payment_method, "external", "default payment_method should be 'external'");
+  assert.equal(res._body.record.type, "extension", "type should be 'extension'");
+  assert.equal(res._body.record.booking_id, "abc123", "booking_id should equal original_booking_id");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 9. LIST BY BOOKING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test("list_by_booking: filters out is_orphan=true rows (GitHub fallback)", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-001", vehicle_id: "camry", gross_amount: 300, payment_status: "paid",
+      type: "rental", is_orphan: false, sync_excluded: false, pickup_date: "2026-04-20", return_date: "2026-04-24" },
+    { id: "r2", booking_id: "bk-002", vehicle_id: "camry", gross_amount: 200, payment_status: "paid",
+      type: "rental", is_orphan: true,  sync_excluded: false, pickup_date: "2026-04-10", return_date: "2026-04-12" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.groups.length, 1, "orphan row should be excluded");
+  assert.equal(res._body.groups[0].booking_id, "bk-001");
+});
+
+test("list_by_booking: filters out sync_excluded=true rows (GitHub fallback)", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-001", vehicle_id: "camry", gross_amount: 300, payment_status: "paid",
+      type: "rental", is_orphan: false, sync_excluded: false, pickup_date: "2026-04-20", return_date: "2026-04-24" },
+    { id: "r2", booking_id: "bk-003", vehicle_id: "camry", gross_amount: 50,  payment_status: "paid",
+      type: "rental", is_orphan: false, sync_excluded: true,  pickup_date: "2026-04-01", return_date: "2026-04-03" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.groups.length, 1, "sync_excluded row should be excluded");
+  assert.equal(res._body.groups[0].booking_id, "bk-001");
+});
+
+test("list_by_booking: includes ALL gross amounts (rental + extension) in sum", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    // Base rental row — counted because every distinct Stripe charge must be included
+    { id: "r1", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 200, payment_status: "paid",
+      type: "rental", original_booking_id: null, is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-20", return_date: "2026-04-24" },
+    // Extension row — also counted
+    { id: "r2", booking_id: "bk-ext-1", vehicle_id: "camry", gross_amount: 120, payment_status: "paid",
+      type: "extension", original_booking_id: "bk-ext-1", is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-24", return_date: "2026-04-27" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.groups.length, 1, "both rows should collapse into one group");
+  const g = res._body.groups[0];
+  assert.equal(g.booking_id, "bk-ext-1");
+  assert.equal(g.record_count, 2, "both records should be present in group.records");
+  assert.equal(g.total_gross, 320, "total_gross should sum rental + extension (200 + 120 = 320)");
+});
+
+test("list_by_booking: includes rental gross when no extension rows exist", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-no-ext", vehicle_id: "camry", gross_amount: 400, payment_status: "paid",
+      type: "rental", original_booking_id: null, is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-01", return_date: "2026-04-07" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.groups.length, 1);
+  assert.equal(res._body.groups[0].total_gross, 400, "rental gross should be counted when no extensions exist");
+});
+
+test("list_by_booking: groups extension rows under parent via original_booking_id", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 600, payment_status: "paid",
+      type: "rental", original_booking_id: null, is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-10", return_date: "2026-04-13" },
+    { id: "r2", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 300, payment_status: "paid",
+      type: "extension", original_booking_id: "bk-parent", is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-13", return_date: "2026-04-16" },
+    { id: "r3", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 300, payment_status: "paid",
+      type: "extension", original_booking_id: "bk-parent", is_orphan: false, sync_excluded: false,
+      pickup_date: "2026-04-16", return_date: "2026-04-19" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.groups.length, 1, "all rows should collapse into one group");
+  const g = res._body.groups[0];
+  assert.equal(g.record_count, 3);
+  assert.equal(g.total_gross, 1200, "total_gross should sum rental + both extensions (600+300+300=1200)");
+  assert.equal(g.min_pickup_date, "2026-04-10");
+  assert.equal(g.max_return_date, "2026-04-19");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 10. KPI — total_revenue_kpi
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test("kpi: returns total_revenue = 0 when GitHub file is empty", async () => {
+  resetState();
+  // supabaseRecords = null → Supabase not configured
+  // ghSha = null → 404 → no records
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "kpi" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.total_revenue, 0, "should return 0 when no records exist");
+});
+
+test("kpi: sums gross_amount for non-cancelled records from GitHub fallback", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-1", gross_amount: 300, is_cancelled: false },
+    { id: "r2", booking_id: "bk-2", gross_amount: 150, is_cancelled: false },
+    { id: "r3", booking_id: "bk-3", gross_amount: 200, is_cancelled: true },  // excluded
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "kpi" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.total_revenue, 450, "should sum only non-cancelled records (300 + 150 = 450)");
+});
+
+test("kpi: includes sync_excluded records (queries raw table, not effective view)", async () => {
+  resetState();
+  ghSha = "sha-existing";
+  ghRecords = [
+    { id: "r1", booking_id: "bk-1", gross_amount: 200, is_cancelled: false, sync_excluded: false },
+    // sync_excluded=true records are still counted by the SQL view (revenue_records, not _effective)
+    // The GitHub fallback mirrors this: no sync_excluded filter on the kpi path.
+    { id: "r2", booking_id: "bk-2", gross_amount: 100, is_cancelled: false, sync_excluded: true },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq({ secret: "test-admin-secret", action: "kpi" }), res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body.total_revenue, 300, "kpi should include sync_excluded records (200 + 100 = 300)");
 });
 
 test("auth: rejects wrong secret with 401", async () => {

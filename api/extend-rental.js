@@ -521,16 +521,26 @@ export default async function handler(req, res) {
       },
       receipt_email: activeBooking.email || undefined,
       metadata: {
+        // "type" is the canonical field read by the webhook and booking_extensions pipeline.
+        // "payment_type" is kept for backward compatibility with reconcile / scheduled-reminders.
+        type:         "rental_extension",
         payment_type: "rental_extension",
-        booking_id:   activeBooking.bookingId || activeBooking.paymentIntentId || "",
+        // Prefer the resolved Supabase booking_ref (sbActiveBookingRef) so the webhook
+        // can always locate the booking via .eq("booking_ref", …).  Fall back to the
+        // bookings.json bookingId (which may be a legacy Stripe PI ID) and then to the
+        // original paymentIntentId for historical bookings.
+        booking_id:   sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId || "",
         vehicle_id:   vehicleId,
-        vehicle_name:        vehicleData.name,
-        renter_name:         activeBooking.name  || "",
-        renter_email:        activeBooking.email || "",
-        renter_phone:        activeBooking.phone || "",
-        extension_label:     extensionLabel,
-        new_return_date:     newReturnDate,
-        new_return_time:     resolvedReturnTime,
+        vehicle_name:          vehicleData.name  || "",
+        renter_name:           activeBooking.name  || "",
+        renter_email:          activeBooking.email || "",
+        renter_phone:          activeBooking.phone || "",
+        extension_label:       extensionLabel,
+        new_return_date:       newReturnDate,
+        new_return_time:       resolvedReturnTime,
+        // Return date in effect before this extension — used by the webhook to set
+        // the correct pickup_date on the extension revenue record (extension start).
+        previous_return_date:  effectiveReturnDate || "",
       },
     });
 

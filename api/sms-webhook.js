@@ -140,7 +140,7 @@ export default async function handler(req, res) {
     .from("bookings")
     .select("id, booking_ref, vehicle_id, customer_phone, status")
     .eq("customer_phone", fromPhone)
-    .eq("status", "active")
+    .in("status", ["active", "active_rental"])
     .maybeSingle();
 
   if (bookingErr) {

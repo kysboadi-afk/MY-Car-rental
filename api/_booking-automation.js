@@ -12,6 +12,7 @@
 //
 // Exported helpers:
 //   autoCreateRevenueRecord  — writes to legacy revenue_records table
+//   createOrphanRevenueRecord — writes an unlinked revenue row (booking_id=NULL, is_orphan=true)
 //   autoUpsertCustomer       — upserts customer row (keyed by phone; falls back to email)
 //   autoUpsertBooking        — syncs booking to normalised bookings table
 //   autoCreateBlockedDate        — inserts a blocked_dates row for a booking
@@ -145,7 +146,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (recordType === "rental") {
       const { data: existingByBooking, error: existingByBookingErr } = await sb
         .from("revenue_records")
-        .select("id, payment_intent_id")
+        .select("id, payment_intent_id, stripe_fee, stripe_net")
         .eq("booking_id", bookingRef)
         .maybeSingle();
       if (existingByBookingErr) {
@@ -157,7 +158,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (!existingRecord && piId) {
       const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
-        .select("id")
+        .select("id, stripe_fee, stripe_net")
         .eq("payment_intent_id", piId)
         .maybeSingle();
       if (existingByPIErr) {
@@ -178,13 +179,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
     const record = {
       booking_id:          bookingRef,
-      // original_booking_id is only set for manual extensions (v2-revenue.js)
-      // which use a synthetic booking_id (e.g. "ext-…").  Stripe-paid extensions
-      // use the original booking_id directly and leave this field null.
-      original_booking_id: booking.originalBookingId || null,
+      // For extension records, original_booking_id = bookingRef (the canonical
+      // booking_ref of the parent booking) so that all records for the same
+      // booking share the same identifier and group correctly.
+      // For all other types, honour the caller-provided value (rarely set).
+      original_booking_id: recordType === "extension" ? bookingRef : (booking.originalBookingId || null),
       payment_intent_id:   piId || null,
       vehicle_id:          normalizeVehicleId(booking.vehicleId),
-      customer_id:         booking.customerId        || null,
       customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
       customer_email:      normalizeEmail(booking.email),
@@ -209,22 +210,42 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     };
 
     if (existingRecord?.id) {
-      const updatePayload = {
-        gross_amount:      record.gross_amount,
-        stripe_fee:        record.stripe_fee,
-        stripe_net:        record.stripe_net,
-        payment_intent_id: record.payment_intent_id,
-        customer_id:       record.customer_id,
-        updated_at:        new Date().toISOString(),
-      };
-      const { error } = await sb
-        .from("revenue_records")
-        .update(updatePayload)
-        .eq("id", existingRecord.id);
-      if (error) {
-        throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+      // SOURCE OF TRUTH RULE: never overwrite gross_amount — the original write
+      // is authoritative.  Extension records are deduplicated by payment_intent_id
+      // so finding one here means the record is already complete; skip entirely.
+      // For rental records, only backfill stripe fee data that was missing on the
+      // initial write (e.g. webhook fired before balance_transaction was settled).
+      if (recordType === "extension") {
+        console.log(
+          `_booking-automation: extension revenue record for PI ${piId} already exists (id=${existingRecord.id}) — skipping`
+        );
+        return;
       }
-      console.log(`_booking-automation: updated ${recordType} revenue record for booking ${bookingRef}`);
+
+      // Rental: only fill in stripe fee/net and PI id when they were absent.
+      // gross_amount is intentionally excluded — it must not be overwritten.
+      const updatePayload = { updated_at: new Date().toISOString() };
+      if (record.stripe_fee != null && existingRecord.stripe_fee == null) {
+        updatePayload.stripe_fee = record.stripe_fee;
+      }
+      if (record.stripe_net != null && existingRecord.stripe_net == null) {
+        updatePayload.stripe_net = record.stripe_net;
+      }
+      if (record.payment_intent_id && !existingRecord.payment_intent_id) {
+        updatePayload.payment_intent_id = record.payment_intent_id;
+      }
+      if (Object.keys(updatePayload).length > 1) {
+        const { error } = await sb
+          .from("revenue_records")
+          .update(updatePayload)
+          .eq("id", existingRecord.id);
+        if (error) {
+          throw new Error(`revenue_records update failed: ${formatSupabaseError(error)}`);
+        }
+        console.log(`_booking-automation: backfilled stripe data on ${recordType} revenue record for booking ${bookingRef}`);
+      } else {
+        console.log(`_booking-automation: ${recordType} revenue record for booking ${bookingRef} already complete — no update needed`);
+      }
     } else {
       const { error } = await sb.from("revenue_records").insert(record);
       if (error) {
@@ -236,6 +257,96 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;
     console.error(msg);
     if (strict) throw new Error(msg);
+  }
+}
+
+/**
+ * Writes an orphan revenue record when a Stripe payment cannot be matched to a
+ * booking row.  The row is flagged is_orphan=true so the DB trigger in migration
+ * 0060 (check_revenue_booking_ref) skips the booking_ref integrity check, and
+ * it is excluded from financial aggregation views until an admin resolves the
+ * linkage.  booking_id is stored as NULL (requires migration 0082 which drops
+ * the NOT NULL constraint on that column).
+ *
+ * Idempotent: deduplicates by payment_intent_id; silently no-ops if a record
+ * with the same PI already exists.  Never throws — errors are logged only.
+ *
+ * @param {object} opts
+ * @param {string} opts.paymentIntentId  - Stripe PaymentIntent ID (required)
+ * @param {string} opts.vehicleId        - vehicle key (e.g. "camry", "slingshot")
+ * @param {string} [opts.name]           - renter name
+ * @param {string} [opts.phone]          - renter phone
+ * @param {string} [opts.email]          - renter email
+ * @param {string} [opts.pickupDate]     - ISO date string
+ * @param {string} [opts.returnDate]     - ISO date string
+ * @param {number} opts.amountPaid       - gross amount in dollars
+ * @param {string} [opts.type]           - revenue record type (default: "deposit")
+ * @param {string} [opts.notes]          - freeform notes
+ * @param {number|null} [opts.stripeFee] - Stripe fee in dollars (null = unknown)
+ * @param {number|null} [opts.stripeNet] - Stripe net in dollars (null = unknown)
+ */
+export async function createOrphanRevenueRecord({
+  paymentIntentId,
+  vehicleId,
+  name,
+  phone,
+  email,
+  pickupDate,
+  returnDate,
+  amountPaid,
+  type = "deposit",
+  notes,
+  stripeFee = null,
+  stripeNet = null,
+}) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  if (!paymentIntentId) {
+    console.error("_booking-automation createOrphanRevenueRecord: paymentIntentId is required");
+    return;
+  }
+
+  try {
+    // Idempotency check: skip if a record with this PI already exists.
+    const { data: existing, error: lookupErr } = await sb
+      .from("revenue_records")
+      .select("id")
+      .eq("payment_intent_id", paymentIntentId)
+      .maybeSingle();
+    if (lookupErr) throw new Error(`revenue_records PI lookup failed: ${formatSupabaseError(lookupErr)}`);
+    if (existing?.id) {
+      console.log(`_booking-automation createOrphanRevenueRecord: record for PI ${paymentIntentId} already exists (id=${existing.id}), skipping`);
+      return;
+    }
+
+    const gross = Number(amountPaid || 0);
+    const { error: insertErr } = await sb.from("revenue_records").insert({
+      booking_id:       null,
+      payment_intent_id: paymentIntentId,
+      vehicle_id:       normalizeVehicleId(vehicleId) || "unknown",
+      customer_name:    normalizeCustomerName(name) || null,
+      customer_phone:   phone || null,
+      customer_email:   normalizeEmail(email),
+      pickup_date:      pickupDate || null,
+      return_date:      returnDate || null,
+      gross_amount:     gross,
+      deposit_amount:   type === "deposit" ? gross : 0,
+      refund_amount:    0,
+      payment_method:   "stripe",
+      payment_status:   "paid",
+      type,
+      notes:            notes || `unresolved booking_ref for PI ${paymentIntentId}`,
+      is_no_show:       false,
+      is_cancelled:     false,
+      override_by_admin: false,
+      stripe_fee:       stripeFee,
+      stripe_net:       stripeNet,
+      is_orphan:        true,
+    });
+    if (insertErr) throw new Error(`revenue_records orphan insert failed: ${formatSupabaseError(insertErr)}`);
+    console.log(`_booking-automation createOrphanRevenueRecord: created orphan revenue record for PI ${paymentIntentId} type=${type} amount=${gross}`);
+  } catch (err) {
+    console.error(`_booking-automation createOrphanRevenueRecord error (non-fatal): ${err.message}`);
   }
 }
 
@@ -374,10 +485,10 @@ export async function autoUpsertCustomer(booking, countStats = false, isNoShow =
 // ── Status mapping: old bookings.json values → new bookings table enum ────────
 const BOOKING_STATUS_MAP = {
   reserved_unpaid:  "pending",
-  booked_paid:      "pending",
-  active_rental:    "active",
-  completed_rental: "completed",
-  cancelled_rental: "completed",
+  booked_paid:      "booked_paid",
+  active_rental:    "active_rental",
+  completed_rental: "completed_rental",
+  cancelled_rental: "cancelled_rental",
 };
 
 /**
@@ -655,40 +766,117 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const todayDate = new Date(today);
 
     for (const row of rows) {
-      if (todayDate < new Date(row.end_date)) {
-        // Early return: shrink the blocked range to end today.
-        const { error: updateErr } = await sb
-          .from("blocked_dates")
-          .update({ end_date: today })
-          .eq("id", row.id);
+      // Delete the blocked_dates row so fleet-status immediately shows the
+      // vehicle as available after an admin marks the rental as returned.
+      // Previously the row was only trimmed to today, but fleet-status queries
+      // `end_date >= today` so the car remained blocked for the rest of the day.
+      const { error: deleteErr } = await sb
+        .from("blocked_dates")
+        .delete()
+        .eq("id", row.id);
 
-        if (updateErr) {
-          console.error("_booking-automation autoReleaseBlockedDateOnReturn update error (non-fatal):", updateErr.message);
-        } else {
-          console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
-            vehicle_id:   normalizedVehicleId,
-            booking_ref:  bookingRef,
-            original_end: row.end_date,
-            updated_end:  today,
-            action:       "trimmed_early_return",
-          });
-        }
+      if (deleteErr) {
+        console.error("_booking-automation autoReleaseBlockedDateOnReturn delete error (non-fatal):", deleteErr.message);
       } else {
-        // On-time or late return — existing end_date is correct, nothing to update.
+        const action = today < row.end_date ? "deleted_early_return"
+          : today === row.end_date ? "deleted_on_time_return"
+          : "deleted_late_return";
         console.log("[BLOCKED_DATE_UPDATED_AFTER_RETURN]", {
           vehicle_id:   normalizedVehicleId,
           booking_ref:  bookingRef,
           original_end: row.end_date,
           actual_return: today,
-          action:        "on_time_or_late_no_change",
+          action,
         });
       }
     }
   } catch (err) {
     console.error("_booking-automation autoReleaseBlockedDateOnReturn error (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Extends an existing blocked_dates row for a booking to a later end_date.
+ * Called after a rental extension so that public availability stays in sync
+ * with the updated return date.
+ *
+ * Behaviour:
+ *  - Finds the blocked_dates row(s) with the given vehicle_id + booking_ref.
+ *  - Updates end_date to newEndDate only when newEndDate > current end_date
+ *    (never shrinks the range).
+ *  - Falls back to a warning when no row is found (e.g. the initial block was
+ *    never created); callers should not treat this as an error.
+ *
+ * Non-fatal — errors are logged and never propagate to the caller.
+ * Idempotent — safe to call multiple times for the same extension.
+ *
+ * @param {string} vehicleId  - vehicle_id text key
+ * @param {string} bookingRef - booking_ref that owns the blocked_dates row
+ * @param {string} newEndDate - YYYY-MM-DD target end date (must be >= existing)
+ */
+export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndDate) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !bookingRef || !newEndDate) {
+    console.warn("_booking-automation extendBlockedDateForBooking: missing required args — skipped");
+    return;
+  }
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+
+  try {
+    const { data: rows, error: findErr } = await sb
+      .from("blocked_dates")
+      .select("id, start_date, end_date")
+      .eq("vehicle_id", normalizedVehicleId)
+      .eq("booking_ref", bookingRef)
+      .eq("reason", "booking");
+
+    if (findErr) {
+      console.error("_booking-automation extendBlockedDateForBooking find error (non-fatal):", findErr.message);
+      return;
+    }
+
+    if (!rows || rows.length === 0) {
+      console.warn(
+        `_booking-automation extendBlockedDateForBooking: no blocked_dates row found for ` +
+        `vehicle=${normalizedVehicleId} booking_ref=${bookingRef} — skipped`
+      );
+      return;
+    }
+
+    // Use the row with the earliest start_date (the original booking window).
+    // Dates are stored as YYYY-MM-DD strings, so lexicographic comparison is correct.
+    const row = rows.reduce((best, r) => (r.start_date < best.start_date ? r : best), rows[0]);
+    const currentEnd = row.end_date ? String(row.end_date).split("T")[0] : null;
+
+    if (currentEnd && currentEnd >= newEndDate) {
+      console.log(
+        `_booking-automation extendBlockedDateForBooking: end_date already at ${currentEnd} >= ${newEndDate} ` +
+        `for booking_ref=${bookingRef} — no update needed`
+      );
+      return;
+    }
+
+    const { error: updateErr } = await sb
+      .from("blocked_dates")
+      .update({ end_date: newEndDate })
+      .eq("id", row.id);
+
+    if (updateErr) {
+      console.error("_booking-automation extendBlockedDateForBooking update error (non-fatal):", updateErr.message);
+      return;
+    }
+
+    console.log("[BLOCKED_DATE_EXTENDED]", {
+      vehicle_id:  normalizedVehicleId,
+      booking_ref: bookingRef,
+      old_end:     currentEnd,
+      new_end:     newEndDate,
+    });
+  } catch (err) {
+    console.error("_booking-automation extendBlockedDateForBooking error (non-fatal):", err.message);
   }
 }
 

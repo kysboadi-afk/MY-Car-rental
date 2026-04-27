@@ -24,10 +24,11 @@
 // "analytics"   — recompute totals from revenue_records (no Stripe call)
 
 import Stripe from "stripe";
+import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { autoCreateRevenueRecord } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
 
 /**
  * Resolves a raw booking reference to the canonical booking_ref confirmed in
@@ -83,8 +84,140 @@ async function updateBookingStatusIfNeeded(sb, bookingRef, expectedStatus, nextS
 }
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
+
+/**
+ * Advances bookings.return_date to newReturnDate when the new date is strictly
+ * later than the current stored value.  Called after an extension revenue record
+ * is recovered so the booking stays consistent with its payments.
+ * Non-fatal: logs errors but never throws.
+ *
+ * @param {object} sb          - Supabase admin client
+ * @param {string} bookingRef  - bookings.booking_ref value
+ * @param {string|null} newReturnDate - YYYY-MM-DD target date
+ */
+async function applyExtensionReturnDateToBooking(sb, bookingRef, newReturnDate) {
+  if (!sb || !bookingRef || !newReturnDate) return;
+  try {
+    const { data: row, error: lookupErr } = await sb
+      .from("bookings")
+      .select("return_date")
+      .eq("booking_ref", bookingRef)
+      .maybeSingle();
+    if (lookupErr) {
+      console.warn(`stripe-reconcile: applyExtensionReturnDateToBooking lookup error: ${lookupErr.message}`);
+      return;
+    }
+    const currentDate = row?.return_date ? String(row.return_date).split("T")[0] : null;
+    if (currentDate && currentDate >= newReturnDate) {
+      console.log(
+        `stripe-reconcile: bookings.return_date already at ${currentDate} ≥ ${newReturnDate} for ${bookingRef} — no update needed`
+      );
+      return;
+    }
+    const { error: updateErr } = await sb
+      .from("bookings")
+      .update({ return_date: newReturnDate, updated_at: new Date().toISOString() })
+      .eq("booking_ref", bookingRef);
+    if (updateErr) throw new Error(updateErr.message);
+    console.log(`stripe-reconcile: advanced bookings.return_date to ${newReturnDate} for ${bookingRef}`);
+  } catch (err) {
+    console.warn(`stripe-reconcile: applyExtensionReturnDateToBooking error (non-fatal): ${err.message}`);
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** HTML-escape a string for use in email templates. */
+function escHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Classify a Stripe PI payment_type into one of three canonical categories:
+ *   "deposit"           — partial/security deposit only (balance still owed)
+ *   "rental_extension"  — extension of an existing rental
+ *   "rental"            — standard full/balance rental payment (default)
+ */
+function classifyPaymentType(rawType) {
+  if (rawType === "rental_extension") return "rental_extension";
+  if (rawType === "reservation_deposit" || rawType === "slingshot_security_deposit") return "deposit";
+  return "rental";
+}
+
+/**
+ * Send an admin alert email when the reconciler detects mismatches.
+ * Non-fatal: logs and returns on any error.
+ *
+ * @param {Array<{pi_id,classification,reason}>} recovered
+ * @param {Array<{pi_id,classification,reason}>} errors
+ * @param {number} lookbackHours
+ */
+async function sendReconcileAlertEmail(recovered, errors, lookbackHours) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !OWNER_EMAIL) return;
+  try {
+    const transporter = nodemailer.createTransport({
+      host:   process.env.SMTP_HOST,
+      port:   Number(process.env.SMTP_PORT || 587),
+      secure: Number(process.env.SMTP_PORT) === 465,
+      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+
+    const total     = recovered.length + errors.length;
+    const subject   = `[SLY RIDES] Stripe Reconcile Alert — ${total} mismatch(es) found (last ${lookbackHours}h)`;
+    const checkedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+
+    const buildRows = (items, statusLabel) =>
+      items.map((item) =>
+        `<tr>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.pi_id)}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.classification)}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(statusLabel)}</td>
+          <td style="padding:4px 8px;border:1px solid #ddd;">${escHtml(item.reason || "")}</td>
+        </tr>`
+      ).join("");
+
+    const html = `
+      <h2 style="color:#c0392b;">⚠️ Stripe Reconciliation Alert</h2>
+      <p>The <strong>sync_recent</strong> reconciler detected mismatches while scanning the last <strong>${lookbackHours} hours</strong> of Stripe PaymentIntents.</p>
+      <p><strong>Checked at:</strong> ${escHtml(checkedAt)} (LA time)</p>
+      <table style="border-collapse:collapse;width:100%;font-size:13px;">
+        <thead>
+          <tr style="background:#f5f5f5;">
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">PaymentIntent ID</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Classification</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Status</th>
+            <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${buildRows(recovered, "recovered")}
+          ${buildRows(errors, "error")}
+        </tbody>
+      </table>
+      <p style="margin-top:16px;color:#555;">
+        <strong>recovered</strong> — record was missing or incorrect in the DB; the reconciler fixed it.<br>
+        <strong>error</strong> — the reconciler could not process this payment; manual review required.
+      </p>
+      <p>Visit the Admin Panel → Revenue → Reconcile to review and take action.</p>
+    `;
+
+    await transporter.sendMail({
+      from:    process.env.SMTP_USER,
+      to:      OWNER_EMAIL,
+      subject,
+      html,
+    });
+    console.log(`[stripe-reconcile] reconcile alert email sent to ${OWNER_EMAIL} (${recovered.length} recovered, ${errors.length} errors)`);
+  } catch (alertErr) {
+    console.error("[stripe-reconcile] alert email failed (non-fatal):", alertErr.message);
+  }
+}
 
 /** Fetch ALL PaymentIntents from Stripe (auto-paginated). */
 async function fetchAllPaymentIntents(stripe) {
@@ -127,7 +260,7 @@ function extractFields(pi) {
   const metadataBookingId = pi.metadata?.booking_id || null;
   // original_booking_id is the legacy field; kept for backward compat with historical PIs
   const metadataOriginalBookingId = pi.metadata?.original_booking_id || null;
-  const paymentType = pi.metadata?.payment_type || null;
+  const paymentType = pi.metadata?.payment_type || pi.metadata?.type || null;
 
   return {
     payment_intent_id:            pi.id,
@@ -141,6 +274,10 @@ function extractFields(pi) {
     metadata_booking_id:          metadataBookingId,
     metadata_original_booking_id: metadataOriginalBookingId,
     payment_type:                 paymentType,
+    // Extension-specific: new return date and the previous return date before extension.
+    // Present only on rental_extension PIs created by extend-rental.js.
+    new_return_date:              pi.metadata?.new_return_date      || null,
+    previous_return_date:         pi.metadata?.previous_return_date || null,
   };
 }
 
@@ -257,7 +394,8 @@ function buildAnalytics(rows) {
 
     const gross = Number(r.gross_amount || 0);
     const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-    const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+    // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+    const net   = gross - fee;
 
     totalGross += gross;
     totalFees  += fee;
@@ -283,6 +421,188 @@ function buildAnalytics(rows) {
     total_fees:  Math.round(totalFees  * 100) / 100,
     total_net:   Math.round(totalNet   * 100) / 100,
     by_vehicle:  Object.values(byVehicle).sort((a, b) => b.net - a.net),
+  };
+}
+
+/**
+ * Core sync_recent logic: fetches succeeded Stripe PaymentIntents from the
+ * last `lookbackHours` hours, compares each against revenue_records, and
+ * inserts/updates any that are missing or incorrect.
+ *
+ * Designed to be called both by the HTTP handler (action="sync_recent") and
+ * the automated cron handler (api/stripe-reconcile-cron.js).
+ *
+ * Requires STRIPE_SECRET_KEY to be set; throws if it is missing.
+ *
+ * @param {object} sb            - Supabase admin client
+ * @param {number} lookbackHours - Window size (1–168)
+ * @returns {Promise<{ok, lookback_hours, total, processed, recovered, errors, details}>}
+ */
+export async function runSyncRecent(sb, lookbackHours) {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+  const stripe    = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+  const sinceUnix = Math.floor(Date.now() / 1000) - lookbackHours * 3600;
+
+  // Fetch only PIs created within the time window (Stripe created filter).
+  const recentPIs = [];
+  let startingAfter;
+  for (;;) {
+    const params = {
+      limit:   100,
+      created: { gte: sinceUnix },
+      expand:  ["data.latest_charge.balance_transaction"],
+    };
+    if (startingAfter) params.starting_after = startingAfter;
+    const page = await stripe.paymentIntents.list(params);
+    recentPIs.push(...page.data.filter((pi) => pi.status === "succeeded"));
+    if (!page.has_more || page.data.length === 0) break;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+
+  /** @type {Array<{pi_id:string, classification:string}>} */
+  const processedItems = [];
+  /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+  const recoveredItems = [];
+  /** @type {Array<{pi_id:string, classification:string, reason:string}>} */
+  const errorItems     = [];
+
+  for (const pi of recentPIs) {
+    const fields         = extractFields(pi);
+    const classification = classifyPaymentType(fields.payment_type);
+    const piId           = pi.id;
+
+    try {
+      // Check DB for an existing record keyed by payment_intent_id.
+      const { data: existing, error: lookupErr } = await sb
+        .from("revenue_records")
+        .select("id, gross_amount, stripe_fee, stripe_net, stripe_charge_id, payment_status, payment_intent_id")
+        .eq("payment_intent_id", piId)
+        .eq("sync_excluded", false)
+        .maybeSingle();
+
+      if (lookupErr) throw new Error(`DB lookup failed: ${lookupErr.message}`);
+
+      if (!existing) {
+        // ── MISSING: insert a new revenue record ────────────────────────
+        const rawRef      = fields.metadata_booking_id || fields.metadata_original_booking_id;
+        const resolvedRef = rawRef ? await resolveBookingId(sb, rawRef) : null;
+
+        // Deposit PIs must link to a real booking — never use a synthetic "stripe-pi_xxx"
+        // booking_id for them as the DB trigger will reject it.
+        if (classification === "deposit" && !resolvedRef) {
+          const reason = `deposit PI has no resolvable booking_ref (rawRef=${rawRef || "<missing>"})`;
+          console.error("[BOOKING_RESOLVE_FAILED]", { pi_id: piId, classification, reason });
+          errorItems.push({ pi_id: piId, classification, reason });
+          continue;
+        }
+
+        // Map classification to the internal type used by autoCreateRevenueRecord.
+        const recType =
+          classification === "rental_extension" ? "extension"
+          : classification === "deposit"        ? "reservation_deposit"
+          :                                       "rental";
+
+        await autoCreateRevenueRecord({
+          bookingId:       resolvedRef || ("stripe-" + piId),
+          paymentIntentId: piId,
+          vehicleId:       pi.metadata?.vehicle_id || null,
+          name:            pi.metadata?.renter_name || null,
+          phone:           pi.metadata?.renter_phone || null,
+          email:           fields.customer_email,
+          // For extension PIs: use the extension window dates from PI metadata so
+          // each extension row stores its own date range (extension_start → extension_end)
+          // rather than the full booking window.  Non-extension PIs use the
+          // standard pickup_date / return_date fields.
+          pickupDate:      recType === "extension"
+            ? (pi.metadata?.previous_return_date || null)
+            : (pi.metadata?.pickup_date || null),
+          returnDate:      recType === "extension"
+            ? (pi.metadata?.new_return_date || null)
+            : (pi.metadata?.return_date || null),
+          amountPaid:      fields.amount_gross,
+          paymentMethod:   "stripe",
+          type:            recType,
+          stripeFee:       fields.stripe_fee,
+          stripeNet:       fields.stripe_net,
+        }, { strict: true, requireStripeFee: false });
+
+        // For extension recoveries, also advance bookings.return_date and
+        // extend blocked_dates so booking state and availability stay in sync.
+        if (recType === "extension" && resolvedRef) {
+          await applyExtensionReturnDateToBooking(sb, resolvedRef, pi.metadata?.new_return_date || null);
+          const extVehicleId = pi.metadata?.vehicle_id || null;
+          if (extVehicleId && pi.metadata?.new_return_date) {
+            await extendBlockedDateForBooking(extVehicleId, resolvedRef, pi.metadata.new_return_date);
+          }
+        }
+
+        console.log("[RECONCILE_RECOVERED_MISSING]", { pi_id: piId, classification });
+        recoveredItems.push({ pi_id: piId, classification, reason: "missing from DB — inserted" });
+
+      } else {
+        // ── EXISTS: check if financials are correct ──────────────────────
+        const amountDiff    = Math.abs(Number(existing.gross_amount) - fields.amount_gross);
+        const feeMissing    = existing.stripe_fee == null && fields.stripe_fee != null;
+        const wrongStatus   = existing.payment_status !== "paid";
+        const chargeMissing = !existing.stripe_charge_id && fields.stripe_charge_id;
+
+        if (amountDiff > 0.01 || feeMissing || wrongStatus || chargeMissing) {
+          // ── INCORRECT: patch the record ────────────────────────────────
+          // Snapshot mutable fields before the async update so the reason
+          // string reflects the original (wrong) DB values, not the patched ones.
+          const origGrossAmount   = existing.gross_amount;
+          const origPaymentStatus = existing.payment_status;
+          const updates = { updated_at: new Date().toISOString(), payment_status: "paid" };
+          if (amountDiff > 0.01)                                       updates.gross_amount      = fields.amount_gross;
+          if ((feeMissing || wrongStatus) && fields.stripe_fee != null) {
+            updates.stripe_fee = fields.stripe_fee;
+            updates.stripe_net = fields.stripe_net;
+          }
+          if (chargeMissing)                                            updates.stripe_charge_id  = fields.stripe_charge_id;
+          if (!existing.payment_intent_id)                              updates.payment_intent_id = piId;
+
+          const { error: upErr } = await sb
+            .from("revenue_records")
+            .update(updates)
+            .eq("id", existing.id);
+          if (upErr) throw new Error(`DB update failed: ${upErr.message}`);
+
+          const reason = [
+            amountDiff > 0.01  ? `amount mismatch (DB: ${origGrossAmount}, Stripe: ${fields.amount_gross})` : null,
+            feeMissing         ? "stripe_fee was missing"                                                    : null,
+            wrongStatus        ? `payment_status was "${origPaymentStatus}"`                                 : null,
+            chargeMissing      ? "stripe_charge_id was missing"                                              : null,
+          ].filter(Boolean).join("; ");
+
+          console.warn("[RECONCILE_RECOVERED_MISMATCH]", { pi_id: piId, classification, reason });
+          recoveredItems.push({ pi_id: piId, classification, reason });
+
+        } else {
+          // ── CORRECT: nothing to do ─────────────────────────────────────
+          processedItems.push({ pi_id: piId, classification });
+        }
+      }
+    } catch (err) {
+      console.error("[RECONCILE_ERROR]", { pi_id: piId, classification, error: err.message });
+      errorItems.push({ pi_id: piId, classification, reason: err.message });
+    }
+  }
+
+  // Alert the admin whenever there are mismatches or errors.
+  if (recoveredItems.length > 0 || errorItems.length > 0) {
+    await sendReconcileAlertEmail(recoveredItems, errorItems, lookbackHours);
+  }
+
+  return {
+    ok:             errorItems.length === 0,
+    lookback_hours: lookbackHours,
+    total:          recentPIs.length,
+    processed:      processedItems.length,
+    recovered:      recoveredItems.length,
+    errors:         errorItems.length,
+    details:        { processed: processedItems, recovered: recoveredItems, errors: errorItems },
   };
 }
 
@@ -485,6 +805,33 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── SYNC_RECENT — time-windowed reconcile with per-PI status tracking ────────
+  // action: "sync_recent"
+  // Body: { secret, action: "sync_recent", lookback_hours?: number }
+  //   lookback_hours — how far back to look in Stripe (1–168, default 72).
+  //
+  // For each succeeded PI in the window:
+  //   • "processed"  — already in DB and financials are correct (no action needed).
+  //   • "recovered"  — was missing from DB or had incorrect data; the reconciler
+  //                    inserted/updated the record automatically.
+  //   • "error"      — could not be reconciled; manual review required.
+  //
+  // Sends an admin alert email whenever any "recovered" or "error" items are found.
+  if (action === "sync_recent") {
+    if (!process.env.STRIPE_SECRET_KEY)
+      return res.status(503).json({ error: "STRIPE_SECRET_KEY is not configured." });
+
+    try {
+      const rawHours      = body.lookback_hours != null ? Number(body.lookback_hours) : 72;
+      const lookbackHours = Math.max(1, Math.min(168, Number.isFinite(rawHours) ? rawHours : 72));
+      const result        = await runSyncRecent(sb, lookbackHours);
+      return res.status(200).json(result);
+    } catch (err) {
+      console.error("stripe-reconcile sync_recent error:", err);
+      return res.status(500).json({ error: adminErrorMessage(err) });
+    }
+  }
+
   // ── RECONCILE / PREVIEW — requires Stripe key ─────────────────────────────
   if (!process.env.STRIPE_SECRET_KEY)
     return res.status(503).json({ error: "STRIPE_SECRET_KEY is not configured." });
@@ -661,8 +1008,10 @@ export default async function handler(req, res) {
               name:            resolvedBooking?.name || null,
               phone:           resolvedBooking?.phone || null,
               email:           payment.customer_email || resolvedBooking?.email || null,
-              pickupDate:      resolvedBooking?.pickupDate || null,
-              returnDate:      resolvedBooking?.returnDate || null,
+              // Use extension window dates from PI metadata when available.
+              // previous_return_date = extension start; new_return_date = extension end.
+              pickupDate:      payment.previous_return_date || resolvedBooking?.pickupDate || null,
+              returnDate:      payment.new_return_date      || resolvedBooking?.returnDate || null,
               amountPaid:      payment.amount_gross,
               paymentMethod:   "stripe",
               type:            "extension",
@@ -671,6 +1020,10 @@ export default async function handler(req, res) {
             }, { strict: false, requireStripeFee: false });
             console.log("[RECOVERY_CREATED_EXTENSION]", payment.payment_intent_id);
             results.created++;
+            // Also advance bookings.return_date so the booking stays consistent.
+            if (payment.new_return_date) {
+              await applyExtensionReturnDateToBooking(sb, resolvedBookingId, payment.new_return_date);
+            }
           } catch (recoveryErr) {
             console.error(
               "stripe-reconcile extension recovery error for PI",
@@ -682,7 +1035,7 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!matchedRecord && payment.payment_type === "reservation_deposit") {
+      if (!matchedRecord && (payment.payment_type === "reservation_deposit" || payment.payment_type === "slingshot_security_deposit")) {
         const bookingRef = payment.metadata_booking_id;
         if (!bookingRef) {
           console.error("[BOOKING_RESOLVE_FAILED]", {

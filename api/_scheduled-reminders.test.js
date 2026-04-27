@@ -81,6 +81,9 @@ mock.module("./_sms-templates.js", {
     UNPAID_REMINDER_2H:              "",
     UNPAID_REMINDER_FINAL:           "",
     PICKUP_REMINDER_24H:             "",
+    RETURN_REMINDER_24H:             "",
+    ACTIVE_RENTAL_1H_BEFORE_END:     "",
+    ACTIVE_RENTAL_MID:               "",
     LATE_WARNING_30MIN:              "",
     LATE_AT_RETURN_TIME:             "",
     LATE_GRACE_EXPIRED:              "",
@@ -209,14 +212,14 @@ test("processAutoCompletions: does not touch bookings that are only 1 hour overd
   assert.equal(updatedBookings.length, 0, "Not yet 4 hours overdue — should not auto-complete");
 });
 
-test("processAutoCompletions: does not touch bookings that are 3.9 hours overdue", async () => {
+test("processAutoCompletions: does not touch bookings that are 23.9 hours overdue", async () => {
   reset();
-  const now = new Date("2026-03-22T13:54:00-07:00"); // 3h54m past return
+  const now = new Date("2026-03-23T09:54:00-07:00"); // 23h54m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
 
-  assert.equal(updatedBookings.length, 0, "3.9 hours overdue — still below 4h threshold");
+  assert.equal(updatedBookings.length, 0, "23.9 hours overdue — still below 24h threshold");
 });
 
 test("processAutoCompletions: respects 24-hour return times with seconds", async () => {
@@ -229,9 +232,9 @@ test("processAutoCompletions: respects 24-hour return times with seconds", async
   assert.equal(updatedBookings.length, 0, "HH:MM:SS return times must not default to midnight");
 });
 
-test("processAutoCompletions: auto-completes booking that is 4+ hours past return time", async () => {
+test("processAutoCompletions: auto-completes booking that is 24+ hours past return time", async () => {
   reset();
-  const now = new Date("2026-03-22T14:05:00-07:00"); // 4h5m past 10:00 AM return
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -247,7 +250,7 @@ test("processAutoCompletions: auto-completes booking that is 4+ hours past retur
 
 test("processAutoCompletions: sets completedAt to now.toISOString()", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T11:00:00-07:00"); // 25h past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -257,7 +260,7 @@ test("processAutoCompletions: sets completedAt to now.toISOString()", async () =
 
 test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -268,7 +271,7 @@ test("processAutoCompletions: calls autoUpsertCustomer with countStats=true", as
 
 test("processAutoCompletions: calls autoUpsertBooking", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -301,11 +304,11 @@ test("processAutoCompletions: skips cancelled bookings", async () => {
 
 test("processAutoCompletions: handles multiple vehicles independently", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00"); // 5h past 10:00 AM return
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM on 2026-03-22
   const allBookings = {
     camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
     slingshot: [makeBooking({ bookingId: "bk-slingshot", vehicleId: "slingshot",
-                              returnDate: "2026-03-22", returnTime: "1:00 PM" })], // only 2h overdue
+                              returnDate: "2026-03-23", returnTime: "9:00 AM" })], // only 1h5m overdue
   };
 
   await processAutoCompletions(allBookings, now);
@@ -316,7 +319,7 @@ test("processAutoCompletions: handles multiple vehicles independently", async ()
 
 test("processAutoCompletions: removes booking from booked-dates.json", async () => {
   reset();
-  const now = new Date("2026-03-22T15:00:00-07:00");
+  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
   const allBookings = { camry: [makeBooking()] };
 
   await processAutoCompletions(allBookings, now);
@@ -542,6 +545,8 @@ function makeSbWithStatus(status) {
         select()      { return this; },
         eq()          { return this; },
         or()          { return this; },
+        order()       { return this; },
+        limit()       { return this; },
         update()      { return this; },
         async maybeSingle() { return { data: { status }, error: null }; },
         async then(resolve) { return resolve({ data: [], error: null }); },
@@ -614,3 +619,96 @@ test("processActiveRentals: caps late fee at MAX_LATE_FEE_USD even within overdu
     `fee must be capped at $500, got $${feeEntry.value}`
   );
 });
+
+// ─── Extension reminder (1 h before return) ───────────────────────────────────
+
+test("processActiveRentals: sends 1h-before-end extension invitation in 45–60 min window", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 7:10 AM (50 min before, inside 45–60 min window)
+  const now = new Date("2026-06-15T07:10:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    true,
+    "extension invitation should fire when ~50 min remain"
+  );
+  // The 30-min warning must NOT also fire in the same tick
+  assert.equal(
+    sentMarks.some((m) => m.key === "late_warning_30min"),
+    false,
+    "30-min warning must not fire simultaneously with 1h reminder"
+  );
+});
+
+test("processActiveRentals: does NOT send 1h-before-end extension invitation too early", async () => {
+  reset();
+  // 8:00 AM return — cron fires at 6:30 AM (90 min before, outside 45–60 min window)
+  const now = new Date("2026-06-15T06:30:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    false,
+    "extension invitation must NOT fire 90 min before return"
+  );
+});
+
+test("processActiveRentals: does NOT send 1h-before-end when already sent (smsSentAt flag)", async () => {
+  reset();
+  const now = new Date("2026-06-15T07:10:00-07:00");
+  const allBookings = {
+    camry: [makeBooking({
+      returnDate: "2026-06-15",
+      returnTime: "8:00 AM",
+      smsSentAt:  { active_rental_1h_before_end: "2026-06-15T07:05:00.000Z" },
+    })],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "active_rental_1h_before_end"),
+    false,
+    "extension invitation must not be resent when smsSentAt flag is already set"
+  );
+});
+
+// ─── Per-renter-per-run dedup ─────────────────────────────────────────────────
+
+test("processActiveRentals: sends only one SMS when two active bookings share the same phone", async () => {
+  reset();
+  // Both bookings have the same phone and both return at 8:00 AM.
+  // The first booking's return-time SMS fires; the second must be skipped.
+  const now = new Date("2026-06-15T08:00:00-07:00");
+  const allBookings = {
+    camry: [
+      makeBooking({ bookingId: "bk-001", phone: "+13105550001",
+                    returnDate: "2026-06-15", returnTime: "8:00 AM" }),
+      makeBooking({ bookingId: "bk-002", phone: "+13105550001",
+                    returnDate: "2026-06-15", returnTime: "8:00 AM" }),
+    ],
+  };
+  const sentMarks = [];
+
+  await processActiveRentals(allBookings, now, sentMarks);
+
+  // Only one late_at_return should be recorded (for the first booking)
+  const returnMarks = sentMarks.filter((m) => m.key === "late_at_return");
+  assert.equal(returnMarks.length, 1,
+    "only one late_at_return SMS must be sent per phone per run");
+  assert.equal(smsCalls.length, 1,
+    "only one outbound SMS must be sent when two bookings share a phone");
+});
+

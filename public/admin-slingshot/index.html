@@ -229,6 +229,9 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f9fafb; }
     .td-actions { display: flex; gap: 6px; align-items: center; }
+    .rev-sub-row td { background: #f8f9fa; font-size: 12px; padding: 8px 12px; border-bottom: 1px solid #eef0f2; color: var(--text-sub); }
+    .rev-sub-row:hover td { background: #f1f3f5; }
+    .rev-group-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 11px; padding: 2px 7px; color: var(--text-sub); white-space: nowrap; }
 
     /* ── Status Badges ──────────────────────────────────────────── */
     .badge {
@@ -3930,7 +3933,7 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list' })
+  apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list', scope: 'slingshot' })
     .then((data) => {
       allRevenueRecords = data.records || [];
       renderRevenueSummary();
@@ -3966,6 +3969,12 @@ function renderRevenueSummary() {
   }
 }
 
+function fmtRevDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function applyRevenueFilters() {
   const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
   const status  = document.getElementById('rev-filter-status')?.value  || '';
@@ -3986,30 +3995,150 @@ function applyRevenueFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
-  tbody.innerHTML = filtered.map((r) => {
+  // Group all revenue records by effective booking ID so extensions collapse
+  // under their parent booking row.
+  //
+  // booking_id is always the canonical booking_ref (bk-xxx) for every record —
+  // enforced by the DB trigger and by the server-side write paths.  Any record
+  // whose booking_id looks malformed (pi_ or ext- prefix) is a data integrity
+  // issue that should be fixed at the source, not silently corrected here.
+  function getEffectiveBookingId(r) {
+    const bid = r.booking_id;
+    if (bid && (bid.startsWith('pi_') || bid.startsWith('ext-'))) {
+      console.warn('[revenue] malformed booking_id detected — run migration 0084 to repair:', bid, 'record id:', r.id);
+    }
+    return bid || r.id;
+  }
+
+  const groupMap = new Map();
+  const groupOrder = [];
+  allRevenueRecords.forEach((r) => {
+    const id = getEffectiveBookingId(r);
+    if (!id) return;
+    if (!groupMap.has(id)) { groupMap.set(id, { base: null, exts: [] }); groupOrder.push(id); }
+    const g = groupMap.get(id);
+    if (r.type === 'extension') g.exts.push(r); else g.base = r;
+  });
+
+  // Only show groups that have at least one record surviving the current filters.
+  const filteredIds = new Set(filtered.map(getEffectiveBookingId));
+  const visibleGroups = groupOrder.filter((id) => filteredIds.has(id));
+
+  if (!visibleGroups.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  tbody.innerHTML = visibleGroups.map((id) => {
+    const g    = groupMap.get(id);
+    const base = g.base;
+    const exts = g.exts.slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+    const hasExts = exts.length > 0;
+    const allRecs = [base, ...exts].filter(Boolean);
+
+    // Summary financials (all records in this booking group).
+    const totalGross  = allRecs.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
+    const totalRefund = allRecs.reduce((s, r) => s + Number(r.refund_amount || 0), 0);
+    const totalNet    = totalGross - totalRefund;
+
+    // Summary date: original pickup → latest return across all records.
+    const pickupDate  = base?.pickup_date || exts[0]?.pickup_date || '';
+    const finalReturn = allRecs.map((r) => r.return_date).filter(Boolean)
+      .reduce((mx, d) => (d > mx ? d : mx), '');
+    const dateCell = (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–');
+
+    // Worst status across the group.
+    const statusRank = { paid: 0, partial: 1, pending: 2, refunded: 3 };
+    const worstRec   = allRecs.reduce((mx, r) =>
+      (statusRank[r.payment_status] ?? 99) > (statusRank[mx.payment_status] ?? 99) ? r : mx, allRecs[0]);
+    const summaryStatus = worstRec?.payment_status || 'paid';
     const payBadge = {
       paid:     '<span class="badge badge-success">Paid</span>',
       pending:  '<span class="badge badge-warning">Pending</span>',
       partial:  '<span class="badge" style="background:#ede9fe;color:#7c3aed;">Partial</span>',
       refunded: '<span class="badge badge-danger">Refunded</span>',
-    }[r.payment_status] || `<span class="badge">${esc(r.payment_status || '')}</span>`;
+    }[summaryStatus] || `<span class="badge">${esc(summaryStatus)}</span>`;
 
-    const net = (Number(r.gross_amount || 0) - Number(r.refund_amount || 0)).toFixed(2);
-    return `<tr>
-      <td>${esc(r.customer_name || '–')}</td>
-      <td>${esc(VEHICLE_NAMES_DYNAMIC[r.vehicle_id] || VEHICLE_NAMES[r.vehicle_id] || r.vehicle_id || '–')}</td>
-      <td style="font-size:12px;">${esc(r.pickup_date || '–')} – ${esc(r.return_date || '–')}</td>
-      <td>$${formatMoney(r.gross_amount  || 0)}</td>
-      <td style="color:var(--danger);">$${formatMoney(r.refund_amount || 0)}</td>
-      <td style="font-weight:700;">$${formatMoney(net)}</td>
-      <td style="font-size:12px;">${esc(r.payment_method || '–')}</td>
+    const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || '';
+    const customer_name  = base?.customer_name  || exts[0]?.customer_name  || '–';
+    const payment_method = base?.payment_method || '–';
+
+    const toggleBtn = hasExts
+      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(id)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup(this.getAttribute('data-rev-toggle'))" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
+      : '';
+
+    // ── Summary row ──────────────────────────────────────────────────────────
+    let html = `<tr class="rev-summary-row" data-rev-summary="${esc(id)}">
+      <td>${esc(customer_name)}</td>
+      <td>${esc(VEHICLE_NAMES_DYNAMIC[vehicle_id] || VEHICLE_NAMES[vehicle_id] || vehicle_id || '–')}</td>
+      <td style="font-size:12px;">${esc(dateCell)}</td>
+      <td>$${formatMoney(totalGross)}</td>
+      <td style="color:var(--danger);">$${formatMoney(totalRefund)}</td>
+      <td style="font-weight:700;">$${formatMoney(totalNet)}</td>
+      <td style="font-size:12px;">${esc(payment_method)}</td>
       <td>${payBadge}</td>
       <td class="td-actions">
-        <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(r.id)}')">Edit</button>
-        <button class="btn btn-danger btn-sm"    onclick="deleteRevenueRecord('${esc(r.id)}')">Delete</button>
+        ${toggleBtn}
+        ${base ? `<button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>` : ''}
+        ${base ? `<button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>` : ''}
       </td>
     </tr>`;
+
+    if (hasExts) {
+      // ── Base detail sub-row ────────────────────────────────────────────────
+      if (base) {
+        const baseNet = (Number(base.gross_amount || 0) - Number(base.refund_amount || 0)).toFixed(2);
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+          <td colspan="2" style="padding-left:28px;">📋 Base rental</td>
+          <td>${esc((fmtRevDate(base.pickup_date) || '–') + ' → ' + (fmtRevDate(base.return_date) || '–'))}</td>
+          <td>$${formatMoney(base.gross_amount || 0)}</td>
+          <td style="color:var(--danger);">$${formatMoney(base.refund_amount || 0)}</td>
+          <td>$${formatMoney(baseNet)}</td>
+          <td>${esc(base.payment_method || '–')}</td>
+          <td></td>
+          <td class="td-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(base.id)}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(base.id)}')">Delete</button>
+          </td>
+        </tr>`;
+      }
+      // ── Extension sub-rows ─────────────────────────────────────────────────
+      exts.forEach((ext, idx) => {
+        const prevReturn = idx === 0 ? (base?.return_date || ext.pickup_date) : exts[idx - 1].return_date;
+        const nDays = (prevReturn && ext.return_date)
+          ? Math.round((new Date(ext.return_date + 'T00:00:00') - new Date(prevReturn + 'T00:00:00')) / 86400000)
+          : 0;
+        const extLabel = '+' + nDays + ' day' + (nDays === 1 ? '' : 's') + ' — ' + (fmtRevDate(prevReturn) || '–');
+        const extNet = (Number(ext.gross_amount || 0) - Number(ext.refund_amount || 0)).toFixed(2);
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+          <td colspan="2" style="padding-left:28px;">🔄 ${esc(extLabel)}</td>
+          <td>→ ${esc(fmtRevDate(ext.return_date) || '–')}</td>
+          <td>$${formatMoney(ext.gross_amount || 0)}</td>
+          <td style="color:var(--danger);">$${formatMoney(ext.refund_amount || 0)}</td>
+          <td>$${formatMoney(extNet)}</td>
+          <td>${esc(ext.payment_method || '–')}</td>
+          <td></td>
+          <td class="td-actions">
+            <button class="btn btn-secondary btn-sm" onclick="openEditRevenueModal('${esc(ext.id)}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRevenueRecord('${esc(ext.id)}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+    }
+    return html;
   }).join('');
+}
+
+function toggleRevenueGroup(groupId) {
+  const rows = document.querySelectorAll(`[data-rev-group="${CSS.escape(groupId)}"]`);
+  const btn  = document.querySelector(`[data-rev-toggle="${CSS.escape(groupId)}"]`);
+  const open = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach((r) => { r.style.display = open ? 'none' : ''; });
+  if (btn) {
+    const n = btn.getAttribute('data-rev-count') || rows.length;
+    btn.textContent = open ? ('▶ ' + n + ' ext.') : ('▼ ' + n + ' ext.');
+  }
 }
 
 function openAddRevenueModal() {
@@ -4127,8 +4256,8 @@ function loadAnalytics() {
   document.getElementById('analytics-content').style.display = 'none';
 
   Promise.all([
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet' }),
-    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12 }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'slingshot' }),
+    apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'slingshot' }),
   ]).then(([fleetData, trendData]) => {
     renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
     document.getElementById('analytics-loading').style.display = 'none';

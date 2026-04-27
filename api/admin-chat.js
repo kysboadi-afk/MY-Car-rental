@@ -62,8 +62,8 @@ You have access to real-time business data through tools. Use them to answer adm
 - get_gps_tracking calls the Bouncie API directly and returns live data for every tracked vehicle — it is always preferred over get_mileage for location or movement questions.
 - Use get_mileage (not get_gps_tracking) for odometer history, maintenance alerts, and usage trends.
 
-**Block Dates**
-- Use get_blocked_dates to see which date ranges are blocked per vehicle (manual blocks + booking-based blocks).
+**Block Dates / Rental Timeline**
+- Use get_blocked_dates to see the full per-segment blocking timeline for a vehicle. Each booking appears as a 'base' segment (original rental) plus one 'extension' segment per paid extension, with correct start/end dates. Also shows manual and maintenance blocks. Use this — NOT get_revenue — whenever the admin asks about rental dates, extension chains, or why a vehicle is blocked.
 - Use **block_dates** to manually block a date range for a vehicle (e.g. vehicle is unavailable for maintenance or personal use). Requires confirmation.
 - Use **open_dates** to remove a manual block and make dates available again. Requires confirmation.
 
@@ -932,6 +932,7 @@ export default async function handler(req, res) {
   const MAX_ROUND_TIMEOUT      = 20000; // cap per-round OpenAI timeout at 20 s
   const MIN_RESPONSE_BUFFER_MS =  3000; // reserve 3 s for JSON serialisation
   const MIN_TOOL_EXECUTION_MS  =  1000; // bail if < 1 s remains before starting a tool call
+  const PREFETCH_WAIT_MS       =  1000; // max time to wait for prefetch result before live call
   // Max messages to send to OpenAI (system prompt excluded).  Long conversation
   // histories increase token count and latency — trimming prevents "Failed to
   // fetch" timeouts caused by the OpenAI call taking too long.
@@ -1002,6 +1003,14 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── Background pre-fetch of get_insights ─────────────────────────────────
+  // toolGetInsights now runs 4 Supabase queries in parallel (~3-7 s total).
+  // The first OpenAI round takes ~10-20 s, so the prefetch finishes well
+  // before the AI returns its tool-call decision, eliminating a full extra
+  // OpenAI round-trip from the critical path for insight-based queries.
+  const insightsPrefetch = executeAction("get_insights", {}, { requireConfirmation: false })
+    .catch((err) => { console.warn("admin-chat: insights prefetch failed:", err.message); return null; });
+
   // ── Agentic loop ─────────────────────────────────────────────────────────
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     // Calculate remaining budget; reserve 3 s for response serialisation.
@@ -1022,30 +1031,47 @@ export default async function handler(req, res) {
 
     let completion;
     let openAiTimeoutId;
+    // AbortController lets us immediately close the underlying HTTP socket when
+    // our timer fires.  Relying solely on the SDK { timeout } option is not
+    // enough on Vercel: the option schedules an abort signal but the socket can
+    // linger until the 60 s maxDuration kills the function, which drops the
+    // TCP connection mid-response and the browser sees "Failed to fetch".
+    const roundAbortController = new AbortController();
     try {
       completion = await Promise.race([
-        client.chat.completions.create({
-          model,
-          messages,
-          tools: TOOL_DEFINITIONS,
-          tool_choice: "auto",
-        }),
+        client.chat.completions.create(
+          {
+            model,
+            messages,
+            tools: TOOL_DEFINITIONS,
+            tool_choice: "auto",
+          },
+          { signal: roundAbortController.signal }, // hard-abort via AbortController
+        ),
         new Promise((_resolve, reject) => {
-          openAiTimeoutId = setTimeout(
-            () => reject(new OpenAiRoundTimeoutError(roundTimeout)),
-            roundTimeout
-          );
+          openAiTimeoutId = setTimeout(() => {
+            roundAbortController.abort(); // immediately close the HTTP socket
+            reject(new OpenAiRoundTimeoutError(roundTimeout));
+          }, roundTimeout);
         }),
       ]);
     } catch (err) {
-      console.error("admin-chat: OpenAI error:", err);
-      if (err?.isTimeout === true || err?.name === "OpenAiRoundTimeoutError") {
+      if (
+        err?.isTimeout === true ||
+        err?.name === "OpenAiRoundTimeoutError" ||
+        err?.name === "APIConnectionTimeoutError" || // SDK-level timeout (name property)
+        err?.name === "AbortError" ||                // Web AbortController fired
+        err?.constructor?.name === "APIUserAbortError" ||        // OpenAI SDK v4 abort
+        err?.constructor?.name === "APIConnectionTimeoutError"   // OpenAI SDK v4 timeout
+      ) {
+        console.warn(`admin-chat: OpenAI round timed out after ${roundTimeout} ms`);
         return res.status(200).json({
           reply:      "⏱ The AI request timed out. Please try again with a shorter or more specific question.",
           tool_calls: toolCallsMade,
           messages:   messages.slice(1),
         });
       }
+      console.error("admin-chat: OpenAI error:", err);
       return res.status(500).json({ error: `OpenAI error: ${err.message}` });
     } finally {
       if (openAiTimeoutId) clearTimeout(openAiTimeoutId);
@@ -1097,12 +1123,28 @@ export default async function handler(req, res) {
         // Pass requireConfirmation=true unless autoMode is explicitly on.
         // Race against a budget-aware timeout so a hanging tool cannot block
         // until Vercel kills the function at maxDuration.
-        toolResult = await Promise.race([
-          executeAction(toolName, args, { requireConfirmation: !autoMode }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
-          ),
-        ]);
+        //
+        // Special case: get_insights was pre-fetched in the background.
+        // Wait up to 1 s for the prefetch to settle before falling back to a
+        // live call so the Supabase queries are never duplicated.
+        if (toolName === "get_insights") {
+          const prefetched = await Promise.race([
+            insightsPrefetch,
+            new Promise((resolve) => setTimeout(() => resolve(null), PREFETCH_WAIT_MS)),
+          ]);
+          if (prefetched && !prefetched.error) {
+            toolResult = prefetched;
+          }
+        }
+
+        if (!toolResult) {
+          toolResult = await Promise.race([
+            executeAction(toolName, args, { requireConfirmation: !autoMode }),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${toolTimeout} ms`)), toolTimeout)
+            ),
+          ]);
+        }
       } catch (err) {
         toolResult = { error: err.message };
       }

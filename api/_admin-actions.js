@@ -31,9 +31,9 @@ import { analyzeMileage } from "../lib/ai/mileage.js";
 import { computeFleetAlerts } from "../lib/ai/maintenance.js";
 import { computeVehiclePriority, sortByPriority, hasNoOverdueMaintenance, ACTION_STATUS_ORDER } from "../lib/ai/priority.js";
 import { TEMPLATES } from "./_sms-templates.js";
-import { fetchBookedDates, hasOverlap } from "./_availability.js";
+import { hasOverlap } from "./_availability.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, parseTime12h } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, parseTime12h } from "./_booking-automation.js";
 import { executeChargeFee, PREDEFINED_FEES, CHARGE_TYPE_LABELS } from "./charge-fee.js";
 import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
@@ -251,7 +251,8 @@ async function toolGetRevenue({ month } = {}) {
           if (r.is_cancelled || r.is_no_show) continue;
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+          const net   = gross - fee;
           const vid   = r.vehicle_id || "unknown";
 
           total     += gross;
@@ -340,10 +341,10 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
       if (status) {
         const APP_TO_DB = {
           reserved_unpaid:  "pending",
-          booked_paid:      "approved",
-          active_rental:    "active",
-          completed_rental: "completed",
-          cancelled_rental: "cancelled",
+          booked_paid:      "booked_paid",
+          active_rental:    "active_rental",
+          completed_rental: "completed_rental",
+          cancelled_rental: "cancelled_rental",
         };
         const dbStatus = APP_TO_DB[status] || status;
         query = query.eq("status", dbStatus);
@@ -763,50 +764,52 @@ async function toolGetInsights() {
   console.time("toolGetInsights execution");
   try {
   const sb = getSupabaseAdmin();
-  const [allBookings, vehicles] = await Promise.all([
+
+  // Run all 4 Supabase queries in parallel instead of two sequential batches.
+  // Previously: batch-1 (bookings + vehicles) then batch-2 (mileage + trips).
+  // Now: all 4 fire simultaneously, cutting total query time roughly in half.
+  const mileageQuery = sb
+    ? sb.from("vehicles")
+        .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
+        .not("bouncie_device_id", "is", null)
+        .catch(() => ({ data: [] }))
+    : Promise.resolve({ data: [] });
+
+  const tripQuery = sb
+    ? sb.from("trip_log")
+        .select("vehicle_id, trip_distance, trip_at")
+        .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString())
+        .catch(() => ({ data: [] }))
+    : Promise.resolve({ data: [] });
+
+  const [allBookings, vehicles, mileageResult, tripResult] = await Promise.all([
     loadAllBookings(),
     loadAllVehicles(),
+    mileageQuery,
+    tripQuery,
   ]);
 
-  // Fetch Bouncie mileage and recent trips so detectProblems can include
-  // maintenance/idle alerts.  These use bouncie_device_id as source of truth —
-  // rental_status is intentionally ignored when deciding what to track.
-  let mileageData = [];
-  let recentTrips = [];
-  if (sb) {
-    try {
-      const [{ data: vehicleRows }, { data: tripRows }] = await Promise.all([
-        sb.from("vehicles")
-          .select("vehicle_id, mileage, last_synced_at, last_oil_change_mileage, last_brake_check_mileage, last_tire_change_mileage, data")
-          .not("bouncie_device_id", "is", null),
-        sb.from("trip_log")
-          .select("vehicle_id, trip_distance, trip_at")
-          .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
-      ]);
-      mileageData = (vehicleRows || [])
-        .filter((r) => {
-          const type = r.data?.type || r.data?.vehicle_type || "";
-          return type !== "slingshot";
-        })
-        .map((r) => ({
-          vehicle_id:               r.vehicle_id,
-          vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
-          total_mileage:            Number(r.mileage) || 0,
-          last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
-          last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
-          last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
-          last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
-          last_synced_at:           r.last_synced_at,
-        }));
-      recentTrips = (tripRows || []).map((r) => ({
-        vehicle_id:    r.vehicle_id,
-        trip_distance: r.trip_distance,
-        trip_at:       r.trip_at,
-      }));
-    } catch {
-      // mileage data unavailable — detectProblems will skip mileage section
-    }
-  }
+  const mileageData = (mileageResult.data || [])
+    .filter((r) => {
+      const type = r.data?.type || r.data?.vehicle_type || "";
+      return type !== "slingshot";
+    })
+    .map((r) => ({
+      vehicle_id:               r.vehicle_id,
+      vehicle_name:             r.data?.vehicle_name || r.vehicle_id,
+      total_mileage:            Number(r.mileage) || 0,
+      last_oil_change_mileage:  r.last_oil_change_mileage  != null ? Number(r.last_oil_change_mileage)  : null,
+      last_brake_check_mileage: r.last_brake_check_mileage != null ? Number(r.last_brake_check_mileage) : null,
+      last_tire_change_mileage: r.last_tire_change_mileage != null ? Number(r.last_tire_change_mileage) : null,
+      last_service_mileage:     Number(r.data?.last_service_mileage) || 0,
+      last_synced_at:           r.last_synced_at,
+    }));
+
+  const recentTrips = (tripResult.data || []).map((r) => ({
+    vehicle_id:    r.vehicle_id,
+    trip_distance: r.trip_distance,
+    trip_at:       r.trip_at,
+  }));
 
   const insights = computeInsights({ allBookings, vehicles, revenueFromBooking });
   const problems = detectProblems({ allBookings, vehicles, revenueFromBooking, insights, mileageData, recentTrips });
@@ -1122,7 +1125,8 @@ async function toolGetAnalytics({ action = "fleet", vehicleId, months = 6 } = {}
           const vid   = r.vehicle_id || "unknown";
           const gross = Number(r.gross_amount || 0);
           const fee   = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
-          const net   = r.stripe_net != null ? Number(r.stripe_net) : gross - fee;
+          // Net = Gross − Stripe Fees (strict formula, no stripe_net).
+          const net   = gross - fee;
           if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
           rrByVehicle[vid].gross += gross;
           rrByVehicle[vid].fees  += fee;
@@ -1552,55 +1556,112 @@ async function toolGetSmsTemplates() {
 
 async function toolGetBlockedDates({ vehicleId } = {}) {
   const sb = getSupabaseAdmin();
-  let blockedDates = null;
 
-  // Try Supabase blocked_dates table first
+  // ── 1. Booking timeline from vehicle_blocking_ranges (single source of truth)
+  //       Returns one row per segment (base rental + each extension) with
+  //       source = 'base' | 'extension' so the timeline is always correct.
+  let timelineByVehicle = null;
   if (sb) {
     try {
-      let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date");
+      let q = sb
+        .from("vehicle_blocking_ranges")
+        .select("vehicle_id, booking_ref, start_date, end_date, source")
+        .order("start_date", { ascending: true });
       if (vehicleId) q = q.eq("vehicle_id", vehicleId);
       const { data, error } = await q;
       if (!error && data) {
-        const byVehicle = {};
-        for (const row of (data || [])) {
+        timelineByVehicle = {};
+        for (const row of data) {
           const vid = row.vehicle_id;
-          if (!byVehicle[vid]) byVehicle[vid] = [];
-          byVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
+          if (!timelineByVehicle[vid]) timelineByVehicle[vid] = [];
+          timelineByVehicle[vid].push({
+            from:        row.start_date,
+            to:          row.end_date,
+            source:      row.source,
+            booking_ref: row.booking_ref || undefined,
+          });
         }
-        blockedDates = byVehicle;
       }
     } catch {
-      // fall through
+      // fall through to manual/maintenance blocks only
     }
   }
 
-  // Fall back to booked-dates.json from GitHub
-  if (!blockedDates) {
+  // ── 2. Manual / maintenance blocks from blocked_dates (non-booking rows)
+  //       These cover 'manual' and 'maintenance' reasons and are NOT included
+  //       in vehicle_blocking_ranges (which only tracks booking segments).
+  let manualBlocksByVehicle = {};
+  if (sb) {
     try {
-      const data = await fetchBookedDates();
-      if (data) {
-        blockedDates = vehicleId
-          ? { [vehicleId]: data[vehicleId] || [] }
-          : data;
+      let q = sb
+        .from("blocked_dates")
+        .select("vehicle_id, start_date, end_date, reason")
+        .neq("reason", "booking")
+        .order("start_date", { ascending: true });
+      if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+      const { data, error } = await q;
+      if (!error && data) {
+        for (const row of data) {
+          const vid = row.vehicle_id;
+          if (!manualBlocksByVehicle[vid]) manualBlocksByVehicle[vid] = [];
+          manualBlocksByVehicle[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason });
+        }
       }
     } catch {
       // ignore
     }
   }
 
-  if (!blockedDates) {
-    return { blocked_dates: {}, note: "Could not retrieve blocked dates — GitHub or Supabase unavailable." };
+  // ── 3. If vehicle_blocking_ranges is unavailable, fall back to flat blocked_dates.
+  if (!timelineByVehicle) {
+    let blockedDates = null;
+    if (sb) {
+      try {
+        let q = sb.from("blocked_dates").select("vehicle_id, start_date, end_date, reason").order("start_date", { ascending: true });
+        if (vehicleId) q = q.eq("vehicle_id", vehicleId);
+        const { data, error } = await q;
+        if (!error && data) {
+          blockedDates = {};
+          for (const row of data) {
+            const vid = row.vehicle_id;
+            if (!blockedDates[vid]) blockedDates[vid] = [];
+            blockedDates[vid].push({ from: row.start_date, to: row.end_date, reason: row.reason || undefined });
+          }
+        }
+      } catch {
+        // fall through
+      }
+    }
+    if (!blockedDates) {
+      return { blocked_dates: {}, note: "Could not retrieve blocked dates — Supabase unavailable." };
+    }
+    const summary = {};
+    let total = 0;
+    for (const [vid, ranges] of Object.entries(blockedDates)) {
+      const arr = Array.isArray(ranges) ? ranges : [];
+      summary[vid] = arr;
+      total += arr.length;
+    }
+    return { total_ranges: total, blocked_dates: summary };
   }
 
+  // ── 4. Merge timeline segments + manual blocks per vehicle ────────────────
+  const allVehicleIds = new Set([
+    ...Object.keys(timelineByVehicle),
+    ...Object.keys(manualBlocksByVehicle),
+  ]);
   const summary = {};
   let total = 0;
-  for (const [vid, ranges] of Object.entries(blockedDates)) {
-    const arr = Array.isArray(ranges) ? ranges : [];
-    summary[vid] = arr;
-    total += arr.length;
+  for (const vid of allVehicleIds) {
+    const segments = (timelineByVehicle[vid] || []).concat(
+      (manualBlocksByVehicle[vid] || []).map((b) => ({ ...b, source: "manual" }))
+    );
+    segments.sort((a, b) => (a.from || "").localeCompare(b.from || ""));
+    summary[vid] = segments;
+    total += segments.length;
   }
 
-  return { total_ranges: total, blocked_dates: summary };
+  return { total_ranges: total, blocked_dates: summary, source: "vehicle_blocking_ranges" };
 }
 
 async function toolGetFraudReport({ flaggedOnly = true } = {}) {
@@ -1888,10 +1949,10 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
 
   const APP_TO_DB_STATUS = {
     reserved_unpaid:  "pending",
-    booked_paid:      "approved",
-    active_rental:    "active",
-    completed_rental: "completed",
-    cancelled_rental: "cancelled",
+    booked_paid:      "booked_paid",
+    active_rental:    "active_rental",
+    completed_rental: "completed_rental",
+    cancelled_rental: "cancelled_rental",
   };
   const validStatuses = Object.keys(APP_TO_DB_STATUS);
   if (!validStatuses.includes(status)) {
@@ -2065,7 +2126,7 @@ async function toolRecordExtensionPayment({
   // ── 4. Update blocked dates ────────────────────────────────────────────────
   if (foundBooking.pickupDate && newReturnDate) {
     try {
-      await autoCreateBlockedDate(foundVehicleId, foundBooking.pickupDate, newReturnDate, "booking", bookingId || null);
+      await extendBlockedDateForBooking(foundVehicleId, bookingId, newReturnDate);
     } catch (bdErr) {
       console.warn("toolRecordExtensionPayment: blocked_dates update error (non-fatal):", bdErr.message);
     }

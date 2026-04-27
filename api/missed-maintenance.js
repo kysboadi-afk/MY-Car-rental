@@ -167,9 +167,9 @@ export default async function handler(req, res) {
       const { data: activeRows, error: activeErr } = await sb
         .from("bookings")
         .select("booking_ref, vehicle_id, customers ( name, phone )")
-        .eq("status", "active")
+        .in("status", ["active", "active_rental"])
         .in("vehicle_id", overdueVehicleIds);
-      if (activeErr) throw activeErr; // query error → propagate, do NOT fallback
+      if (activeErr) throw activeErr;
       usedSupabase = true;
       for (const r of (activeRows || [])) {
         activeBookingByVehicle[r.vehicle_id] = {

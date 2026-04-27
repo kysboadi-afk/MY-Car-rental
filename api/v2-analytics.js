@@ -16,7 +16,7 @@
 //   gross_revenue = SUM(gross_amount)  WHERE payment_status='paid' AND NOT cancelled/no-show
 //                   includes all payment methods (cash, manual, Stripe, etc.)
 //   total_fees    = SUM(stripe_fee)    (null → 0 for unreconciled/non-Stripe rows)
-//   net_revenue   = SUM(stripe_net ?? gross − fee) − SUM(refund_amount)
+//   net_revenue   = SUM(gross_amount − stripe_fee − refund_amount)
 //   profit        = net_revenue − total_expenses
 //
 // Falls back to bookings.json when Supabase is unavailable or revenue_records is empty.
@@ -120,6 +120,9 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
+  // scope: 'car' → only non-slingshot vehicles; 'slingshot' → only slingshot vehicles; absent → all
+  const scope = body.scope || null;
+
   try {
     const [{ data: bookingsData }, vehicles, expenses] = await Promise.all([
       loadBookings(),
@@ -131,6 +134,19 @@ export default async function handler(req, res) {
     const paidStatuses   = new Set(["booked_paid", "active_rental", "completed_rental"]);
     const activeStatuses = new Set(["booked_paid", "active_rental"]);
 
+    // Build vehicle-type lookup for scope filtering across all actions.
+    const vehicleTypeMap = {};
+    for (const [vid, v] of Object.entries(vehicles)) {
+      vehicleTypeMap[vid] = (v.type || "").toLowerCase();
+    }
+
+    /** Returns true if vehicleId matches the requested scope. */
+    function inScope(vid) {
+      if (!scope) return true;
+      const t = vehicleTypeMap[vid] || "";
+      return scope === "slingshot" ? t === "slingshot" : t !== "slingshot";
+    }
+
     // ── Load revenue_records from Supabase (financial source of truth) ────────
     // Uses revenue_records_effective with payment_status='paid' — identical to
     // v2-dashboard.js and the Revenue Tracker page — so all three surfaces report
@@ -141,7 +157,51 @@ export default async function handler(req, res) {
     const rrByVehicle = {};
     let financialsFromRevRecords = false;
 
+    // ── Live active bookings: vehicles currently on rental (from Supabase) ────
+    // activeVehicleIds: Set of vehicle_ids that have an active booking right now.
+    // This is loaded from Supabase (not bookings.json) so it always reflects the
+    // live state rather than a potentially-stale GitHub JSON snapshot.
+    const activeVehicleIds = new Set();
+
     const sb = getSupabaseAdmin();
+
+    // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
+    // Fetched once and reused across all actions that need the fleet revenue total.
+    let kpiTotalRevenue = null;
+    if (sb) {
+      try {
+        const { data: kpiRow, error: kpiErr } = await sb
+          .from("total_revenue_kpi")
+          .select("total_revenue")
+          .single();
+        if (!kpiErr && kpiRow != null) {
+          kpiTotalRevenue = Math.round(Number(kpiRow.total_revenue) * 100) / 100;
+        } else if (kpiErr) {
+          console.warn("v2-analytics: total_revenue_kpi query failed (non-fatal):", kpiErr.message);
+        }
+      } catch (kpiEx) {
+        console.warn("v2-analytics: total_revenue_kpi query error (non-fatal):", kpiEx.message);
+      }
+    }
+
+    if (sb) {
+      try {
+        const { data: activeRows, error: activeErr } = await sb
+          .from("bookings")
+          .select("vehicle_id")
+          .in("status", ["active", "active_rental", "overdue"]);
+        if (!activeErr && activeRows) {
+          for (const row of activeRows) {
+            if (row.vehicle_id) activeVehicleIds.add(uiVehicleId(row.vehicle_id) || row.vehicle_id);
+          }
+        } else if (activeErr) {
+          console.warn("v2-analytics: active bookings query failed (non-fatal):", activeErr.message);
+        }
+      } catch (activeEx) {
+        console.warn("v2-analytics: active bookings query error (non-fatal):", activeEx.message);
+      }
+    }
+
     if (sb) {
       try {
         const rrResult = await sb
@@ -158,13 +218,11 @@ export default async function handler(req, res) {
           for (const r of rrRows) {
             if (r.is_cancelled || r.is_no_show) continue;
             const vid    = uiVehicleId(r.vehicle_id) || "unknown";
-            // Use gross_amount (total collected before refunds or fees) as the gross
-            // figure — matching the Revenue Tracker and Dashboard formulas exactly.
             const gross  = Number(r.gross_amount  || 0);
             const fee    = r.stripe_fee != null ? Number(r.stripe_fee) : 0;
             const refund = Number(r.refund_amount || 0);
-            // net = (stripe_net ?? gross − fee) − refund_amount, matching Revenue Tracker.
-            const net    = (r.stripe_net != null ? Number(r.stripe_net) : gross - fee) - refund;
+            // Net = Gross − Stripe Fees − Refunds (strict formula, no stripe_net).
+            const net    = gross - fee - refund;
             if (!rrByVehicle[vid]) rrByVehicle[vid] = { gross: 0, fees: 0, net: 0, count: 0, monthly: {} };
             rrByVehicle[vid].gross += gross;
             rrByVehicle[vid].fees  += fee;
@@ -187,6 +245,7 @@ export default async function handler(req, res) {
       const vehicleStats = {};
 
       for (const [vehicleId, vehicle] of Object.entries(vehicles)) {
+        if (!inScope(vehicleId)) continue;
         const vBookings    = (bookingsData[vehicleId] || []);
         const paidBookings = vBookings.filter((b) => paidStatuses.has(b.status));
 
@@ -216,13 +275,16 @@ export default async function handler(req, res) {
         const totalDays  = Math.max(MIN_UTILIZATION_WINDOW_DAYS, Math.round((now - firstDate) / 86400000));
         const utilizationRate = Math.min(100, Math.round((rentedDays / totalDays) * 100 * 10) / 10);
 
-        // Active booking right now (from bookings.json)
-        const activeNow = vBookings.some((b) => {
-          if (!activeStatuses.has(b.status)) return false;
-          const pick = b.pickupDate ? new Date(b.pickupDate) : null;
-          const ret  = b.returnDate ? new Date(b.returnDate) : null;
-          return pick && ret && pick <= now && ret >= now;
-        });
+        // Active booking right now: prefer Supabase live query (activeVehicleIds),
+        // fall back to bookings.json date-range check when Supabase is unavailable.
+        const activeNow = activeVehicleIds.size > 0
+          ? activeVehicleIds.has(vehicleId)
+          : vBookings.some((b) => {
+              if (!activeStatuses.has(b.status)) return false;
+              const pick = b.pickupDate ? new Date(b.pickupDate) : null;
+              const ret  = b.returnDate ? new Date(b.returnDate) : null;
+              return pick && ret && pick <= now && ret >= now;
+            });
 
         const vProfit        = Math.round((net - vExpenses) * 100) / 100;
         const purchasePrice  = Number(vehicle.purchase_price || 0);
@@ -280,7 +342,7 @@ export default async function handler(req, res) {
         };
       }
 
-      return res.status(200).json({ fleet: vehicleStats, _source: financialsFromRevRecords ? "revenue_records" : "bookings_fallback" });
+      return res.status(200).json({ fleet: vehicleStats, kpi_total_revenue: kpiTotalRevenue, _source: financialsFromRevRecords ? "revenue_records" : "bookings_fallback" });
     }
 
     // ── SINGLE VEHICLE DEEP-DIVE ─────────────────────────────────────────────
@@ -357,7 +419,8 @@ export default async function handler(req, res) {
 
       if (financialsFromRevRecords) {
         // Aggregate from revenue_records (already grouped by vehicle+month in rrByVehicle)
-        for (const vr of Object.values(rrByVehicle)) {
+        for (const [vid, vr] of Object.entries(rrByVehicle)) {
+          if (!inScope(vid)) continue;
           for (const [m, amount] of Object.entries(vr.monthly)) {
             if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
             monthly[m].revenue  += amount;
@@ -370,6 +433,7 @@ export default async function handler(req, res) {
         for (const m of Object.keys(monthly)) monthly[m].bookings = 0;
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
           const m = (b.pickupDate || "").slice(0, 7);
           if (m && monthly[m]) monthly[m].bookings += 1;
         }
@@ -377,6 +441,7 @@ export default async function handler(req, res) {
         // Fallback: bookings.json
         for (const b of allBookings) {
           if (!paidStatuses.has(b.status)) continue;
+          if (!inScope(b.vehicleId)) continue;
           const m = (b.pickupDate || "").slice(0, 7);
           if (!m) continue;
           if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
