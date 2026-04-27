@@ -24,7 +24,7 @@ import { buildDateTimeLA, DEFAULT_RETURN_TIME } from "./_time.js";
  *   returnTime:      string,       // HH:MM return time (always set, never null/empty)
  *   end_datetime:    Date,         // LA-timezone Date for the return moment
  *   minutesToReturn: number|null,  // positive = future, negative = overdue, null = unparseable date
- *   isActive:        boolean       // true when booking status is active or active_rental
+ *   isActive:        boolean       // true when booking status is active, active_rental, or overdue
  * }>}
  */
 export async function getRentalState(sb, bookingRef) {
@@ -93,7 +93,7 @@ export async function getRentalState(sb, bookingRef) {
     ? null
     : (end_datetime - new Date()) / 60_000;
 
-  const isActive = ["active", "active_rental"].includes(bk?.status);
+  const isActive = ["active", "active_rental", "overdue"].includes(bk?.status);
 
   return { endDate, returnTime, end_datetime, minutesToReturn, isActive };
 }
