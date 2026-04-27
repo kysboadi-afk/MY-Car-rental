@@ -355,6 +355,12 @@ test("latest block wins by end_time when end_dates are equal", async () => {
   assert.equal(res._body.camry?.available, false);
   // available_at should reflect the latest time (17:00 LA)
   assert.ok(res._body.camry?.available_at, "available_at should be set");
+  // The ISO timestamp should represent 17:00 LA time — verify it parses to the same wall-clock hour
+  const availAt = new Date(res._body.camry.available_at);
+  const hourLA = parseInt(availAt.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles", hour: "2-digit", hour12: false,
+  }), 10);
+  assert.equal(hourLA, 17, "available_at should be anchored to 17:00 LA time");
   // next_available_display should include "5:00 PM" (17:00 in 12-h)
   assert.ok(res._body.camry?.next_available_display?.includes("5:00 PM"), "should reflect 17:00 → 5:00 PM");
 });

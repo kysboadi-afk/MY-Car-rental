@@ -46,7 +46,12 @@ const BUSINESS_TZ = "America/Los_Angeles";
 function buildBufferedEnd(returnDate, returnTime) {
   if (!returnTime) return { date: returnDate, time: null };
   const returnDt = buildDateTimeLA(returnDate, returnTime);
-  if (!Number.isFinite(returnDt.getTime())) return { date: returnDate, time: null };
+  if (!Number.isFinite(returnDt.getTime())) {
+    console.warn(
+      `_booking-automation buildBufferedEnd: unparseable returnTime "${returnTime}" for ${returnDate} — falling back to date-only`
+    );
+    return { date: returnDate, time: null };
+  }
   const bufferedDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   const laDate = bufferedDt.toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ }); // YYYY-MM-DD
   const laTime = bufferedDt.toLocaleTimeString("en-GB", {

@@ -222,13 +222,24 @@ export default async function handler(req, res) {
         day: "2-digit",
       }).format(new Date()); // YYYY-MM-DD in LA timezone
 
-      // Current time in LA as "HH:MM" for mid-day block expiry checks.
-      const nowTimeLA = new Date().toLocaleTimeString("en-GB", {
-        timeZone: BUSINESS_TZ,
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }); // "HH:MM"
+      // Current time in LA as minutes-since-midnight for robust mid-day block expiry checks.
+      const nowLA = new Date();
+      const nowMinutesLA = (() => {
+        const h = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, hour: "2-digit", hour12: false }), 10);
+        const m = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, minute: "2-digit" }), 10);
+        return h * 60 + m;
+      })();
+
+      /** Convert "HH:MM" end_time to minutes-since-midnight. Returns -1 on failure. */
+      function endTimeToMinutes(t) {
+        if (!t || typeof t !== "string") return -1;
+        const parts = String(t).substring(0, 5).split(":");
+        if (parts.length < 2) return -1;
+        const h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return -1;
+        return h * 60 + m;
+      }
 
       const { data: blockedRows, error: blockedError } = await sb
         .from("blocked_dates")
@@ -242,11 +253,14 @@ export default async function handler(req, res) {
       const latestByVehicle = computeLatestBlockByVehicle(blockedRows || []);
 
       // Post-filter: if a block's end_date is today and its end_time has
-      // already passed, the vehicle is available again even though end_date
-      // >= today still matches the query.
+      // already passed (in LA time), the vehicle is available again even
+      // though end_date >= today still matches the Supabase query.
       for (const [vid, block] of Object.entries(latestByVehicle)) {
-        if (block.end_time && block.end_date === today && block.end_time <= nowTimeLA) {
-          delete latestByVehicle[vid];
+        if (block.end_time && block.end_date === today) {
+          const blockMins = endTimeToMinutes(block.end_time);
+          if (blockMins >= 0 && blockMins <= nowMinutesLA) {
+            delete latestByVehicle[vid];
+          }
         }
       }
 
