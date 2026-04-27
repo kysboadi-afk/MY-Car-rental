@@ -5156,7 +5156,7 @@ function loadAnalytics() {
     apiPost('/api/v2-analytics', { secret: adminSecret, action: 'fleet', scope: 'car' }),
     apiPost('/api/v2-analytics', { secret: adminSecret, action: 'revenue_trend', months: 12, scope: 'car' }),
   ]).then(([fleetData, trendData]) => {
-    renderAnalytics(fleetData.fleet || {}, trendData.trend || []);
+    renderAnalytics(fleetData.fleet || {}, trendData.trend || [], fleetData.kpi_total_revenue ?? null);
     document.getElementById('analytics-loading').style.display = 'none';
     document.getElementById('analytics-content').style.display = '';
   }).catch((err) => {
@@ -5165,7 +5165,7 @@ function loadAnalytics() {
   });
 }
 
-function renderAnalytics(fleet, trend) {
+function renderAnalytics(fleet, trend, kpiTotalRevenue) {
   // KPI grid — all totals via the shared financial engine.
   const vehicles = Object.values(fleet);
   const fin           = calcFinancials(vehicles.map(normalizeFleetVehicle), 'Fleet');
@@ -5178,13 +5178,18 @@ function renderAnalytics(fleet, trend) {
   const kpiGrid = document.getElementById('analytics-kpi-grid');
   if (kpiGrid) {
     const totalExpenses = vehicles.reduce((s, v) => s + (v.expenses || 0), 0);
+    // Use canonical total_revenue_kpi value when available (same source as Revenue page).
+    // Fall back to the per-vehicle sum from analytics when the view is unavailable.
+    const grossRevenue = kpiTotalRevenue !== null && kpiTotalRevenue !== undefined
+      ? kpiTotalRevenue
+      : fin.amount_gross;
     const totalProfit   = fin.amount_net - totalExpenses;
     const fleetROI      = totalExpenses > 0
       ? Math.round((totalProfit / totalExpenses) * 10000) / 100
       : null;
     const roiDisplay = fleetROI === null ? 'N/A' : fleetROI.toFixed(1) + '%';
     kpiGrid.innerHTML = [
-      { label: 'Gross Revenue',   value: '$' + formatMoney(fin.amount_gross), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
+      { label: 'Gross Revenue',   value: '$' + formatMoney(grossRevenue), icon: '💵', sub: `${totalBookings} paid booking${totalBookings !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',     value: '$' + formatMoney(fin.stripe_fee),   icon: '💳', sub: 'Total processing fees' },
       { label: 'Net Revenue',     value: '$' + formatMoney(fin.amount_net),   icon: '✅', sub: 'After Stripe fees & refunds' },
       { label: 'Avg Utilization', value: avgUtil + '%',                       icon: '📊', sub: `${activeNow} vehicle${activeNow !== 1 ? 's' : ''} active now` },

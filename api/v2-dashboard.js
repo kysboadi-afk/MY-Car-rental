@@ -192,13 +192,23 @@ export default async function handler(req, res) {
           .then((r) => r, () => ({ data: null }))
       : Promise.resolve({ data: null });
 
-    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult] =
+    // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
+    const kpiPromise = sb
+      ? sb.from("total_revenue_kpi").select("total_revenue").single()
+          .then((r) => r, (e) => {
+            console.warn("v2-dashboard: total_revenue_kpi query failed (non-fatal):", e?.message);
+            return { data: null, error: e };
+          })
+      : Promise.resolve({ data: null });
+
+    const [{ data: vehicles }, { data: expenses }, allBookingsRaw, metricsViewResult, recentBkResult, kpiResult] =
       await Promise.all([
         loadVehicles(),
         fetchExpenses(),
         fetchBookingsKpis(),
         metricsPromise,
         bookingsPromise,
+        kpiPromise,
       ]);
 
     // admin_metrics_v2: pre-aggregated dashboard KPIs.
@@ -656,11 +666,20 @@ export default async function handler(req, res) {
       : null;
     console.log("v2-dashboard: totalExpenses =", totalExpenses, "(count:", expenses.length, ")");
 
+    // Override totalRevenue with the canonical total_revenue_kpi value when
+    // available — same source used by the Revenue Tracker page KPI card.
+    const kpiRevenue = kpiResult?.data?.total_revenue != null
+      ? Number(kpiResult.data.total_revenue)
+      : null;
+    const finalTotalRevenue = kpiRevenue !== null
+      ? Math.round(kpiRevenue * 100) / 100
+      : Math.round(totalRevenue * 100) / 100;
+
     return res.status(200)
       .setHeader("Cache-Control", "no-store")
       .json({
         kpis: {
-          totalRevenue:    Math.round(totalRevenue    * 100) / 100,
+          totalRevenue:    finalTotalRevenue,
           totalExpenses:   Math.round(totalExpenses   * 100) / 100,
           netRevenue:      Math.round(netRevenue      * 100) / 100,
           netProfit:       Math.round(netProfit       * 100) / 100,
