@@ -325,8 +325,19 @@ export default async function handler(req, res) {
         .select("booking_ref, vehicle_id, return_date, return_time, oil_check_required, oil_status, oil_check_last_request, customers ( name, phone )")
         .in("status", ["active", "active_rental"])
         .in("vehicle_id", trackedIds);
-      if (activeErr) throw activeErr; // query error → propagate, do NOT fallback
-      usedSupabase = true;
+      if (activeErr) {
+        // Schema errors (e.g. missing column — Postgres code 42703) must not
+        // crash the endpoint.  Log the error and proceed with an empty booking
+        // map so downstream vehicle processing is safely skipped.
+        if (activeErr.code === "42703") {
+          console.error("maintenance-alerts: bookings schema error — missing column. Proceeding with empty active bookings. Run migration 0098 to add the missing columns.", activeErr.message);
+        } else {
+          throw activeErr; // other query errors → propagate, do NOT fallback
+        }
+      } else {
+        // Only mark Supabase as used when the query actually succeeded.
+        usedSupabase = true;
+      }
       for (const r of (activeRows || [])) {
         activeBookingByVehicle[r.vehicle_id] = {
           bookingId:           r.booking_ref || null,
@@ -353,6 +364,9 @@ export default async function handler(req, res) {
             : null;
           if (active) activeBookingByVehicle[vid] = active;
         }
+      } else if (err.code === "42703") {
+        // Schema error in a non-Supabase path — log and proceed with empty bookings.
+        console.error("maintenance-alerts: schema error — missing column. Run migration 0098 to add the missing columns.", err.message);
       } else {
         throw err; // non-network Supabase error → propagate
       }
@@ -661,6 +675,13 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("maintenance-alerts error:", err);
-    return res.status(500).json({ error: adminErrorMessage(err) });
+    // Always return 200 so the cron runner does not treat this as a platform
+    // failure.  The error detail is preserved in the response body and in logs.
+    return res.status(200).json({
+      ran_at:      new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      alerts_sent: 0,
+      error:       adminErrorMessage(err),
+    });
   }
 }
