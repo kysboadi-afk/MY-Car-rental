@@ -516,7 +516,7 @@ export default async function handler(req, res) {
           );
           currentStatus = currentBooking?.status || null;
         }
-        if (currentStatus && currentStatus !== "active_rental") {
+        if (currentStatus && !["active_rental", "overdue"].includes(currentStatus)) {
           return res.status(409).json({
             error: `Cannot mark as returned: booking must be active (current status: ${currentStatus})`,
           });

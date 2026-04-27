@@ -9,7 +9,7 @@
 
 // All booking statuses that mean the vehicle is occupied / unavailable.
 // Keep aligned with fleet-status.js and v2-availability.js.
-const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 
 /**
  * Convert a PostgreSQL time string "HH:MM:SS" to 12-hour "H:MM AM/PM" format.
