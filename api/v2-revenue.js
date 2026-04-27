@@ -590,13 +590,93 @@ export default async function handler(req, res) {
       return res.status(201).json({ record: created, booking_id: original_booking_id });
     }
 
+    // ── KPI — total revenue from the ledger view ─────────────────────────────
+    // Returns { total_revenue } from the total_revenue_kpi Supabase view, which
+    // sums gross_amount from revenue_records WHERE is_cancelled = false.  This
+    // is the canonical, ledger-based KPI — independent of payment_intent_id or
+    // any Stripe-specific aggregation.
+    if (action === "kpi") {
+      if (sb) {
+        try {
+          const { data, error } = await sb
+            .from("total_revenue_kpi")
+            .select("total_revenue")
+            .single();
+          if (!error) return res.status(200).json({ total_revenue: Number(data?.total_revenue ?? 0) });
+          if (!isSchemaError(error)) console.error("v2-revenue kpi error:", error.message);
+        } catch (kpiErr) {
+          console.error("v2-revenue kpi error:", kpiErr);
+        }
+      }
+      // GitHub fallback: compute from revenue-records.json
+      const { data: ghRecords } = await loadRecordsFromGitHub();
+      const total = ghRecords
+        .filter((r) => !r.is_cancelled)
+        .reduce((s, r) => s + Number(r.gross_amount || 0), 0);
+      return res.status(200).json({ total_revenue: Math.round(total * 100) / 100 });
+    }
+
     // ── LIST BY BOOKING (aggregated UI view) ────────────────────────────────
-    // Groups revenue_records by booking_id and returns one entry per booking
-    // showing MIN(pickup_date), MAX(return_date), SUM(gross_amount) together
-    // with the individual child rows so the UI can expand the base + extension
-    // detail.  Extension records share booking_id with their parent rental row,
-    // so they aggregate correctly without any joins.
+    // Returns one entry per booking: MIN(pickup_date), MAX(return_date),
+    // SUM(gross_amount WHERE is_cancelled = false), plus the individual child
+    // rows so the UI can expand base + extension detail.
+    //
+    // Primary path: queries the booking_revenue_grouped Supabase view (which
+    // does the grouping in SQL).  Falls back to loading all rows and grouping
+    // in JavaScript when the view is unavailable (schema migration not yet run).
     if (action === "list_by_booking") {
+      // Resolve scope → vehicle IDs (same logic as the list action).
+      let scopedVehicleIds = null;
+      if (body.scope) {
+        try {
+          const { data: vData } = await loadVehicles();
+          scopedVehicleIds = Object.values(vData || {})
+            .filter((v) => body.scope === "slingshot"
+              ? (v.type || "") === "slingshot"
+              : (v.type || "") !== "slingshot")
+            .map((v) => v.vehicle_id)
+            .filter(Boolean);
+        } catch (scopeErr) {
+          console.warn("v2-revenue list_by_booking: scope vehicle lookup failed (non-fatal):", scopeErr.message);
+        }
+      }
+
+      // ── Try booking_revenue_grouped view ────────────────────────────────
+      if (sb) {
+        try {
+          let q = sb
+            .from("booking_revenue_grouped")
+            .select("*")
+            .order("min_pickup_date", { ascending: false });
+          if (body.vehicleId) q = q.eq("vehicle_id", body.vehicleId);
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
+          const { data, error } = await q;
+          if (!error) {
+            let groups = (data || []).map((g) => ({
+              booking_id:      g.booking_group_id,
+              vehicle_id:      g.vehicle_id     || null,
+              customer_name:   g.customer_name  || null,
+              customer_phone:  g.customer_phone || null,
+              customer_email:  g.customer_email || null,
+              min_pickup_date: g.min_pickup_date || null,
+              max_return_date: g.max_return_date || null,
+              total_gross:     Number(g.gross_total || 0),
+              record_count:    Number(g.record_count || 0),
+              records:         (g.records || []).filter(Boolean),
+            }));
+            // Apply any date-range filters that weren't pushed to the DB.
+            if (body.startDate) groups = groups.filter((g) => !g.max_return_date || g.max_return_date >= body.startDate);
+            if (body.endDate)   groups = groups.filter((g) => !g.min_pickup_date || g.min_pickup_date <= body.endDate);
+            if (body.limit)     groups.splice(Number(body.limit));
+            return res.status(200).json({ groups });
+          }
+          // Schema error means the view doesn't exist yet — fall through to JS grouping.
+          if (!isSchemaError(error)) console.error("v2-revenue list_by_booking view error:", error.message);
+        } catch (viewErr) {
+          console.warn("v2-revenue list_by_booking: view unavailable, falling back to JS grouping:", viewErr.message);
+        }
+      }
+
       let allRows = null;
 
       if (sb) {
@@ -609,6 +689,7 @@ export default async function handler(req, res) {
           if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
           if (body.endDate)    q = q.lte("return_date",  body.endDate);
+          if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
           const { data, error } = await q;
           if (!error) allRows = data || [];
         } catch (qErr) {
@@ -619,6 +700,7 @@ export default async function handler(req, res) {
       if (!allRows) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
         allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
+        if (scopedVehicleIds) allRows = allRows.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
       }
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
