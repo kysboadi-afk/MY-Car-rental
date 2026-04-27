@@ -158,7 +158,7 @@ test("active blocked_dates row makes vehicle unavailable with date-only next_ava
   assert.equal(res._status, 200);
   // blocked_dates row drives unavailability — regardless of vehicles.rental_status
   assert.equal(res._body.camry?.available, false);
-  // available_at is always null (blocked_dates has no time column)
+  // no end_time on row → available_at stays null (legacy date-only behaviour)
   assert.equal(res._body.camry?.available_at, null);
   // next_available_display is set to date only (no time component)
   assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
@@ -220,7 +220,7 @@ test("maintenance vehicle is unavailable even with no active blocks", async () =
   assert.equal(res._body.slingshot?.available, true, "non-maintenance vehicle should still be available");
 });
 
-test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_available_display", async () => {
+test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_available_display when end_time is absent", async () => {
   resetMock();
   sbMock.blockedDateRows = [
     { vehicle_id: "camry", end_date: "2026-06-10" },
@@ -238,7 +238,7 @@ test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_
     const computedLog = captured.find((args) => args[0] === "[AVAILABLE_AT_COMPUTED]");
     assert.ok(computedLog, "Expected [AVAILABLE_AT_COMPUTED] log entry");
     assert.equal(computedLog[1]?.vehicle_id, "camry");
-    // return_datetime is null — blocked_dates has no time column
+    // end_time absent — return_datetime is null (legacy date-only behaviour)
     assert.equal(computedLog[1]?.return_datetime, null);
     // next_available_display is date-only
     assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
@@ -246,4 +246,121 @@ test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_
   } finally {
     console.log = originalLog;
   }
+});
+
+test("blocked_dates row with end_time makes vehicle unavailable with time-aware display", async () => {
+  resetMock();
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: "2026-06-10", end_time: "17:00" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.camry?.available, false);
+  // available_at should be an ISO string when end_time is present
+  assert.ok(res._body.camry?.available_at, "available_at should be set when end_time is present");
+  assert.ok(typeof res._body.camry.available_at === "string", "available_at should be a string");
+  assert.ok(res._body.camry.available_at.includes("T"), "available_at should be ISO 8601");
+  // next_available_display should include time
+  assert.ok(res._body.camry?.next_available_display, "next_available_display should be set");
+  assert.ok(res._body.camry.next_available_display.includes(" at "), "next_available_display should include time");
+  assert.ok(res._body.camry.next_available_display.includes("Jun"), "next_available_display should contain the month");
+});
+
+test("[AVAILABLE_AT_COMPUTED] log includes ISO return_datetime when end_time is set", async () => {
+  resetMock();
+  sbMock.blockedDateRows = [
+    { vehicle_id: "slingshot", end_date: "2026-06-15", end_time: "12:00" },
+  ];
+
+  const captured = [];
+  const originalLog = console.log;
+  console.log = (...args) => { captured.push(args); };
+
+  try {
+    const res = makeRes();
+    await handler(makeReq(), res);
+
+    assert.equal(res._status, 200);
+    const computedLog = captured.find(
+      (args) => args[0] === "[AVAILABLE_AT_COMPUTED]" && args[1]?.vehicle_id === "slingshot"
+    );
+    assert.ok(computedLog, "Expected [AVAILABLE_AT_COMPUTED] log entry for slingshot");
+    // return_datetime is an ISO string when end_time is set
+    assert.ok(computedLog[1]?.return_datetime, "return_datetime should be set");
+    assert.ok(computedLog[1].return_datetime.includes("T"), "return_datetime should be ISO 8601");
+    // next_available_display includes time
+    assert.ok(res._body.slingshot?.next_available_display?.includes(" at "), "next_available_display should include time");
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+test("expired block (end_date today, end_time in the past) shows vehicle as available", async () => {
+  resetMock();
+  // Simulate a block that ends today but at 00:01 — always in the past by the time tests run.
+  const todayLA = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: todayLA, end_time: "00:01" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  // Block has already expired (00:01 is always in the past during test runs) —
+  // the vehicle should now be available.
+  assert.equal(res._body.camry?.available, true, "camry should be available after block expiry");
+  assert.equal(res._body.camry?.available_at, null, "available_at should be null when available");
+});
+
+test("future block on today's date (end_time not yet reached) keeps vehicle unavailable", async () => {
+  resetMock();
+  const todayLA = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+
+  sbMock.blockedDateRows = [
+    // end_time "23:59" is always in the future during test runs.
+    { vehicle_id: "slingshot", end_date: todayLA, end_time: "23:59" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.slingshot?.available, false, "slingshot should be unavailable until 23:59");
+  assert.ok(res._body.slingshot?.available_at, "available_at should be set for future time-aware block");
+});
+
+test("latest block wins by end_time when end_dates are equal", async () => {
+  resetMock();
+  sbMock.blockedDateRows = [
+    { vehicle_id: "camry", end_date: "2026-06-10", end_time: "15:00" },
+    { vehicle_id: "camry", end_date: "2026-06-10", end_time: "17:00" },
+    { vehicle_id: "camry", end_date: "2026-06-10", end_time: "12:00" },
+  ];
+
+  const res = makeRes();
+  await handler(makeReq(), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.camry?.available, false);
+  // available_at should reflect the latest time (17:00 LA)
+  assert.ok(res._body.camry?.available_at, "available_at should be set");
+  // The ISO timestamp should represent 17:00 LA time — verify it parses to the same wall-clock hour
+  const availAt = new Date(res._body.camry.available_at);
+  const hourLA = parseInt(availAt.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles", hour: "2-digit", hour12: false,
+  }), 10);
+  assert.equal(hourLA, 17, "available_at should be anchored to 17:00 LA time");
+  // next_available_display should include "5:00 PM" (17:00 in 12-h)
+  assert.ok(res._body.camry?.next_available_display?.includes("5:00 PM"), "should reflect 17:00 → 5:00 PM");
 });

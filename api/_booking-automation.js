@@ -23,6 +23,45 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { updateBooking, normalizePhone } from "./_bookings.js";
 import { loadBooleanSetting } from "./_settings.js";
+import { buildDateTimeLA } from "./_time.js";
+
+// Hours the car is unavailable after a return before a new pickup can start.
+// Must match BOOKING_BUFFER_HOURS in _availability.js.
+const BOOKING_BUFFER_HOURS = 2;
+
+const BUSINESS_TZ = "America/Los_Angeles";
+
+/**
+ * Compute the buffered end date and time for a blocked_dates row.
+ * Adds BOOKING_BUFFER_HOURS to the return time and returns the resulting
+ * date (YYYY-MM-DD) and time (HH:MM) anchored to Los Angeles wall-clock time.
+ *
+ * Returns { date: endDate, time: null } when returnTime is absent or unparseable
+ * so callers fall back to date-only behaviour.
+ *
+ * @param {string} returnDate - YYYY-MM-DD
+ * @param {string|null} returnTime - "HH:MM" or "H:MM AM/PM" in LA timezone
+ * @returns {{ date: string, time: string|null }}
+ */
+function buildBufferedEnd(returnDate, returnTime) {
+  if (!returnTime) return { date: returnDate, time: null };
+  const returnDt = buildDateTimeLA(returnDate, returnTime);
+  if (!Number.isFinite(returnDt.getTime())) {
+    console.warn(
+      `_booking-automation buildBufferedEnd: unparseable returnTime "${returnTime}" for ${returnDate} — falling back to date-only`
+    );
+    return { date: returnDate, time: null };
+  }
+  const bufferedDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
+  const laDate = bufferedDt.toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ }); // YYYY-MM-DD
+  const laTime = bufferedDt.toLocaleTimeString("en-GB", {
+    timeZone: BUSINESS_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }); // HH:MM
+  return { date: laDate, time: laTime };
+}
 
 function formatSupabaseError(err) {
   if (!err) return "Unknown Supabase error";
@@ -678,25 +717,42 @@ export async function autoUpsertBooking(booking, opts = {}) {
  * Inserts a blocked_dates row for a booking period.
  * Skipped silently when Supabase is not configured.
  *
- * @param {string} vehicleId   - vehicle_id text key
- * @param {string} startDate   - YYYY-MM-DD
- * @param {string} endDate     - YYYY-MM-DD
- * @param {string} reason      - 'booking' | 'maintenance' | 'manual'
+ * When `returnTime` is provided the stored end_date and end_time reflect
+ * the return datetime + BOOKING_BUFFER_HOURS so that fleet-status can show
+ * an accurate "available at" time instead of blocking the entire day.
+ *
+ * @param {string} vehicleId    - vehicle_id text key
+ * @param {string} startDate    - YYYY-MM-DD
+ * @param {string} endDate      - YYYY-MM-DD return date (pre-buffer)
+ * @param {string} reason       - 'booking' | 'maintenance' | 'manual'
  * @param {string} [bookingRef] - optional booking_ref foreign key (for 'booking' reason)
+ * @param {string} [returnTime] - optional "HH:MM" or "H:MM AM/PM" LA-timezone return time
  */
-export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking", bookingRef = null) {
+export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reason = "booking", bookingRef = null, returnTime = null) {
   const normalizedVehicleId = normalizeVehicleId(vehicleId);
   if (!normalizedVehicleId || !startDate || !endDate) {
     throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
   }
-  if (new Date(startDate) > new Date(endDate)) {
+
+  // Compute the buffered end date/time when a return time is available.
+  const { date: bufferedEndDate, time: bufferedEndTime } = returnTime
+    ? buildBufferedEnd(endDate, returnTime)
+    : { date: endDate, time: null };
+
+  if (new Date(startDate) > new Date(bufferedEndDate)) {
     throw new Error("Invalid date range: startDate must be on or before endDate");
   }
   const sb = getSupabaseAdmin();
   if (!sb) return;
 
-  const row = { vehicle_id: normalizedVehicleId, start_date: startDate, end_date: endDate, reason };
+  const row = {
+    vehicle_id: normalizedVehicleId,
+    start_date: startDate,
+    end_date:   bufferedEndDate,
+    reason,
+  };
   if (bookingRef) row.booking_ref = bookingRef;
+  if (bufferedEndTime) row.end_time = bufferedEndTime;
 
   try {
     const { error } = await sb
@@ -709,9 +765,10 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
       console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", error.message);
     } else {
       console.log("[BLOCKED_DATE_CREATED]", {
-        vehicle_id: normalizedVehicleId,
-        start: startDate,
-        end: endDate,
+        vehicle_id:  normalizedVehicleId,
+        start:       startDate,
+        end:         bufferedEndDate,
+        end_time:    bufferedEndTime || null,
         booking_ref: bookingRef || null,
       });
     }
@@ -798,37 +855,45 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
 }
 
 /**
- * Extends an existing blocked_dates row for a booking to a later end_date.
+ * Extends an existing blocked_dates row for a booking to a later end_date/end_time.
  * Called after a rental extension so that public availability stays in sync
  * with the updated return date.
  *
  * Behaviour:
  *  - Finds the blocked_dates row(s) with the given vehicle_id + booking_ref.
- *  - Updates end_date to newEndDate only when newEndDate > current end_date
- *    (never shrinks the range).
+ *  - Computes the buffered end (newReturnDate + BOOKING_BUFFER_HOURS) when
+ *    newReturnTime is provided; otherwise uses newReturnDate as-is.
+ *  - Updates end_date (and end_time when applicable) only when the buffered
+ *    end is strictly later than the current stored values (never shrinks).
  *  - Falls back to a warning when no row is found (e.g. the initial block was
  *    never created); callers should not treat this as an error.
  *
  * Non-fatal — errors are logged and never propagate to the caller.
  * Idempotent — safe to call multiple times for the same extension.
  *
- * @param {string} vehicleId  - vehicle_id text key
- * @param {string} bookingRef - booking_ref that owns the blocked_dates row
- * @param {string} newEndDate - YYYY-MM-DD target end date (must be >= existing)
+ * @param {string} vehicleId      - vehicle_id text key
+ * @param {string} bookingRef     - booking_ref that owns the blocked_dates row
+ * @param {string} newReturnDate  - YYYY-MM-DD new return date (pre-buffer)
+ * @param {string} [newReturnTime] - optional "HH:MM" or "H:MM AM/PM" return time
  */
-export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndDate) {
+export async function extendBlockedDateForBooking(vehicleId, bookingRef, newReturnDate, newReturnTime = null) {
   const normalizedVehicleId = normalizeVehicleId(vehicleId);
-  if (!normalizedVehicleId || !bookingRef || !newEndDate) {
+  if (!normalizedVehicleId || !bookingRef || !newReturnDate) {
     console.warn("_booking-automation extendBlockedDateForBooking: missing required args — skipped");
     return;
   }
   const sb = getSupabaseAdmin();
   if (!sb) return;
 
+  // Compute buffered end date and time.
+  const { date: newEndDate, time: newEndTime } = newReturnTime
+    ? buildBufferedEnd(newReturnDate, newReturnTime)
+    : { date: newReturnDate, time: null };
+
   try {
     const { data: rows, error: findErr } = await sb
       .from("blocked_dates")
-      .select("id, start_date, end_date")
+      .select("id, start_date, end_date, end_time")
       .eq("vehicle_id", normalizedVehicleId)
       .eq("booking_ref", bookingRef)
       .eq("reason", "booking");
@@ -850,18 +915,33 @@ export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndD
     // Dates are stored as YYYY-MM-DD strings, so lexicographic comparison is correct.
     const row = rows.reduce((best, r) => (r.start_date < best.start_date ? r : best), rows[0]);
     const currentEnd = row.end_date ? String(row.end_date).split("T")[0] : null;
+    const currentEndTime = row.end_time ? String(row.end_time).substring(0, 5) : null;
 
-    if (currentEnd && currentEnd >= newEndDate) {
+    // Determine whether the new end is strictly later than the current stored end.
+    // When both have times, compare the full datetime; otherwise compare dates.
+    const isAlreadyAtOrPast = (() => {
+      if (!currentEnd) return false;
+      if (currentEnd > newEndDate) return true;
+      if (currentEnd < newEndDate) return false;
+      // Same date — compare times if both are available.
+      if (currentEndTime && newEndTime) return currentEndTime >= newEndTime;
+      return true; // Same date, no time comparison possible → treat as at-or-past.
+    })();
+
+    if (isAlreadyAtOrPast) {
       console.log(
-        `_booking-automation extendBlockedDateForBooking: end_date already at ${currentEnd} >= ${newEndDate} ` +
+        `_booking-automation extendBlockedDateForBooking: end already at ${currentEnd}${currentEndTime ? ` ${currentEndTime}` : ""} >= ${newEndDate}${newEndTime ? ` ${newEndTime}` : ""} ` +
         `for booking_ref=${bookingRef} — no update needed`
       );
       return;
     }
 
+    const updatePayload = { end_date: newEndDate };
+    if (newEndTime) updatePayload.end_time = newEndTime;
+
     const { error: updateErr } = await sb
       .from("blocked_dates")
-      .update({ end_date: newEndDate })
+      .update(updatePayload)
       .eq("id", row.id);
 
     if (updateErr) {
@@ -873,7 +953,9 @@ export async function extendBlockedDateForBooking(vehicleId, bookingRef, newEndD
       vehicle_id:  normalizedVehicleId,
       booking_ref: bookingRef,
       old_end:     currentEnd,
+      old_end_time: currentEndTime || null,
       new_end:     newEndDate,
+      new_end_time: newEndTime || null,
     });
   } catch (err) {
     console.error("_booking-automation extendBlockedDateForBooking error (non-fatal):", err.message);

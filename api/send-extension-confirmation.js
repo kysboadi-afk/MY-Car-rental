@@ -317,7 +317,7 @@ export default async function handler(req, res) {
         console.error("send-extension-confirmation: booked-dates.json extension update failed (non-fatal):", bdErr.message);
       }
       try {
-        await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedReturnDate);
+        await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedReturnDate, updatedReturnTime || null);
         console.log(`send-extension-confirmation: Supabase blocked_dates updated for extension ${vehicle_id}: ${booking.pickupDate} → ${updatedReturnDate}`);
       } catch (sbBlockErr) {
         console.error("send-extension-confirmation: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);

@@ -437,7 +437,7 @@ export async function persistBooking(opts) {
     // Step D: blocked_dates entry
     if (opts.pickupDate && opts.returnDate) {
       const blockResult = await runStep(traceId, "create_blocked_date", () =>
-        autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking", bookingId)
+        autoCreateBlockedDate(opts.vehicleId, opts.pickupDate, opts.returnDate, "booking", bookingId, opts.returnTime || null)
       );
       if (!blockResult.ok) {
         const warn = `create_blocked_date: ${blockResult.error}`;

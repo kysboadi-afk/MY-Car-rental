@@ -1742,7 +1742,7 @@ export default async function handler(req, res) {
               // Update blocked_dates to reflect the new return date.
               if (vehicle_id && new_return_date) {
                 try {
-                  await extendBlockedDateForBooking(vehicle_id, bookingRef, new_return_date);
+                  await extendBlockedDateForBooking(vehicle_id, bookingRef, new_return_date, sbRow.return_time || null);
                 } catch (sbBlockErr) {
                   console.error("stripe-webhook: Supabase fallback blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
                 }
@@ -1987,7 +1987,7 @@ export default async function handler(req, res) {
           // the no-overlap DB trigger would reject an INSERT that covers the same range.
           if (vehicle_id && updatedBooking.returnDate) {
             try {
-              await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedBooking.returnDate);
+              await extendBlockedDateForBooking(vehicle_id, bookingRef, updatedBooking.returnDate, updatedBooking.returnTime || null);
             } catch (sbBlockErr) {
               console.error("stripe-webhook: Supabase blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
             }
