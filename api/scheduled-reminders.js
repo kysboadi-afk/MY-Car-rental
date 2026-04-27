@@ -1360,7 +1360,7 @@ export async function processAutoCompletions(allBookings, now) {
   const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      if (booking.status !== "active_rental" && booking.status !== "active") continue;
+      if (booking.status !== "active_rental" && booking.status !== "active" && booking.status !== "overdue") continue;
 
       // Compute the final return date/time from vehicle_blocking_ranges so
       // auto-completion fires against the renter's true (possibly extended)
