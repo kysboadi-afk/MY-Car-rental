@@ -5,8 +5,8 @@
 // Single source of truth: Supabase `blocked_dates` table.
 //
 // A vehicle is unavailable if it has a blocked_dates row whose end_date is
-// today or in the future.  availability is never read from fleet-status.json,
-// vehicles.rental_status, or the bookings table directly.
+// today or in the future, AND (when end_time is set) the end_time has not yet
+// passed in Los Angeles wall-clock time.
 //
 // vehicles.rental_status = 'maintenance' is still respected as a manual
 // override so the fleet manager can take a vehicle offline for servicing
@@ -15,9 +15,11 @@
 // Response: { vehicle_id: { available, rental_status, available_at,
 //                           next_available_display }, ... }
 //
-//   available_at          — always null (blocked_dates has no time column).
-//   next_available_display — human-readable date string, e.g. "Apr 27, 2026"
-//                           (always set for unavailable vehicles).
+//   available_at          — ISO 8601 UTC string when end_time is set;
+//                           null for legacy date-only blocks.
+//   next_available_display — human-readable string, e.g.
+//                           "Apr 27, 2026 at 5:00 PM" (time-aware) or
+//                           "Apr 27, 2026" (date-only for legacy rows).
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -130,22 +132,42 @@ function formatForDisplay(dateObj, includeTime = true) {
 }
 
 /**
- * Build a lookup of the maximum blocked end_date per vehicle_id from a set of
+ * Build a lookup of the latest blocked end per vehicle_id from a set of
  * blocked_dates rows already filtered to end_date >= today.
  *
- * @param {object[]} rows - blocked_dates rows with vehicle_id and end_date
- * @returns {{ [vehicleId]: string }} vehicleId → YYYY-MM-DD string
+ * Returns each vehicle's latest block as { end_date, end_time } where
+ * end_time may be null for legacy rows that predate the end_time column.
+ * When multiple rows exist for the same vehicle the one with the latest
+ * end_date wins; ties are broken by end_time (later time wins, null last).
+ *
+ * @param {object[]} rows - blocked_dates rows with vehicle_id, end_date[, end_time]
+ * @returns {{ [vehicleId]: { end_date: string, end_time: string|null } }}
  */
-function computeMaxEndByVehicle(rows) {
-  const maxEndByVehicle = {};
+function computeLatestBlockByVehicle(rows) {
+  const latest = {};
   for (const row of (rows || [])) {
     if (!row?.vehicle_id || !row?.end_date) continue;
-    const existing = maxEndByVehicle[row.vehicle_id];
-    if (!existing || row.end_date > existing) {
-      maxEndByVehicle[row.vehicle_id] = row.end_date;
+    const endDate = String(row.end_date).split("T")[0];
+    const endTime = row.end_time ? String(row.end_time).substring(0, 5) : null; // "HH:MM"
+
+    const existing = latest[row.vehicle_id];
+    if (!existing) {
+      latest[row.vehicle_id] = { end_date: endDate, end_time: endTime };
+      continue;
+    }
+
+    if (endDate > existing.end_date) {
+      latest[row.vehicle_id] = { end_date: endDate, end_time: endTime };
+    } else if (endDate === existing.end_date) {
+      // Same date — prefer the later time; null < any time string.
+      const newMins  = endTime       ? parseInt(endTime.replace(":", ""), 10)       : -1;
+      const exstMins = existing.end_time ? parseInt(existing.end_time.replace(":", ""), 10) : -1;
+      if (newMins > exstMins) {
+        latest[row.vehicle_id] = { end_date: endDate, end_time: endTime };
+      }
     }
   }
-  return maxEndByVehicle;
+  return latest;
 }
 
 export default async function handler(req, res) {
@@ -186,36 +208,54 @@ export default async function handler(req, res) {
       }
 
       // ── 2. Query blocked_dates — source of truth for availability ────────
-      // Use MAX(end_date) per vehicle to determine if a vehicle has an active
-      // or upcoming block.  Only rows with end_date >= today are considered;
-      // expired rows are cleaned up by the cleanup-blocked-dates cron.
+      // Fetch rows with end_date >= today (expired rows are cleaned up by the
+      // cleanup-blocked-dates cron).  Also select end_time so the handler can
+      // provide an accurate "available at" timestamp and correctly expire
+      // time-aware blocks mid-day.
       //
-      // Use LA timezone for "today" to match how end_date is interpreted: a
-      // booking that returns on Apr 27 LA time should remain blocked until the
-      // LA calendar date rolls to Apr 28, not until UTC midnight.
+      // Use LA timezone for "today" so a booking that returns on Apr 27 LA
+      // time stays blocked until the LA calendar rolls to Apr 28.
       const today = new Intl.DateTimeFormat("en-CA", {
         timeZone: BUSINESS_TZ,
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
       }).format(new Date()); // YYYY-MM-DD in LA timezone
+
+      // Current time in LA as "HH:MM" for mid-day block expiry checks.
+      const nowTimeLA = new Date().toLocaleTimeString("en-GB", {
+        timeZone: BUSINESS_TZ,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }); // "HH:MM"
+
       const { data: blockedRows, error: blockedError } = await sb
         .from("blocked_dates")
-        .select("vehicle_id, end_date")
+        .select("vehicle_id, end_date, end_time")
         .in("vehicle_id", vehicleIds)
         .gte("end_date", today);
 
       if (blockedError) throw new Error(blockedError.message || "blocked_dates query failed");
 
-      // ── 3. Derive max end_date per vehicle ────────────────────────────────
-      const maxEndByVehicle = computeMaxEndByVehicle(blockedRows || []);
+      // ── 3. Derive latest block per vehicle, then expire time-aware blocks ─
+      const latestByVehicle = computeLatestBlockByVehicle(blockedRows || []);
+
+      // Post-filter: if a block's end_date is today and its end_time has
+      // already passed, the vehicle is available again even though end_date
+      // >= today still matches the query.
+      for (const [vid, block] of Object.entries(latestByVehicle)) {
+        if (block.end_time && block.end_date === today && block.end_time <= nowTimeLA) {
+          delete latestByVehicle[vid];
+        }
+      }
 
       // ── 4. Build response ─────────────────────────────────────────────────
       const result = {};
       for (const vid of vehicleIds) {
-        const maxEnd = maxEndByVehicle[vid]; // YYYY-MM-DD or undefined
+        const block = latestByVehicle[vid]; // { end_date, end_time } or undefined
         const isMaintenance = maintenanceVehicles.has(vid);
-        const hasActiveBlock = !!maxEnd;
+        const hasActiveBlock = !!block;
 
         // Availability: no active block + not in maintenance = available.
         const available = !hasActiveBlock && !isMaintenance;
@@ -223,21 +263,27 @@ export default async function handler(req, res) {
         const entry = {
           available,
           rental_status: isMaintenance ? "maintenance" : (hasActiveBlock ? "rented" : "available"),
-          // blocked_dates has no time column — available_at is always null.
           available_at: null,
           next_available_display: null,
         };
 
-        if (!available && maxEnd) {
-          // Format the end date as "Apr 27, 2026" (date only — no time component).
-          // buildDateTimeLA is called with 12:00 (noon LA) so that toLocaleDateString
-          // never crosses a date boundary due to the UTC-to-LA timezone offset.
-          const endDateObj = buildDateTimeLA(maxEnd, "12:00");
-          entry.next_available_display = formatForDisplay(endDateObj, false);
+        if (!available && block) {
+          if (block.end_time) {
+            // Time-aware block: show exact "available at" datetime.
+            const endDateObj = buildDateTimeLA(block.end_date, block.end_time);
+            entry.available_at       = endDateObj.toISOString();
+            entry.next_available_display = formatForDisplay(endDateObj, true);
+          } else {
+            // Legacy date-only block: show date only.
+            // buildDateTimeLA uses noon so the date never shifts due to UTC offset.
+            const endDateObj = buildDateTimeLA(block.end_date, "12:00");
+            entry.available_at       = null;
+            entry.next_available_display = formatForDisplay(endDateObj, false);
+          }
 
           console.log("[AVAILABLE_AT_COMPUTED]", {
-            vehicle_id: vid,
-            return_datetime: null,
+            vehicle_id:             vid,
+            return_datetime:        entry.available_at,
             next_available_display: entry.next_available_display,
           });
         }

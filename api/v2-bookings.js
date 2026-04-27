@@ -703,7 +703,8 @@ export default async function handler(req, res) {
           updatedBooking.pickupDate,
           updatedBooking.returnDate,
           "booking",
-          updatedBooking.bookingId || null
+          updatedBooking.bookingId || null,
+          updatedBooking.returnTime || null
         );
         // Send booking confirmation SMS when status transitions to booked_paid
         if (newStatus === "booked_paid" && updatedBooking.phone &&
@@ -906,7 +907,8 @@ export default async function handler(req, res) {
             updatedBooking.pickupDate,
             updatedBooking.returnDate,
             "booking",
-            updatedBooking.bookingId || null
+            updatedBooking.bookingId || null,
+            updatedBooking.returnTime || null
           );
           await blockBookedDates(updatedBooking.vehicleId, updatedBooking.pickupDate, updatedBooking.returnDate).catch((err) => {
             console.warn("v2-bookings: blockBookedDates on returnDate update failed (non-fatal):", err.message);
