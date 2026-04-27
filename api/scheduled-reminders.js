@@ -1879,6 +1879,8 @@ async function runReconciliation() {
 
     const repairedPIIds = [];
     const failedPIIds   = [];
+    // Maps piId → human-readable error summary for use in the repair email alert.
+    const repairErrors  = new Map();
 
     for (const pi of newMismatches) {
       const piMetaReconcile = pi.metadata || {};
@@ -1890,50 +1892,76 @@ async function runReconciliation() {
         continue;
       }
 
+      // Step 0: Resolve stripe fee (non-blocking).
+      // Booking is always persisted even when fee resolution fails; stripe_fee
+      // will remain null and be backfilled later by stripe-reconcile.js.
+      let reconExtraFields = {};
       try {
-        // Retrieve stripe fee from Stripe before calling saveWebhookBookingRecord.
-        // This ensures the atomic RPC receives a non-null stripe_fee, which is
-        // required to satisfy the revenue record completeness check.
-        let reconExtraFields = {};
-        try {
-          const expandedPI = await stripe.paymentIntents.retrieve(pi.id, {
-            expand: ["latest_charge.balance_transaction"],
-          });
-          const charge = expandedPI?.latest_charge;
-          const bt = charge && typeof charge === "object" ? charge.balance_transaction : null;
-          if (bt && typeof bt === "object") {
-            const feeCents = bt.fee != null ? Number(bt.fee) : null;
-            const netCents = bt.net != null ? Number(bt.net) : null;
-            const stripeFee = feeCents != null ? Math.round(feeCents) / 100 : null;
-            const stripeNet = netCents != null ? Math.round(netCents) / 100 : null;
-            if (stripeFee != null && Number.isFinite(stripeFee) && stripeFee >= 0) {
-              reconExtraFields = { stripeFee, stripeNet: Number.isFinite(stripeNet) ? stripeNet : null };
-            }
+        const expandedPI = await stripe.paymentIntents.retrieve(pi.id, {
+          expand: ["latest_charge.balance_transaction"],
+        });
+        const charge = expandedPI?.latest_charge;
+        const bt = charge && typeof charge === "object" ? charge.balance_transaction : null;
+        if (bt && typeof bt === "object") {
+          const feeCents = bt.fee != null ? Number(bt.fee) : null;
+          const netCents = bt.net != null ? Number(bt.net) : null;
+          const stripeFee = feeCents != null ? Math.round(feeCents) / 100 : null;
+          const stripeNet = netCents != null ? Math.round(netCents) / 100 : null;
+          if (stripeFee != null && Number.isFinite(stripeFee) && stripeFee >= 0) {
+            reconExtraFields = { stripeFee, stripeNet: Number.isFinite(stripeNet) ? stripeNet : null };
           }
-        } catch (feeErr) {
-          console.warn(`scheduled-reminders reconciliation: stripe fee resolution failed for PI ${pi.id} (non-fatal):`, feeErr.message);
         }
+      } catch (feeErr) {
+        console.warn(
+          `scheduled-reminders reconciliation: stripe fee resolution failed for PI ${pi.id}` +
+          ` (non-fatal — proceeding with fee=null, backfilled by reconcile):`,
+          feeErr
+        );
+      }
 
-        // 1. Persist booking + revenue record (idempotent).
-        //    saveWebhookBookingRecord performs the canonical vehicle_id mapping
-        //    internally, so its result is authoritative for the vehicle key.
+      const stepErrors = []; // collect per-step error strings for this PI
+
+      // Step 1: Persist booking + revenue record (idempotent).
+      //   saveWebhookBookingRecord uses upsert semantics — if the booking already
+      //   exists it updates it; if revenue already exists it backfills missing fee data.
+      //   booking_id in revenue_records is always set to the booking_ref (not the UUID id).
+      let step1Ok = false;
+      try {
         await saveWebhookBookingRecord(pi, reconExtraFields);
+        step1Ok = true;
+        console.log(`scheduled-reminders reconciliation: step 1 (persist) succeeded for PI ${pi.id} (${paymentType || "full_payment"})`);
+      } catch (persistErr) {
+        // Build a detailed error string: message + any Supabase-style fields.
+        const detail = [
+          persistErr.message,
+          persistErr.code    ? `code=${persistErr.code}`       : null,
+          persistErr.details ? `details=${persistErr.details}` : null,
+          persistErr.hint    ? `hint=${persistErr.hint}`       : null,
+        ].filter(Boolean).join(" | ");
+        stepErrors.push(`persist: ${detail}`);
+        // Log the full error object so Vercel captures the stack trace.
+        console.error(
+          `scheduled-reminders reconciliation: step 1 (persist) FAILED for PI ${pi.id} — ${detail}`,
+          persistErr
+        );
+      }
 
-        // 2. Block calendar dates and mark vehicle unavailable.
-        //    mapVehicleId derives the canonical ID from PI metadata so that
-        //    the GitHub JSON files always receive the correct key.
-        const meta = pi.metadata || {};
-        if (meta.pickup_date && meta.return_date) {
-          let reconVehicleId = "";
+      // Step 2: Block calendar dates and mark vehicle unavailable.
+      //   Runs regardless of step 1 outcome so partial states are always completed.
+      //   mapVehicleId derives the canonical ID from PI metadata.
+      const meta = pi.metadata || {};
+      if (meta.pickup_date && meta.return_date) {
+        let reconVehicleId = "";
+        try {
+          reconVehicleId = mapVehicleId(meta);
+        } catch (mapErr) {
+          console.warn(
+            `scheduled-reminders reconciliation: vehicle_id mapping failed for PI ${pi.id}: ${mapErr.message}` +
+            " — skipping blockBookedDates/markVehicleUnavailable"
+          );
+        }
+        if (reconVehicleId) {
           try {
-            reconVehicleId = mapVehicleId(meta);
-          } catch (mapErr) {
-            console.warn(
-              `scheduled-reminders reconciliation: vehicle_id mapping failed for PI ${pi.id}: ${mapErr.message}` +
-              " — skipping blockBookedDates/markVehicleUnavailable"
-            );
-          }
-          if (reconVehicleId) {
             await blockBookedDates(
               reconVehicleId,
               meta.pickup_date,
@@ -1942,21 +1970,37 @@ async function runReconciliation() {
               meta.return_time  || ""
             );
             await markVehicleUnavailable(reconVehicleId);
+          } catch (blockErr) {
+            stepErrors.push(`block_dates: ${blockErr.message}`);
+            console.error(
+              `scheduled-reminders reconciliation: step 2 (block dates) FAILED for PI ${pi.id}:`,
+              blockErr
+            );
           }
         }
+      }
 
-        // 3. Send owner + customer notification emails
-        //    sendWebhookNotificationEmails checks the email_sent flag on
-        //    pending_booking_docs so the owner is never emailed twice.
+      // Step 3: Send owner + customer notification emails.
+      //   Runs regardless of steps 1–2 outcome.
+      //   sendWebhookNotificationEmails checks email_sent flag — never double-sends.
+      try {
         await sendWebhookNotificationEmails(pi);
+      } catch (emailErr) {
+        stepErrors.push(`email: ${emailErr.message}`);
+        console.error(
+          `scheduled-reminders reconciliation: step 3 (notification emails) FAILED for PI ${pi.id}:`,
+          emailErr
+        );
+      }
 
+      if (step1Ok) {
         repairedPIIds.push(pi.id);
         console.log(`scheduled-reminders reconciliation: auto-repaired PI ${pi.id} (${paymentType || "full_payment"})`);
-      } catch (repairErr) {
+      } else {
         failedPIIds.push(pi.id);
+        repairErrors.set(pi.id, stepErrors.join("; "));
         console.error(
-          `scheduled-reminders reconciliation: auto-repair failed for PI ${pi.id}:`,
-          repairErr.message
+          `scheduled-reminders reconciliation: PI ${pi.id} repair FAILED — errors: ${stepErrors.join("; ")}`
         );
       }
     }
@@ -1968,7 +2012,8 @@ async function runReconciliation() {
       const meta      = pi.metadata || {};
       const repaired  = repairedPIIds.includes(pi.id);
       const failed    = failedPIIds.includes(pi.id);
-      const status    = repaired ? "✅ Auto-processed" : (failed ? "❌ Repair failed" : "⚠️ Skipped (manual)");
+      const errDetail = failed ? (repairErrors.get(pi.id) || "see server logs") : "";
+      const status    = repaired ? "✅ Auto-processed" : (failed ? `❌ Repair failed: ${escStr(errDetail)}` : "⚠️ Skipped (manual)");
       return `<tr>
         <td style="padding:6px;border:1px solid #ddd">${escStr(pi.id)}</td>
         <td style="padding:6px;border:1px solid #ddd">$${(pi.amount / 100).toFixed(2)}</td>
@@ -2035,7 +2080,8 @@ async function runReconciliation() {
               const repaired = repairedPIIds.includes(pi.id);
               const failed   = failedPIIds.includes(pi.id);
               const st       = repaired ? "[PROCESSED]" : (failed ? "[FAILED]" : "[SKIPPED]");
-              return `  ${st} ${pi.id}  $${(pi.amount / 100).toFixed(2)}`;
+              const errLine  = failed && repairErrors.get(pi.id) ? `  error: ${repairErrors.get(pi.id)}` : "";
+              return `  ${st} ${pi.id}  $${(pi.amount / 100).toFixed(2)}${errLine}`;
             }),
             "",
             "Admin Panel: https://www.slytrans.com/admin-v2/",
