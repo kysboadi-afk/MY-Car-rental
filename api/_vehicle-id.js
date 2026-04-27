@@ -13,6 +13,12 @@ const LEGACY_ID_NORMALIZE = {
   "camry2012": "camry",
 };
 
+// All known DB-stored IDs (canonical + legacy) that belong to each canonical vehicle.
+// Used to expand query filters so legacy-stored records are never missed.
+const VEHICLE_ID_FAMILY = {
+  camry: ["camry", "camry2012"],
+};
+
 /**
  * Normalize incoming vehicle IDs/names into canonical IDs used for persistence.
  * @param {string} vehicleId
@@ -45,4 +51,18 @@ const DB_TO_UI_MAP = Object.fromEntries(
 export function uiVehicleId(dbId) {
   const raw = String(dbId || "").trim();
   return DB_TO_UI_MAP[raw] || LEGACY_ID_NORMALIZE[raw] || raw;
+}
+
+/**
+ * Returns all DB-stored vehicle IDs (canonical + legacy aliases) that belong
+ * to the same logical vehicle as the given ID.  Use this to expand Supabase
+ * `.eq("vehicle_id", id)` filters into `.in("vehicle_id", vehicleIdFamily(id))`
+ * so that records stored under legacy IDs (e.g. "camry2012") are never missed.
+ *
+ * @param {string} id - canonical or legacy vehicle ID
+ * @returns {string[]} - e.g. vehicleIdFamily("camry") → ["camry", "camry2012"]
+ */
+export function vehicleIdFamily(id) {
+  const canonical = normalizeVehicleId(id);
+  return VEHICLE_ID_FAMILY[canonical] || [canonical];
 }
