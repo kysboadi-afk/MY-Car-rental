@@ -81,6 +81,7 @@ mock.module("./_sms-templates.js", {
     UNPAID_REMINDER_2H:              "",
     UNPAID_REMINDER_FINAL:           "",
     PICKUP_REMINDER_24H:             "",
+    RETURN_REMINDER_24H:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
     LATE_WARNING_30MIN:              "",
     LATE_AT_RETURN_TIME:             "",
