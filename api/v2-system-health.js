@@ -15,6 +15,7 @@
 //    Supported: fix_paymentBookingRevenue, fix_orphanRevenue,
 //               fix_staleReservations, fix_stripePaymentNoBooking
 //    Note: fix_smsDeliveryHealth is handled by POST /api/system-health-fix-sms
+//    Note: fix_availabilitySyncHealth is handled by POST /api/system-health-fix-availability
 //
 // 3. Scheduled cron (Vercel Cron / GET or Bearer-authenticated POST):
 //    GET /api/v2-system-health
@@ -34,6 +35,7 @@
 //     stripePaymentNoBooking:  HealthCheck,
 //     extensionReturnDateSync: HealthCheck,
 //     smsDeliveryHealth:       HealthCheck,
+//     availabilitySyncHealth:  HealthCheck,
 //   },
 //   overallStatus: "ok" | "warning" | "error",
 //   checkedAt: ISO-8601 string,
@@ -54,7 +56,8 @@ import Stripe from "stripe";
 import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
-import { autoCreateRevenueRecord, ensureBlockedDate } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, buildBufferedEnd } from "./_booking-automation.js";
+import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -725,73 +728,144 @@ async function checkSmsDeliveryHealth(sb) {
   }
 }
 
-// Check 9 — Booking ↔ Blocked Date Sync
-// Detects active_rental / overdue bookings that are missing a blocked_dates
-// row — the condition that causes a vehicle to incorrectly appear as available
-// on the booking page while an active rental is in progress.
-async function checkBookingBlockedDateSync(sb) {
+// ── Check 9: Availability Sync Health ─────────────────────────────────────
+// Detects active/overdue bookings that are missing a blocked_dates row, or
+// whose existing blocked_dates row has an end that is earlier than the
+// booking's return_date+return_time+buffer — meaning the vehicle may
+// incorrectly appear as available while it is actively rented.
+const AVAILABILITY_SYNC_ACTIVE = ["active_rental", "overdue"];
+async function checkAvailabilitySync(sb) {
   try {
-    const { data: activeBookings, error: bErr } = await sb
+    const { data: activeRows, error: activeErr } = await sb
       .from("bookings")
-      .select("booking_ref, vehicle_id, return_date, return_time, status")
-      .in("status", ["active_rental", "overdue"])
+      .select("booking_ref, vehicle_id, status, pickup_date, return_date, return_time")
+      .in("status", AVAILABILITY_SYNC_ACTIVE)
       .limit(200);
 
-    if (bErr) {
-      console.error("[v2-system-health] bookingBlockedDateSync query error:", bErr.message);
-      return check("Booking ↔ Blocked Date Sync", "error", "Could not query active bookings: " + bErr.message);
+    if (activeErr) {
+      console.error("[v2-system-health] availabilitySyncHealth query error:", activeErr.message);
+      return check("Availability Sync Health", "error", "Could not query bookings: " + activeErr.message);
     }
 
-    const rows = activeBookings || [];
+    const rows = activeRows || [];
     if (rows.length === 0) {
-      return check("Booking ↔ Blocked Date Sync", "ok", "No active or overdue rentals to check.");
+      return check("Availability Sync Health", "ok", "No active or overdue rentals to check.");
     }
 
     const refs = rows.map((r) => r.booking_ref).filter(Boolean);
 
-    // Fetch all blocked_dates rows linked to these bookings.
+    // Fetch all blocked_dates rows linked to these bookings by booking_ref.
     const { data: blockRows, error: blockErr } = await sb
       .from("blocked_dates")
-      .select("booking_ref")
+      .select("booking_ref, vehicle_id, end_date, end_time")
       .in("booking_ref", refs)
       .eq("reason", "booking");
 
     if (blockErr) {
-      console.error("[v2-system-health] bookingBlockedDateSync blocked_dates query error:", blockErr.message);
-      return check("Booking ↔ Blocked Date Sync", "error", "Could not query blocked_dates: " + blockErr.message);
+      console.error("[v2-system-health] availabilitySyncHealth blocked_dates query error:", blockErr.message);
+      return check("Availability Sync Health", "error", "Could not query blocked_dates: " + blockErr.message);
     }
 
-    const blockedRefs = new Set((blockRows || []).map((r) => r.booking_ref).filter(Boolean));
+    // Index by booking_ref — use the row with the latest end_date (or end_time) per booking.
+    const blockByRef = {};
+    for (const b of blockRows || []) {
+      if (!b.booking_ref) continue;
+      const cur = blockByRef[b.booking_ref];
+      if (!cur) {
+        blockByRef[b.booking_ref] = b;
+        continue;
+      }
+      // Keep the later end: compare end_date first, then end_time.
+      const newIsLater =
+        b.end_date > cur.end_date ||
+        (b.end_date === cur.end_date &&
+          (b.end_time || "00:00") > (cur.end_time || "00:00"));
+      if (newIsLater) blockByRef[b.booking_ref] = b;
+    }
 
-    const missing = rows.filter((b) => b.booking_ref && !blockedRefs.has(b.booking_ref));
+    const missingBlocks = [];
+    const staleBlocks   = [];
 
-    if (missing.length === 0) {
+    for (const booking of rows) {
+      const ref = booking.booking_ref;
+      if (!ref) continue;
+
+      const block = blockByRef[ref];
+
+      if (!block) {
+        // No blocked_dates row at all.
+        missingBlocks.push({
+          id:   ref,
+          info: `status=${booking.status} vehicle=${booking.vehicle_id || "?"} return=${booking.return_date || "?"}`,
+        });
+        continue;
+      }
+
+      // Check whether the stored end is earlier than return+buffer.
+      if (!booking.return_date) continue; // cannot validate without a return date
+
+      const { date: correctEndDate, time: correctEndTime } = buildBufferedEnd(
+        booking.return_date,
+        booking.return_time || null,
+      );
+
+      const storedEnd     = String(block.end_date || "").split("T")[0];
+      const storedEndTime = block.end_time ? String(block.end_time).substring(0, 5) : null;
+
+      const isStale = (() => {
+        if (!storedEnd) return true;
+        if (storedEnd < correctEndDate) return true;
+        if (storedEnd > correctEndDate) return false;
+        // Same date — compare times only when both are available.
+        if (storedEndTime && correctEndTime) return storedEndTime < correctEndTime;
+        return false;
+      })();
+
+      if (isStale) {
+        staleBlocks.push({
+          id:   ref,
+          info: `status=${booking.status} vehicle=${booking.vehicle_id || "?"} ` +
+                `stored_end=${storedEnd}${storedEndTime ? ` ${storedEndTime}` : ""} ` +
+                `expected_end=${correctEndDate}${correctEndTime ? ` ${correctEndTime}` : ""}`,
+        });
+      }
+    }
+
+    const totalIssues = missingBlocks.length + staleBlocks.length;
+    if (totalIssues === 0) {
       return check(
-        "Booking ↔ Blocked Date Sync",
+        "Availability Sync Health",
         "ok",
-        `All ${rows.length} active rental${rows.length !== 1 ? "s" : ""} have a blocked_dates row.`,
+        `All ${rows.length} active rental${rows.length !== 1 ? "s" : ""} have correct blocked_dates entries.`,
       );
     }
 
-    const items = missing.map((b) => ({
-      id: b.booking_ref,
-      info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${b.return_date || "?"}`,
-    }));
+    const allItems = [
+      ...missingBlocks.map((i) => ({ id: i.id, info: `[MISSING BLOCK] ${i.info}` })),
+      ...staleBlocks.map((i)   => ({ id: i.id, info: `[STALE BLOCK] ${i.info}` })),
+    ];
+
+    const parts = [];
+    if (missingBlocks.length > 0)
+      parts.push(`${missingBlocks.length} vehicle${missingBlocks.length !== 1 ? "s" : ""} missing blocks`);
+    if (staleBlocks.length > 0)
+      parts.push(`${staleBlocks.length} vehicle${staleBlocks.length !== 1 ? "s" : ""} with stale/incorrect blocks`);
+
     console.error(
-      `[v2-system-health] ${missing.length} active booking(s) missing blocked_dates row:`,
-      missing.map((b) => b.booking_ref),
+      `[v2-system-health] availabilitySyncHealth: missing=${missingBlocks.length} stale=${staleBlocks.length}`
     );
+
     return check(
-      "Booking ↔ Blocked Date Sync",
+      "Availability Sync Health",
       "error",
-      `${missing.length} active rental${missing.length !== 1 ? "s" : ""} missing a blocked_dates row (vehicle may show as available).`,
-      items,
-      "Click 'Fix Now' to rebuild the missing blocked_dates rows.",
+      parts.join("; ") + ".",
+      allItems,
+      "Click 'Fix Now' to rebuild missing or incorrect blocked_dates rows from active bookings.",
       true,
     );
   } catch (err) {
-    console.error("[v2-system-health] bookingBlockedDateSync exception:", err);
-    return check("Booking ↔ Blocked Date Sync", "error", "Unexpected error: " + err.message);
+    console.error("[v2-system-health] availabilitySyncHealth exception:", err);
+    return check("Availability Sync Health", "error", "Unexpected error: " + err.message);
   }
 }
 
@@ -808,7 +882,7 @@ async function runAllChecks(sb) {
     checkStripePaymentNoBooking(sb)   .then((r) => { checks.stripePaymentNoBooking   = r; }),
     checkExtensionReturnDateSync(sb)  .then((r) => { checks.extensionReturnDateSync  = r; }),
     checkSmsDeliveryHealth(sb)        .then((r) => { checks.smsDeliveryHealth        = r; }),
-    checkBookingBlockedDateSync(sb)   .then((r) => { checks.bookingBlockedDateSync   = r; }),
+    checkAvailabilitySync(sb)         .then((r) => { checks.availabilitySyncHealth   = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);
@@ -822,71 +896,6 @@ async function runAllChecks(sb) {
 }
 
 // ── Fix actions ────────────────────────────────────────────────────────────
-
-// Fix 9: rebuild missing blocked_dates rows for active bookings
-async function fixBookingBlockedDateSync(sb) {
-  const { data: activeBookings, error: bErr } = await sb
-    .from("bookings")
-    .select("booking_ref, vehicle_id, pickup_date, return_date, return_time, status")
-    .in("status", ["active_rental", "overdue"])
-    .limit(200);
-
-  if (bErr) throw new Error("Could not query active bookings: " + bErr.message);
-
-  const rows = activeBookings || [];
-  if (rows.length === 0) return { fixed: 0, message: "No active bookings found." };
-
-  const refs = rows.map((r) => r.booking_ref).filter(Boolean);
-
-  const { data: blockRows, error: blockErr } = await sb
-    .from("blocked_dates")
-    .select("booking_ref")
-    .in("booking_ref", refs)
-    .eq("reason", "booking");
-
-  if (blockErr) throw new Error("Could not query blocked_dates: " + blockErr.message);
-
-  const blockedRefs = new Set((blockRows || []).map((r) => r.booking_ref).filter(Boolean));
-  const missing = rows.filter((b) => b.booking_ref && !blockedRefs.has(b.booking_ref));
-
-  if (missing.length === 0) return { fixed: 0, message: "No missing blocked_dates rows found." };
-
-  let fixed    = 0;
-  let skipped  = 0;
-  const failures = [];
-
-  for (const b of missing) {
-    try {
-      const returnDate = b.return_date ? String(b.return_date).split("T")[0] : null;
-      if (!returnDate || !b.vehicle_id || !b.booking_ref) {
-        skipped++;
-        continue;
-      }
-      const returnTime = b.return_time ? String(b.return_time).substring(0, 5) : null;
-      const startDate  = b.pickup_date ? String(b.pickup_date).split("T")[0] : returnDate;
-
-      const result = await ensureBlockedDate(b.vehicle_id, b.booking_ref, returnDate, returnTime, startDate);
-      if (result.created) {
-        fixed++;
-        console.log(`[v2-system-health] fix_blocked_sync: rebuilt blocked_dates for ${b.booking_ref}`);
-      } else {
-        skipped++;
-        console.log(`[v2-system-health] fix_blocked_sync: skipped ${b.booking_ref} (${result.reason})`);
-      }
-    } catch (err) {
-      failures.push({ id: b.booking_ref, error: err.message });
-      console.error(`[v2-system-health] fix_blocked_sync: failed for ${b.booking_ref}:`, err.message);
-    }
-  }
-
-  return {
-    fixed,
-    skipped,
-    failed: failures.length,
-    failures,
-    message: `Rebuilt ${fixed} blocked_dates row${fixed !== 1 ? "s" : ""}${failures.length ? `, ${failures.length} failed` : ""}.`,
-  };
-}
 
 // Fix 1: create missing revenue records for paid bookings
 async function fixPaymentBookingRevenue(sb) {
@@ -1383,7 +1392,6 @@ export default async function handler(req, res) {
         else if (checkKey === "orphanRevenue")          result = await fixOrphanRevenue(sb);
         else if (checkKey === "staleReservations")      result = await fixStaleReservations(sb);
         else if (checkKey === "stripePaymentNoBooking") result = await fixStripePaymentNoBooking(sb);
-        else if (checkKey === "bookingBlockedDateSync") result = await fixBookingBlockedDateSync(sb);
         else return res.status(400).json({ error: `Unknown fix action: ${action}` });
         return res.status(200).json({ ok: true, action, ...result });
       } catch (err) {
@@ -1408,7 +1416,7 @@ export default async function handler(req, res) {
       orphanRevenue:          fixOrphanRevenue,
       staleReservations:      fixStaleReservations,
       stripePaymentNoBooking: fixStripePaymentNoBooking,
-      bookingBlockedDateSync: fixBookingBlockedDateSync,
+      availabilitySyncHealth: runAvailabilitySyncFix,
     };
     for (const [key, fixFn] of Object.entries(autoRepairMap)) {
       if (checks[key]?.status === "error" && checks[key]?.fixable) {

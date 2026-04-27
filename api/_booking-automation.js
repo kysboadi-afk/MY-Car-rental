@@ -43,7 +43,7 @@ const BUSINESS_TZ = "America/Los_Angeles";
  * @param {string|null} returnTime - "HH:MM" or "H:MM AM/PM" in LA timezone
  * @returns {{ date: string, time: string|null }}
  */
-function buildBufferedEnd(returnDate, returnTime) {
+export function buildBufferedEnd(returnDate, returnTime) {
   if (!returnTime) return { date: returnDate, time: null };
   const returnDt = buildDateTimeLA(returnDate, returnTime);
   if (!Number.isFinite(returnDt.getTime())) {
