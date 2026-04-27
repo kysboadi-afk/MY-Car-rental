@@ -179,6 +179,13 @@ export const PICKUP_REMINDER_30MIN =
 // 5. ACTIVE RENTAL
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Sent ~24 hours before the scheduled return time. */
+export const RETURN_REMINDER_24H =
+  "Hi {customer_name},\n\n" +
+  "Your {vehicle} is due back tomorrow at {return_time}.\n\n" +
+  "Reply EXTEND if you\u2019d like more time.\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent mid-rental (e.g. roughly halfway through). */
 export const ACTIVE_RENTAL_MID =
   "Hope you\u2019re enjoying your {vehicle}.\n\n" +

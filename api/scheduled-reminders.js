@@ -40,6 +40,7 @@ import {
   UNPAID_REMINDER_2H,
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
+  RETURN_REMINDER_24H,
   ACTIVE_RENTAL_1H_BEFORE_END,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
@@ -131,6 +132,13 @@ const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire
 // return-obligation warning so renters never receive both in the same cron tick.
 const EXT_REMINDER_UPPER_MIN = 60; // inclusive upper bound: fires when ≤ 60 min remain
 const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when ≤ 45 min remain
+
+// Boundaries (in minutes) for the 24-hour-before-return reminder window.
+// Fires once in the 1,380–1,440 min window (23–24 h before return).
+// Cron runs every 5 min, so a 60-min window guarantees the message fires exactly
+// once even if a cron tick is delayed or skipped.
+const RETURN_REMINDER_24H_UPPER_MIN = 1440; // inclusive upper bound: fires when ≤ 1440 min (24 h) remain
+const RETURN_REMINDER_24H_LOWER_MIN = 1380; // exclusive lower bound: does not fire when ≤ 1380 min (23 h) remain
 
 // SMS send-window boundaries — messages are only delivered between these hours
 // in America/Los_Angeles time to avoid waking renters outside business hours.
@@ -777,14 +785,37 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // Falls back to the booking's own returnDate/returnTime when Supabase is
       // unavailable (e.g. null client in test environments).
       const id = booking.bookingId || booking.paymentIntentId;
-      let { endDate: finalDate, returnTime: resolvedFinalTime, end_datetime: returnDt } =
-        await getRentalState(sb, id);
+      let {
+        endDate:         finalDate,
+        returnTime:      resolvedFinalTime,
+        end_datetime:    returnDt,
+        minutesToReturn: rsMinutesToReturn,
+        isActive:        rsIsActive,
+      } = await getRentalState(sb, id);
+
+      console.log("[RENTAL_STATE]", {
+        booking_ref:        id,
+        status:             booking.status,
+        rs_endDate:         finalDate,
+        rs_returnTime:      resolvedFinalTime,
+        rs_end_datetime:    isNaN(returnDt.getTime()) ? "NaN" : toLAString(returnDt),
+        rs_minutesToReturn: rsMinutesToReturn,
+        rs_isActive:        rsIsActive,
+      });
+
       if (isNaN(returnDt.getTime())) {
         const fbDate = booking.returnDate || "";
         const fbTime = booking.returnTime || DEFAULT_RETURN_TIME;
         returnDt = buildDateTimeLA(fbDate, fbTime);
         finalDate = fbDate;
         resolvedFinalTime = fbTime;
+        console.log("[RENTAL_STATE_FALLBACK]", {
+          booking_ref:     id,
+          reason:          "getRentalState returned NaN end_datetime — using booking.returnDate/returnTime",
+          fb_returnDate:   fbDate,
+          fb_returnTime:   fbTime,
+          fb_end_datetime: isNaN(returnDt.getTime()) ? "NaN" : toLAString(returnDt),
+        });
       }
       if (isNaN(returnDt.getTime())) continue;
 
@@ -801,6 +832,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 
       console.log("[SMS_ACTIVE]", {
         booking_ref:       id,
+        status:            booking.status,
         vehicleId,
         return_date_raw:   booking.returnDate,
         return_time_raw:   booking.returnTime || null,
@@ -1052,6 +1084,45 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         }
       } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
+      }
+
+      // ── P3: ~24 hours before return — return reminder ─────────────────────────
+      // Fires once in the 1,380–1,440 min window (23 h–24 h before return).
+      // Uses the same scoring / cooldown path as the 1h extension invite so that
+      // cross-cron spam protection applies.  sms_logs dedup prevents a second
+      // send if the cron fires multiple times during the 60-min window.
+      if (
+        !sentThisBooking &&
+        minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN &&
+        !alreadySent(booking, "return_reminder_24h") &&
+        !(await isSmsLogged(id, "return_reminder_24h", returnDateStr))
+      ) {
+        const recentRows = await fetchRecentSmsLogs(sb, id);
+        const scoringCtx = buildSmsContext(
+          "return_reminder_24h",
+          recentRows,
+          { minutesToReturn: minutesUntilReturn, daysSincePickup }
+        );
+        const { score, breakdown } = computeSmsScoreWithBreakdown("return_reminder_24h", scoringCtx);
+        const effectiveThreshold   = computeEffectiveThreshold(scoringCtx);
+        console.log(
+          `[SMS_SCORE] ${id} return_reminder_24h:` +
+          ` score=${score} threshold=${effectiveThreshold}` +
+          ` breakdown=${JSON.stringify(breakdown)}`
+        );
+        if (score <= effectiveThreshold) {
+          console.log(`[SMS_SKIP] ${id} return_reminder_24h: score ${score} ≤ ${effectiveThreshold}`);
+        } else {
+          logSmsTrigger(id, returnIso, nowIso, "return_reminder_24h");
+          const sent = await safeSend(booking.phone, render(RETURN_REMINDER_24H, v));
+          if (sent) {
+            sentThisBooking = true;
+            sentMarks.push({ vehicleId, id, key: "return_reminder_24h" });
+            await logSmsToSupabase(id, "return_reminder_24h", returnDateStr, { score, breakdown });
+          }
+        }
+      } else if (minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} return_reminder_24h: already sent (dedup)`);
       }
 
       // Per-run dedup: if any SMS was sent for this booking, mark the phone so

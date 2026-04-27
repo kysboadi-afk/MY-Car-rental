@@ -58,6 +58,7 @@ export const SMS_PRIORITY = {
 
   // ── P3 — Standard ──────────────────────────────────────────────────────────
   active_rental_1h_before_end:     PRIORITY.STANDARD,   // extension invitation
+  return_reminder_24h:             PRIORITY.STANDARD,   // 24h before return reminder
   pickup_24h:                      PRIORITY.STANDARD,   // pickup reminder
   unpaid_2h:                       PRIORITY.STANDARD,   // unpaid payment reminder
   unpaid_final:                    PRIORITY.STANDARD,   // final unpaid reminder
