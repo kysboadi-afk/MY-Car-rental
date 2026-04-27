@@ -622,7 +622,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     pickupDate:            pickup_date,
     pickupTime:            pickup_time  || "",
     returnDate:            return_date,
-    returnTime:            return_time  || "",
+    returnTime:            return_time  || DEFAULT_RETURN_TIME,
     location:              DEFAULT_LOCATION,
     status,
     amountPaid,
@@ -1890,10 +1890,11 @@ export default async function handler(req, res) {
           // because the extend flow has no time picker — the renter keeps their
           // original daily schedule.
           // The insert is idempotent via the UNIQUE constraint on payment_intent_id.
+          // Fatal: return 500 on failure so Stripe retries and the row is never silently lost.
           try {
             const sbBE = getSupabaseAdmin();
             if (sbBE && resolvedBookingId && new_return_date) {
-              const { data: beData, error: beError } = await sbBE
+              const { data: beData, error: beUpsertErr } = await sbBE
                 .from("booking_extensions")
                 .upsert(
                   {
@@ -1905,8 +1906,9 @@ export default async function handler(req, res) {
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );
-              if (beError) {
-                console.error("stripe-webhook: booking_extensions upsert failed:", beError.message, beError.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+              if (beUpsertErr) {
+                console.error("stripe-webhook: booking_extensions upsert failed:", beUpsertErr.message, beUpsertErr.details || "", { resolvedBookingId, paymentIntentId: paymentIntent.id });
+                throw beUpsertErr;
               } else {
                 console.log("stripe-webhook: booking_extensions upsert succeeded", { resolvedBookingId, paymentIntentId: paymentIntent.id, rows: beData?.length ?? "(no data)" });
               }
@@ -1914,7 +1916,11 @@ export default async function handler(req, res) {
               console.warn("stripe-webhook: booking_extensions upsert skipped — missing sbBE, resolvedBookingId, or new_return_date", { resolvedBookingId, new_return_date });
             }
           } catch (beErr) {
-            console.error("stripe-webhook: booking_extensions insert error (non-fatal):", beErr.message);
+            console.error("stripe-webhook: booking_extensions insert error:", beErr.message);
+            return res.status(500).json({
+              received: false,
+              error: `booking_extensions persistence failed for ${paymentIntent.id}`,
+            });
           }
 
           // Create a new extension revenue record (type='extension').
@@ -2782,8 +2788,7 @@ export default async function handler(req, res) {
               pickupDate: meta.pickup_date || "",
               pickupTime: meta.pickup_time || "",
               returnDate: meta.return_date || "",
-              returnTime: meta.return_time || "",
-              paymentIntentId: originalPiId || "",
+              returnTime: meta.return_time || DEFAULT_RETURN_TIME,
               amountPaid: paidAmount,
               totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
               paymentStatus: "paid",
@@ -2871,7 +2876,7 @@ export default async function handler(req, res) {
           pickupDate:               pickup_date,
           pickupTime:               meta.pickup_time || "",
           returnDate:               return_date,
-          returnTime:               meta.return_time || "",
+          returnTime:               meta.return_time || DEFAULT_RETURN_TIME,
           location:                 DEFAULT_LOCATION,
           status:                   "reserved_unpaid",
           amountPaid,

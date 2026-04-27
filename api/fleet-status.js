@@ -25,6 +25,7 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
 
+
 function buildDefaultStatus() {
   const map = {};
   for (const vehicleId of FALLBACK_VEHICLE_IDS) {
