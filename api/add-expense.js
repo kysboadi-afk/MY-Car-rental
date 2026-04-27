@@ -19,9 +19,10 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES   = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES   = FLEET_VEHICLE_IDS;
 const ALLOWED_CATEGORIES = ["maintenance", "insurance", "repair", "fuel", "registration", "other"];
 
 export default async function handler(req, res) {

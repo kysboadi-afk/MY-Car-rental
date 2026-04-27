@@ -29,12 +29,13 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeClockTime } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES  = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES  = FLEET_VEHICLE_IDS;
 const VEHICLE_NAMES     = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (Unit 2)",

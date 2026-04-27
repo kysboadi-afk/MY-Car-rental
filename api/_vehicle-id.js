@@ -1,3 +1,5 @@
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+
 // Map legacy IDs and user-facing names to canonical IDs before persistence.
 const VEHICLE_ID_ALIASES = {
   "Camry 2012": "camry",
@@ -12,6 +14,16 @@ const VEHICLE_ID_ALIASES = {
 const LEGACY_ID_NORMALIZE = {
   "camry2012": "camry",
 };
+
+// All DB-side vehicle IDs: canonical fleet IDs plus any legacy IDs that were
+// stored in old database records before normalisation was enforced.
+// Use this list (instead of FLEET_VEHICLE_IDS) for Supabase `.in("vehicle_id", …)`
+// filters so that legacy-stored bookings (e.g. vehicle_id="camry2012") are never missed.
+// Adding a new car to CARS in _pricing.js automatically includes it here.
+export const FLEET_DB_VEHICLE_IDS = [
+  ...FLEET_VEHICLE_IDS,
+  ...Object.keys(LEGACY_ID_NORMALIZE),
+].filter((v, i, arr) => arr.indexOf(v) === i);
 
 // All known DB-stored IDs (canonical + legacy) that belong to each canonical vehicle.
 // Used to expand query filters so legacy-stored records are never missed.

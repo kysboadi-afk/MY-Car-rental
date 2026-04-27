@@ -18,9 +18,10 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_final-return-date.js";
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 
