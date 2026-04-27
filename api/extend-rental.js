@@ -537,7 +537,7 @@ export default async function handler(req, res) {
         renter_phone:          activeBooking.phone || "",
         extension_label:       extensionLabel,
         new_return_date:       newReturnDate,
-        new_return_time:       formatTime12h(resolvedReturnTime),
+        new_return_time:       formatTime12h(resolvedReturnTime) || "",
         // Return date in effect before this extension — used by the webhook to set
         // the correct pickup_date on the extension revenue record (extension start).
         previous_return_date:  effectiveReturnDate || "",

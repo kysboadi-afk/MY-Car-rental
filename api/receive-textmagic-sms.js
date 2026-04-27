@@ -326,7 +326,7 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
         renter_phone:        booking.phone || "",
         extension_label:     label,
         new_return_date:     newReturnDate || "",
-        new_return_time:     formatTime12h(newReturnTime) || "",
+        new_return_time:     newReturnTime ? formatTime12h(newReturnTime) : "",
       },
     });
     return pi;
