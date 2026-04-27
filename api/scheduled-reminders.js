@@ -1317,7 +1317,7 @@ async function loadBookingsFromSupabase(sb) {
       "late_fee_status, late_fee_amount, created_at";
 
     // Recently completed = last 9 days (covers 7-day retention + buffer)
-    const cutoffDate = new Date(Date.now() - 9 * 24 * 3600_000).toISOString();
+    const cutoffDate = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
 
     const [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
       await Promise.all([
@@ -1390,7 +1390,7 @@ async function loadBookingsFromSupabase(sb) {
     // Pre-populate smsSentAt from sms_logs sentinel rows (once-per-booking SMS
     // types logged without a return date).  Return-time keys are intentionally
     // excluded so alreadySent() never blocks a re-fire after an extension.
-    const bookingRefs = allRows.map((r) => r.booking_ref).filter(Boolean);
+    const bookingRefs = allRows.map((r) => r.booking_ref).filter((ref) => ref && ref.trim());
     if (bookingRefs.length > 0) {
       try {
         const { data: smsRows, error: smsErr } = await sb
@@ -2052,9 +2052,14 @@ export default async function handler(req, res) {
 
   // Enforce 8 AM – 7 PM LA send window for cron-triggered runs.
   // Manual POST bypasses the window to allow out-of-hours testing.
-  // P1/P2 critical messages (late_warning_30min, late_at_return, late_grace_expired,
-  // late_fee_pending) and the named P3 active_rental_1h_before_end bypass the
-  // window restriction and fire even during off-hours (criticalOnly=true).
+  // In criticalOnly mode (outside window), processActiveRentals still runs for
+  // all active bookings, but only the time-critical trigger blocks execute:
+  //   P1 (late_fee_pending, late_grace_expired) and P2 (late_at_return,
+  //   late_warning_30min) always fire because they are NOT gated by criticalOnly.
+  //   active_rental_1h_before_end (P3) also fires because it is not gated.
+  //   Non-critical P3 blocks (active_rental_mid, return_reminder_24h) are
+  //   skipped when criticalOnly=true.
+  // processUnpaid, processPaidBookings, and processCompleted are skipped entirely.
   if (req.method === "GET") {
     const hour = laHour();
     if (hour < SMS_WINDOW_START_HOUR || hour >= SMS_WINDOW_END_HOUR) {
