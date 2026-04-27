@@ -23,6 +23,7 @@ import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
+import { normalizeVehicleId, vehicleIdFamily } from "./_vehicle-id.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -125,7 +126,7 @@ export default async function handler(req, res) {
       if (sb) {
         try {
           let q = sb.from("revenue_records_effective").select("*").eq("is_orphan", false).order("created_at", { ascending: false });
-          if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
+          if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
           if (body.status)     q = q.eq("payment_status", body.status);
           if (body.startDate)  q = q.gte("pickup_date",   body.startDate);
           if (body.endDate)    q = q.lte("return_date",   body.endDate);
@@ -146,7 +147,7 @@ export default async function handler(req, res) {
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
       let records = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
-      if (body.vehicleId)  records = records.filter((r) => r.vehicle_id    === body.vehicleId);
+      if (body.vehicleId)  records = records.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       if (body.status)     records = records.filter((r) => r.payment_status === body.status);
       if (body.startDate)  records = records.filter((r) => r.pickup_date   >= body.startDate);
       if (body.endDate)    records = records.filter((r) => r.return_date   <= body.endDate);
@@ -185,7 +186,7 @@ export default async function handler(req, res) {
             updated_at:     b.updatedAt   || null,
             _derived:       true,
           }));
-        if (body.vehicleId) derived = derived.filter((r) => r.vehicle_id    === body.vehicleId);
+        if (body.vehicleId) derived = derived.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
         if (body.status)    derived = derived.filter((r) => r.payment_status === body.status);
         if (body.startDate) derived = derived.filter((r) => r.pickup_date   >= body.startDate);
         if (body.endDate)   derived = derived.filter((r) => r.return_date   <= body.endDate);
@@ -216,7 +217,10 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicle_id, gross_amount } = body;
+      const { gross_amount } = body;
+      // Normalize vehicle_id to canonical form (e.g. "camry2012" → "camry") so
+      // manually-inserted records are always grouped with their vehicle's history.
+      const vehicle_id = normalizeVehicleId(body.vehicle_id);
       // booking_id is optional for manual entries; auto-generate a unique id if not supplied
       const booking_id = body.booking_id || ("manual-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex"));
       if (!vehicle_id || gross_amount == null)
@@ -284,8 +288,12 @@ export default async function handler(req, res) {
       }
       if (!Object.keys(updates).length)
         return res.status(400).json({ error: "No valid update fields provided" });
-      if ("vehicle_id" in updates && !updates.vehicle_id) {
-        console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
+      if ("vehicle_id" in updates) {
+        if (!updates.vehicle_id) {
+          console.warn(`v2-revenue update [${body.id}]: vehicle_id was provided but is empty — record will have no vehicle assigned`);
+        } else {
+          updates.vehicle_id = normalizeVehicleId(updates.vehicle_id);
+        }
       }
 
       if (sb) {
@@ -348,7 +356,7 @@ export default async function handler(req, res) {
         const summary = {};
         const totals = { gross: 0, fees: 0, refunds: 0, net: 0, deposits: 0, bookingCount: 0 };
         for (const r of (recs || [])) {
-          const vid = r.vehicle_id || "unknown";
+          const vid = normalizeVehicleId(r.vehicle_id) || "unknown";
           if (!summary[vid]) {
             summary[vid] = { vehicle_id: vid, booking_count:0, cancelled_count:0, no_show_count:0, total_gross:0, total_fees:0, total_refunds:0, total_net:0, total_deposits:0 };
           }
@@ -648,7 +656,7 @@ export default async function handler(req, res) {
             .from("booking_revenue_grouped")
             .select("*")
             .order("min_pickup_date", { ascending: false });
-          if (body.vehicleId) q = q.eq("vehicle_id", body.vehicleId);
+          if (body.vehicleId) q = q.in("vehicle_id", vehicleIdFamily(body.vehicleId));
           if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
           const { data, error } = await q;
           if (!error) {
@@ -687,7 +695,7 @@ export default async function handler(req, res) {
             .select("*")
             .eq("is_orphan", false)
             .order("created_at", { ascending: true });
-          if (body.vehicleId)  q = q.eq("vehicle_id",    body.vehicleId);
+          if (body.vehicleId)  q = q.in("vehicle_id",    vehicleIdFamily(body.vehicleId));
           if (body.startDate)  q = q.gte("pickup_date",  body.startDate);
           if (body.endDate)    q = q.lte("return_date",  body.endDate);
           if (scopedVehicleIds && scopedVehicleIds.length > 0) q = q.in("vehicle_id", scopedVehicleIds);
@@ -702,6 +710,7 @@ export default async function handler(req, res) {
         const { data: ghRecords } = await loadRecordsFromGitHub();
         allRows = ghRecords.filter((r) => !r.sync_excluded && !r.is_orphan);
         if (scopedVehicleIds) allRows = allRows.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
+        if (body.vehicleId) allRows = allRows.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
       }
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
