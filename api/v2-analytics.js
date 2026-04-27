@@ -164,6 +164,26 @@ export default async function handler(req, res) {
     const activeVehicleIds = new Set();
 
     const sb = getSupabaseAdmin();
+
+    // Canonical ledger-based KPI — same view queried by v2-revenue.js `kpi` action.
+    // Fetched once and reused across all actions that need the fleet revenue total.
+    let kpiTotalRevenue = null;
+    if (sb) {
+      try {
+        const { data: kpiRow, error: kpiErr } = await sb
+          .from("total_revenue_kpi")
+          .select("total_revenue")
+          .single();
+        if (!kpiErr && kpiRow != null) {
+          kpiTotalRevenue = Math.round(Number(kpiRow.total_revenue) * 100) / 100;
+        } else if (kpiErr) {
+          console.warn("v2-analytics: total_revenue_kpi query failed (non-fatal):", kpiErr.message);
+        }
+      } catch (kpiEx) {
+        console.warn("v2-analytics: total_revenue_kpi query error (non-fatal):", kpiEx.message);
+      }
+    }
+
     if (sb) {
       try {
         const { data: activeRows, error: activeErr } = await sb
@@ -322,7 +342,7 @@ export default async function handler(req, res) {
         };
       }
 
-      return res.status(200).json({ fleet: vehicleStats, _source: financialsFromRevRecords ? "revenue_records" : "bookings_fallback" });
+      return res.status(200).json({ fleet: vehicleStats, kpi_total_revenue: kpiTotalRevenue, _source: financialsFromRevRecords ? "revenue_records" : "bookings_fallback" });
     }
 
     // ── SINGLE VEHICLE DEEP-DIVE ─────────────────────────────────────────────
