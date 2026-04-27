@@ -14,6 +14,7 @@
 //    Body: { "secret": "<ADMIN_SECRET>", "action": "fix_<checkKey>" }
 //    Supported: fix_paymentBookingRevenue, fix_orphanRevenue,
 //               fix_staleReservations, fix_stripePaymentNoBooking
+//    Note: fix_smsDeliveryHealth is handled by POST /api/system-health-fix-sms
 //
 // 3. Scheduled cron (Vercel Cron / GET or Bearer-authenticated POST):
 //    GET /api/v2-system-health
@@ -25,13 +26,14 @@
 // ── Response shape (run mode) ───────────────────────────────────────────────
 // {
 //   checks: {
-//     paymentBookingRevenue:  HealthCheck,
-//     missingAgreements:      HealthCheck,
-//     activeRentalCount:      HealthCheck,
-//     orphanRevenue:          HealthCheck,
-//     staleReservations:      HealthCheck,
-//     stripePaymentNoBooking: HealthCheck,
+//     paymentBookingRevenue:   HealthCheck,
+//     missingAgreements:       HealthCheck,
+//     activeRentalCount:       HealthCheck,
+//     orphanRevenue:           HealthCheck,
+//     staleReservations:       HealthCheck,
+//     stripePaymentNoBooking:  HealthCheck,
 //     extensionReturnDateSync: HealthCheck,
+//     smsDeliveryHealth:       HealthCheck,
 //   },
 //   overallStatus: "ok" | "warning" | "error",
 //   checkedAt: ISO-8601 string,
@@ -592,7 +594,136 @@ async function checkExtensionReturnDateSync(sb) {
   }
 }
 
-// ── Run all checks ─────────────────────────────────────────────────────────
+// ── Check 8: SMS Delivery Health ────────────────────────────────────────────
+// Detects active/overdue rentals that are missing required SMS communication:
+//   • Active rentals with zero sms_logs entries (silent bookings)
+//   • Overdue/recently-past-return bookings missing critical return-window SMS
+//   • Active bookings with no customer_phone (cannot receive SMS)
+async function checkSmsDeliveryHealth(sb) {
+  try {
+    const today     = new Date().toISOString().slice(0, 10);
+    // Look back 48 h for recently-past-return bookings that may have missed critical SMS.
+    const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const ACTIVE_STATUSES = ["active_rental", "active", "overdue"];
+
+    const { data: activeRows, error: activeErr } = await sb
+      .from("bookings")
+      .select("booking_ref, status, customer_phone, customer_name, return_date, vehicle_id")
+      .in("status", ACTIVE_STATUSES)
+      .limit(200);
+
+    if (activeErr) {
+      console.error("[v2-system-health] smsDeliveryHealth query error:", activeErr.message);
+      return check("SMS Delivery Health", "error", "Could not query bookings: " + activeErr.message);
+    }
+
+    const rows = activeRows || [];
+    if (rows.length === 0) {
+      return check("SMS Delivery Health", "ok", "No active or overdue rentals to check.");
+    }
+
+    const refs = rows.map((r) => r.booking_ref).filter(Boolean);
+
+    // Fetch all sms_logs rows for these bookings in one query.
+    const { data: smsRows, error: smsErr } = await sb
+      .from("sms_logs")
+      .select("booking_id, template_key, return_date_at_send")
+      .in("booking_id", refs);
+
+    if (smsErr) {
+      console.error("[v2-system-health] smsDeliveryHealth sms_logs query error:", smsErr.message);
+      return check("SMS Delivery Health", "error", "Could not query sms_logs: " + smsErr.message);
+    }
+
+    // Build a set of "template_key|return_date_at_send" tuples per booking.
+    const smsByBooking = {};
+    for (const log of smsRows || []) {
+      if (!smsByBooking[log.booking_id]) smsByBooking[log.booking_id] = new Set();
+      smsByBooking[log.booking_id].add(`${log.template_key}|${log.return_date_at_send}`);
+    }
+
+    const missingPhone   = [];
+    const noSmsContact   = [];
+    const missedCritical = [];
+
+    for (const b of rows) {
+      const ref = b.booking_ref;
+      if (!ref) continue;
+
+      // Sub-check A: booking missing a phone number
+      if (!b.customer_phone) {
+        missingPhone.push({
+          id:   ref,
+          info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${b.return_date || "?"}`,
+        });
+        continue; // cannot send SMS without a phone number
+      }
+
+      const logs = smsByBooking[ref] || new Set();
+
+      // Sub-check B: active rental with zero SMS contact ever
+      if (logs.size === 0) {
+        noSmsContact.push({
+          id:   ref,
+          info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${b.return_date || "?"}`,
+        });
+      }
+
+      // Sub-check C: overdue / recently-past-return without critical return-window SMS
+      const returnDate = b.return_date ? String(b.return_date).split("T")[0] : null;
+      if (returnDate && returnDate <= today && returnDate >= cutoff48h) {
+        const criticalKeys = ["late_warning_30min", "late_at_return", "late_grace_expired"];
+        const missed = criticalKeys.filter((k) => !logs.has(`${k}|${returnDate}`));
+        if (missed.length > 0) {
+          missedCritical.push({
+            id:   ref,
+            info: `status=${b.status} return=${returnDate} missed=[${missed.join(",")}] vehicle=${b.vehicle_id || "?"}`,
+          });
+        }
+      }
+    }
+
+    const totalIssues = missingPhone.length + noSmsContact.length + missedCritical.length;
+    if (totalIssues === 0) {
+      return check(
+        "SMS Delivery Health",
+        "ok",
+        `All ${rows.length} active rental${rows.length !== 1 ? "s" : ""} have SMS coverage.`,
+      );
+    }
+
+    const allItems = [
+      ...missedCritical.map((i) => ({ id: i.id, info: `[MISSED CRITICAL] ${i.info}` })),
+      ...noSmsContact.map((i)   => ({ id: i.id, info: `[NO SMS] ${i.info}` })),
+      ...missingPhone.map((i)   => ({ id: i.id, info: `[NO PHONE] ${i.info}` })),
+    ];
+
+    const parts = [];
+    if (missedCritical.length > 0)
+      parts.push(`${missedCritical.length} booking${missedCritical.length !== 1 ? "s" : ""} missed critical return-window SMS`);
+    if (noSmsContact.length > 0)
+      parts.push(`${noSmsContact.length} active rental${noSmsContact.length !== 1 ? "s" : ""} with no SMS contact`);
+    if (missingPhone.length > 0)
+      parts.push(`${missingPhone.length} booking${missingPhone.length !== 1 ? "s" : ""} without a phone number`);
+
+    console.error(
+      `[v2-system-health] smsDeliveryHealth: missedCritical=${missedCritical.length}` +
+      ` noSmsContact=${noSmsContact.length} missingPhone=${missingPhone.length}`
+    );
+
+    return check(
+      "SMS Delivery Health",
+      missedCritical.length > 0 ? "error" : "warning",
+      parts.join("; ") + ".",
+      allItems,
+      "Click 'Fix Now' to send any missing critical SMS. Bookings without a phone number require manual intervention.",
+      true, // fixable — frontend routes Fix Now to /api/system-health-fix-sms
+    );
+  } catch (err) {
+    console.error("[v2-system-health] smsDeliveryHealth exception:", err);
+    return check("SMS Delivery Health", "error", "Unexpected error: " + err.message);
+  }
+}
 
 async function runAllChecks(sb) {
   const checks    = {};
@@ -606,6 +737,7 @@ async function runAllChecks(sb) {
     checkStaleReservations(sb)        .then((r) => { checks.staleReservations        = r; }),
     checkStripePaymentNoBooking(sb)   .then((r) => { checks.stripePaymentNoBooking   = r; }),
     checkExtensionReturnDateSync(sb)  .then((r) => { checks.extensionReturnDateSync  = r; }),
+    checkSmsDeliveryHealth(sb)        .then((r) => { checks.smsDeliveryHealth        = r; }),
   ]);
 
   const statuses = Object.values(checks).map((c) => c.status);

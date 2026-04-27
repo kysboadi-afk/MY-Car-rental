@@ -6385,10 +6385,17 @@ function renderSystemHealth(data) {
 async function fixHealthCheck(checkKey, btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Fixing…'; }
   try {
-    const result = await apiPost('/api/v2-system-health', {
-      secret: adminSecret,
-      action: `fix_${checkKey}`,
-    });
+    let result;
+    if (checkKey === 'smsDeliveryHealth') {
+      // SMS repair runs through its own dedicated endpoint which reuses the
+      // exact same processActiveRentals logic as the cron (repairMode: true).
+      result = await apiPost('/api/system-health-fix-sms', { secret: adminSecret });
+    } else {
+      result = await apiPost('/api/v2-system-health', {
+        secret: adminSecret,
+        action: `fix_${checkKey}`,
+      });
+    }
     showToast(result.message || 'Fix applied.', 'success');
     // Re-run all checks to reflect updated state
     await loadSystemHealth();

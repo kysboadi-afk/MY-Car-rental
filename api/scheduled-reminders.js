@@ -152,6 +152,15 @@ const SAME_DAY_REMINDER_LOWER_MIN = 420; // exclusive lower bound: does not fire
 const RETURN_REMINDER_24H_UPPER_MIN = 1440; // inclusive upper bound: fires when ≤ 1440 min (24 h) remain
 const RETURN_REMINDER_24H_LOWER_MIN = 1380; // exclusive lower bound: does not fire when ≤ 1380 min (23 h) remain
 
+// RepairMode window bounds — used when processActiveRentals is called with
+// { repairMode: true } to catch up on SMS that were missed due to cron gaps.
+// Windows are intentionally wider than the regular bands; sms_logs dedup
+// prevents re-sends even if the window overlaps an already-fired message.
+const REPAIR_LATE_WARN_UPPER_MIN   =   60; // late_warning_30min: up to 60 min before return
+const REPAIR_LATE_WARN_LOWER_MIN   =  -30; // …or up to 30 min past return (just missed the window)
+const REPAIR_EXT_1H_UPPER_MIN      =  120; // active_rental_1h_before_end: any time return is within 2 h
+const REPAIR_RETURN_24H_LOWER_MIN  =  120; // return_reminder_24h: fire if return is still > 2 h away
+
 // SMS send-window boundaries — messages are only delivered between these hours
 // in America/Los_Angeles time to avoid waking renters outside business hours.
 const SMS_WINDOW_START_HOUR = 8;  // 8:00 AM LA
@@ -776,8 +785,9 @@ function logSmsTrigger(bookingRef, returnDatetime, currentTime, triggerType) {
  *   active booking (e.g. overlapping rentals) it is silently skipped so that
  *   no renter ever receives more than one message per cron tick.
  */
-export async function processActiveRentals(allBookings, now, sentMarks, criticalOnly = false) {
+export async function processActiveRentals(allBookings, now, sentMarks, criticalOnly = false, options = {}) {
   const sb = getSupabaseAdmin();
+  const { repairMode = false } = options;
   // Per-run dedup: max 1 SMS per phone number per cron invocation.
   const phonesContactedThisRun = new Set();
   const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -897,6 +907,25 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       // evaluated in priority order: P1 (CRITICAL) → P4 (MARKETING).
       let sentThisBooking = false;
 
+      // In repairMode, narrow per-cron-tick windows are relaxed so missed SMS
+      // can be recovered immediately.  sms_logs dedup remains the primary guard.
+      // Each variable holds the boolean window result for the corresponding trigger.
+      const wndLateGrace    = repairMode
+        ? (now >= graceAt   && now < lateFeeAt)
+        : (now >= graceAt   && now < new Date(graceAt.getTime()  + TRIGGER_WINDOW_MS));
+      const wndLateAtReturn = repairMode
+        ? (now >= returnDt  && now < graceAt)
+        : (now >= returnDt  && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS));
+      const wndLateWarn30   = repairMode
+        ? (minutesUntilReturn <= REPAIR_LATE_WARN_UPPER_MIN && minutesUntilReturn > REPAIR_LATE_WARN_LOWER_MIN)
+        : (minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN);
+      const wndExt1h        = repairMode
+        ? (minutesUntilReturn <= REPAIR_EXT_1H_UPPER_MIN && minutesUntilReturn > 0)
+        : (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN);
+      const wndReturn24h    = repairMode
+        ? (minutesUntilReturn > REPAIR_RETURN_24H_LOWER_MIN && minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN)
+        : (minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN);
+
       // ── P1: Late fee at return_datetime + 2 h (once per return_date) ─────────
       // Evaluated FIRST so that if a stale booking is overdue on both the grace
       // and late-fee windows simultaneously, the more critical fee fires.
@@ -1014,7 +1043,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       // ── P1: Grace expired at return_datetime + 1 h (15 min window) ───────────
       if (
         !sentThisBooking &&
-        now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS) &&
+        wndLateGrace &&
         !alreadySent(booking, "late_grace_expired") &&
         !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
       ) {
@@ -1025,14 +1054,14 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
           await logSmsToSupabase(id, "late_grace_expired", returnDateStr);
         }
-      } else if (now >= graceAt && now < new Date(graceAt.getTime() + TRIGGER_WINDOW_MS)) {
+      } else if (wndLateGrace) {
         console.log(`[SMS_SKIP] ${id} late_grace_expired: already sent (dedup)`);
       }
 
       // ── P2: At return time (0–15 min window) ──────────────────────────────────
       if (
         !sentThisBooking &&
-        now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS) &&
+        wndLateAtReturn &&
         !alreadySent(booking, "late_at_return") &&
         !(await isSmsLogged(id, "late_at_return", returnDateStr))
       ) {
@@ -1043,7 +1072,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           sentMarks.push({ vehicleId, id, key: "late_at_return" });
           await logSmsToSupabase(id, "late_at_return", returnDateStr);
         }
-      } else if (now >= returnDt && now < new Date(returnDt.getTime() + TRIGGER_WINDOW_MS)) {
+      } else if (wndLateAtReturn) {
         console.log(`[SMS_SKIP] ${id} late_at_return: already sent (dedup)`);
       }
 
@@ -1052,7 +1081,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       // that were sending separate 1h, 30min, and 15min messages).
       if (
         !sentThisBooking &&
-        minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN &&
+        wndLateWarn30 &&
         !alreadySent(booking, "late_warning_30min") &&
         !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
       ) {
@@ -1063,7 +1092,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
           await logSmsToSupabase(id, "late_warning_30min", returnDateStr);
         }
-      } else if (minutesUntilReturn <= WARNING_BEFORE_END_UPPER_MIN && minutesUntilReturn > WARNING_BEFORE_END_LOWER_MIN) {
+      } else if (wndLateWarn30) {
         console.log(`[SMS_SKIP] ${id} late_warning_30min: already sent (dedup)`);
       }
 
@@ -1074,7 +1103,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       // already contacted this renter recently, this low-urgency invite is skipped.
       if (
         !sentThisBooking &&
-        minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN &&
+        wndExt1h &&
         !alreadySent(booking, "active_rental_1h_before_end") &&
         !(await isSmsLogged(id, "active_rental_1h_before_end", returnDateStr))
       ) {
@@ -1106,7 +1135,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
             }
           }
         }
-      } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
+      } else if (wndExt1h) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
       }
 
@@ -1115,8 +1144,10 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       // the gap between the 24h return reminder and the 1h extension invite.
       // Uses the same scoring / cooldown path as the other P3 reminders.
       // Skipped in criticalOnly mode (outside SMS send window).
+      // Skipped in repairMode (non-critical; not needed for missed-SMS recovery).
       if (
         !criticalOnly &&
+        !repairMode &&
         !sentThisBooking &&
         minutesUntilReturn <= SAME_DAY_REMINDER_UPPER_MIN && minutesUntilReturn > SAME_DAY_REMINDER_LOWER_MIN &&
         !alreadySent(booking, "active_rental_mid") &&
@@ -1159,7 +1190,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       if (
         !criticalOnly &&
         !sentThisBooking &&
-        minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN &&
+        wndReturn24h &&
         !alreadySent(booking, "return_reminder_24h") &&
         !(await isSmsLogged(id, "return_reminder_24h", returnDateStr))
       ) {
@@ -1187,7 +1218,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
             await logSmsToSupabase(id, "return_reminder_24h", returnDateStr, { score, breakdown });
           }
         }
-      } else if (minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN) {
+      } else if (wndReturn24h) {
         console.log(`[SMS_SKIP] ${id} return_reminder_24h: already sent (dedup)`);
       }
 
@@ -1308,7 +1339,7 @@ async function persistSentMarks(sentMarks) {
  * @param {object} sb - Supabase admin client
  * @returns {Promise<object|null>}
  */
-async function loadBookingsFromSupabase(sb) {
+export async function loadBookingsFromSupabase(sb) {
   try {
     const SELECT_COLS =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
