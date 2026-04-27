@@ -23,6 +23,7 @@
 //                           unavailable vehicles, even when return_time is absent).
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { DEFAULT_RETURN_TIME } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
@@ -157,11 +158,10 @@ function computeLatestByVehicle(rows) {
         status: row.status || null,
         return_date: row.return_date,
       });
-      // Midnight is used ONLY for internal date ordering so the latest booking
-      // per vehicle is still selected correctly.  hasTime = false ensures no
-      // time component is shown to customers via next_available_display, and
-      // available_at remains null (no synthetic timestamp is exposed).
-      returnDateTime = buildDateTimeLA(row.return_date, "00:00");
+      // Fall back to DEFAULT_RETURN_TIME so available_at is never null and
+      // downstream buffer logic always has a timestamp to work with.
+      returnDateTime = buildDateTimeLA(row.return_date, DEFAULT_RETURN_TIME);
+      hasTime = true;
     } else {
       returnDateTime = buildDateTimeLA(row.return_date, row.return_time);
       hasTime = true;
