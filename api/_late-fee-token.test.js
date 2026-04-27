@@ -184,9 +184,17 @@ test("confirm flow: adjust token cannot be used as a confirm token", () => {
 
 test("confirm flow: tampered token is rejected at confirm step", () => {
   const goodToken = createLateFeeToken("bk-confirm-04", 100, "approve");
-  // Simulate tampering by flipping the last character of the signature
-  const lastChar  = goodToken.slice(-1);
-  const tampered  = goodToken.slice(0, -1) + (lastChar === "A" ? "B" : "A");
+  // Simulate tampering by flipping the first character of the signature.
+  // We target the first sig character (position dotIdx+1) rather than the last
+  // because the last character of a 43-char base64url HMAC-SHA256 carries only
+  // 4 significant bits — swapping 'A'↔'B' there only toggles the zero-padding
+  // bits, leaving the decoded bytes unchanged and causing a spurious test pass
+  // ~1/16 of the time.  The first character is always fully significant.
+  const dotIdx      = goodToken.lastIndexOf(".");
+  const firstSigChr = goodToken[dotIdx + 1];
+  const tampered    = goodToken.slice(0, dotIdx + 1)
+    + (firstSigChr === "A" ? "B" : "A")
+    + goodToken.slice(dotIdx + 2);
   assert.equal(verifyLateFeeToken(tampered), null);
 });
 
