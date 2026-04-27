@@ -301,7 +301,7 @@ export default async function handler(req, res) {
         return_date:  returnDate,
         pickup_time:  formatTime12h(trimmedPickupTime),
         return_time:  formatTime12h(derivedReturnTime),
-        email,
+        renter_email: email,
         ...(isSlingshotVehicle ? {
           rental_duration: Number(slingshotDuration) >= 48
             ? `${Number(slingshotDuration) / 24} days`

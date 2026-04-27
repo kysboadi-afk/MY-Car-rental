@@ -546,6 +546,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     return_date,
     pickup_time,
     return_time,
+    renter_email,
     email,
     payment_type,
     full_rental_amount,
@@ -611,6 +612,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       ""
     ),
     email: String(
+      renter_email ||
       email ||
       meta.email ||
       paymentIntent.customer_details?.email ||

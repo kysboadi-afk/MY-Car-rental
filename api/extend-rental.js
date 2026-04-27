@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server configuration error." });
   }
 
-  const { vehicleId, email, phone, newReturnDate } = req.body || {};
+  const { vehicleId, email, phone, newReturnDate, name } = req.body || {};
 
   // ── Input validation ────────────────────────────────────────────────────────
   const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
@@ -532,7 +532,7 @@ export default async function handler(req, res) {
         booking_id:   sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId || "",
         vehicle_id:   vehicleId,
         vehicle_name:          vehicleData.name  || "",
-        renter_name:           activeBooking.name  || "",
+        renter_name:           activeBooking.name  || (typeof name === "string" ? name.trim() : "") || "",
         renter_email:          activeBooking.email || "",
         renter_phone:          activeBooking.phone || "",
         extension_label:       extensionLabel,
