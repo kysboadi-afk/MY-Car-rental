@@ -331,9 +331,11 @@ export default async function handler(req, res) {
         } else if (row.end_mileage != null && row.start_mileage != null) {
           miles = Math.max(0, Number(row.end_mileage) - Number(row.start_mileage));
         } else if (isActive && row.start_mileage != null) {
-          // In-progress rental: compute live miles as current_odometer − start_mileage
+          // In-progress rental: compute live miles as current_odometer − start_mileage.
+          // Subtract a 10-mile tolerance buffer to absorb Bouncie sync delay and
+          // prevent early false triggers for high-usage renters.
           const currentOdo = vehicleOdoMap[row.vehicle_id] || 0;
-          miles = Math.max(0, currentOdo - Number(row.start_mileage));
+          miles = Math.max(0, currentOdo - Number(row.start_mileage) - 10);
         } else {
           miles = 0;
         }
