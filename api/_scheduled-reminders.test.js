@@ -83,6 +83,7 @@ mock.module("./_sms-templates.js", {
     PICKUP_REMINDER_24H:             "",
     RETURN_REMINDER_24H:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
+    ACTIVE_RENTAL_MID:               "",
     LATE_WARNING_30MIN:              "",
     LATE_AT_RETURN_TIME:             "",
     LATE_GRACE_EXPIRED:              "",

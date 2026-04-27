@@ -11,7 +11,10 @@
 //  reserved_unpaid  → UNPAID_REMINDER_2H, UNPAID_REMINDER_FINAL
 //  booked_paid      → PICKUP_REMINDER_24H
 //                     + auto-activated → active_rental once pickup time arrives
-//  active_rental    → LATE_WARNING_30MIN (30 min before return),
+//  active_rental    → RETURN_REMINDER_24H (24 h before return),
+//                     ACTIVE_RENTAL_MID (6–10 h before return),
+//                     ACTIVE_RENTAL_1H_BEFORE_END (1 h before return),
+//                     LATE_WARNING_30MIN (30 min before return),
 //                     LATE_AT_RETURN_TIME, LATE_GRACE_EXPIRED, LATE_FEE_APPLIED
 //                     + auto-completed → completed_rental after AUTO_COMPLETE_HOURS
 //  completed_rental → POST_RENTAL_THANK_YOU, RETENTION_DAY_7
@@ -41,6 +44,7 @@ import {
   UNPAID_REMINDER_FINAL,
   PICKUP_REMINDER_24H,
   RETURN_REMINDER_24H,
+  ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
@@ -132,6 +136,14 @@ const WARNING_BEFORE_END_LOWER_MIN = 15; // exclusive lower bound: does not fire
 // return-obligation warning so renters never receive both in the same cron tick.
 const EXT_REMINDER_UPPER_MIN = 60; // inclusive upper bound: fires when ≤ 60 min remain
 const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when ≤ 45 min remain
+
+// Boundaries (in minutes) for the same-day return reminder window.
+// Fires once in the 420–480 min window (7–8 h before return), bridging the
+// gap between the 24h reminder and the 1h extension invite.  The 60-min
+// window mirrors other reminder bands and gives cron ~6 attempts (10-min cadence)
+// while keeping dedup as a safety net rather than the primary guard.
+const SAME_DAY_REMINDER_UPPER_MIN = 480; // inclusive upper bound: fires when ≤ 480 min (8 h) remain
+const SAME_DAY_REMINDER_LOWER_MIN = 420; // exclusive lower bound: does not fire when ≤ 420 min (7 h) remain
 
 // Boundaries (in minutes) for the 24-hour-before-return reminder window.
 // Fires once in the 1,380–1,440 min window (23–24 h before return).
@@ -1084,6 +1096,44 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         }
       } else if (minutesUntilReturn <= EXT_REMINDER_UPPER_MIN && minutesUntilReturn > EXT_REMINDER_LOWER_MIN) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
+      }
+
+      // ── P3: ~7–8 hours before return — same-day reminder ────────────────────
+      // Fires once in the 420–480 min window (7–8 h before return), bridging
+      // the gap between the 24h return reminder and the 1h extension invite.
+      // Uses the same scoring / cooldown path as the other P3 reminders.
+      if (
+        !sentThisBooking &&
+        minutesUntilReturn <= SAME_DAY_REMINDER_UPPER_MIN && minutesUntilReturn > SAME_DAY_REMINDER_LOWER_MIN &&
+        !alreadySent(booking, "active_rental_mid") &&
+        !(await isSmsLogged(id, "active_rental_mid", returnDateStr))
+      ) {
+        const recentRows = await fetchRecentSmsLogs(sb, id);
+        const scoringCtx = buildSmsContext(
+          "active_rental_mid",
+          recentRows,
+          { minutesToReturn: minutesUntilReturn, daysSincePickup }
+        );
+        const { score, breakdown } = computeSmsScoreWithBreakdown("active_rental_mid", scoringCtx);
+        const effectiveThreshold   = computeEffectiveThreshold(scoringCtx);
+        console.log(
+          `[SMS_SCORE] ${id} active_rental_mid:` +
+          ` score=${score} threshold=${effectiveThreshold}` +
+          ` breakdown=${JSON.stringify(breakdown)}`
+        );
+        if (score <= effectiveThreshold) {
+          console.log(`[SMS_SKIP] ${id} active_rental_mid: score ${score} ≤ ${effectiveThreshold}`);
+        } else {
+          logSmsTrigger(id, returnIso, nowIso, "same_day_reminder");
+          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
+          if (sent) {
+            sentThisBooking = true;
+            sentMarks.push({ vehicleId, id, key: "active_rental_mid" });
+            await logSmsToSupabase(id, "active_rental_mid", returnDateStr, { score, breakdown });
+          }
+        }
+      } else if (minutesUntilReturn <= SAME_DAY_REMINDER_UPPER_MIN && minutesUntilReturn > SAME_DAY_REMINDER_LOWER_MIN) {
+        console.log(`[SMS_SKIP] ${id} active_rental_mid: already sent (dedup)`);
       }
 
       // ── P3: ~24 hours before return — return reminder ─────────────────────────
