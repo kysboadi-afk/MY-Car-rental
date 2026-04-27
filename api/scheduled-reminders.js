@@ -1324,7 +1324,16 @@ async function loadBookingsFromSupabase(sb) {
         sb
           .from("bookings")
           .select(SELECT_COLS)
-          .in("status", ["pending", "booked_paid", "active", "active_rental", "overdue"])
+          .in("status", [
+            // Modern app-layer values
+            "pending", "booked_paid", "active_rental", "overdue",
+            // Legacy values that the availability system treats as "vehicle occupied"
+            "active",           // pre-migration-0064 equivalent of active_rental
+            "approved",         // pre-migration-0066 equivalent of booked_paid
+            // Reservation-deposit flow (migration 0066)
+            "reserved",
+            "pending_verification",
+          ])
           .order("created_at", { ascending: false }),
         sb
           .from("bookings")
@@ -1350,14 +1359,21 @@ async function loadBookingsFromSupabase(sb) {
 
     // Supabase status → legacy status used by process* functions
     const REVERSE_STATUS = {
-      pending:          "reserved_unpaid",
-      booked_paid:      "booked_paid",
-      active:           "active_rental",
-      active_rental:    "active_rental",
-      overdue:          "active_rental",
-      completed:        "completed_rental",
-      completed_rental: "completed_rental",
-      cancelled_rental: "cancelled_rental",
+      // Modern app-layer values (direct pass-through / already correct)
+      pending:              "reserved_unpaid",
+      booked_paid:          "booked_paid",
+      active:               "active_rental",
+      active_rental:        "active_rental",
+      overdue:              "active_rental",
+      completed:            "completed_rental",
+      completed_rental:     "completed_rental",
+      cancelled_rental:     "cancelled_rental",
+      // Legacy / reservation-deposit values — align with ACTIVE_BOOKING_STATUSES
+      // in _availability.js and v2-availability.js so cron behaviour matches
+      // availability checks.
+      approved:             "booked_paid",       // pre-0066 equivalent of booked_paid
+      reserved:             "reserved_unpaid",   // partial-payment reservation (migration 0066)
+      pending_verification: "reserved_unpaid",   // verification step (migration 0066)
     };
 
     // Group by vehicle_id
