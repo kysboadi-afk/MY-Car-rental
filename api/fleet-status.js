@@ -29,7 +29,7 @@ const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", 
 const BUSINESS_TZ = "America/Los_Angeles";
 // All booking statuses that mean the vehicle is occupied / unavailable.
 // Keep aligned with v2-availability.js and booked-dates.js.
-const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental"];
+const ACTIVE_BOOKING_STATUSES = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 
 function buildDefaultStatus() {
   const map = {};
@@ -234,6 +234,8 @@ export default async function handler(req, res) {
         .order("return_time", { ascending: false });
 
       if (bookingError) throw new Error(bookingError.message || "bookings query failed");
+
+      console.log("BOOKINGS USED FOR AVAILABILITY:", bookingRows);
 
       // ── 3. Derive latest return datetime per vehicle ───────────────────────
       const latestByVehicle = computeLatestByVehicle(bookingRows || []);
