@@ -777,14 +777,37 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
       // Falls back to the booking's own returnDate/returnTime when Supabase is
       // unavailable (e.g. null client in test environments).
       const id = booking.bookingId || booking.paymentIntentId;
-      let { endDate: finalDate, returnTime: resolvedFinalTime, end_datetime: returnDt } =
-        await getRentalState(sb, id);
+      let {
+        endDate:         finalDate,
+        returnTime:      resolvedFinalTime,
+        end_datetime:    returnDt,
+        minutesToReturn: rsMinutesToReturn,
+        isActive:        rsIsActive,
+      } = await getRentalState(sb, id);
+
+      console.log("[RENTAL_STATE]", {
+        booking_ref:        id,
+        status:             booking.status,
+        rs_endDate:         finalDate,
+        rs_returnTime:      resolvedFinalTime,
+        rs_end_datetime:    isNaN(returnDt.getTime()) ? "NaN" : toLAString(returnDt),
+        rs_minutesToReturn: rsMinutesToReturn,
+        rs_isActive:        rsIsActive,
+      });
+
       if (isNaN(returnDt.getTime())) {
         const fbDate = booking.returnDate || "";
         const fbTime = booking.returnTime || DEFAULT_RETURN_TIME;
         returnDt = buildDateTimeLA(fbDate, fbTime);
         finalDate = fbDate;
         resolvedFinalTime = fbTime;
+        console.log("[RENTAL_STATE_FALLBACK]", {
+          booking_ref:     id,
+          reason:          "getRentalState returned NaN end_datetime — using booking.returnDate/returnTime",
+          fb_returnDate:   fbDate,
+          fb_returnTime:   fbTime,
+          fb_end_datetime: isNaN(returnDt.getTime()) ? "NaN" : toLAString(returnDt),
+        });
       }
       if (isNaN(returnDt.getTime())) continue;
 
@@ -801,6 +824,7 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
 
       console.log("[SMS_ACTIVE]", {
         booking_ref:       id,
+        status:            booking.status,
         vehicleId,
         return_date_raw:   booking.returnDate,
         return_time_raw:   booking.returnTime || null,
