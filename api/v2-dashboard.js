@@ -285,7 +285,8 @@ export default async function handler(req, res) {
       }
       if (booking.status === "reserved_unpaid") pendingApprovals++;
       if (bookingIsOverdue) overdueCount++;
-      if (booking.returnDate === todayStr && bookingIsActive) {
+      if (booking.returnDate === todayStr && bookingIsActive
+          && booking.status !== "completed_rental") {
         returnsTodayCount++;
       }
       // Pickups today: booked/approved rentals whose pickup date is today (LA).
