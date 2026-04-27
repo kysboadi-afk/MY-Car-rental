@@ -138,11 +138,12 @@ const EXT_REMINDER_UPPER_MIN = 60; // inclusive upper bound: fires when ≤ 60 m
 const EXT_REMINDER_LOWER_MIN = 45; // exclusive lower bound: does not fire when ≤ 45 min remain
 
 // Boundaries (in minutes) for the same-day return reminder window.
-// Fires once in the 360–600 min window (6–10 h before return), bridging the
-// gap between the 24h reminder and the 1h extension invite.  The 240-min
-// window comfortably accommodates cron delays.
-const SAME_DAY_REMINDER_UPPER_MIN = 600; // inclusive upper bound: fires when ≤ 600 min (10 h) remain
-const SAME_DAY_REMINDER_LOWER_MIN = 360; // exclusive lower bound: does not fire when ≤ 360 min (6 h) remain
+// Fires once in the 420–480 min window (7–8 h before return), bridging the
+// gap between the 24h reminder and the 1h extension invite.  The 60-min
+// window mirrors other reminder bands and gives cron ~6 attempts (10-min cadence)
+// while keeping dedup as a safety net rather than the primary guard.
+const SAME_DAY_REMINDER_UPPER_MIN = 480; // inclusive upper bound: fires when ≤ 480 min (8 h) remain
+const SAME_DAY_REMINDER_LOWER_MIN = 420; // exclusive lower bound: does not fire when ≤ 420 min (7 h) remain
 
 // Boundaries (in minutes) for the 24-hour-before-return reminder window.
 // Fires once in the 1,380–1,440 min window (23–24 h before return).
@@ -1097,8 +1098,8 @@ export async function processActiveRentals(allBookings, now, sentMarks) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
       }
 
-      // ── P3: ~6–10 hours before return — same-day reminder ────────────────────
-      // Fires once in the 360–600 min window (6–10 h before return), bridging
+      // ── P3: ~7–8 hours before return — same-day reminder ────────────────────
+      // Fires once in the 420–480 min window (7–8 h before return), bridging
       // the gap between the 24h return reminder and the 1h extension invite.
       // Uses the same scoring / cooldown path as the other P3 reminders.
       if (

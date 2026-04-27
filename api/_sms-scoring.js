@@ -87,6 +87,7 @@ const URGENCY_SCORE = {
   // P3 — Standard operational
   unpaid_final:                       38,
   active_rental_1h_before_end:        36,
+  active_rental_mid:                  34,  // same-day reminder, ~7–8 h before return
   pickup_24h:                         35,
   unpaid_2h:                          33,
   OIL_CHECK_MERGED:                   33,
@@ -124,6 +125,7 @@ const CONTEXT_SCORE = {
 
   // Tied to booking timeline (mid tier: 12–16)
   active_rental_1h_before_end:        16,
+  active_rental_mid:                  15,  // same-day reminder, ~7–8 h before return
   OIL_CHECK_MERGED:                   15,
   pickup_24h:                         14,
   unpaid_2h:                          14,
