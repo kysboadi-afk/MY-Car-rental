@@ -1891,10 +1891,33 @@ async function runReconciliation() {
       }
 
       try {
+        // Retrieve stripe fee from Stripe before calling saveWebhookBookingRecord.
+        // This ensures the atomic RPC receives a non-null stripe_fee, which is
+        // required to satisfy the revenue record completeness check.
+        let reconExtraFields = {};
+        try {
+          const expandedPI = await stripe.paymentIntents.retrieve(pi.id, {
+            expand: ["latest_charge.balance_transaction"],
+          });
+          const charge = expandedPI?.latest_charge;
+          const bt = charge && typeof charge === "object" ? charge.balance_transaction : null;
+          if (bt && typeof bt === "object") {
+            const feeCents = bt.fee != null ? Number(bt.fee) : null;
+            const netCents = bt.net != null ? Number(bt.net) : null;
+            const stripeFee = feeCents != null ? Math.round(feeCents) / 100 : null;
+            const stripeNet = netCents != null ? Math.round(netCents) / 100 : null;
+            if (stripeFee != null && Number.isFinite(stripeFee) && stripeFee >= 0) {
+              reconExtraFields = { stripeFee, stripeNet: Number.isFinite(stripeNet) ? stripeNet : null };
+            }
+          }
+        } catch (feeErr) {
+          console.warn(`scheduled-reminders reconciliation: stripe fee resolution failed for PI ${pi.id} (non-fatal):`, feeErr.message);
+        }
+
         // 1. Persist booking + revenue record (idempotent).
         //    saveWebhookBookingRecord performs the canonical vehicle_id mapping
         //    internally, so its result is authoritative for the vehicle key.
-        await saveWebhookBookingRecord(pi);
+        await saveWebhookBookingRecord(pi, reconExtraFields);
 
         // 2. Block calendar dates and mark vehicle unavailable.
         //    mapVehicleId derives the canonical ID from PI metadata so that
