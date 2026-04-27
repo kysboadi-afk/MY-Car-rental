@@ -784,14 +784,14 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
   const activeRentals = Object.values(allBookings)
     .flat()
     .filter((b) => {
-      const isActiveStatus = b.status === "active_rental" || b.status === "active";
+      const isActiveStatus = b.status === "active_rental" || b.status === "active" || b.status === "overdue";
       const hasFutureReturn = b.returnDate && b.returnDate >= todayStr;
       return isActiveStatus || hasFutureReturn;
     });
   console.log("active rentals:", activeRentals.length);
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      const isActiveStatus = booking.status === "active_rental" || booking.status === "active";
+      const isActiveStatus = booking.status === "active_rental" || booking.status === "active" || booking.status === "overdue";
       const hasFutureReturn = booking.returnDate && booking.returnDate >= todayStr;
       if (!isActiveStatus && !hasFutureReturn) continue;
       if (!booking.phone) continue;
@@ -1364,7 +1364,7 @@ async function loadBookingsFromSupabase(sb) {
       booked_paid:          "booked_paid",
       active:               "active_rental",
       active_rental:        "active_rental",
-      overdue:              "active_rental",
+      overdue:              "overdue",
       completed:            "completed_rental",
       completed_rental:     "completed_rental",
       cancelled_rental:     "cancelled_rental",
@@ -1532,7 +1532,7 @@ export async function processAutoCompletions(allBookings, now) {
   const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
-      if (booking.status !== "active_rental") continue;
+      if (booking.status !== "active_rental" && booking.status !== "overdue") continue;
 
       // Compute the final return date/time from vehicle_blocking_ranges so
       // auto-completion fires against the renter's true (possibly extended)
@@ -1599,7 +1599,7 @@ export async function processAutoCompletions(allBookings, now) {
         // this vehicle (handles the case where a follow-on booking is already
         // active at the same time).
         const otherActiveRentals = (allBookings[vehicleId] || []).filter(
-          (b) => (b.bookingId || b.paymentIntentId) !== id && b.status === "active_rental"
+          (b) => (b.bookingId || b.paymentIntentId) !== id && (b.status === "active_rental" || b.status === "overdue")
         );
         if (otherActiveRentals.length === 0) {
           await markVehicleAvailable(vehicleId);
