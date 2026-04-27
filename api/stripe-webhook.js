@@ -1692,10 +1692,11 @@ export default async function handler(req, res) {
           // because the extend flow has no time picker — the renter keeps their
           // original daily schedule.
           // The insert is idempotent via the UNIQUE constraint on payment_intent_id.
+          // Fatal: return 500 on failure so Stripe retries and the row is never silently lost.
           try {
             const sbBE = getSupabaseAdmin();
             if (sbBE && resolvedBookingId && new_return_date) {
-              await sbBE
+              const { error: beUpsertErr } = await sbBE
                 .from("booking_extensions")
                 .upsert(
                   {
@@ -1707,9 +1708,23 @@ export default async function handler(req, res) {
                   },
                   { onConflict: "payment_intent_id", ignoreDuplicates: true }
                 );
+              if (beUpsertErr) throw beUpsertErr;
+
+              // Verify the row is actually readable after the upsert (catches silent
+              // RLS / replication failures that return no error but persist nothing).
+              const { error: beCheckErr } = await sbBE
+                .from("booking_extensions")
+                .select("id")
+                .eq("payment_intent_id", paymentIntent.id)
+                .single();
+              if (beCheckErr) throw new Error(`booking_extensions post-write check failed for PI ${paymentIntent.id}: ${beCheckErr.message}`);
             }
           } catch (beErr) {
-            console.error("stripe-webhook: booking_extensions insert error (non-fatal):", beErr.message);
+            console.error("stripe-webhook: booking_extensions insert error:", beErr.message);
+            return res.status(500).json({
+              received: false,
+              error: `booking_extensions persistence failed for ${paymentIntent.id}`,
+            });
           }
 
           // Create a new extension revenue record (type='extension').
