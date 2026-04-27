@@ -22,10 +22,17 @@
 //                           "Apr 27, 2026" (date-only for legacy rows).
 
 import { getSupabaseAdmin } from "./_supabase.js";
+import { ensureBlockedDate } from "./_booking-automation.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
+
+// Must match BOOKING_BUFFER_HOURS in _booking-automation.js and _availability.js.
+const BOOKING_BUFFER_HOURS = 2;
+
+// Active booking statuses that keep a vehicle blocked.
+const ACTIVE_BOOKING_STATUSES = ["active_rental", "overdue"];
 
 
 function buildDefaultStatus() {
@@ -129,6 +136,39 @@ function formatForDisplay(dateObj, includeTime = true) {
     hour12: true,
   });
   return `${dateStr} at ${timeStr}`;
+}
+
+/**
+ * Compute a blocked_dates-style { end_date, end_time } from a booking's
+ * return_date + return_time by applying the BOOKING_BUFFER_HOURS offset.
+ * Mirrors buildBufferedEnd() in _booking-automation.js.
+ *
+ * Note: This is deliberately kept local to fleet-status.js rather than
+ * importing _booking-automation.js at module level.  fleet-status is a
+ * public, unauthenticated hot-path and importing the full automation module
+ * (which itself pulls in many other modules) would increase cold-start
+ * latency and complicate circular-dependency analysis.  The function is
+ * small enough that duplication is the safer trade-off here.
+ *
+ * Returns { end_date, end_time: null } when returnTime is absent.
+ *
+ * @param {string} returnDate - YYYY-MM-DD
+ * @param {string|null} returnTime - "HH:MM" in LA timezone (or null)
+ * @returns {{ end_date: string, end_time: string|null }}
+ */
+function computeBufferedBlock(returnDate, returnTime) {
+  if (!returnTime) return { end_date: returnDate, end_time: null };
+  const returnDt = buildDateTimeLA(returnDate, returnTime);
+  if (!Number.isFinite(returnDt.getTime())) return { end_date: returnDate, end_time: null };
+  const bufferedDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
+  const end_date = bufferedDt.toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ });
+  const end_time = bufferedDt.toLocaleTimeString("en-GB", {
+    timeZone: BUSINESS_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return { end_date, end_time };
 }
 
 /**
@@ -261,6 +301,75 @@ export default async function handler(req, res) {
           if (blockMins >= 0 && blockMins <= nowMinutesLA) {
             delete latestByVehicle[vid];
           }
+        }
+      }
+
+      // ── 3b. Active-booking fallback — catch missing blocked_dates rows ─────
+      // If a vehicle has an active_rental/overdue booking but no blocked_dates
+      // row (e.g. the row was never written or was accidentally deleted), the
+      // vehicle would incorrectly appear available.  Query the bookings table
+      // for the vehicles that are not yet marked unavailable and synthesise a
+      // block so they are correctly shown as unavailable.  Also fire-and-forget
+      // a self-heal write so blocked_dates stays in sync going forward.
+      const vehiclesMissingBlockedDatesRow = vehicleIds.filter((vid) => !latestByVehicle[vid] && !maintenanceVehicles.has(vid));
+
+      if (vehiclesMissingBlockedDatesRow.length > 0) {
+        try {
+          const { data: activeBookings, error: activeError } = await sb
+            .from("bookings")
+            .select("vehicle_id, booking_ref, pickup_date, return_date, return_time")
+            .in("vehicle_id", vehiclesMissingBlockedDatesRow)
+            .in("status", ACTIVE_BOOKING_STATUSES);
+
+          if (!activeError && activeBookings && activeBookings.length > 0) {
+            // Group by vehicle_id; pick the booking with the latest return_date.
+            const latestBookingByVehicle = {};
+            for (const bk of activeBookings) {
+              const vid = bk.vehicle_id;
+              const rd  = bk.return_date ? String(bk.return_date).split("T")[0] : null;
+              if (!rd) continue;
+              const existing = latestBookingByVehicle[vid];
+              if (!existing || rd > existing.return_date) {
+                latestBookingByVehicle[vid] = {
+                  booking_ref: bk.booking_ref,
+                  pickup_date: bk.pickup_date ? String(bk.pickup_date).split("T")[0] : rd,
+                  return_date: rd,
+                  return_time: bk.return_time ? String(bk.return_time).substring(0, 5) : null,
+                };
+              }
+            }
+
+            for (const [vid, bk] of Object.entries(latestBookingByVehicle)) {
+              const { end_date, end_time } = computeBufferedBlock(bk.return_date, bk.return_time);
+
+              // Only apply the override when the computed block hasn't already expired.
+              const blockExpired = end_time && end_date === today
+                ? endTimeToMinutes(end_time) <= nowMinutesLA
+                : end_date < today;
+
+              if (!blockExpired) {
+                latestByVehicle[vid] = { end_date, end_time };
+                console.log("[FLEET_STATUS_ACTIVE_BOOKING_OVERRIDE]", {
+                  vehicle_id:  vid,
+                  booking_ref: bk.booking_ref,
+                  return_date: bk.return_date,
+                  return_time: bk.return_time || null,
+                  end_date,
+                  end_time:    end_time || null,
+                });
+
+                // Self-heal: recreate the missing blocked_dates row in the background.
+                if (bk.booking_ref) {
+                  ensureBlockedDate(vid, bk.booking_ref, bk.return_date, bk.return_time, bk.pickup_date)
+                    .catch((e) => console.error("[FLEET_STATUS_SELF_HEAL_ERROR]", vid, e.message));
+                }
+              }
+            }
+          } else if (activeError) {
+            console.warn("fleet-status: active booking fallback query failed (non-fatal):", activeError.message);
+          }
+        } catch (fallbackErr) {
+          console.warn("fleet-status: active booking fallback error (non-fatal):", fallbackErr.message);
         }
       }
 

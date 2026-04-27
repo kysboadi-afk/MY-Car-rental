@@ -865,8 +865,9 @@ export async function autoReleaseBlockedDateOnReturn(vehicleId, bookingRef) {
  *    newReturnTime is provided; otherwise uses newReturnDate as-is.
  *  - Updates end_date (and end_time when applicable) only when the buffered
  *    end is strictly later than the current stored values (never shrinks).
- *  - Falls back to a warning when no row is found (e.g. the initial block was
- *    never created); callers should not treat this as an error.
+ *  - Falls back to creating a new row when no row is found (e.g. the initial
+ *    block was never created or was accidentally removed) so availability is
+ *    always corrected on the extension path.
  *
  * Non-fatal — errors are logged and never propagate to the caller.
  * Idempotent — safe to call multiple times for the same extension.
@@ -904,9 +905,20 @@ export async function extendBlockedDateForBooking(vehicleId, bookingRef, newRetu
     }
 
     if (!rows || rows.length === 0) {
-      console.warn(
+      // No existing row — create a new one so availability stays in sync.
+      // This covers the case where the original blocked_dates row was never
+      // created or was accidentally removed.
+      console.log(
         `_booking-automation extendBlockedDateForBooking: no blocked_dates row found for ` +
-        `vehicle=${normalizedVehicleId} booking_ref=${bookingRef} — skipped`
+        `vehicle=${normalizedVehicleId} booking_ref=${bookingRef} — creating new row`
+      );
+      await autoCreateBlockedDate(
+        normalizedVehicleId,
+        newReturnDate,  // use newReturnDate as start_date (best available)
+        newReturnDate,
+        "booking",
+        bookingRef,
+        newReturnTime
       );
       return;
     }
@@ -959,6 +971,76 @@ export async function extendBlockedDateForBooking(vehicleId, bookingRef, newRetu
     });
   } catch (err) {
     console.error("_booking-automation extendBlockedDateForBooking error (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Ensures a blocked_dates row exists for an active/overdue booking.
+ * Idempotent — safe to call multiple times; only inserts when no booking-linked
+ * row with matching booking_ref already exists.
+ *
+ * Call this whenever an active booking is loaded (cron, availability check,
+ * system health) to self-heal missing blocked_dates rows caused by any failure
+ * in the original booking write path.
+ *
+ * @param {string} vehicleId   - vehicle_id text key
+ * @param {string} bookingRef  - booking_ref that should own the blocked_dates row
+ * @param {string} returnDate  - YYYY-MM-DD (pre-buffer return date from booking)
+ * @param {string} [returnTime] - optional "HH:MM" or "H:MM AM/PM" LA-timezone return time
+ * @param {string} [startDate] - optional YYYY-MM-DD pickup date; falls back to returnDate
+ * @returns {Promise<{created: boolean, reason: string}>}
+ */
+export async function ensureBlockedDate(vehicleId, bookingRef, returnDate, returnTime = null, startDate = null) {
+  const normalizedVehicleId = normalizeVehicleId(vehicleId);
+  if (!normalizedVehicleId || !bookingRef || !returnDate) {
+    return { created: false, reason: "missing_args" };
+  }
+
+  const sb = getSupabaseAdmin();
+  if (!sb) return { created: false, reason: "no_supabase" };
+
+  try {
+    // Check whether a booking-linked blocked_dates row already exists.
+    const { data: existing, error: findErr } = await sb
+      .from("blocked_dates")
+      .select("id")
+      .eq("vehicle_id", normalizedVehicleId)
+      .eq("booking_ref", bookingRef)
+      .eq("reason", "booking")
+      .maybeSingle();
+
+    if (findErr) {
+      console.error("_booking-automation ensureBlockedDate find error (non-fatal):", findErr.message);
+      return { created: false, reason: "find_error" };
+    }
+
+    if (existing?.id) {
+      return { created: false, reason: "already_exists" };
+    }
+
+    // Row is missing — recreate it.
+    const effectiveStartDate = startDate || returnDate;
+    await autoCreateBlockedDate(
+      normalizedVehicleId,
+      effectiveStartDate,
+      returnDate,
+      "booking",
+      bookingRef,
+      returnTime
+    );
+
+    console.log("[BLOCKED_DATE_ENSURED]", {
+      vehicle_id:  normalizedVehicleId,
+      booking_ref: bookingRef,
+      start_date:  effectiveStartDate,
+      return_date: returnDate,
+      return_time: returnTime || null,
+    });
+
+    return { created: true, reason: "missing_row_recreated" };
+  } catch (err) {
+    console.error("_booking-automation ensureBlockedDate error (non-fatal):", err.message);
+    return { created: false, reason: "error" };
   }
 }
 
