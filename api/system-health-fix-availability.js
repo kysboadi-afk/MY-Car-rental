@@ -4,8 +4,11 @@
 //
 // For each booking with status IN ("active_rental", "overdue"):
 //   1. Compute the correct end_date/end_time using buildBufferedEnd().
-//   2. If no blocked_dates row exists for that vehicle+booking_ref → INSERT.
+//   2. If no blocked_dates row exists for that vehicle → INSERT.
 //   3. If a row exists but the stored end is earlier than the correct end → UPDATE.
+//
+// Lookup is performed entirely by vehicle_id (not booking_ref) so that this
+// handler works even when the blocked_dates.booking_ref column is absent.
 //
 // Safe to call multiple times (idempotent).  Never deletes valid future blocks.
 //
@@ -62,33 +65,36 @@ export async function runAvailabilitySyncFix(sb) {
     return { inserted: 0, updated: 0, skipped: 0, failed: 0, message: "No active or overdue rentals found." };
   }
 
-  const refs = bookings.map((b) => b.booking_ref).filter(Boolean);
+  const vehicleIds = [...new Set(bookings.map((b) => normalizeVehicleId(b.vehicle_id)).filter(Boolean))];
 
-  // ── Fetch existing blocked_dates rows for these bookings ─────────────────
+  // ── Fetch existing blocked_dates rows for these vehicles ─────────────────
+  // We query by vehicle_id only (not booking_ref) because booking_ref may not
+  // exist as a column in all deployments.
   const { data: blockRows, error: blockErr } = await sb
     .from("blocked_dates")
-    .select("id, booking_ref, vehicle_id, end_date, end_time")
-    .in("booking_ref", refs)
+    .select("id, vehicle_id, end_date, end_time")
+    .in("vehicle_id", vehicleIds)
     .eq("reason", "booking");
 
   if (blockErr) {
     throw new Error("Could not load blocked_dates: " + blockErr.message);
   }
 
-  // Index by booking_ref → keep the row with the latest end.
-  const blockByRef = {};
+  // Index by vehicle_id → keep the row with the latest end.
+  const blockByVehicle = {};
   for (const b of blockRows || []) {
-    if (!b.booking_ref) continue;
-    const cur = blockByRef[b.booking_ref];
+    const vid = b.vehicle_id;
+    if (!vid) continue;
+    const cur = blockByVehicle[vid];
     if (!cur) {
-      blockByRef[b.booking_ref] = b;
+      blockByVehicle[vid] = b;
       continue;
     }
     const newIsLater =
       b.end_date > cur.end_date ||
       (b.end_date === cur.end_date &&
         (b.end_time || "00:00") > (cur.end_time || "00:00"));
-    if (newIsLater) blockByRef[b.booking_ref] = b;
+    if (newIsLater) blockByVehicle[vid] = b;
   }
 
   let inserted = 0;
@@ -97,13 +103,10 @@ export async function runAvailabilitySyncFix(sb) {
   let failed   = 0;
 
   for (const booking of bookings) {
-    const ref = booking.booking_ref;
-    if (!ref) continue;
-
     const vehicleId = normalizeVehicleId(booking.vehicle_id);
     if (!vehicleId || !booking.return_date || !booking.pickup_date) {
       console.warn(
-        `[system-health-fix-availability] skipping ${ref}: missing vehicle_id, pickup_date, or return_date`
+        `[system-health-fix-availability] skipping ${booking.booking_ref || vehicleId}: missing vehicle_id, pickup_date, or return_date`
       );
       skipped++;
       continue;
@@ -116,7 +119,7 @@ export async function runAvailabilitySyncFix(sb) {
     );
 
     try {
-      const existingBlock = blockByRef[ref];
+      const existingBlock = blockByVehicle[vehicleId];
 
       if (!existingBlock) {
         // ── INSERT missing row ────────────────────────────────────────────
@@ -125,7 +128,6 @@ export async function runAvailabilitySyncFix(sb) {
           start_date:  booking.pickup_date,
           end_date:    correctEndDate,
           reason:      "booking",
-          booking_ref: ref,
         };
         if (correctEndTime) row.end_time = correctEndTime;
 
@@ -135,11 +137,11 @@ export async function runAvailabilitySyncFix(sb) {
 
         if (insertErr) {
           console.error(
-            `[system-health-fix-availability] INSERT failed for ${ref}:`, insertErr.message
+            `[system-health-fix-availability] INSERT failed for ${vehicleId}:`, insertErr.message
           );
           failed++;
         } else {
-          console.log(`[system-health-fix-availability] INSERTED blocked_dates for ${ref}`, {
+          console.log(`[system-health-fix-availability] INSERTED blocked_dates for ${vehicleId}`, {
             vehicle_id: vehicleId, end_date: correctEndDate, end_time: correctEndTime || null,
           });
           inserted++;
@@ -175,11 +177,11 @@ export async function runAvailabilitySyncFix(sb) {
 
       if (updateErr) {
         console.error(
-          `[system-health-fix-availability] UPDATE failed for ${ref}:`, updateErr.message
+          `[system-health-fix-availability] UPDATE failed for ${vehicleId}:`, updateErr.message
         );
         failed++;
       } else {
-        console.log(`[system-health-fix-availability] UPDATED blocked_dates for ${ref}`, {
+        console.log(`[system-health-fix-availability] UPDATED blocked_dates for ${vehicleId}`, {
           vehicle_id: vehicleId,
           old_end: storedEnd, old_end_time: storedEndTime || null,
           new_end: correctEndDate, new_end_time: correctEndTime || null,
@@ -187,7 +189,7 @@ export async function runAvailabilitySyncFix(sb) {
         updated++;
       }
     } catch (err) {
-      console.error(`[system-health-fix-availability] unexpected error for ${ref}:`, err.message);
+      console.error(`[system-health-fix-availability] unexpected error for ${vehicleId}:`, err.message);
       failed++;
     }
   }

@@ -57,6 +57,7 @@ import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { autoCreateRevenueRecord, buildBufferedEnd } from "./_booking-automation.js";
+import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -759,13 +760,14 @@ async function checkAvailabilitySync(sb) {
       return check("Availability Sync Health", "ok", "No active or overdue rentals to check.");
     }
 
-    const refs = rows.map((r) => r.booking_ref).filter(Boolean);
+    const vehicleIds = [...new Set(rows.map((r) => normalizeVehicleId(r.vehicle_id)).filter(Boolean))];
 
-    // Fetch all blocked_dates rows linked to these bookings by booking_ref.
+    // Fetch all blocked_dates rows for the vehicles that have active bookings.
+    // We do NOT use booking_ref because that column may not exist in all deployments.
     const { data: blockRows, error: blockErr } = await sb
       .from("blocked_dates")
-      .select("booking_ref, vehicle_id, end_date, end_time")
-      .in("booking_ref", refs)
+      .select("vehicle_id, end_date, end_time")
+      .in("vehicle_id", vehicleIds)
       .eq("reason", "booking");
 
     if (blockErr) {
@@ -773,13 +775,14 @@ async function checkAvailabilitySync(sb) {
       return check("Availability Sync Health", "error", "Could not query blocked_dates: " + blockErr.message);
     }
 
-    // Index by booking_ref — use the row with the latest end_date (or end_time) per booking.
-    const blockByRef = {};
+    // Index by vehicle_id — use the row with the latest end_date (or end_time) per vehicle.
+    const blockByVehicle = {};
     for (const b of blockRows || []) {
-      if (!b.booking_ref) continue;
-      const cur = blockByRef[b.booking_ref];
+      const vid = b.vehicle_id;
+      if (!vid) continue;
+      const cur = blockByVehicle[vid];
       if (!cur) {
-        blockByRef[b.booking_ref] = b;
+        blockByVehicle[vid] = b;
         continue;
       }
       // Keep the later end: compare end_date first, then end_time.
@@ -787,23 +790,23 @@ async function checkAvailabilitySync(sb) {
         b.end_date > cur.end_date ||
         (b.end_date === cur.end_date &&
           (b.end_time || "00:00") > (cur.end_time || "00:00"));
-      if (newIsLater) blockByRef[b.booking_ref] = b;
+      if (newIsLater) blockByVehicle[vid] = b;
     }
 
     const missingBlocks = [];
     const staleBlocks   = [];
 
     for (const booking of rows) {
-      const ref = booking.booking_ref;
-      if (!ref) continue;
+      const vehicleId = normalizeVehicleId(booking.vehicle_id);
+      if (!vehicleId) continue;
 
-      const block = blockByRef[ref];
+      const block = blockByVehicle[vehicleId];
 
       if (!block) {
         // No blocked_dates row at all.
         missingBlocks.push({
-          id:   ref,
-          info: `status=${booking.status} vehicle=${booking.vehicle_id || "?"} return=${booking.return_date || "?"}`,
+          id:   vehicleId,
+          info: `status=${booking.status} vehicle=${vehicleId} return=${booking.return_date || "?"}`,
         });
         continue;
       }
@@ -830,8 +833,8 @@ async function checkAvailabilitySync(sb) {
 
       if (isStale) {
         staleBlocks.push({
-          id:   ref,
-          info: `status=${booking.status} vehicle=${booking.vehicle_id || "?"} ` +
+          id:   vehicleId,
+          info: `status=${booking.status} vehicle=${vehicleId} ` +
                 `stored_end=${storedEnd}${storedEndTime ? ` ${storedEndTime}` : ""} ` +
                 `expected_end=${correctEndDate}${correctEndTime ? ` ${correctEndTime}` : ""}`,
         });
