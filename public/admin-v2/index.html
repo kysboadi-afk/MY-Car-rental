@@ -2449,6 +2449,7 @@ function logout() {
   editingVehicleId = null;
   editingSmsKey = null;
   allRevenueRecords = [];
+  revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
@@ -2547,6 +2548,7 @@ function refreshCurrentPage() {
   allExpenses = [];
   smsTemplates = [];
   allRevenueRecords = [];
+  revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
   allSystemSettings = [];
@@ -4652,6 +4654,7 @@ if (_origRenderDashboard) {
 
 // ── Revenue ───────────────────────────────────────────────────────────────
 let allRevenueRecords = [];
+let revenueKpiTotal   = null; // Total Revenue from total_revenue_kpi view (ledger-based)
 
 function loadRevenue() {
   document.getElementById('revenue-loading').style.display = '';
@@ -4661,20 +4664,23 @@ function loadRevenue() {
   const kpiGrid = document.getElementById('rev-kpi-grid');
   if (kpiGrid) kpiGrid.innerHTML = '';
 
-  // Fetch revenue records and expenses in parallel so renderRevenueSummary()
-  // can include real expenses in calcFinancials (matching Dashboard/Fleet).
-  // If allExpenses is already populated (user visited Expenses page first) we
-  // skip the extra round-trip.
+  // Fetch grouped bookings (list_by_booking), the ledger-based KPI total,
+  // and expenses in parallel.  allRevenueRecords is populated by flattening
+  // the individual records from each group so edit/delete modals still work.
   const expensesPromise = allExpenses.length
     ? Promise.resolve({ expenses: allExpenses })
     : apiPost('/api/get-expenses', { secret: adminSecret });
 
   Promise.all([
-    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'list_by_booking', scope: 'car' }),
+    apiPost('/api/v2-revenue', { secret: adminSecret, action: 'kpi' }),
     expensesPromise,
   ])
-    .then(([revData, expData]) => {
-      allRevenueRecords = revData.records || [];
+    .then(([revData, kpiData, expData]) => {
+      // Flatten all per-group records into allRevenueRecords for modal operations.
+      const groups = revData.groups || [];
+      allRevenueRecords = groups.flatMap((g) => g.records || []);
+      revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
       applyRevenueFilters();
@@ -4705,7 +4711,12 @@ function renderRevenueSummary() {
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
-      { label: 'Gross Revenue',    value: '$' + formatMoney(fin.amount_gross),           icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
+      // Note: revenueKpiTotal (from total_revenue_kpi view) sums ALL non-cancelled
+      // records including sync_excluded rows, matching the SQL spec.  fin.amount_gross
+      // (calculated from allRevenueRecords via revenue_records_effective) excludes
+      // sync_excluded rows. The revenueKpiTotal value is preferred when available;
+      // fin.amount_gross acts as a best-effort fallback when Supabase is unavailable.
+      { label: 'Total Revenue',    value: '$' + formatMoney(revenueKpiTotal ?? fin.amount_gross), icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',      value: '$' + formatMoney(fin.stripe_fee),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
       { label: 'Net (after fees)', value: '$' + formatMoney(fin.amount_net - refunds),   icon: '✅', sub: 'After fees & refunds' },
       { label: 'Total Refunds',    value: '$' + formatMoney(refunds),                    icon: '↩️', sub: '' },
@@ -5054,6 +5065,7 @@ function syncRevenue(btn) {
     .then((data) => {
       showToast(data.message || 'Sync complete.', 'success');
       allRevenueRecords = [];
+      revenueKpiTotal   = null;
       loadRevenue();
     })
     .catch((err) => showToast('Sync error: ' + err.message, 'error'))
@@ -5080,6 +5092,7 @@ async function runStripeReconcile(btn) {
     await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
     // Refresh all finance views so they show updated data
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     // Refresh dashboard KPIs to reflect new Stripe net/fees
     dashboardData = null;
@@ -5102,6 +5115,7 @@ async function runDedup(btn) {
       : '✅ No duplicates found.';
     showToast(msg, 'success');
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
     refreshDashboard();
@@ -5119,6 +5133,7 @@ async function runCleanupOrphans(btn) {
     const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
     showToast(data.message || '✅ Cleanup complete.', 'success');
     allRevenueRecords = [];
+    revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
     refreshDashboard();
