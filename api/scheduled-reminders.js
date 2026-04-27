@@ -1454,9 +1454,9 @@ async function loadBookingsFromSupabase(sb) {
  * @param {Date}   now
  */
 export async function processAutoActivations(allBookings, now) {
-  if (!process.env.GITHUB_TOKEN) return;
-
   // Respect the admin toggle — skip the entire cycle when disabled.
+  // Note: GITHUB_TOKEN is only needed for the bookings.json write; the
+  // Supabase update and in-memory state update proceed regardless.
   const enabled = await loadBooleanSetting("auto_activate_on_pickup", true);
   if (!enabled) {
     console.log("scheduled-reminders: auto_activate_on_pickup is disabled — skipping auto-activations");
@@ -1492,20 +1492,24 @@ export async function processAutoActivations(allBookings, now) {
         `(pickup was ${booking.pickupDate} ${booking.pickupTime || ""})`
       );
 
-      try {
-        await updateBooking(vehicleId, id, {
-          status:      "active_rental",
-          activatedAt,
-          updatedAt:   activatedAt,
-        });
+      // Update in-memory state immediately so processActiveRentals sees the
+      // correct active_rental status in the same cron run.
+      booking.status      = "active_rental";
+      booking.activatedAt = activatedAt;
+      booking.updatedAt   = activatedAt;
 
-        const activatedBooking = {
-          ...booking,
-          status:      "active_rental",
-          activatedAt,
-          updatedAt:   activatedAt,
-        };
-        await autoUpsertBooking(activatedBooking);
+      try {
+        // Sync to Supabase (does not require GITHUB_TOKEN).
+        await autoUpsertBooking(booking);
+
+        // Persist to bookings.json (requires GITHUB_TOKEN; skipped when absent).
+        if (process.env.GITHUB_TOKEN) {
+          await updateBooking(vehicleId, id, {
+            status:      "active_rental",
+            activatedAt,
+            updatedAt:   activatedAt,
+          });
+        }
       } catch (err) {
         console.error(
           `scheduled-reminders: auto-activation failed for ${vehicleId}/${id} (non-fatal):`,
@@ -1527,7 +1531,8 @@ export async function processAutoActivations(allBookings, now) {
  * @param {Date}   now
  */
 export async function processAutoCompletions(allBookings, now) {
-  if (!process.env.GITHUB_TOKEN) return;
+  // Note: GITHUB_TOKEN is only needed for the bookings.json write; the
+  // Supabase update and in-memory state update proceed regardless.
 
   const sb = getSupabaseAdmin();
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
@@ -1573,23 +1578,25 @@ export async function processAutoCompletions(allBookings, now) {
         `(${Math.round(minsOverdue)} min past return time)`
       );
 
-      try {
-        // Update status and completedAt in bookings.json
-        await updateBooking(vehicleId, id, {
-          status:      "completed_rental",
-          completedAt,
-          updatedAt:   completedAt,
-        });
+      // Update in-memory state immediately so downstream logic in this same
+      // cron run (e.g. otherActiveRentals check below) uses the correct status.
+      booking.status      = "completed_rental";
+      booking.completedAt = completedAt;
+      booking.updatedAt   = completedAt;
 
-        // Sync to Supabase
-        const completedBooking = {
-          ...booking,
-          status:      "completed_rental",
-          completedAt,
-          updatedAt:   completedAt,
-        };
-        await autoUpsertCustomer(completedBooking, true); // countStats=true: increment total_bookings/total_spent
-        await autoUpsertBooking(completedBooking);
+      try {
+        // Sync to Supabase (does not require GITHUB_TOKEN).
+        await autoUpsertCustomer(booking, true); // countStats=true: increment total_bookings/total_spent
+        await autoUpsertBooking(booking);
+
+        // Persist to bookings.json (requires GITHUB_TOKEN; skipped when absent).
+        if (process.env.GITHUB_TOKEN) {
+          await updateBooking(vehicleId, id, {
+            status:      "completed_rental",
+            completedAt,
+            updatedAt:   completedAt,
+          });
+        }
 
         // Free up the dates in booked-dates.json
         await removeFromBookedDates(vehicleId, booking.pickupDate, booking.returnDate);
@@ -1687,6 +1694,12 @@ export async function processAutoCompletions(allBookings, now) {
           `scheduled-reminders: auto-completion failed for ${vehicleId}/${id} (non-fatal):`,
           err.message
         );
+        // Revert in-memory state so processActiveRentals still sees this
+        // booking as active in the current run (Supabase sync failed, so the
+        // external record is still active_rental; don't silently drop it).
+        booking.status      = "active_rental";
+        booking.completedAt = undefined;
+        booking.updatedAt   = undefined;
       }
     }
   }
