@@ -539,6 +539,7 @@ export default async function handler(req, res) {
       // correcting a return date or processing a manual extension) so Supabase-
       // only bookings stay consistent with the updated dates.
       let sbUpdateSuccess = false;
+      let sbOnlyRowUpdateError = null;
       const sbInstance = getSupabaseAdmin();
       const hasReturnUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
       if (sbInstance && (safeUpdates.status || hasReturnUpdate)) {
@@ -567,7 +568,9 @@ export default async function handler(req, res) {
               if (!soErr) {
                 sbUpdateSuccess = true;
               } else {
-                console.error("v2-bookings: Supabase-only booking update error (non-fatal):", soErr.message, "| details:", soErr.details, "| code:", soErr.code, "| hint:", soErr.hint);
+                sbOnlyRowUpdateError = soErr;
+                console.error("RETURN UPDATE ERROR:", soErr);
+                console.error("v2-bookings: Supabase-only booking update error:", soErr.message, "| details:", soErr.details, "| code:", soErr.code, "| hint:", soErr.hint);
               }
             } else {
               const { data: sbRow, error: sbErr } = await sbInstance
@@ -665,7 +668,8 @@ export default async function handler(req, res) {
       if (sbOnlyRow) {
         if (!sbUpdateSuccess) {
           // The Supabase update failed and there is no bookings.json to fall back on.
-          return res.status(500).json({ error: "Failed to update booking in database" });
+          const errMsg = sbOnlyRowUpdateError ? sbOnlyRowUpdateError.message : "Failed to update booking in database";
+          return res.status(500).json({ error: errMsg, details: sbOnlyRowUpdateError });
         }
         updatedBooking = {
           bookingId,
