@@ -505,7 +505,7 @@ export default async function handler(req, res) {
         safeUpdates.activatedAt = safeUpdates.updatedAt;
       }
       // Auto-stamp completedAt and actualReturnTime when an admin marks the rental as returned.
-      // Safety guard: only allow this transition when the booking is currently active.
+      // Safety guard: only allow this transition when the booking is currently active or overdue.
       if (safeUpdates.status === "completed_rental") {
         let currentStatus = null;
         if (sbOnlyRow) {
@@ -516,9 +516,9 @@ export default async function handler(req, res) {
           );
           currentStatus = currentBooking?.status || null;
         }
-        if (currentStatus && currentStatus !== "active_rental") {
+        if (currentStatus && currentStatus !== "active_rental" && currentStatus !== "overdue") {
           return res.status(409).json({
-            error: `Cannot mark as returned: booking must be active (current status: ${currentStatus})`,
+            error: `Cannot mark as returned: booking must be active or overdue (current status: ${currentStatus})`,
           });
         }
         if (!safeUpdates.completedAt) {
@@ -567,7 +567,7 @@ export default async function handler(req, res) {
               if (!soErr) {
                 sbUpdateSuccess = true;
               } else {
-                console.error("v2-bookings: Supabase-only booking update error (non-fatal):", soErr.message);
+                console.error("v2-bookings: Supabase-only booking update error (non-fatal):", soErr.message, "| details:", soErr.details, "| code:", soErr.code, "| hint:", soErr.hint);
               }
             } else {
               const { data: sbRow, error: sbErr } = await sbInstance
@@ -602,12 +602,12 @@ export default async function handler(req, res) {
                     if (!piErr) {
                       sbUpdateSuccess = true;
                     } else {
-                      console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message);
+                      console.error("v2-bookings: Supabase fallback update error (non-fatal):", piErr.message, "| details:", piErr.details, "| code:", piErr.code, "| hint:", piErr.hint);
                     }
                   }
                 }
               } else if (sbErr) {
-                console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message);
+                console.error("v2-bookings: Supabase direct update error (non-fatal):", sbErr.message, "| details:", sbErr.details, "| code:", sbErr.code, "| hint:", sbErr.hint);
               }
             }
           } catch (sbCatchErr) {
