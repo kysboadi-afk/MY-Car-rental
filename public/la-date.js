@@ -134,6 +134,8 @@
      * @param {string} [timeStr] - "HH:MM" (24-hour)
      * @returns {string} e.g. "Jun 15, 2024, 8:00 AM"
      */
+    formatLocalDateTime: formatLocalDateTime,
+
     /**
      * Format an ISO timestamp as "Apr 27, 2026 at 8:00 AM" in LA timezone.
      * Returns null when the value is falsy or unparseable.
