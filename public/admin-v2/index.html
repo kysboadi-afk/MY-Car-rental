@@ -4711,6 +4711,11 @@ function renderRevenueSummary() {
   const grid = document.getElementById('rev-kpi-grid');
   if (grid) {
     grid.innerHTML = [
+      // Note: revenueKpiTotal (from total_revenue_kpi view) sums ALL non-cancelled
+      // records including sync_excluded rows, matching the SQL spec.  fin.amount_gross
+      // (calculated from allRevenueRecords via revenue_records_effective) excludes
+      // sync_excluded rows. The revenueKpiTotal value is preferred when available;
+      // fin.amount_gross acts as a best-effort fallback when Supabase is unavailable.
       { label: 'Total Revenue',    value: '$' + formatMoney(revenueKpiTotal ?? fin.amount_gross), icon: '💵', sub: `${active.length} paid record${active.length !== 1 ? 's' : ''}` },
       { label: 'Stripe Fees',      value: '$' + formatMoney(fin.stripe_fee),             icon: '💳', sub: `${reconciled} reconciled${unreconciled > 0 ? ` · ${unreconciled} pending ⚡` : ''}` },
       { label: 'Net (after fees)', value: '$' + formatMoney(fin.amount_net - refunds),   icon: '✅', sub: 'After fees & refunds' },

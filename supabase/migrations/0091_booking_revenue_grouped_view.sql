@@ -14,9 +14,9 @@
 --   extensions       = JSONB array of rows WHERE type = 'extension'
 --   records          = JSONB array of ALL rows in the group (for detail view)
 --
--- Scalar metadata (vehicle_id, customer_*) is taken from whichever row sorts
--- first by MAX so the non-NULL value is reliably surfaced.  In practice all
--- rows in a booking share the same vehicle and customer.
+-- Scalar metadata (vehicle_id, customer_*) is taken from MAX() aggregation,
+-- which reliably surfaces non-NULL values. In practice all rows in a booking
+-- share the same vehicle and customer so MAX() returns the correct value.
 --
 -- Queries revenue_records_effective (sync_excluded = false already applied).
 --

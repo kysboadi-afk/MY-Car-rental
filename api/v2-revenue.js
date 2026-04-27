@@ -664,7 +664,8 @@ export default async function handler(req, res) {
               record_count:    Number(g.record_count || 0),
               records:         (g.records || []).filter(Boolean),
             }));
-            // Apply any date-range filters that weren't pushed to the DB.
+            // Groups with a null start or end date are included intentionally —
+            // they represent bookings missing date info and are still valid revenue.
             if (body.startDate) groups = groups.filter((g) => !g.max_return_date || g.max_return_date >= body.startDate);
             if (body.endDate)   groups = groups.filter((g) => !g.min_pickup_date || g.min_pickup_date <= body.endDate);
             if (body.limit)     groups.splice(Number(body.limit));
