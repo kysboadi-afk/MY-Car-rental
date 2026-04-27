@@ -254,8 +254,11 @@ export default async function handler(req, res) {
     let pickupsTodayCount = 0;
     const activeOrOverdueBookings = [];
     for (const booking of allBookings) {
-      if (booking.status === "cancelled_rental") {
-        // Cancelled bookings never contribute to any active/overdue KPIs.
+      if (booking.status === "cancelled_rental" || booking.status === "completed_rental") {
+        // Completed and cancelled bookings never contribute to active/overdue KPIs.
+        // A completed_rental whose return date is in the past would otherwise be
+        // incorrectly counted as overdue (now >= returnDateTime is true for any
+        // past booking).  Only the revenue fallback loop below needs completed_rental.
         continue;
       }
       const returnDateTime = parseReturnDateTime(booking.returnDate, booking.returnTime);
