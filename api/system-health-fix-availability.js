@@ -29,7 +29,14 @@ import { buildBufferedEnd }                     from "./_booking-automation.js";
 import { normalizeVehicleId }                   from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ACTIVE_STATUSES = ["active_rental", "overdue"];
+// All statuses that represent a vehicle being held for a renter — must match
+// ACTIVE_BOOKING_STATUSES in fleet-status.js so the health fix covers every
+// booking state that prevents a vehicle from being available.
+const ACTIVE_STATUSES = [
+  "pending", "booked_paid", "approved", "active",
+  "reserved", "reserved_unpaid", "pending_verification",
+  "active_rental", "overdue",
+];
 
 /**
  * Core repair logic for availability sync.

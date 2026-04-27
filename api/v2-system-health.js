@@ -733,7 +733,14 @@ async function checkSmsDeliveryHealth(sb) {
 // whose existing blocked_dates row has an end that is earlier than the
 // booking's return_date+return_time+buffer — meaning the vehicle may
 // incorrectly appear as available while it is actively rented.
-const AVAILABILITY_SYNC_ACTIVE = ["active_rental", "overdue"];
+// All statuses that represent a vehicle being held for a renter — must match
+// ACTIVE_BOOKING_STATUSES in fleet-status.js and ACTIVE_STATUSES in
+// system-health-fix-availability.js.
+const AVAILABILITY_SYNC_ACTIVE = [
+  "pending", "booked_paid", "approved", "active",
+  "reserved", "reserved_unpaid", "pending_verification",
+  "active_rental", "overdue",
+];
 async function checkAvailabilitySync(sb) {
   try {
     const { data: activeRows, error: activeErr } = await sb
