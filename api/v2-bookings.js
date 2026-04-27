@@ -1112,6 +1112,12 @@ export default async function handler(req, res) {
       const parsedTotal  = typeof totalPrice === "number" ? totalPrice  : parseFloat(totalPrice)  || 0;
       const bookingId    = crypto.randomBytes(8).toString("hex");
 
+      // Ensure every manual booking has a stable payment_intent_id for revenue
+      // deduplication.  When the admin doesn't supply one (cash/offline bookings),
+      // generate a "manual_" prefixed ID, matching add-manual-booking.js behaviour.
+      const trimmedPI = typeof paymentIntentId === "string" ? paymentIntentId.trim() : "";
+      const resolvedPaymentIntentId = trimmedPI || "manual_" + crypto.randomBytes(6).toString("hex");
+
       // Persist booking through the unified pipeline (Supabase + bookings.json).
       // bookingId is stable across retries for idempotency.
       const result = await persistBooking({
@@ -1128,7 +1134,7 @@ export default async function handler(req, res) {
         amountPaid:     Math.round(parsedAmount * 100) / 100,
         totalPrice:     Math.round((parsedTotal || parsedAmount) * 100) / 100,
         paymentMethod:  typeof paymentMethod    === "string" ? paymentMethod.trim()    : "cash",
-        paymentIntentId: typeof paymentIntentId  === "string" ? paymentIntentId.trim()  : "",
+        paymentIntentId: resolvedPaymentIntentId,
         status:         parsedAmount > 0 ? "booked_paid" : "reserved_unpaid",
         notes:          typeof notes === "string" ? notes.trim().slice(0, 500) : "",
         source:         "admin_v2",
