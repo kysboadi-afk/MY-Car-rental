@@ -80,6 +80,7 @@ const URGENCY_SCORE = {
   late_warning_30min:                 42,
   maint_brakes_urgent:                42,
   OIL_CHECK_FINAL:                    42,
+  MAINTENANCE_REQUIRED:               40,
   maint_tires_urgent:                 40,
   MAINTENANCE_AVAILABILITY_URGENT:    40,
   OIL_CHECK_REMINDER:                 40,
@@ -94,6 +95,7 @@ const URGENCY_SCORE = {
   OIL_CHECK_REQUEST:                  32,
   MAINTENANCE_AVAILABILITY_REQUEST:   30,
   maint_brakes_warn:                  30,
+  OIL_CHECK_RISK:                     30,
   maint_tires_warn:                   28,
   HIGH_DAILY_MILEAGE:                 26,
 
@@ -118,6 +120,7 @@ const CONTEXT_SCORE = {
   late_warning_30min:                 17,
   maint_brakes_urgent:                17,
   OIL_CHECK_REMINDER:                 17,
+  MAINTENANCE_REQUIRED:               16,
   unpaid_final:                       17,
   maint_tires_urgent:                 16,
   MAINTENANCE_AVAILABILITY_URGENT:    16,
@@ -131,6 +134,7 @@ const CONTEXT_SCORE = {
   OIL_CHECK_REQUEST:                  14,
   MAINTENANCE_AVAILABILITY_REQUEST:   13,
   maint_brakes_warn:                  13,
+  OIL_CHECK_RISK:                     13,
   maint_tires_warn:                   12,
   HIGH_DAILY_MILEAGE:                 10,
 

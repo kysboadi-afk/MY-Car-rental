@@ -68,6 +68,8 @@ export const SMS_PRIORITY = {
   MAINTENANCE_AVAILABILITY_REQUEST: PRIORITY.STANDARD,  // generic maintenance warn
   OIL_CHECK_REQUEST:               PRIORITY.STANDARD,   // initial oil-check request
   OIL_CHECK_MERGED:                PRIORITY.STANDARD,   // merged oil-check + service
+  OIL_CHECK_RISK:                  PRIORITY.STANDARD,   // avgMilesPerDay >= 150
+  MAINTENANCE_REQUIRED:            PRIORITY.IMPORTANT,  // avgMilesPerDay >= 250
   HIGH_DAILY_MILEAGE:              PRIORITY.STANDARD,   // driver mileage alert (owner)
 
   // ── P4 — Marketing ─────────────────────────────────────────────────────────
