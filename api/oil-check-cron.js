@@ -102,27 +102,76 @@ function hoursSince(earlier, later = new Date().toISOString()) {
 /**
  * Log a sent oil-check SMS to sms_logs so other crons (scheduled-reminders,
  * maintenance-alerts) can see it via the cross-cron cooldown check.
- * Uses the real calendar date as return_date_at_send so logs are auditable.
+ *
+ * opts.sentinelDate = true  → upsert with return_date_at_send='1970-01-01'.
+ *   Use this for once-per-booking alert types (OIL_CHECK_RISK,
+ *   MAINTENANCE_REQUIRED) so the DB-level unique constraint prevents duplicate
+ *   rows across cron runs.
+ *
+ * opts.sentinelDate = false (default) → insert with today's real calendar date.
+ *   Use this for compliance escalation keys (OIL_CHECK_REQUEST,
+ *   OIL_CHECK_REMINDER, OIL_CHECK_FINAL) where multiple rows per booking are
+ *   expected and auditable.
+ *
  * Non-fatal: errors are only logged.
  * @param {object} extraMetadata - optional additional fields (e.g. { score })
+ * @param {{ sentinelDate?: boolean }} opts
  */
-async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata = {}) {
+async function logOilCheckToSupabase(sb, bookingRef, templateKey, extraMetadata = {}, opts = {}) {
   if (!sb || !bookingRef) return;
   try {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    const { error } = await sb
-      .from("sms_logs")
-      .insert({
-        booking_id:          bookingRef,
-        template_key:        templateKey,
-        return_date_at_send: today,
-        metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
-      });
+    const returnDateAtSend = opts.sentinelDate
+      ? "1970-01-01"
+      : new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const row = {
+      booking_id:          bookingRef,
+      template_key:        templateKey,
+      return_date_at_send: returnDateAtSend,
+      metadata:            { priority: getSmsPriority(templateKey), ...extraMetadata },
+    };
+    const { error } = opts.sentinelDate
+      ? await sb.from("sms_logs").upsert(row, { onConflict: "booking_id,template_key,return_date_at_send" })
+      : await sb.from("sms_logs").insert(row);
     if (error) {
       console.warn("oil-check-cron: sms_logs write failed (non-fatal):", error.message);
     }
   } catch (err) {
     console.warn("oil-check-cron: sms_logs write failed (non-fatal):", err.message);
+  }
+}
+
+/**
+ * Returns true if a mileage-based alert (OIL_CHECK_RISK or MAINTENANCE_REQUIRED)
+ * has already been sent for this booking.  These alerts use the sentinel
+ * return_date_at_send='1970-01-01' so they fire at most once per booking
+ * regardless of how many cron runs occur.
+ *
+ * Fails open: if the DB query errors, returns false so the caller can proceed
+ * with its own scoring/spam guards rather than silently suppressing the send.
+ *
+ * @param {object} sb          - Supabase admin client
+ * @param {string} bookingRef  - booking_ref (bk-...)
+ * @param {string} templateKey - 'OIL_CHECK_RISK' | 'MAINTENANCE_REQUIRED'
+ * @returns {Promise<boolean>}
+ */
+async function hasMileageAlertBeenSent(sb, bookingRef, templateKey) {
+  if (!sb || !bookingRef) return false;
+  try {
+    const { data, error } = await sb
+      .from("sms_logs")
+      .select("id")
+      .eq("booking_id", bookingRef)
+      .eq("template_key", templateKey)
+      .eq("return_date_at_send", "1970-01-01")
+      .maybeSingle();
+    if (error) {
+      console.warn("oil-check-cron: sms_logs dedup check failed (non-fatal):", error.message);
+      return false;
+    }
+    return !!data;
+  } catch (err) {
+    console.warn("oil-check-cron: sms_logs dedup check failed (non-fatal):", err.message);
+    return false;
   }
 }
 
@@ -473,7 +522,7 @@ export default async function handler(req, res) {
   // ── Mileage-based triggers ────────────────────────────────────────────────
   // Independently scan each active rental for high avg miles/day.
   // These fire regardless of the oil-check compliance state above.
-  // Cross-run dedup is handled by the scoring system via sms_logs.
+  // Hard dedup: hasMileageAlertBeenSent() guards each key to once per booking.
   const nowMs = Date.now();
   for (const booking of bookings) {
     const {
@@ -519,6 +568,14 @@ export default async function handler(req, res) {
       continue;
     }
 
+    // Hard dedup: each mileage alert type fires at most once per booking,
+    // across all cron runs and across extensions (same booking_ref throughout).
+    if (await hasMileageAlertBeenSent(sb, bookingRef, templateKey)) {
+      results.skipped_no_trigger++;
+      console.log(`oil-check-cron (mileage): SKIP ${bookingRef || bookingId}: ${templateKey} already sent for this booking`);
+      continue;
+    }
+
     // Compute time-proximity context for scoring.
     const { minutesToReturn: rawMinutesToReturnMileage } = await getRentalState(sb, bookingRef);
     const mileageMinutesToReturn = rawMinutesToReturnMileage !== null ? rawMinutesToReturnMileage : undefined;
@@ -549,7 +606,7 @@ export default async function handler(req, res) {
         score:             mileageScore,
         breakdown:         mileageBreakdown,
         avg_miles_per_day: Math.round(avgMilesPerDay),
-      });
+      }, { sentinelDate: true });
       results.triggered++;
       console.log(`oil-check-cron (mileage): triggered booking ${bookingRef || bookingId} (key=${templateKey}, avg=${avgMilesPerDay.toFixed(1)} mi/day)`);
     } catch (err) {
