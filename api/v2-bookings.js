@@ -40,20 +40,20 @@ import {
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
-import { CARS, computeRentalDays } from "./_pricing.js";
+import { CARS, computeRentalDays, FLEET_VEHICLE_IDS } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
-import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
+import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2012", "camry2013"];
+const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (Unit 2)",

@@ -17,12 +17,13 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
+import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 
 const DEFAULT_STATUS = {
   slingshot:  { available: true },

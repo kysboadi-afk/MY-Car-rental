@@ -21,10 +21,10 @@ import { computeAmount } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
+import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2012", "camry2013"];
+const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
   slingshot:  "Slingshot R",
   slingshot2: "Slingshot R (Unit 2)",

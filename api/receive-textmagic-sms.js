@@ -39,6 +39,7 @@ import { CARS } from "./_pricing.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { validateLink, PAGE_URLS } from "./_link-validator.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
+import { formatTime12h } from "./_time.js";
 
 // Disable Vercel's built-in body parser so we can read the raw request body
 // for TEXTMAGIC_WEBHOOK_SECRET HMAC-SHA256 signature verification.
@@ -325,7 +326,7 @@ async function createExtensionPaymentIntent(vehicleId, booking, newReturnDate, n
         renter_phone:        booking.phone || "",
         extension_label:     label,
         new_return_date:     newReturnDate || "",
-        new_return_time:     newReturnTime || "",
+        new_return_time:     newReturnTime ? formatTime12h(newReturnTime) : "",
       },
     });
     return pi;

@@ -63,6 +63,11 @@ export const CARS = {
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };
 
+// Canonical vehicle IDs derived from the CARS registry above.
+// Adding a new vehicle to CARS automatically adds it here, which propagates to
+// every endpoint that validates or iterates over the fleet — no manual list updates needed.
+export const FLEET_VEHICLE_IDS = Object.keys(CARS);
+
 // Damage Protection Plan rates — must stay in sync with car.js client-side constants.
 // Legacy tiered rates (used for Slingshot Option B and backward-compatibility).
 export const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
