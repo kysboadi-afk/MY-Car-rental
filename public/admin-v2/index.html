@@ -1818,6 +1818,36 @@
             Run Checks Now
           </button>
         </div>
+
+        <!-- SMS Logs card -->
+        <div class="card" style="margin-top:24px;">
+          <div class="card-header" style="margin-bottom:12px;">
+            <div>
+              <div class="card-title">SMS Logs</div>
+              <div class="card-sub">Last 100 SMS delivery attempts</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadSmsLogs()">↻ Refresh</button>
+          </div>
+          <div id="sms-logs-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading…</div></div>
+          <div id="sms-logs-error" style="display:none;color:var(--danger);font-size:13px;padding:8px 0;"></div>
+          <div id="sms-logs-table-wrap" style="display:none;overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Time</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Booking</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Vehicle</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Phone</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Type</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Status</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);">Error</th>
+                </tr>
+              </thead>
+              <tbody id="sms-logs-tbody"></tbody>
+            </table>
+            <div id="sms-logs-empty" style="display:none;text-align:center;padding:32px 20px;color:var(--text-sub);font-size:13px;">No SMS delivery logs yet.</div>
+          </div>
+        </div>
       </div>
 
       <!-- AI ASSISTANT PAGE -->
@@ -2539,7 +2569,7 @@ function navigate(page) {
   else if (page === 'settings') loadSiteContent();
   else if (page === 'ai') loadAiInsights();
   else if (page === 'driver-mileage') initDriverMileagePage();
-  else if (page === 'system-health') loadSystemHealth();
+  else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
 }
 
 function refreshCurrentPage() {
@@ -2568,7 +2598,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'gps') loadGpsTracking();
   else if (currentPage === 'block-dates') loadBlockedDates();
   else if (currentPage === 'settings') loadSiteContent();
-  else if (currentPage === 'system-health') loadSystemHealth();
+  else if (currentPage === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
 }
 
 // ── Sidebar Mobile ─────────────────────────────────────────────────────────
@@ -6425,6 +6455,60 @@ async function fixHealthCheck(checkKey, btn) {
   } catch (err) {
     showToast('Fix failed: ' + err.message, 'error');
     if (btn) { btn.disabled = false; btn.textContent = '🔧 Fix Now'; }
+  }
+}
+
+// ── SMS Logs ───────────────────────────────────────────────────────────────
+async function loadSmsLogs() {
+  const loading  = document.getElementById('sms-logs-loading');
+  const errorEl  = document.getElementById('sms-logs-error');
+  const tableWrap = document.getElementById('sms-logs-table-wrap');
+  const tbody    = document.getElementById('sms-logs-tbody');
+  const emptyEl  = document.getElementById('sms-logs-empty');
+
+  if (loading)   loading.style.display = '';
+  if (errorEl)   { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+  if (tableWrap) tableWrap.style.display = 'none';
+
+  try {
+    const data = await apiPost('/api/sms-logs', { secret: adminSecret });
+    const logs = data.logs || [];
+
+    if (tbody) {
+      tbody.innerHTML = logs.map((row) => {
+        const statusColor = row.status === 'sent'
+          ? '#16a34a'
+          : row.status === 'failed'
+          ? '#dc2626'
+          : '#ca8a04';
+        const statusBg = row.status === 'sent'
+          ? '#f0fdf4'
+          : row.status === 'failed'
+          ? '#fef2f2'
+          : '#fefce8';
+        const time = row.created_at
+          ? new Date(row.created_at).toLocaleString()
+          : '—';
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:7px 10px;white-space:nowrap;color:var(--text-sub);">${esc(time)}</td>
+          <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--primary);">${esc(row.booking_ref || '—')}</td>
+          <td style="padding:7px 10px;">${esc(getVehicleLabel(row.vehicle_id || '') || row.vehicle_id || '—')}</td>
+          <td style="padding:7px 10px;font-family:monospace;font-size:11px;">${esc(row.renter_phone || '—')}</td>
+          <td style="padding:7px 10px;font-family:monospace;font-size:11px;">${esc(row.message_type || '—')}</td>
+          <td style="padding:7px 10px;">
+            <span style="background:${statusBg};color:${statusColor};font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;">${esc(row.status || '—')}</span>
+          </td>
+          <td style="padding:7px 10px;color:var(--danger);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(row.error || '')}">${esc(row.error || '')}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    if (emptyEl)   emptyEl.style.display  = logs.length === 0 ? '' : 'none';
+    if (tableWrap) tableWrap.style.display = '';
+  } catch (err) {
+    if (errorEl) { errorEl.textContent = 'Failed to load SMS logs: ' + err.message; errorEl.style.display = ''; }
+  } finally {
+    if (loading) loading.style.display = 'none';
   }
 }
 
