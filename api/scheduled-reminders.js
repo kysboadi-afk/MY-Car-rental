@@ -1478,7 +1478,7 @@ export async function loadBookingsFromSupabase(sb) {
     // If the query failed due to renter_phone not existing yet (PostgreSQL error
     // 42703 — undefined column), retry both queries without renter_phone.
     // Migration 0104 is the permanent fix; this is a resilience guard.
-    if (activeErr && (activeErr.code === "42703" || /renter_phone/i.test(activeErr.message || ""))) {
+    if (activeErr && activeErr.code === "42703") {
       console.warn(
         "scheduled-reminders loadBookingsFromSupabase: renter_phone column missing — " +
         "retrying without it (run migration 0104 to fix permanently)"
