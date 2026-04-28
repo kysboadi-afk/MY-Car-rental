@@ -269,7 +269,9 @@ export default async function handler(req, res) {
       const nowMinutesLA = (() => {
         const h = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, hour: "2-digit", hour12: false }), 10);
         const m = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, minute: "2-digit" }), 10);
-        return h * 60 + m;
+        // Normalize h=24 (midnight expressed as end-of-day in some ICU builds) to h=0.
+        const normalizedH = (h === 24) ? 0 : h;
+        return normalizedH * 60 + m;
       })();
 
       /** Convert "HH:MM" end_time to minutes-since-midnight. Returns -1 on failure. */
@@ -394,14 +396,16 @@ export default async function handler(req, res) {
 
         if (!available && block) {
           if (block.end_time) {
-            // Time-aware block: both available_at and next_available_display are
-            // derived directly from blocked_dates.end_time, which already includes
-            // the 2-hour preparation buffer applied at booking time.
-            // Displaying the buffered end time is intentional — visitors see the
-            // actual earliest pickup time (e.g. 10:00 AM), not the raw return time.
+            // Time-aware block: available_at is the buffered end_time (when the
+            // vehicle is ready for the next pickup).  next_available_display shows
+            // the actual return time (end_time minus the 2-hour preparation buffer)
+            // so visitors see "Car returns at 3:00 PM" rather than the internal
+            // cutoff time.
             const endDateObj = buildDateTimeLA(block.end_date, block.end_time);
-            entry.available_at           = endDateObj.toISOString();
-            entry.next_available_display = formatForDisplay(endDateObj, true);
+            entry.available_at = endDateObj.toISOString();
+            // Compute actual return time = buffered end_time − BOOKING_BUFFER_HOURS
+            const actualReturnDt = new Date(endDateObj.getTime() - BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
+            entry.next_available_display = formatForDisplay(actualReturnDt, true);
           } else {
             // Legacy date-only block: show date only.
             // buildDateTimeLA uses noon so the date never shifts due to UTC offset.

@@ -634,6 +634,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
       customer_name:             normalizeCustomerName(booking.name) || null,
       customer_email:            normalizedEmail                || null,
       customer_phone:            booking.phone                  || null,
+      renter_phone:              booking.phone                  || null,
       // Mirror the JS-side auto-stamps so the Supabase row is consistent with
       // the bookings.json record.  The DB trigger on_booking_status_timestamps
       // will also stamp these automatically, but passing the JS value ensures

@@ -1343,7 +1343,7 @@ async function persistSentMarks(sentMarks) {
 export async function loadBookingsFromSupabase(sb) {
   try {
     const SELECT_COLS =
-      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
+      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
       "late_fee_status, late_fee_amount, created_at";
@@ -1420,7 +1420,9 @@ export async function loadBookingsFromSupabase(sb) {
         vehicleName:    vehicleId,
         name:           row.customer_name       || "",
         email:          row.customer_email      || "",
-        phone:          row.customer_phone      || "",
+        // renter_phone is the canonical SMS field; fall back to customer_phone
+        // for rows written before migration 0101.
+        phone:          row.renter_phone        || row.customer_phone || "",
         pickupDate:     row.pickup_date  ? String(row.pickup_date).split("T")[0]  : "",
         pickupTime:     row.pickup_time  ? String(row.pickup_time).substring(0, 5) : "",
         returnDate:     row.return_date  ? String(row.return_date).split("T")[0]  : "",
@@ -2191,10 +2193,11 @@ export default async function handler(req, res) {
               if (resolved) {
                 const normalized = normalizePhone(resolved);
                 booking.phone = normalized;
-                // Backfill Supabase so future cron runs don't need to re-fetch
+                // Backfill renter_phone (canonical SMS column) in Supabase so
+                // future cron runs don't need to re-fetch from Stripe.
                 const { error: phoneErr } = await sbClient
                   .from("bookings")
-                  .update({ customer_phone: normalized })
+                  .update({ renter_phone: normalized })
                   .eq("booking_ref", booking.bookingId);
                 if (phoneErr) {
                   console.warn(

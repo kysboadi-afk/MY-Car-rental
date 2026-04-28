@@ -717,6 +717,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       customer_name:             persistPayload.name  || null,
       customer_email:            persistPayload.email || null,
       customer_phone:            persistPayload.phone || null,
+      renter_phone:              persistPayload.phone || null,
     };
 
     const { data: preWriteData, error: preWriteError } = await sbPre
@@ -2310,6 +2311,7 @@ export default async function handler(req, res) {
               customer_name:        bookingForSync.name  || null,
               customer_email:       bookingForSync.email || null,
               customer_phone:       bookingForSync.phone || null,
+              renter_phone:         bookingForSync.phone || null,
               updated_at:           new Date().toISOString(),
             })
             .eq("booking_ref", resolvedBookingId);
