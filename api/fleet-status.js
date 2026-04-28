@@ -394,15 +394,14 @@ export default async function handler(req, res) {
 
         if (!available && block) {
           if (block.end_time) {
-            // Time-aware block: available_at uses the full buffered end_time so
-            // calendar blocking and extend-form min-date logic is correct.
-            // next_available_display shows the actual return time (buffer removed)
-            // so visitors see "Available after 6:00 PM" rather than the internal
-            // 2-hour post-return window (e.g. 8:00 PM).
+            // Time-aware block: both available_at and next_available_display are
+            // derived directly from blocked_dates.end_time, which already includes
+            // the 2-hour preparation buffer applied at booking time.
+            // Displaying the buffered end time is intentional — visitors see the
+            // actual earliest pickup time (e.g. 10:00 AM), not the raw return time.
             const endDateObj = buildDateTimeLA(block.end_date, block.end_time);
-            entry.available_at       = endDateObj.toISOString();
-            const returnDateObj = new Date(endDateObj.getTime() - BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
-            entry.next_available_display = formatForDisplay(returnDateObj, true);
+            entry.available_at           = endDateObj.toISOString();
+            entry.next_available_display = formatForDisplay(endDateObj, true);
           } else {
             // Legacy date-only block: show date only.
             // buildDateTimeLA uses noon so the date never shifts due to UTC offset.
