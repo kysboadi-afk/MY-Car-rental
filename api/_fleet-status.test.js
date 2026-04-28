@@ -361,7 +361,8 @@ test("latest block wins by end_time when end_dates are equal", async () => {
     timeZone: "America/Los_Angeles", hour: "2-digit", hour12: false,
   }), 10);
   assert.equal(hourLA, 17, "available_at should be anchored to 17:00 LA time");
-  // next_available_display shows the actual return time (end_time − BOOKING_BUFFER_HOURS=2):
-  // 17:00 buffered − 2h = 15:00 actual → "3:00 PM"
-  assert.ok(res._body.camry?.next_available_display?.includes("3:00 PM"), "should reflect actual return 15:00 → 3:00 PM");
+  // next_available_display shows the buffered end_time directly (already includes
+  // the +2h preparation window), which is the actual earliest pickup time for the
+  // next booking (e.g. "5:00 PM" when end_time is 17:00).
+  assert.ok(res._body.camry?.next_available_display?.includes("5:00 PM"), "should reflect buffered availability 17:00 → 5:00 PM");
 });

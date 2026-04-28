@@ -1412,6 +1412,13 @@ async function sendBalancePaidOwnerEmail({
 }
 
 export default async function handler(req, res) {
+  // ── Security note ────────────────────────────────────────────────────────────
+  // This endpoint must NOT require an Authorization header.  Stripe sends
+  // webhooks without one.  Security is enforced exclusively via the
+  // Stripe-Signature header checked by stripe.webhooks.constructEvent() below.
+  // Any Authorization / CRON_SECRET / ADMIN_SECRET check here would cause
+  // Stripe to receive a 401 and retry indefinitely.
+  // ────────────────────────────────────────────────────────────────────────────
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   if (!process.env.STRIPE_SECRET_KEY) {

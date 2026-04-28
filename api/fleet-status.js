@@ -269,7 +269,9 @@ export default async function handler(req, res) {
       const nowMinutesLA = (() => {
         const h = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, hour: "2-digit", hour12: false }), 10);
         const m = parseInt(nowLA.toLocaleString("en-US", { timeZone: BUSINESS_TZ, minute: "2-digit" }), 10);
-        return h * 60 + m;
+        // Normalize h=24 (midnight expressed as end-of-day in some ICU builds) to h=0.
+        const normalizedH = (h === 24) ? 0 : h;
+        return normalizedH * 60 + m;
       })();
 
       /** Convert "HH:MM" end_time to minutes-since-midnight. Returns -1 on failure. */
