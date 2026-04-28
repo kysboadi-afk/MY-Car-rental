@@ -257,6 +257,46 @@ async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata)
   }
 }
 
+// ─── SMS delivery visibility log ──────────────────────────────────────────────
+// Writes a single row to sms_delivery_logs for every SMS attempt, capturing
+// the outcome (sent / failed / skipped).  This is a separate table from the
+// dedup sms_logs table — it does NOT affect deduplication logic.
+// Non-fatal: a write failure is logged but never re-thrown.
+
+/**
+ * Append one row to sms_delivery_logs.
+ * @param {object} ctx
+ * @param {string|null} ctx.booking_ref
+ * @param {string|null} ctx.vehicle_id
+ * @param {string|null} ctx.renter_phone
+ * @param {string|null} ctx.message_type
+ * @param {string|null} ctx.message_body
+ * @param {string}      ctx.status        - 'sent' | 'failed' | 'skipped'
+ * @param {string|null} [ctx.error]
+ * @param {string|null} [ctx.provider_id] - TextMagic session id (sent rows only)
+ */
+async function logSmsDelivery({ booking_ref, vehicle_id, renter_phone, message_type, message_body, status, error, provider_id }) {
+  const sb = getSupabaseAdmin();
+  if (!sb) return;
+  try {
+    const { error: dbErr } = await sb.from("sms_delivery_logs").insert({
+      booking_ref:  booking_ref  || null,
+      vehicle_id:   vehicle_id   || null,
+      renter_phone: renter_phone || null,
+      message_type: message_type || null,
+      message_body: message_body || null,
+      status,
+      error:        error        || null,
+      provider_id:  provider_id  || null,
+    });
+    if (dbErr) {
+      console.warn("scheduled-reminders: sms_delivery_logs write error (non-fatal):", dbErr.message);
+    }
+  } catch (err) {
+    console.warn("scheduled-reminders: sms_delivery_logs write failed (non-fatal):", err.message);
+  }
+}
+
 function ghHeaders() {
   const token = process.env.GITHUB_TOKEN;
   const headers = {
@@ -507,21 +547,62 @@ function formatTime(d) {
 
 /**
  * Safely send an SMS, catching errors so one failure doesn't abort the whole job.
- * @param {string} phone
- * @param {string} body
+ * When logCtx is supplied, every attempt (sent / failed / skipped) is recorded
+ * in sms_delivery_logs for visibility.  Existing callers that omit logCtx are
+ * unaffected.
+ * @param {string}      phone
+ * @param {string}      body
+ * @param {object|null} [logCtx]             - optional delivery log context
+ * @param {string|null} [logCtx.booking_ref] - booking_ref (bk-...)
+ * @param {string|null} [logCtx.vehicle_id]
+ * @param {string|null} [logCtx.message_type] - template key
  * @returns {Promise<boolean>} true on success
  */
-async function safeSend(phone, body) {
+async function safeSend(phone, body, logCtx = null) {
   const normalized = normalizePhone(phone);
   if (!normalized) {
     console.warn("scheduled-reminders: no phone number — skipping");
+    if (logCtx) {
+      await logSmsDelivery({
+        booking_ref:  logCtx.booking_ref  || null,
+        vehicle_id:   logCtx.vehicle_id   || null,
+        renter_phone: null,
+        message_type: logCtx.message_type || null,
+        message_body: body,
+        status:       "skipped",
+        error:        "Missing phone number",
+      });
+    }
     return false;
   }
   try {
-    await sendSms(normalized, body);
+    const tmResult = await sendSms(normalized, body);
+    const providerId = tmResult && tmResult.id != null ? String(tmResult.id) : null;
+    if (logCtx) {
+      await logSmsDelivery({
+        booking_ref:  logCtx.booking_ref  || null,
+        vehicle_id:   logCtx.vehicle_id   || null,
+        renter_phone: normalized,
+        message_type: logCtx.message_type || null,
+        message_body: body,
+        status:       "sent",
+        provider_id:  providerId,
+      });
+    }
     return true;
   } catch (err) {
     console.error(`scheduled-reminders: SMS send failed to ${normalized}:`, err.message);
+    if (logCtx) {
+      await logSmsDelivery({
+        booking_ref:  logCtx.booking_ref  || null,
+        vehicle_id:   logCtx.vehicle_id   || null,
+        renter_phone: normalized,
+        message_type: logCtx.message_type || null,
+        message_body: body,
+        status:       "failed",
+        error:        err.message,
+      });
+    }
     return false;
   }
 }
@@ -683,7 +764,7 @@ async function processUnpaid(allBookings, now, sentMarks) {
       // 2-hour reminder (window: 2h–90min)
       if (minutesUntilPickup <= 120 && minutesUntilPickup > 90 && !alreadySent(booking, "unpaid_2h") &&
           !(await isSmsLogged(id, "unpaid_2h"))) {
-        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_2H, v));
+        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_2H, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "unpaid_2h" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "unpaid_2h" });
           await logSmsToSupabase(id, "unpaid_2h");
@@ -695,7 +776,7 @@ async function processUnpaid(allBookings, now, sentMarks) {
       // Final reminder (window: 30–15 min)
       if (minutesUntilPickup <= 30 && minutesUntilPickup > 15 && !alreadySent(booking, "unpaid_final") &&
           !(await isSmsLogged(id, "unpaid_final"))) {
-        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_FINAL, v));
+        const sent = await safeSend(booking.phone, render(UNPAID_REMINDER_FINAL, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "unpaid_final" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "unpaid_final" });
           await logSmsToSupabase(id, "unpaid_final");
@@ -732,7 +813,7 @@ async function processPaidBookings(allBookings, now, sentMarks) {
       // 24-hour reminder (window: 24h–23h)
       if (minutesUntilPickup <= 24 * 60 && minutesUntilPickup > 23 * 60 && !alreadySent(booking, "pickup_24h") &&
           !(await isSmsLogged(id, "pickup_24h"))) {
-        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v));
+        const sent = await safeSend(booking.phone, render(PICKUP_REMINDER_24H, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "pickup_24h" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "pickup_24h" });
           await logSmsToSupabase(id, "pickup_24h");
@@ -1018,7 +1099,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
 
             const feeVars = { ...v, late_fee: String(feeAmount) };
             // 1. Notify customer that a late fee has been assessed
-            const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars));
+            const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_fee_pending" });
             // 2. Request owner approval before charging
             const approvalSent = await requestLateFeeApproval(booking, feeAmount);
             if (smsSent || approvalSent) {
@@ -1056,7 +1137,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
       ) {
         logSmsTrigger(id, returnIso, nowIso, "grace");
-        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v));
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_grace_expired" });
         if (sent) {
           sentThisBooking = true;
           sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
@@ -1074,7 +1155,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !(await isSmsLogged(id, "late_at_return", returnDateStr))
       ) {
         logSmsTrigger(id, returnIso, nowIso, "ended");
-        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v));
+        const sent = await safeSend(booking.phone, render(LATE_AT_RETURN_TIME, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_at_return" });
         if (sent) {
           sentThisBooking = true;
           sentMarks.push({ vehicleId, id, key: "late_at_return" });
@@ -1094,7 +1175,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !(await isSmsLogged(id, "late_warning_30min", returnDateStr))
       ) {
         logSmsTrigger(id, returnIso, nowIso, "warning_30min");
-        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v));
+        const sent = await safeSend(booking.phone, render(LATE_WARNING_30MIN, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_warning_30min" });
         if (sent) {
           sentThisBooking = true;
           sentMarks.push({ vehicleId, id, key: "late_warning_30min" });
@@ -1135,7 +1216,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
             console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: score ${score} ≤ ${effectiveThreshold}`);
           } else {
             logSmsTrigger(id, returnIso, nowIso, "ext_reminder_1h");
-            const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v));
+            const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_1H_BEFORE_END, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "active_rental_1h_before_end" });
             if (sent) {
               sentThisBooking = true;
               sentMarks.push({ vehicleId, id, key: "active_rental_1h_before_end" });
@@ -1178,7 +1259,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           console.log(`[SMS_SKIP] ${id} active_rental_mid: score ${score} ≤ ${effectiveThreshold}`);
         } else {
           logSmsTrigger(id, returnIso, nowIso, "same_day_reminder");
-          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v));
+          const sent = await safeSend(booking.phone, render(ACTIVE_RENTAL_MID, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "active_rental_mid" });
           if (sent) {
             sentThisBooking = true;
             sentMarks.push({ vehicleId, id, key: "active_rental_mid" });
@@ -1219,7 +1300,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
           console.log(`[SMS_SKIP] ${id} return_reminder_24h: score ${score} ≤ ${effectiveThreshold}`);
         } else {
           logSmsTrigger(id, returnIso, nowIso, "return_reminder_24h");
-          const sent = await safeSend(booking.phone, render(RETURN_REMINDER_24H, v));
+          const sent = await safeSend(booking.phone, render(RETURN_REMINDER_24H, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "return_reminder_24h" });
           if (sent) {
             sentThisBooking = true;
             sentMarks.push({ vehicleId, id, key: "return_reminder_24h" });
@@ -1260,7 +1341,7 @@ async function processCompleted(allBookings, now, sentMarks) {
       // Thank-you immediately on completion (within 1 hour)
       if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you") &&
           !(await isSmsLogged(id, "post_thank_you"))) {
-        const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v));
+        const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "post_thank_you" });
         if (sent) {
           sentMarks.push({ vehicleId, id, key: "post_thank_you" });
           await logSmsToSupabase(id, "post_thank_you");
@@ -1287,7 +1368,7 @@ async function processCompleted(allBookings, now, sentMarks) {
           !alreadySent(booking, item.key) &&
           !(await isSmsLogged(id, item.key))
         ) {
-          const sent = await safeSend(booking.phone, render(item.template, v));
+          const sent = await safeSend(booking.phone, render(item.template, v), { booking_ref: id, vehicle_id: vehicleId, message_type: item.key });
           if (sent) {
             sentMarks.push({ vehicleId, id, key: item.key });
             await logSmsToSupabase(id, item.key);
