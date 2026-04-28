@@ -1114,6 +1114,160 @@ async function sendWebhookNotificationEmails(paymentIntent) {
 }
 
 /**
+ * Unified Stripe payment processing pipeline.
+ *
+ * Guarantees that every payment_intent.succeeded event produces a revenue
+ * record in Supabase, regardless of payment type.  Type-specific booking
+ * creation/update logic runs in the type-specific handler branches before this
+ * function is called; this function provides the shared revenue recording and
+ * logging guarantee for the whole pipeline.
+ *
+ * Steps:
+ *   1. Identify payment type from PaymentIntent metadata.
+ *   2. Resolve the canonical booking_id (type-specific; booking updates already
+ *      handled by the calling branch — this step only resolves the ID).
+ *   3. Retrieve Stripe fee data and write an idempotent revenue record (ALWAYS).
+ *   4. SMS notifications are handled by the type-specific callers above.
+ *   5. Log outcome.
+ *
+ * autoCreateRevenueRecord is idempotent on payment_intent_id, so calling this
+ * function even when a caller already recorded revenue is safe — the second
+ * write is a no-op.
+ *
+ * @param {Stripe}  stripe              - Stripe SDK instance
+ * @param {object}  paymentIntent       - Stripe PaymentIntent object
+ * @param {object}  [opts]
+ * @param {string}  [opts.bookingId]         - Pre-resolved booking_id (skips internal resolution)
+ * @param {number}  [opts.preResolvedGross]  - Gross amount in dollars (skips PI expand when provided)
+ * @param {number|null} [opts.preResolvedFee]  - Stripe fee in dollars (skips PI expand when provided)
+ * @param {number|null} [opts.preResolvedNet]  - Net amount in dollars (skips PI expand when provided)
+ */
+async function processStripePayment(stripe, paymentIntent, opts = {}) {
+  // Step 1 — Identify type
+  const type = paymentIntent.metadata?.payment_type || paymentIntent.metadata?.type || "";
+  console.log("[processStripePayment] start", {
+    paymentIntentId: paymentIntent.id,
+    type:            type || "<untyped>",
+  });
+
+  // Step 2 — Resolve booking_id
+  // For rental_extension the booking_id/original_booking_id metadata field
+  // is the canonical ref.  For slingshot_balance_payment the booking_id is
+  // not in metadata; the caller resolves it from bookings.json and passes it
+  // via opts.bookingId.  For all other rental types the booking_id is in
+  // metadata.  As a final fallback, try to look up the booking by PI ID.
+  let booking_id = opts.bookingId || null;
+
+  if (!booking_id) {
+    if (type === "rental_extension") {
+      // DO NOT modify booking — already handled by the extension pipeline.
+      const ref =
+        paymentIntent.metadata?.booking_id ||
+        paymentIntent.metadata?.original_booking_id;
+      if (ref) booking_id = await resolveBookingId(ref);
+    } else {
+      // All other rental payment types embed the booking_id in metadata.
+      const ref =
+        paymentIntent.metadata?.booking_id ||
+        paymentIntent.metadata?.booking_ref ||
+        paymentIntent.metadata?.original_booking_id;
+      if (ref) booking_id = (await resolveBookingId(ref)) || ref;
+
+      // Fallback: look up by payment_intent_id (covers auto-generated wh- IDs
+      // for full_payment bookings where booking_id is not set in metadata).
+      if (!booking_id) {
+        try {
+          const sbFb = getSupabaseAdmin();
+          if (sbFb) {
+            const { data: piRow } = await sbFb
+              .from("bookings")
+              .select("booking_ref")
+              .eq("payment_intent_id", paymentIntent.id)
+              .maybeSingle();
+            if (piRow?.booking_ref) booking_id = piRow.booking_ref;
+          }
+        } catch (fbErr) {
+          console.warn("[processStripePayment] PI-ID fallback lookup failed (non-fatal):", fbErr.message);
+        }
+      }
+    }
+  }
+
+  if (!booking_id) {
+    console.warn("[processStripePayment] booking_id not resolved — revenue not recorded", {
+      paymentIntentId: paymentIntent.id,
+      type:            type || "<untyped>",
+    });
+    return;
+  }
+
+  // Step 3 — ALWAYS record revenue.
+  // Use pre-resolved fee data when supplied by the caller (avoids an extra
+  // Stripe API round-trip for types that already ran resolveStripeFeeFields).
+  // autoCreateRevenueRecord is idempotent on payment_intent_id, so a second
+  // call for types that already recorded revenue is a safe no-op.
+  let gross    = opts.preResolvedGross ?? ((paymentIntent.amount_received || paymentIntent.amount || 0) / 100);
+  let stripeFee = opts.preResolvedFee  ?? null;
+  let stripeNet = opts.preResolvedNet  ?? null;
+
+  if (opts.preResolvedGross == null) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntent.id, {
+        expand: ["latest_charge.balance_transaction"],
+      });
+      const amountCents = pi.amount_received || pi.amount || 0;
+      gross = amountCents / 100;
+      const bt = pi.latest_charge?.balance_transaction;
+      if (bt && typeof bt === "object") {
+        stripeFee = bt.fee != null ? Number(bt.fee) / 100 : null;
+        stripeNet = bt.net != null ? Number(bt.net) / 100 : null;
+      }
+    } catch (feeErr) {
+      console.warn("[processStripePayment] Stripe fee lookup failed (non-fatal):", feeErr.message);
+    }
+  }
+
+  // Normalise type: metadata uses "rental_extension" but the revenue_records
+  // table convention (and existing callers) use "extension".
+  const revenueType = type === "rental_extension" ? "extension" : (type || "rental");
+
+  try {
+    await autoCreateRevenueRecord(
+      {
+        bookingId:       booking_id,
+        paymentIntentId: paymentIntent.id,
+        type:            revenueType,
+        amountPaid:      gross,
+        stripeFee,
+        stripeNet,
+        paymentMethod:   "stripe",
+      },
+      { strict: false, requireStripeFee: false }
+    );
+  } catch (revErr) {
+    console.error("[processStripePayment] revenue recording failed:", {
+      paymentIntentId: paymentIntent.id,
+      booking_id,
+      type,
+      error: revErr.message,
+    });
+    throw revErr;
+  }
+
+  // Step 4 — SMS notifications are handled by the type-specific callers above.
+
+  // Step 5 — Logging
+  console.log("[processStripePayment] complete", {
+    paymentIntentId: paymentIntent.id,
+    type:            type || "<untyped>",
+    booking_id,
+    gross,
+    stripe_fee:      stripeFee,
+    net_amount:      stripeNet,
+  });
+}
+
+/**
  * Read the raw request body from a Node.js IncomingMessage stream.
  */
 function getRawBody(req) {
@@ -2063,6 +2217,13 @@ export default async function handler(req, res) {
           `rental_extension missing required metadata vehicle_id=${vehicle_id || "<missing>"} booking_id=${bookingRef || "<missing>"}`
         );
       }
+      // Unified pipeline: revenue guarantee (idempotent — extension handler above
+      // already recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent);
+      } catch (pspErr) {
+        console.warn("stripe-webhook: rental_extension processStripePayment failed (non-fatal):", pspErr.message);
+      }
       return res.status(200).json({ received: true });
     }
 
@@ -2305,6 +2466,19 @@ export default async function handler(req, res) {
         return res.status(500).json({ received: false, error: `reservation deposit availability sync failed for ${paymentIntent.id}` });
       }
 
+      // Unified pipeline: revenue guarantee (idempotent — Step 4 above already
+      // recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent, {
+          bookingId:        resolvedBookingId,
+          preResolvedGross: amountPaid,
+          preResolvedFee:   depositFeeFields.stripeFee,
+          preResolvedNet:   depositFeeFields.stripeNet,
+        });
+      } catch (pspErr) {
+        console.warn("stripe-webhook: reservation_deposit processStripePayment failed (non-fatal):", pspErr.message);
+      }
+
       return res.status(200).json({ received: true });
     }
 
@@ -2375,6 +2549,14 @@ export default async function handler(req, res) {
         });
       } catch (revErr) {
         console.error(`stripe-webhook: post-rental revenue record failed for PI ${paymentIntent.id}:`, revErr.message);
+      }
+
+      // Unified pipeline: revenue guarantee (idempotent — autoCreateRevenueRecord
+      // above already recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent, { bookingId: resolvedRef });
+      } catch (pspErr) {
+        console.warn("stripe-webhook: post-rental processStripePayment failed (non-fatal):", pspErr.message);
       }
 
       return res.status(200).json({ received: true });
@@ -2601,6 +2783,13 @@ export default async function handler(req, res) {
         });
       } catch (changeErr) {
         console.error("stripe-webhook: booking_change_fee processing error:", changeErr.message);
+      }
+      // Unified pipeline: revenue guarantee (idempotent — autoCreateRevenueRecord
+      // inside the try above already recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent, { bookingId: bookingRef || undefined });
+      } catch (pspErr) {
+        console.warn("stripe-webhook: booking_change_fee processStripePayment failed (non-fatal):", pspErr.message);
       }
       return res.status(200).json({ received: true });
     }
@@ -2843,6 +3032,13 @@ export default async function handler(req, res) {
           `balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} booking_id=${bookingRef || "<missing>"} original_payment_intent_id=${originalPiId || "<missing>"}`
         );
       }
+      // Unified pipeline: revenue guarantee (idempotent — autoCreateRevenueRecord
+      // above already recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent, { bookingId: bookingRef || undefined });
+      } catch (pspErr) {
+        console.warn("stripe-webhook: balance_payment processStripePayment failed (non-fatal):", pspErr.message);
+      }
       return res.status(200).json({ received: true });
     }
 
@@ -2988,6 +3184,16 @@ export default async function handler(req, res) {
         }
       }
 
+      // Unified pipeline: revenue guarantee (idempotent — persistBooking above
+      // already recorded it; this is a safety net for any gap).
+      try {
+        await processStripePayment(stripe, paymentIntent, {
+          bookingId: slingshotDepositResult?.bookingId || undefined,
+        });
+      } catch (pspErr) {
+        console.warn("stripe-webhook: slingshot_security_deposit processStripePayment failed (non-fatal):", pspErr.message);
+      }
+
       return res.status(200).json({ received: true });
     }
 
@@ -3001,6 +3207,10 @@ export default async function handler(req, res) {
         `stripe-webhook: slingshot_balance_payment — vehicle=${vehicle_id} pi=${paymentIntent.id}`
       );
 
+      // Hoisted so processStripePayment (Step 3) can use the resolved booking_id
+      // without reloading bookings.json.
+      let slingshotBalanceBookingId = null;
+
       // Update the booking record: fully_paid, remaining_balance = 0
       if (vehicle_id && payment_link_token) {
         try {
@@ -3009,6 +3219,7 @@ export default async function handler(req, res) {
           const booking = list.find((b) => b.paymentLinkToken === payment_link_token);
           if (booking) {
             const bookingId = booking.bookingId || booking.paymentIntentId;
+            slingshotBalanceBookingId = bookingId;
             await updateBooking(vehicle_id, bookingId, {
               status:                   "booked_paid",
               paymentStatus:            "fully_paid",
@@ -3064,6 +3275,12 @@ export default async function handler(req, res) {
                 console.error("stripe-webhook: slingshot balance SMS error:", smsErr.message);
               }
             }
+          } else {
+            console.warn(
+              `stripe-webhook: slingshot_balance_payment booking not found in bookings.json` +
+              ` — revenue will be recorded by PI fallback lookup only` +
+              ` (vehicle_id=${vehicle_id} payment_link_token=${payment_link_token} pi=${paymentIntent.id})`
+            );
           }
         } catch (err) {
           console.error("stripe-webhook: slingshot balance booking update error:", err);
@@ -3073,6 +3290,23 @@ export default async function handler(req, res) {
           paymentIntent,
           `slingshot_balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} payment_link_token=${payment_link_token || "<missing>"}`
         );
+      }
+
+      // Unified pipeline — Step 3: ALWAYS record revenue.
+      // This was previously missing for slingshot_balance_payment, causing a gap
+      // in financial records every time a renter paid the remaining balance.
+      // processStripePayment is idempotent on payment_intent_id, so it is safe
+      // even if a previous partial delivery had already inserted a record.
+      try {
+        await processStripePayment(stripe, paymentIntent, {
+          bookingId: slingshotBalanceBookingId || undefined,
+        });
+      } catch (pspErr) {
+        console.error("stripe-webhook: slingshot_balance_payment processStripePayment failed:", pspErr.message);
+        return res.status(500).json({
+          received: false,
+          error: `slingshot balance payment revenue persistence failed for ${paymentIntent.id}`,
+        });
       }
 
       return res.status(200).json({ received: true });
@@ -3188,6 +3422,18 @@ export default async function handler(req, res) {
         received: false,
         error: `booking persistence failed for ${paymentIntent.id} — check server logs for db_atomic_error or db_step_error entries`,
       });
+    }
+
+    // Unified pipeline: revenue guarantee (idempotent — saveWebhookBookingRecord
+    // above already recorded it via persistBooking; this is a safety net).
+    try {
+      await processStripePayment(stripe, paymentIntent, {
+        preResolvedGross: feeFields ? ((paymentIntent.amount_received || paymentIntent.amount || 0) / 100) : undefined,
+        preResolvedFee:   feeFields?.stripeFee  ?? undefined,
+        preResolvedNet:   feeFields?.stripeNet  ?? undefined,
+      });
+    } catch (pspErr) {
+      console.warn("stripe-webhook: full_payment processStripePayment failed (non-fatal):", pspErr.message);
     }
   }
 
