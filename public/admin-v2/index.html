@@ -2480,6 +2480,7 @@ function logout() {
   editingVehicleId = null;
   editingSmsKey = null;
   allRevenueRecords = [];
+  allRevenueGroups  = [];
   revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
@@ -2579,6 +2580,7 @@ function refreshCurrentPage() {
   allExpenses = [];
   smsTemplates = [];
   allRevenueRecords = [];
+  allRevenueGroups  = [];
   revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
@@ -4704,6 +4706,7 @@ if (_origRenderDashboard) {
 
 // ── Revenue ───────────────────────────────────────────────────────────────
 let allRevenueRecords = [];
+let allRevenueGroups  = []; // Server-side groups (each has a records[] array)
 let revenueKpiTotal   = null; // Total Revenue from total_revenue_kpi view (ledger-based)
 
 function loadRevenue() {
@@ -4727,13 +4730,14 @@ function loadRevenue() {
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {
-      // Flatten all per-group records into allRevenueRecords for modal operations.
+      // Store server-side groups and flatten records for modal operations.
       const groups = revData.groups || [];
+      allRevenueGroups  = groups;
       allRevenueRecords = groups.flatMap((g) => g.records || []);
       revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
-      applyRevenueFilters();
+      renderRevenue(allRevenueGroups);
       document.getElementById('revenue-loading').style.display = 'none';
     })
     .catch((err) => {
@@ -4831,96 +4835,12 @@ function fmtRevDate(dateStr) {
 }
 
 function renderRevenue(groups) {
-  const tbody = document.getElementById("revenue-table-body");
-  tbody.innerHTML = "";
-
-  const wrap  = document.getElementById('revenue-table-wrap');
-  const empty = document.getElementById('revenue-empty');
-
-  if (!groups || !groups.length) {
-    if (wrap)  wrap.style.display  = 'none';
-    if (empty) empty.style.display = '';
-    return;
-  }
-  if (wrap)  wrap.style.display  = '';
-  if (empty) empty.style.display = 'none';
-
-  groups.forEach(group => {
-
-    // MAIN BOOKING ROW
-    const mainRow = document.createElement("tr");
-    mainRow.innerHTML = `
-      <td>${group.customer_name || ''}</td>
-      <td>${group.vehicle_id || ''}</td>
-      <td>${group.start_date} → ${group.end_date}</td>
-      <td><strong>$${group.gross_total.toFixed(2)}</strong></td>
-      <td>$${group.stripe_fee_total?.toFixed(2) || ''}</td>
-      <td></td>
-      <td><strong>$${group.net_total?.toFixed(2) || ''}</strong></td>
-      <td></td>
-      <td></td>
-      <td></td>
-    `;
-    tbody.appendChild(mainRow);
-
-    // BASE RENTAL ROW
-    if (group.base_rental) {
-      const base = group.base_rental;
-
-      const baseRow = document.createElement("tr");
-      baseRow.classList.add("rev-sub-row");
-      baseRow.innerHTML = `
-        <td></td>
-        <td colspan="2">🧾 Base rental (${base.pickup_date} → ${base.return_date})</td>
-        <td>$${base.gross_amount}</td>
-        <td>$${base.stripe_fee || ''}</td>
-        <td></td>
-        <td>$${base.net_amount || ''}</td>
-        <td></td>
-        <td></td>
-        <td></td>
-      `;
-      tbody.appendChild(baseRow);
-    }
-
-    // EXTENSIONS
-    if (Array.isArray(group.extensions)) {
-      group.extensions.forEach(ext => {
-        if (!ext) return;
-
-        const extRow = document.createElement("tr");
-        extRow.classList.add("rev-sub-row");
-        extRow.innerHTML = `
-          <td></td>
-          <td colspan="2">🔁 +1 day (${ext.pickup_date} → ${ext.return_date})</td>
-          <td>$${ext.gross_amount}</td>
-          <td>$${ext.stripe_fee || ''}</td>
-          <td></td>
-          <td>$${ext.net_amount || ''}</td>
-          <td></td>
-          <td></td>
-          <td></td>
-        `;
-        tbody.appendChild(extRow);
-      });
-    }
-
-  });
-}
-
-function applyRevenueFilters() {
-  const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
-  const status  = document.getElementById('rev-filter-status')?.value  || '';
-
-  let filtered = allRevenueRecords;
-  if (vehicle) filtered = filtered.filter((r) => r.vehicle_id === vehicle);
-  if (status)  filtered = filtered.filter((r) => r.payment_status === status);
-
   const tbody = document.getElementById('revenue-table-body');
   const wrap  = document.getElementById('revenue-table-wrap');
   const empty = document.getElementById('revenue-empty');
 
-  if (!filtered.length) {
+  if (!groups || !groups.length) {
+    tbody.innerHTML = '';
     if (wrap)  wrap.style.display  = 'none';
     if (empty) empty.style.display = '';
     return;
@@ -4928,46 +4848,14 @@ function applyRevenueFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
-  // Group all revenue records by effective booking ID so extensions collapse
-  // under their parent booking row.
-  //
-  // All records in a booking group share the same canonical booking_ref (bk-xxx).
-  // Extension rows store it in original_booking_id; the base rental uses booking_id.
-  // Use original_booking_id ?? booking_id so extension rows always collapse under
-  // their parent rental even if their booking_id is stale (run migration 0084/0085
-  // to fully normalise the data).
-  function getEffectiveBookingId(r) {
-    const effective = r.original_booking_id ?? r.booking_id;
-    if (effective && (effective.startsWith('pi_') || effective.startsWith('ext-'))) {
-      console.warn('[revenue] malformed booking_id detected — run migration 0084/0085 to repair:', effective, 'record id:', r.id);
-    }
-    return effective || r.id;
-  }
+  tbody.innerHTML = groups.map((group, groupIndex) => {
+    const id   = group.booking_id
+      || (group.records && group.records[0] && (group.records[0].original_booking_id ?? group.records[0].booking_id))
+      || ('group-' + groupIndex);
+    const recs = group.records || [];
 
-  const groupMap = new Map();
-  const groupOrder = [];
-  allRevenueRecords.forEach((r) => {
-    const id = getEffectiveBookingId(r);
-    if (!id) return;
-    if (!groupMap.has(id)) { groupMap.set(id, { base: null, exts: [] }); groupOrder.push(id); }
-    const g = groupMap.get(id);
-    if (r.type === 'extension') g.exts.push(r); else g.base = r;
-  });
-
-  // Only show groups that have at least one record surviving the current filters.
-  const filteredIds = new Set(filtered.map(getEffectiveBookingId));
-  const visibleGroups = groupOrder.filter((id) => filteredIds.has(id));
-
-  if (!visibleGroups.length) {
-    if (wrap)  wrap.style.display  = 'none';
-    if (empty) empty.style.display = '';
-    return;
-  }
-
-  tbody.innerHTML = visibleGroups.map((id) => {
-    const g    = groupMap.get(id);
-    const base = g.base;
-    const exts = g.exts.slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+    const base    = recs.find((r) => r.type !== 'extension') || null;
+    const exts    = recs.filter((r) => r.type === 'extension').slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
     const hasExts = exts.length > 0;
     const allRecs = [base, ...exts].filter(Boolean);
 
@@ -5001,8 +4889,8 @@ function applyRevenueFilters() {
       refunded: '<span class="badge badge-danger">Refunded</span>',
     }[summaryStatus] || `<span class="badge">${esc(summaryStatus)}</span>`;
 
-    const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || '';
-    const customer_name  = base?.customer_name  || exts[0]?.customer_name  || '–';
+    const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || group.vehicle_id || '';
+    const customer_name  = base?.customer_name  || exts[0]?.customer_name  || group.customer_name || '–';
     const payment_method = base?.payment_method || '–';
     const stripeFeeCell  = allRecs.some((r) => r.stripe_fee != null)
       ? '$' + formatMoney(totalStripeFee)
@@ -5079,6 +4967,17 @@ function applyRevenueFilters() {
     }
     return html;
   }).join('');
+}
+
+function applyRevenueFilters() {
+  const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
+  const status  = document.getElementById('rev-filter-status')?.value  || '';
+
+  let filtered = allRevenueGroups;
+  if (vehicle) filtered = filtered.filter((g) => g.vehicle_id === vehicle);
+  if (status)  filtered = filtered.filter((g) => (g.records || []).some((r) => r.payment_status === status));
+
+  renderRevenue(filtered);
 }
 
 function toggleRevenueGroup(groupId) {
@@ -5193,6 +5092,7 @@ function syncRevenue(btn) {
     .then((data) => {
       showToast(data.message || 'Sync complete.', 'success');
       allRevenueRecords = [];
+      allRevenueGroups  = [];
       revenueKpiTotal   = null;
       loadRevenue();
     })
@@ -5220,6 +5120,7 @@ async function runStripeReconcile(btn) {
     await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
     // Refresh all finance views so they show updated data
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     // Refresh dashboard KPIs to reflect new Stripe net/fees
@@ -5243,6 +5144,7 @@ async function runDedup(btn) {
       : '✅ No duplicates found.';
     showToast(msg, 'success');
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
@@ -5261,6 +5163,7 @@ async function runCleanupOrphans(btn) {
     const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
     showToast(data.message || '✅ Cleanup complete.', 'success');
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
