@@ -107,7 +107,6 @@ mock.module("./stripe-webhook.js", {
     markVehicleUnavailable:        async () => {},
     sendWebhookNotificationEmails: async () => {},
     mapVehicleId:                  (meta = {}) => meta.vehicle_id || "camry",
-    resolveStripePhone:            async () => null,
   },
 });
 

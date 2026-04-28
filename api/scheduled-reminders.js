@@ -78,7 +78,6 @@ import {
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
   mapVehicleId,
-  resolveStripePhone,
 } from "./stripe-webhook.js";
 
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
@@ -2255,64 +2254,6 @@ export default async function handler(req, res) {
   }
 
   const now = new Date();
-
-  // ── Resolve missing phone numbers from Stripe (non-blocking) ─────────────
-  // Active bookings whose customer_phone is null in Supabase may still have a
-  // phone recorded in Stripe (billing_details or the Customer object).  Fetch
-  // and backfill now so SMS delivery is never silently skipped.
-  if (process.env.STRIPE_SECRET_KEY && sbClient) {
-    try {
-      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
-      const missingPhoneBookings = Object.values(allBookings)
-        .flat()
-        .filter((b) => !b.phone && b.paymentIntentId && b.status !== "completed_rental");
-      if (missingPhoneBookings.length > 0) {
-        await Promise.allSettled(
-          missingPhoneBookings.map(async (booking) => {
-            try {
-              // Pass only the PI id; resolveStripePhone fetches the expanded PI
-              // itself and reads customer ID from the Stripe response, so passing
-              // customer: null here is intentional — it does not skip the
-              // customer-level phone lookup.
-              const resolved = await resolveStripePhone(stripe, {
-                id: booking.paymentIntentId,
-                customer: null,
-              });
-              if (resolved) {
-                const normalized = normalizePhone(resolved);
-                booking.phone = normalized;
-                // Backfill renter_phone (canonical SMS column) in Supabase so
-                // future cron runs don't need to re-fetch from Stripe.
-                const { error: phoneErr } = await sbClient
-                  .from("bookings")
-                  .update({ renter_phone: normalized })
-                  .eq("booking_ref", booking.bookingId);
-                if (phoneErr) {
-                  console.warn(
-                    `scheduled-reminders: Supabase phone backfill failed for ${booking.bookingId}: ${phoneErr.message}`
-                  );
-                } else {
-                  console.log(
-                    `scheduled-reminders: resolved phone from Stripe for booking ${booking.bookingId}`
-                  );
-                }
-              } else {
-                console.warn(
-                  `scheduled-reminders: no phone found in Stripe for booking ${booking.bookingId} (PI ${booking.paymentIntentId})`
-                );
-              }
-            } catch (phoneErr) {
-              console.warn(
-                `scheduled-reminders: Stripe phone lookup failed for booking ${booking.bookingId}: ${phoneErr.message}`
-              );
-            }
-          })
-        );
-      }
-    } catch (stripePhoneErr) {
-      console.warn("scheduled-reminders: Stripe phone resolution skipped:", stripePhoneErr.message);
-    }
-  }
 
   // Auto-activate and auto-complete bookings regardless of SMS configuration.
   // These must run on every cron tick so overdue bookings never stay stuck.
