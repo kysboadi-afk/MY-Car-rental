@@ -2480,6 +2480,7 @@ function logout() {
   editingVehicleId = null;
   editingSmsKey = null;
   allRevenueRecords = [];
+  allRevenueGroups  = [];
   revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
@@ -2579,6 +2580,7 @@ function refreshCurrentPage() {
   allExpenses = [];
   smsTemplates = [];
   allRevenueRecords = [];
+  allRevenueGroups  = [];
   revenueKpiTotal   = null;
   allCustomers = [];
   allProtectionPlans = [];
@@ -4704,6 +4706,7 @@ if (_origRenderDashboard) {
 
 // ── Revenue ───────────────────────────────────────────────────────────────
 let allRevenueRecords = [];
+let allRevenueGroups  = []; // Pre-grouped data from list_by_booking (one entry per booking)
 let revenueKpiTotal   = null; // Total Revenue from total_revenue_kpi view (ledger-based)
 
 function loadRevenue() {
@@ -4727,8 +4730,10 @@ function loadRevenue() {
     expensesPromise,
   ])
     .then(([revData, kpiData, expData]) => {
-      // Flatten all per-group records into allRevenueRecords for modal operations.
+      // Store the pre-grouped data so applyRevenueFilters can use backend groups directly.
+      // allRevenueRecords is kept as the flat list so edit/delete modals still work.
       const groups = revData.groups || [];
+      allRevenueGroups  = groups;
       allRevenueRecords = groups.flatMap((g) => g.records || []);
       revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
@@ -4834,15 +4839,18 @@ function applyRevenueFilters() {
   const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
   const status  = document.getElementById('rev-filter-status')?.value  || '';
 
-  let filtered = allRevenueRecords;
-  if (vehicle) filtered = filtered.filter((r) => r.vehicle_id === vehicle);
-  if (status)  filtered = filtered.filter((r) => r.payment_status === status);
-
   const tbody = document.getElementById('revenue-tbody');
   const wrap  = document.getElementById('revenue-table-wrap');
   const empty = document.getElementById('revenue-empty');
 
-  if (!filtered.length) {
+  // Filter using the pre-grouped backend data (COALESCE(original_booking_id, booking_id))
+  // so extensions are always combined with their parent booking — no re-grouping needed.
+  let visibleGroups = allRevenueGroups;
+  if (vehicle) visibleGroups = visibleGroups.filter((g) => g.vehicle_id === vehicle);
+  if (status)  visibleGroups = visibleGroups.filter((g) =>
+    (g.records || []).some((r) => r.payment_status === status));
+
+  if (!visibleGroups.length) {
     if (wrap)  wrap.style.display  = 'none';
     if (empty) empty.style.display = '';
     return;
@@ -4850,48 +4858,14 @@ function applyRevenueFilters() {
   if (wrap)  wrap.style.display  = '';
   if (empty) empty.style.display = 'none';
 
-  // Group all revenue records by effective booking ID so extensions collapse
-  // under their parent booking row.
-  //
-  // All records in a booking group share the same canonical booking_ref (bk-xxx).
-  // Extension rows store it in original_booking_id; the base rental uses booking_id.
-  // Use original_booking_id ?? booking_id so extension rows always collapse under
-  // their parent rental even if their booking_id is stale (run migration 0084/0085
-  // to fully normalise the data).
-  function getEffectiveBookingId(r) {
-    const effective = r.original_booking_id ?? r.booking_id;
-    if (effective && (effective.startsWith('pi_') || effective.startsWith('ext-'))) {
-      console.warn('[revenue] malformed booking_id detected — run migration 0084/0085 to repair:', effective, 'record id:', r.id);
-    }
-    return effective || r.id;
-  }
-
-  const groupMap = new Map();
-  const groupOrder = [];
-  allRevenueRecords.forEach((r) => {
-    const id = getEffectiveBookingId(r);
-    if (!id) return;
-    if (!groupMap.has(id)) { groupMap.set(id, { base: null, exts: [] }); groupOrder.push(id); }
-    const g = groupMap.get(id);
-    if (r.type === 'extension') g.exts.push(r); else g.base = r;
-  });
-
-  // Only show groups that have at least one record surviving the current filters.
-  const filteredIds = new Set(filtered.map(getEffectiveBookingId));
-  const visibleGroups = groupOrder.filter((id) => filteredIds.has(id));
-
-  if (!visibleGroups.length) {
-    if (wrap)  wrap.style.display  = 'none';
-    if (empty) empty.style.display = '';
-    return;
-  }
-
-  tbody.innerHTML = visibleGroups.map((id) => {
-    const g    = groupMap.get(id);
-    const base = g.base;
-    const exts = g.exts.slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
+  tbody.innerHTML = visibleGroups.map((g) => {
+    const allRecs = (g.records || []).filter(Boolean);
+    const base    = allRecs.find((r) => r.type !== 'extension') || null;
+    const exts    = allRecs.filter((r) => r.type === 'extension')
+      .slice().sort((a, b) => (a.return_date < b.return_date ? -1 : 1));
     const hasExts = exts.length > 0;
-    const allRecs = [base, ...exts].filter(Boolean);
+    // Use the backend-provided canonical group ID (COALESCE(original_booking_id, booking_id)).
+    const groupId = g.booking_id || base?.id || exts[0]?.id || '';
 
     // Summary financials (all records in this booking group).
     const totalGross     = allRecs.reduce((s, r) => s + Number(r.gross_amount  || 0), 0);
@@ -4902,11 +4876,9 @@ function applyRevenueFilters() {
       return s + norm.amount_net - Number(r.refund_amount || 0);
     }, 0);
 
-    // Summary date: earliest pickup → latest return across all records.
-    const pickupDates = allRecs.map((r) => r.pickup_date).filter(Boolean).sort();
-    const pickupDate  = pickupDates[0] || '';
-    const finalReturn = allRecs.map((r) => r.return_date).filter(Boolean)
-      .reduce((mx, d) => (d > mx ? d : mx), '');
+    // Summary date: MIN(pickup_date) → MAX(return_date) pre-computed by backend.
+    const pickupDate  = g.min_pickup_date || '';
+    const finalReturn = g.max_return_date || '';
     const dateCell = pickupDate
       ? (fmtRevDate(pickupDate) || '–') + ' → ' + (fmtRevDate(finalReturn) || '–')
       : (fmtRevDate(finalReturn) || '–');
@@ -4923,19 +4895,19 @@ function applyRevenueFilters() {
       refunded: '<span class="badge badge-danger">Refunded</span>',
     }[summaryStatus] || `<span class="badge">${esc(summaryStatus)}</span>`;
 
-    const vehicle_id     = base?.vehicle_id     || exts[0]?.vehicle_id     || '';
-    const customer_name  = base?.customer_name  || exts[0]?.customer_name  || '–';
-    const payment_method = base?.payment_method || '–';
+    const vehicle_id     = g.vehicle_id    || base?.vehicle_id    || exts[0]?.vehicle_id    || '';
+    const customer_name  = g.customer_name || base?.customer_name || exts[0]?.customer_name || '–';
+    const payment_method = base?.payment_method || allRecs[0]?.payment_method || '–';
     const stripeFeeCell  = allRecs.some((r) => r.stripe_fee != null)
       ? '$' + formatMoney(totalStripeFee)
       : '<span style="color:var(--text-sub);font-size:11px;">—</span>';
 
     const toggleBtn = hasExts
-      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(id)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup(this.getAttribute('data-rev-toggle'))" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
+      ? `<button class="rev-group-toggle" data-rev-toggle="${esc(groupId)}" data-rev-count="${exts.length}" onclick="toggleRevenueGroup(this.getAttribute('data-rev-toggle'))" title="Show/hide ${exts.length} extension${exts.length !== 1 ? 's' : ''}">▶ ${exts.length} ext.</button>`
       : '';
 
     // ── Summary row ──────────────────────────────────────────────────────────
-    let html = `<tr class="rev-summary-row" data-rev-summary="${esc(id)}">
+    let html = `<tr class="rev-summary-row" data-rev-summary="${esc(groupId)}">
       <td>${esc(customer_name)}</td>
       <td>${esc(getVehicleLabel(vehicle_id) || '–')}</td>
       <td style="font-size:12px;">${esc(dateCell)}</td>
@@ -4958,7 +4930,7 @@ function applyRevenueFilters() {
         const baseNorm = normalizeRevenueRecord(base);
         const baseNet  = (baseNorm.amount_net - Number(base.refund_amount || 0)).toFixed(2);
         const baseFee  = base.stripe_fee != null ? '$' + formatMoney(base.stripe_fee) : '<span style="font-size:11px;">—</span>';
-        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(groupId)}" style="display:none;">
           <td colspan="2" style="padding-left:28px;">📋 Base rental</td>
           <td>${esc((fmtRevDate(base.pickup_date) || '–') + ' → ' + (fmtRevDate(base.return_date) || '–'))}</td>
           <td>$${formatMoney(base.gross_amount || 0)}</td>
@@ -4983,7 +4955,7 @@ function applyRevenueFilters() {
         const extNorm   = normalizeRevenueRecord(ext);
         const extNet    = (extNorm.amount_net - Number(ext.refund_amount || 0)).toFixed(2);
         const extFee    = ext.stripe_fee != null ? '$' + formatMoney(ext.stripe_fee) : '<span style="font-size:11px;">—</span>';
-        html += `<tr class="rev-sub-row" data-rev-group="${esc(id)}" style="display:none;">
+        html += `<tr class="rev-sub-row" data-rev-group="${esc(groupId)}" style="display:none;">
           <td colspan="2" style="padding-left:28px;">🔄 ${esc(extLabel)}</td>
           <td>→ ${esc(fmtRevDate(ext.return_date) || '–')}</td>
           <td>$${formatMoney(ext.gross_amount || 0)}</td>
@@ -5115,6 +5087,7 @@ function syncRevenue(btn) {
     .then((data) => {
       showToast(data.message || 'Sync complete.', 'success');
       allRevenueRecords = [];
+      allRevenueGroups  = [];
       revenueKpiTotal   = null;
       loadRevenue();
     })
@@ -5142,6 +5115,7 @@ async function runStripeReconcile(btn) {
     await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cash_update' });
     // Refresh all finance views so they show updated data
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     // Refresh dashboard KPIs to reflect new Stripe net/fees
@@ -5165,6 +5139,7 @@ async function runDedup(btn) {
       : '✅ No duplicates found.';
     showToast(msg, 'success');
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
@@ -5183,6 +5158,7 @@ async function runCleanupOrphans(btn) {
     const data = await apiPost('/api/stripe-reconcile', { secret: adminSecret, action: 'cleanup_orphans' });
     showToast(data.message || '✅ Cleanup complete.', 'success');
     allRevenueRecords = [];
+    allRevenueGroups  = [];
     revenueKpiTotal   = null;
     loadRevenue();
     dashboardData = null;
