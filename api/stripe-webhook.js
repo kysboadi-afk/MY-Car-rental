@@ -1215,11 +1215,12 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
       const pi = await stripe.paymentIntents.retrieve(paymentIntent.id, {
         expand: ["latest_charge.balance_transaction"],
       });
-      gross = (pi.amount_received || pi.amount || 0) / 100;
+      const amountCents = pi.amount_received || pi.amount || 0;
+      gross = amountCents / 100;
       const bt = pi.latest_charge?.balance_transaction;
       if (bt && typeof bt === "object") {
-        stripeFee = bt.fee != null ? Math.round(Number(bt.fee)) / 100 : null;
-        stripeNet = stripeFee != null ? Math.round((gross - stripeFee) * 100) / 100 : null;
+        stripeFee = bt.fee != null ? Number(bt.fee) / 100 : null;
+        stripeNet = bt.net != null ? Number(bt.net) / 100 : null;
       }
     } catch (feeErr) {
       console.warn("[processStripePayment] Stripe fee lookup failed (non-fatal):", feeErr.message);
@@ -3274,6 +3275,12 @@ export default async function handler(req, res) {
                 console.error("stripe-webhook: slingshot balance SMS error:", smsErr.message);
               }
             }
+          } else {
+            console.warn(
+              `stripe-webhook: slingshot_balance_payment booking not found in bookings.json` +
+              ` — revenue will be recorded by PI fallback lookup only` +
+              ` (vehicle_id=${vehicle_id} payment_link_token=${payment_link_token} pi=${paymentIntent.id})`
+            );
           }
         } catch (err) {
           console.error("stripe-webhook: slingshot balance booking update error:", err);
