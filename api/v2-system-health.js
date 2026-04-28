@@ -327,10 +327,10 @@ async function checkOrphanRevenue(sb) {
   try {
     const { data: orphanRows, error: oErr } = await sb
       .from("revenue_records")
-      .select("id, booking_id, vehicle_id, gross_amount, created_at")
+      .select("id, booking_id, vehicle_id, gross_amount, created_at, type")
       .eq("is_orphan", false)
       .eq("sync_excluded", false)
-      .eq("type", "rental")
+      .in("type", ["rental", "extension"])
       .limit(500);
 
     if (oErr) {
@@ -347,15 +347,15 @@ async function checkOrphanRevenue(sb) {
 
     const { data: bookingRows, error: bErr } = await sb
       .from("bookings")
-      .select("booking_id")
-      .in("booking_id", bookingIds);
+      .select("booking_ref")
+      .in("booking_ref", bookingIds);
 
     if (bErr) {
       console.error("[v2-system-health] orphanRevenue bookings lookup error:", bErr.message);
       return check("Orphan Revenue Records", "error", "Could not verify booking refs: " + bErr.message);
     }
 
-    const validRefs   = new Set((bookingRows || []).map((b) => b.booking_id));
+    const validRefs   = new Set((bookingRows || []).map((b) => b.booking_ref));
     const trueOrphans = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
 
     if (trueOrphans.length === 0) {
@@ -1050,7 +1050,7 @@ async function fixOrphanRevenue(sb) {
     .select("id, booking_id")
     .eq("is_orphan", false)
     .eq("sync_excluded", false)
-    .eq("type", "rental")
+    .in("type", ["rental", "extension"])
     .limit(500);
   if (oErr) throw new Error("Could not query revenue_records: " + oErr.message);
 
@@ -1060,11 +1060,11 @@ async function fixOrphanRevenue(sb) {
 
   const { data: bookingRows, error: bErr } = await sb
     .from("bookings")
-    .select("booking_id")
-    .in("booking_id", bookingIds);
+    .select("booking_ref")
+    .in("booking_ref", bookingIds);
   if (bErr) throw new Error("Could not verify booking refs: " + bErr.message);
 
-  const validRefs   = new Set((bookingRows || []).map((b) => b.booking_id));
+  const validRefs   = new Set((bookingRows || []).map((b) => b.booking_ref));
   const trueOrphans = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
   if (trueOrphans.length === 0) return { fixed: 0, message: "No true orphans found." };
 
