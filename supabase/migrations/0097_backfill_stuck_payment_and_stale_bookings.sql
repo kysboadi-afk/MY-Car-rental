@@ -78,6 +78,7 @@ BEGIN
   -- ── 3. Insert stuck booking bk-bc8b0ddcc89e ─────────────────────────────────
   -- Payment: $60.64 full_payment, 2026-04-27 → 2026-04-28, camry2013.
   -- PI: pi_3TQwKHPo7fICjrtZ18v5heUr
+  -- Pickup was 08:00 on 2026-04-27 (already past), so status is active_rental.
   INSERT INTO public.bookings (
     booking_ref, customer_id, vehicle_id,
     pickup_date, return_date,
@@ -92,7 +93,7 @@ BEGIN
     'bk-bc8b0ddcc89e', v_customer_id, 'camry2013',
     '2026-04-27', '2026-04-28',
     '08:00:00', '08:00:00',
-    'pending', 60.64, 60.64, 0.00,
+    'active_rental', 60.64, 60.64, 0.00,
     'paid', 'stripe',
     'pi_3TQwKHPo7fICjrtZ18v5heUr', 'cus_UKU6OFbaET2wdh',
     'Brandon Bookhart', 'brandon.bookhart@gmail.com', '+15303285561',
@@ -100,7 +101,12 @@ BEGIN
     now()
   )
   ON CONFLICT (booking_ref) DO UPDATE
-    SET status             = EXCLUDED.status,
+    -- Only upgrade the status (never downgrade a terminal state).
+    SET status = CASE
+          WHEN bookings.status IN ('cancelled', 'cancelled_rental', 'completed', 'completed_rental')
+          THEN bookings.status
+          ELSE 'active_rental'
+        END,
         total_price        = EXCLUDED.total_price,
         deposit_paid       = EXCLUDED.deposit_paid,
         remaining_balance  = EXCLUDED.remaining_balance,
