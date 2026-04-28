@@ -100,16 +100,24 @@ function applyFleetStatus(fleetStatus) {
       badge.textContent = i18n.t(badgeKey);
       badge.className = "status-badge unavailable booked";
 
-      // Prefer next_available_at (timestamp with time) when available;
-      // fall back to the date-only next_available_display string.
+      // Prefer available_at (ISO timestamp with buffered end_time) when present;
+      // fall back to the pre-built next_available_display string.
       var nextAvailDisplay = status
-        ? (SlyLA.formatTimestamp(status.next_available_at) || status.next_available_display || null)
+        ? (SlyLA.formatTimestamp(status.available_at) || status.next_available_display || null)
         : null;
       if (nextAvailDisplay) {
         const nextBadge = document.createElement("span");
         nextBadge.className = "next-available-badge";
         const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
         nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
+
+        // ⓘ icon — tooltip explains the 2-hour preparation buffer
+        const infoIcon = document.createElement("span");
+        infoIcon.className = "buffer-info-icon";
+        infoIcon.textContent = " ⓘ";
+        infoIcon.setAttribute("data-tooltip", "Availability includes a 2-hour buffer for cleaning and inspection after each rental.");
+        nextBadge.appendChild(infoIcon);
+
         badge.insertAdjacentElement("afterend", nextBadge);
       }
 
