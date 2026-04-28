@@ -451,8 +451,8 @@ async function resolveStripeFeeFields(stripe, paymentIntent) {
     throw new Error(`invalid stripe fee for PI ${piId}`);
   }
   return {
-    stripeFee:    Math.round(stripeFee * 100) / 100,
-    stripeNet:    Number.isFinite(stripeNet) ? (Math.round(stripeNet * 100) / 100) : null,
+    stripeFee: Math.round(stripeFee * 100) / 100,
+    stripeNet: Number.isFinite(stripeNet) ? (Math.round(stripeNet * 100) / 100) : null,
     // billing_details is a top-level field on the Charge object; no additional
     // expansion is needed beyond latest_charge.balance_transaction.
     billingPhone: (charge && typeof charge === "object") ? (charge.billing_details?.phone || null) : null,
@@ -3229,6 +3229,7 @@ export {
   blockBookedDates,
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
+  resolveStripePhone,
 };
 
 // ── Slingshot deposit-paid notification email to customer ──────────────────

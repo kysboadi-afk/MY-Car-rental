@@ -78,6 +78,7 @@ import {
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
   mapVehicleId,
+  resolveStripePhone,
 } from "./stripe-webhook.js";
 
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
@@ -2184,22 +2185,10 @@ export default async function handler(req, res) {
         await Promise.allSettled(
           missingPhoneBookings.map(async (booking) => {
             try {
-              const expanded = await stripe.paymentIntents.retrieve(booking.paymentIntentId, {
-                expand: ["latest_charge"],
+              const resolved = await resolveStripePhone(stripe, {
+                id: booking.paymentIntentId,
+                customer: null,
               });
-              const charge = expanded?.latest_charge;
-              let resolved = null;
-              if (charge && typeof charge === "object" && charge.billing_details?.phone) {
-                resolved = charge.billing_details.phone;
-              } else {
-                const customerId = expanded?.customer;
-                if (customerId && typeof customerId === "string") {
-                  const customer = await stripe.customers.retrieve(customerId);
-                  if (customer && !customer.deleted && customer.phone) {
-                    resolved = customer.phone;
-                  }
-                }
-              }
               if (resolved) {
                 const normalized = normalizePhone(resolved);
                 booking.phone = normalized;
