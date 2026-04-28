@@ -101,6 +101,11 @@ const LATE_FEE_AMOUNTS = {
 // Consistent with MAX_CHARGE_WARN_USD in approve-late-fee.js.
 const MAX_LATE_FEE_USD = 500;
 
+// Preparation buffer added to the return time before the vehicle is available
+// for the next pickup.  Must match BOOKING_BUFFER_HOURS in _booking-automation.js
+// and _availability.js.
+const BOOKING_BUFFER_HOURS = 2;
+
 // Maximum hours-overdue window in which a late fee may be triggered.
 // If minsOverdue exceeds this threshold the booking was never auto-completed
 // (stale status, cron outage, etc.) and firing a fee would produce unrealistic
@@ -538,12 +543,14 @@ function alreadySentAny(booking, keys) {
 function vars(booking) {
   const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
   const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+  const bufferedReturnDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   return {
     customer_name: booking.name || "Customer",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
     pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
     return_time:   booking.returnTime ? (formatTime(returnDt) || formatTime12h(booking.returnTime)) : "",
+    buffered_time: booking.returnTime ? (formatTime(bufferedReturnDt) || "") : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
     payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",

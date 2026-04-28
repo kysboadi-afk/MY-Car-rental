@@ -23,6 +23,7 @@ import {
   ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
   ACTIVE_RENTAL_15MIN_BEFORE_END,
+  RETURN_REMINDER_24H,
   EXTEND_UNAVAILABLE,
   EXTEND_OPTIONS_SLINGSHOT,
   EXTEND_OPTIONS_ECONOMY,
@@ -204,6 +205,28 @@ test("ACTIVE_RENTAL_15MIN_BEFORE_END mentions EXTEND", () => {
   assert.ok(ACTIVE_RENTAL_15MIN_BEFORE_END.includes("EXTEND"));
 });
 
+test("RETURN_REMINDER_24H references return_time, buffered_time, and vehicle", () => {
+  assert.ok(RETURN_REMINDER_24H.includes("{customer_name}"));
+  assert.ok(RETURN_REMINDER_24H.includes("{vehicle}"));
+  assert.ok(RETURN_REMINDER_24H.includes("{return_time}"));
+  assert.ok(RETURN_REMINDER_24H.includes("{buffered_time}"));
+  assert.ok(RETURN_REMINDER_24H.includes("EXTEND"));
+});
+
+test("render RETURN_REMINDER_24H fills all variables", () => {
+  const msg = render(RETURN_REMINDER_24H, {
+    customer_name: "Alice",
+    vehicle:       "Slingshot R",
+    return_time:   "8:00 AM",
+    buffered_time: "10:00 AM",
+  });
+  assert.ok(msg.includes("Alice"));
+  assert.ok(msg.includes("Slingshot R"));
+  assert.ok(msg.includes("8:00 AM"));
+  assert.ok(msg.includes("10:00 AM"));
+  assert.ok(!msg.includes("{"));
+});
+
 // ─── Extend system templates ───────────────────────────────────────────────────
 
 test("EXTEND_UNAVAILABLE explains the situation", () => {
@@ -292,18 +315,23 @@ test("render EXTEND_SELECTED_UPSELL fills all variables", () => {
 
 // ─── Late return templates ────────────────────────────────────────────────────
 
-test("LATE_WARNING_30MIN references return_time", () => {
+test("LATE_WARNING_30MIN references return_time and buffered_time", () => {
   assert.ok(LATE_WARNING_30MIN.includes("{return_time}"));
+  assert.ok(LATE_WARNING_30MIN.includes("{buffered_time}"));
   assert.ok(LATE_WARNING_30MIN.includes("additional charges"));
 });
 
-test("LATE_AT_RETURN_TIME mentions EXTEND", () => {
+test("LATE_AT_RETURN_TIME mentions EXTEND and buffered_time", () => {
   assert.ok(LATE_AT_RETURN_TIME.includes("{customer_name}"));
+  assert.ok(LATE_AT_RETURN_TIME.includes("{return_time}"));
+  assert.ok(LATE_AT_RETURN_TIME.includes("{buffered_time}"));
   assert.ok(LATE_AT_RETURN_TIME.includes("EXTEND"));
 });
 
-test("LATE_GRACE_EXPIRED mentions late fees", () => {
+test("LATE_GRACE_EXPIRED mentions late fees and buffered_time", () => {
   assert.ok(LATE_GRACE_EXPIRED.includes("{customer_name}"));
+  assert.ok(LATE_GRACE_EXPIRED.includes("{return_time}"));
+  assert.ok(LATE_GRACE_EXPIRED.includes("{buffered_time}"));
   assert.ok(LATE_GRACE_EXPIRED.includes("Late fees"));
 });
 
