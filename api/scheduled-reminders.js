@@ -1429,30 +1429,43 @@ async function persistSentMarks(sentMarks) {
  */
 export async function loadBookingsFromSupabase(sb) {
   try {
+    // SELECT_COLS includes renter_phone (added in migration 0101/0104).
+    // SELECT_COLS_FALLBACK is used if renter_phone doesn't exist yet on the DB
+    // (e.g. dual-0101 conflict where only 0101_sms_delivery_logs ran before
+    // 0103/0104 catch-up migrations were applied).  In that case we fall back to
+    // customer_phone only so the query succeeds.
     const SELECT_COLS =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
       "late_fee_status, late_fee_amount, created_at";
 
+    const SELECT_COLS_FALLBACK =
+      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
+      "pickup_date, return_date, pickup_time, return_time, status, " +
+      "payment_intent_id, completed_at, extension_count, " +
+      "late_fee_status, late_fee_amount, created_at";
+
+    const ACTIVE_STATUSES = [
+      // Modern app-layer values
+      "pending", "booked_paid", "active_rental", "overdue",
+      // Legacy values that the availability system treats as "vehicle occupied"
+      "active",           // pre-migration-0064 equivalent of active_rental
+      "approved",         // pre-migration-0066 equivalent of booked_paid
+      // Reservation-deposit flow (migration 0066)
+      "reserved",
+      "pending_verification",
+    ];
+
     // Recently completed = last 9 days (covers 7-day retention + buffer)
     const cutoffDate = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
 
-    const [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
+    let [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
       await Promise.all([
         sb
           .from("bookings")
           .select(SELECT_COLS)
-          .in("status", [
-            // Modern app-layer values
-            "pending", "booked_paid", "active_rental", "overdue",
-            // Legacy values that the availability system treats as "vehicle occupied"
-            "active",           // pre-migration-0064 equivalent of active_rental
-            "approved",         // pre-migration-0066 equivalent of booked_paid
-            // Reservation-deposit flow (migration 0066)
-            "reserved",
-            "pending_verification",
-          ])
+          .in("status", ACTIVE_STATUSES)
           .order("created_at", { ascending: false }),
         sb
           .from("bookings")
@@ -1461,6 +1474,30 @@ export async function loadBookingsFromSupabase(sb) {
           .gte("completed_at", cutoffDate)
           .order("completed_at", { ascending: false }),
       ]);
+
+    // If the query failed due to renter_phone not existing yet (PostgreSQL error
+    // 42703 — undefined column), retry both queries without renter_phone.
+    // Migration 0104 is the permanent fix; this is a resilience guard.
+    if (activeErr && activeErr.code === "42703") {
+      console.warn(
+        "scheduled-reminders loadBookingsFromSupabase: renter_phone column missing — " +
+        "retrying without it (run migration 0104 to fix permanently)"
+      );
+      [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
+        await Promise.all([
+          sb
+            .from("bookings")
+            .select(SELECT_COLS_FALLBACK)
+            .in("status", ACTIVE_STATUSES)
+            .order("created_at", { ascending: false }),
+          sb
+            .from("bookings")
+            .select(SELECT_COLS_FALLBACK)
+            .in("status", ["completed", "completed_rental"])
+            .gte("completed_at", cutoffDate)
+            .order("completed_at", { ascending: false }),
+        ]);
+    }
 
     if (activeErr) {
       console.error("scheduled-reminders loadBookingsFromSupabase: active query failed:", activeErr.message);
