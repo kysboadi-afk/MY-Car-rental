@@ -459,38 +459,6 @@ async function resolveStripeFeeFields(stripe, paymentIntent) {
   };
 }
 
-/**
- * Non-blocking helper — resolves the renter phone from Stripe without requiring
- * balance_transaction expansion.  Returns null on any failure.
- *
- * Resolution order:
- *   1. latest_charge.billing_details.phone  (Stripe-collected at checkout)
- *   2. Stripe Customer.phone                (profile-level, set on the customer object)
- */
-async function resolveStripePhone(stripe, paymentIntent) {
-  try {
-    const piId = paymentIntent?.id;
-    if (!piId) return null;
-    const expanded = await stripe.paymentIntents.retrieve(piId, {
-      expand: ["latest_charge"],
-    });
-    const charge = expanded?.latest_charge;
-    if (charge && typeof charge === "object" && charge.billing_details?.phone) {
-      return charge.billing_details.phone;
-    }
-    const customerId = expanded?.customer || paymentIntent?.customer;
-    if (customerId && typeof customerId === "string") {
-      const customer = await stripe.customers.retrieve(customerId);
-      if (customer && !customer.deleted && customer.phone) {
-        return customer.phone;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 async function bookingExistsInJson(vehicleId, bookingId, paymentIntentId) {
   if (!vehicleId) return false;
   try {
@@ -2143,13 +2111,15 @@ export default async function handler(req, res) {
         console.error("stripe-webhook: reservation_deposit updateBooking error:", bookingErr.message);
       }
 
-      // Resolve phone from Stripe billing_details / customer when not present in
-      // metadata or customer_details (non-blocking: failure just leaves phone empty).
-      // Note: feeFields (which also carries billingPhone) is not resolved until
-      // Step 3, so we use resolveStripePhone() here as an independent early lookup.
-      let stripeDepositPhone = null;
-      if (!renter_phone && !paymentIntent.customer_details?.phone && !meta.customer_phone) {
-        stripeDepositPhone = await resolveStripePhone(stripe, paymentIntent);
+      // Resolve Stripe fee fields early so billingPhone can be used as a phone
+      // fallback below.  This piggybacks on the existing fee lookup; no extra
+      // Stripe API call is needed.  Failure is non-fatal: feeFields defaults to
+      // { stripeFee: null, stripeNet: null, billingPhone: null }.
+      let depositFeeFields = { stripeFee: null, stripeNet: null, billingPhone: null };
+      try {
+        depositFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
+      } catch (feeErr) {
+        console.warn(`stripe-webhook: reservation_deposit early fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
       }
 
       const bookingForSync = {
@@ -2157,7 +2127,7 @@ export default async function handler(req, res) {
         vehicleId: updatedBooking?.vehicleId || vehicle_id || "",
         vehicleName: updatedBooking?.vehicleName || vehicle_name || vehicle_id || "",
         name: updatedBooking?.name || renter_name || "",
-        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || stripeDepositPhone || "")),
+        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || depositFeeFields.billingPhone || "")),
         email: updatedBooking?.email || email || meta.customer_email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
         pickupDate: updatedBooking?.pickupDate || pickup_date || "",
         pickupTime: updatedBooking?.pickupTime || pickup_time || "",
@@ -2262,12 +2232,6 @@ export default async function handler(req, res) {
 
       // ── Step 3: Create revenue record ─────────────────────────────────────
       try {
-        let feeFields = { stripeFee: null, stripeNet: null };
-        try {
-          feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-            } catch (feeErr) {
-              console.warn(`stripe-webhook: reservation_deposit fee lookup failed for PI ${paymentIntent.id} (non-fatal): ${feeErr.message}`);
-            }
         const customerId = await resolveCustomerIdFromSupabase(
           bookingForSync.phone || "",
           bookingForSync.email || "",
@@ -2285,7 +2249,7 @@ export default async function handler(req, res) {
           amountPaid,
           paymentMethod: "stripe",
           type: "reservation_deposit",
-          ...feeFields,
+          ...depositFeeFields,
         }, {
           strict: true,
           requireStripeFee: false,
@@ -3240,7 +3204,6 @@ export {
   blockBookedDates,
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
-  resolveStripePhone,
 };
 
 // ── Slingshot deposit-paid notification email to customer ──────────────────
