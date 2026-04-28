@@ -1549,7 +1549,7 @@
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody id="revenue-tbody"></tbody>
+              <tbody id="revenue-table-body"></tbody>
             </table>
           </div>
           <div id="revenue-empty" class="empty-state" style="display:none">
@@ -4733,7 +4733,7 @@ function loadRevenue() {
       revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
-      applyRevenueFilters();
+      renderRevenue(groups);
       document.getElementById('revenue-loading').style.display = 'none';
     })
     .catch((err) => {
@@ -4830,6 +4830,84 @@ function fmtRevDate(dateStr) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function renderRevenue(groups) {
+  const tbody = document.getElementById("revenue-table-body");
+  tbody.innerHTML = "";
+
+  const wrap  = document.getElementById('revenue-table-wrap');
+  const empty = document.getElementById('revenue-empty');
+
+  if (!groups || !groups.length) {
+    if (wrap)  wrap.style.display  = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (wrap)  wrap.style.display  = '';
+  if (empty) empty.style.display = 'none';
+
+  groups.forEach(group => {
+
+    // MAIN BOOKING ROW
+    const mainRow = document.createElement("tr");
+    mainRow.innerHTML = `
+      <td>${group.customer_name || ''}</td>
+      <td>${group.vehicle_id || ''}</td>
+      <td>${group.start_date} → ${group.end_date}</td>
+      <td><strong>$${group.gross_total.toFixed(2)}</strong></td>
+      <td>$${group.stripe_fee_total?.toFixed(2) || ''}</td>
+      <td></td>
+      <td><strong>$${group.net_total?.toFixed(2) || ''}</strong></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    `;
+    tbody.appendChild(mainRow);
+
+    // BASE RENTAL ROW
+    if (group.base_rental) {
+      const base = group.base_rental;
+
+      const baseRow = document.createElement("tr");
+      baseRow.classList.add("rev-sub-row");
+      baseRow.innerHTML = `
+        <td></td>
+        <td colspan="2">🧾 Base rental (${base.pickup_date} → ${base.return_date})</td>
+        <td>$${base.gross_amount}</td>
+        <td>$${base.stripe_fee || ''}</td>
+        <td></td>
+        <td>$${base.net_amount || ''}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+      `;
+      tbody.appendChild(baseRow);
+    }
+
+    // EXTENSIONS
+    if (Array.isArray(group.extensions)) {
+      group.extensions.forEach(ext => {
+        if (!ext) return;
+
+        const extRow = document.createElement("tr");
+        extRow.classList.add("rev-sub-row");
+        extRow.innerHTML = `
+          <td></td>
+          <td colspan="2">🔁 +1 day (${ext.pickup_date} → ${ext.return_date})</td>
+          <td>$${ext.gross_amount}</td>
+          <td>$${ext.stripe_fee || ''}</td>
+          <td></td>
+          <td>$${ext.net_amount || ''}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        `;
+        tbody.appendChild(extRow);
+      });
+    }
+
+  });
+}
+
 function applyRevenueFilters() {
   const vehicle = document.getElementById('rev-filter-vehicle')?.value || '';
   const status  = document.getElementById('rev-filter-status')?.value  || '';
@@ -4838,7 +4916,7 @@ function applyRevenueFilters() {
   if (vehicle) filtered = filtered.filter((r) => r.vehicle_id === vehicle);
   if (status)  filtered = filtered.filter((r) => r.payment_status === status);
 
-  const tbody = document.getElementById('revenue-tbody');
+  const tbody = document.getElementById('revenue-table-body');
   const wrap  = document.getElementById('revenue-table-wrap');
   const empty = document.getElementById('revenue-empty');
 
