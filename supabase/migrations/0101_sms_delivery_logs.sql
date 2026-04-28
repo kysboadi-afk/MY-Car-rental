@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sms_delivery_logs (
   renter_phone  TEXT,
   message_type  TEXT,
   message_body  TEXT,
-  status        TEXT        NOT NULL,   -- sent | failed | skipped
+  status        TEXT        NOT NULL CHECK (status IN ('sent', 'failed', 'skipped')),   -- sent | failed | skipped
   error         TEXT,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
