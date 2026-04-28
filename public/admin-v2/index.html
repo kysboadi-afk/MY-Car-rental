@@ -4733,7 +4733,7 @@ function loadRevenue() {
       revenueKpiTotal = typeof kpiData?.total_revenue === 'number' ? kpiData.total_revenue : null;
       if (!allExpenses.length) allExpenses = expData.expenses || [];
       renderRevenueSummary();
-      renderRevenue(groups);
+      applyRevenueFilters();
       document.getElementById('revenue-loading').style.display = 'none';
     })
     .catch((err) => {
