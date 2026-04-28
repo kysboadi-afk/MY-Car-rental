@@ -2173,18 +2173,17 @@ export default async function handler(req, res) {
   if (process.env.STRIPE_SECRET_KEY && sbClient) {
     try {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
-      const missingPhoneBookings = [];
-      for (const bookings of Object.values(allBookings)) {
-        for (const booking of bookings) {
-          if (!booking.phone && booking.paymentIntentId && booking.status !== "completed_rental") {
-            missingPhoneBookings.push(booking);
-          }
-        }
-      }
+      const missingPhoneBookings = Object.values(allBookings)
+        .flat()
+        .filter((b) => !b.phone && b.paymentIntentId && b.status !== "completed_rental");
       if (missingPhoneBookings.length > 0) {
         await Promise.allSettled(
           missingPhoneBookings.map(async (booking) => {
             try {
+              // Pass only the PI id; resolveStripePhone fetches the expanded PI
+              // itself and reads customer ID from the Stripe response, so passing
+              // customer: null here is intentional — it does not skip the
+              // customer-level phone lookup.
               const resolved = await resolveStripePhone(stripe, {
                 id: booking.paymentIntentId,
                 customer: null,

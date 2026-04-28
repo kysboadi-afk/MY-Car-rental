@@ -455,7 +455,7 @@ async function resolveStripeFeeFields(stripe, paymentIntent) {
     stripeNet: Number.isFinite(stripeNet) ? (Math.round(stripeNet * 100) / 100) : null,
     // billing_details is a top-level field on the Charge object; no additional
     // expansion is needed beyond latest_charge.balance_transaction.
-    billingPhone: (charge && typeof charge === "object") ? (charge.billing_details?.phone || null) : null,
+    billingPhone: charge?.billing_details?.phone || null,
   };
 }
 
@@ -2137,6 +2137,8 @@ export default async function handler(req, res) {
 
       // Resolve phone from Stripe billing_details / customer when not present in
       // metadata or customer_details (non-blocking: failure just leaves phone empty).
+      // Note: feeFields (which also carries billingPhone) is not resolved until
+      // Step 3, so we use resolveStripePhone() here as an independent early lookup.
       let stripeDepositPhone = null;
       if (!renter_phone && !paymentIntent.customer_details?.phone && !meta.customer_phone) {
         stripeDepositPhone = await resolveStripePhone(stripe, paymentIntent);
