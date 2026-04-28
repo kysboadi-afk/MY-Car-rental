@@ -660,6 +660,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_intent_id text,          -- Stripe PaymentIntent ID (migration 0033)
   activated_at      timestamptz,  -- stamped when status → 'active'   (migration 0017)
   completed_at      timestamptz,  -- stamped when status → 'completed' (migration 0017)
+  renter_phone      text,          -- canonical SMS phone; prefer over customer_phone (migration 0101/0104)
   created_at        timestamptz   NOT NULL DEFAULT now(),
   updated_at        timestamptz   NOT NULL DEFAULT now()
 );
