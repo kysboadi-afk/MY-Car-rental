@@ -2165,6 +2165,76 @@ export default async function handler(req, res) {
 
   const now = new Date();
 
+  // ── Resolve missing phone numbers from Stripe (non-blocking) ─────────────
+  // Active bookings whose customer_phone is null in Supabase may still have a
+  // phone recorded in Stripe (billing_details or the Customer object).  Fetch
+  // and backfill now so SMS delivery is never silently skipped.
+  if (process.env.STRIPE_SECRET_KEY && sbClient) {
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+      const missingPhoneBookings = [];
+      for (const bookings of Object.values(allBookings)) {
+        for (const booking of bookings) {
+          if (!booking.phone && booking.paymentIntentId && booking.status !== "completed_rental") {
+            missingPhoneBookings.push(booking);
+          }
+        }
+      }
+      if (missingPhoneBookings.length > 0) {
+        await Promise.allSettled(
+          missingPhoneBookings.map(async (booking) => {
+            try {
+              const expanded = await stripe.paymentIntents.retrieve(booking.paymentIntentId, {
+                expand: ["latest_charge"],
+              });
+              const charge = expanded?.latest_charge;
+              let resolved = null;
+              if (charge && typeof charge === "object" && charge.billing_details?.phone) {
+                resolved = charge.billing_details.phone;
+              } else {
+                const customerId = expanded?.customer;
+                if (customerId && typeof customerId === "string") {
+                  const customer = await stripe.customers.retrieve(customerId);
+                  if (customer && !customer.deleted && customer.phone) {
+                    resolved = customer.phone;
+                  }
+                }
+              }
+              if (resolved) {
+                const normalized = normalizePhone(resolved);
+                booking.phone = normalized;
+                // Backfill Supabase so future cron runs don't need to re-fetch
+                const { error: phoneErr } = await sbClient
+                  .from("bookings")
+                  .update({ customer_phone: normalized })
+                  .eq("booking_ref", booking.bookingId);
+                if (phoneErr) {
+                  console.warn(
+                    `scheduled-reminders: Supabase phone backfill failed for ${booking.bookingId}: ${phoneErr.message}`
+                  );
+                } else {
+                  console.log(
+                    `scheduled-reminders: resolved phone from Stripe for booking ${booking.bookingId}`
+                  );
+                }
+              } else {
+                console.warn(
+                  `scheduled-reminders: no phone found in Stripe for booking ${booking.bookingId} (PI ${booking.paymentIntentId})`
+                );
+              }
+            } catch (phoneErr) {
+              console.warn(
+                `scheduled-reminders: Stripe phone lookup failed for booking ${booking.bookingId}: ${phoneErr.message}`
+              );
+            }
+          })
+        );
+      }
+    } catch (stripePhoneErr) {
+      console.warn("scheduled-reminders: Stripe phone resolution skipped:", stripePhoneErr.message);
+    }
+  }
+
   // Auto-activate and auto-complete bookings regardless of SMS configuration.
   // These must run on every cron tick so overdue bookings never stay stuck.
   await processAutoActivations(allBookings, now);
