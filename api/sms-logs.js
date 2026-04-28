@@ -2,11 +2,10 @@
 // Vercel serverless function — returns the 100 most recent SMS delivery log
 // entries from the sms_delivery_logs table.  Admin-protected.
 //
-// POST /api/sms-logs
-// Body: { "secret": "<ADMIN_SECRET>" }
+// GET /api/sms-logs?secret=<ADMIN_SECRET>
 // Response: { "logs": [ { id, booking_ref, vehicle_id, renter_phone,
 //                          message_type, message_body, status, error,
-//                          created_at }, … ] }
+//                          provider_id, created_at }, … ] }
 
 import { getSupabaseAdmin } from "./_supabase.js";
 import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
@@ -18,16 +17,16 @@ export default async function handler(req, res) {
   if (ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+  if (req.method !== "GET") return res.status(405).send("Method Not Allowed");
 
   if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
   }
 
-  const { secret } = req.body || {};
+  const secret = req.query?.secret;
   if (!isAdminAuthorized(secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -40,7 +39,7 @@ export default async function handler(req, res) {
   try {
     const { data, error } = await sb
       .from("sms_delivery_logs")
-      .select("id, booking_ref, vehicle_id, renter_phone, message_type, message_body, status, error, created_at")
+      .select("id, booking_ref, vehicle_id, renter_phone, message_type, message_body, status, error, provider_id, created_at")
       .order("created_at", { ascending: false })
       .limit(100);
 

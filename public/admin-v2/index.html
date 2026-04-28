@@ -1840,6 +1840,7 @@
                   <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Phone</th>
                   <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Type</th>
                   <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Status</th>
+                  <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);white-space:nowrap;">Provider ID</th>
                   <th style="padding:7px 10px;font-weight:600;color:var(--text-sub);">Error</th>
                 </tr>
               </thead>
@@ -6471,7 +6472,13 @@ async function loadSmsLogs() {
   if (tableWrap) tableWrap.style.display = 'none';
 
   try {
-    const data = await apiPost('/api/sms-logs', { secret: adminSecret });
+    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
+    const res  = await fetch(url);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
     const logs = data.logs || [];
 
     if (tbody) {
@@ -6498,6 +6505,7 @@ async function loadSmsLogs() {
           <td style="padding:7px 10px;">
             <span style="background:${statusBg};color:${statusColor};font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;">${esc(row.status || '—')}</span>
           </td>
+          <td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-sub);">${esc(row.provider_id || '—')}</td>
           <td style="padding:7px 10px;color:var(--danger);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(row.error || '')}">${esc(row.error || '')}</td>
         </tr>`;
       }).join('');

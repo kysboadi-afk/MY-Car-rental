@@ -267,8 +267,9 @@ async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata)
  * @param {string|null} ctx.message_body
  * @param {string}      ctx.status        - 'sent' | 'failed' | 'skipped'
  * @param {string|null} [ctx.error]
+ * @param {string|null} [ctx.provider_id] - TextMagic session id (sent rows only)
  */
-async function logSmsDelivery({ booking_ref, vehicle_id, renter_phone, message_type, message_body, status, error }) {
+async function logSmsDelivery({ booking_ref, vehicle_id, renter_phone, message_type, message_body, status, error, provider_id }) {
   const sb = getSupabaseAdmin();
   if (!sb) return;
   try {
@@ -280,6 +281,7 @@ async function logSmsDelivery({ booking_ref, vehicle_id, renter_phone, message_t
       message_body: message_body || null,
       status,
       error:        error        || null,
+      provider_id:  provider_id  || null,
     });
     if (dbErr) {
       console.warn("scheduled-reminders: sms_delivery_logs write error (non-fatal):", dbErr.message);
@@ -568,7 +570,8 @@ async function safeSend(phone, body, logCtx = null) {
     return false;
   }
   try {
-    await sendSms(normalized, body);
+    const tmResult = await sendSms(normalized, body);
+    const providerId = tmResult && tmResult.id != null ? String(tmResult.id) : null;
     if (logCtx) {
       await logSmsDelivery({
         booking_ref:  logCtx.booking_ref  || null,
@@ -577,6 +580,7 @@ async function safeSend(phone, body, logCtx = null) {
         message_type: logCtx.message_type || null,
         message_body: body,
         status:       "sent",
+        provider_id:  providerId,
       });
     }
     return true;
