@@ -19,6 +19,7 @@
 //   booking_link       – URL for completing the booking
 //   waitlist_link      – URL for joining the waitlist
 //   max_available_time – maximum extension window (e.g. "2 hours" or "3 days")
+//   buffered_time      – return_time + 2 h buffer (e.g. "5:00 PM"), for informational display
 //   late_fee           – late fee amount in dollars (e.g. "50")
 
 export const DEFAULT_LOCATION = "1200 S Figueroa St, Los Angeles, CA 90015";
@@ -182,7 +183,8 @@ export const PICKUP_REMINDER_30MIN =
 /** Sent ~24 hours before the scheduled return time. */
 export const RETURN_REMINDER_24H =
   "Hi {customer_name},\n\n" +
-  "Your {vehicle} is due back tomorrow at {return_time}.\n\n" +
+  "Your {vehicle} is due back tomorrow at {return_time}.\n" +
+  "Vehicle will be ready for next renter at {buffered_time}.\n\n" +
   "Reply EXTEND if you\u2019d like more time.\n\n" +
   "Reply STOP to opt out.";
 
@@ -305,21 +307,24 @@ export const EXTEND_PAYMENT_PENDING =
 
 /** Sent 30 minutes before scheduled return. */
 export const LATE_WARNING_30MIN =
-  "Your rental is ending soon at {return_time}.\n\n" +
+  "Your rental is ending soon at {return_time}.\n" +
+  "Vehicle will be ready for next renter at {buffered_time}.\n\n" +
   "Please return on time to avoid additional charges.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent exactly at the scheduled return time. */
 export const LATE_AT_RETURN_TIME =
   "Hi {customer_name},\n\n" +
-  "Your rental time has ended.\n\n" +
+  "Your rental time has ended.\n" +
+  "Return by {return_time}. Vehicle will be ready for next renter at {buffered_time}.\n\n" +
   "Reply EXTEND if you need more time.\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent after the grace period has expired. */
 export const LATE_GRACE_EXPIRED =
   "Hi {customer_name},\n\n" +
-  "Your rental is now past the grace period.\n\n" +
+  "Your rental is now past the grace period.\n" +
+  "Return by {return_time}. Vehicle will be ready for next renter at {buffered_time}.\n\n" +
   "Late fees may apply.\n\n" +
   "Reply STOP to opt out.";
 

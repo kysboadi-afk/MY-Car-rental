@@ -396,11 +396,11 @@ export default async function handler(req, res) {
 
         if (!available && block) {
           if (block.end_time) {
-            // Time-aware block: both available_at and next_available_display are
-            // derived directly from blocked_dates.end_time, which already includes
-            // the 2-hour preparation buffer applied at booking time.
-            // Displaying the buffered end time is intentional — visitors see the
-            // actual earliest pickup time (e.g. 10:00 AM), not the raw return time.
+            // Time-aware block: blocked_dates.end_time already includes the
+            // +2 hour preparation buffer applied at booking time.  Both
+            // available_at and next_available_display are derived directly from
+            // end_time — this is the earliest the vehicle is available for the
+            // next pickup, and is what visitors should see in the UI.
             const endDateObj = buildDateTimeLA(block.end_date, block.end_time);
             entry.available_at           = endDateObj.toISOString();
             entry.next_available_display = formatForDisplay(endDateObj, true);
