@@ -453,7 +453,42 @@ async function resolveStripeFeeFields(stripe, paymentIntent) {
   return {
     stripeFee: Math.round(stripeFee * 100) / 100,
     stripeNet: Number.isFinite(stripeNet) ? (Math.round(stripeNet * 100) / 100) : null,
+    // billing_details is a top-level field on the Charge object; no additional
+    // expansion is needed beyond latest_charge.balance_transaction.
+    billingPhone: charge?.billing_details?.phone || null,
   };
+}
+
+/**
+ * Non-blocking helper — resolves the renter phone from Stripe without requiring
+ * balance_transaction expansion.  Returns null on any failure.
+ *
+ * Resolution order:
+ *   1. latest_charge.billing_details.phone  (Stripe-collected at checkout)
+ *   2. Stripe Customer.phone                (profile-level, set on the customer object)
+ */
+async function resolveStripePhone(stripe, paymentIntent) {
+  try {
+    const piId = paymentIntent?.id;
+    if (!piId) return null;
+    const expanded = await stripe.paymentIntents.retrieve(piId, {
+      expand: ["latest_charge"],
+    });
+    const charge = expanded?.latest_charge;
+    if (charge && typeof charge === "object" && charge.billing_details?.phone) {
+      return charge.billing_details.phone;
+    }
+    const customerId = expanded?.customer || paymentIntent?.customer;
+    if (customerId && typeof customerId === "string") {
+      const customer = await stripe.customers.retrieve(customerId);
+      if (customer && !customer.deleted && customer.phone) {
+        return customer.phone;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function bookingExistsInJson(vehicleId, bookingId, paymentIntentId) {
@@ -609,6 +644,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       renter_phone ||
       meta.renter_phone ||
       paymentIntent.customer_details?.phone ||
+      extraFields.billingPhone ||
       ""
     ),
     email: String(
@@ -681,6 +717,7 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       customer_name:             persistPayload.name  || null,
       customer_email:            persistPayload.email || null,
       customer_phone:            persistPayload.phone || null,
+      renter_phone:              persistPayload.phone || null,
     };
 
     const { data: preWriteData, error: preWriteError } = await sbPre
@@ -2099,12 +2136,21 @@ export default async function handler(req, res) {
         console.error("stripe-webhook: reservation_deposit updateBooking error:", bookingErr.message);
       }
 
+      // Resolve phone from Stripe billing_details / customer when not present in
+      // metadata or customer_details (non-blocking: failure just leaves phone empty).
+      // Note: feeFields (which also carries billingPhone) is not resolved until
+      // Step 3, so we use resolveStripePhone() here as an independent early lookup.
+      let stripeDepositPhone = null;
+      if (!renter_phone && !paymentIntent.customer_details?.phone && !meta.customer_phone) {
+        stripeDepositPhone = await resolveStripePhone(stripe, paymentIntent);
+      }
+
       const bookingForSync = {
         bookingId: resolvedBookingId,
         vehicleId: updatedBooking?.vehicleId || vehicle_id || "",
         vehicleName: updatedBooking?.vehicleName || vehicle_name || vehicle_id || "",
         name: updatedBooking?.name || renter_name || "",
-        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || "")),
+        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || stripeDepositPhone || "")),
         email: updatedBooking?.email || email || meta.customer_email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
         pickupDate: updatedBooking?.pickupDate || pickup_date || "",
         pickupTime: updatedBooking?.pickupTime || pickup_time || "",
@@ -2265,6 +2311,7 @@ export default async function handler(req, res) {
               customer_name:        bookingForSync.name  || null,
               customer_email:       bookingForSync.email || null,
               customer_phone:       bookingForSync.phone || null,
+              renter_phone:         bookingForSync.phone || null,
               updated_at:           new Date().toISOString(),
             })
             .eq("booking_ref", resolvedBookingId);
@@ -2871,7 +2918,7 @@ export default async function handler(req, res) {
         slingshotDepositResult = await persistBooking({
           bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
           name:                     renter_name || "",
-          phone:                    renter_phone ? normalizePhone(renter_phone) : "",
+          phone:                    renter_phone ? normalizePhone(renter_phone) : normalizePhone(feeFields.billingPhone || paymentIntent.customer_details?.phone || ""),
           email:                    email || "",
           vehicleId:                vehicle_id,
           vehicleName:              meta.vehicle_name || vehicle_id,
@@ -3186,6 +3233,7 @@ export {
   blockBookedDates,
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
+  resolveStripePhone,
 };
 
 // ── Slingshot deposit-paid notification email to customer ──────────────────

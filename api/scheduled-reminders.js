@@ -78,6 +78,7 @@ import {
   markVehicleUnavailable,
   sendWebhookNotificationEmails,
   mapVehicleId,
+  resolveStripePhone,
 } from "./stripe-webhook.js";
 
 // ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
@@ -99,6 +100,11 @@ const LATE_FEE_AMOUNTS = {
 // stale bookings.json entries that remain as "active_rental" for days/weeks.
 // Consistent with MAX_CHARGE_WARN_USD in approve-late-fee.js.
 const MAX_LATE_FEE_USD = 500;
+
+// Preparation buffer added to the return time before the vehicle is available
+// for the next pickup.  Must match BOOKING_BUFFER_HOURS in _booking-automation.js
+// and _availability.js.
+const BOOKING_BUFFER_HOURS = 2;
 
 // Maximum hours-overdue window in which a late fee may be triggered.
 // If minsOverdue exceeds this threshold the booking was never auto-completed
@@ -537,12 +543,14 @@ function alreadySentAny(booking, keys) {
 function vars(booking) {
   const pickupDt = parseBookingDateTime(booking.pickupDate, booking.pickupTime);
   const returnDt = parseBookingDateTime(booking.returnDate, booking.returnTime);
+  const bufferedReturnDt = new Date(returnDt.getTime() + BOOKING_BUFFER_HOURS * 60 * 60 * 1000);
   return {
     customer_name: booking.name || "Customer",
     vehicle:       booking.vehicleName || booking.vehicleId,
     pickup_date:   booking.pickupDate ? formatDate(pickupDt) : booking.pickupDate || "",
     pickup_time:   booking.pickupTime ? (formatTime(pickupDt) || formatTime12h(booking.pickupTime)) : "",
     return_time:   booking.returnTime ? (formatTime(returnDt) || formatTime12h(booking.returnTime)) : "",
+    buffered_time: booking.returnTime ? (formatTime(bufferedReturnDt) || "") : "",
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
     payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",
@@ -1342,7 +1350,7 @@ async function persistSentMarks(sentMarks) {
 export async function loadBookingsFromSupabase(sb) {
   try {
     const SELECT_COLS =
-      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
+      "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
       "late_fee_status, late_fee_amount, created_at";
@@ -1419,7 +1427,9 @@ export async function loadBookingsFromSupabase(sb) {
         vehicleName:    vehicleId,
         name:           row.customer_name       || "",
         email:          row.customer_email      || "",
-        phone:          row.customer_phone      || "",
+        // renter_phone is the canonical SMS field; fall back to customer_phone
+        // for rows written before migration 0101.
+        phone:          row.renter_phone        || row.customer_phone || "",
         pickupDate:     row.pickup_date  ? String(row.pickup_date).split("T")[0]  : "",
         pickupTime:     row.pickup_time  ? String(row.pickup_time).substring(0, 5) : "",
         returnDate:     row.return_date  ? String(row.return_date).split("T")[0]  : "",
@@ -2164,6 +2174,64 @@ export default async function handler(req, res) {
   }
 
   const now = new Date();
+
+  // ── Resolve missing phone numbers from Stripe (non-blocking) ─────────────
+  // Active bookings whose customer_phone is null in Supabase may still have a
+  // phone recorded in Stripe (billing_details or the Customer object).  Fetch
+  // and backfill now so SMS delivery is never silently skipped.
+  if (process.env.STRIPE_SECRET_KEY && sbClient) {
+    try {
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2023-10-16" });
+      const missingPhoneBookings = Object.values(allBookings)
+        .flat()
+        .filter((b) => !b.phone && b.paymentIntentId && b.status !== "completed_rental");
+      if (missingPhoneBookings.length > 0) {
+        await Promise.allSettled(
+          missingPhoneBookings.map(async (booking) => {
+            try {
+              // Pass only the PI id; resolveStripePhone fetches the expanded PI
+              // itself and reads customer ID from the Stripe response, so passing
+              // customer: null here is intentional — it does not skip the
+              // customer-level phone lookup.
+              const resolved = await resolveStripePhone(stripe, {
+                id: booking.paymentIntentId,
+                customer: null,
+              });
+              if (resolved) {
+                const normalized = normalizePhone(resolved);
+                booking.phone = normalized;
+                // Backfill renter_phone (canonical SMS column) in Supabase so
+                // future cron runs don't need to re-fetch from Stripe.
+                const { error: phoneErr } = await sbClient
+                  .from("bookings")
+                  .update({ renter_phone: normalized })
+                  .eq("booking_ref", booking.bookingId);
+                if (phoneErr) {
+                  console.warn(
+                    `scheduled-reminders: Supabase phone backfill failed for ${booking.bookingId}: ${phoneErr.message}`
+                  );
+                } else {
+                  console.log(
+                    `scheduled-reminders: resolved phone from Stripe for booking ${booking.bookingId}`
+                  );
+                }
+              } else {
+                console.warn(
+                  `scheduled-reminders: no phone found in Stripe for booking ${booking.bookingId} (PI ${booking.paymentIntentId})`
+                );
+              }
+            } catch (phoneErr) {
+              console.warn(
+                `scheduled-reminders: Stripe phone lookup failed for booking ${booking.bookingId}: ${phoneErr.message}`
+              );
+            }
+          })
+        );
+      }
+    } catch (stripePhoneErr) {
+      console.warn("scheduled-reminders: Stripe phone resolution skipped:", stripePhoneErr.message);
+    }
+  }
 
   // Auto-activate and auto-complete bookings regardless of SMS configuration.
   // These must run on every cron tick so overdue bookings never stay stuck.

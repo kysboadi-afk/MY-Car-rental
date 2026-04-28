@@ -47,21 +47,30 @@ mock.module("stripe", {
         const src = stripePiStore[id] || { id, amount: 0, metadata: {} };
         const shouldExpandBt = Array.isArray(opts.expand) &&
           opts.expand.includes("latest_charge.balance_transaction");
-        if (!shouldExpandBt) return { ...src };
+        const shouldExpandCharge = Array.isArray(opts.expand) &&
+          opts.expand.some((e) => e === "latest_charge" || e.startsWith("latest_charge."));
+        if (!shouldExpandBt && !shouldExpandCharge) return { ...src };
         const grossCents = Number(src.amount || 0);
         const feeCents = Math.round(grossCents * 0.029 + 30);
         return {
           ...src,
           latest_charge: {
             id: `ch_${id}`,
-            balance_transaction: {
-              id: `txn_${id}`,
-              fee: feeCents,
-              net: Math.max(0, grossCents - feeCents),
-            },
+            // billing_details.phone is populated from the PI store if set
+            billing_details: { phone: src._billingPhone || null },
+            ...(shouldExpandBt ? {
+              balance_transaction: {
+                id: `txn_${id}`,
+                fee: feeCents,
+                net: Math.max(0, grossCents - feeCents),
+              },
+            } : {}),
           },
         };
       },
+    };
+    customers = {
+      retrieve: async () => ({ deleted: false, phone: null }),
     };
     get webhooks() {
       return {
@@ -1224,4 +1233,58 @@ test("webhook full_payment: uses customer_details.phone when renter_phone absent
 
   const bookingSync = automationCalls.booking.find((b) => b.phone === "+13105550011");
   assert.ok(bookingSync, "full_payment booking must carry phone from customer_details fallback");
+});
+
+test("webhook full_payment: uses billing_details.phone when renter_phone and customer_details are both absent", async () => {
+  resetStore(); resetCalls();
+
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-12-01", return_date: "2026-12-03",
+    renter_name: "BD Full Pay",
+    renter_phone: "",      // ← missing from metadata
+    email: "bdfull@example.com",
+    payment_type: "full_payment",
+  });
+  // Simulate billing_details.phone via the _billingPhone sentinel on the PI store
+  // (FakeStripe.retrieve returns this when expanding latest_charge).
+  event.data.object._billingPhone = "+13105550088";
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const bookingSync = automationCalls.booking.find((b) => b.phone === "+13105550088");
+  assert.ok(bookingSync, "full_payment booking must carry phone from billing_details fallback");
+});
+
+test("webhook reservation_deposit: uses billing_details.phone when renter_phone and customer_details are both absent", async () => {
+  resetStore(); resetCalls();
+
+  const bookingId = "bk-bd-resv-phone";
+  const event = piSucceededEvent({
+    vehicle_id: "camry", vehicle_name: "Camry 2012",
+    pickup_date: "2026-12-10", return_date: "2026-12-12",
+    renter_name: "BD Resv",
+    renter_phone: "",      // ← missing
+    email: "bdresv@example.com",
+    payment_type: "reservation_deposit",
+    booking_id: bookingId,
+    full_rental_amount: "300",
+  });
+  event.data.object._billingPhone = "+13105550077";
+
+  supabaseBookingsStore[bookingId] = {
+    id: `sb_${bookingId}`, booking_ref: bookingId,
+    status: "pending", return_date: "2026-12-12",
+  };
+
+  const res = makeRes();
+  await handler(makeWebhookReq(event), res);
+  assert.equal(res._status, 200);
+
+  const syncedBooking = automationCalls.booking.find((b) => b.bookingId === bookingId);
+  assert.ok(syncedBooking, "reservation_deposit must produce a booking sync call");
+  assert.equal(syncedBooking?.phone, "+13105550077",
+    "reservation_deposit must fall back to billing_details.phone when renter_phone is absent");
 });
