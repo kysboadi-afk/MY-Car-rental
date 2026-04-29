@@ -1931,9 +1931,10 @@ export default async function handler(req, res) {
                   sbRow.customer_email || renter_email || "",
                 );
                 await autoCreateRevenueRecord({
+                  booking_ref:     resolvedBookingId,
                   bookingId:       resolvedBookingId,
                   paymentIntentId: paymentIntent.id,
-                  vehicleId:       vehicle_id,
+                  vehicleId:       sbRow.vehicle_id || vehicle_id,
                   customerId:      fallbackCustomerId,
                   name:            sbRow.customer_name || renter_name || "",
                   phone:           sbRow.customer_phone || "",
@@ -2003,9 +2004,10 @@ export default async function handler(req, res) {
                 updatedBooking.email || renter_email || "",
               );
               await autoCreateRevenueRecord({
+                booking_ref:     resolvedBookingId,
                 bookingId:       resolvedBookingId,
                 paymentIntentId: paymentIntent.id,
-                vehicleId:       vehicle_id,
+                vehicleId:       updatedBooking.vehicleId || vehicle_id,
                 customerId:      extCustomerId,
                 name:            updatedBooking.name || renter_name || "",
                 phone:           updatedBooking.phone || "",
@@ -2155,9 +2157,10 @@ export default async function handler(req, res) {
             );
 
             await autoCreateRevenueRecord({
+              booking_ref:     resolvedBookingId,
               bookingId:       resolvedBookingId,
               paymentIntentId: paymentIntent.id,
-              vehicleId:       vehicle_id,
+              vehicleId:       updatedBooking.vehicleId || vehicle_id,
               customerId:      extCustomerId,
               name:            updatedBooking.name || renter_name || "",
               phone:           updatedBooking.phone || "",
