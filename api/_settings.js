@@ -20,6 +20,7 @@ import {
   PROTECTION_PLAN_STANDARD,
   PROTECTION_PLAN_PREMIUM,
   computeRentalDays,
+  computeProtectionPlanCost,
 } from "./_pricing.js";
 
 // Keys that live in the system_settings table and their hardcoded fallback values.
@@ -162,11 +163,7 @@ export function computeAmountFromSettings(vehicleId, pickup, returnDate, setting
  * @returns {number}
  */
 export function computeDppCostFromSettings(days, tier) {
-  const d = Math.max(1, days);
-  if (tier === "basic")    return d * PROTECTION_PLAN_BASIC;
-  if (tier === "standard") return d * PROTECTION_PLAN_STANDARD;
-  if (tier === "premium")  return d * PROTECTION_PLAN_PREMIUM;
-  return 0;
+  return computeProtectionPlanCost(days, tier ?? null);
 }
 
 /**

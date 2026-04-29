@@ -24,6 +24,12 @@ export const CARS = {
 export const FLEET_VEHICLE_IDS = Object.keys(CARS);
 
 // Damage Protection Plan rates — must stay in sync with car.js client-side constants.
+// Legacy tiered rates (used for backward-compatibility and PDF display).
+export const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
+export const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
+export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
+// Legacy daily rate derived from weekly (used when no tier is specified).
+export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 // Economy car protection plan tiers (flat daily rates — no weekly/monthly discount).
 export const PROTECTION_PLAN_BASIC    = 15;  // $15/day — limits liability to $2,500
@@ -46,9 +52,11 @@ export function computeRentalDays(pickup, returnDate) {
 /**
  * Compute the Damage Protection Plan cost for a given number of rental days.
  *
- * Applies a flat daily rate based on the chosen tier:
- * "basic" ($15/day), "standard" ($30/day), "premium" ($50/day).
- * Returns 0 for unknown/null tier.
+ * When `tier` is "basic", "standard", or "premium" (Economy car tiers), a flat
+ * daily rate is applied for all days.
+ *
+ * When `tier` is null/undefined (legacy callers and PDF display), the greedy
+ * monthly → biweekly → weekly → daily algorithm is used.
  *
  * @param {number} days  - number of rental days (min 1)
  * @param {string|null} [tier=null] - "basic" | "standard" | "premium" | null
@@ -59,7 +67,26 @@ export function computeProtectionPlanCost(days, tier = null) {
   if (tier === "basic")    return d * PROTECTION_PLAN_BASIC;
   if (tier === "standard") return d * PROTECTION_PLAN_STANDARD;
   if (tier === "premium")  return d * PROTECTION_PLAN_PREMIUM;
-  return 0;
+  // Legacy / null tier: greedy monthly → biweekly → weekly → daily
+  let remaining = d;
+  let cost = 0;
+  if (remaining >= 30) {
+    const months = Math.floor(remaining / 30);
+    cost += months * PROTECTION_PLAN_MONTHLY;
+    remaining = remaining % 30;
+  }
+  if (remaining >= 14) {
+    const twoWeeks = Math.floor(remaining / 14);
+    cost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
+    remaining = remaining % 14;
+  }
+  if (remaining >= 7) {
+    const weeks = Math.floor(remaining / 7);
+    cost += weeks * PROTECTION_PLAN_WEEKLY;
+    remaining = remaining % 7;
+  }
+  cost += remaining * PROTECTION_PLAN_DAILY;
+  return cost;
 }
 
 /**
