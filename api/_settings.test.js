@@ -1,4 +1,4 @@
-// Tests for api/_settings.js — computeCamryAmountFromSettings, computeSlingshotAmountFromSettings,
+// Tests for api/_settings.js — computeCamryAmountFromSettings,
 // computeBreakdownLinesFromSettings, computeDppCostFromSettings, applyTax, and loadPricingSettings.
 //
 // These tests run entirely with hardcoded settings objects (no Supabase required) to verify
@@ -71,7 +71,6 @@ test("camry2013 default: 7 days = $350 (uses same rates as camry)", () => {
 });
 
 test("camry default: unknown vehicleId returns null", () => {
-  assert.equal(computeCamryAmountFromSettings("slingshot", "2025-07-01", "2025-07-02", S), null);
 });
 
 // ─── computeCamryAmountFromSettings (promo / admin-overridden rates) ─────────

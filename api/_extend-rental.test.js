@@ -40,7 +40,6 @@ let sbClient     = null;   // null = no Supabase
 // Camry vehicle data used across tests
 const CAMRY_VEHICLE = {
   name:        "Camry 2012",
-  isSlingshot: false,
   pricePerDay: 55,
   weekly:      300,
   biweekly:    null,
@@ -61,7 +60,6 @@ mock.module("./_settings.js", {
       camry_weekly_rate:   300,
       camry_biweekly_rate: null,
       camry_monthly_rate:  null,
-      slingshot_daily_rate: 350,
       tax_rate:            0.095,
     }),
     applyTax: (amount, settings) =>

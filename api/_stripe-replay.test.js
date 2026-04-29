@@ -7,7 +7,6 @@
 //   2. PI already in revenue_records returns already_processed without calling any step
 //   3. balance_payment is rejected (422) — would create phantom duplicate booking
 //   4. rental_extension is rejected (422)
-//   5. slingshot_balance_payment is rejected (422)
 //   6. PI with missing vehicle_id is rejected (422)
 //   7. PI that is not succeeded is rejected (422)
 //   8. dry_run=true returns would_process without calling any step

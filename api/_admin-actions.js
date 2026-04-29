@@ -447,7 +447,7 @@ async function toolGetVehicles() {
           .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
       ]);
       const mileageInput = (vehicleRows || [])
-        .filter((r) => (r.data?.type || r.data?.vehicle_type || "") !== "slingshot")
+        .filter((r) => true)
         .map((r) => ({
           vehicle_id:               r.vehicle_id,
           total_mileage:            Number(r.mileage) || 0,
@@ -788,7 +788,7 @@ async function toolGetInsights() {
   const mileageData = (mileageResult.data || [])
     .filter((r) => {
       const type = r.data?.type || r.data?.vehicle_type || "";
-      return type !== "slingshot";
+      return true;
     })
     .map((r) => ({
       vehicle_id:               r.vehicle_id,
@@ -898,7 +898,7 @@ async function toolGetMileage() {
     .filter((r) => {
       // Use canonical type from vehicles.json first, then fall back to JSONB field.
       const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
-      return type !== "slingshot";
+      return true;
     })
     .map((r) => ({
       vehicle_id:               r.vehicle_id,
@@ -985,7 +985,6 @@ async function toolGetGpsTracking() {
   // are still visible (with null location fields).
   const vehicleMap = {};
   for (const v of trackedVehicles) {
-    if (v.vehicle_type === "slingshot") continue;
     vehicleMap[v.vehicle_id] = {
       vehicle_id:   v.vehicle_id,
       vehicle_name: v.vehicle_name || v.vehicle_id,
@@ -2766,13 +2765,9 @@ async function toolRecountCustomerCounts() {
   };
 }
 
-const PROTECTED_VEHICLES = new Set(["slingshot", "slingshot2", "slingshot3"]);
 
 async function toolDeleteVehicle({ vehicleId }) {
   if (!vehicleId) throw new Error("vehicleId is required");
-  if (PROTECTED_VEHICLES.has(vehicleId)) {
-    throw new Error(`Vehicle "${vehicleId}" is a core Slingshot unit and cannot be deleted via the AI assistant. Manage slingshots in the admin Fleet page.`);
-  }
 
   const vehicles = await loadAllVehicles();
   if (!vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" not found`);
@@ -2862,9 +2857,6 @@ function esc(str) {
 
 // ── Vehicles supported by manual booking ─────────────────────────────────────
 const MANUAL_BOOKING_VEHICLES = {
-  slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (Unit 2)",
-  slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };

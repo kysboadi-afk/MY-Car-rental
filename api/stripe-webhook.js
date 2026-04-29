@@ -212,7 +212,7 @@ function resolveBookingStatus(paymentType) {
 }
 
 // A canonical vehicle ID is all-lowercase alphanumeric, starts with a letter,
-// and is at least 2 characters long (e.g. "camry", "camry2012", "slingshot2",
+// and is at least 2 characters long (e.g. "camry", "camry2012", "camry2013",
 // "corolla2020").  No spaces, hyphens, or other special characters are allowed.
 // This pattern replaces a hardcoded vehicle list so that new vehicles are
 // supported automatically without code changes.
@@ -231,7 +231,7 @@ const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
  *       - replace non-alphanumeric chars with spaces
  *       - split into tokens
  *       - remove single-character tokens (strips variant designators such as
- *         "R" in "Slingshot R" so that the result is "slingshot", not "slingshotr")
+ *         normalizes vehicle name tokens)
  *       - join tokens without separator
  *
  * This is fully generic — no hardcoded model names.  New vehicles are handled
@@ -256,10 +256,10 @@ export function mapVehicleId(metadata = {}) {
   //   1. lowercase
   //   2. replace non-alphanumeric chars with spaces
   //   3. split into tokens
-  //   4. skip single-letter tokens (removes "r" from "Slingshot R")
+  //   4. skip single-letter tokens (removes trailing single letters from vehicle names)
   //   5. stop accumulating after the first numeric token (year/variant number)
   //      so trim-level suffixes like "SE" in "Camry 2013 SE" are dropped
-  //   6. join without separator → "camry2012", "camry2013", "slingshot2", "corolla2020"
+  //   6. join without separator → "camry2012", "camry2013", "corolla2020"
   let nameId = "";
   if (rawName) {
     const allTokens = rawName.toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/);

@@ -6,13 +6,11 @@
 //   PROCESSED (persistBooking called):
 //     full_payment                         — standard new booking
 //     reservation_deposit                  — Camry deposit; saved as reserved_unpaid
-//     slingshot_security_deposit           — Slingshot deposit; saved as reserved_unpaid
 //     unrecognised / missing payment_type  — safe generic fallback (same as webhook)
 //
 //   SKIPPED (webhook mutates existing booking; backfill must not create phantom booking):
 //     rental_extension
 //     balance_payment
-//     slingshot_balance_payment
 //     PI already in revenue_records
 //     PI missing vehicle_id / pickup_date / return_date
 //
@@ -100,7 +98,6 @@ mock.module("./_sms-templates.js", {
   namedExports: {
     DEFAULT_LOCATION:           "Los Angeles, CA",
     render:                     (t) => t,
-    EXTEND_CONFIRMED_SLINGSHOT: "",
     EXTEND_CONFIRMED_ECONOMY:   "",
   },
 });

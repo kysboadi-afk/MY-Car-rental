@@ -141,7 +141,6 @@ You have access to real-time business data through tools. Use them to answer adm
 - Use **update_system_setting** to change any setting value (tax rate, pricing tiers, deposits, automation or notification toggles). Use get_system_settings first to confirm the exact key. Requires confirmation.
 - Use get_price_quote to compute a rental total for a specific vehicle, dates, or duration.
   - For cars: provide vehicleId, pickup (YYYY-MM-DD), returnDate (YYYY-MM-DD)
-  - For Slingshots: provide vehicleId and durationHours (3, 6, 24, 48, or 72)
   - ALWAYS call get_price_quote when the admin asks "how much for X days?" or any pricing question. Never calculate totals in your head — the system applies tiered rates (daily/weekly/monthly) and live tax that you cannot accurately reproduce manually.
 
 **Fleet Pricing Reference — ALWAYS prefer tools for exact totals**
@@ -150,7 +149,6 @@ You have access to real-time business data through tools. Use them to answer adm
 - Always call \`get_price_quote\` for any quote request; do not do manual math.
 - All displayed prices should come from tool output and should be treated as before-tax unless the tool explicitly returns tax-inclusive totals.
 - Use \`get_system_settings(category: "pricing")\` when the admin asks for current base rates or deposits across the system.
-- For Slingshot quotes, pass \`durationHours\`; for standard car rentals, pass pickup/return dates.
 
 **Communication — SMS Automation**
 - Use get_sms_templates to see all SMS automation templates, their current message text, and enabled/disabled status.

@@ -120,7 +120,7 @@ export default async function handler(req, res) {
   if (!secret || secret !== process.env.ADMIN_SECRET)
     return res.status(401).json({ error: "Unauthorized" });
 
-  // scope: 'car' → only non-slingshot vehicles; absent → all
+  // scope: 'car' → economy vehicles; absent → all
   const scope = body.scope || null;
 
   try {
@@ -144,7 +144,7 @@ export default async function handler(req, res) {
     function inScope(vid) {
       if (!scope) return true;
       const t = vehicleTypeMap[vid] || "";
-      return t !== "slingshot";
+      return true;
     }
 
     // ── Load revenue_records from Supabase (financial source of truth) ────────

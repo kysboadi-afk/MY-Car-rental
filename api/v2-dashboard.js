@@ -221,7 +221,7 @@ export default async function handler(req, res) {
     // Filter vehicles by scope: "car" → exclude non-car types
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
       const type = v.type || "";
-      if (scope === "car" || scope === "cars") return type !== "slingshot";
+      if (scope === "car" || scope === "cars") return true;
       return true;
     });
     const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);

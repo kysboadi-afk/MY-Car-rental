@@ -9,7 +9,7 @@
 //   "<vehicleId>": {
 //     vehicle_id:     string,
 //     vehicle_name:   string,
-//     type:           "slingshot" | "economy",
+//     type:           "economy",
 //     vehicle_year:   number | null  (model year, e.g. 2021),
 //     purchase_date:  string  (YYYY-MM-DD or ""),
 //     purchase_price: number  (dollars),
@@ -25,7 +25,6 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const VEHICLES_PATH      = "vehicles.json";
 
 const EMPTY_VEHICLES = {
-  slingshot:  { vehicle_id: "slingshot",  vehicle_name: "Slingshot R",   type: "slingshot", vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
   camry:      { vehicle_id: "camry",      vehicle_name: "Camry 2012",    type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
   camry2013:  { vehicle_id: "camry2013",  vehicle_name: "Camry 2013 SE", type: "economy",   vehicle_year: null, purchase_date: "", purchase_price: 0, status: "active" },
 };
@@ -109,19 +108,16 @@ export async function saveVehicles(data, sha, message) {
  *
  * @param {string} vehicleId
  * @param {object} vdata - raw vehicle data from CARS, Supabase, or vehicles.json
- * @returns {{ vehicleId, name, type, isSlingshot, hourlyTiers, pricePerDay, weekly, biweekly, monthly, deposit }}
+ * @returns {{ vehicleId, name, type, hourlyTiers, pricePerDay, weekly, biweekly, monthly, deposit }}
  */
 function normalizeVehicleData(vehicleId, vdata) {
   const type = (vdata.type || vdata.vehicle_type || "car").toLowerCase();
-  const isSlingshot = type === "slingshot";
-  // For known slingshot vehicles in CARS, carry the hourly tier table through.
-  const hourlyTiers = isSlingshot ? (CARS[vehicleId]?.hourlyTiers || vdata.hourlyTiers || null) : null;
+  const hourlyTiers = vdata.hourlyTiers || null;
   const toNum = (v) => { const n = Number(v); return isNaN(n) ? null : n; };
   return {
     vehicleId,
     name:        vdata.vehicle_name || vdata.name || vehicleId,
     type,
-    isSlingshot,
     hourlyTiers,
     pricePerDay: toNum(vdata.daily_rate  ?? vdata.pricePerDay),
     weekly:      toNum(vdata.weekly      ?? vdata.weekly_rate),
@@ -152,12 +148,10 @@ export async function getVehicleById(vehicleId) {
   // ── 1. Known static vehicles (CARS) ─────────────────────────────────────
   if (CARS[vehicleId]) {
     const car = CARS[vehicleId];
-    const isSlingshot = !!car.hourlyTiers;
     return {
       vehicleId,
       name:        car.name,
-      type:        isSlingshot ? "slingshot" : "car",
-      isSlingshot,
+      type:        "car",
       hourlyTiers: car.hourlyTiers || null,
       pricePerDay: car.pricePerDay || null,
       weekly:      car.weekly      || null,

@@ -1,4 +1,4 @@
-// Tests for api/_pricing.js — computeAmount, computeSlingshotAmount, computeProtectionPlanCost, and computeBreakdownLines
+// Tests for api/_pricing.js — computeAmount, computeProtectionPlanCost, and computeBreakdownLines
 //
 // Run with: npm test
 import { test } from "node:test";

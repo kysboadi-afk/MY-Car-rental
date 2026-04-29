@@ -105,7 +105,6 @@ export default async function handler(req, res) {
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
           if (scope === "cars" || scope === "car") {
-            if (type === "slingshot") continue;
           }
 
           const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
@@ -139,7 +138,6 @@ export default async function handler(req, res) {
         if (status && status !== "active") continue;
         const type = v.type || "";
         if (scope === "cars" || scope === "car") {
-          if (type === "slingshot") continue;
         }
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
         let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
@@ -176,10 +174,10 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      // scope: "car" → exclude slingshot type; omit → all
+      // scope: "car" → economy type; omit → all
       const scope = (body.scope || "").toLowerCase();
       const scopeFilter = (type) => {
-        if (scope === "car" || scope === "cars") return type !== "slingshot";
+        if (scope === "car" || scope === "cars") return true;
         return true;
       };
 

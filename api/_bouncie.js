@@ -8,7 +8,7 @@
 //            A 401 response from the Bouncie API triggers an automatic token refresh.
 //
 // Vehicle mapping is stored in the vehicles table (bouncie_device_id column).
-// Slingshots (type = 'slingshot') are never tracked — all helpers skip them.
+// Only Bouncie-tracked economy vehicles are processed here.
 
 import { getSupabaseAdmin } from "./_supabase.js";
 
@@ -113,7 +113,7 @@ export async function getBouncieVehicles() {
 
 /**
  * Load all vehicles that are actively tracked: those with is_tracked=true or
- * a Bouncie IMEI assigned.  Slingshots are excluded regardless.
+ * a Bouncie IMEI assigned.
  *
  * @param {object} sb - Supabase admin client
  * @returns {Promise<Array>}
