@@ -16,7 +16,6 @@ import {
 import {
   loadPricingSettings,
   computeCarAmountFromVehicleData,
-  computeSlingshotAmountFromSettings,
   computeDppCostFromSettings,
 } from "./_settings.js";
 import { getVehicleById } from "./_vehicles.js";
@@ -47,7 +46,7 @@ export default async function handler(req, res) {
 
   try {
     const {
-      vehicleId, name, email, pickup, returnDate, protectionPlan, slingshotDuration,
+      vehicleId, name, email, pickup, returnDate, protectionPlan,
       bookingId, originalPaymentIntentId, depositPaymentIntentId,
     } = req.body;
 
@@ -55,15 +54,6 @@ export default async function handler(req, res) {
     const vehicleData = vehicleId ? await getVehicleById(vehicleId) : null;
     if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
-    }
-
-    const isSlingshotVehicle = vehicleData.isSlingshot;
-
-    // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
-    if (isSlingshotVehicle) {
-      if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
-        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
-      }
     }
 
     // Validate dates
@@ -88,14 +78,12 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
 
     // Compute amounts server-side — never trust a client-supplied amount.
-    const computedFullRental = isSlingshotVehicle
-      ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
-      : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
+    const computedFullRental = computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 
-    const days = isSlingshotVehicle ? 1 : computeRentalDays(pickup, returnDate);
+    const days = computeRentalDays(pickup, returnDate);
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
 
-    const depositPaid = isSlingshotVehicle ? settings.slingshot_booking_deposit : settings.camry_booking_deposit;
+    const depositPaid = settings.camry_booking_deposit;
     const preTaxAmount = computedFullRental + protectionCost;
     // Balance = pre-tax rental amount minus the deposit already paid.
     // Tax is calculated by Stripe automatically at checkout.
@@ -122,7 +110,6 @@ export default async function handler(req, res) {
         vehicle_name:          vehicleData.name,
         pickup_date:           pickup,
         return_date:           returnDate,
-        ...(isSlingshotVehicle ? { rental_duration: `${slingshotDuration} hours` } : {}),
         email,
         payment_type:          "balance_payment",
         original_payment_intent_id: originalPaymentIntentId || depositPaymentIntentId || "",

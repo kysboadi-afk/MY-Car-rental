@@ -9,56 +9,11 @@
 // Combined City of Los Angeles rate: CA state 7.25% + LA county 2.25% + LA city 0.75% = 10.25%
 export const LA_TAX_RATE = 0.1025;
 
-// Non-refundable reservation deposit for Slingshot bookings.
-// Retained for legacy compatibility but Slingshot now charges the full rental amount online.
-export const SLINGSHOT_BOOKING_DEPOSIT = 50;
-
 // Non-refundable reservation deposit for Camry "Reserve Now" mode.
 // Renters who choose "Reserve Now" pay this upfront; the remaining rental balance is due at pickup.
 export const CAMRY_BOOKING_DEPOSIT = 50;
 
-// Slingshot insurance-based authorization hold amounts (capture_method: "manual").
-// Option A (renter has own insurance): $500 hold — no DPP charged.
-// Option B (renter has no insurance): $300 hold — Damage Protection Plan is automatically included.
-export const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
-export const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
-
 export const CARS = {
-  slingshot:  {
-    name: "Slingshot R",
-    // Slingshot uses hourly/daily tier pricing.
-    // Security deposit = rental tier price (refundable, charged at booking).
-    // Total charged = tier price × 2 (rental + deposit) + tax.
-    hourlyTiers: [
-      { hours: 3,  price: 200 },
-      { hours: 6,  price: 250 },
-      { hours: 24, price: 350 },
-      { hours: 48, price: 700 },
-      { hours: 72, price: 1050 },
-    ],
-  },
-  slingshot2: {
-    name: "Slingshot R",
-    // Same pricing tiers as slingshot — different unit with different photos.
-    hourlyTiers: [
-      { hours: 3,  price: 200 },
-      { hours: 6,  price: 250 },
-      { hours: 24, price: 350 },
-      { hours: 48, price: 700 },
-      { hours: 72, price: 1050 },
-    ],
-  },
-  slingshot3: {
-    name: "Slingshot R",
-    // Same pricing tiers as slingshot — third unit.
-    hourlyTiers: [
-      { hours: 3,  price: 200 },
-      { hours: 6,  price: 250 },
-      { hours: 24, price: 350 },
-      { hours: 48, price: 700 },
-      { hours: 72, price: 1050 },
-    ],
-  },
   camry:      { name: "Camry 2012",     pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
   camry2013:  { name: "Camry 2013 SE",  pricePerDay: 55,  weekly: 350, biweekly: 650, monthly: 1300, deposit: 0 },
 };
@@ -69,34 +24,11 @@ export const CARS = {
 export const FLEET_VEHICLE_IDS = Object.keys(CARS);
 
 // Damage Protection Plan rates — must stay in sync with car.js client-side constants.
-// Legacy tiered rates (used for Slingshot Option B and backward-compatibility).
-export const PROTECTION_PLAN_WEEKLY   = 85;   // $85/week  (7-day block)
-export const PROTECTION_PLAN_BIWEEKLY = 150;  // $150/2 weeks (14-day block)
-export const PROTECTION_PLAN_MONTHLY  = 295;  // $295/month (30-day block)
-// Legacy daily rate (Slingshot Option B, and default when no tier is specified).
-export const PROTECTION_PLAN_DAILY    = Math.ceil(PROTECTION_PLAN_WEEKLY / 7); // ≈ $13/day
 
 // Economy car protection plan tiers (flat daily rates — no weekly/monthly discount).
 export const PROTECTION_PLAN_BASIC    = 15;  // $15/day — limits liability to $2,500
 export const PROTECTION_PLAN_STANDARD = 30;  // $30/day — limits liability to $1,000
 export const PROTECTION_PLAN_PREMIUM  = 50;  // $50/day — limits liability to $500
-
-/**
- * Compute the total charge for an hourly/daily-tier rental (Slingshot vehicles).
- * The security deposit equals the rental tier price (deposit = tier.price).
- * Total = tier.price × 2 (rental + refundable security deposit).
- * @param {number} durationHours - rental duration in hours (must be 3, 6, 24, 48, or 72)
- * @param {string} [vehicleId="slingshot"] - key from CARS for the vehicle
- * @returns {number|null} total in dollars (rental + deposit), or null if invalid
- */
-export function computeSlingshotAmount(durationHours, vehicleId = "slingshot") {
-  const car = CARS[vehicleId];
-  if (!car || !car.hourlyTiers) return null;
-  const tier = car.hourlyTiers.find(t => t.hours === durationHours);
-  if (!tier) return null;
-  // Deposit equals the rental tier price; total = tier.price × 2.
-  return tier.price * 2;
-}
 
 /**
  * Compute the number of rental days from two ISO date strings.
@@ -114,12 +46,9 @@ export function computeRentalDays(pickup, returnDate) {
 /**
  * Compute the Damage Protection Plan cost for a given number of rental days.
  *
- * When `tier` is "basic", "standard", or "premium" (Economy car tiers), a flat
- * daily rate is applied for all days — no weekly/monthly discount buckets.
- *
- * When `tier` is null/undefined (Slingshot Option B and legacy callers), the
- * original greedy monthly → biweekly → weekly → daily logic is used so that
- * existing tests and Slingshot pricing remain unchanged.
+ * Applies a flat daily rate based on the chosen tier:
+ * "basic" ($15/day), "standard" ($30/day), "premium" ($50/day).
+ * Returns 0 for unknown/null tier.
  *
  * @param {number} days  - number of rental days (min 1)
  * @param {string|null} [tier=null] - "basic" | "standard" | "premium" | null
@@ -130,26 +59,7 @@ export function computeProtectionPlanCost(days, tier = null) {
   if (tier === "basic")    return d * PROTECTION_PLAN_BASIC;
   if (tier === "standard") return d * PROTECTION_PLAN_STANDARD;
   if (tier === "premium")  return d * PROTECTION_PLAN_PREMIUM;
-  // Legacy / Slingshot Option B: greedy monthly → biweekly → weekly → daily
-  let remaining = d;
-  let cost = 0;
-  if (remaining >= 30) {
-    const months = Math.floor(remaining / 30);
-    cost += months * PROTECTION_PLAN_MONTHLY;
-    remaining = remaining % 30;
-  }
-  if (remaining >= 14) {
-    const twoWeeks = Math.floor(remaining / 14);
-    cost += twoWeeks * PROTECTION_PLAN_BIWEEKLY;
-    remaining = remaining % 14;
-  }
-  if (remaining >= 7) {
-    const weeks = Math.floor(remaining / 7);
-    cost += weeks * PROTECTION_PLAN_WEEKLY;
-    remaining = remaining % 7;
-  }
-  cost += remaining * PROTECTION_PLAN_DAILY;
-  return cost;
+  return 0;
 }
 
 /**
@@ -202,8 +112,6 @@ export function computeAmount(vehicleId, pickup, returnDate) {
 export function computeBreakdownLines(vehicleId, pickup, returnDate, protectionPlan = false, protectionPlanTier = null) {
   const car = CARS[vehicleId];
   if (!car) return null;
-  // Hourly-tier vehicles (Slingshot) do not use daily/weekly pricing
-  if (car.hourlyTiers) return null;
 
   const lines = [];
   let remaining = computeRentalDays(pickup, returnDate);
