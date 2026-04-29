@@ -153,13 +153,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     }
 
     // Application-level guard: verify the booking row exists before writing revenue.
-    // This complements (rather than duplicates) the DB trigger added in migration 0060:
-    // the JS check runs before the INSERT/UPDATE reaches the DB, providing a cleaner
-    // error message and a traceable log line in the pipeline trace.  The trigger acts
-    // as the hard backstop if this check is ever bypassed (e.g., direct SQL writes).
+    // Also read vehicle_id and return_date so we can backfill them on the revenue
+    // record when the caller did not provide them (e.g. processStripePayment, which
+    // passes only bookingId + payment data).  This ensures every revenue record
+    // written at insert time carries correct linking fields.
     const { data: bookingRow, error: bookingLookupErr } = await sb
       .from("bookings")
-      .select("id")
+      .select("id, vehicle_id, return_date")
       .eq("booking_ref", bookingRef)
       .maybeSingle();
     if (bookingLookupErr) {
@@ -167,6 +167,26 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     }
     if (!bookingRow?.id) {
       throw new Error(`missing booking for revenue booking_id=${bookingRef}`);
+    }
+
+    // Use the booking's vehicle_id / return_date as fallbacks when the caller
+    // did not supply them — this covers processStripePayment and other callers
+    // that pass only payment identifiers without full booking context.
+    const resolvedVehicleId = booking.vehicleId || normalizeVehicleId(bookingRow.vehicle_id);
+    const resolvedReturnDate = booking.returnDate ||
+      (bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null);
+
+    if (!resolvedVehicleId) {
+      console.warn(
+        `_booking-automation autoCreateRevenueRecord: booking ${bookingRef} has no vehicle_id — ` +
+        "revenue record will have vehicle_id=null",
+      );
+    }
+    if (!resolvedReturnDate) {
+      console.warn(
+        `_booking-automation autoCreateRevenueRecord: booking ${bookingRef} has no return_date — ` +
+        "revenue record will have return_date=null",
+      );
     }
 
     // Resolve the Stripe PaymentIntent ID.
@@ -226,12 +246,12 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       // For all other types, honour the caller-provided value (rarely set).
       original_booking_id: recordType === "extension" ? bookingRef : (booking.originalBookingId || null),
       payment_intent_id:   piId || null,
-      vehicle_id:          normalizeVehicleId(booking.vehicleId),
+      vehicle_id:          resolvedVehicleId || null,
       customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
       customer_email:      normalizeEmail(booking.email),
       pickup_date:         booking.pickupDate  || null,
-      return_date:         booking.returnDate  || null,
+      return_date:         resolvedReturnDate  || null,
       gross_amount:        gross,
       deposit_amount:      0,
       refund_amount:       0,
