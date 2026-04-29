@@ -886,6 +886,35 @@ export default async function handler(req, res) {
       // Non-fatal — if bookings.json is unavailable we still create stub records.
     }
 
+    // Also load bookings from Supabase, keyed by payment_intent_id, so the
+    // auto-create path can use the canonical booking_ref rather than a synthetic
+    // "stripe-pi_xxx" key when the booking already exists in the database.
+    // This prevents creating orphan revenue records for bookings that are fully
+    // present in Supabase but were not yet written to bookings.json.
+    const supabaseBookingsByPI = new Map(); // payment_intent_id → { bookingId, vehicleId, ... }
+    try {
+      const { data: sbBookings } = await sb
+        .from("bookings")
+        .select("booking_ref, payment_intent_id, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date")
+        .not("payment_intent_id", "is", null)
+        .limit(500);
+      for (const b of sbBookings || []) {
+        if (b.payment_intent_id) {
+          supabaseBookingsByPI.set(b.payment_intent_id, {
+            bookingId:   b.booking_ref,
+            vehicleId:   b.vehicle_id,
+            name:        b.customer_name,
+            phone:       b.customer_phone,
+            email:       b.customer_email,
+            pickupDate:  b.pickup_date,
+            returnDate:  b.return_date,
+          });
+        }
+      }
+    } catch (_) {
+      // Non-fatal — Supabase bookings lookup is best-effort.
+    }
+
     // Build lookup maps for matching
     const byPIId      = new Map(); // payment_intent_id → record
     const byBookingId = new Map(); // booking_id → record (for extension rows that store PI id as booking_id)
@@ -1162,9 +1191,14 @@ export default async function handler(req, res) {
       if (!matchedRecord) {
         // AUTO-CREATE: build a new revenue_record from Stripe + booking data
         // so the payment appears in the Revenue Tracker without manual intervention.
+        // Priority order for booking lookup:
+        //   1. bookings.json (in-memory) — fastest, already loaded
+        //   2. Supabase bookings by payment_intent_id — catches bookings that are in
+        //      Supabase but were not synced to bookings.json (e.g. after manual edits)
         const booking =
           (payment.metadata_booking_id ? bookingsByBookingId.get(payment.metadata_booking_id) : null) ||
           bookingsByPI.get(payment.payment_intent_id) ||
+          supabaseBookingsByPI.get(payment.payment_intent_id) ||
           null;
 
         // Derive a stable, unique booking_id — prefer the one from metadata/bookings.
@@ -1174,7 +1208,7 @@ export default async function handler(req, res) {
           ("stripe-" + payment.payment_intent_id);
 
         // Mark as orphan when booking_id is a synthetic "stripe-<pi>" key — no real
-        // booking row was found in either bookings.json or Stripe metadata.
+        // booking row was found in either bookings.json, Supabase, or Stripe metadata.
         // Real "bk-…" refs from metadata or bookings.json are left as is_orphan=false
         // so the DB trigger enforces they have a matching bookings row.
         const isOrphanAutoCreate = newBookingId.startsWith("stripe-");
@@ -1328,10 +1362,13 @@ export default async function handler(req, res) {
 
     // STEP 10: Auto-dedup — collapse any duplicate records created in prior runs
     // (e.g. "stripe-pi_xxx" auto-creates that overlap with booking-synced "bk-xxx" records).
+    // Merge bookingsByPI (from bookings.json) with supabaseBookingsByPI (from Supabase)
+    // so the dedup step can resolve synthetic records against Supabase-only bookings too.
     let deduped = 0;
     if (!dryRun) {
       try {
-        const { merged } = await deduplicateRevenueRecords(sb, bookingsByPI);
+        const mergedBookingsByPI = new Map([...bookingsByPI, ...supabaseBookingsByPI]);
+        const { merged } = await deduplicateRevenueRecords(sb, mergedBookingsByPI);
         deduped = merged;
       } catch (dedupErr) {
         console.warn("stripe-reconcile: auto-dedup failed (non-fatal):", dedupErr.message);
