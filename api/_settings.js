@@ -15,15 +15,10 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import {
   LA_TAX_RATE,
   CARS,
-  SLINGSHOT_BOOKING_DEPOSIT,
   CAMRY_BOOKING_DEPOSIT,
   PROTECTION_PLAN_BASIC,
   PROTECTION_PLAN_STANDARD,
   PROTECTION_PLAN_PREMIUM,
-  PROTECTION_PLAN_DAILY,
-  PROTECTION_PLAN_WEEKLY,
-  PROTECTION_PLAN_BIWEEKLY,
-  PROTECTION_PLAN_MONTHLY,
   computeRentalDays,
 } from "./_pricing.js";
 
@@ -36,15 +31,7 @@ export const PRICING_DEFAULTS = {
   camry_weekly_rate:          CARS.camry.weekly,
   camry_biweekly_rate:        CARS.camry.biweekly,
   camry_monthly_rate:         CARS.camry.monthly,
-  // Slingshot tier rates (price before security deposit)
-  slingshot_3hr_rate:         200,
-  slingshot_6hr_rate:         250,
-  slingshot_daily_rate:       350,  // 24 hr / 1 day
-  slingshot_2day_rate:        700,
-  slingshot_3day_rate:        1050,
   // Deposits / booking fees
-  // Note: Slingshot security deposit = rental tier price (dynamic, not a fixed admin setting).
-  slingshot_booking_deposit:  SLINGSHOT_BOOKING_DEPOSIT,
   camry_booking_deposit:      CAMRY_BOOKING_DEPOSIT,
   // Booking change fee (charged for each change after the first free one)
   booking_change_fee:         25,
@@ -149,45 +136,18 @@ export function computeCamryAmountFromSettings(vehicleId, pickup, returnDate, se
 }
 
 /**
- * Compute total pre-tax + deposit charge for a Slingshot rental using live rates.
- * Security deposit = rental tier price. Total = tier price × 2.
- *
- * @param {number} durationHours - 3 | 6 | 24 | 48 | 72
- * @param {object} settings      - result of loadPricingSettings()
- * @returns {number|null} total in dollars (tier price × 2), or null
- */
-export function computeSlingshotAmountFromSettings(durationHours, settings) {
-  const tierMap = {
-    3:  settings.slingshot_3hr_rate,
-    6:  settings.slingshot_6hr_rate,
-    24: settings.slingshot_daily_rate,
-    48: settings.slingshot_2day_rate,
-    72: settings.slingshot_3day_rate,
-  };
-  const tierPrice = tierMap[Number(durationHours)];
-  if (tierPrice == null) return null;
-  // Deposit = tier price; total = tier price × 2.
-  return tierPrice * 2;
-}
-
-/**
  * Compute the total rental amount for any vehicle using live settings.
- * Routes to the appropriate helper based on whether the vehicle uses hourly tiers
- * (Slingshot) or daily/weekly tiers (Camry / economy).
+ * Routes to the appropriate helper based on the vehicle type.
  *
  * @param {string} vehicleId     - key in CARS
  * @param {string} pickup        - ISO date string
  * @param {string} returnDate    - ISO date string
  * @param {object} settings      - result of loadPricingSettings()
- * @param {number} [slingshotDurationHours] - required for Slingshot vehicles
  * @returns {number|null}
  */
-export function computeAmountFromSettings(vehicleId, pickup, returnDate, settings, slingshotDurationHours) {
+export function computeAmountFromSettings(vehicleId, pickup, returnDate, settings) {
   const car = CARS[vehicleId];
   if (!car) return null;
-  if (car.hourlyTiers) {
-    return computeSlingshotAmountFromSettings(slingshotDurationHours, settings);
-  }
   return computeCamryAmountFromSettings(vehicleId, pickup, returnDate, settings);
 }
 
@@ -206,13 +166,7 @@ export function computeDppCostFromSettings(days, tier) {
   if (tier === "basic")    return d * PROTECTION_PLAN_BASIC;
   if (tier === "standard") return d * PROTECTION_PLAN_STANDARD;
   if (tier === "premium")  return d * PROTECTION_PLAN_PREMIUM;
-  // Legacy / Slingshot Option B greedy logic
-  let remaining = d, cost = 0;
-  if (remaining >= 30) { const m = Math.floor(remaining / 30); cost += m * PROTECTION_PLAN_MONTHLY; remaining %= 30; }
-  if (remaining >= 14) { const b = Math.floor(remaining / 14); cost += b * PROTECTION_PLAN_BIWEEKLY; remaining %= 14; }
-  if (remaining >= 7)  { const w = Math.floor(remaining / 7);  cost += w * PROTECTION_PLAN_WEEKLY;  remaining %= 7;  }
-  cost += remaining * PROTECTION_PLAN_DAILY;
-  return cost;
+  return 0;
 }
 
 /**
@@ -291,8 +245,7 @@ export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate,
  *   vehicleData.biweekly     — bi-weekly rate (optional; applied for 14+ days)
  *   vehicleData.monthly      — monthly rate (optional; applied for 30+ days)
  *
- * Returns null for slingshot vehicles (they use hourly tiers) or when the
- * vehicle data is missing a daily rate.
+ * Returns null when the vehicle data is missing a daily rate.
  *
  * @param {object} vehicleData  - result of getVehicleById() from _vehicles.js
  * @param {string} pickup       - ISO date string, e.g. "2025-07-01"
@@ -301,7 +254,7 @@ export function computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate,
  * @returns {number|null}
  */
 export function computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings) {
-  if (!vehicleData || vehicleData.isSlingshot) return null;
+  if (!vehicleData) return null;
 
   // Delegate to the existing settings-aware function for known economy cars.
   if (vehicleData.vehicleId === "camry" || vehicleData.vehicleId === "camry2013") {

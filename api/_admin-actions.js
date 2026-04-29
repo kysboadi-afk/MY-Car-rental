@@ -18,7 +18,6 @@ import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import {
   loadPricingSettings,
   computeBreakdownLinesFromSettings,
-  computeSlingshotAmountFromSettings,
   applyTax,
 } from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
@@ -448,7 +447,7 @@ async function toolGetVehicles() {
           .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
       ]);
       const mileageInput = (vehicleRows || [])
-        .filter((r) => (r.data?.type || r.data?.vehicle_type || "") !== "slingshot")
+        .filter((r) => true)
         .map((r) => ({
           vehicle_id:               r.vehicle_id,
           total_mileage:            Number(r.mileage) || 0,
@@ -470,7 +469,7 @@ async function toolGetVehicles() {
     const revenue    = vBookings.reduce((s, b) => s + (b.amountPaid || revenueFromBooking(b)), 0);
     const bookCount  = sbCounts ? (sbCounts[vehicleId] ?? vBookings.length) : vBookings.length;
     const vType      = v.type || v.vehicle_type || "";
-    const isCar      = vType !== "slingshot";
+    const isCar      = true;
 
     const { priority, reason: priorityReason } = computeVehiclePriority(v, mileageStatMap[vehicleId] || null);
 
@@ -568,9 +567,6 @@ async function toolCreateVehicle({ vehicle_id: requestedVehicleId, name, type, p
   if (!name || !String(name).trim()) throw new Error("name is required");
 
   const resolvedType = (type || "car").toLowerCase();
-  if (resolvedType === "slingshot") {
-    throw new Error("Slingshots are managed separately and cannot be created via this tool.");
-  }
 
   const dailyRate = Number(price_per_day);
   if (!price_per_day || isNaN(dailyRate) || dailyRate <= 0) {
@@ -792,7 +788,7 @@ async function toolGetInsights() {
   const mileageData = (mileageResult.data || [])
     .filter((r) => {
       const type = r.data?.type || r.data?.vehicle_type || "";
-      return type !== "slingshot";
+      return true;
     })
     .map((r) => ({
       vehicle_id:               r.vehicle_id,
@@ -902,7 +898,7 @@ async function toolGetMileage() {
     .filter((r) => {
       // Use canonical type from vehicles.json first, then fall back to JSONB field.
       const type = vehicleTypeMap[r.vehicle_id] || r.data?.type || r.data?.vehicle_type || "";
-      return type !== "slingshot";
+      return true;
     })
     .map((r) => ({
       vehicle_id:               r.vehicle_id,
@@ -989,7 +985,6 @@ async function toolGetGpsTracking() {
   // are still visible (with null location fields).
   const vehicleMap = {};
   for (const v of trackedVehicles) {
-    if (v.vehicle_type === "slingshot") continue;
     vehicleMap[v.vehicle_id] = {
       vehicle_id:   v.vehicle_id,
       vehicle_name: v.vehicle_name || v.vehicle_id,
@@ -1408,12 +1403,8 @@ async function toolGetSystemSettings({ category } = {}) {
   // Hardcoded defaults (mirrors v2-system-settings.js)
   const defaults = [
     { key: "la_tax_rate",                value: 0.1025, description: "LA combined sales tax rate",             category: "tax" },
-    { key: "slingshot_daily_rate",       value: 350,    description: "Slingshot R daily rate (USD)",           category: "pricing" },
-    { key: "slingshot_3hr_rate",         value: 200,    description: "Slingshot R 3-hour rate (USD)",          category: "pricing" },
-    { key: "slingshot_6hr_rate",         value: 250,    description: "Slingshot R 6-hour rate (USD)",          category: "pricing" },
     { key: "camry_daily_rate",           value: 55,     description: "Camry daily rate (USD)",                 category: "pricing" },
     { key: "camry_weekly_rate",          value: 350,    description: "Camry weekly rate (USD)",                category: "pricing" },
-    { key: "slingshot_security_deposit", value: 150,    description: "Slingshot security deposit (USD)",       category: "pricing" },
     { key: "auto_block_dates_on_approve",value: true,   description: "Auto-block dates when booking approved", category: "automation" },
     { key: "notify_sms_on_approve",      value: true,   description: "Send SMS on booking approval",           category: "notification" },
     { key: "notify_email_on_approve",    value: true,   description: "Send email on booking approval",         category: "notification" },
@@ -1426,11 +1417,10 @@ async function toolGetSystemSettings({ category } = {}) {
 /**
  * Compute a rental price quote using the live pricing system.
  * Routes to the appropriate settings-based helper depending on vehicle type:
- *   - Slingshot vehicles → computeSlingshotAmountFromSettings
  *   - Known economy cars (camry/camry2013) → computeBreakdownLinesFromSettings
  *   - Newly created "car" type vehicles → daily_rate × days + live tax
  */
-async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours }) {
+async function toolGetPriceQuote({ vehicleId, pickup, returnDate }) {
   if (!vehicleId) return { error: "vehicleId is required" };
 
   const settings = await loadPricingSettings();
@@ -1440,37 +1430,6 @@ async function toolGetPriceQuote({ vehicleId, pickup, returnDate, durationHours 
   if (!vehicle) return { error: `Vehicle "${vehicleId}" not found` };
 
   const vType = (vehicle.type || vehicle.vehicle_type || "").toLowerCase();
-  const isSlingshot = vType === "slingshot";
-
-  // ── Slingshot (hourly-tier pricing) ───────────────────────────────────────
-  if (isSlingshot) {
-    const hours = Number(durationHours);
-    if (!hours || ![3, 6, 24, 48, 72].includes(hours)) {
-      return { error: "durationHours is required for Slingshot vehicles and must be 3, 6, 24, 48, or 72" };
-    }
-    // computeSlingshotAmountFromSettings returns (tier price × 2): rental + refundable deposit.
-    // The rental fee equals the tier price; the security deposit equals the same tier price.
-    const totalCharged = computeSlingshotAmountFromSettings(hours, settings);
-    const tierPrice    = totalCharged / 2; // rental = deposit = tier price
-    const tierLabel    = hours >= 24 ? `${hours / 24}-day` : `${hours}-hour`;
-    return {
-      vehicleId,
-      vehicle_name: vehicle.vehicle_name || vehicleId,
-      type:         "slingshot",
-      duration:     `${hours} hours`,
-      breakdown: [
-        `${tierLabel} rental: $${tierPrice}`,
-        `Refundable security deposit: $${tierPrice}`,
-        `Total charged at booking: $${totalCharged}`,
-      ],
-      rental_amount:    tierPrice,
-      security_deposit: tierPrice,
-      total:            totalCharged,
-      note: "Security deposit is refundable. Tax is not applied to Slingshot rentals.",
-    };
-  }
-
-  // ── Economy / Car vehicles (daily/weekly pricing) ─────────────────────────
   if (!pickup || !returnDate) {
     return { error: "pickup and returnDate (YYYY-MM-DD) are required for car price quotes" };
   }
@@ -2806,13 +2765,9 @@ async function toolRecountCustomerCounts() {
   };
 }
 
-const PROTECTED_VEHICLES = new Set(["slingshot", "slingshot2", "slingshot3"]);
 
 async function toolDeleteVehicle({ vehicleId }) {
   if (!vehicleId) throw new Error("vehicleId is required");
-  if (PROTECTED_VEHICLES.has(vehicleId)) {
-    throw new Error(`Vehicle "${vehicleId}" is a core Slingshot unit and cannot be deleted via the AI assistant. Manage slingshots in the admin Fleet page.`);
-  }
 
   const vehicles = await loadAllVehicles();
   if (!vehicles[vehicleId]) throw new Error(`Vehicle "${vehicleId}" not found`);
@@ -2902,9 +2857,6 @@ function esc(str) {
 
 // ── Vehicles supported by manual booking ─────────────────────────────────────
 const MANUAL_BOOKING_VEHICLES = {
-  slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (Unit 2)",
-  slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };

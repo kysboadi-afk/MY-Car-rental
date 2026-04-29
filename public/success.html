@@ -113,14 +113,8 @@
       var urlParams = new URLSearchParams(window.location.search);
       var vehicleId = urlParams.get("vehicle");
       var tryAgainHref = vehicleId
-        ? (vehicleId.startsWith("slingshot") ? "slingshot.html" : "car.html?vehicle=" + encodeURIComponent(vehicleId))
+        ? "car.html?vehicle=" + encodeURIComponent(vehicleId)
         : "cars.html";
-      // For slingshot bookings the secondary "Back to Homepage" link should also
-      // return the user to the slingshot landing page.
-      if (vehicleId && vehicleId.startsWith("slingshot")) {
-        var secondary = document.getElementById("homeLinkSecondary");
-        if (secondary) { secondary.href = "slingshot.html"; }
-      }
 
       // Read and immediately clear the stored PaymentIntent client secret so it
       // cannot be replayed.  Used by Path 3 when Stripe did not append URL params.

@@ -46,7 +46,6 @@ const MOCK_LISTS = [
   { id: 2, name: "approved" },
   { id: 3, name: "waitlist" },
   { id: 4, name: "booked" },
-  { id: 5, name: "slingshot" },
   { id: 6, name: "economy" },
   { id: 7, name: "past_customer" },
 ];
@@ -56,10 +55,6 @@ const MOCK_LISTS_RESPONSE = { resources: MOCK_LISTS };
 const { upsertContact, vehicleTag } = await import("./_contacts.js");
 
 // ─── vehicleTag ────────────────────────────────────────────────────────────────
-
-test("vehicleTag returns 'slingshot' for slingshot", () => {
-  assert.equal(vehicleTag("slingshot"), "slingshot");
-});
 
 test("vehicleTag returns 'economy' for camry", () => {
   assert.equal(vehicleTag("camry"), "economy");
@@ -139,13 +134,13 @@ test("upsertContact passes multiple list IDs when multiple tags are given", asyn
     { status: 201, body: { id: 101 } },  // create contact
   ]);
 
-  await upsertContact("+13105550101", "Bob Smith", { addTags: ["waitlist", "slingshot"] });
+  await upsertContact("+13105550101", "Bob Smith", { addTags: ["waitlist", "booked"] });
 
   const calls = globalThis.fetch.calls;
   const body = JSON.parse(calls[2].body);
-  // lists should contain IDs for "waitlist" (3) and "slingshot" (5)
+  // lists should contain IDs for "waitlist" (3) and "booked" (4)
   const listIds = body.lists.split(",").map(Number).sort((a, b) => a - b);
-  assert.deepEqual(listIds, [3, 5]);
+  assert.deepEqual(listIds, [3, 4]);
 
   globalThis.fetch = originalFetch;
 });

@@ -4,7 +4,7 @@
 // GET  /api/maintenance-alerts  — Vercel cron trigger (no auth required from Vercel)
 // POST /api/maintenance-alerts  — Manual trigger; requires Authorization: Bearer <ADMIN_SECRET|CRON_SECRET>
 //
-// Applies ONLY to Bouncie-tracked vehicles (bouncie_device_id IS NOT NULL, non-slingshot).
+// Applies ONLY to Bouncie-tracked vehicles (bouncie_device_id IS NOT NULL).
 // Only sends alerts when the vehicle has an ACTIVE booking (status = "active_rental").
 //
 // Flow per vehicle × service type (oil | brakes | tires):
@@ -300,7 +300,7 @@ export default async function handler(req, res) {
 
     const trackedVehicles = (vehicleRows || []).filter((r) => {
       const type = r.data?.type || r.data?.vehicle_type || "";
-      return type !== "slingshot";
+      return true;
     });
 
     if (trackedVehicles.length === 0) {
@@ -308,7 +308,7 @@ export default async function handler(req, res) {
         ran_at:      new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
         alerts_sent: 0,
-        detail:      "No Bouncie-tracked non-slingshot vehicles found",
+        detail:      "No Bouncie-tracked vehicles found",
       });
     }
 

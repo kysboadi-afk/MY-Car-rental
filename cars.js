@@ -78,14 +78,6 @@ function buildEconomyCard(v, pricing) {
         <div class="price-item">${biweekly} / <span data-i18n="fleet.unitBiweek">${t("fleet.unitBiweek", "2 weeks")}</span></div>
         <div class="price-item">${monthly} / <span data-i18n="fleet.unitMonth">${t("fleet.unitMonth", "month")}</span> <span class="best-value-tag" data-i18n="fleet.bestValue">${t("fleet.bestValue", "Best Value")}</span></div>
       </div>
-      <div class="earnings-breakdown">
-        <p class="earnings-breakdown-title" data-i18n="fleet.driverEarnings">${t("fleet.driverEarnings", "💰 Driver Earnings Example (Los Angeles)")}</p>
-        <ul class="earnings-breakdown-list">
-          <li><span data-i18n="fleet.earningsLi1">${t("fleet.earningsLi1", "Avg. weekly Uber/Lyft earnings:")}</span> <strong>$1,200 – $1,600</strong></li>
-          <li><span data-i18n="fleet.earningsLi2">${t("fleet.earningsLi2", "Weekly rental:")}</span> <strong>${weekly}</strong></li>
-          <li><span data-i18n="fleet.earningsLi3">${t("fleet.earningsLi3", "Est. driver take-home:")}</span> <strong>$850 – $1,250</strong></li>
-        </ul>
-      </div>
       ${scarcity}
       <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
         <button class="select-btn" id="select-btn-${vid}" data-i18n="fleet.bookNow">${t("fleet.bookNow", "Book Now")}</button>
@@ -94,39 +86,9 @@ function buildEconomyCard(v, pricing) {
   </div>`;
 }
 
-function buildSlingshotCard(v, pricing) {
-  const vid  = esc(v.vehicle_id);
-  const name = esc(v.vehicle_name || v.vehicle_id);
-  const img  = esc(v.cover_image || "/images/slingshot.jpg");
-
-  const r3h  = pricing ? fmtMoney(pricing.slingshot["3hr"])  : "$200";
-  const r6h  = pricing ? fmtMoney(pricing.slingshot["6hr"])  : "$250";
-  const r24h = pricing ? fmtMoney(pricing.slingshot["24hr"]) : "$350";
-  const dep  = pricing ? fmtMoney(pricing.slingshot.booking_deposit)  : "$50";
-  const sec  = pricing ? fmtMoney(pricing.slingshot.security_deposit) : "$150";
-
-  return `<div class="car-card" data-category="slingshot" data-vehicle="${vid}">
-    <img src="${img}" alt="${name}" loading="lazy">
-    <div class="car-info">
-      <span class="status-badge available" id="status-badge-${vid}" data-i18n="fleet.available">● ${t("fleet.available", "Available")}</span>
-      <h3>${name}</h3>
-      <p class="car-subtitle">Sports 2-Seater</p>
-      <p class="price-list-label" data-i18n="fleet.rentalPlans">${t("fleet.rentalPlans", "Rental Plans")}</p>
-      <div class="price-list">
-        <div class="price-item">${r3h} / 3 hrs</div>
-        <div class="price-item price-item--popular">${r6h} / 6 hrs <span class="popular-tag" data-i18n="fleet.mostPopular">${t("fleet.mostPopular", "Most Popular")}</span></div>
-        <div class="price-item">${r24h} / 24 hrs</div>
-      </div>
-      <p class="scarcity-notice">🔒 ${dep} booking deposit · ${sec} security deposit at pickup</p>
-      <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
-        <button class="select-btn" id="select-btn-${vid}" data-i18n="fleet.bookNow">${t("fleet.bookNow", "Book Now")}</button>
-      </a>
-    </div>
-  </div>`;
-}
 
 function buildCardHTML(v, pricing) {
-  return v.type === "slingshot" ? buildSlingshotCard(v, pricing) : buildEconomyCard(v, pricing);
+  return buildEconomyCard(v, pricing);
 }
 
 // ─── Loading / empty states ───────────────────────────────────────────────────
@@ -249,65 +211,44 @@ async function loadFleetStatus() {
   }
 }
 
-// ─── Rideshare info section visibility ───────────────────────────────────────
-// Sections only relevant to rideshare/economy vehicles (not Slingshot rentals).
-const rideshareOnlySections = [
-  document.querySelector(".why-drivers-section"),
-  document.querySelector(".fleet-cta-section"),
-];
-
-function updateRideshareVisibility(vehicles) {
-  const hasEconomy = vehicles.some(v => v.type !== "slingshot");
-  rideshareOnlySections.forEach(el => {
-    if (el) el.style.display = hasEconomy ? "" : "none";
-  });
-}
-
-// ─── Main fleet loader ────────────────────────────────────────────────────────
+// ─── Fleet loader ─────────────────────────────────────────────────────────────
 async function loadFleet() {
   const grid = document.getElementById("car-grid");
   if (!grid) return;
 
-  showLoadingState(grid);
+  // Only show loading spinner if no static cards are already present
+  const hasStaticCards = grid.querySelector(".car-card");
+  if (!hasStaticCards) showLoadingState(grid);
 
-  const [vehiclesResult, pricingResult] = await Promise.allSettled([
-    fetch(API_BASE + "/api/v2-vehicles").then(r => r.ok ? r.json() : []),
-    fetch(API_BASE + "/api/public-pricing").then(r => r.ok ? r.json() : null),
-  ]);
+  let vehicles = [];
+  let pricing  = null;
 
-  const vehicles = vehiclesResult.status === "fulfilled" ? (vehiclesResult.value || []) : [];
-  const pricing  = pricingResult.status  === "fulfilled" ? pricingResult.value           : null;
+  try {
+    const [vRes, pRes] = await Promise.all([
+      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/public-pricing"),
+    ]);
+    if (vRes.ok) vehicles = await vRes.json();
+    if (pRes.ok) pricing  = await pRes.json();
+  } catch (err) {
+    console.warn("Could not load fleet data:", err);
+  }
 
-  // Only render vehicles the admin has marked as active.
-  // Vehicles with rental_status "rented"/"reserved" are kept in the grid but
-  // shown as "Currently Booked" by applyFleetStatus — they must NOT be hidden
-  // here or the "Extend Rental" button and "Next Available" badge disappear.
-  const active = vehicles
-    .filter(v => !v.status || v.status === "active")
-    .sort((a, b) => {
-      // Slingshot first, then economy, then anything else
-      const VEHICLE_TYPE_ORDER = { slingshot: 0, economy: 1 };
-      const ao = VEHICLE_TYPE_ORDER[a.type] ?? 2;
-      const bo = VEHICLE_TYPE_ORDER[b.type] ?? 2;
-      if (ao !== bo) return ao - bo;
-      // Within same type: use display_order if set, then vehicle_id alphabetically
-      const da = a.display_order ?? 999;
-      const db = b.display_order ?? 999;
-      return da !== db ? da - db : (a.vehicle_id < b.vehicle_id ? -1 : 1);
-    });
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
+    (!v.status || v.status === "active") && (v.type || "").toLowerCase() !== "slingshot"
+  );
 
+  // Only replace the grid if the API returned valid vehicles.
+  // If the API failed or returned nothing, keep any static cards already in the HTML.
   if (!active.length) {
-    grid.innerHTML = `<p class="fleet-empty">No vehicles currently available. Please check back soon or <a href="tel:+12139166606">call (213) 916-6606</a>.</p>`;
+    if (!grid.querySelector(".car-card")) {
+      grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles available at this time. Please check back soon.")}</p>`;
+    }
     return;
   }
 
   grid.innerHTML = active.map(v => buildCardHTML(v, pricing)).join("");
-
-  // Capture current i18n keys so applyFleetStatus can restore them correctly
   captureButtonKeys();
-
-  // Hide rideshare-specific sections if no economy vehicles are present
-  updateRideshareVisibility(active);
 
   // Fetch and apply live availability badges
   loadFleetStatus();

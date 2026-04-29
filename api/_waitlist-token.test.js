@@ -10,7 +10,7 @@ process.env.OTP_SECRET = "test-waitlist-token-secret-abc123";
 const { createDecisionToken, verifyDecisionToken } = await import("./_waitlist-token.js");
 
 test("createDecisionToken returns a non-empty string", () => {
-  const token = createDecisionToken("slingshot", "abc123");
+  const token = createDecisionToken("camry", "abc123");
   assert.ok(typeof token === "string" && token.length > 0);
 });
 
@@ -25,7 +25,7 @@ test("verifyDecisionToken returns correct payload for a valid token", () => {
 });
 
 test("verifyDecisionToken returns null for a tampered token", () => {
-  const token = createDecisionToken("slingshot", "entry001");
+  const token = createDecisionToken("camry", "entry001");
   // Flip the last character to simulate tampering
   const tampered = token.slice(0, -1) + (token.endsWith("a") ? "b" : "a");
   assert.equal(verifyDecisionToken(tampered), null);
@@ -44,22 +44,22 @@ test("verifyDecisionToken returns null for a token with no dot separator", () =>
 });
 
 test("two different entries produce different tokens", () => {
-  const t1 = createDecisionToken("slingshot", "entry001");
-  const t2 = createDecisionToken("slingshot", "entry002");
+  const t1 = createDecisionToken("camry", "entry001");
+  const t2 = createDecisionToken("camry", "entry002");
   assert.notEqual(t1, t2);
 });
 
 test("two different vehicles produce different tokens", () => {
-  const t1 = createDecisionToken("slingshot", "entry001");
-  const t2 = createDecisionToken("camry",     "entry001");
+  const t1 = createDecisionToken("camry",   "entry001");
+  const t2 = createDecisionToken("camry2013", "entry001");
   assert.notEqual(t1, t2);
 });
 
 test("token from one entry does not verify as another entry", () => {
-  const token = createDecisionToken("slingshot", "entry001");
+  const token = createDecisionToken("camry", "entry001");
   // Manually build a payload for a different entry and splice in the original sig
   const fakeParts = token.split(".");
-  const fakePayload = Buffer.from(JSON.stringify({ vehicleId: "slingshot", entryId: "entry002" })).toString("base64url");
+  const fakePayload = Buffer.from(JSON.stringify({ vehicleId: "camry", entryId: "entry002" })).toString("base64url");
   const spoofedToken = `${fakePayload}.${fakeParts[1]}`;
   assert.equal(verifyDecisionToken(spoofedToken), null);
 });

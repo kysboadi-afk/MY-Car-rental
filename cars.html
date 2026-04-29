@@ -76,10 +76,59 @@
       </nav>
     </aside>
 
-    <!-- CAR GRID — populated dynamically by cars.js from /api/v2-vehicles -->
+    <!-- CAR GRID -->
     <section class="cars" id="car-grid">
-      <!-- Vehicles load here. Add/remove vehicles via the admin portal → Fleet Management,
-           no code change needed. -->
+
+      <!-- Camry -->
+      <div class="car-card" data-category="economy" data-vehicle="camry">
+        <img src="images/IMG_0046.png" alt="Camry 2012">
+        <div class="car-info">
+          <span class="status-badge available" id="status-badge-camry" data-i18n="fleet.available">● Available</span>
+          <h3>Camry 2012</h3>
+          <p class="car-subtitle" data-i18n="fleet.sedan5seater">Sedan • 5 Seater</p>
+          <div class="rideshare-badges">
+            <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">🚗 Uber &amp; Lyft Ready</span>
+            <span class="rideshare-badge" data-i18n="fleet.unlimitedMilesBadge">∞ Unlimited Miles</span>
+          </div>
+          <p class="price-list-label" data-i18n="fleet.rentalPlans">Rental Plans</p>
+          <div class="price-list">
+            <div class="price-item">$55 / <span data-i18n="fleet.unitDay">day</span></div>
+            <div class="price-item price-item--popular">$350 / <span data-i18n="fleet.unitWeek">week</span> <span class="popular-tag" data-i18n="fleet.mostPopular">Most Popular</span></div>
+            <div class="price-item">$650 / <span data-i18n="fleet.unitBiweek">2 weeks</span></div>
+            <div class="price-item">$1,300 / <span data-i18n="fleet.unitMonth">month</span> <span class="best-value-tag" data-i18n="fleet.bestValue">Best Value</span></div>
+          </div>
+          <p class="scarcity-notice" data-i18n="fleet.highDemand">🔥 High demand — reserve today</p>
+          <a href="car.html?vehicle=camry" class="select-link" id="select-link-camry">
+            <button class="select-btn" id="select-btn-camry" data-i18n="fleet.bookNow">Book Now</button>
+          </a>
+        </div>
+      </div>
+
+      <!-- Camry 2013 SE -->
+      <div class="car-card" data-category="economy" data-vehicle="camry2013">
+        <img src="images/IMG_5144.png" alt="Camry 2013 SE">
+        <div class="car-info">
+          <span class="status-badge available" id="status-badge-camry2013" data-i18n="fleet.available">● Available</span>
+          <h3>Camry 2013 SE</h3>
+          <p class="car-subtitle" data-i18n="fleet.sedan5seater">Sedan • 5 Seater</p>
+          <div class="rideshare-badges">
+            <span class="rideshare-badge" data-i18n="fleet.rideshareReadyBadge">🚗 Uber &amp; Lyft Ready</span>
+            <span class="rideshare-badge" data-i18n="fleet.unlimitedMilesBadge">∞ Unlimited Miles</span>
+          </div>
+          <p class="price-list-label" data-i18n="fleet.rentalPlans">Rental Plans</p>
+          <div class="price-list">
+            <div class="price-item">$55 / <span data-i18n="fleet.unitDay">day</span></div>
+            <div class="price-item price-item--popular">$350 / <span data-i18n="fleet.unitWeek">week</span> <span class="popular-tag" data-i18n="fleet.mostPopular">Most Popular</span></div>
+            <div class="price-item">$650 / <span data-i18n="fleet.unitBiweek">2 weeks</span></div>
+            <div class="price-item">$1,300 / <span data-i18n="fleet.unitMonth">month</span> <span class="best-value-tag" data-i18n="fleet.bestValue">Best Value</span></div>
+          </div>
+          <p class="scarcity-notice" data-i18n="fleet.limitedAvail">⚡ Limited vehicles available</p>
+          <a href="car.html?vehicle=camry2013" class="select-link" id="select-link-camry2013">
+            <button class="select-btn" id="select-btn-camry2013" data-i18n="fleet.bookNow">Book Now</button>
+          </a>
+        </div>
+      </div>
+
     </section>
   </div>
 </div>

@@ -1,7 +1,4 @@
 {
-    "slingshot": [],
-    "slingshot2": [],
-    "slingshot3": [],
     "camry": [
         {
             "bookingId": "bk-ms-2026-0313",
@@ -40,7 +37,7 @@
             "paymentIntentId": "manual_bg20260219",
             "paymentMethod": "cash",
             "amountPaid": 785,
-            "notes": "$300 refunded \u2014 car broke down",
+            "notes": "$300 refunded — car broke down",
             "smsSentAt": {},
             "createdAt": "2026-02-18T18:00:00.000Z",
             "source": "admin_v2"
@@ -128,7 +125,7 @@
             "paymentMethod": "stripe",
             "amountPaid": 303.19,
             "totalPrice": 303.19,
-            "notes": "5-day rental. Full payment $303.19 via Stripe. Confirmation email failed on browser \u2014 resent manually via admin.",
+            "notes": "5-day rental. Full payment $303.19 via Stripe. Confirmation email failed on browser — resent manually via admin.",
             "smsSentAt": {},
             "createdAt": "2026-04-07T04:58:14.000Z",
             "source": "admin_v2"

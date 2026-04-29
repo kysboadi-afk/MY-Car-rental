@@ -59,7 +59,7 @@ function normalizePhone(phone) {
 }
 
 function resolveBookingStatus(paymentType) {
-  return (paymentType === "reservation_deposit" || paymentType === "slingshot_security_deposit")
+  return (paymentType === "reservation_deposit")
     ? "reserved_unpaid"
     : "booked_paid";
 }

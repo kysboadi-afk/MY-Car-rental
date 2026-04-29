@@ -314,7 +314,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
  *
  * @param {object} opts
  * @param {string} opts.paymentIntentId  - Stripe PaymentIntent ID (required)
- * @param {string} opts.vehicleId        - vehicle key (e.g. "camry", "slingshot")
+ * @param {string} opts.vehicleId        - vehicle key (e.g. "camry", "camry2013")
  * @param {string} [opts.name]           - renter name
  * @param {string} [opts.phone]          - renter phone
  * @param {string} [opts.email]          - renter email

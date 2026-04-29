@@ -7,11 +7,11 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import crypto from "crypto";
 import Stripe from "stripe";
-import { computeRentalDays, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
-import { loadPricingSettings, computeCarAmountFromVehicleData, computeSlingshotAmountFromSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
-import { isDatesAndTimesAvailable, isVehicleAvailable, findAvailableSlingshotUnit } from "./_availability.js";
+import { computeRentalDays } from "./_pricing.js";
+import { loadPricingSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
+import { isDatesAndTimesAvailable, isVehicleAvailable } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
-import { normalizeClockTime, deriveReturnTime, formatTime12h } from "./_time.js";
+import { normalizeClockTime, formatTime12h } from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -25,8 +25,8 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
  * Examples:
  *   ("camry", "Camry 2012") → "camry"
  *   ("camry2013", "Camry 2013 SE") → "camry2013"
- *   ("", "Slingshot R") → "slingshot"
- *   ("slingshot2","Slingshot R")   → "slingshot2"  (id already specific)
+ *   ("", "Camry 2012") → "camry"
+ *   ("camry2013","Camry 2013 SE") → "camry2013" (id already specific)
  *
  * @param {string} vehicleIdRaw  - internal vehicle key (e.g. "camry")
  * @param {string} vehicleNameRaw - human-readable name (e.g. "Camry 2012")
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, slingshotDuration, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, adminOverride, testMode } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, adminOverride, testMode } = req.body;
     const adminOverrideEnabled = adminOverride === true || /^(true|1)$/i.test(String(adminOverride || ""));
     const testModeEnabled = testMode === true || /^(true|1)$/i.test(String(testMode || ""));
     const testAvailabilityOverride = adminOverrideEnabled && testModeEnabled;
@@ -84,8 +84,6 @@ export default async function handler(req, res) {
     if (!vehicleData) {
       return res.status(400).json({ error: "Invalid vehicle" });
     }
-
-    const isSlingshotVehicle = vehicleData.isSlingshot;
 
     // Pickup time is required for all vehicles — it anchors the rental window and
     // is enforced as the return time for economy cars (return_time = pickup_time).
@@ -98,24 +96,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Return time is required. Please select a return time before proceeding." });
     }
 
-    // For hourly-tier vehicles (Slingshot), validate the hourly duration selection
-    if (isSlingshotVehicle) {
-      if (!slingshotDuration || ![3, 6, 24, 48, 72].includes(Number(slingshotDuration))) {
-        return res.status(400).json({ error: "Invalid rental duration for Slingshot. Please select 3 hours, 6 hours, 24 hours, 2 days, or 3 days." });
-      }
-    }
-
-    // For economy (non-Slingshot) vehicles: enforce that the renter declared either
+    // For economy vehicles: enforce that the renter declared either
     // personal auto insurance (verified at pickup) OR selected a valid DPP tier.
     // This is a server-side guard that cannot be bypassed via browser DevTools.
-    if (!isSlingshotVehicle) {
-      if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
-        return res.status(400).json({ error: "Please indicate whether you have personal auto insurance or would like to add a Damage Protection Plan." });
-      }
-      if (insuranceCoverageChoice === "no") {
-        if (protectionPlan !== true || !["basic", "standard", "premium"].includes(protectionPlanTier)) {
-          return res.status(400).json({ error: "A valid Damage Protection Plan (Basic, Standard, or Premium) is required when you do not have personal auto insurance." });
-        }
+    if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
+      return res.status(400).json({ error: "Please indicate whether you have personal auto insurance or would like to add a Damage Protection Plan." });
+    }
+    if (insuranceCoverageChoice === "no") {
+      if (protectionPlan !== true || !["basic", "standard", "premium"].includes(protectionPlanTier)) {
+        return res.status(400).json({ error: "A valid Damage Protection Plan (Basic, Standard, or Premium) is required when you do not have personal auto insurance." });
       }
     }
 
@@ -126,15 +115,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid dates" });
     }
 
-    const derivedReturnTime = isSlingshotVehicle
-      ? deriveReturnTime(pickup, trimmedPickupTime, trimmedReturnTime, slingshotDuration)
-      : trimmedPickupTime;
+    const derivedReturnTime = trimmedPickupTime;
 
     // ── Availability check ──────────────────────────────────────────────────
-    // For Slingshot: auto-assign the first available unit — customers book a
-    // generic "Slingshot" and we give them whichever unit is free.
-    // For economy cars: check only the specific requested vehicle.
-    // Both checks are time-aware: a booking from 9 AM to 9 AM does not block
+    // Check the specific requested vehicle.
+    // The check is time-aware: a booking from 9 AM to 9 AM does not block
     // a subsequent booking starting at 9 AM on the same return date.
     let assignedVehicleId = vehicleId;
     console.log("[VEHICLE_ID_INPUT]", JSON.stringify({
@@ -142,27 +127,17 @@ export default async function handler(req, res) {
       vehicle_name:   vehicleData?.name || null,
     }));
     if (!testAvailabilityOverride) {
-      if (isSlingshotVehicle) {
-        // Compute the Slingshot return time from pickup time + duration so the
-        // overlap check is precise at the hour level.
-        const unit = await findAvailableSlingshotUnit(pickup, returnDate, trimmedPickupTime, derivedReturnTime);
-        if (!unit) {
-          return res.status(409).json({ error: "No Slingshot units are available for these dates. Please select different dates or call us at (213) 916-6606." });
-        }
-        assignedVehicleId = unit;
-      } else {
-        // For economy cars the return time always equals the pickup time.
-        // Use the same time for both bounds so the check is symmetric.
-        const available = await isDatesAndTimesAvailable(vehicleId, pickup, returnDate, trimmedPickupTime, trimmedPickupTime);
-        if (!available) {
-          return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
-        }
+      // For economy cars the return time always equals the pickup time.
+      // Use the same time for both bounds so the check is symmetric.
+      const available = await isDatesAndTimesAvailable(vehicleId, pickup, returnDate, trimmedPickupTime, trimmedPickupTime);
+      if (!available) {
+        return res.status(409).json({ error: "These dates are no longer available. Please select different dates." });
+      }
 
-        // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
-        const vehicleAvailable = await isVehicleAvailable(vehicleId);
-        if (!vehicleAvailable) {
-          return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
-        }
+      // Check vehicle-level availability — reject if the vehicle is globally marked unavailable
+      const vehicleAvailable = await isVehicleAvailable(vehicleId);
+      if (!vehicleAvailable) {
+        return res.status(409).json({ error: "This vehicle is currently unavailable for booking. Please browse other available vehicles." });
       }
     }
 
@@ -188,49 +163,27 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
 
     // Compute amount server-side — never trust a client-supplied amount.
-    const computedFullRental = isSlingshotVehicle
-      ? computeSlingshotAmountFromSettings(Number(slingshotDuration), settings)
-      : computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
+    const computedFullRental = computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
 
-    // Slingshot: no Damage Protection Plan — DPP has been removed for Slingshot.
-    // Economy cars: add DPP cost when the renter opted in.
-    const days = isSlingshotVehicle ? Math.max(1, Math.ceil(Number(slingshotDuration) / 24)) : computeRentalDays(pickup, returnDate);
-    const tier = isSlingshotVehicle ? null : (protectionPlanTier || null);
-    const protectionCost = (!isSlingshotVehicle && protectionPlan) ? computeDppCostFromSettings(days, tier) : 0;
+    // Add DPP cost when the renter opted in.
+    const days = computeRentalDays(pickup, returnDate);
+    const tier = protectionPlanTier || null;
+    const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
 
-    // For Slingshot: no tax — total is rental fee + security deposit only.
-    // Security deposit = rental fee (computedFullRental is already rental × 2 from _settings).
-    // For Slingshot deposit-only mode: charge only the security deposit (= rental fee) now.
     // For Camry with paymentMode:'deposit': charge only the booking deposit now; rest at pickup.
-    // For all other Camry modes: charge the after-tax total.
+    // For all other modes: charge the after-tax total.
     const preTaxFullRental = computedFullRental + protectionCost;
     const afterTaxFullRental = applyTax(preTaxFullRental, settings);
 
-    // Slingshot-specific amounts (no tax applied).
-    // computeSlingshotAmountFromSettings() returns tier.price × 2 (rental + security deposit),
-    // where the security deposit equals the rental fee. So dividing by 2 gives each component.
-    const slingshotRentalFee = isSlingshotVehicle ? computedFullRental / 2 : 0;
-    const slingshotSecurityDeposit = slingshotRentalFee; // security deposit = rental fee
-    const slingshotFullTotal = computedFullRental; // rental + deposit, no tax
-
     let totalAmount;
 
-    if (isSlingshotVehicle) {
-      if (paymentMode === "deposit") {
-        // Deposit-only: charge security deposit now, remaining rental fee paid later
-        totalAmount = slingshotSecurityDeposit;
-      } else {
-        // Full payment: rental + security deposit, no tax
-        totalAmount = slingshotFullTotal;
-      }
-    } else if (paymentMode === "deposit") {
+    if (paymentMode === "deposit") {
       totalAmount = settings.camry_booking_deposit;
     } else {
       totalAmount = afterTaxFullRental;
     }
 
-    const isCamryDepositMode = !isSlingshotVehicle && paymentMode === "deposit";
-    const isSlingshotDepositMode = isSlingshotVehicle && paymentMode === "deposit";
+    const isCamryDepositMode = paymentMode === "deposit";
 
     // Find or create a Stripe Customer so the card can be saved for future
     // off-session charges (e.g., damages, late fees).
@@ -262,13 +215,9 @@ export default async function handler(req, res) {
       // Save the card for future off-session charges (damages, late fees, etc.).
       setup_future_usage: "off_session",
       receipt_email: email,
-      description: isSlingshotVehicle
-        ? (isSlingshotDepositMode
-            ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation (Security Deposit)`
-            : `Sly Transportation Services LLC – ${vehicleData.name} Rental`)
-        : (isCamryDepositMode
+      description: isCamryDepositMode
             ? `Sly Transportation Services LLC – ${vehicleData.name} Reservation Deposit (Non-Refundable)`
-            : `Sly Transportation Services LLC – ${vehicleData.name}`),
+            : `Sly Transportation Services LLC – ${vehicleData.name}`,
       // Automatic payment methods lets Stripe surface Apple Pay, Google Pay, and
       // other wallets in addition to cards — without maintaining an explicit list.
       automatic_payment_methods: { enabled: true },
@@ -302,34 +251,7 @@ export default async function handler(req, res) {
         pickup_time:  formatTime12h(trimmedPickupTime),
         return_time:  formatTime12h(derivedReturnTime),
         renter_email: email,
-        ...(isSlingshotVehicle ? {
-          rental_duration: Number(slingshotDuration) >= 48
-            ? `${Number(slingshotDuration) / 24} days`
-            : `${slingshotDuration} hours`,
-        } : {}),
-        ...(isSlingshotVehicle && !isSlingshotDepositMode ? {
-          payment_type:         "full_payment",
-          slingshot_payment_status: "fully_paid",
-          slingshot_booking_status: "reserved",
-          rental_price:         slingshotRentalFee.toFixed(2),
-          security_deposit:     slingshotSecurityDeposit.toFixed(2),
-          amount_paid:          slingshotFullTotal.toFixed(2),
-          remaining_balance:    "0.00",
-          full_rental_amount:   slingshotFullTotal.toFixed(2),
-          insurance_status:     insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_no_dpp",
-        } : {}),
-        ...(isSlingshotDepositMode ? {
-          payment_type:              "slingshot_security_deposit",
-          slingshot_payment_status:  "deposit_paid",
-          slingshot_booking_status:  "reserved",
-          rental_price:              slingshotRentalFee.toFixed(2),
-          security_deposit:          slingshotSecurityDeposit.toFixed(2),
-          amount_paid:               slingshotSecurityDeposit.toFixed(2),
-          remaining_balance:         slingshotRentalFee.toFixed(2),
-          full_rental_amount:        slingshotFullTotal.toFixed(2),
-          insurance_status:          insuranceCoverageChoice === "yes" ? "own_insurance_provided" : "no_insurance_no_dpp",
-        } : {}),
-        ...(!isSlingshotVehicle && !isCamryDepositMode ? {
+        ...(!isCamryDepositMode ? {
           payment_type:        "full_payment",
           full_rental_amount:  afterTaxFullRental.toFixed(2),
           ...( protectionPlan && tier ? { protection_plan_tier: tier } : {} ),

@@ -6,13 +6,11 @@
 //   PROCESSED (persistBooking called):
 //     full_payment                         — standard new booking
 //     reservation_deposit                  — Camry deposit; saved as reserved_unpaid
-//     slingshot_security_deposit           — Slingshot deposit; saved as reserved_unpaid
 //     unrecognised / missing payment_type  — safe generic fallback (same as webhook)
 //
 //   SKIPPED (webhook mutates existing booking; backfill must not create phantom booking):
 //     rental_extension
 //     balance_payment
-//     slingshot_balance_payment
 //     PI already in revenue_records
 //     PI missing vehicle_id / pickup_date / return_date
 //
@@ -100,7 +98,6 @@ mock.module("./_sms-templates.js", {
   namedExports: {
     DEFAULT_LOCATION:           "Los Angeles, CA",
     render:                     (t) => t,
-    EXTEND_CONFIRMED_SLINGSHOT: "",
     EXTEND_CONFIRMED_ECONOMY:   "",
   },
 });
@@ -202,39 +199,6 @@ test("backfill: balance_payment with complete metadata is SKIPPED (not a new boo
   assert.equal(persistedOpts.length, 0, "persistBooking must NOT be called for balance_payment");
 });
 
-test("backfill: rental_extension is SKIPPED", async () => {
-  reset();
-  stripePiList = [makePi("pi_ext_1", "rental_extension", {
-    metadata: {
-      vehicle_id:          "slingshot",
-      original_booking_id: "bk-original",
-      new_return_date:     "2026-08-10",
-      // extensions don't have pickup_date / return_date (but skip happens before metadata check)
-      pickup_date:         undefined,
-      return_date:         undefined,
-    },
-  })];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret" }), res);
-
-  assert.equal(res._body.skipped, 1);
-  assert.equal(res._body.details[0].payment_type, "rental_extension");
-  assert.equal(persistedOpts.length, 0);
-});
-
-test("backfill: slingshot_balance_payment is SKIPPED", async () => {
-  reset();
-  stripePiList = [makePi("pi_slb_1", "slingshot_balance_payment")];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret" }), res);
-
-  assert.equal(res._body.skipped, 1);
-  assert.equal(res._body.details[0].payment_type, "slingshot_balance_payment");
-  assert.equal(persistedOpts.length, 0);
-});
-
 test("backfill: PI already in revenue_records is SKIPPED", async () => {
   reset();
   existingRevenuePiIds = new Set(["pi_dup_1"]);
@@ -297,21 +261,6 @@ test("backfill: reservation_deposit is processed as reserved_unpaid", async () =
 
   assert.equal(res._body.processed, 1);
   assert.equal(res._body.details[0].payment_type, "reservation_deposit");
-  assert.equal(res._body.details[0].booking_status, "reserved_unpaid");
-  assert.equal(persistedOpts[0].status, "reserved_unpaid");
-});
-
-test("backfill: slingshot_security_deposit is processed as reserved_unpaid", async () => {
-  reset();
-  stripePiList = [makePi("pi_sldep_1", "slingshot_security_deposit", {
-    metadata: { vehicle_id: "slingshot", full_rental_amount: "900.00" },
-  })];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret" }), res);
-
-  assert.equal(res._body.processed, 1);
-  assert.equal(res._body.details[0].payment_type, "slingshot_security_deposit");
   assert.equal(res._body.details[0].booking_status, "reserved_unpaid");
   assert.equal(persistedOpts[0].status, "reserved_unpaid");
 });

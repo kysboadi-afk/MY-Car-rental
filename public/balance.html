@@ -197,7 +197,6 @@
       var pickupTime   = params.get("pt")  || "";
       var returnTime   = params.get("rt")  || "";
       var carName      = params.get("car") || vehicleId;
-      var slingshotDur = params.get("d")   || "";
       var bookingId    = params.get("b")   || "";
       var originalPiId = params.get("opi") || "";
 
@@ -314,12 +313,8 @@
           ["Renter",        renterName || "—"],
           ["Email",         renterEmail],
         ];
-        if (slingshotDur) {
-          rows.push(["Duration", slingshotDur + " hours"]);
-        } else {
-          rows.push(["Pickup",  pickup + (pickupTime  ? " at " + pickupTime  : "")]);
-          rows.push(["Return",  returnDate + (returnTime ? " at " + returnTime : "")]);
-        }
+        rows.push(["Pickup",  pickup + (pickupTime  ? " at " + pickupTime  : "")]);
+        rows.push(["Return",  returnDate + (returnTime ? " at " + returnTime : "")]);
         rows.push(["Insurance", protectionPlan ? "Damage Protection Plan" : "Own insurance"]);
         rows.push(["Deposit Paid", "$" + depositPaid + " (non-refundable)"]);
         rows.push(["Rental Subtotal", "$" + fullTotal + " (+ applicable tax)"]);
@@ -341,7 +336,6 @@
           pickup:            pickup,
           returnDate:        returnDate,
           protectionPlan:    protectionPlan,
-          slingshotDuration: slingshotDur ? Number(slingshotDur) : undefined,
           bookingId:         bookingId || undefined,
           originalPaymentIntentId: originalPiId || undefined,
           depositPaymentIntentId:  originalPiId || undefined,
@@ -393,7 +387,6 @@
               depositAlreadyPaid: depositPaid,
               fullRentalTotal:    fullTotal,
             };
-            if (slingshotDur) { data.slingshotDuration = Number(slingshotDur); }
             return data;
           }
 

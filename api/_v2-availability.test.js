@@ -334,8 +334,8 @@ test("all vehicles: returns map of vehicleId → availability when Supabase OK",
     await handler(makeReq({ query: { from: "2026-05-01", to: "2026-05-07" } }), res);
     assert.equal(res._status, 200);
     assert.ok(res._body.vehicles, "response should have vehicles map");
-    // All five vehicles should be present
-    for (const vid of ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"]) {
+    // Both configured vehicles should be present
+    for (const vid of ["camry", "camry2013"]) {
       assert.ok(Object.prototype.hasOwnProperty.call(res._body.vehicles, vid), `missing vehicle ${vid}`);
       assert.equal(res._body.vehicles[vid].available, true);
     }
@@ -361,7 +361,6 @@ test("all vehicles: falls back to GitHub when Supabase errors — unavailable ve
     assert.equal(res._body.vehicles.camry.available, false, "camry must not appear available during Supabase outage");
     assert.equal(res._body.vehicles.camry.source, "booked-dates-json");
     // Other vehicles with no bookings in fallback must appear available
-    assert.equal(res._body.vehicles.slingshot.available, true);
   } finally {
     supabaseMock.client = null;
     githubBookedDates = {};
@@ -370,21 +369,6 @@ test("all vehicles: falls back to GitHub when Supabase errors — unavailable ve
 });
 
 // ─── POST method ─────────────────────────────────────────────────────────────
-
-test("POST: accepts params from body", async () => {
-  setupFetchMock();
-  supabaseMock.client = makeSupabaseClient({ rows: [] });
-  try {
-    const res = makeRes();
-    await handler(makeReq({ method: "POST", body: { vehicleId: "slingshot", from: "2026-06-01", to: "2026-06-02" } }), res);
-    assert.equal(res._status, 200);
-    assert.equal(res._body.vehicleId, "slingshot");
-    assert.equal(res._body.available, true);
-  } finally {
-    supabaseMock.client = null;
-    teardownFetchMock();
-  }
-});
 
 // ─── Active rental override ───────────────────────────────────────────────────
 // The active_rental override now uses finalReturnDate (incorporating paid

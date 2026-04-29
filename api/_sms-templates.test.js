@@ -25,7 +25,6 @@ import {
   ACTIVE_RENTAL_15MIN_BEFORE_END,
   RETURN_REMINDER_24H,
   EXTEND_UNAVAILABLE,
-  EXTEND_OPTIONS_SLINGSHOT,
   EXTEND_OPTIONS_ECONOMY,
   EXTEND_FLEXIBLE_PROMPT,
   EXTEND_INVALID_INPUT,
@@ -47,9 +46,9 @@ import {
 test("render: substitutes known variables", () => {
   const result = render("Hi {customer_name}, your {vehicle} is ready.", {
     customer_name: "Alice",
-    vehicle:       "Slingshot R",
+    vehicle:       "Camry 2012",
   });
-  assert.equal(result, "Hi Alice, your Slingshot R is ready.");
+  assert.equal(result, "Hi Alice, your Camry 2012 is ready.");
 });
 
 test("render: leaves unknown placeholders intact", () => {
@@ -143,13 +142,13 @@ test("BOOKING_CONFIRMED references all key variables", () => {
 
 test("render BOOKING_CONFIRMED fills correctly", () => {
   const msg = render(BOOKING_CONFIRMED, {
-    vehicle:       "Slingshot R",
+    vehicle:       "Camry 2012",
     customer_name: "Carlos",
     pickup_date:   "March 28",
     pickup_time:   "3:00 PM",
     location:      DEFAULT_LOCATION,
   });
-  assert.ok(msg.includes("Slingshot R"));
+  assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("Carlos"));
   assert.ok(msg.includes("March 28"));
   assert.ok(msg.includes("3:00 PM"));
@@ -216,12 +215,12 @@ test("RETURN_REMINDER_24H references return_time, buffered_time, and vehicle", (
 test("render RETURN_REMINDER_24H fills all variables", () => {
   const msg = render(RETURN_REMINDER_24H, {
     customer_name: "Alice",
-    vehicle:       "Slingshot R",
+    vehicle:       "Camry 2012",
     return_time:   "8:00 AM",
     buffered_time: "10:00 AM",
   });
   assert.ok(msg.includes("Alice"));
-  assert.ok(msg.includes("Slingshot R"));
+  assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("8:00 AM"));
   assert.ok(msg.includes("10:00 AM"));
   assert.ok(!msg.includes("{"));
@@ -232,12 +231,6 @@ test("render RETURN_REMINDER_24H fills all variables", () => {
 test("EXTEND_UNAVAILABLE explains the situation", () => {
   assert.ok(EXTEND_UNAVAILABLE.includes("reserved after your current booking"));
   assert.ok(EXTEND_UNAVAILABLE.includes("return the vehicle"));
-});
-
-test("EXTEND_OPTIONS_SLINGSHOT has 3 options", () => {
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("1 = +1 hour"));
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("2 = +2 hours"));
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("4 = +4 hours"));
 });
 
 test("EXTEND_OPTIONS_ECONOMY has 3 options", () => {
@@ -256,12 +249,12 @@ test("EXTEND_SELECTED references extra_time, vehicle, price, and payment_link", 
 test("render EXTEND_SELECTED fills all variables", () => {
   const msg = render(EXTEND_SELECTED, {
     extra_time:   "+2 hours",
-    vehicle:      "Slingshot R",
+    vehicle:      "Camry 2012",
     price:        "100",
     payment_link: "https://www.slytrans.com/balance.html?test=1",
   });
   assert.ok(msg.includes("+2 hours"));
-  assert.ok(msg.includes("Slingshot R"));
+  assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("$100"));
   assert.ok(msg.includes("https://www.slytrans.com/balance.html?test=1"));
   assert.ok(!msg.includes("{"));
@@ -375,10 +368,10 @@ test("TEMPLATES map contains all expected keys", () => {
     "unpaid_reminder_24h", "unpaid_reminder_2h", "unpaid_reminder_final",
     "pickup_reminder_24h", "pickup_reminder_2h", "pickup_reminder_30min",
     "active_rental_mid", "active_rental_1h_before_end", "active_rental_15min_before_end",
-    "extend_unavailable", "extend_limited", "extend_options_slingshot", "extend_options_economy",
+    "extend_unavailable", "extend_limited", "extend_options_economy",
     "extend_flexible_prompt", "extend_invalid_input",
     "extend_selected", "extend_selected_upsell",
-    "extend_confirmed_slingshot", "extend_confirmed_economy", "extend_payment_pending",
+    "extend_confirmed_economy", "extend_payment_pending",
     "late_warning_30min", "late_at_return_time", "late_grace_expired", "late_fee_applied",
     "post_rental_thank_you",
     "retention_day_1", "retention_day_3", "retention_day_7", "retention_day_14", "retention_day_30",

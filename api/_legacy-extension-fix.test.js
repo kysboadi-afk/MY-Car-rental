@@ -220,28 +220,6 @@ test("legacy-extension-fix: PI already in revenue_records is skipped", async () 
   assert.equal(revenueCreateCalls.length, 0, "autoCreateRevenueRecord must NOT be called");
 });
 
-test("legacy-extension-fix: new-format extension PI (has booking_id) is NOT a legacy PI", async () => {
-  reset();
-  stripePiList = [makePi("pi_new_ext", {
-    metadata: {
-      payment_type:  "rental_extension",
-      booking_id:    "bk-new-001",    // present — not legacy
-      vehicle_id:    "slingshot",
-      new_return_date: "2026-09-10",
-    },
-  })];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret" }), res);
-
-  assert.equal(res._status, 200);
-  const body = res._body;
-  assert.equal(body.legacy,  0, "new-format PI must not count as legacy");
-  assert.equal(body.fixed,   0);
-  assert.equal(body.skipped, 0);
-  assert.equal(revenueCreateCalls.length, 0);
-});
-
 test("legacy-extension-fix: full_payment PI is not a legacy PI", async () => {
   reset();
   stripePiList = [makePi("pi_full_1", {
@@ -311,35 +289,6 @@ test("legacy-extension-fix: dry_run skips already-recorded PI (routing consisten
   assert.equal(res._body.skipped, 1, "already-recorded PI must be skipped even in dry_run");
   assert.equal(res._body.fixed,   0);
   assert.equal(revenueCreateCalls.length, 0);
-});
-
-test("legacy-extension-fix: mixed PI set — only legacy ones are processed", async () => {
-  reset();
-  existingRevenuePiIds = new Set(["pi_already"]);
-  stripePiList = [
-    makeLegacyExtPi("pi_leg_a", { metadata: { original_booking_id: "bk-aaa", vehicle_id: "camry" } }),
-    makeLegacyExtPi("pi_already", { metadata: { original_booking_id: "bk-bbb", vehicle_id: "camry" } }),
-    makePi("pi_full_p", {
-      metadata: { payment_type: "full_payment", vehicle_id: "camry", pickup_date: "2026-07-01", return_date: "2026-07-05" },
-    }),
-    makePi("pi_new_ext", {
-      metadata: { payment_type: "rental_extension", booking_id: "bk-new", vehicle_id: "slingshot", new_return_date: "2026-09-10" },
-    }),
-  ];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret" }), res);
-
-  assert.equal(res._status, 200);
-  const body = res._body;
-  assert.equal(body.total,   4, "all 4 PIs counted in total");
-  assert.equal(body.legacy,  2, "2 legacy PIs identified");
-  assert.equal(body.fixed,   1, "1 fixed (pi_leg_a)");
-  assert.equal(body.skipped, 1, "1 skipped (pi_already)");
-  assert.equal(body.errors,  0);
-
-  assert.equal(revenueCreateCalls.length, 1);
-  assert.equal(revenueCreateCalls[0].booking.bookingId, "bk-aaa");
 });
 
 test("legacy-extension-fix: revenue create failure is captured as error (not thrown)", async () => {

@@ -55,9 +55,6 @@ import { createManageToken } from "./_manage-booking-token.js";
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
-  slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (Unit 2)",
-  slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
   camry2012:  "Camry 2012",
   camry2013:  "Camry 2013 SE",

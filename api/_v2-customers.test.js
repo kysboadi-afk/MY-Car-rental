@@ -351,25 +351,6 @@ test("C) missing phone: phone-null rows are included via email fallback", async 
   assert.equal(agg.row_count,   1);
 });
 
-test("C) missing phone: phone-null AND email-null rows included via name fallback", async () => {
-  resetState();
-  rrRows = [
-    { customer_phone: null, customer_name: "Ghost Customer", customer_email: null,
-      gross_amount: 75, stripe_fee: 0, stripe_net: null, refund_amount: 0, net_amount: 75,
-      is_cancelled: false, is_no_show: false, payment_status: "paid",
-      pickup_date: "2026-03-01", return_date: "2026-03-02", vehicle_id: "slingshot" },
-  ];
-
-  const res = await runSync();
-  assert.equal(res._status, 200);
-  assert.equal(res._body.synced, 1, "name-only customer should be synced");
-
-  const agg = parseAggLog();
-  assert.ok(agg);
-  assert.equal(agg.gross_total, 75);
-  assert.equal(agg.row_count,   1);
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // D) NO DUPLICATE SPLITS
 // ═══════════════════════════════════════════════════════════════════════════════

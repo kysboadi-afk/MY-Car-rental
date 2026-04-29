@@ -44,9 +44,8 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       name, email, phone,
       pickup, pickupTime, returnDate, returnTime,
       total, deposit, days, protectionPlan, protectionPlanTier, signature,
-      slingshotDuration,
       fullRentalCost, balanceAtPickup,
-      insuranceCoverageChoice, slingshotDepositAmount,
+      insuranceCoverageChoice,
     } = body;
 
     const signedAt = new Date().toLocaleString("en-US", {
@@ -69,11 +68,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
       : (protectionPlan
           ? `Damage Protection Plan selected — ${pdfTierLabel}`
           : "Renter provided personal rental car insurance");
-    const durationLine = isHourly && slingshotDuration
-      ? (Number(slingshotDuration) >= 48
-          ? `${Number(slingshotDuration) / 24}-day rental`
-          : `${Number(slingshotDuration)}-hour rental`)
-      : (days ? `${days} day${Number(days) !== 1 ? "s" : ""}` : "");
+    const durationLine = days ? `${days} day${Number(days) !== 1 ? "s" : ""}` : "";
 
     const doc = new PDFDocument({ margin: 50, size: "LETTER" });
     const chunks = [];
@@ -226,14 +221,6 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
     ]);
     doc.moveDown(0.2);
     bodyText("Third-Party Liability: Renter is solely responsible for any third-party claims, including bodily injury, property damage, or death. SLY Transportation Services is not liable for renter negligence. Renter agrees to indemnify and hold harmless SLY Transportation Services from any claims, losses, or expenses arising from vehicle use.");
-
-    // ── Slingshot Speed Policy ─────────────────────────────────────────────────
-    if (isHourly) {
-      sectionHeader("Slingshot Speed Policy");
-      bodyText("Speed Limit: The posted speed limit is 65 mph. Renters may not exceed 75 mph under any circumstances.");
-      doc.moveDown(0.1);
-      bodyText("Strike Policy: After two (2) speed or agreement violations, the renter's security deposit becomes non-refundable.");
-    }
 
     // ── Use Restrictions ───────────────────────────────────────────────────────
     sectionHeader("Use Restrictions");

@@ -27,7 +27,6 @@ mock.module("./_sms-templates.js", { namedExports: {
   DEFAULT_LOCATION:     "Los Angeles, CA",
   EXTEND_UNAVAILABLE:   "",
   EXTEND_LIMITED:       "",
-  EXTEND_OPTIONS_SLINGSHOT: "",
   EXTEND_FLEXIBLE_PROMPT:   "",
   EXTEND_INVALID_INPUT:     "",
   EXTEND_SELECTED:          "",

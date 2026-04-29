@@ -15,7 +15,7 @@
 //   mil         — check engine light ON         → log alert to ai_logs
 //   battery     — low/critical battery          → log alert to ai_logs
 //
-// Slingshots are never stored — they have no bouncie_device_id in the DB.
+
 //
 // POST /api/bouncie-webhook
 //

@@ -61,11 +61,9 @@ export default async function handler(req, res) {
     }
 
     // Build an entry for every tracked vehicle (null GPS until Bouncie enriches it).
-    // Slingshots never have Bouncie devices so skip them.
     const vehicleMap = {};
     const imeiToId   = {};
     for (const v of trackedVehicles) {
-      if (v.vehicle_type === "slingshot") continue;
       vehicleMap[v.vehicle_id] = {
         vehicleId:   v.vehicle_id,
         vehicleName: v.vehicle_name || v.vehicle_id,

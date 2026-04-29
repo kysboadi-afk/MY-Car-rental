@@ -149,7 +149,7 @@ export function generateExtensionAgreementPdf({
       "Mileage and geographic restrictions (Los Angeles County / 50-mile radius)",
       "Fuel policy (return with the same fuel level as at pickup)",
       "No smoking, no pets, no off-road use, no subleasing",
-      "Late fee: $50/day (economy) or $100/hour (Slingshot) after grace period",
+      "Late fee: $50/day (economy) after grace period",
       "Payment authorization for all charges under the original agreement",
       "Damage liability and any applicable Protection Plan coverage",
     ].forEach(item => {

@@ -1,6 +1,6 @@
 // api/complete-booking.js
 // Vercel serverless function — handles the complete-booking flow for
-// Slingshot reservations that were paid with a security deposit only.
+// reservations that were paid with a deposit only.
 //
 // GET  /api/complete-booking?token=<payment_link_token>
 //   → Returns booking info (name, email, phone, remaining_balance, payment_status, dates, vehicle).
@@ -188,8 +188,8 @@ function sanitizeBooking(booking) {
     securityDeposit:  booking.securityDeposit || booking.security_deposit || 0,
     amountPaid:       booking.amountPaid   || booking.amount_paid   || 0,
     remainingBalance: booking.remainingBalance || booking.remaining_balance || 0,
-    paymentStatus:    booking.paymentStatus    || booking.slingshot_payment_status || "deposit_paid",
-    bookingStatus:    booking.bookingStatus    || booking.slingshot_booking_status || "reserved",
+    paymentStatus:    booking.paymentStatus    || "deposit_paid",
+    bookingStatus:    booking.bookingStatus    || "reserved",
   };
 }
 
@@ -212,8 +212,8 @@ function supabaseRowToBooking(row) {
     securityDeposit:  Number(row.security_deposit || 0),
     amountPaid:       Number(row.amount_paid || 0),
     remainingBalance: Number(row.remaining_balance || 0),
-    paymentStatus:    row.slingshot_payment_status || row.payment_status || "deposit_paid",
-    bookingStatus:    row.slingshot_booking_status || "reserved",
+    paymentStatus:    row.payment_status || "deposit_paid",
+    bookingStatus:    "reserved",
     paymentLinkToken: row.payment_link_token,
     paymentIntentId:  row.stripe_payment_intent_id,
   };
@@ -230,7 +230,7 @@ async function handleCreatePaymentIntent(req, res, booking) {
     return res.status(500).json({ error: "Server configuration error: STRIPE_PUBLISHABLE_KEY is missing." });
   }
 
-  const paymentStatus = booking.paymentStatus || booking.slingshot_payment_status || "";
+  const paymentStatus = booking.paymentStatus || "";
   if (paymentStatus === "fully_paid" || paymentStatus === "paid") {
     return res.status(409).json({ error: "This booking has already been fully paid.", alreadyPaid: true });
   }
@@ -302,9 +302,7 @@ async function handleFinalize(req, res, booking) {
 
   const updates = {
     paymentStatus:    "fully_paid",
-    slingshot_payment_status: "fully_paid",
     bookingStatus:    "reserved",
-    slingshot_booking_status: "reserved",
     remainingBalance: 0,
     remaining_balance: 0,
     status:           "booked_paid",
@@ -330,10 +328,9 @@ async function handleFinalize(req, res, booking) {
       await supabase
         .from("bookings")
         .update({
-          payment_status:           "paid",
-          slingshot_payment_status: "fully_paid",
-          remaining_balance:        0,
-          updated_at:               new Date().toISOString(),
+          payment_status:    "paid",
+          remaining_balance: 0,
+          updated_at:        new Date().toISOString(),
         })
         .eq("booking_ref", booking.bookingId);
     }
