@@ -161,7 +161,9 @@ test("returns 500 when ADMIN_SECRET is not configured", async () => {
   assert.ok(res._body.error.includes("ADMIN_SECRET"));
 });
 
-test("returns 500 when GITHUB_TOKEN is not configured", async () => {
+// Phase 4: GITHUB_TOKEN is no longer required — booked-dates.json writes are disabled.
+// The endpoint now writes directly to Supabase (or silently skips when Supabase is not configured).
+test("succeeds even when GITHUB_TOKEN is not configured (Phase 4)", async () => {
   const savedToken = process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_TOKEN;
 
@@ -169,15 +171,14 @@ test("returns 500 when GITHUB_TOKEN is not configured", async () => {
   const res = makeRes();
   await handler(req, res);
   process.env.GITHUB_TOKEN = savedToken;
-  assert.equal(res._status, 500);
-  assert.ok(res._body.error.includes("GITHUB_TOKEN"));
+  // Phase 4: no longer returns 500 for missing GITHUB_TOKEN
+  assert.equal(res._status, 200);
+  assert.deepEqual(res._body, { success: true, added: 1 });
 });
 
-test("successfully adds a new blocked date range", async () => {
-  const fetchFn = mockFetch();
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = fetchFn;
-
+test("successfully adds a new blocked date range (Supabase-only, Phase 4)", async () => {
+  // Phase 4: GitHub API is no longer called; Supabase is the only write target.
+  // When Supabase is not configured in tests, autoCreateBlockedDate silently succeeds.
   const req = makeReq("POST", {
     secret: "test-admin-secret",
     vehicleId: "camry",
@@ -186,21 +187,14 @@ test("successfully adds a new blocked date range", async () => {
   });
   const res = makeRes();
   await handler(req, res);
-  globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body, { success: true, added: 1 });
-  assert.equal(fetchFn.getStored().camry.length, 1, "Blocked range should be added");
-  assert.deepEqual(fetchFn.getStored().camry[0], { from: "2026-04-01", to: "2026-04-05" });
 });
 
-test("returns added:0 when range overlaps an existing booking", async () => {
-  const fetchFn = mockFetch({
-    camry: [{ from: "2026-04-01", to: "2026-04-05" }],
-  });
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = fetchFn;
-
+// Phase 4: overlap detection was done in the JSON file; now Supabase handles idempotency.
+// The endpoint always reports added:1 on Supabase success (no pre-check for overlaps).
+test("returns 200 when range would overlap (idempotent Supabase upsert, Phase 4)", async () => {
   const req = makeReq("POST", {
     secret: "test-admin-secret",
     vehicleId: "camry",
@@ -209,106 +203,19 @@ test("returns added:0 when range overlaps an existing booking", async () => {
   });
   const res = makeRes();
   await handler(req, res);
-  globalThis.fetch = origFetch;
 
   assert.equal(res._status, 200);
-  assert.equal(res._body.added, 0, "Should not add when overlap exists");
-  assert.equal(fetchFn.getStored().camry.length, 1, "Original range should remain unchanged");
+  assert.equal(typeof res._body.added, "number");
 });
 
-test("does not affect other vehicles when blocking dates", async () => {
-  const fetchFn = mockFetch({
-    camry2013: [{ from: "2026-04-01", to: "2026-04-05" }],
-    camry: [],
-  });
+test("does not make GitHub API calls (Phase 4: GitHub writes disabled)", async () => {
+  const githubCalls = [];
   const origFetch = globalThis.fetch;
-  globalThis.fetch = fetchFn;
-
-  const req = makeReq("POST", {
-    secret: "test-admin-secret",
-    vehicleId: "camry",
-    from: "2026-04-10",
-    to: "2026-04-15",
-  });
-  const res = makeRes();
-  await handler(req, res);
-  globalThis.fetch = origFetch;
-
-  assert.equal(res._status, 200);
-  assert.equal(fetchFn.getStored().camry.length, 1, "camry range should be added");
-  assert.equal(fetchFn.getStored().camry2013.length, 1, "camry2013 range should be untouched");
-});
-
-test("creates vehicle key if it does not exist in the file", async () => {
-  const fetchFn = mockFetch({}); // no camry key
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = fetchFn;
-
-  const req = makeReq("POST", {
-    secret: "test-admin-secret",
-    vehicleId: "camry",
-    from: "2026-04-10",
-    to: "2026-04-15",
-  });
-  const res = makeRes();
-  await handler(req, res);
-  globalThis.fetch = origFetch;
-
-  assert.equal(res._status, 200);
-  assert.ok(Array.isArray(fetchFn.getStored().camry), "camry key should be created");
-  assert.equal(fetchFn.getStored().camry.length, 1);
-});
-
-test("makes a GET then a PUT to GitHub API", async () => {
-  const fetchFn = mockFetch();
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = fetchFn;
-
-  const req = makeReq("POST", {
-    secret: "test-admin-secret",
-    vehicleId: "camry",
-    from: "2026-04-01",
-    to: "2026-04-05",
-  });
-  const res = makeRes();
-  await handler(req, res);
-  globalThis.fetch = origFetch;
-
-  assert.equal(fetchFn.calls.length, 2, "Should make exactly 2 GitHub API calls");
-  assert.ok(fetchFn.calls[0].url.includes("booked-dates.json"));
-  assert.equal(fetchFn.calls[0].method, undefined); // GET (no method = default GET)
-  assert.equal(fetchFn.calls[1].method, "PUT");
-});
-
-test("returns 500 when GitHub GET fails", async () => {
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: false, status: 500, text: async () => "error" });
-
-  const req = makeReq("POST", {
-    secret: "test-admin-secret",
-    vehicleId: "camry",
-    from: "2026-04-01",
-    to: "2026-04-05",
-  });
-  const res = makeRes();
-  await handler(req, res);
-  globalThis.fetch = origFetch;
-
-  assert.equal(res._status, 500);
-});
-
-test("returns 500 when GitHub PUT fails", async () => {
-  const origFetch = globalThis.fetch;
-  let callCount = 0;
   globalThis.fetch = async (url, opts) => {
-    callCount++;
-    if (callCount === 1) {
-      return {
-        ok: true,
-        json: async () => ({ content: MOCK_FILE_CONTENT(INITIAL_DATES), sha: "abc" }),
-      };
+    if (typeof url === "string" && url.includes("api.github.com")) {
+      githubCalls.push({ url, method: (opts && opts.method) || "GET" });
     }
-    return { ok: false, status: 409, text: async () => "conflict" };
+    return { ok: true, json: async () => ({}) };
   };
 
   const req = makeReq("POST", {
@@ -321,5 +228,6 @@ test("returns 500 when GitHub PUT fails", async () => {
   await handler(req, res);
   globalThis.fetch = origFetch;
 
-  assert.equal(res._status, 500);
+  assert.equal(res._status, 200);
+  assert.equal(githubCalls.length, 0, "Phase 4: no GitHub API calls should be made");
 });
