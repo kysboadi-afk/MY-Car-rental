@@ -2323,7 +2323,7 @@ export default async function handler(req, res) {
           returnDate:  return_date || "<missing>",
           paymentIntentId: paymentIntent.id,
         });
-        return res.status(200).json({ received: true });
+        return res.status(500).json({ received: false, error: "reservation_deposit missing required booking fields" });
       }
       const resolvedBookingId = bookingRef;
 
