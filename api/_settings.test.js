@@ -11,7 +11,6 @@ import assert from "node:assert/strict";
 import {
   PRICING_DEFAULTS,
   computeCamryAmountFromSettings,
-  computeSlingshotAmountFromSettings,
   computeBreakdownLinesFromSettings,
   computeDppCostFromSettings,
   applyTax,
@@ -33,26 +32,6 @@ test("PRICING_DEFAULTS.camry_biweekly_rate = 650", () => {
 
 test("PRICING_DEFAULTS.camry_monthly_rate = 1300", () => {
   assert.equal(PRICING_DEFAULTS.camry_monthly_rate, 1300);
-});
-
-test("PRICING_DEFAULTS.slingshot_daily_rate = 350", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_daily_rate, 350);
-});
-
-test("PRICING_DEFAULTS.slingshot_3hr_rate = 200", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_3hr_rate, 200);
-});
-
-test("PRICING_DEFAULTS.slingshot_6hr_rate = 250", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_6hr_rate, 250);
-});
-
-test("PRICING_DEFAULTS.slingshot_2day_rate = 700", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_2day_rate, 700);
-});
-
-test("PRICING_DEFAULTS.slingshot_3day_rate = 1050", () => {
-  assert.equal(PRICING_DEFAULTS.slingshot_3day_rate, 1050);
 });
 
 test("PRICING_DEFAULTS.la_tax_rate = 0.1025", () => {
@@ -127,44 +106,6 @@ test("camry promo $1200/month: 30 days = $1200", () => {
   assert.equal(computeCamryAmountFromSettings("camry", "2025-07-01", "2025-07-31", promo), 1200);
 });
 
-// ─── computeSlingshotAmountFromSettings (default rates) ─────────────────────
-
-test("slingshot default: 3 hr = $200 rental + $200 deposit = $400", () => {
-  assert.equal(computeSlingshotAmountFromSettings(3, S), 400);
-});
-
-test("slingshot default: 6 hr = $250 rental + $250 deposit = $500", () => {
-  assert.equal(computeSlingshotAmountFromSettings(6, S), 500);
-});
-
-test("slingshot default: 24 hr = $350 rental + $350 deposit = $700", () => {
-  assert.equal(computeSlingshotAmountFromSettings(24, S), 700);
-});
-
-test("slingshot default: 48 hr = $700 rental + $700 deposit = $1400", () => {
-  assert.equal(computeSlingshotAmountFromSettings(48, S), 1400);
-});
-
-test("slingshot default: 72 hr = $1050 rental + $1050 deposit = $2100", () => {
-  assert.equal(computeSlingshotAmountFromSettings(72, S), 2100);
-});
-
-test("slingshot default: invalid duration returns null", () => {
-  assert.equal(computeSlingshotAmountFromSettings(12, S), null);
-});
-
-// ─── computeSlingshotAmountFromSettings (promo / admin-overridden rates) ─────
-
-test("slingshot promo $300/day: 24 hr = $300 rental + $300 deposit = $600", () => {
-  const promo = { ...S, slingshot_daily_rate: 300 };
-  assert.equal(computeSlingshotAmountFromSettings(24, promo), 600);
-});
-
-test("slingshot promo $600/2-day: 48 hr = $600 rental + $600 deposit = $1200", () => {
-  const promo = { ...S, slingshot_2day_rate: 600 };
-  assert.equal(computeSlingshotAmountFromSettings(48, promo), 1200);
-});
-
 // ─── applyTax ────────────────────────────────────────────────────────────────
 
 test("applyTax: $100 at 10.25% = $110.25", () => {
@@ -237,8 +178,4 @@ test("breakdown: 1-day camry with standard DPP", () => {
   const totalLine = lines.find(l => l.startsWith("Total:"));
   // ($55 + $30) × 1.1025 = $93.71
   assert.equal(totalLine, "Total: $93.71");
-});
-
-test("breakdown: slingshot vehicleId returns null (not supported by breakdown helper)", () => {
-  assert.equal(computeBreakdownLinesFromSettings("slingshot", "2025-07-01", "2025-07-02", S), null);
 });

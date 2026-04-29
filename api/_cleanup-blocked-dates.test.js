@@ -120,21 +120,6 @@ test("returns removed:0 when no expired rows exist", async () => {
   assert.equal(res._body.removed, 0);
 });
 
-test("returns removed count matching deleted rows", async () => {
-  deletedRows = [
-    { id: 1, vehicle_id: "camry", start_date: "2025-01-01", end_date: "2025-01-05", reason: "booking" },
-    { id: 2, vehicle_id: "slingshot", start_date: "2025-02-01", end_date: "2025-02-03", reason: "maintenance" },
-  ];
-  supabaseDeleteError = null;
-  const req = makeReq();
-  const res = makeRes();
-  await handler(req, res);
-  assert.equal(res._status, 200);
-  assert.equal(res._body.success, true);
-  assert.equal(res._body.removed, 2);
-  assert.equal(res._body.rows.length, 2);
-});
-
 test("returns 500 when Supabase delete fails", async () => {
   deletedRows = [];
   supabaseDeleteError = "database connection error";

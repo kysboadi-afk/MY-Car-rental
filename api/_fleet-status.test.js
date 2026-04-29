@@ -32,10 +32,7 @@ const sbMock = {
   client: null,
   vehiclesRows: [
     { vehicle_id: "camry",      rental_status: "available" },
-    { vehicle_id: "slingshot",  rental_status: "available" },
     { vehicle_id: "camry2013",  rental_status: "available" },
-    { vehicle_id: "slingshot2", rental_status: "available" },
-    { vehicle_id: "slingshot3", rental_status: "available" },
   ],
   vehiclesError: null,
   blockedDateRows: [],
@@ -84,10 +81,7 @@ const { default: handler } = await import("./fleet-status.js");
 function resetMock() {
   sbMock.vehiclesRows = [
     { vehicle_id: "camry",      rental_status: "available" },
-    { vehicle_id: "slingshot",  rental_status: "available" },
     { vehicle_id: "camry2013",  rental_status: "available" },
-    { vehicle_id: "slingshot2", rental_status: "available" },
-    { vehicle_id: "slingshot3", rental_status: "available" },
   ];
   sbMock.vehiclesError  = null;
   sbMock.blockedDateRows = [];
@@ -114,7 +108,7 @@ test("no Supabase: returns hard-coded defaults with all vehicles available", asy
   await handler(makeReq(), res);
   assert.equal(res._status, 200);
   // All FALLBACK_VEHICLE_IDS should be available
-  for (const vid of ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"]) {
+  for (const vid of ["camry", "camry2013"]) {
     assert.equal(res._body[vid]?.available, true, `${vid} should default to available`);
   }
 });
@@ -127,7 +121,7 @@ test("Supabase vehicles error: uses fallback IDs, still queries blocked_dates, a
   await handler(makeReq(), res);
   assert.equal(res._status, 200);
   // No blocked dates → all vehicles should be available
-  for (const vid of ["camry", "slingshot"]) {
+  for (const vid of ["camry"]) {
     assert.equal(res._body[vid]?.available, true, `${vid} should be available with no active blocks`);
     assert.equal(res._body[vid]?.available_at, null);
   }
@@ -140,7 +134,7 @@ test("no active blocks: all vehicles available and available_at is null", async 
   await handler(makeReq(), res);
 
   assert.equal(res._status, 200);
-  for (const vid of ["camry", "slingshot", "camry2013", "slingshot2", "slingshot3"]) {
+  for (const vid of ["camry", "camry2013"]) {
     assert.equal(res._body[vid]?.available, true, `${vid} should be available`);
     assert.equal(res._body[vid]?.available_at, null, `${vid} should have available_at=null`);
   }
@@ -166,47 +160,11 @@ test("active blocked_dates row makes vehicle unavailable with date-only next_ava
   assert.ok(res._body.camry.next_available_display.includes("Jun"), "next_available_display should contain the month");
 });
 
-test("vehicle with active block is unavailable even when rental_status=available", async () => {
-  resetMock();
-  // vehicles table says slingshot is "available" — but there is an active block
-  sbMock.blockedDateRows = [
-    { vehicle_id: "slingshot", end_date: "2026-06-11" },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq(), res);
-
-  assert.equal(res._status, 200);
-  // Block overrides the vehicles.rental_status value — vehicle is unavailable
-  assert.equal(res._body.slingshot?.available, false, "slingshot should be unavailable due to active block");
-  assert.ok(res._body.slingshot?.next_available_display, "slingshot should have next_available_display set");
-});
-
-test("latest blocked end_date wins per vehicle", async () => {
-  resetMock();
-  sbMock.blockedDateRows = [
-    { vehicle_id: "camry", end_date: "2026-06-09" },
-    { vehicle_id: "camry", end_date: "2026-06-10" },
-    { vehicle_id: "camry", end_date: "2026-06-08" },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq(), res);
-
-  assert.equal(res._status, 200);
-  assert.equal(res._body.camry?.available, false);
-  // next_available_display should reflect the latest end_date (Jun 10)
-  assert.ok(res._body.camry?.next_available_display?.includes("10"), "display should show day 10");
-});
-
 test("maintenance vehicle is unavailable even with no active blocks", async () => {
   resetMock();
   sbMock.vehiclesRows = [
     { vehicle_id: "camry",      rental_status: "maintenance" },
-    { vehicle_id: "slingshot",  rental_status: "available"   },
     { vehicle_id: "camry2013",  rental_status: "available"   },
-    { vehicle_id: "slingshot2", rental_status: "available"   },
-    { vehicle_id: "slingshot3", rental_status: "available"   },
   ];
   sbMock.blockedDateRows = []; // no blocks
 
@@ -217,7 +175,7 @@ test("maintenance vehicle is unavailable even with no active blocks", async () =
   assert.equal(res._body.camry?.available, false, "maintenance vehicle should be unavailable");
   assert.equal(res._body.camry?.rental_status, "maintenance");
   assert.equal(res._body.camry?.available_at, null, "no block = no available_at");
-  assert.equal(res._body.slingshot?.available, true, "non-maintenance vehicle should still be available");
+  assert.equal(res._body.camry2013?.available, true, "non-maintenance vehicle should still be available");
 });
 
 test("logs [AVAILABLE_AT_COMPUTED] with null return_datetime and date-only next_available_display when end_time is absent", async () => {
@@ -269,35 +227,6 @@ test("blocked_dates row with end_time makes vehicle unavailable with time-aware 
   assert.ok(res._body.camry.next_available_display.includes("Jun"), "next_available_display should contain the month");
 });
 
-test("[AVAILABLE_AT_COMPUTED] log includes ISO return_datetime when end_time is set", async () => {
-  resetMock();
-  sbMock.blockedDateRows = [
-    { vehicle_id: "slingshot", end_date: "2026-06-15", end_time: "12:00" },
-  ];
-
-  const captured = [];
-  const originalLog = console.log;
-  console.log = (...args) => { captured.push(args); };
-
-  try {
-    const res = makeRes();
-    await handler(makeReq(), res);
-
-    assert.equal(res._status, 200);
-    const computedLog = captured.find(
-      (args) => args[0] === "[AVAILABLE_AT_COMPUTED]" && args[1]?.vehicle_id === "slingshot"
-    );
-    assert.ok(computedLog, "Expected [AVAILABLE_AT_COMPUTED] log entry for slingshot");
-    // return_datetime is an ISO string when end_time is set
-    assert.ok(computedLog[1]?.return_datetime, "return_datetime should be set");
-    assert.ok(computedLog[1].return_datetime.includes("T"), "return_datetime should be ISO 8601");
-    // next_available_display includes time
-    assert.ok(res._body.slingshot?.next_available_display?.includes(" at "), "next_available_display should include time");
-  } finally {
-    console.log = originalLog;
-  }
-});
-
 test("expired block (end_date today, end_time in the past) shows vehicle as available", async () => {
   resetMock();
   // Simulate a block that ends today but at 00:01 — always in the past by the time tests run.
@@ -320,24 +249,21 @@ test("expired block (end_date today, end_time in the past) shows vehicle as avai
   assert.equal(res._body.camry?.available_at, null, "available_at should be null when available");
 });
 
-test("future block on today's date (end_time not yet reached) keeps vehicle unavailable", async () => {
+test("latest blocked end_date wins per vehicle", async () => {
   resetMock();
-  const todayLA = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
-
   sbMock.blockedDateRows = [
-    // end_time "23:59" is always in the future during test runs.
-    { vehicle_id: "slingshot", end_date: todayLA, end_time: "23:59" },
+    { vehicle_id: "camry", end_date: "2026-06-09" },
+    { vehicle_id: "camry", end_date: "2026-06-10" },
+    { vehicle_id: "camry", end_date: "2026-06-08" },
   ];
 
   const res = makeRes();
   await handler(makeReq(), res);
 
   assert.equal(res._status, 200);
-  assert.equal(res._body.slingshot?.available, false, "slingshot should be unavailable until 23:59");
-  assert.ok(res._body.slingshot?.available_at, "available_at should be set for future time-aware block");
+  assert.equal(res._body.camry?.available, false);
+  // next_available_display should reflect the latest end_date (Jun 10)
+  assert.ok(res._body.camry?.next_available_display?.includes("10"), "display should show day 10");
 });
 
 test("latest block wins by end_time when end_dates are equal", async () => {

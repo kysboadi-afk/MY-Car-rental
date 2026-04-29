@@ -33,7 +33,6 @@ const MOCK_FILE_CONTENT = (data) =>
   Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
 
 const INITIAL_DATES = {
-  slingshot: [],
   camry: [{ from: "2026-03-01", to: "2026-03-05" }],
 };
 
@@ -245,7 +244,7 @@ test("returns removed:0 when range does not exist", async () => {
 
 test("does not remove ranges for other vehicles", async () => {
   const fetchFn = mockFetch({
-    slingshot: [{ from: "2026-03-01", to: "2026-03-05" }],
+    camry2013: [{ from: "2026-03-01", to: "2026-03-05" }],
     camry: [{ from: "2026-03-01", to: "2026-03-05" }],
   });
   const origFetch = globalThis.fetch;
@@ -263,7 +262,7 @@ test("does not remove ranges for other vehicles", async () => {
 
   assert.equal(res._status, 200);
   assert.equal(fetchFn.getStored().camry.length, 0, "camry range should be removed");
-  assert.equal(fetchFn.getStored().slingshot.length, 1, "slingshot range should be untouched");
+  assert.equal(fetchFn.getStored().camry2013.length, 1, "camry2013 range should be untouched");
 });
 
 test("makes a GET then a PUT to GitHub API", async () => {

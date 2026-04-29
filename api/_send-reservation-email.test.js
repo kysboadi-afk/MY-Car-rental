@@ -275,11 +275,11 @@ test("owner email notes when ID is attached", async () => {
 // ─── blockBookedDates + markVehicleUnavailable shared mock helpers ─────────
 
 const MOCK_BOOKED_DATES_CONTENT =
-  Buffer.from(JSON.stringify({ slingshot: [], camry: [] }, null, 2) + "\n").toString("base64");
+  Buffer.from(JSON.stringify({ camry: [] }, null, 2) + "\n").toString("base64");
 
 const MOCK_FLEET_STATUS_CONTENT =
   Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: true }, camry2013: { available: true } }, null, 2) + "\n"
+    JSON.stringify({ camry: { available: true }, camry2013: { available: true } }, null, 2) + "\n"
   ).toString("base64");
 
 /**
@@ -367,41 +367,6 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   assert.equal(updated.camry.length, 1, "camry should have one booked range");
   assert.equal(updated.camry[0].from, VALID_BODY.pickup);
   assert.equal(updated.camry[0].to, VALID_BODY.returnDate);
-});
-
-test("blockBookedDates: works correctly for slingshot vehicle", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const fetchCalls = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
-  process.env.GITHUB_TOKEN = "test-token";
-
-  const slingshotBody = {
-    ...VALID_BODY,
-    vehicleId: "slingshot",
-    car: "Slingshot R",
-    pricePerDay: 300,
-    deposit: 150,
-    total: "450",
-  };
-  const req = makeReq("POST", slingshotBody);
-  const res = makeRes();
-  await handler(req, res);
-
-  delete process.env.GITHUB_TOKEN;
-  globalThis.fetch = originalFetch;
-
-  assert.equal(res._status, 200);
-  const bookedDatesPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("booked-dates.json"));
-  assert.ok(bookedDatesPut, "PUT to booked-dates.json should have been made");
-  const putBody = JSON.parse(bookedDatesPut.body);
-  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.slingshot.length, 1, "slingshot should have one booked range");
-  assert.equal(updated.slingshot[0].from, slingshotBody.pickup);
-  assert.equal(updated.slingshot[0].to, slingshotBody.returnDate);
-  assert.equal(updated.camry.length, 0, "camry should remain unaffected");
 });
 
 test("blockBookedDates: GitHub API failure does not change the 200 response", async () => {
@@ -749,38 +714,6 @@ test("markVehicleUnavailable: fleet-status.json is updated to available:false af
   assert.ok(putBody.message.toLowerCase().includes("unavailable"), "Commit message should mention unavailable");
 });
 
-test("markVehicleUnavailable: fleet-status.json is updated for slingshot vehicle too", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const fetchCalls = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
-  process.env.GITHUB_TOKEN = "test-token";
-
-  const req = makeReq("POST", {
-    ...VALID_BODY,
-    vehicleId: "slingshot",
-    car: "Slingshot R",
-    pricePerDay: 300,
-    deposit: 150,
-    total: "450",
-  });
-  const res = makeRes();
-  await handler(req, res);
-
-  delete process.env.GITHUB_TOKEN;
-  globalThis.fetch = originalFetch;
-
-  assert.equal(res._status, 200);
-  const fleetStatusPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("fleet-status.json"));
-  assert.ok(fleetStatusPut, "PUT to fleet-status.json should have been made");
-  const putBody = JSON.parse(fleetStatusPut.body);
-  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.slingshot.available, false, "slingshot should be marked unavailable");
-  assert.equal(updated.camry.available, true, "camry should remain unaffected");
-});
-
 test("markVehicleUnavailable: fleet-status.json is NOT updated for a failed payment", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
@@ -853,7 +786,7 @@ test("markVehicleUnavailable: skips the GitHub write when vehicle is already una
 
   // Provide a fleet-status where camry is ALREADY unavailable
   const alreadyUnavailableContent = Buffer.from(
-    JSON.stringify({ slingshot: { available: true }, camry: { available: false }, camry2013: { available: true } }, null, 2) + "\n"
+    JSON.stringify({ camry: { available: false }, camry2013: { available: true } }, null, 2) + "\n"
   ).toString("base64");
 
   const putCalls = [];
@@ -1054,137 +987,3 @@ test("non-deposit full-payment email does NOT include 'Pay Balance Online' link"
   );
 });
 
-// ─── Slingshot-specific email content tests ────────────────────────────────
-
-const SLINGSHOT_BODY = {
-  vehicleId:             "slingshot",
-  car:                   "Slingshot R",
-  vehicleMake:           "Polaris",
-  vehicleModel:          "Slingshot XR",
-  vehicleYear:           2023,
-  vehicleVin:            "57XAARHB8P8156561",
-  name:                  "John Smith",
-  pickup:                "2026-04-10",
-  pickupTime:            "10:00 AM",
-  returnDate:            "2026-04-10",
-  returnTime:            "4:00 PM",
-  email:                 "john@example.com",
-  phone:                 "555-9876",
-  total:                 "275.50",
-  paymentStatus:         "confirmed",
-  deposit:               150,
-  days:                  1,
-  slingshotDuration:     6,
-  paymentIntentId:       "pi_slingshot_test_123",
-  insuranceCoverageChoice: "yes",
-  protectionPlan:        false,
-  signature:             "John Smith",
-};
-
-test("Slingshot owner email includes insurance option for Option A (own insurance)", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const req = makeReq("POST", SLINGSHOT_BODY);
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  const ownerMail = sentMails[0];
-  assert.ok(ownerMail, "Owner email should be sent");
-  assert.ok(
-    ownerMail.html.includes("Option A"),
-    "Owner email should include Option A for own insurance choice"
-  );
-  assert.ok(
-    ownerMail.html.includes("Insurance Option"),
-    "Owner email should include an Insurance Option row"
-  );
-});
-
-test("Slingshot owner email includes insurance option for Option B (DPP)", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const req = makeReq("POST", {
-    ...SLINGSHOT_BODY,
-    insuranceCoverageChoice: "no",
-    protectionPlan:          true,
-  });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  const ownerMail = sentMails[0];
-  assert.ok(ownerMail, "Owner email should be sent");
-  assert.ok(
-    ownerMail.html.includes("Option B"),
-    "Owner email should include Option B for DPP choice"
-  );
-  assert.ok(
-    ownerMail.html.includes("Protection Plan") || ownerMail.html.includes("DPP"),
-    "Owner email should mention the Damage Protection Plan"
-  );
-});
-
-test("Slingshot customer email is sent on confirmed payment", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const req = makeReq("POST", SLINGSHOT_BODY);
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.equal(mockSendMail.mock.callCount(), 2, "Both owner and customer emails should be sent for Slingshot");
-  const customerMail = sentMails[1];
-  assert.ok(customerMail, "Customer email should be sent");
-  assert.equal(customerMail.to, SLINGSHOT_BODY.email);
-  assert.ok(
-    customerMail.html.includes("Slingshot") || customerMail.html.includes("Slingshot R"),
-    "Customer email should reference the Slingshot vehicle"
-  );
-});
-
-test("Slingshot email does NOT include 'Pay Balance Online' link (full payment upfront)", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const req = makeReq("POST", SLINGSHOT_BODY);
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  const customerMail = sentMails[1];
-  assert.ok(customerMail, "Customer email should be sent");
-  assert.ok(
-    !customerMail.html.includes("Pay Balance Online"),
-    "Slingshot full-payment email should NOT include a 'Pay Balance Online' link"
-  );
-});
-
-test("Slingshot blockBookedDates and markVehicleUnavailable are called on confirmed booking", async () => {
-  mockSendMail.mock.resetCalls();
-  sentMails.length = 0;
-
-  const fetchCalls = [];
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = makeGitHubFetchMock(fetchCalls);
-  process.env.GITHUB_TOKEN = "test-token";
-
-  const req = makeReq("POST", SLINGSHOT_BODY);
-  const res = makeRes();
-  await handler(req, res);
-
-  delete process.env.GITHUB_TOKEN;
-  globalThis.fetch = originalFetch;
-
-  assert.equal(res._status, 200);
-  const bookedDatesPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("booked-dates.json"));
-  assert.ok(bookedDatesPut, "booked-dates.json should be updated after Slingshot booking");
-  const fleetPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("fleet-status.json"));
-  assert.ok(fleetPut, "fleet-status.json should be updated after Slingshot booking");
-  const putBody = JSON.parse(bookedDatesPut.body);
-  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.slingshot.length, 1, "slingshot dates should be blocked");
-});

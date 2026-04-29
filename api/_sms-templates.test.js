@@ -25,7 +25,6 @@ import {
   ACTIVE_RENTAL_15MIN_BEFORE_END,
   RETURN_REMINDER_24H,
   EXTEND_UNAVAILABLE,
-  EXTEND_OPTIONS_SLINGSHOT,
   EXTEND_OPTIONS_ECONOMY,
   EXTEND_FLEXIBLE_PROMPT,
   EXTEND_INVALID_INPUT,
@@ -232,12 +231,6 @@ test("render RETURN_REMINDER_24H fills all variables", () => {
 test("EXTEND_UNAVAILABLE explains the situation", () => {
   assert.ok(EXTEND_UNAVAILABLE.includes("reserved after your current booking"));
   assert.ok(EXTEND_UNAVAILABLE.includes("return the vehicle"));
-});
-
-test("EXTEND_OPTIONS_SLINGSHOT has 3 options", () => {
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("1 = +1 hour"));
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("2 = +2 hours"));
-  assert.ok(EXTEND_OPTIONS_SLINGSHOT.includes("4 = +4 hours"));
 });
 
 test("EXTEND_OPTIONS_ECONOMY has 3 options", () => {

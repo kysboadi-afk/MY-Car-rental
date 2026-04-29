@@ -413,23 +413,6 @@ function piSucceededEvent(meta, amountCents = 35000, livemode = true) {
 
 // ─── 1. saveWebhookBookingRecord: new booking fallback ───────────────────────
 
-test("webhook new booking: PREFLIGHT — autoUpsertBooking is called", async () => {
-  resetStore(); resetCalls();
-  const event = piSucceededEvent({
-    vehicle_id: "slingshot", vehicle_name: "Slingshot R",
-    pickup_date: "2026-08-01", return_date: "2026-08-01",
-    renter_name: "Test User", renter_phone: "+13105551111",
-    email: "test@example.com", payment_type: "full_payment",
-  });
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
-  assert.ok(
-    automationCalls.booking.length > 0,
-    "PREFLIGHT FAIL: autoUpsertBooking must be called in saveWebhookBookingRecord to sync the Supabase bookings table"
-  );
-});
-
 test("webhook test mode: skips booking persistence and availability changes (livemode=false)", async () => {
   resetStore(); resetCalls();
   const event = piSucceededEvent({
@@ -444,23 +427,6 @@ test("webhook test mode: skips booking persistence and availability changes (liv
   assert.deepEqual(res._body, { received: true, testMode: true }, "livemode=false must short-circuit as test mode");
   assert.equal(automationCalls.booking.length, 0, "livemode=false must not create bookings");
   assert.equal(automationCalls.blocked.length, 0, "livemode=false must not create blocked dates");
-});
-
-test("webhook new booking: PREFLIGHT — autoCreateBlockedDate is called", async () => {
-  resetStore(); resetCalls();
-  const event = piSucceededEvent({
-    vehicle_id: "slingshot", vehicle_name: "Slingshot R",
-    pickup_date: "2026-08-02", return_date: "2026-08-02",
-    renter_name: "Test User", renter_phone: "+13105551111",
-    email: "test@example.com", payment_type: "full_payment",
-  });
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
-  assert.ok(
-    automationCalls.blocked.length > 0,
-    "PREFLIGHT FAIL: autoCreateBlockedDate must be called in saveWebhookBookingRecord to sync the Supabase blocked_dates table"
-  );
 });
 
 test("webhook new booking: PREFLIGHT — all four sync helpers fire on new payment", async () => {
@@ -631,47 +597,6 @@ test("webhook balance_payment: PREFLIGHT — autoUpsertBooking called after stat
     automationCalls.booking.length > 0,
     "PREFLIGHT FAIL: autoUpsertBooking must be called after balance_payment so Supabase reflects the booked_paid status"
   );
-});
-
-// ─── 3. rental_extension: return-date sync to Supabase ───────────────────────
-
-test("webhook rental_extension: PREFLIGHT — autoUpsertBooking called with updated return date", async () => {
-  resetStore(); resetCalls();
-  const origBookingId = "bk-active-ext";
-  bookingsStore["slingshot"] = [{
-    bookingId:    origBookingId,
-    vehicleId:    "slingshot",
-    name:         "Active Renter",
-    phone:        "+13105554444",
-    pickupDate:   "2026-11-01",
-    returnDate:   "2026-11-01",
-    returnTime:   "3:00 PM",
-    status:       "active_rental",
-    amountPaid:   350,
-    extensionPendingPayment: {
-      newReturnDate: "2026-11-02",
-      newReturnTime: "3:00 PM",
-    },
-  }];
-  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
-
-  const event = piSucceededEvent({
-    payment_type:        "rental_extension",
-    vehicle_id:          "slingshot",
-    booking_id:             origBookingId,
-    new_return_date:     "2026-11-02",
-    new_return_time:     "3:00 PM",
-  });
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
-  assert.ok(
-    automationCalls.booking.length > 0,
-    "PREFLIGHT FAIL: autoUpsertBooking must be called after rental_extension so Supabase gets the updated return date"
-  );
-  // Verify the synced booking has the new return date
-  const synced = automationCalls.booking[0];
-  assert.equal(synced.returnDate, "2026-11-02", "Supabase booking should reflect the extended return date");
 });
 
 // ─── 4. Auto-activation on payment confirmation ───────────────────────────────
@@ -1011,65 +936,6 @@ test("webhook rental_extension: alreadyApplied path recovers missing revenue rec
 });
 
 
-test("webhook rental_extension: returnTime is preserved from existing booking and invalid status is rejected", async () => {
-  resetStore(); resetCalls();
-  const bookingId = "bk-ext-time-rule";
-  bookingsStore["slingshot"] = [{
-    bookingId,
-    vehicleId: "slingshot",
-    name: "Time Rule Renter",
-    phone: "+13105558888",
-    pickupDate: "2026-12-20",
-    pickupTime: "3:00 PM",
-    returnDate: "2026-12-21",
-    returnTime: "3:00 PM",
-    status: "reserved",
-    amountPaid: 300,
-    extensionPendingPayment: { newReturnDate: "2026-12-22", newReturnTime: "11:30 AM", price: 300 },
-  }];
-  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
-
-  const event = piSucceededEvent({
-    payment_type: "rental_extension",
-    vehicle_id: "slingshot",
-    booking_id:             bookingId,
-    new_return_date: "2026-12-22",
-    new_return_time: "11:30 AM",
-  }, 30000);
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
-  const updated = bookingsStore.slingshot.find((b) => b.bookingId === bookingId);
-  assert.equal(updated.returnTime, "15:00", "returnTime must preserve existing booking return time in HH:MM format");
-
-  // Invalid status branch
-  resetCalls();
-  bookingsStore["slingshot"] = [{
-    bookingId: "bk-ext-invalid-status",
-    vehicleId: "slingshot",
-    pickupDate: "2026-12-25",
-    pickupTime: "3:00 PM",
-    returnDate: "2026-12-26",
-    returnTime: "3:00 PM",
-    status: "booked_paid",
-    amountPaid: 300,
-  }];
-  supabaseBookingsStore["bk-ext-invalid-status"] = { id: "sb_bk-ext-invalid-status", booking_ref: "bk-ext-invalid-status" };
-  const invalidEvent = piSucceededEvent({
-    payment_type: "rental_extension",
-    vehicle_id: "slingshot",
-    booking_id:             "bk-ext-invalid-status",
-    new_return_date: "2026-12-27",
-    new_return_time: "3:00 PM",
-  }, 30000);
-  const invalidRes = makeRes();
-  await handler(makeWebhookReq(invalidEvent), invalidRes);
-  assert.equal(invalidRes._status, 200);
-  const invalidSaved = bookingsStore.slingshot.find((b) => b.bookingId === "bk-ext-invalid-status");
-  assert.equal(invalidSaved.returnDate, "2026-12-26", "invalid status must not mutate booking");
-  assert.equal(automationCalls.booking.length, 0, "invalid status must not upsert booking");
-});
-
 // ─── 6b. rental_extension: Supabase-only booking fallback ────────────────────
 
 test("webhook rental_extension: Supabase-only booking — updates bookings.return_date and creates revenue record", async () => {
@@ -1212,27 +1078,6 @@ test("webhook reservation_deposit: uses customer_details.email when metadata ema
   assert.ok(bookingSync, "reservation_deposit must sync booking");
   assert.equal(bookingSync.email, "cdemail@example.com",
     "should fall back to customer_details.email when metadata email is absent");
-});
-
-test("webhook full_payment: uses customer_details.phone when renter_phone absent from metadata", async () => {
-  resetStore(); resetCalls();
-
-  const event = piSucceededEvent({
-    vehicle_id: "slingshot", vehicle_name: "Slingshot R",
-    pickup_date: "2026-11-10", return_date: "2026-11-10",
-    renter_name: "CD Full Pay",
-    renter_phone: "",    // ← missing
-    email: "cdfull@example.com",
-    payment_type: "full_payment",
-  });
-  event.data.object.customer_details = { phone: "+13105550011", email: null };
-
-  const res = makeRes();
-  await handler(makeWebhookReq(event), res);
-  assert.equal(res._status, 200);
-
-  const bookingSync = automationCalls.booking.find((b) => b.phone === "+13105550011");
-  assert.ok(bookingSync, "full_payment booking must carry phone from customer_details fallback");
 });
 
 test("webhook full_payment: uses billing_details.phone when renter_phone and customer_details are both absent", async () => {

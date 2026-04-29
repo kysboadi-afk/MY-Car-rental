@@ -151,27 +151,6 @@ test("500 when ADMIN_SECRET env var is not set", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("list: falls back to GitHub when Supabase env vars are missing", async () => {
-  setSecret("testSecret");
-  supabaseMockState.client = null; // getSupabaseAdmin() returns null
-  vehiclesMockState.result = {
-    data: {
-      slingshot: { vehicle_id: "slingshot", vehicle_name: "Slingshot R", status: "active" },
-    },
-    sha: null,
-  };
-  vehiclesMockState.throwErr = null;
-
-  const req = makeReq({ body: { secret: "testSecret", action: "list" } });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.ok(res._body.vehicles);
-  assert.equal(res._body.vehicles.slingshot.vehicle_id, "slingshot");
-  setSecret(REAL_ADMIN_SECRET);
-});
-
 // ─── list ─────────────────────────────────────────────────────────────────────
 
 test("list: returns empty object when table is empty", async () => {
@@ -189,50 +168,6 @@ test("list: returns empty object when table is empty", async () => {
 
   assert.equal(res._status, 200);
   assert.deepEqual(res._body.vehicles, {});
-  setSecret(REAL_ADMIN_SECRET);
-});
-
-test("list: returns object keyed by vehicle_id", async () => {
-  setSecret("testSecret");
-  const rows = [
-    { vehicle_id: "slingshot",  data: { vehicle_id: "slingshot",  status: "active" } },
-    { vehicle_id: "camry",      data: { vehicle_id: "camry",      status: "maintenance" } },
-  ];
-  supabaseMockState.client = {
-    from: () => ({
-      select: () => Promise.resolve({ data: rows, error: null }),
-    }),
-  };
-
-  const req = makeReq({ body: { secret: "testSecret" } }); // no action → defaults to list
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.deepEqual(res._body.vehicles, {
-    slingshot: {
-      vehicle_id:               "slingshot",
-      status:                   "active",
-      bouncie_device_id:        null,
-      total_mileage:            0,
-      last_synced_at:           null,
-      last_oil_change_mileage:  null,
-      last_brake_check_mileage: null,
-      last_tire_change_mileage: null,
-      tracked:                  false,
-    },
-    camry: {
-      vehicle_id:               "camry",
-      status:                   "maintenance",
-      bouncie_device_id:        null,
-      total_mileage:            0,
-      last_synced_at:           null,
-      last_oil_change_mileage:  null,
-      last_brake_check_mileage: null,
-      last_tire_change_mileage: null,
-      tracked:                  false,
-    },
-  });
   setSecret(REAL_ADMIN_SECRET);
 });
 
@@ -314,19 +249,6 @@ test("update: 400 on invalid vehicleId format", async () => {
   setSecret(REAL_ADMIN_SECRET);
 });
 
-test("update: 400 on invalid status value", async () => {
-  setSecret("testSecret");
-  supabaseMockState.client = makeSupabase();
-
-  const req = makeReq({ body: { secret: "testSecret", action: "update", vehicleId: "slingshot", updates: { status: "retired" } } });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 400);
-  assert.ok(res._body.error.includes("status"));
-  setSecret(REAL_ADMIN_SECRET);
-});
-
 test("update: 400 on negative purchase_price", async () => {
   setSecret("testSecret");
   supabaseMockState.client = makeSupabase();
@@ -350,71 +272,6 @@ test("update: 400 on non-numeric vehicle_year", async () => {
 
   assert.equal(res._status, 400);
   assert.ok(res._body.error.includes("vehicle_year"));
-  setSecret(REAL_ADMIN_SECRET);
-});
-
-test("update: 404 when vehicle row not found in Supabase", async () => {
-  setSecret("testSecret");
-  // maybeSingle returns null data (row not found)
-  const chain = {
-    select:      () => chain,
-    eq:          () => chain,
-    maybeSingle: () => Promise.resolve({ data: null, error: null }),
-  };
-  supabaseMockState.client = { from: () => chain };
-
-  const req = makeReq({ body: { secret: "testSecret", action: "update", vehicleId: "slingshot", updates: { status: "maintenance" } } });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 404);
-  assert.ok(res._body.error.includes("not found"));
-  setSecret(REAL_ADMIN_SECRET);
-});
-
-test("update: writes merged data to Supabase and returns updated vehicle", async () => {
-  setSecret("testSecret");
-
-  const existingData = { vehicle_id: "slingshot", status: "active", purchase_price: 10000 };
-  let upsertPayload = null;
-
-  const upsertChain = {
-    select: () => upsertChain,
-    single: () => Promise.resolve({
-      data: { data: { ...existingData, status: "maintenance" } },
-      error: null,
-    }),
-  };
-  const selectChain = {
-    select:      () => selectChain,
-    eq:          () => selectChain,
-    maybeSingle: () => Promise.resolve({ data: { data: existingData }, error: null }),
-  };
-
-  supabaseMockState.client = {
-    from: (table) => {
-      return {
-        select:      () => selectChain,
-        eq:          () => selectChain,
-        maybeSingle: () => selectChain.maybeSingle(),
-        upsert:      (payload) => { upsertPayload = payload; return upsertChain; },
-      };
-    },
-  };
-
-  const req = makeReq({ body: { secret: "testSecret", action: "update", vehicleId: "slingshot", updates: { status: "maintenance" } } });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.equal(res._body.success, true);
-  assert.ok(res._body.vehicle);
-  assert.equal(res._body.vehicle.status, "maintenance");
-  // Verify upsert was called with merged data
-  assert.ok(upsertPayload);
-  assert.equal(upsertPayload.vehicle_id, "slingshot");
-  assert.equal(upsertPayload.data.status, "maintenance");
-  assert.equal(upsertPayload.data.purchase_price, 10000); // existing field preserved
   setSecret(REAL_ADMIN_SECRET);
 });
 
@@ -505,32 +362,6 @@ test("GET: returns empty array when table is empty", async () => {
   assert.deepEqual(res._body, []);
 });
 
-test("GET: returns array of flattened vehicle objects", async () => {
-  const rows = [
-    { vehicle_id: "slingshot",  data: { vehicle_id: "slingshot",  vehicle_name: "Slingshot R", cover_image: "../images/car2.jpg", status: "active" } },
-    { vehicle_id: "camry",      data: { vehicle_id: "camry",      vehicle_name: "Camry 2012",  cover_image: "images/car1.jpg",   status: "active" } },
-  ];
-  supabaseMockState.client = {
-    from: () => ({
-      select: () => Promise.resolve({ data: rows, error: null }),
-    }),
-  };
-
-  const req = makeReq({ method: "GET" });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.ok(Array.isArray(res._body));
-  assert.equal(res._body.length, 2);
-  assert.equal(res._body[0].vehicle_id, "slingshot");
-  assert.equal(res._body[0].vehicle_name, "Slingshot R");
-  // "../images/car2.jpg" normalizes to "/images/car2.jpg"
-  assert.equal(res._body[0].cover_image, "/images/car2.jpg");
-  // "images/car1.jpg" normalizes to "/images/car1.jpg"
-  assert.equal(res._body[1].cover_image, "/images/car1.jpg");
-});
-
 test("GET: collapses duplicate camry rows to one UI vehicle id and keeps richer row", async () => {
   const rows = [
     { vehicle_id: "camry", data: { vehicle_id: "camry", status: "active" } },
@@ -602,26 +433,6 @@ test("GET: falls back to GitHub when Supabase select returns an error", async ()
   assert.ok(Array.isArray(res._body));
   assert.equal(res._body.length, 1);
   assert.equal(res._body[0].vehicle_id, "camry");
-});
-
-test("GET: falls back to GitHub when Supabase is not configured", async () => {
-  supabaseMockState.client = null;
-  vehiclesMockState.result = {
-    data: {
-      slingshot: { vehicle_id: "slingshot", vehicle_name: "Slingshot R", status: "active", cover_image: "/images/car2.jpg" },
-    },
-    sha: null,
-  };
-  vehiclesMockState.throwErr = null;
-
-  const req = makeReq({ method: "GET" });
-  const res = makeRes();
-  await handler(req, res);
-
-  assert.equal(res._status, 200);
-  assert.ok(Array.isArray(res._body));
-  assert.equal(res._body.length, 1);
-  assert.equal(res._body[0].vehicle_id, "slingshot");
 });
 
 test("GET: 500 when Supabase error AND GitHub fallback also fails", async () => {

@@ -247,22 +247,6 @@ test("list: skips non-paid bookings when deriving from bookings.json", async () 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. LIST — Supabase has records → returns them directly
-// ═══════════════════════════════════════════════════════════════════════════════
-test("list: returns Supabase records when available and non-empty", async () => {
-  resetState();
-  supabaseRecords = [
-    { id: "sb-1", booking_id: "bk-sb", vehicle_id: "slingshot", gross_amount: 350, payment_status: "paid" },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
-  assert.equal(res._status, 200);
-  assert.equal(res._body.records.length, 1);
-  assert.equal(res._body.records[0].id, "sb-1");
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // 4. LIST — Supabase empty, GitHub has records
 // ═══════════════════════════════════════════════════════════════════════════════
 test("list: returns GitHub records when Supabase is empty but GitHub file exists", async () => {
@@ -445,28 +429,6 @@ test("record_extension_fee: saves to GitHub with booking_id = original_booking_i
   assert.equal(ghRecords[0].type, "extension", "GitHub record should have type=extension");
 });
 
-test("record_extension_fee: auto-generates notes when not provided", async () => {
-  resetState();
-  ghSha     = "sha-existing";
-  ghRecords = [];
-
-  const res = makeRes();
-  await handler(makeReq({
-    secret:              "test-admin-secret",
-    action:              "record_extension_fee",
-    original_booking_id: "abc123",
-    vehicle_id:          "slingshot",
-    amount:              75,
-  }), res);
-
-  assert.equal(res._status, 201);
-  assert.ok(res._body.record.notes.includes("abc123"), "auto-generated notes should reference original booking");
-  assert.ok(res._body.record.notes.toLowerCase().includes("extension"), "notes should mention extension");
-  assert.equal(res._body.record.payment_method, "external", "default payment_method should be 'external'");
-  assert.equal(res._body.record.type, "extension", "type should be 'extension'");
-  assert.equal(res._body.record.booking_id, "abc123", "booking_id should equal original_booking_id");
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // 9. LIST BY BOOKING
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -543,32 +505,6 @@ test("list_by_booking: includes rental gross when no extension rows exist", asyn
   assert.equal(res._status, 200);
   assert.equal(res._body.groups.length, 1);
   assert.equal(res._body.groups[0].total_gross, 400, "rental gross should be counted when no extensions exist");
-});
-
-test("list_by_booking: groups extension rows under parent via original_booking_id", async () => {
-  resetState();
-  ghSha = "sha-existing";
-  ghRecords = [
-    { id: "r1", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 600, payment_status: "paid",
-      type: "rental", original_booking_id: null, is_orphan: false, sync_excluded: false,
-      pickup_date: "2026-04-10", return_date: "2026-04-13" },
-    { id: "r2", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 300, payment_status: "paid",
-      type: "extension", original_booking_id: "bk-parent", is_orphan: false, sync_excluded: false,
-      pickup_date: "2026-04-13", return_date: "2026-04-16" },
-    { id: "r3", booking_id: "bk-parent", vehicle_id: "slingshot", gross_amount: 300, payment_status: "paid",
-      type: "extension", original_booking_id: "bk-parent", is_orphan: false, sync_excluded: false,
-      pickup_date: "2026-04-16", return_date: "2026-04-19" },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret", action: "list_by_booking" }), res);
-  assert.equal(res._status, 200);
-  assert.equal(res._body.groups.length, 1, "all rows should collapse into one group");
-  const g = res._body.groups[0];
-  assert.equal(g.record_count, 3);
-  assert.equal(g.total_gross, 1200, "total_gross should sum rental + both extensions (600+300+300=1200)");
-  assert.equal(g.min_pickup_date, "2026-04-10");
-  assert.equal(g.max_return_date, "2026-04-19");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

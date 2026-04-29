@@ -17,7 +17,6 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 test("normalizeVehicleId: canonical ID passes through unchanged", () => {
   assert.equal(normalizeVehicleId("camry"),     "camry");
   assert.equal(normalizeVehicleId("camry2013"), "camry2013");
-  assert.equal(normalizeVehicleId("slingshot"), "slingshot");
 });
 
 test("normalizeVehicleId: display name resolves to canonical ID", () => {
@@ -43,7 +42,6 @@ test("normalizeVehicleId: empty / null input returns empty string", () => {
 test("uiVehicleId: canonical DB ID passes through unchanged", () => {
   assert.equal(uiVehicleId("camry"),     "camry");
   assert.equal(uiVehicleId("camry2013"), "camry2013");
-  assert.equal(uiVehicleId("slingshot"), "slingshot");
 });
 
 test("uiVehicleId: legacy DB ID 'camry2012' maps to canonical 'camry'", () => {
@@ -63,7 +61,7 @@ test("uiVehicleId: empty / null input returns empty string", () => {
 // ── round-trip: normalizeVehicleId ∘ uiVehicleId ─────────────────────────────
 
 test("round-trip: uiVehicleId(normalizeVehicleId(x)) is idempotent for known IDs", () => {
-  const inputs = ["camry", "camry2012", "Camry 2012", "camry2013", "Camry 2013 SE", "slingshot"];
+  const inputs = ["camry", "camry2012", "Camry 2012", "camry2013", "Camry 2013 SE"];
   for (const input of inputs) {
     const canonical = normalizeVehicleId(input);
     const ui        = uiVehicleId(canonical);
@@ -89,7 +87,7 @@ test("dashboard grouping: legacy camry2012 bookings count towards 'camry' vehicl
   //   → filteredVehicleIds.has("camry") === true
   //   → booking included ✓
 
-  const filteredVehicleIds = new Set(["camry", "camry2013", "slingshot"]);
+  const filteredVehicleIds = new Set(["camry", "camry2013"]);
 
   // Legacy row from Supabase
   const row = { vehicle_id: "camry2012", deposit_paid: 150 };

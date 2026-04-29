@@ -269,19 +269,6 @@ test("replay: rental_extension is rejected (422)", async () => {
   assert.equal(stepCalls.saveWebhookBookingRecord.length, 0);
 });
 
-test("replay: slingshot_balance_payment is rejected (422)", async () => {
-  reset();
-  stripePiFixture = makePi("pi_slb_1", "slingshot_balance_payment");
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret", pi_id: "pi_slb_1" }), res);
-
-  assert.equal(res._status, 422);
-  assert.equal(res._body.status, "error");
-  assert.ok(res._body.reason.includes("slingshot_balance_payment"));
-  assert.equal(stepCalls.saveWebhookBookingRecord.length, 0);
-});
-
 test("replay: PI missing vehicle_id in metadata is rejected (422)", async () => {
   reset();
   stripePiFixture = makePi("pi_nocar_1", "full_payment", { vehicle_id: undefined });
