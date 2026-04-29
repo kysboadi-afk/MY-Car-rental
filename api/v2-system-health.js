@@ -436,6 +436,9 @@ async function checkStaleReservations(sb) {
 // Check 6 — Stripe PaymentIntent exists but no booking
 // Detects is_orphan=true revenue records with payment_intent_id set —
 // these are Stripe-confirmed payments for which no booking was ever created.
+// Records whose booking_id already matches a bookings row are ignored — those
+// are legacy false-positive orphan flags left over from a previous bug and do
+// not represent a real data gap.
 async function checkStripePaymentNoBooking(sb) {
   try {
     const cutoff60d = new Date(Date.now() - SIXTY_DAYS_MS).toISOString();
@@ -457,12 +460,48 @@ async function checkStripePaymentNoBooking(sb) {
       );
     }
 
-    const rows = orphanPIRows || [];
-    if (rows.length === 0) {
+    const allRows = orphanPIRows || [];
+    if (allRows.length === 0) {
       return check(
         "Stripe Payment → No Booking",
         "ok",
         "No unlinked Stripe payments in the last 60 days.",
+      );
+    }
+
+    // Cross-reference booking_id against bookings.booking_ref.
+    // Records whose booking_id matches a real booking are legacy false-positive
+    // orphan flags — they must not be surfaced as errors.
+    const candidateBookingIds = [...new Set(allRows.map((r) => r.booking_id).filter(Boolean))];
+    let existingRefs = new Set();
+    if (candidateBookingIds.length > 0) {
+      const { data: bookingRows, error: bErr } = await sb
+        .from("bookings")
+        .select("booking_ref")
+        .in("booking_ref", candidateBookingIds);
+      if (!bErr) {
+        existingRefs = new Set((bookingRows || []).map((b) => b.booking_ref));
+      }
+    }
+
+    // Only surface rows where booking_id is absent from bookings (true orphans).
+    const rows = allRows.filter((r) => !r.booking_id || !existingRefs.has(r.booking_id));
+    const legacyFalsePositives = allRows.length - rows.length;
+
+    if (legacyFalsePositives > 0) {
+      console.log(
+        `[v2-system-health] stripePaymentNoBooking: ${legacyFalsePositives} record(s) skipped — ` +
+        "is_orphan=true but booking exists (legacy stale flag); use Fix Now to clear.",
+      );
+    }
+
+    if (rows.length === 0) {
+      return check(
+        "Stripe Payment → No Booking",
+        "ok",
+        legacyFalsePositives > 0
+          ? `No truly unlinked Stripe payments. ${legacyFalsePositives} legacy orphan flag(s) cleared by Fix Now.`
+          : "No unlinked Stripe payments in the last 60 days.",
       );
     }
 
@@ -1043,8 +1082,51 @@ async function fixPaymentBookingRevenue(sb) {
   };
 }
 
-// Fix 4: flag true-orphan revenue records as is_orphan=true
+// Fix 4: resolve orphan revenue records.
+//
+// Two-pass strategy reflecting the current data model:
+//   Pass A — Un-orphan legacy false positives:
+//     Clear is_orphan=true on any rental/extension records whose booking_id
+//     already matches a real booking_ref.  These were incorrectly flagged by
+//     old code that queried the non-existent bookings.booking_id column.
+//   Pass B — Flag true orphans:
+//     Set is_orphan=true on any is_orphan=false records whose booking_id has
+//     no matching booking_ref (genuine missing-booking situations).
 async function fixOrphanRevenue(sb) {
+  // ── Pass A: un-orphan stale false-positive records ─────────────────────────
+  let unorphaned = 0;
+  const { data: flaggedRows, error: fErr } = await sb
+    .from("revenue_records")
+    .select("id, booking_id")
+    .eq("is_orphan", true)
+    .eq("sync_excluded", false)
+    .in("type", ["rental", "extension"])
+    .not("booking_id", "is", null)
+    .limit(500);
+  if (fErr) throw new Error("Could not query is_orphan=true records: " + fErr.message);
+
+  if (flaggedRows && flaggedRows.length > 0) {
+    const flaggedIds = [...new Set(flaggedRows.map((r) => r.booking_id))];
+    const { data: validFlagged, error: vErr } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .in("booking_ref", flaggedIds);
+    if (vErr) throw new Error("Could not verify flagged booking refs: " + vErr.message);
+
+    const validFlaggedRefs = new Set((validFlagged || []).map((b) => b.booking_ref));
+    const toUnorphan = flaggedRows.filter((r) => validFlaggedRefs.has(r.booking_id));
+    if (toUnorphan.length > 0) {
+      const { error: unorphanErr } = await sb
+        .from("revenue_records")
+        .update({ is_orphan: false })
+        .in("id", toUnorphan.map((r) => r.id));
+      if (unorphanErr) throw new Error("Could not clear stale orphan flags: " + unorphanErr.message);
+      unorphaned = toUnorphan.length;
+      console.log(`[v2-system-health] fix_orphans: cleared is_orphan on ${unorphaned} record(s) with valid booking_id`);
+    }
+  }
+
+  // ── Pass B: flag records with no matching booking ──────────────────────────
   const { data: orphanRows, error: oErr } = await sb
     .from("revenue_records")
     .select("id, booking_id")
@@ -1056,7 +1138,12 @@ async function fixOrphanRevenue(sb) {
 
   const rows       = orphanRows || [];
   const bookingIds = [...new Set(rows.map((r) => r.booking_id).filter(Boolean))];
-  if (bookingIds.length === 0) return { fixed: 0, message: "Nothing to fix." };
+  if (bookingIds.length === 0) {
+    const msg = unorphaned > 0
+      ? `Cleared ${unorphaned} stale orphan flag${unorphaned !== 1 ? "s" : ""}. No new orphans found.`
+      : "Nothing to fix.";
+    return { fixed: 0, unorphaned, message: msg };
+  }
 
   const { data: bookingRows, error: bErr } = await sb
     .from("bookings")
@@ -1066,7 +1153,13 @@ async function fixOrphanRevenue(sb) {
 
   const validRefs   = new Set((bookingRows || []).map((b) => b.booking_ref));
   const trueOrphans = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
-  if (trueOrphans.length === 0) return { fixed: 0, message: "No true orphans found." };
+
+  if (trueOrphans.length === 0) {
+    const msg = unorphaned > 0
+      ? `Cleared ${unorphaned} stale orphan flag${unorphaned !== 1 ? "s" : ""}. No true orphans found.`
+      : "No true orphans found.";
+    return { fixed: 0, unorphaned, message: msg };
+  }
 
   const ids = trueOrphans.map((r) => r.id);
   const { error: updateErr } = await sb
@@ -1076,9 +1169,13 @@ async function fixOrphanRevenue(sb) {
   if (updateErr) throw new Error("Could not flag orphans: " + updateErr.message);
 
   console.log(`[v2-system-health] fix_orphans: flagged ${trueOrphans.length} records as is_orphan=true`);
+  const parts = [];
+  if (trueOrphans.length > 0) parts.push(`Flagged ${trueOrphans.length} true orphan${trueOrphans.length !== 1 ? "s" : ""}`);
+  if (unorphaned > 0)         parts.push(`Cleared ${unorphaned} stale flag${unorphaned !== 1 ? "s" : ""}`);
   return {
     fixed: trueOrphans.length,
-    message: `Flagged ${trueOrphans.length} orphan record${trueOrphans.length !== 1 ? "s" : ""} as is_orphan=true.`,
+    unorphaned,
+    message: parts.join("; ") + ".",
   };
 }
 
@@ -1119,8 +1216,12 @@ async function fixStaleReservations(sb) {
 //   2. pi.metadata.booking_id is present
 //   3. No booking with that booking_ref already exists in the DB
 //
+// Special case: when the booking already exists (guard 3 fails), the revenue
+// record is a legacy false-positive orphan — is_orphan is cleared so it re-
+// appears in financial reports and the health panel stops showing it as an error.
+//
 // If metadata is incomplete (guard 2 fails) → flag only, do NOT auto-repair.
-// Idempotent: a booking that already exists is never reconstructed again.
+// Idempotent: a booking that already exists is cleared but never reconstructed.
 async function fixStripePaymentNoBooking(sb) {
   const cutoff60d = new Date(Date.now() - SIXTY_DAYS_MS).toISOString();
 
@@ -1138,9 +1239,9 @@ async function fixStripePaymentNoBooking(sb) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   let queued             = 0;
+  let unorphaned         = 0;
   let skippedNotSucceeded = 0;
   let skippedIncomplete  = 0;
-  let skippedExists      = 0;
   const failures         = [];
 
   for (const row of rows) {
@@ -1171,7 +1272,7 @@ async function fixStripePaymentNoBooking(sb) {
         continue;
       }
 
-      // Guard 3: booking_ref must NOT already exist in the bookings table
+      // Guard 3: check whether booking already exists in the bookings table.
       const { data: existing, error: bErr } = await sb
         .from("bookings")
         .select("booking_ref")
@@ -1182,15 +1283,28 @@ async function fixStripePaymentNoBooking(sb) {
         console.error(`[v2-system-health] fix_pi_no_booking: bookings lookup error for ${piId}:`, bErr.message);
         continue;
       }
+
       if (existing?.booking_ref) {
-        skippedExists++;
-        console.log(
-          `[v2-system-health] fix_pi_no_booking: skipped ${piId} — booking ${bookingRef} already exists`,
-        );
+        // Booking exists — this is a legacy false-positive orphan flag.  Clear it
+        // so the revenue record re-appears in financial reports and the health
+        // panel no longer surfaces it as an unlinked payment.
+        const { error: clearErr } = await sb
+          .from("revenue_records")
+          .update({ is_orphan: false })
+          .eq("id", row.id);
+        if (clearErr) {
+          failures.push({ id: piId, error: `is_orphan clear failed: ${clearErr.message}` });
+          console.error(`[v2-system-health] fix_pi_no_booking: clear error for ${piId}:`, clearErr.message);
+        } else {
+          unorphaned++;
+          console.log(
+            `[v2-system-health] fix_pi_no_booking: cleared stale orphan flag for ${piId} (booking ${bookingRef} exists)`,
+          );
+        }
         continue;
       }
 
-      // All guards passed — queue for reconstruction
+      // Booking does not exist — queue for reconstruction.
       const { error: updateErr } = await sb
         .from("revenue_records")
         .update({ is_orphan: false, sync_excluded: false })
@@ -1213,14 +1327,14 @@ async function fixStripePaymentNoBooking(sb) {
 
   const parts = [];
   if (queued > 0)              parts.push(`${queued} queued for reconstruction`);
-  if (skippedExists > 0)       parts.push(`${skippedExists} already exist`);
+  if (unorphaned > 0)          parts.push(`${unorphaned} stale orphan flag${unorphaned !== 1 ? "s" : ""} cleared`);
   if (skippedIncomplete > 0)   parts.push(`${skippedIncomplete} flagged (incomplete metadata)`);
   if (skippedNotSucceeded > 0) parts.push(`${skippedNotSucceeded} not yet succeeded`);
   if (failures.length > 0)     parts.push(`${failures.length} failed`);
 
   return {
     fixed:               queued,
-    skippedExists,
+    unorphaned,
     skippedIncomplete,
     skippedNotSucceeded,
     failed:              failures.length,
