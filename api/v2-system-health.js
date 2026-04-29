@@ -1171,7 +1171,7 @@ async function fixOrphanRevenue(sb) {
   console.log(`[v2-system-health] fix_orphans: flagged ${trueOrphans.length} records as is_orphan=true`);
   const parts = [];
   if (trueOrphans.length > 0) parts.push(`Flagged ${trueOrphans.length} true orphan${trueOrphans.length !== 1 ? "s" : ""}`);
-  if (unorphaned > 0)         parts.push(`cleared ${unorphaned} stale flag${unorphaned !== 1 ? "s" : ""}`);
+  if (unorphaned > 0)         parts.push(`Cleared ${unorphaned} stale flag${unorphaned !== 1 ? "s" : ""}`);
   return {
     fixed: trueOrphans.length,
     unorphaned,
