@@ -695,7 +695,14 @@ export async function autoUpsertBooking(booking, opts = {}) {
 
     if (existing) {
       // UPDATE — no conflict-check trigger fires on plain UPDATE
+      // Do not overwrite required NOT NULL fields with NULL when the caller omits
+      // them (e.g. a status-only update that doesn't pass vehicleId).  The DB now
+      // enforces NOT NULL on vehicle_id, pickup_date and return_date, so sending
+      // NULL would cause an update failure and corrupt the existing values.
       const patchRecord = { ...record, updated_at: new Date().toISOString() };
+      if (!patchRecord.vehicle_id)  delete patchRecord.vehicle_id;
+      if (!patchRecord.pickup_date) delete patchRecord.pickup_date;
+      if (!patchRecord.return_date) delete patchRecord.return_date;
       if (fixBookingRef) patchRecord.booking_ref = booking.bookingId;
       const { error } = await sb
         .from("bookings")
@@ -716,10 +723,24 @@ export async function autoUpsertBooking(booking, opts = {}) {
         }
       }
     } else {
-      // INSERT — conflict-check trigger fires; will reject overlapping dates
+      // INSERT — conflict-check trigger fires; will reject overlapping dates.
+      // Validate required fields before sending to DB so the error message is
+      // actionable rather than a generic Supabase constraint violation.
+      const insertRecord = { ...record, booking_ref: booking.bookingId };
+      const missingFields = [];
+      if (!insertRecord.vehicle_id)  missingFields.push("vehicle_id");
+      if (!insertRecord.pickup_date) missingFields.push("pickup_date");
+      if (!insertRecord.return_date) missingFields.push("return_date");
+      if (missingFields.length > 0) {
+        throw new Error(
+          `autoUpsertBooking: booking ${booking.bookingId} is missing required fields for INSERT: ` +
+          missingFields.join(", ") +
+          " — booking creation must be atomic (all required fields must be present at insert time)"
+        );
+      }
       const { error } = await sb
         .from("bookings")
-        .insert({ ...record, booking_ref: booking.bookingId });
+        .insert(insertRecord);
       if (error) {
         const msg = `_booking-automation autoUpsertBooking insert error${strict ? "" : " (non-fatal)"}: ${error.message}`;
         console.error(msg);

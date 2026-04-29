@@ -652,12 +652,40 @@ export default async function handler(req, res) {
       const neededIds = new Set(orphans.map((r) => r.booking_id).filter(Boolean));
       const bookingVehicleMap = {};
       if (neededIds.size > 0) {
-        const { data: bookingsData } = await loadBookings();
-        for (const list of Object.values(bookingsData)) {
-          for (const b of (list || [])) {
-            if (b.bookingId && neededIds.has(b.bookingId)) {
-              bookingVehicleMap[b.bookingId] = b.vehicleId || null;
+        // Primary: look up vehicle_id directly from Supabase bookings (the canonical
+        // source of truth).  This removes the dependency on bookings.json for repair.
+        const neededArr = [...neededIds];
+        try {
+          const { data: sbBookings } = await sb
+            .from("bookings")
+            .select("booking_ref, vehicle_id")
+            .in("booking_ref", neededArr);
+          for (const b of sbBookings || []) {
+            if (b.booking_ref && b.vehicle_id) {
+              bookingVehicleMap[b.booking_ref] = b.vehicle_id;
             }
+          }
+        } catch (_sbErr) {
+          // Non-fatal — fall through to bookings.json fallback below.
+          console.warn("stripe-reconcile cleanup_orphans: Supabase vehicle_id lookup failed (non-fatal) — will try bookings.json");
+        }
+
+        // Fallback: for any booking_ids still unresolved, try bookings.json.
+        // This handles legacy bookings whose booking_ref may differ from the
+        // booking_id stored in revenue_records (e.g. old pi_xxx IDs).
+        const stillNeeded = neededArr.filter((id) => !bookingVehicleMap[id]);
+        if (stillNeeded.length > 0) {
+          try {
+            const { data: bookingsData } = await loadBookings();
+            for (const list of Object.values(bookingsData)) {
+              for (const b of (list || [])) {
+                if (b.bookingId && stillNeeded.includes(b.bookingId) && b.vehicleId) {
+                  bookingVehicleMap[b.bookingId] = b.vehicleId;
+                }
+              }
+            }
+          } catch (_) {
+            // Non-fatal — bookings.json may be unavailable.
           }
         }
       }

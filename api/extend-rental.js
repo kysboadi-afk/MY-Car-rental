@@ -513,9 +513,15 @@ export default async function handler(req, res) {
         payment_type: "rental_extension",
         // Prefer the resolved Supabase booking_ref (sbActiveBookingRef) so the webhook
         // can always locate the booking via .eq("booking_ref", …).  Fall back to the
-        // bookings.json bookingId (which may be a legacy Stripe PI ID) and then to the
-        // original paymentIntentId for historical bookings.
-        booking_id:   sbActiveBookingRef || activeBooking.bookingId || activeBooking.paymentIntentId || "",
+        // bookings.json bookingId only when it is a real booking_ref (not a legacy Stripe
+        // PI ID).  A PI ID must never be used as booking_id because the extension webhook
+        // queries bookings by booking_ref — using a PI ID would always fail to find the
+        // booking and produce an unresolvable orphan record.
+        booking_id:   sbActiveBookingRef ||
+          (activeBooking.bookingId && !String(activeBooking.bookingId).startsWith("pi_")
+            ? activeBooking.bookingId
+            : null) ||
+          "",
         vehicle_id:   vehicleId,
         vehicle_name:          vehicleData.name  || "",
         renter_name:           activeBooking.name  || (typeof name === "string" ? name.trim() : "") || "",
