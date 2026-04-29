@@ -919,7 +919,7 @@ export default async function handler(req, res) {
     // "stripe-pi_xxx" key when the booking already exists in the database.
     // This prevents creating orphan revenue records for bookings that are fully
     // present in Supabase but were not yet written to bookings.json.
-    const supabaseBookingsByPI = new Map(); // payment_intent_id → { bookingId, vehicleId, ... }
+    const supabaseBookingsByPI = new Map(); // payment_intent_id → { bookingRef, vehicleId, ... }
     try {
       const { data: sbBookings } = await sb
         .from("bookings")
@@ -929,7 +929,8 @@ export default async function handler(req, res) {
       for (const b of sbBookings || []) {
         if (b.payment_intent_id) {
           supabaseBookingsByPI.set(b.payment_intent_id, {
-            bookingId:   b.booking_ref,
+            bookingRef:  b.booking_ref,
+            bookingId:   b.booking_ref,   // alias kept for compatibility with bookings.json object shape
             vehicleId:   b.vehicle_id,
             name:        b.customer_name,
             phone:       b.customer_phone,

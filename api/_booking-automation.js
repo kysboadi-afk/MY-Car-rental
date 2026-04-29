@@ -172,8 +172,8 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     // Use the booking's vehicle_id / return_date as fallbacks when the caller
     // did not supply them — this covers processStripePayment and other callers
     // that pass only payment identifiers without full booking context.
-    // Apply normalizeVehicleId to both sources consistently.
-    const resolvedVehicleId = normalizeVehicleId(booking.vehicleId) || normalizeVehicleId(bookingRow.vehicle_id);
+    // Call normalizeVehicleId once on the merged value.
+    const resolvedVehicleId = normalizeVehicleId(booking.vehicleId || bookingRow.vehicle_id);
     const resolvedReturnDate = booking.returnDate ||
       (bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null);
 
@@ -733,9 +733,7 @@ export async function autoUpsertBooking(booking, opts = {}) {
       if (!insertRecord.return_date) missingFields.push("return_date");
       if (missingFields.length > 0) {
         throw new Error(
-          `autoUpsertBooking: booking ${booking.bookingId} is missing required fields for INSERT: ` +
-          missingFields.join(", ") +
-          " — booking creation must be atomic (all required fields must be present at insert time)"
+          `autoUpsertBooking: booking ${booking.bookingId} is missing required fields for INSERT: ${missingFields.join(", ")} — booking creation must be atomic (all required fields must be present at insert time)`
         );
       }
       const { error } = await sb
