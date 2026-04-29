@@ -466,16 +466,6 @@ body {
   object-fit: cover;
 }
 
-/* Slingshot needs to show the vehicle from the bottom of its portrait image */
-.car-card img.img-slingshot {
-  object-position: center bottom;
-}
-
-/* Slingshot 2 photos have the car centered in the portrait — show the middle */
-.car-card img.img-slingshot2 {
-  object-position: center center;
-}
-
 
 .car-info {
   padding: 20px;
@@ -523,35 +513,6 @@ body {
 .car-subtitle {
   color: #aaa;
   font-size: 14px;
-}
-
-/* SLINGSHOT MARKETING DESCRIPTION */
-.slingshot-desc {
-  margin: 10px 0;
-  font-size: 13px;
-}
-.slingshot-desc-tagline {
-  font-weight: bold;
-  color: #fff;
-  margin: 0 0 2px;
-}
-.slingshot-desc-sub {
-  color: #ccc;
-  margin: 0 0 8px;
-}
-.slingshot-desc-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 8px;
-  color: #ddd;
-}
-.slingshot-desc-list li {
-  margin-bottom: 3px;
-}
-.slingshot-desc-cta {
-  color: #ff7a00;
-  font-weight: bold;
-  margin: 0;
 }
 
 /* EARNINGS BLOCK — car booking page */
@@ -1550,19 +1511,6 @@ body {
   background: #1f1a00;
 }
 
-/* SLINGSHOT DURATION SELECTOR */
-#slingshotDurationSection {
-  margin-bottom: 16px;
-}
-
-#slingshotDurationSection > label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ccc;
-  margin-bottom: 8px;
-}
-
 .duration-options {
   display: flex;
   flex-direction: column;
@@ -1851,49 +1799,8 @@ body {
   transform: translateY(-2px);
 }
 
-/* Slingshot-only bottom sections */
-.slingshot-explore-section {
-  background: #000;
-}
 
-.slingshot-why-section {
-  background: #0a0a0a;
-}
 
-.slingshot-explore-body {
-  text-align: center;
-  color: #aaa;
-  font-size: 16px;
-  max-width: 600px;
-  margin: 0 auto 28px;
-  line-height: 1.7;
-}
-
-.slingshot-explore-list {
-  list-style: none;
-  margin: 0 auto;
-  padding: 0;
-  max-width: 560px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.slingshot-explore-list li {
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
-  border-left: 4px solid #ffb400;
-  border-radius: 8px;
-  padding: 14px 20px;
-  font-size: 15px;
-  color: #ccc;
-  line-height: 1.5;
-}
-
-.slingshot-cta-wrap {
-  text-align: center;
-  margin-top: 32px;
-}
 
 /* CARS PAGE LAYOUT (sidebar + grid) */
 .cars-page-layout {

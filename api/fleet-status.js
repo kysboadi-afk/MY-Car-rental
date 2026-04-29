@@ -25,7 +25,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { ensureBlockedDate } from "./_booking-automation.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const FALLBACK_VEHICLE_IDS = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const FALLBACK_VEHICLE_IDS = ["camry", "camry2013"];
 const BUSINESS_TZ = "America/Los_Angeles";
 
 // Must match BOOKING_BUFFER_HOURS in _booking-automation.js and _availability.js.

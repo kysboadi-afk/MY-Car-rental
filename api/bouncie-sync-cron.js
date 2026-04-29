@@ -43,7 +43,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // Load all tracked vehicles (non-slingshot with Bouncie device assigned)
+  // Load all tracked vehicles with Bouncie device assigned
   const { data: trackedData, error: trackedError } = await sb
     .from("vehicles")
     .select("vehicle_id, bouncie_device_id, data")

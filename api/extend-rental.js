@@ -433,23 +433,13 @@ export default async function handler(req, res) {
     }
     // ── Compute extension price ────────────────────────────────────────────
     const settings = await loadPricingSettings();
-    const isSlingshot = vehicleData.isSlingshot;
 
     let extensionAmountPreTax;
     let extensionLabel;
-    // Hoisted for debug logging below; only populated for economy vehicles.
     let extensionDays = null;
     let pricePerDay   = null;
 
-    if (isSlingshot) {
-      // Slingshot: bill by extra hours at daily rate ÷ 24
-      const extraMs    = newReturnMs - currentReturnMs;
-      const extraHours = Math.max(1, Math.ceil(extraMs / 3600000));
-      const dailyRate  = settings.slingshot_daily_rate || 350;
-      const hourlyRate = dailyRate / 24;
-      extensionAmountPreTax = Math.ceil(extraHours * hourlyRate);
-      extensionLabel = `+${extraHours} hour${extraHours !== 1 ? "s" : ""}`;
-    } else {
+    {
       // Economy/car vehicles: bill by extra days using the same tiered pricing as
       // the main booking flow (monthly → bi-weekly → weekly → daily).
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -489,11 +479,7 @@ export default async function handler(req, res) {
       pricePerDay   = dailyRate;
     }
 
-    // Slingshot: no tax — consistent with the main booking flow which also charges no tax.
-    // Economy vehicles: apply LA sales tax (same as the main booking flow).
-    const extensionAmount = isSlingshot
-      ? extensionAmountPreTax
-      : applyTax(extensionAmountPreTax, settings);
+    const extensionAmount = applyTax(extensionAmountPreTax, settings);
 
     // Temporary debug log — compare Camry 2012 vs Camry 2013 outputs to
     // identify stale returnDate or rate mismatch.

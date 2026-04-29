@@ -21,7 +21,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
-import { render, BOOKING_CONFIRMED, SLINGSHOT_DEPOSIT_RECEIVED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_SLINGSHOT, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
+import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
@@ -205,15 +205,14 @@ function esc(str) {
  * @returns {"reserved_unpaid" | "booked_paid"}
  */
 function resolveBookingStatus(paymentType) {
-  // "reservation_deposit"       = Camry deposit-only (balance owed)
-  // "slingshot_security_deposit" = Slingshot deposit-only (balance owed)
-  return (paymentType === "reservation_deposit" || paymentType === "slingshot_security_deposit")
+  // "reservation_deposit" = deposit-only (balance owed)
+  return (paymentType === "reservation_deposit")
     ? "reserved_unpaid"
     : "booked_paid";
 }
 
 // A canonical vehicle ID is all-lowercase alphanumeric, starts with a letter,
-// and is at least 2 characters long (e.g. "camry", "camry2012", "slingshot2",
+// and is at least 2 characters long (e.g. "camry", "camry2012", "camry2013",
 // "corolla2020").  No spaces, hyphens, or other special characters are allowed.
 // This pattern replaces a hardcoded vehicle list so that new vehicles are
 // supported automatically without code changes.
@@ -232,7 +231,7 @@ const CANONICAL_ID_PATTERN = /^[a-z][a-z0-9]+$/;
  *       - replace non-alphanumeric chars with spaces
  *       - split into tokens
  *       - remove single-character tokens (strips variant designators such as
- *         "R" in "Slingshot R" so that the result is "slingshot", not "slingshotr")
+ *         normalizes vehicle name tokens)
  *       - join tokens without separator
  *
  * This is fully generic — no hardcoded model names.  New vehicles are handled
@@ -257,10 +256,10 @@ export function mapVehicleId(metadata = {}) {
   //   1. lowercase
   //   2. replace non-alphanumeric chars with spaces
   //   3. split into tokens
-  //   4. skip single-letter tokens (removes "r" from "Slingshot R")
+  //   4. skip single-letter tokens (removes trailing single letters from vehicle names)
   //   5. stop accumulating after the first numeric token (year/variant number)
   //      so trim-level suffixes like "SE" in "Camry 2013 SE" are dropped
-  //   6. join without separator → "camry2012", "camry2013", "slingshot2", "corolla2020"
+  //   6. join without separator → "camry2012", "camry2013", "corolla2020"
   let nameId = "";
   if (rawName) {
     const allTokens = rawName.toLowerCase().replace(/[^a-z0-9]/g, " ").trim().split(/\s+/);
@@ -1152,9 +1151,7 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
 
   // Step 2 — Resolve booking_id
   // For rental_extension the booking_id/original_booking_id metadata field
-  // is the canonical ref.  For slingshot_balance_payment the booking_id is
-  // not in metadata; the caller resolves it from bookings.json and passes it
-  // via opts.bookingId.  For all other rental types the booking_id is in
+  // is the canonical ref.  For all other rental types the booking_id is in
   // metadata.  As a final fallback, try to look up the booking by PI ID.
   let booking_id = opts.bookingId || null;
 
@@ -2163,8 +2160,7 @@ export default async function handler(req, res) {
 
           // Send extension confirmed SMS
           if (updatedBooking.phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-            const isSlingshot = vehicle_id && vehicle_id.startsWith("slingshot");
-            const template = isSlingshot ? EXTEND_CONFIRMED_SLINGSHOT : EXTEND_CONFIRMED_ECONOMY;
+            const template = EXTEND_CONFIRMED_ECONOMY;
             try {
               await sendSms(normalizePhone(updatedBooking.phone), render(template, {
                 return_time: updatedBooking.returnTime || "",
@@ -3042,275 +3038,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true });
     }
 
-    // ── Slingshot security-deposit-only payment ───────────────────────────────
-    // When a renter pays only the security deposit, we:
-    //   1. Block the dates (vehicle is now reserved).
-    //   2. Save the booking record with payment_status = "deposit_paid".
-    //   3. Generate a unique payment_link_token and store it in the booking.
-    //   4. Send email + SMS to the customer with the completion link.
-    if (paymentType === "slingshot_security_deposit") {
-      const meta = paymentIntent.metadata || {};
-      const {
-        vehicle_id, pickup_date, return_date,
-        pickup_time, return_time,
-        renter_name, renter_phone, email,
-        rental_price, security_deposit, remaining_balance,
-        full_rental_amount, rental_duration,
-      } = meta;
-
-      console.log(
-        `stripe-webhook: slingshot_security_deposit — vehicle=${vehicle_id} pi=${paymentIntent.id}`
-      );
-
-      // Block dates so the vehicle shows as reserved
-      if (vehicle_id && pickup_date && return_date) {
-        try {
-          await blockBookedDates(vehicle_id, pickup_date, return_date, pickup_time || "", return_time || "");
-        } catch (err) {
-          console.error("stripe-webhook: blockBookedDates (slingshot deposit) error:", err);
-        }
-      }
-
-      // Generate a unique token for the completion link
-      const paymentLinkToken = crypto.randomBytes(24).toString("hex");
-
-      // Persist the booking record with the token and deposit-paid status.
-      // Route through persistBooking so all four pipeline steps fire in the
-      // correct order (customer → booking → revenue record → blocked_dates).
-      // Extra slingshot-specific fields are passed through into the booking record.
-      const amountPaid = paymentIntent.amount ? Math.round(paymentIntent.amount) / 100 : 0;
-      let slingshotDepositResult = null;
-      try {
-        const feeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-        slingshotDepositResult = await persistBooking({
-          bookingId:                meta.booking_id || ("wh-" + crypto.randomBytes(8).toString("hex")),
-          name:                     renter_name || "",
-          phone:                    renter_phone ? normalizePhone(renter_phone) : normalizePhone(feeFields.billingPhone || paymentIntent.customer_details?.phone || ""),
-          email:                    email || "",
-          vehicleId:                vehicle_id,
-          vehicleName:              meta.vehicle_name || vehicle_id,
-          pickupDate:               pickup_date,
-          pickupTime:               meta.pickup_time || "",
-          returnDate:               return_date,
-          returnTime:               meta.return_time || DEFAULT_RETURN_TIME,
-          location:                 DEFAULT_LOCATION,
-          status:                   "reserved_unpaid",
-          amountPaid,
-          totalPrice:               Number(full_rental_amount || 0) || amountPaid,
-          paymentIntentId:          paymentIntent.id,
-          paymentMethod:            "stripe",
-          source:                   "stripe_webhook",
-          requireStripeFee:         true,
-          strictPersistence:        true,
-          // Extra slingshot-specific fields passed through into the booking record
-          paymentStatus:            "deposit_paid",
-          slingshot_payment_status: "deposit_paid",
-          bookingStatus:            "reserved",
-          slingshot_booking_status: "reserved",
-          rentalPrice:              Number(rental_price || 0),
-          securityDeposit:          Number(security_deposit || 0),
-          remainingBalance:         Number(remaining_balance || rental_price || 0),
-          fullRentalAmount:         Number(full_rental_amount || 0),
-          rentalDuration:           rental_duration || "",
-          paymentLinkToken,
-          stripeCustomerId:         paymentIntent.customer          || null,
-          stripePaymentMethodId:    paymentIntent.payment_method    || null,
-          ...feeFields,
-        });
-        console.log(`stripe-webhook: slingshot deposit pipeline succeeded (PI ${paymentIntent.id}) bookingId=${slingshotDepositResult.bookingId}`);
-      } catch (err) {
-        console.error(`stripe-webhook: slingshot deposit pipeline failed for PI ${paymentIntent.id}:`, err.message);
-        return res.status(500).json({
-          received: false,
-          error: `slingshot deposit persistence failed for ${paymentIntent.id}`,
-        });
-      }
-
-      // Build the completion link
-      const completionLink = `https://www.slytrans.com/complete-booking.html?token=${paymentLinkToken}`;
-
-      // Send email to customer with completion link
-      if (email && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-        try {
-          await sendSlingshotDepositEmail({
-            to:              email,
-            renterName:      renter_name || "",
-            vehicleName:     meta.vehicle_name || vehicle_id,
-            pickupDate:      pickup_date,
-            returnDate:      return_date,
-            rentalDuration:  rental_duration || "",
-            securityDeposit: amountPaid,
-            remainingBalance: Number(remaining_balance || rental_price || 0),
-            completionLink,
-          });
-        } catch (emailErr) {
-          console.error("stripe-webhook: slingshot deposit customer email error:", emailErr.message);
-        }
-      }
-
-      // Send owner notification email
-      try {
-        await sendSlingshotDepositOwnerEmail({
-          renterName:      renter_name || "",
-          renterPhone:     renter_phone || "",
-          renterEmail:     email || "",
-          vehicleName:     meta.vehicle_name || vehicle_id,
-          pickupDate:      pickup_date,
-          returnDate:      return_date,
-          rentalDuration:  rental_duration || "",
-          securityDeposit: amountPaid,
-          remainingBalance: Number(remaining_balance || rental_price || 0),
-          completionLink,
-          paymentIntentId: paymentIntent.id,
-        });
-      } catch (ownerEmailErr) {
-        console.error("stripe-webhook: slingshot deposit owner email error:", ownerEmailErr.message);
-      }
-
-      // Send SMS to customer with completion link
-      if (renter_phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-        try {
-          await sendSms(
-            normalizePhone(renter_phone),
-            render(SLINGSHOT_DEPOSIT_RECEIVED, {
-              customer_name: sanitizeSmsValue(renter_name || ""),
-              vehicle:       sanitizeSmsValue(meta.vehicle_name || vehicle_id || "Slingshot"),
-              payment_link:  completionLink,
-            })
-          );
-          console.log(`stripe-webhook: slingshot deposit SMS sent to ${renter_phone}`);
-        } catch (smsErr) {
-          console.error("stripe-webhook: slingshot deposit SMS error:", smsErr.message);
-        }
-      }
-
-      // Unified pipeline: revenue guarantee (idempotent — persistBooking above
-      // already recorded it; this is a safety net for any gap).
-      try {
-        await processStripePayment(stripe, paymentIntent, {
-          bookingId: slingshotDepositResult?.bookingId || undefined,
-        });
-      } catch (pspErr) {
-        console.warn("stripe-webhook: slingshot_security_deposit processStripePayment failed (non-fatal):", pspErr.message);
-      }
-
-      return res.status(200).json({ received: true });
-    }
-
-    // ── Slingshot balance completion payment ─────────────────────────────────
-    // When a renter pays the remaining rental balance via the complete-booking page.
-    if (paymentType === "slingshot_balance_payment") {
-      const meta = paymentIntent.metadata || {};
-      const { vehicle_id, payment_link_token, renter_name, email, renter_phone } = meta;
-
-      console.log(
-        `stripe-webhook: slingshot_balance_payment — vehicle=${vehicle_id} pi=${paymentIntent.id}`
-      );
-
-      // Hoisted so processStripePayment (Step 3) can use the resolved booking_id
-      // without reloading bookings.json.
-      let slingshotBalanceBookingId = null;
-
-      // Update the booking record: fully_paid, remaining_balance = 0
-      if (vehicle_id && payment_link_token) {
-        try {
-          const { data: bkData } = await loadBookings();
-          const list = Array.isArray(bkData[vehicle_id]) ? bkData[vehicle_id] : [];
-          const booking = list.find((b) => b.paymentLinkToken === payment_link_token);
-          if (booking) {
-            const bookingId = booking.bookingId || booking.paymentIntentId;
-            slingshotBalanceBookingId = bookingId;
-            await updateBooking(vehicle_id, bookingId, {
-              status:                   "booked_paid",
-              paymentStatus:            "fully_paid",
-              slingshot_payment_status: "fully_paid",
-              bookingStatus:            "reserved",
-              slingshot_booking_status: "reserved",
-              remainingBalance:         0,
-              completionPaymentIntentId: paymentIntent.id,
-              completedAt:              new Date().toISOString(),
-            });
-            console.log(`stripe-webhook: slingshot balance booking updated to fully_paid (${bookingId})`);
-
-            // Send confirmation email to customer
-            if ((email || booking.email) && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-              try {
-                await sendSlingshotFullyPaidEmail({
-                  to:          email || booking.email,
-                  bookingId:   booking.bookingId || booking.paymentIntentId || "",
-                  paymentIntentId: paymentIntent.id,
-                  vehicleId:   vehicle_id || booking.vehicleId || "",
-                  renterName:  renter_name || booking.name || "",
-                  renterEmail: email || booking.email || "",
-                  renterPhone: renter_phone || booking.phone || "",
-                  vehicleName: meta.vehicle_name || booking.vehicleName || vehicle_id,
-                  pickupDate:  meta.pickup_date  || booking.pickupDate,
-                  pickupTime:  meta.pickup_time  || booking.pickupTime || "",
-                  returnDate:  meta.return_date  || booking.returnDate,
-                  returnTime:  meta.return_time  || booking.returnTime || "",
-                  amountPaid:  paymentIntent.amount ? (paymentIntent.amount / 100) : 0,
-                  totalPrice:  booking.totalPrice || meta.full_rental_amount || 0,
-                });
-              } catch (emailErr) {
-                console.error("stripe-webhook: slingshot balance paid email error:", emailErr.message);
-              }
-            }
-
-            // Send confirmation SMS
-            const phone = renter_phone || booking.phone;
-            if (phone && process.env.TEXTMAGIC_USERNAME && process.env.TEXTMAGIC_API_KEY) {
-              try {
-                const vehicleName = meta.vehicle_name || booking.vehicleName || "Slingshot";
-                await sendSms(
-                  normalizePhone(phone),
-                  render(BOOKING_CONFIRMED, {
-                    customer_name: sanitizeSmsValue(renter_name || booking.name || ""),
-                    vehicle:       sanitizeSmsValue(vehicleName),
-                    pickup_date:   meta.pickup_date  || booking.pickupDate  || "",
-                    pickup_time:   meta.pickup_time  || booking.pickupTime  || "",
-                    location:      DEFAULT_LOCATION,
-                  })
-                );
-              } catch (smsErr) {
-                console.error("stripe-webhook: slingshot balance SMS error:", smsErr.message);
-              }
-            }
-          } else {
-            console.warn(
-              `stripe-webhook: slingshot_balance_payment booking not found in bookings.json` +
-              ` — revenue will be recorded by PI fallback lookup only` +
-              ` (vehicle_id=${vehicle_id} payment_link_token=${payment_link_token} pi=${paymentIntent.id})`
-            );
-          }
-        } catch (err) {
-          console.error("stripe-webhook: slingshot balance booking update error:", err);
-        }
-      } else {
-        logWebhookSkip(
-          paymentIntent,
-          `slingshot_balance_payment missing linkage metadata vehicle_id=${vehicle_id || "<missing>"} payment_link_token=${payment_link_token || "<missing>"}`
-        );
-      }
-
-      // Unified pipeline — Step 3: ALWAYS record revenue.
-      // This was previously missing for slingshot_balance_payment, causing a gap
-      // in financial records every time a renter paid the remaining balance.
-      // processStripePayment is idempotent on payment_intent_id, so it is safe
-      // even if a previous partial delivery had already inserted a record.
-      try {
-        await processStripePayment(stripe, paymentIntent, {
-          bookingId: slingshotBalanceBookingId || undefined,
-        });
-      } catch (pspErr) {
-        console.error("stripe-webhook: slingshot_balance_payment processStripePayment failed:", pspErr.message);
-        return res.status(500).json({
-          received: false,
-          error: `slingshot balance payment revenue persistence failed for ${paymentIntent.id}`,
-        });
-      }
-
-      return res.status(200).json({ received: true });
-    }
 
     const { vehicle_id, pickup_date, return_date, pickup_time: meta_pickup_time, return_time: meta_return_time } = paymentIntent.metadata || {};
 
@@ -3452,187 +3179,3 @@ export {
   sendWebhookNotificationEmails,
 };
 
-// ── Slingshot deposit-paid notification email to customer ──────────────────
-
-async function sendSlingshotDepositEmail({
-  to, renterName, vehicleName, pickupDate, returnDate, rentalDuration,
-  securityDeposit, remainingBalance, completionLink,
-}) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || "587"),
-    secure: process.env.SMTP_PORT === "465",
-    auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  const firstName = renterName ? renterName.split(" ")[0] : "there";
-  await transporter.sendMail({
-    from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "Complete Your Slingshot Booking – Sly Transportation Services LLC",
-    html: `
-      <h2>🏎️ Your Slingshot is Reserved!</h2>
-      <p>Hi ${esc(firstName)},</p>
-      <p>Your vehicle has been reserved with a security deposit. To complete your booking, please use the link below:</p>
-      <table style="border-collapse:collapse;width:100%;margin:16px 0">
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
-        ${rentalDuration ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Duration</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(rentalDuration)}</td></tr>` : ""}
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(securityDeposit.toFixed ? securityDeposit.toFixed(2) : securityDeposit))}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(String(remainingBalance.toFixed ? remainingBalance.toFixed(2) : remainingBalance))}</strong></td></tr>
-      </table>
-      <p><a href="${esc(completionLink)}" style="display:inline-block;background:#ffb400;color:#000;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:700">Complete Payment →</a></p>
-      <p style="color:#aaa;font-size:0.9em">You can complete this now or when you arrive for pickup. Full payment must be completed before the vehicle is handed over.</p>
-      <p>If you have any questions, contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
-      <p><strong>Sly Transportation Services LLC 🏎️</strong></p>
-    `,
-    text: [
-      "Your Slingshot is Reserved!",
-      "",
-      `Hi ${firstName},`,
-      "Your vehicle has been reserved with a security deposit.",
-      "To complete your booking, please use the link below:",
-      "",
-      `Vehicle            : ${vehicleName}`,
-      rentalDuration ? `Duration           : ${rentalDuration}` : "",
-      `Pickup Date        : ${pickupDate}`,
-      `Return Date        : ${returnDate}`,
-      `Security Deposit   : $${typeof securityDeposit === "number" ? securityDeposit.toFixed(2) : securityDeposit}`,
-      `Remaining Balance  : $${typeof remainingBalance === "number" ? remainingBalance.toFixed(2) : remainingBalance}`,
-      "",
-      `Complete Payment: ${completionLink}`,
-      "",
-      "You can complete this now or when you arrive for pickup.",
-      "Full payment must be completed before the vehicle is handed over.",
-      "",
-      `Questions? Contact ${OWNER_EMAIL} or call (213) 916-6606.`,
-      "",
-      "Sly Transportation Services LLC",
-    ].filter((l) => l !== undefined).join("\n"),
-  });
-}
-
-// ── Slingshot deposit-paid notification email to owner ────────────────────
-
-async function sendSlingshotDepositOwnerEmail({
-  renterName, renterPhone, renterEmail, vehicleName, pickupDate, returnDate,
-  rentalDuration, securityDeposit, remainingBalance, completionLink, paymentIntentId,
-}) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || "587"),
-    secure: process.env.SMTP_PORT === "465",
-    auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  await transporter.sendMail({
-    from:    `"Sly Transportation Services LLC Bookings" <${process.env.SMTP_USER}>`,
-    to:      OWNER_EMAIL,
-    ...(renterEmail ? { replyTo: renterEmail } : {}),
-    subject: `🔒 Slingshot Deposit Paid – ${esc(renterName || "New Renter")} (Balance Pending)`,
-    html: `
-      <h2>🔒 Slingshot Security Deposit Received</h2>
-      <p>A renter has paid the security deposit. Remaining balance is pending.</p>
-      <table style="border-collapse:collapse;width:100%;margin:16px 0">
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Renter</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterName || "N/A")}</td></tr>
-        ${renterEmail ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Email</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterEmail)}</td></tr>` : ""}
-        ${renterPhone ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Phone</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(renterPhone)}</td></tr>` : ""}
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
-        ${rentalDuration ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Duration</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(rentalDuration)}</td></tr>` : ""}
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Security Deposit Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(typeof securityDeposit === "number" ? securityDeposit.toFixed(2) : securityDeposit))}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Remaining Balance</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(String(typeof remainingBalance === "number" ? remainingBalance.toFixed(2) : remainingBalance))}</strong></td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Stripe Payment ID</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(paymentIntentId || "N/A")}</td></tr>
-      </table>
-      <p>The customer's completion link: <a href="${esc(completionLink)}">${esc(completionLink)}</a></p>
-      <p style="color:#ff9800"><strong>⚠️ Full payment must be received before handing over the vehicle.</strong></p>
-    `,
-    text: [
-      "Slingshot Security Deposit Received",
-      "",
-      `Renter             : ${renterName || "N/A"}`,
-      renterEmail ? `Email              : ${renterEmail}` : "",
-      renterPhone ? `Phone              : ${renterPhone}` : "",
-      `Vehicle            : ${vehicleName}`,
-      rentalDuration ? `Duration           : ${rentalDuration}` : "",
-      `Pickup Date        : ${pickupDate}`,
-      `Return Date        : ${returnDate}`,
-      `Security Deposit   : $${typeof securityDeposit === "number" ? securityDeposit.toFixed(2) : securityDeposit}`,
-      `Remaining Balance  : $${typeof remainingBalance === "number" ? remainingBalance.toFixed(2) : remainingBalance}`,
-      `Stripe PI          : ${paymentIntentId || "N/A"}`,
-      "",
-      `Completion link: ${completionLink}`,
-      "",
-      "⚠️ Full payment must be received before handing over the vehicle.",
-    ].filter((l) => l !== undefined).join("\n"),
-  });
-}
-
-// ── Slingshot fully-paid confirmation email to customer ───────────────────
-
-async function sendSlingshotFullyPaidEmail({
-  to, bookingId, paymentIntentId, vehicleId, vehicleName,
-  renterName, renterEmail, renterPhone,
-  pickupDate, pickupTime, returnDate, returnTime,
-  amountPaid, totalPrice,
-}) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return;
-  const transporter = nodemailer.createTransport({
-    host:   process.env.SMTP_HOST,
-    port:   parseInt(process.env.SMTP_PORT || "587"),
-    secure: process.env.SMTP_PORT === "465",
-    auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  });
-  const firstName = renterName ? renterName.split(" ")[0] : "there";
-  const agreementAttachment = await buildUpdatedRentalAgreementAttachment({
-    bookingId,
-    paymentIntentId,
-    vehicleId,
-    vehicleName,
-    renterName,
-    renterEmail,
-    renterPhone,
-    pickupDate,
-    pickupTime,
-    returnDate,
-    returnTime,
-    totalPrice,
-    amountPaid,
-  });
-  await transporter.sendMail({
-    from:    `"Sly Transportation Services LLC" <${process.env.SMTP_USER}>`,
-    to,
-    subject: "✅ Slingshot Booking Fully Paid – Sly Transportation Services LLC",
-    attachments: agreementAttachment,
-    html: `
-      <h2>✅ Your Slingshot Booking is Fully Paid!</h2>
-      <p>Hi ${esc(firstName)}, your payment has been received and your booking is complete.</p>
-      ${agreementAttachment.length ? "<p>📄 Your updated rental agreement is attached for your records.</p>" : ""}
-      <table style="border-collapse:collapse;width:100%;margin:16px 0">
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Vehicle</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(vehicleName)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Pickup Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(pickupDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Return Date</strong></td><td style="padding:8px;border:1px solid #ddd">${esc(returnDate)}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Paid</strong></td><td style="padding:8px;border:1px solid #ddd;color:green"><strong>$${esc(String(typeof amountPaid === "number" ? amountPaid.toFixed(2) : amountPaid))}</strong></td></tr>
-      </table>
-      <p>See you at pickup! If you have any questions, contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
-      <p><strong>Sly Transportation Services LLC 🏎️</strong></p>
-    `,
-    text: [
-      "✅ Your Slingshot Booking is Fully Paid!",
-      "",
-      `Hi ${firstName}, your payment has been received and your booking is complete.`,
-      ...(agreementAttachment.length ? ["Your updated rental agreement PDF is attached."] : []),
-      "",
-      `Vehicle     : ${vehicleName}`,
-      `Pickup Date : ${pickupDate}`,
-      `Return Date : ${returnDate}`,
-      `Amount Paid : $${typeof amountPaid === "number" ? amountPaid.toFixed(2) : amountPaid}`,
-      "",
-      `Questions? Contact ${OWNER_EMAIL} or call (213) 916-6606.`,
-      "",
-      "Sly Transportation Services LLC",
-    ].filter(Boolean).join("\n"),
-  });
-}

@@ -7,7 +7,7 @@
 //
 // Variables reference:
 //   customer_name      – renter's first name (or full name)
-//   vehicle            – vehicle display name  (e.g. "Slingshot R")
+//   vehicle            – vehicle display name  (e.g. "Camry 2012")
 //   pickup_date        – human-readable date   (e.g. "March 28")
 //   pickup_time        – human-readable time   (e.g. "3:00 PM")
 //   return_time        – human-readable time   (e.g. "5:00 PM")
@@ -103,13 +103,6 @@ export const WAITLIST_DECLINED =
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. BOOKING / PAYMENT FLOW
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Sent when a slingshot security deposit is received and rental balance remains. */
-export const SLINGSHOT_DEPOSIT_RECEIVED =
-  "Your {vehicle} is reserved, {customer_name}.\n\n" +
-  "Complete your rental payment here:\n" +
-  "{payment_link}\n\n" +
-  "Reply STOP to opt out.";
 
 /** Sent when an economy reservation deposit is received and rental balance remains. */
 export const RESERVATION_DEPOSIT_CONFIRMED =
@@ -223,14 +216,6 @@ export const EXTEND_LIMITED =
   "Reply with available option(s).\n\n" +
   "Reply STOP to opt out.";
 
-/** Sent when a Slingshot extension is available with full options. */
-export const EXTEND_OPTIONS_SLINGSHOT =
-  "How much extra time would you like?\n\n" +
-  "1 = +1 hour\n" +
-  "2 = +2 hours\n" +
-  "4 = +4 hours\n\n" +
-  "Reply STOP to opt out.";
-
 /** Sent when a Camry / economy extension is available with full options. */
 export const EXTEND_OPTIONS_ECONOMY =
   "How would you like to extend your rental?\n\n" +
@@ -280,12 +265,6 @@ export const EXTEND_SELECTED_UPSELL =
   "{payment_link}\n\n" +
   "Tip: A full 7-day extension is only \${weekly_price}.\n" +
   "Text EXTEND to switch.\n\n" +
-  "Reply STOP to opt out.";
-
-/** Sent after a Slingshot extension payment succeeds. */
-export const EXTEND_CONFIRMED_SLINGSHOT =
-  "Your new return time:\n" +
-  "{return_time}\n\n" +
   "Reply STOP to opt out.";
 
 /** Sent after an economy extension payment succeeds. */
@@ -441,7 +420,6 @@ export const TEMPLATES = {
   waitlist_booking_reminder: WAITLIST_BOOKING_REMINDER,
   waitlist_declined:         WAITLIST_DECLINED,
   booking_confirmed:         BOOKING_CONFIRMED,
-  slingshot_deposit_received:   SLINGSHOT_DEPOSIT_RECEIVED,
   reservation_deposit_confirmed: RESERVATION_DEPOSIT_CONFIRMED,
   unpaid_reminder_24h:       UNPAID_REMINDER_24H,
   unpaid_reminder_2h:        UNPAID_REMINDER_2H,
@@ -454,13 +432,11 @@ export const TEMPLATES = {
   active_rental_15min_before_end: ACTIVE_RENTAL_15MIN_BEFORE_END,
   extend_unavailable:        EXTEND_UNAVAILABLE,
   extend_limited:            EXTEND_LIMITED,
-  extend_options_slingshot:  EXTEND_OPTIONS_SLINGSHOT,
   extend_options_economy:    EXTEND_OPTIONS_ECONOMY,
   extend_flexible_prompt:    EXTEND_FLEXIBLE_PROMPT,
   extend_invalid_input:      EXTEND_INVALID_INPUT,
   extend_selected:           EXTEND_SELECTED,
   extend_selected_upsell:    EXTEND_SELECTED_UPSELL,
-  extend_confirmed_slingshot: EXTEND_CONFIRMED_SLINGSHOT,
   extend_confirmed_economy:  EXTEND_CONFIRMED_ECONOMY,
   extend_payment_pending:    EXTEND_PAYMENT_PENDING,
   late_warning_30min:        LATE_WARNING_30MIN,

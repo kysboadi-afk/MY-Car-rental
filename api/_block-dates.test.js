@@ -33,7 +33,6 @@ const MOCK_FILE_CONTENT = (data) =>
   Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
 
 const INITIAL_DATES = {
-  slingshot: [],
   camry: [],
 };
 
@@ -197,7 +196,6 @@ test("successfully adds a new blocked date range", async () => {
 
 test("returns added:0 when range overlaps an existing booking", async () => {
   const fetchFn = mockFetch({
-    slingshot: [],
     camry: [{ from: "2026-04-01", to: "2026-04-05" }],
   });
   const origFetch = globalThis.fetch;
@@ -220,7 +218,7 @@ test("returns added:0 when range overlaps an existing booking", async () => {
 
 test("does not affect other vehicles when blocking dates", async () => {
   const fetchFn = mockFetch({
-    slingshot: [{ from: "2026-04-01", to: "2026-04-05" }],
+    camry2013: [{ from: "2026-04-01", to: "2026-04-05" }],
     camry: [],
   });
   const origFetch = globalThis.fetch;
@@ -238,11 +236,11 @@ test("does not affect other vehicles when blocking dates", async () => {
 
   assert.equal(res._status, 200);
   assert.equal(fetchFn.getStored().camry.length, 1, "camry range should be added");
-  assert.equal(fetchFn.getStored().slingshot.length, 1, "slingshot range should be untouched");
+  assert.equal(fetchFn.getStored().camry2013.length, 1, "camry2013 range should be untouched");
 });
 
 test("creates vehicle key if it does not exist in the file", async () => {
-  const fetchFn = mockFetch({ slingshot: [] }); // no camry key
+  const fetchFn = mockFetch({}); // no camry key
   const origFetch = globalThis.fetch;
   globalThis.fetch = fetchFn;
 

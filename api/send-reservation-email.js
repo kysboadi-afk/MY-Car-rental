@@ -12,7 +12,7 @@
 import nodemailer from "nodemailer";
 import Stripe from "stripe";
 import { hasOverlap } from "./_availability.js";
-import { CARS, PROTECTION_PLAN_DAILY, PROTECTION_PLAN_WEEKLY, PROTECTION_PLAN_BIWEEKLY, PROTECTION_PLAN_MONTHLY, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM, SLINGSHOT_BOOKING_DEPOSIT, SLINGSHOT_DEPOSIT_WITH_INSURANCE, SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE } from "./_pricing.js";
+import { CARS, PROTECTION_PLAN_BASIC, PROTECTION_PLAN_STANDARD, PROTECTION_PLAN_PREMIUM } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
@@ -211,15 +211,11 @@ function generateRentalAgreementHtml(body) {
     name, email, phone,
     pickup, pickupTime, returnDate, returnTime,
     total, deposit, days, protectionPlan, protectionPlanTier, signature,
-    slingshotDuration,
     fullRentalCost, balanceAtPickup,
-    insuranceCoverageChoice, slingshotDepositAmount,
   } = body;
 
   const signedAt = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles", dateStyle: "long", timeStyle: "short" });
 
-  // Build the DPP rates label from server-side constants to avoid hardcoding
-  const dppRatesText = `$${PROTECTION_PLAN_DAILY}/day &bull; $${PROTECTION_PLAN_WEEKLY}/week &bull; $${PROTECTION_PLAN_BIWEEKLY}/2 wks &bull; $${PROTECTION_PLAN_MONTHLY}/month`;
   // Economy car tier label
   const tierLabel = protectionPlanTier === "basic" ? "Basic ($15/day)"
     : protectionPlanTier === "premium" ? "Premium ($50/day)"
@@ -227,53 +223,19 @@ function generateRentalAgreementHtml(body) {
   // Economy car tier liability cap (Basic: $2,500 / Standard: $1,000 / Premium: $500)
   const tierLiabilityCap = dppTierLiabilityCap(protectionPlanTier);
 
-  // Deposit / pricing section — matches the logic in car.js openAgreement()
-  const carInfo = (vehicleId && CARS[vehicleId]) ? CARS[vehicleId] : null;
-  const isHourly = !!(carInfo && carInfo.hourlyTiers);
-  let depositSection = "";
-  if (isHourly) {
-    // Full payment system: security deposit included in total, charged at booking.
-    // No Damage Protection Plan for Slingshot — renter assumes full liability.
-    const insuranceChoiceLabel = insuranceCoverageChoice === "no"
-      ? "Option B — No personal insurance (no DPP available — renter assumes full liability)"
-      : "Option A — Renter provided own insurance (proof required at pickup)";
-    depositSection = `
-      <h4>SECURITY DEPOSIT (Refundable)</h4>
-      <p>A <strong>refundable security deposit equal to your rental fee</strong> is included in your total payment. It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.</p>
-      <p><strong>Insurance/Protection Choice:</strong> ${insuranceChoiceLabel}</p>
-    `;
-  } else {
-    const dppDetail = protectionPlan
-      ? `<strong>Damage Protection Plan &mdash; ${tierLabel}:</strong> selected &mdash; reduces your damage liability based on chosen plan`
-      : `<strong>Damage Protection Plan:</strong> not selected (renter provided personal rental car insurance)`;
-    depositSection = `
-      <p>No security deposit is required for this vehicle.</p>
-      <p>${dppDetail}</p>
-    `;
-  }
+  const dppDetail = protectionPlan
+    ? `<strong>Damage Protection Plan &mdash; ${tierLabel}:</strong> selected &mdash; reduces your damage liability based on chosen plan`
+    : `<strong>Damage Protection Plan:</strong> not selected (renter provided personal rental car insurance)`;
+  const depositSection = `
+    <p>No security deposit is required for this vehicle.</p>
+    <p>${dppDetail}</p>
+  `;
 
-  // Insurance / protection plan summary
-  const insuranceSummary = isHourly
-    ? (insuranceCoverageChoice === "no"
-        ? "Option B: No personal insurance — no DPP available for Slingshot; renter assumes full liability"
-        : "Option A: Renter has own insurance (proof required at pickup)")
-    : (protectionPlan
-        ? `Damage Protection Plan selected — ${tierLabel}`
-        : "Renter provided personal rental car insurance");
+  const insuranceSummary = protectionPlan
+    ? `Damage Protection Plan selected — ${tierLabel}`
+    : "Renter provided personal rental car insurance";
 
-  // Slingshot speed policy section
-  const speedSection = isHourly ? `
-    <h4>SLINGSHOT SPEED POLICY</h4>
-    <p><strong>Speed Limit:</strong> The posted speed limit is 65 mph. Renters may not exceed <strong>75 mph</strong> under any circumstances. Exceeding 75 mph at any time constitutes a violation of this agreement.</p>
-    <p><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
-  ` : "";
-
-  // Rental duration line
-  const durationLine = isHourly && slingshotDuration
-    ? (Number(slingshotDuration) >= 48
-        ? `${esc(String(Number(slingshotDuration) / 24))}-day rental`
-        : `${esc(String(slingshotDuration))}-hour rental`)
-    : (days ? `${esc(String(days))} day${Number(days) !== 1 ? "s" : ""}` : "");
+  const durationLine = days ? `${esc(String(days))} day${Number(days) !== 1 ? "s" : ""}` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -327,11 +289,11 @@ function generateRentalAgreementHtml(body) {
     <tr><th>Return Date</th><td>${esc(returnDate || "")}</td></tr>
     <tr><th>Return Time</th><td>${esc(returnTime || "Not specified")}</td></tr>
     ${durationLine ? `<tr><th>Duration</th><td>${durationLine}</td></tr>` : ""}
-    <tr><th>${isHourly ? "Total Charged" : "Total Charged"}</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
-    ${!isHourly && balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+    <tr><th>Total Charged</th><td><strong>$${esc(total || "TBD")}</strong></td></tr>
+    ${balanceAtPickup ? `<tr><th>Balance Due at Pickup</th><td><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
     <tr><th>Insurance / Protection</th><td>${esc(insuranceSummary)}</td></tr>
   </table>
-  <p><strong>Late Fee:</strong> ${isHourly ? "$100/hour after a 30-minute grace period." : "$50/day after a 2-hour grace period."}</p>
+  <p><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
 
   <h4>MILEAGE, GEOGRAPHIC USE &amp; FUEL</h4>
   <p><strong>Mileage &amp; Geographic Limit:</strong> Unlimited miles are included within a designated local area only. All vehicle use must remain within <strong>Los Angeles County</strong> or within a <strong>50-mile radius of Los Angeles</strong>, unless otherwise approved in writing by the host. Travel outside this area — including trips to San Diego, San Francisco, Las Vegas, or any out-of-state destination — is not allowed without prior written authorization. Unauthorized use outside the approved area will result in a <strong>$500 penalty fee</strong> and may lead to early termination of the rental without refund. The vehicle is equipped with a GPS tracking system for security and compliance; by renting, you consent to location monitoring during the rental period.</p>
@@ -345,12 +307,8 @@ function generateRentalAgreementHtml(body) {
     <li>Valid personal auto insurance covering rental vehicles (proof required), <strong>OR</strong></li>
     <li>Purchase of SLY Transportation Services Damage Protection Plan</li>
   </ul>
-  ${isHourly
-    ? `<p><strong>Damage Protection Plan (Slingshot):</strong> ${dppRatesText}</p>
-  <p>This plan reduces the renter's financial responsibility for covered vehicle damage to a maximum of <strong>$1,000 per incident</strong>.</p>`
-    : `<p><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $${PROTECTION_PLAN_BASIC}/day &bull; Standard &mdash; $${PROTECTION_PLAN_STANDARD}/day &bull; Premium &mdash; $${PROTECTION_PLAN_PREMIUM}/day</p>
-  <p>Liability cap depends on plan selected: Basic &mdash; $2,500 &bull; Standard &mdash; $1,000 &bull; Premium &mdash; $500 per incident.</p>`
-  }
+  <p><strong>Damage Protection Plan (Optional):</strong> Basic &mdash; $${PROTECTION_PLAN_BASIC}/day &bull; Standard &mdash; $${PROTECTION_PLAN_STANDARD}/day &bull; Premium &mdash; $${PROTECTION_PLAN_PREMIUM}/day</p>
+  <p>Liability cap depends on plan selected: Basic &mdash; $2,500 &bull; Standard &mdash; $1,000 &bull; Premium &mdash; $500 per incident.</p>
   <p><strong>Without Protection Plan:</strong> Renter is fully responsible for all damages and associated costs, including but not limited to:</p>
   <ul>
     <li>Full cost of vehicle repair or replacement</li>
@@ -358,7 +316,7 @@ function generateRentalAgreementHtml(body) {
     <li>Diminished value</li>
     <li>Administrative, towing, and storage fees</li>
   </ul>
-  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>${isHourly ? "$1,000" : tierLiabilityCap} per incident</strong>. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.</p>
+  <p><strong>With Protection Plan:</strong> Renter's maximum liability for covered vehicle damage is limited to <strong>${tierLiabilityCap} per incident</strong>. Any damage costs exceeding this cap are covered by the plan, provided all terms of this agreement are followed.</p>
   <p><strong>Exclusions (Protection Plan Void If):</strong></p>
   <ul>
     <li>Driver is under the influence of drugs or alcohol</li>
@@ -375,8 +333,6 @@ function generateRentalAgreementHtml(body) {
   <p>No smoking &nbsp; No pets &nbsp; No off-road use &nbsp; No subleasing</p>
   <p>Approved drivers only &nbsp; No racing or towing &nbsp; No commercial hauling</p>
 
-  ${speedSection}
-
   <h4>CONDITION INSPECTION</h4>
   <p>Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
 
@@ -384,7 +340,7 @@ function generateRentalAgreementHtml(body) {
   <p>SLY Transportation Services may terminate this agreement immediately for breach of terms, unpaid fees, unlawful use, or safety violations. Renter is liable for all costs to recover the vehicle.</p>
 
   <h4>PAYMENT TERMS</h4>
-  <p>${isHourly ? "Full payment (including a refundable security deposit equal to your rental fee) was charged at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues." : "All fees are due at pickup."} Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
+  <p>All fees are due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.</p>
   <p>&#9888; <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Refunds may be issued only if SLY Transportation cancels or cannot fulfill the rental.</p>
 
   <h4>PAYMENT AUTHORIZATION &amp; CHARGEBACK POLICY</h4>
@@ -455,16 +411,6 @@ async function fetchPaymentIntentStatus(paymentIntentId) {
   }
 }
 
-function parseSlingshotDurationHours(raw) {
-  if (raw == null) return null;
-  const text = String(raw).trim().toLowerCase();
-  if (!text) return null;
-  const n = parseFloat(text);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  if (text.includes("day")) return Math.round(n * 24);
-  return Math.round(n);
-}
-
 function isNullOrEmptyString(v) {
   return v == null || (typeof v === "string" && !v.trim());
 }
@@ -495,7 +441,6 @@ const RECOVERABLE_BOOKING_FIELDS = [
   "protectionPlanTier",
   "protectionPlan",
   "insuranceCoverageChoice",
-  "slingshotDuration",
 ];
 
 /**
@@ -520,9 +465,8 @@ async function hydrateBookingBodyFromPaymentIntent(paymentIntentId) {
     const pickup = meta.pickup_date || "";
     const returnDate = meta.return_date || "";
     const pickupTime = normalizeClockTime(meta.pickup_time);
-    const parsedDuration = parseSlingshotDurationHours(meta.rental_duration || "");
     const metaReturnTime = normalizeClockTime(meta.return_time);
-    const returnTime = deriveReturnTime(pickup, pickupTime, metaReturnTime, parsedDuration);
+    const returnTime = deriveReturnTime(pickup, pickupTime, metaReturnTime);
 
     if (!vehicleId || !pickup || !returnDate || !pickupTime) {
       console.warn(
@@ -559,7 +503,6 @@ async function hydrateBookingBodyFromPaymentIntent(paymentIntentId) {
       protectionPlanTier: tier || undefined,
       protectionPlan: !!tier,
       insuranceCoverageChoice: inferredInsuranceChoice || undefined,
-      slingshotDuration: parsedDuration || undefined,
     };
   } catch (err) {
     console.warn(`hydrateBookingBodyFromPaymentIntent: failed for PI ${paymentIntentId}:`, err.message);
@@ -698,7 +641,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, slingshotDuration, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice, slingshotDepositAmount } = hydratedBody;
+  const { vehicleId, bookingId, car, vehicleMake, vehicleModel, vehicleYear, vehicleVin, vehicleColor, name, pickup, pickupTime: rawPickupTime, returnDate, returnTime: rawReturnTime, email, phone, total, pricePerDay, pricePerWeek, pricePerBiWeekly, pricePerMonthly, deposit, days, idBase64, idFileName, idMimeType, insuranceBase64, insuranceFileName, insuranceMimeType, protectionPlan, protectionPlanTier, signature, paymentStatus, fullRentalCost, balanceAtPickup, paymentType, paymentIntentId, insuranceCoverageChoice } = hydratedBody;
   const normalizedPaymentStatus = typeof paymentStatus === "string" ? paymentStatus.trim().toLowerCase() : "";
 
   const pickupTime = normalizeClockTime(rawPickupTime);
@@ -709,7 +652,7 @@ export default async function handler(req, res) {
         : "Pickup time is required. Please select a pickup time before proceeding.",
     });
   }
-  const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime, slingshotDuration);
+  const returnTime = deriveReturnTime(pickup, pickupTime, rawReturnTime);
   if (!returnTime) {
     return res.status(400).json({
       error: usedRecoveryPath
@@ -744,13 +687,9 @@ export default async function handler(req, res) {
 
   // Compute server-side pricing breakdown lines for daily/weekly rentals using
   // live admin-configurable rates from system_settings.
-  // Slingshot (hourly tier) or missing dates fall back gracefully to null.
-  const pricingSettings = (vehicleId && pickup && returnDate && !slingshotDuration)
+  const pricingSettings = (vehicleId && pickup && returnDate)
     ? await loadPricingSettings()
     : null;
-  // Slingshot bookings use hourly tier pricing and do not produce a line-item
-  // breakdown table in the email — the total charged is displayed directly.
-  // loadPricingSettings() is only needed for Camry / economy car breakdowns.
   const breakdownLines = pricingSettings
     ? computeBreakdownLinesFromSettings(vehicleId, pickup, returnDate, pricingSettings, !!protectionPlan, protectionPlanTier || null)
     : null;
@@ -802,18 +741,13 @@ export default async function handler(req, res) {
       ...(pickupTime  ? [["pt", pickupTime]]  : []),
       ...(returnTime  ? [["rt", returnTime]]  : []),
       ...(car       ? [["car", car]]       : []),
-      ...(slingshotDuration ? [["d", String(slingshotDuration)]] : []),
     ];
     balancePayUrl = "https://www.slytrans.com/balance.html?" +
       bpParts.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
   }
 
-  // For Slingshot bookings, 'total' is the full rental amount charged at booking (including refundable security deposit equal to the rental fee).
-  const isHourlyEmail = !!(vehicleId && CARS[vehicleId] && CARS[vehicleId].hourlyTiers);
   const totalChargedLabel = isBalancePayment
     ? "Balance Paid"
-    // fullRentalCost is only set for Camry deposit-mode bookings (partial payment up front).
-    // Slingshot bookings set fullRentalCost to null since everything is charged at once.
     : (fullRentalCost ? "Booking Deposit Charged" : "Total Charged");
   const ownerSubject = isBalancePayment
     ? `🎉 Balance Paid – Booking Fully Paid: ${esc(car)}`
@@ -922,24 +856,14 @@ export default async function handler(req, res) {
         pricePerMonthly  ? `Monthly Rate   : $${pricePerMonthly} / month`    : "",
         `Deposit        : ${deposit != null && deposit > 0 ? "$" + deposit : "None"}`,
         `${totalChargedLabel.padEnd(15)}: $${total || "TBD"}`,
-        !isHourlyEmail && fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
-        !isHourlyEmail && balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
-        isHourlyEmail
-          ? `Insurance Option: ${insuranceCoverageChoice === "no" ? "Option B — No insurance (DPP included)" : "Option A — Own insurance (proof required at pickup)"}`
-          : (protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : (insuranceBase64 && insuranceFileName ? "Own insurance (proof uploaded)" : "Own insurance (no proof on file — verify at pickup)")}` : ""),
-        isHourlyEmail ? `Insurance Uploaded: ${insuranceBase64 && insuranceFileName ? "Yes (" + insuranceFileName + ")" : "No"}` : "",
-        isHourlyEmail ? `Protection Plan: ${protectionPlan ? "Included (Option B)" : "Not included (Option A)"}` : "",
+        fullRentalCost   ? `Full Rental Cost: $${fullRentalCost}` : "",
+        balanceAtPickup ? `Balance at Pickup: $${balanceAtPickup}` : "",
+        (protectionPlan != null ? `Insurance      : ${protectionPlan ? "Damage Protection Plan (no personal coverage)" : (insuranceBase64 && insuranceFileName ? "Own insurance (proof uploaded)" : "Own insurance (no proof on file — verify at pickup)")}` : ""),
         signature ? `Digital Signature: ${signature}` : "",
         breakdownText ? "\nPrice Breakdown:\n" + breakdownText : "",
         "",
         idBase64 && idFileName ? `ID attached: ${idFileName}` : "No ID was uploaded by the renter.",
-        isHourlyEmail
-          ? (insuranceBase64 && insuranceFileName
-              ? `Insurance attached: ${insuranceFileName}`
-              : (insuranceCoverageChoice === "no"
-                  ? "No insurance upload (renter chose Option B / DPP)."
-                  : "No insurance document uploaded — verify at pickup (renter chose Option A)."))
-          : (insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter.")),
+        (insuranceBase64 && insuranceFileName ? `Insurance attached: ${insuranceFileName}` : (protectionPlan ? "No insurance upload (renter chose Damage Protection Plan)." : "No insurance document was uploaded by the renter.")),
         isConfirmed && signature ? `Signed Rental Agreement: attached (${agreementPdfFilename})` : "",
         "",
         footerText,
@@ -969,27 +893,18 @@ export default async function handler(req, res) {
           ${pricePerMonthly  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Monthly Rate</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(String(pricePerMonthly))} / month</td></tr>` : ""}
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>Deposit</strong></td><td style="padding:8px;border:1px solid #ddd">${deposit != null && deposit > 0 ? "$" + esc(String(deposit)) : "None"}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd"><strong>${esc(totalChargedLabel)}</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(total) || "TBD"}</strong></td></tr>
-          ${fullRentalCost && !isHourlyEmail  ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
-          ${!isHourlyEmail && balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
-          ${isHourlyEmail
-            ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Option</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceCoverageChoice === "no" ? "⚠️ Option B — No personal insurance (DPP included)" : "✅ Option A — Renter has own insurance (proof required at pickup)"}</td></tr>
-               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Uploaded</strong></td><td style="padding:8px;border:1px solid #ddd">${insuranceBase64 && insuranceFileName ? "✅ Yes (" + esc(insuranceFileName) + ")" : "❌ No"}</td></tr>
-               <tr><td style="padding:8px;border:1px solid #ddd"><strong>Protection Plan</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "✅ Included (Option B)" : "❌ Not included (Option A)"}</td></tr>`
-            : `${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : (insuranceBase64 && insuranceFileName ? "✅ Own insurance (proof uploaded)" : "⚠️ Own insurance (no proof uploaded — verify at pickup)")}</td></tr>` : ""}`
-          }
+          ${fullRentalCost ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Full Rental Cost</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(fullRentalCost)}</td></tr>` : ""}
+          ${balanceAtPickup ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Due at Pickup</strong></td><td style="padding:8px;border:1px solid #ddd;color:#ff9800"><strong>$${esc(balanceAtPickup)}</strong></td></tr>` : ""}
+          ${protectionPlan != null ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Insurance Coverage</strong></td><td style="padding:8px;border:1px solid #ddd">${protectionPlan ? "⚠️ Damage Protection Plan (no personal coverage)" : (insuranceBase64 && insuranceFileName ? "✅ Own insurance (proof uploaded)" : "⚠️ Own insurance (no proof uploaded — verify at pickup)")}</td></tr>` : ""}
           ${signature ? `<tr><td style="padding:8px;border:1px solid #ddd"><strong>Digital Signature</strong></td><td style="padding:8px;border:1px solid #ddd;font-style:italic">${esc(signature)}</td></tr>` : ""}
         </table>
         ${breakdownHtml ? `<h3 style="margin-top:16px">📊 Price Breakdown</h3>${breakdownHtml}` : ""}
         ${idBase64 && idFileName ? `<p>📎 <strong>Renter's ID is attached</strong> to this email (${esc(idFileName)}).</p>` : `<p>⚠️ No ID was uploaded by the renter.</p>`}
         ${insuranceBase64 && insuranceFileName
           ? `<p>🛡️ <strong>Renter's insurance document is attached</strong> to this email (${esc(insuranceFileName)}).</p>`
-          : (isHourlyEmail
-              ? (insuranceCoverageChoice === "no"
-                  ? `<p>ℹ️ Renter chose Option B (Damage Protection Plan) — no personal insurance upload required.</p>`
-                  : `<p>⚠️ Renter chose Option A (own insurance) but did not upload proof — verify at pickup.</p>`)
-              : (protectionPlan
-                  ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>`
-                  : `<p>⚠️ Renter declared own insurance but did not upload proof — <strong>verify insurance at pickup before releasing the vehicle</strong>.</p>`))
+          : (protectionPlan
+              ? `<p>ℹ️ Renter chose the Damage Protection Plan — no personal insurance was uploaded.</p>`
+              : `<p>⚠️ Renter declared own insurance but did not upload proof — <strong>verify insurance at pickup before releasing the vehicle</strong>.</p>`)
         }
         ${isConfirmed && signature ? `<p>📄 <strong>Signed Rental Agreement is attached</strong> to this email as a PDF file.</p>` : ""}
         <p>${footerText}</p>

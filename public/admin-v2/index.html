@@ -1485,14 +1485,7 @@
         <div class="form-section" style="max-width:480px;">
           <div class="form-section-title">Quick Links</div>
           <div class="form-grid one">
-            <div class="form-group">
-              <label class="form-label">Slingshot Admin Portal</label>
-              <a href="../admin-slingshot/" class="btn btn-secondary" target="_blank" style="display:inline-flex;align-items:center;gap:6px;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                🏍️ Open Slingshot Admin
-              </a>
             </div>
-          </div>
         </div>
 
         <div class="form-section" style="max-width:640px;">
@@ -2232,9 +2225,6 @@ function getVehicleLabel(id) {
   return VEHICLE_NAMES_DYNAMIC[key] || VEHICLE_LABELS[key] || key;
 }
 
-// Vehicle IDs that belong to the slingshot admin — excluded from the car Bookings UI.
-// Must stay in sync with the slingshot IDs in api/v2-bookings.js (ALLOWED_VEHICLES).
-const SLINGSHOT_VEHICLE_IDS = new Set(['slingshot', 'slingshot2', 'slingshot3']);
 
 // Hard-coded local fallback images — used when the API/DB doesn't provide a cover URL
 // or when the stored URL fails to load. Root-relative so they work from any page depth.
@@ -2277,13 +2267,13 @@ async function loadVehiclesFromApi() {
     const vehicles = await res.json();
     if (!Array.isArray(vehicles)) return;
     vehicles.forEach((v) => {
-      if (v.vehicle_id && (v.type || '') !== 'slingshot') {
+      if (v.vehicle_id) {
         if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
         if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
       }
     });
     // Populate dynamic vehicle filter dropdowns for Revenue and Expenses
-    populateVehicleFilters(vehicles.filter((v) => (v.type || '') !== 'slingshot'));
+    populateVehicleFilters(vehicles);
   } catch (err) {
     // Network/parse error — continue with hard-coded fallbacks
     console.error('admin-v2: failed to load vehicles from API, using fallback values', err);
@@ -2847,7 +2837,7 @@ function renderVehicles(vehicles, stats) {
       </button>
     </div>
     <div class="vehicles-grid">
-      ${Object.entries(vehicles).filter(([, v]) => (v.type || '') !== 'slingshot').map(([id, v]) => {
+      ${Object.entries(vehicles).map(([id, v]) => {
         const s = stats[id] || {};
         const isActive = v.status === 'active';
         const profitClass = s.netProfit < 0 ? 'negative' : (s.netProfit > 0 ? 'positive' : '');
@@ -3374,7 +3364,7 @@ function updateBouncieWarning(prefix) {
   const imeiEl    = document.getElementById(prefix + '-bouncie-id');
   const warnEl    = document.getElementById(prefix + '-bouncie-warn');
   if (!typeEl || !imeiEl || !warnEl) return;
-  const isCar     = typeEl.value !== 'slingshot';
+  const isCar     = true;
   const hasImei   = imeiEl.value.trim().length > 0;
   warnEl.style.display = (isCar && !hasImei) ? '' : 'none';
 }
@@ -3635,8 +3625,7 @@ function loadBookings() {
         ...b,
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
-      // Exclude slingshot bookings — those are managed in the slingshot admin.
-      allBookings = normalizedBookings.filter((b) => !b.vehicleId || !SLINGSHOT_VEHICLE_IDS.has(b.vehicleId));
+      allBookings = normalizedBookings;
       renderBookings();
     })
     .catch((err) => {

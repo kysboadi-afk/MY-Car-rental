@@ -339,9 +339,8 @@
       <select id="vehicleSelect">
         <option value="camry">Camry 2012</option>
         <option value="camry2013">Camry 2013 SE</option>
-        <option value="slingshot">Slingshot R</option>
-        <option value="slingshot2">Slingshot R (Unit 2)</option>
-        <option value="slingshot3">Slingshot R (Unit 3)</option>
+
+
       </select>
     </div>
 
@@ -373,42 +372,6 @@
       <p class="subtitle">Toggle a vehicle's availability. Changes appear on the website immediately.</p>
 
       <div id="fleetVehicles">
-        <!-- Slingshot R -->
-        <div class="fleet-vehicle-row" id="fleet-row-slingshot">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Slingshot R</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Slingshot R availability">
-            <input type="checkbox" id="toggle-slingshot" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Slingshot R Unit 2 -->
-        <div class="fleet-vehicle-row" id="fleet-row-slingshot2">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Slingshot R (Unit 2)</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot2">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Slingshot R Unit 2 availability">
-            <input type="checkbox" id="toggle-slingshot2" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <!-- Slingshot R Unit 3 -->
-        <div class="fleet-vehicle-row" id="fleet-row-slingshot3">
-          <div class="fleet-vehicle-info">
-            <div class="fleet-vehicle-name">Slingshot R (Unit 3)</div>
-            <span class="fleet-vehicle-status available" id="fleet-status-text-slingshot3">● Available</span>
-          </div>
-          <label class="toggle-switch" aria-label="Toggle Slingshot R Unit 3 availability">
-            <input type="checkbox" id="toggle-slingshot3" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
         <!-- Camry 2012 -->
         <div class="fleet-vehicle-row" id="fleet-row-camry">
           <div class="fleet-vehicle-info">
@@ -448,9 +411,8 @@
           <select id="mbVehicle">
             <option value="camry">Camry 2012</option>
             <option value="camry2013">Camry 2013 SE</option>
-            <option value="slingshot">Slingshot R</option>
-            <option value="slingshot2">Slingshot R (Unit 2)</option>
-            <option value="slingshot3">Slingshot R (Unit 3)</option>
+
+
           </select>
         </div>
 
@@ -745,9 +707,6 @@
     (function () {
       var API_BASE = "https://sly-rides.vercel.app";
       var VEHICLES = [
-        { id: "slingshot",  name: "Slingshot R" },
-        { id: "slingshot2", name: "Slingshot R (Unit 2)" },
-        { id: "slingshot3", name: "Slingshot R (Unit 3)" },
         { id: "camry",      name: "Camry 2012" },
         { id: "camry2013",  name: "Camry 2013 SE" },
       ];
@@ -888,7 +847,7 @@
       // ── Render vehicle cards ───────────────────────────────────────────────
       function renderCards(stats) {
         var container = document.getElementById("vehicleCards");
-        var VEHICLE_ORDER = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+        var VEHICLE_ORDER = ["camry", "camry2013"];
         var html = "";
         VEHICLE_ORDER.forEach(function (vid) {
           var s = stats[vid];

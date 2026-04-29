@@ -75,7 +75,7 @@ export default async function handler(req, res) {
       const mileageData = (vehicleRows || [])
         .filter((r) => {
           const type = r.data?.type || r.data?.vehicle_type || "";
-          return type !== "slingshot";
+          return true;
         })
         .map((r) => ({
           vehicle_id:               r.vehicle_id,

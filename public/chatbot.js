@@ -10,12 +10,6 @@ function escHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// Returns true when the chatbot is embedded in a Slingshot-specific page.
-// Set window.slyChatbotMode = "slingshot" before loading this script to activate.
-function isSlingshotMode() {
-  return window.slyChatbotMode === "slingshot";
-}
-
 // ── Los Angeles timezone helper ───────────────────────────────────────────────
 // SlyLA is provided by la-date.js; if that script wasn't loaded (e.g., on a
 // page that only embeds the chatbot widget), define a self-contained fallback.
@@ -70,24 +64,16 @@ var slyChatPricing  = null;
 
 /**
  * Returns live pricing from the API if loaded, otherwise hardcoded fallback.
- * @returns {{ slingshot: {3hr,6hr,24hr,48hr,72hr,booking_deposit},
- *             economy:   {daily,weekly,biweekly,monthly,booking_deposit},
- *             tax_rate:  number }}
- * Note: Slingshot security deposit = rental tier price (no flat security_deposit field).
+ * @returns {{ economy: {daily,weekly,biweekly,monthly,booking_deposit}, tax_rate: number }}
  */
 function getChatPricing() {
   return slyChatPricing || {
-    slingshot: { "3hr": 200, "6hr": 250, "24hr": 350, "48hr": 700, "72hr": 1050,
-                 booking_deposit: 50 },
     economy:   { daily: 55, weekly: 350, biweekly: 650, monthly: 1300, booking_deposit: 50 },
     tax_rate:  0.1025,
   };
 }
 
 var KNOWN_VEHICLE_META = {
-  slingshot:  { name: "Slingshot R", icon: "🔴", type: "slingshot" },
-  slingshot2: { name: "Slingshot R (Unit 2)", icon: "🔴", type: "slingshot" },
-  slingshot3: { name: "Slingshot R (Unit 3)", icon: "🔴", type: "slingshot" },
   camry:      { name: "Camry 2012", icon: "🔵", type: "economy" },
   camry2013:  { name: "Camry 2013 SE", icon: "🟢", type: "economy" }
 };
@@ -108,8 +94,8 @@ function getVehicleMeta(vehicleId) {
   var text = String(vehicleId || "").toLowerCase();
   return {
     name: prettifyVehicleId(vehicleId),
-    icon: /sling/.test(text) ? "🔴" : "🚗",
-    type: /sling/.test(text) ? "slingshot" : "other"
+    icon: "🚗",
+    type: "other"
   };
 }
 
@@ -137,26 +123,11 @@ function getFleetVehicleIds() {
   return ids;
 }
 
-function getSlingshotUnitCount() {
-  var count = getFleetVehicleIds().filter(function(id) { return getVehicleMeta(id).type === "slingshot"; }).length;
-  return count || 1;
-}
-
 /** Build the general pricing message for all vehicles in the given language. */
 function buildChatPricingText(lang) {
-  var p = getChatPricing(), s = p.slingshot, e = p.economy;
-  var slingshotCount = getSlingshotUnitCount();
-  // In Slingshot mode only show Slingshot pricing.
-  if (isSlingshotMode()) {
-    return buildChatSlingshotPricingText(lang);
-  }
+  var p = getChatPricing(), e = p.economy;
   if (lang === "es") {
     return "Aquí están nuestras tarifas actuales 🚗\n\n" +
-      "🔴 Slingshot R — Deportivo 2 plazas (" + slingshotCount + " unidades disponibles)\n" +
-      "  • 3 Horas  — $" + s["3hr"] + " (depósito reembolsable: $" + s["3hr"] + ")\n" +
-      "  • 6 Horas  — $" + s["6hr"] + " (depósito reembolsable: $" + s["6hr"] + ")\n" +
-      "  • 24 Horas — $" + s["24hr"] + " (depósito reembolsable: $" + s["24hr"] + ")\n" +
-      "  • 💡 El depósito de seguridad iguala el precio del alquiler\n\n" +
       "🔵 Camry 2012\n" +
       "  • Diario    — $" + e.daily + " / día\n" +
       "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
@@ -172,11 +143,6 @@ function buildChatPricingText(lang) {
       "¡Pregúntame sobre un auto específico para más detalles!";
   }
   return "Here are our current rates 🚗\n\n" +
-    "🔴 Slingshot R — Sports 2-Seater (" + slingshotCount + " units available)\n" +
-    "  • 3 Hours  — $" + s["3hr"] + " (refundable deposit: $" + s["3hr"] + ")\n" +
-    "  • 6 Hours  — $" + s["6hr"] + " (refundable deposit: $" + s["6hr"] + ")\n" +
-    "  • 24 Hours — $" + s["24hr"] + " (refundable deposit: $" + s["24hr"] + ")\n" +
-    "  • 💡 Security deposit equals your rental fee\n\n" +
     "🔵 Camry 2012\n" +
     "  • Daily     — $" + e.daily + " / day\n" +
     "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
@@ -190,32 +156,6 @@ function buildChatPricingText(lang) {
     "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
     "  • No deposit required\n\n" +
     "Ask me about a specific car for more details!";
-}
-
-/** Build the Slingshot-only pricing message. */
-function buildChatSlingshotPricingText(lang) {
-  var s = getChatPricing().slingshot;
-  var slingshotCount = getSlingshotUnitCount();
-  if (lang === "es") {
-    return "Aquí están las tarifas del Slingshot R 🔴 (tenemos " + slingshotCount + " unidades)\n\n" +
-      "⏱ Tarifas por Duración (Deportivo 2 plazas):\n" +
-      "  • 3 Horas  — $" + s["3hr"] + "  💰 Depósito reembolsable: $" + s["3hr"] + "\n" +
-      "  • 6 Horas  — $" + s["6hr"] + "  💰 Depósito reembolsable: $" + s["6hr"] + "\n" +
-      "  • 24 Horas — $" + s["24hr"] + "  💰 Depósito reembolsable: $" + s["24hr"] + "\n" +
-      "  • 48 Horas — $" + s["48hr"] + "  💰 Depósito reembolsable: $" + s["48hr"] + "\n" +
-      "  • 72 Horas — $" + s["72hr"] + " 💰 Depósito reembolsable: $" + s["72hr"] + "\n\n" +
-      "💡 El depósito de seguridad iguala el precio del alquiler y se reembolsa después de la devolución e inspección del vehículo.\n\n" +
-      "¿Listo para reservar? <a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot</a>";
-  }
-  return "Here are the Slingshot R rates 🔴 (we have " + slingshotCount + " units)\n\n" +
-    "⏱ Rates by Duration (Sports 2-Seater):\n" +
-    "  • 3 Hours  — $" + s["3hr"] + "  💰 Refundable deposit: $" + s["3hr"] + "\n" +
-    "  • 6 Hours  — $" + s["6hr"] + "  💰 Refundable deposit: $" + s["6hr"] + "\n" +
-    "  • 24 Hours — $" + s["24hr"] + "  💰 Refundable deposit: $" + s["24hr"] + "\n" +
-    "  • 48 Hours — $" + s["48hr"] + "  💰 Refundable deposit: $" + s["48hr"] + "\n" +
-    "  • 72 Hours — $" + s["72hr"] + " 💰 Refundable deposit: $" + s["72hr"] + "\n\n" +
-    "💡 The security deposit equals your rental fee and is fully refunded after the vehicle is returned and inspected with no issues.\n\n" +
-    "Ready to book? <a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot</a>";
 }
 
 /** Build the Camry-only pricing message. */
@@ -253,25 +193,16 @@ function buildChatCamryPricingText(lang) {
 
 /** Build the deposit info message. */
 function buildChatDepositText(lang) {
-  var s = getChatPricing().slingshot;
   if (lang === "es") {
-    return "Aquí está nuestra información de depósito 💰\n\n" +
-      "🔴 Slingshot R — Depósito de seguridad reembolsable:\n" +
-      "  • 3 Horas  — Depósito: $" + s["3hr"] + " (igual al precio del alquiler)\n" +
-      "  • 6 Horas  — Depósito: $" + s["6hr"] + " (igual al precio del alquiler)\n" +
-      "  • 24 Horas — Depósito: $" + s["24hr"] + " (igual al precio del alquiler)\n" +
-      "  • 48 Horas — Depósito: $" + s["48hr"] + " (igual al precio del alquiler)\n" +
-      "  • 72 Horas — Depósito: $" + s["72hr"] + " (igual al precio del alquiler)\n\n" +
-      "💡 El depósito se cobra al reservar y se reembolsa después de la devolución e inspección del vehículo (generalmente en 5–7 días hábiles).";
+    return "Información sobre depósito 💰\n\n" +
+      "🔵🟢 Camry 2012 / Camry 2013 SE\n\n" +
+      "✅ No se requiere depósito de seguridad para nuestros vehículos de economía.\n\n" +
+      "💡 El pago completo se cobra al momento de reservar.";
   }
-  return "Here's our deposit info 💰\n\n" +
-    "🔴 Slingshot R — Refundable security deposit per rental duration:\n" +
-    "  • 3 Hours  — Deposit: $" + s["3hr"] + " (equals rental fee)\n" +
-    "  • 6 Hours  — Deposit: $" + s["6hr"] + " (equals rental fee)\n" +
-    "  • 24 Hours — Deposit: $" + s["24hr"] + " (equals rental fee)\n" +
-    "  • 48 Hours — Deposit: $" + s["48hr"] + " (equals rental fee)\n" +
-    "  • 72 Hours — Deposit: $" + s["72hr"] + " (equals rental fee)\n\n" +
-    "💡 The deposit is charged at booking and refunded after the vehicle is returned and inspected with no issues (typically within 5–7 business days).";
+  return "Deposit info 💰\n\n" +
+    "🔵🟢 Camry 2012 / Camry 2013 SE\n\n" +
+    "✅ No security deposit required for our economy vehicles.\n\n" +
+    "💡 Full payment is charged at the time of booking.";
 }
 
 /** Format an ISO date string (YYYY-MM-DD) as "March 28, 2026". */
@@ -435,37 +366,11 @@ function buildFleetMessage(lang) {
     return " 🔴 Currently Unavailable";
   }
 
-  if (isSlingshotMode()) {
-    // Slingshot-mode: only show Slingshot info
-    var sp = getChatPricing().slingshot;
-    if (lang === "es") {
-      return "🔴 <strong>Slingshot R</strong> — Deportivo 2 plazas" + statusLine("slingshot") + "\n\n" +
-        "⏱ Tarifas:\n" +
-        "  • 3 Horas  — $" + sp["3hr"] + "  💰 Depósito reembolsable: $" + sp["3hr"] + "\n" +
-        "  • 6 Horas  — $" + sp["6hr"] + "  💰 Depósito reembolsable: $" + sp["6hr"] + "\n" +
-        "  • 24 Horas — $" + sp["24hr"] + "  💰 Depósito reembolsable: $" + sp["24hr"] + "\n" +
-        "  • 48 Horas — $" + sp["48hr"] + "  💰 Depósito reembolsable: $" + sp["48hr"] + "\n" +
-        "  • 72 Horas — $" + sp["72hr"] + " 💰 Depósito reembolsable: $" + sp["72hr"] + "\n\n" +
-        "💡 El depósito iguala el precio del alquiler y se reembolsa después de la devolución.\n\n" +
-        "<a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot</a>";
-    }
-    return "🔴 <strong>Slingshot R</strong> — Sports 2-Seater" + statusLine("slingshot") + "\n\n" +
-      "⏱ Rates:\n" +
-      "  • 3 Hours  — $" + sp["3hr"] + "  💰 Refundable deposit: $" + sp["3hr"] + "\n" +
-      "  • 6 Hours  — $" + sp["6hr"] + "  💰 Refundable deposit: $" + sp["6hr"] + "\n" +
-      "  • 24 Hours — $" + sp["24hr"] + "  💰 Refundable deposit: $" + sp["24hr"] + "\n" +
-      "  • 48 Hours — $" + sp["48hr"] + "  💰 Refundable deposit: $" + sp["48hr"] + "\n" +
-      "  • 72 Hours — $" + sp["72hr"] + " 💰 Refundable deposit: $" + sp["72hr"] + "\n\n" +
-      "💡 The security deposit equals your rental fee and is refunded after return & inspection.\n\n" +
-      "<a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot</a>";
-  }
-
   var fleetIds = getFleetVehicleIds();
-  var slingshotIds = fleetIds.filter(function(id) { return getVehicleMeta(id).type === "slingshot"; });
   var economyIds = fleetIds.filter(function(id) { return getVehicleMeta(id).type === "economy"; });
   var otherIds = fleetIds.filter(function(id) {
     var t = getVehicleMeta(id).type;
-    return t !== "slingshot" && t !== "economy";
+    return t !== "economy";
   });
 
   function renderList(ids, renderer) {
@@ -476,15 +381,8 @@ function buildFleetMessage(lang) {
   }
 
   if (lang === "es") {
-    var p = getChatPricing(), s = p.slingshot, e = p.economy;
+    var p = getChatPricing(), e = p.economy;
     var outEs = "Contamos con <strong>" + fleetIds.length + " vehículos</strong> en nuestra flota:\n\n";
-    if (slingshotIds.length) {
-      outEs += renderList(slingshotIds, function(id, meta) {
-        return meta.icon + " " + meta.name + " — Deportivo 2 plazas" + statusLine(id);
-      }) + "\n" +
-        "   3 hrs $" + s["3hr"] + " · 6 hrs $" + s["6hr"] + " · 24 hrs $" + s["24hr"] + "\n" +
-        "   💰 Depósito reembolsable igual al precio del alquiler\n\n";
-    }
     if (economyIds.length) {
       outEs += renderList(economyIds, function(id, meta) {
         return meta.icon + " " + meta.name + " — $" + e.daily + "/día o $" + e.weekly + "/semana, Millaje Ilimitado (sin depósito)" + statusLine(id);
@@ -497,15 +395,8 @@ function buildFleetMessage(lang) {
     }
     return outEs + "¡Visita nuestra página de Autos para ver y reservar!";
   }
-  var pricing2 = getChatPricing(), slPricing = pricing2.slingshot, economy2 = pricing2.economy;
+  var pricing2 = getChatPricing(), economy2 = pricing2.economy;
   var outEn = "We have <strong>" + fleetIds.length + " vehicles</strong> in our fleet:\n\n";
-  if (slingshotIds.length) {
-    outEn += renderList(slingshotIds, function(id, meta) {
-      return meta.icon + " " + meta.name + " — Sports 2-Seater" + statusLine(id);
-    }) + "\n" +
-      "   3 hrs $" + slPricing["3hr"] + " · 6 hrs $" + slPricing["6hr"] + " · 24 hrs $" + slPricing["24hr"] + "\n" +
-      "   💰 Refundable deposit equals your rental fee\n\n";
-  }
   if (economyIds.length) {
     outEn += renderList(economyIds, function(id, meta) {
       return meta.icon + " " + meta.name + " — $" + economy2.daily + "/day or $" + economy2.weekly + "/week, Unlimited Miles (no deposit)" + statusLine(id);
@@ -526,10 +417,6 @@ var botResponses = {
       reply: "Hey! 👋 Looking to rent a car for DoorDash, Uber Eats, or other delivery apps?\n\nOur cars are <strong>$350/week with unlimited miles</strong>. I can help you get approved quickly.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Click here to apply and get approved</a>"
     },
     {
-      patterns: ["slingshot price","slingshot cost","slingshot rate","slingshot how much","slingshot fee","how much is the slingshot","how much for the slingshot","how much slingshot","price of slingshot","cost of slingshot"],
-      reply: function() { return buildChatSlingshotPricingText("en"); }
-    },
-    {
       patterns: ["camry price","camry cost","camry rate","camry how much","camry fee","how much is the camry","how much for the camry","how much camry","price of camry","cost of camry"],
       reply: function() { return buildChatCamryPricingText("en"); }
     },
@@ -542,15 +429,8 @@ var botResponses = {
       reply: "💰 Earning Potential with SLY Rides\n\nOur delivery drivers typically earn:\n  • $800 – $1,500 per week\n\nworking on apps like DoorDash, Uber Eats, Instacart, and Amazon Flex.\n\nFor just $350/week with unlimited miles, that's a great return!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Apply now to get approved</a>"
     },
     {
-      patterns: ["car","cars","vehicle","vehicles","available","fleet","slingshot","camry"],
+      patterns: ["car","cars","vehicle","vehicles","available","fleet","camry"],
       reply: function() { return buildFleetMessage("en"); }
-    },
-    {
-      patterns: ["when is slingshot","slingshot available","slingshot booked","how long slingshot","slingshot rented","when will slingshot","slingshot free","slingshot when available","slingshot when free","slingshot status","slingshot availability"],
-      reply: function() {
-        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-        return getVehicleBookingInfo("slingshot", lang);
-      }
     },
     {
       patterns: ["camry 2012 available","2012 available","camry 2012 booked","how long camry 2012","when is camry 2012","camry 2012 rented","2012 booked","camry 2012 status","camry 2012 free"],
@@ -600,7 +480,7 @@ var botResponses = {
     },
     {
       patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Slingshot: the $50 reservation deposit is NON-REFUNDABLE and will be forfeited\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
+      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contact","phone","call","email","reach","support","help"],
@@ -633,10 +513,6 @@ var botResponses = {
       reply: "¡Hola! 👋 ¿Quieres alquilar un auto para DoorDash, Uber Eats u otras aplicaciones de entrega?\n\nNuestros autos son <strong>$350/semana con millaje ilimitado</strong>. Puedo ayudarte a obtener aprobación rápidamente.\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Haz clic aquí para solicitar y obtener aprobación</a>"
     },
     {
-      patterns: ["precio slingshot","costo slingshot","cuánto slingshot","cuanto slingshot","tarifa slingshot","slingshot precio","slingshot costo"],
-      reply: function() { return buildChatSlingshotPricingText("es"); }
-    },
-    {
       patterns: ["precio camry","costo camry","cuánto camry","cuanto camry","tarifa camry","camry precio","camry costo"],
       reply: function() { return buildChatCamryPricingText("es"); }
     },
@@ -649,14 +525,8 @@ var botResponses = {
       reply: "💰 Potencial de Ganancias con SLY Rides\n\nNuestros conductores de entrega típicamente ganan:\n  • $800 – $1,500 por semana\n\ntrabajando en apps como DoorDash, Uber Eats, Instacart y Amazon Flex.\n\n¡Por solo $350/semana con millaje ilimitado, es un excelente retorno!\n\n<a href=\"index.html\" id=\"chatApplyLink\">👉 Solicita ahora para obtener aprobación</a>"
     },
     {
-      patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","slingshot","camry"],
+      patterns: ["auto","autos","carro","carros","vehículo","vehiculo","disponible","flota","camry"],
       reply: function() { return buildFleetMessage("es"); }
-    },
-    {
-      patterns: ["cuando slingshot","slingshot disponible","slingshot reservado","cuánto tiempo slingshot","cuanto tiempo slingshot","slingshot alquilado","cuando estará slingshot","slingshot libre","slingshot cuando disponible","disponibilidad slingshot"],
-      reply: function() {
-        return getVehicleBookingInfo("slingshot", "es");
-      }
     },
     {
       patterns: ["camry 2012 disponible","2012 disponible","camry 2012 reservado","camry 2012 libre","cuando camry 2012","camry 2012 alquilado","disponibilidad camry 2012"],
@@ -696,7 +566,7 @@ var botResponses = {
     },
     {
       patterns: ["cancelar","cancelación","cancelacion","reembolso","reembolsar","no presentarse"],
-      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Slingshot: el depósito de $50 es NO REEMBOLSABLE y se pierde si cancelas\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (213) 916-6606 o envía un correo a slyservices@supports-info.com 🙏"
+      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (213) 916-6606 o envía un correo a slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contacto","teléfono","telefono","llamar","correo","comunicarme","ayuda","soporte","asistencia"],
@@ -725,127 +595,9 @@ var botResponses = {
   ]
 };
 
-// ── Slingshot-mode response set ────────────────────────────────────────────────
-// Used by getBotReply() when isSlingshotMode() is true. Only covers Slingshot topics.
-var slingshotBotResponses = {
-  en: [
-    {
-      patterns: ["hello","hi","hey","howdy","sup","what's up"],
-      reply: "Hey! 👋 Welcome to <strong>SLY Slingshot Rentals</strong> 🔴\n\nLooking to rent the iconic Polaris Slingshot in Los Angeles?\n\n<a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot now</a>"
-    },
-    {
-      patterns: ["slingshot price","slingshot cost","slingshot rate","slingshot how much","slingshot fee","how much is the slingshot","how much for the slingshot","how much slingshot","price of slingshot","cost of slingshot","price","cost","how much","rate","rates","fee","fees"],
-      reply: function() { return buildChatSlingshotPricingText("en"); }
-    },
-    {
-      patterns: ["deposit","security","refund","refundable"],
-      reply: function() { return buildChatDepositText("en"); }
-    },
-    {
-      patterns: ["available","availability","when is slingshot","slingshot available","slingshot booked","how long slingshot","slingshot rented","when will slingshot","slingshot free","slingshot when available","slingshot when free","slingshot status","slingshot availability","check availability"],
-      reply: function() {
-        return getVehicleBookingInfo("slingshot", "en");
-      }
-    },
-    {
-      patterns: ["car","vehicle","fleet","slingshot","book","booking","reserve","reservation","how do i","how to"],
-      reply: "Booking the Slingshot R is easy! 🔴\n\n1. Click the link below to go to the booking page\n2. Choose your rental duration (3 hrs · 6 hrs · 24 hrs · 48 hrs · 72 hrs)\n3. Pick your pickup date & time\n4. Enter your name, email & phone\n5. Upload your Driver's License\n6. Sign the rental agreement\n7. Click 💳 Pay Now\n\n<a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot</a>"
-    },
-    {
-      patterns: ["require","requirement","requirements","license","licence","driver","id","identification","qualify","eligible","age","21","insurance"],
-      reply: "📋 Requirements to Rent the Slingshot\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • License must not be expired\n  • Upload a photo of your license during booking\n  • Auto insurance (own policy) OR add our Damage Protection Plan\n\n<a href=\"car.html?vehicle=slingshot\">👉 Book Now</a>"
-    },
-    {
-      patterns: ["cancel","cancellation","no show","no-show","noshow","refund policy"],
-      reply: "⚠️ Cancellation Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund of the rental fee\n• The refundable security deposit will be released only if the booking is cancelled before pickup and the vehicle has not been used\n• Refunds may be issued only if SLY Slingshot Rentals cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
-    },
-    {
-      patterns: ["contact","phone","call","email","reach","support","help"],
-      reply: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
-    },
-    {
-      patterns: ["pay","payment","stripe","credit","card","paypal"],
-      reply: "We accept all major credit and debit cards via Stripe 💳\n\nThe full amount (rental fee + matching refundable security deposit + tax) is charged securely at booking.\n\n<a href=\"car.html?vehicle=slingshot\">👉 Book & Pay Now</a>"
-    },
-    {
-      patterns: ["location","where","pickup","pick up","pick-up","address"],
-      reply: "📍 Please contact us to confirm the pickup location:\n\n📧 slyservices@supports-info.com\n\nWe'll share the exact address after your booking is confirmed!"
-    },
-    {
-      patterns: ["late fee","late return","return late","overdue","grace period","late charge","return policy","late policy"],
-      reply: "⏰ Late Return Fee — Slingshot\n\nA <strong>30-minute grace period</strong> is provided after your scheduled return time.\n\nAfter the grace period: <strong>$100/hour</strong> for each hour (or part thereof) you are late.\n\nPlease return the vehicle on time to avoid late charges! 🙏"
-    },
-    {
-      patterns: ["thanks","thank you","thank","appreciate","great","awesome","perfect"],
-      reply: "You're welcome! 😊 Enjoy your Slingshot experience! 🔴💨"
-    },
-    {
-      patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
-      reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (213) 916-6606"
-    }
-  ],
-  es: [
-    {
-      patterns: ["hola","buenos días","buenas tardes","buenas noches","buenas","qué tal","qué onda","saludos"],
-      reply: "¡Hola! 👋 Bienvenido a <strong>SLY Slingshot Rentals</strong> 🔴\n\n¿Quieres rentar el icónico Polaris Slingshot en Los Ángeles?\n\n<a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot ahora</a>"
-    },
-    {
-      patterns: ["precio slingshot","costo slingshot","cuánto slingshot","cuanto slingshot","tarifa slingshot","slingshot precio","slingshot costo","precio","costo","cuánto cuesta","cuanto cuesta","tarifa","tarifas"],
-      reply: function() { return buildChatSlingshotPricingText("es"); }
-    },
-    {
-      patterns: ["depósito","deposito","fianza","garantía","garantia","seguridad","reembolso","reembolsable"],
-      reply: function() { return buildChatDepositText("es"); }
-    },
-    {
-      patterns: ["disponible","disponibilidad","cuando slingshot","slingshot disponible","slingshot reservado","cuánto tiempo slingshot","cuanto tiempo slingshot","slingshot alquilado","cuando estará slingshot","slingshot libre","disponibilidad slingshot","revisar disponibilidad"],
-      reply: function() {
-        return getVehicleBookingInfo("slingshot", "es");
-      }
-    },
-    {
-      patterns: ["auto","carro","vehículo","vehiculo","slingshot","reservar","reserva","reservación","reservacion","cómo reservo","como reservo","cómo rento","como rento"],
-      reply: "¡Reservar el Slingshot R es fácil! 🔴\n\n1. Haz clic en el enlace de abajo para ir a la página de reservas\n2. Elige la duración del alquiler (3 hrs · 6 hrs · 24 hrs · 48 hrs · 72 hrs)\n3. Selecciona tu fecha y hora de recogida\n4. Ingresa tu nombre, correo y teléfono\n5. Sube tu Licencia de Conducir\n6. Firma el contrato de alquiler\n7. Haz clic en 💳 Pagar Ahora\n\n<a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot</a>"
-    },
-    {
-      patterns: ["requisito","requisitos","licencia","documento","identificación","calificar","elegible","edad","21","seguro"],
-      reply: "📋 Requisitos para Rentar el Slingshot\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • La licencia no debe estar vencida\n  • Subir foto de la licencia durante la reserva\n  • Seguro de auto propio O añadir nuestro Plan de Protección\n\n<a href=\"car.html?vehicle=slingshot\">👉 Reservar Ahora</a>"
-    },
-    {
-      patterns: ["cancelar","cancelación","cancelacion","no presentarse","política de reembolso"],
-      reply: "⚠️ Política de Cancelación\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones no son elegibles para reembolso del alquiler\n• El depósito de seguridad reembolsable se libera solo si se cancela antes del uso del vehículo\n• Los reembolsos se emiten solo si SLY Slingshot Rentals cancela o no puede cumplir\n\nPara preguntas, llama al (213) 916-6606 o escribe a slyservices@supports-info.com 🙏"
-    },
-    {
-      patterns: ["contacto","teléfono","telefono","llamar","correo","comunicarme","ayuda"],
-      reply: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
-    },
-    {
-      patterns: ["pagar","pago","tarjeta","crédito","débito","cómo pago","como pago"],
-      reply: "Aceptamos todas las tarjetas de crédito y débito a través de Stripe 💳\n\nEl monto total (alquiler + depósito reembolsable + impuesto) se cobra de forma segura al reservar.\n\n<a href=\"car.html?vehicle=slingshot\">👉 Reservar y Pagar Ahora</a>"
-    },
-    {
-      patterns: ["ubicación","ubicacion","dónde","donde","recoger","recogida"],
-      reply: "📍 Por favor contáctanos para confirmar la ubicación de recogida:\n\n📧 slyservices@supports-info.com\n\n¡Compartiremos la dirección exacta después de confirmar tu reserva!"
-    },
-    {
-      patterns: ["cargo tardío","cargo por mora","devolución tardía","devolver tarde","tarde","vencido","período de gracia","periodo de gracia","cargo por retraso","política de devolución"],
-      reply: "⏰ Cargo por Devolución Tardía — Slingshot\n\nSe proporciona un <strong>período de gracia de 30 minutos</strong> después de tu hora de devolución programada.\n\nDespués del período de gracia: <strong>$100/hora</strong> por cada hora (o fracción) de retraso.\n\n¡Por favor devuelve el vehículo a tiempo para evitar cargos por mora! 🙏"
-    },
-    {
-      patterns: ["gracias","muchas gracias","genial","perfecto","excelente"],
-      reply: "¡De nada! 😊 ¡Disfruta tu experiencia en el Slingshot! 🔴💨"
-    },
-    {
-      patterns: ["texto","sms","notificación","notificacion","notificaciones","recordatorio","recordatorios","mensaje","mensajes","me van a mandar","van a enviar","mensajes automáticos","mensajes automaticos","qué mensajes","que mensajes"],
-      reply: "📱 Notificaciones SMS Automáticas\n\nEsquema de mensajes que recibirás:\n\n<strong>Antes del recogida</strong>\n  • 24 hrs antes — recordatorio de recogida con hora y ubicación\n\n<strong>Durante tu renta</strong>\n  • Antes del fin — opción para extender tu renta\n  • Al vencer — aviso de que el tiempo de renta terminó\n  • +1 hr vencido — aviso de período de gracia expirado\n  • +2 hrs vencido — cargo por retraso (si aplica)\n\n<strong>Después de devolución</strong>\n  • Al completarse — mensaje de agradecimiento\n  • Día 7 — mensaje de seguimiento\n\nTodos incluyen opción STOP para cancelar.\n\n¿Preguntas? 📞 (213) 916-6606"
-    }
-  ]
-};
-
 function getBotReply(input) {
   var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : (localStorage.getItem("slyLang") || "en");
-  // Use Slingshot-only responses when in Slingshot mode
-  var responseSet = isSlingshotMode() ? slingshotBotResponses : botResponses;
+  var responseSet = botResponses;
   var responses = responseSet[lang] || responseSet["en"];
   var lower = input.toLowerCase();
   for (var i = 0; i < responses.length; i++) {
@@ -864,9 +616,7 @@ function getBotReply(input) {
       }
     }
   }
-  return isSlingshotMode()
-    ? "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Slingshot pricing\n\u2022 Availability\n\u2022 How to book\n\u2022 Deposit info\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com"
-    : (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.fallback") : "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com";
+  return (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.fallback") : "I\u2019m not sure about that one \uD83E\uDD14\n\nTry asking about:\n\u2022 Pricing\n\u2022 Available cars\n\u2022 How to book\n\u2022 Delivery apps\n\u2022 Contact info\n\nOr email us at slyservices@supports-info.com";
 }
 
 function buildChatbot() {
@@ -893,10 +643,7 @@ function buildChatbot() {
     // Reminder popup (shown 12 s after badge appears with no interaction)
     '<div id="chat-reminder" hidden role="alertdialog" aria-label="Chat reminder">' +
       '<button id="chat-reminder-close" aria-label="Dismiss reminder">\u2715</button>' +
-      (isSlingshotMode()
-        ? '<p>\uD83D\uDD34 <strong>Slingshot R — From $200</strong></p><p>Book LA\'s most iconic 3-wheeler. Available now!</p><button id="chat-reminder-cta">Book Now \u2192</button>'
-        : '<p>\uD83D\uDE97 <strong>$350/week \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>'
-      ) +
+      '<p>\uD83D\uDE97 <strong>$350/week \u2014 Unlimited Miles!</strong></p><p>Rent a car for DoorDash or Uber Eats and start earning today.</p><button id="chat-reminder-cta">Apply Now \u2192</button>' +
     '</div>'
   );
 
@@ -969,27 +716,6 @@ function buildChatbot() {
 
   // ── Entry point chips ──────────────────────────────────────────────────────
   function showEntryChips() {
-    if (isSlingshotMode()) {
-      var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-      if (lang === "es") {
-        addChips([
-          { label: "💰 Precios",                action: function() { showFAQAnswer("pricing");      } },
-          { label: "📅 Disponibilidad",         action: function() { showFAQAnswer("availability"); } },
-          { label: "💳 Info de Depósito",       action: function() { showFAQAnswer("deposit");      } },
-          { label: "📋 Cómo Reservar",          action: function() { showFAQAnswer("booking");      } },
-          { label: "🔴 Reservar Slingshot",     action: function() { addMessage("¡Perfecto! Visita <a href=\"car.html?vehicle=slingshot\">esta página</a> para reservar el Slingshot.", "bot"); } }
-        ]);
-      } else {
-        addChips([
-          { label: "💰 Pricing",               action: function() { showFAQAnswer("pricing");      } },
-          { label: "📅 Availability",          action: function() { showFAQAnswer("availability"); } },
-          { label: "💳 Deposit Info",          action: function() { showFAQAnswer("deposit");      } },
-          { label: "📋 How to Book",           action: function() { showFAQAnswer("booking");      } },
-          { label: "🔴 Book Slingshot",        action: function() { addMessage("Great choice! Visit <a href=\"car.html?vehicle=slingshot\">this page</a> to book the Slingshot.", "bot"); } }
-        ]);
-      }
-      return;
-    }
     addChips([
       { label: "✅ Yes, I want to apply",   action: startQualify },
       { label: "❓ I have a question",       action: startFAQ    }
@@ -1013,36 +739,7 @@ function buildChatbot() {
   function addFAQChips() {
     var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
     var chips;
-    if (isSlingshotMode()) {
-      // Slingshot-only FAQ chips
-      if (lang === "es") {
-        chips = [
-          { label: "💰 Precios",               action: function() { showFAQAnswer("pricing");      } },
-          { label: "📅 Disponibilidad",        action: function() { showFAQAnswer("availability"); } },
-          { label: "💳 Info de Depósito",      action: function() { showFAQAnswer("deposit");      } },
-          { label: "📋 Cómo Reservar",         action: function() { showFAQAnswer("booking");      } },
-          { label: "📋 Requisitos",            action: function() { showFAQAnswer("reqs");         } },
-          { label: "⏰ Cargo por Mora",         action: function() { showFAQAnswer("latefee");      } },
-          { label: "📞 Contacto",              action: function() { showFAQAnswer("contact");      } },
-          { label: "🔴 Reservar Slingshot",    action: function() {
-            addMessage("¡Visita esta página para reservar: <a href=\"car.html?vehicle=slingshot\">Reservar Slingshot</a>", "bot");
-          }}
-        ];
-      } else {
-        chips = [
-          { label: "💰 Pricing",               action: function() { showFAQAnswer("pricing");      } },
-          { label: "📅 Availability",          action: function() { showFAQAnswer("availability"); } },
-          { label: "💳 Deposit Info",          action: function() { showFAQAnswer("deposit");      } },
-          { label: "📋 How to Book",           action: function() { showFAQAnswer("booking");      } },
-          { label: "📋 Requirements",          action: function() { showFAQAnswer("reqs");         } },
-          { label: "⏰ Late Fee Policy",        action: function() { showFAQAnswer("latefee");      } },
-          { label: "📞 Contact",               action: function() { showFAQAnswer("contact");      } },
-          { label: "🔴 Book Slingshot",        action: function() {
-            addMessage("Visit this page to book: <a href=\"car.html?vehicle=slingshot\">Book the Slingshot</a>", "bot");
-          }}
-        ];
-      }
-    } else if (lang === "es") {
+    if (lang === "es") {
       chips = [
         { label: "💰 Precios",              action: function() { showFAQAnswer("pricing");      } },
         { label: "🚗 Autos Disponibles",    action: function() { showFAQAnswer("cars");         } },
@@ -1080,36 +777,24 @@ function buildChatbot() {
         es: function() { return buildChatDepositText("es"); }
       },
       reqs: {
-        en: isSlingshotMode()
-          ? "📋 Requirements to Rent the Slingshot\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • License must not be expired\n  • Upload a photo of your license during booking\n  • Auto insurance (own policy) OR add our Damage Protection Plan"
-          : "📋 Requirements to Rent\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • At least 3 months of driving experience\n  • License must not be expired\n  • Upload a photo of your license during booking",
-        es: isSlingshotMode()
-          ? "📋 Requisitos para Rentar el Slingshot\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • La licencia no debe estar vencida\n  • Subir foto de la licencia durante la reserva\n  • Seguro de auto propio O añadir nuestro Plan de Protección"
-          : "📋 Requisitos para Alquilar\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • Al menos 3 meses de experiencia al volante\n  • La licencia no debe estar vencida\n  • Subir una foto de tu licencia durante la reserva"
+        en: "📋 Requirements to Rent\n\n✅ What you'll need:\n  • Valid government-issued driver's license\n  • Must be 21 years or older\n  • At least 3 months of driving experience\n  • License must not be expired\n  • Upload a photo of your license during booking",
+        es: "📋 Requisitos para Alquilar\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • Al menos 3 meses de experiencia al volante\n  • La licencia no debe estar vencida\n  • Subir una foto de tu licencia durante la reserva"
       },
       contact: {
         en: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
         es: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
       },
       availability: {
-        en: function() {
-          return isSlingshotMode()
-            ? getVehicleBookingInfo("slingshot", "en")
-            : buildAvailabilityMessage("en");
-        },
-        es: function() {
-          return isSlingshotMode()
-            ? getVehicleBookingInfo("slingshot", "es")
-            : buildAvailabilityMessage("es");
-        }
+        en: function() { return buildAvailabilityMessage("en"); },
+        es: function() { return buildAvailabilityMessage("es"); }
       },
       booking: {
-        en: "Booking the Slingshot R is easy! 🔴\n\n1. Click the link below to open the booking page\n2. Choose your rental duration (3 hrs · 6 hrs · 24 hrs · 48 hrs · 72 hrs)\n3. Pick your pickup date & time\n4. Enter your name, email & phone\n5. Upload your Driver's License\n6. Sign the rental agreement\n7. Click 💳 Pay Now — the rental fee + matching refundable deposit are charged at booking\n\n<a href=\"car.html?vehicle=slingshot\">👉 Book the Slingshot Now</a>",
-        es: "¡Reservar el Slingshot R es fácil! 🔴\n\n1. Haz clic en el enlace de abajo para abrir la página de reservas\n2. Elige la duración del alquiler (3 hrs · 6 hrs · 24 hrs · 48 hrs · 72 hrs)\n3. Selecciona tu fecha y hora de recogida\n4. Ingresa tu nombre, correo y teléfono\n5. Sube tu Licencia de Conducir\n6. Firma el contrato de alquiler\n7. Haz clic en 💳 Pagar Ahora — el alquiler + depósito reembolsable se cobran al reservar\n\n<a href=\"car.html?vehicle=slingshot\">👉 Reservar el Slingshot Ahora</a>"
+        en: "Booking is easy! 📅\n\n1. Visit our Cars page to browse vehicles\n2. Click 'Select' on your chosen vehicle\n3. Choose your pickup & return dates\n4. Enter your name, email & phone\n5. Upload your Driver's License / ID\n6. Sign the rental agreement\n7. Click 💳 Pay Now\n\n📋 Do you have a valid driving license? A valid driver's license is required to rent any of our vehicles.",
+        es: "¡Reservar es fácil! 📅\n\n1. Visita nuestra página de Autos para ver los vehículos\n2. Haz clic en 'Seleccionar' en el vehículo que elijas\n3. Elige tus fechas de recogida y devolución\n4. Ingresa tu nombre, correo y teléfono\n5. Sube tu Licencia de Conducir / ID\n6. Firma el contrato de alquiler\n7. Haz clic en 💳 Pagar Ahora\n\n📋 ¿Tienes una licencia de conducir válida? Se requiere licencia de conducir válida para alquilar cualquiera de nuestros vehículos."
       },
       latefee: {
-        en: "⏰ Late Return Fee — Slingshot\n\nA <strong>30-minute grace period</strong> is provided after your scheduled return time.\n\nAfter the grace period: <strong>$100/hour</strong> for each hour (or part thereof) you are late.\n\nPlease return the vehicle on time to avoid late charges! 🙏",
-        es: "⏰ Cargo por Devolución Tardía — Slingshot\n\nSe proporciona un <strong>período de gracia de 30 minutos</strong> después de tu hora de devolución programada.\n\nDespués del período de gracia: <strong>$100/hora</strong> por cada hora (o fracción) de retraso.\n\n¡Por favor devuelve el vehículo a tiempo para evitar cargos por mora! 🙏"
+        en: "⏰ Late Return Fee\n\nA <strong>30-minute grace period</strong> is provided after your scheduled return time.\n\nAfter the grace period: <strong>$100/hour</strong> for each hour (or part thereof) you are late.\n\nPlease return the vehicle on time to avoid late charges! 🙏",
+        es: "⏰ Cargo por Devolución Tardía\n\nSe proporciona un <strong>período de gracia de 30 minutos</strong> después de tu hora de devolución programada.\n\nDespués del período de gracia: <strong>$100/hora</strong> por cada hora (o fracción) de retraso.\n\n¡Por favor devuelve el vehículo a tiempo para evitar cargos por mora! 🙏"
       }
     };
     var replyValue = (replies[topic] && replies[topic][lang]) || (replies[topic] && replies[topic]["en"]) || "";
@@ -1119,21 +804,10 @@ function buildChatbot() {
       // Show follow-up chips after FAQ answer
       setTimeout(function() {
         var lang2 = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-        if (isSlingshotMode()) {
-          addChips([
-            { label: lang2 === "es" ? "🔙 Más preguntas"        : "🔙 More questions",   action: startFAQ },
-            { label: lang2 === "es" ? "🔴 Reservar Slingshot"   : "🔴 Book Slingshot",   action: function() {
-              addMessage(lang2 === "es"
-                ? "¡Visita <a href=\"car.html?vehicle=slingshot\">esta página</a> para reservar el Slingshot!"
-                : "Visit <a href=\"car.html?vehicle=slingshot\">this page</a> to book the Slingshot!", "bot");
-            }}
-          ]);
-        } else {
           addChips([
             { label: lang2 === "es" ? "🔙 Más preguntas"  : "🔙 More questions",  action: startFAQ    },
             { label: lang2 === "es" ? "✅ Solicitar Ahora" : "✅ Apply Now",        action: startQualify }
           ]);
-        }
       }, 600);
     }, 400);
   }
@@ -1142,24 +816,6 @@ function buildChatbot() {
   var QUALIFY_STEPS = ["name", "phone", "license", "app", "experience", "terms"];
 
   function startQualify() {
-    // In Slingshot mode there is no delivery-app qualify flow — redirect to booking.
-    if (isSlingshotMode()) {
-      var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-      setTimeout(function() {
-        if (lang === "es") {
-          addMessage("¡Reservar es rápido y fácil! 🔴\n\nVisita <a href=\"car.html?vehicle=slingshot\">esta página</a> para elegir tu duración, ingresar tus datos y pagar de forma segura.", "bot");
-        } else {
-          addMessage("Booking is quick and easy! 🔴\n\nVisit <a href=\"car.html?vehicle=slingshot\">this page</a> to pick your duration, enter your info, and pay securely.", "bot");
-        }
-        setTimeout(function() {
-          var lang2 = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-          addChips([
-            { label: lang2 === "es" ? "🔙 Más preguntas" : "🔙 More questions", action: startFAQ }
-          ]);
-        }, 600);
-      }, 400);
-      return;
-    }
     mode        = "qualify";
     qualifyStep = 0;
     qualifyData = {};
@@ -1433,15 +1089,7 @@ function buildChatbot() {
     badge.hidden   = true;
     dismissReminder();
     if (!messages.children.length) {
-      var welcome;
-      if (isSlingshotMode()) {
-        var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-        welcome = lang === "es"
-          ? "¡Hola! 👋 Bienvenido a <strong>SLY Slingshot Rentals</strong> 🔴\n\nPuedo ayudarte con:\n• 💰 Precios y depósitos\n• 📅 Disponibilidad\n• 📋 Cómo reservar\n• 📞 Contacto\n\n¿Qué necesitas saber?"
-          : "Hi! 👋 Welcome to <strong>SLY Slingshot Rentals</strong> 🔴\n\nI can help you with:\n• 💰 Pricing &amp; deposits\n• 📅 Availability\n• 📋 How to book\n• 📞 Contact info\n\nWhat would you like to know?";
-      } else {
-        welcome = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.welcome") : "Hi! 👋";
-      }
+      var welcome = (window.slyI18n && window.slyI18n.t) ? window.slyI18n.t("chatbot.welcome") : "Hi! 👋";
       addMessage(welcome, "bot");
       setTimeout(showEntryChips, 600);
     }
@@ -1482,21 +1130,10 @@ function buildChatbot() {
         if (mode === "free" || mode === "faq") {
           setTimeout(function() {
             var lang = (window.slyI18n && window.slyI18n.getLang) ? window.slyI18n.getLang() : "en";
-            if (isSlingshotMode()) {
-              addChips([
-                { label: lang === "es" ? "🔴 Reservar Slingshot" : "🔴 Book Slingshot", action: function() {
-                  addMessage(lang === "es"
-                    ? "Visita <a href=\"car.html?vehicle=slingshot\">esta página</a> para reservar el Slingshot."
-                    : "Visit <a href=\"car.html?vehicle=slingshot\">this page</a> to book the Slingshot.", "bot");
-                }},
-                { label: lang === "es" ? "❓ Más preguntas" : "❓ More questions", action: startFAQ }
-              ]);
-            } else {
               addChips([
                 { label: lang === "es" ? "✅ Solicitar Ahora" : "✅ Apply Now",  action: startQualify },
                 { label: lang === "es" ? "❓ Más preguntas"  : "❓ More questions", action: startFAQ }
               ]);
-            }
           }, 800);
         }
       }, 400);

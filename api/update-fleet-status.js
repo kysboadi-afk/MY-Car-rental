@@ -9,7 +9,7 @@
 // Request body (JSON):
 //   {
 //     "secret":    "<ADMIN_SECRET value>",
-//     "vehicleId": "camry" | "slingshot" | …,
+//     "vehicleId": "camry" | …,
 //     "available": true | false
 //   }
 
@@ -26,11 +26,8 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 
 const DEFAULT_STATUS = {
-  slingshot:  { available: true },
-  slingshot2: { available: true },
-  slingshot3: { available: true },
-  camry:      { available: true },
-  camry2013:  { available: true },
+  camry:     { available: true },
+  camry2013: { available: true },
 };
 
 function ghHeaders() {

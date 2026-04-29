@@ -9,7 +9,7 @@
 // Request body (JSON):
 //   {
 //     "secret":    "<ADMIN_SECRET value>",
-//     "vehicleId": "camry" | "slingshot" | "slingshot2" | "slingshot3" | "camry2013",
+//     "vehicleId": "camry" | "camry2013",
 //     "from":      "YYYY-MM-DD",
 //     "to":        "YYYY-MM-DD"
 //   }

@@ -27,7 +27,6 @@ import {
   DEFAULT_LOCATION,
   EXTEND_UNAVAILABLE,
   EXTEND_LIMITED,
-  EXTEND_OPTIONS_SLINGSHOT,
   EXTEND_FLEXIBLE_PROMPT,
   EXTEND_INVALID_INPUT,
   EXTEND_SELECTED,
@@ -48,18 +47,6 @@ export const config = {
 };
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-
-// Extension options per vehicle class
-const SLINGSHOT_EXTENSION_PRICES = {
-  1: { hours: 1,  label: "+1 hour",  price: 50  },
-  2: { hours: 2,  label: "+2 hours", price: 100 },
-  4: { hours: 4,  label: "+4 hours", price: 150 },
-};
-
-// Valid reply digits for Slingshot — derived from SLINGSHOT_EXTENSION_PRICES keys so
-// that a single source of truth governs both the menu and the validation guard.
-const SLINGSHOT_VALID_OPTIONS_RE = new RegExp(`^[${Object.keys(SLINGSHOT_EXTENSION_PRICES).join("")}]$`);
-const SLINGSHOT_OPTIONS_STRING = Object.keys(SLINGSHOT_EXTENSION_PRICES).join(", ");
 
 const ECONOMY_EXTENSION_PRICES = {
   1: { days: 1,  label: "+1 day",  price: 55  },
@@ -171,9 +158,6 @@ function parseDateTime(date, time) {
   return base;
 }
 
-function isSlingshotVehicle(vehicleId) {
-  return typeof vehicleId === "string" && vehicleId.startsWith("slingshot");
-}
 
 /**
  * Parse a customer's freeform reply into a number of extension days.
@@ -407,8 +391,6 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
     return;
   }
   const { vehicleId, booking } = match;
-  const isSlingshot = isSlingshotVehicle(vehicleId);
-
   // Resolve the true final return date/time from revenue_records so that
   // availability checks and extension limits use the renter's actual current
   // return schedule (including any paid extensions), not a stale JSON value.
@@ -429,11 +411,9 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   }
 
   // Check if extension is limited
-  const minExtension = isSlingshot ? 60 : 24 * 60; // 1h for Slingshot, 1 day for economy
+  const minExtension = 24 * 60;
   if (availMinutes < minExtension) {
-    const maxLabel = isSlingshot
-      ? `${Math.floor(availMinutes)} minutes`
-      : `${Math.floor(availMinutes / 60 / 24)} day(s)`;
+    const maxLabel = `${Math.floor(availMinutes / 60 / 24)} day(s)`;
     await sendSms(fromPhone, render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }));
     return;
   }
@@ -460,7 +440,7 @@ async function handleExtend(fromPhone, allBookings, data, sha) {
   }
 
   // Send option SMS
-  const optionMsg = isSlingshot ? EXTEND_OPTIONS_SLINGSHOT : EXTEND_FLEXIBLE_PROMPT;
+  const optionMsg = EXTEND_FLEXIBLE_PROMPT;
   await sendSms(fromPhone, optionMsg);
 }
 
@@ -474,24 +454,21 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
     return;
   }
   const { vehicleId, booking } = match;
-  const isSlingshot = isSlingshotVehicle(vehicleId);
   const optionNum = parseInt(option, 10);
 
-  const pricing = isSlingshot ? SLINGSHOT_EXTENSION_PRICES : ECONOMY_EXTENSION_PRICES;
+  const pricing = ECONOMY_EXTENSION_PRICES;
   const selected = pricing[optionNum];
 
   if (!selected) {
-    await sendSms(fromPhone, "Invalid option. " + (isSlingshot ? "Reply 1, 2, or 4." : "Reply 1, 3, or 7."));
+    await sendSms(fromPhone, "Invalid option. Reply 1, 3, or 7.");
     return;
   }
 
   // Check this option fits within available time
   const availMinutes = booking.extendAvailMinutes || Infinity;
-  const requiredMinutes = isSlingshot ? selected.hours * 60 : (selected.days || 1) * 24 * 60;
+  const requiredMinutes = (selected.days || 1) * 24 * 60;
   if (requiredMinutes > availMinutes) {
-    const maxLabel = isSlingshot
-      ? `${Math.floor(availMinutes)} minutes`
-      : `${Math.floor(availMinutes / 60 / 24)} day(s)`;
+    const maxLabel = `${Math.floor(availMinutes / 60 / 24)} day(s)`;
     await sendSms(fromPhone, render(EXTEND_LIMITED, { max_available_time: maxLabel, vehicle: booking.vehicleName || vehicleId }));
     return;
   }
@@ -509,13 +486,7 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
   let newReturnDate = selFinalDate || booking.returnDate;
   let newReturnTime = selFinalTime || booking.returnTime;
 
-  if (isSlingshot) {
-    const updated = addHoursToDateTime(newReturnDate, newReturnTime, selected.hours);
-    newReturnDate = updated.newDate;
-    newReturnTime = updated.newTime;
-  } else {
-    newReturnDate = addDaysToDate(newReturnDate, selected.days);
-  }
+  newReturnDate = addDaysToDate(newReturnDate, selected.days);
 
   // Create Stripe PaymentIntent for extension charge (with full metadata)
   const pi = await createExtensionPaymentIntent(vehicleId, booking, newReturnDate, newReturnTime, selected.price, selected.label);
@@ -577,7 +548,7 @@ async function handleExtendSelection(fromPhone, option, allBookings, data, sha) 
 }
 
 /**
- * Handle a flexible day-count extension for economy (non-slingshot) vehicles.
+ * Handle a flexible day-count extension for economy vehicles.
  * Called after `parseDaysFromMessage` has successfully extracted the number of days.
  *
  * Pricing tiers (camry defaults):
@@ -781,15 +752,8 @@ export default async function handler(req, res) {
       // Check if this customer has a pending extend selection
       const pendingMatch = findExtendPending(allBookings, normalizedFrom);
       if (pendingMatch) {
-        if (isSlingshotVehicle(pendingMatch.vehicleId)) {
-          // Slingshot: fixed option menu derived from SLINGSHOT_EXTENSION_PRICES
-          if (SLINGSHOT_VALID_OPTIONS_RE.test(keyword)) {
-            await handleExtendSelection(normalizedFrom, keyword, allBookings, data, sha);
-          } else {
-            await sendSms(normalizedFrom, render(EXTEND_INVALID_INPUT, { options: SLINGSHOT_OPTIONS_STRING }));
-          }
-        } else {
-          // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)
+        // Economy: flexible day input ("3", "3 days", "2 weeks", "month", …)
+        {
           const days = parseDaysFromMessage(messageText.trim());
           if (days === null) {
             await sendSms(

@@ -22,7 +22,7 @@ import { uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS       = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
 const ALLOWED_STATUSES      = ["active", "maintenance", "inactive"];
-const ALLOWED_TYPES         = ["slingshot", "car", "economy", "luxury", "suv", "truck", "van", "other"];
+const ALLOWED_TYPES         = ["car", "economy", "luxury", "suv", "truck", "van", "other"];
 const MAX_VEHICLE_NAME_LEN  = 200;
 const MAX_PURCHASE_DATE_LEN = 20;
 
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     // Prevent CDN/browser caches from serving stale vehicle lists after creation.
     res.setHeader("Cache-Control", "no-store");
 
-    // Optional scope filter: ?scope=car → exclude slingshots; ?scope=slingshot → only slingshots
+    // Optional scope filter: ?scope=car → exclude non-car types
     const scope = (req.query?.scope || "").toLowerCase();
     const supabase = getSupabaseAdmin();
     if (supabase) {
@@ -104,13 +104,7 @@ export default async function handler(req, res) {
           const status = row.data?.status;
           if (status && status !== "active") continue;
           const type = row.data?.type || row.data?.vehicle_type || "";
-          const vid = (row.vehicle_id || "").toLowerCase();
-          const vname = (row.data?.vehicle_name || row.data?.name || "").toLowerCase();
-          const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
           if (scope === "cars" || scope === "car") {
-            if (isSlingshot) continue;
-          } else if (scope === "slingshot" && !isSlingshot) {
-            continue;
           }
 
           const id = uiVehicleId(row.vehicle_id) || row.vehicle_id;
@@ -143,13 +137,7 @@ export default async function handler(req, res) {
         const status = v.status;
         if (status && status !== "active") continue;
         const type = v.type || "";
-        const vid = (v.vehicle_id || "").toLowerCase();
-        const vname = (v.vehicle_name || v.name || "").toLowerCase();
-        const isSlingshot = type === "slingshot" || vid.includes("slingshot") || vname.includes("slingshot");
         if (scope === "cars" || scope === "car") {
-          if (isSlingshot) continue;
-        } else if (scope === "slingshot" && !isSlingshot) {
-          continue;
         }
         const id = uiVehicleId(v.vehicle_id) || v.vehicle_id;
         let next = { ...v, vehicle_id: id, tracked: !!v.bouncie_device_id };
@@ -186,11 +174,10 @@ export default async function handler(req, res) {
   try {
     // ── LIST ────────────────────────────────────────────────────────────────
     if (action === "list" || !action) {
-      // scope: "car" → exclude slingshots; "slingshot" → slingshot only; omit → all
+      // scope: "car" → economy type; omit → all
       const scope = (body.scope || "").toLowerCase();
       const scopeFilter = (type) => {
-        if (scope === "car" || scope === "cars") return type !== "slingshot";
-        if (scope === "slingshot") return type === "slingshot";
+        if (scope === "car" || scope === "cars") return true;
         return true;
       };
 
@@ -414,7 +401,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // Validate bouncieDeviceId if provided (slingshots should not have one)
+      // Validate bouncieDeviceId if provided
       let safeBouncieId = null;
       if (bouncieDeviceId !== undefined && bouncieDeviceId !== null && bouncieDeviceId !== "") {
         const trimmed = String(bouncieDeviceId).trim();

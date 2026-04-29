@@ -302,21 +302,6 @@ test("processAutoCompletions: skips cancelled bookings", async () => {
   assert.equal(updatedBookings.length, 0);
 });
 
-test("processAutoCompletions: handles multiple vehicles independently", async () => {
-  reset();
-  const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM on 2026-03-22
-  const allBookings = {
-    camry:     [makeBooking({ bookingId: "bk-camry",     vehicleId: "camry" })],
-    slingshot: [makeBooking({ bookingId: "bk-slingshot", vehicleId: "slingshot",
-                              returnDate: "2026-03-23", returnTime: "9:00 AM" })], // only 1h5m overdue
-  };
-
-  await processAutoCompletions(allBookings, now);
-
-  assert.equal(updatedBookings.length, 1, "Only camry should be auto-completed");
-  assert.equal(updatedBookings[0].vehicleId, "camry");
-});
-
 test("processAutoCompletions: removes booking from booked-dates.json", async () => {
   reset();
   const now = new Date("2026-03-23T10:05:00-07:00"); // 24h5m past 10:00 AM return
@@ -592,31 +577,6 @@ test("processActiveRentals: does NOT send late fee when Supabase says booking is
     sentMarks.some((m) => m.key === "late_fee_pending"),
     false,
     "late fee must NOT fire when Supabase status is completed_rental"
-  );
-});
-
-test("processActiveRentals: caps late fee at MAX_LATE_FEE_USD even within overdue window", async () => {
-  reset();
-  // Return was 2026-06-15 08:00 AM.  Now = 06-15 4:00 PM (8 h overdue, at the limit).
-  // hourlyRate = $50, lateHours = 8, rawFee = $400 — under the $500 cap.
-  // But slingshot at $100/h for 6 h = $600 > $500 cap, so fee must be $500.
-  const now = new Date("2026-06-15T14:05:00-07:00"); // 6 h 5 min overdue
-  const allBookings = {
-    slingshot: [makeBooking({
-      vehicleId:  "slingshot",
-      returnDate: "2026-06-15",
-      returnTime: "8:00 AM",
-    })],
-  };
-  const sentMarks = [];
-
-  await processActiveRentals(allBookings, now, sentMarks);
-
-  const feeEntry = sentMarks.find((m) => m.key === "_late_fee_amount");
-  assert.ok(feeEntry, "late fee amount entry must exist in sentMarks");
-  assert.ok(
-    feeEntry.value <= 500,
-    `fee must be capped at $500, got $${feeEntry.value}`
   );
 });
 

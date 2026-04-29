@@ -201,7 +201,7 @@ function effectiveBalanceDue(row) {
 }
 
 /**
- * Recompute total and balance_due for a non-Slingshot booking after a change.
+ * Recompute total and balance_due for a booking after a change.
  * Returns { newTotal, newBalanceDue } or null on unknown vehicle.
  */
 async function recomputePricing(vehicleData, pickupDate, returnDate, protectionPlan, protectionPlanTier, depositPaid) {

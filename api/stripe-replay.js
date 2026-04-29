@@ -24,9 +24,9 @@
 //
 // Routing guard:
 //   Payment types handled by webhook's specialised branches (rental_extension,
-//   balance_payment, slingshot_balance_payment) are rejected — they must never
+//   balance_payment) are rejected — they must never
 //   be replayed as new bookings.  Only payment types that create a new booking
-//   record (full_payment, reservation_deposit, slingshot_security_deposit, or
+//   record (full_payment, reservation_deposit, or
 //   an unrecognised type with complete metadata) are accepted.
 //
 // POST /api/stripe-replay
@@ -62,7 +62,6 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const REJECT_PAYMENT_TYPES = new Set([
   "rental_extension",
   "balance_payment",
-  "slingshot_balance_payment",
 ]);
 
 /**

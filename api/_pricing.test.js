@@ -1,9 +1,9 @@
-// Tests for api/_pricing.js — computeAmount, computeSlingshotAmount, computeProtectionPlanCost, and computeBreakdownLines
+// Tests for api/_pricing.js — computeAmount, computeProtectionPlanCost, and computeBreakdownLines
 //
 // Run with: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeAmount, computeProtectionPlanCost, computeSlingshotAmount, computeBreakdownLines, SLINGSHOT_BOOKING_DEPOSIT, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
+import { computeAmount, computeProtectionPlanCost, computeBreakdownLines, CAMRY_BOOKING_DEPOSIT } from "./_pricing.js";
 
 // ─── Camry daily ────────────────────────────────────────────────────────────
 
@@ -63,34 +63,6 @@ test("camry: 37 days = 1 × $1300 + 1 × $350 weekly = $1650", () => {
 
 test("camry: 60 days = 2 × $1300 monthly = $2600", () => {
   assert.equal(computeAmount("camry", "2025-07-01", "2025-08-30"), 2600);
-});
-
-// ─── Slingshot hourly tiers (deposit = rental tier price; total = tier × 2) ──
-
-test("slingshot: 3 hours = $200 rental + $200 deposit = $400", () => {
-  assert.equal(computeSlingshotAmount(3), 400);
-});
-
-test("slingshot: 6 hours = $250 rental + $250 deposit = $500", () => {
-  assert.equal(computeSlingshotAmount(6), 500);
-});
-
-test("slingshot: 24 hours = $350 rental + $350 deposit = $700", () => {
-  assert.equal(computeSlingshotAmount(24), 700);
-});
-
-test("slingshot: 48 hours (2 days) = $700 rental + $700 deposit = $1400", () => {
-  assert.equal(computeSlingshotAmount(48), 1400);
-});
-
-test("slingshot: 72 hours (3 days) = $1050 rental + $1050 deposit = $2100", () => {
-  assert.equal(computeSlingshotAmount(72), 2100);
-});
-
-test("slingshot: invalid duration returns null", () => {
-  assert.equal(computeSlingshotAmount(12), null);
-  assert.equal(computeSlingshotAmount(0), null);
-  assert.equal(computeSlingshotAmount(300), null);
 });
 
 // ─── Edge cases ───────────────────────────────────────────────────────────────
@@ -224,27 +196,6 @@ test("breakdown: camry without DPP has no DPP line", () => {
 
 test("breakdown: unknown vehicleId returns null", () => {
   assert.equal(computeBreakdownLines("unknown", "2025-07-01", "2025-07-05"), null);
-});
-
-test("breakdown: slingshot returns null (hourly tier, not daily)", () => {
-  // slingshot has no pricePerDay — computeBreakdownLines returns null for hourly-only vehicles
-  assert.equal(computeBreakdownLines("slingshot", "2025-07-01", "2025-07-02"), null);
-});
-
-// ─── SLINGSHOT_BOOKING_DEPOSIT constant ──────────────────────────────────────
-
-test("SLINGSHOT_BOOKING_DEPOSIT equals $50", () => {
-  assert.equal(SLINGSHOT_BOOKING_DEPOSIT, 50);
-});
-
-test("Slingshot full rental (3 hours) minus booking deposit = balance at pickup", () => {
-  // 3hr full rental = $200 rental + $200 security deposit = $400; minus $50 booking deposit = $350 balance
-  assert.equal(computeSlingshotAmount(3) - SLINGSHOT_BOOKING_DEPOSIT, 350);
-});
-
-test("Slingshot full rental (24 hours) minus booking deposit = balance at pickup", () => {
-  // 24hr full rental = $350 rental + $350 security deposit = $700; minus $50 booking deposit = $650 balance
-  assert.equal(computeSlingshotAmount(24) - SLINGSHOT_BOOKING_DEPOSIT, 650);
 });
 
 // ─── CAMRY_BOOKING_DEPOSIT constant ──────────────────────────────────────────

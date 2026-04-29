@@ -10,7 +10,7 @@
 // POST /api/add-manual-booking
 // Body: {
 //   "secret":     "<ADMIN_SECRET>",
-//   "vehicleId":  "camry" | "camry2013" | "slingshot",
+//   "vehicleId":  "camry" | "camry2013",
 //   "name":       "Customer Full Name",
 //   "phone":      "2135551234",        (optional)
 //   "email":      "customer@email.com",(optional)
@@ -37,9 +37,6 @@ const BOOKED_DATES_PATH  = "booked-dates.json";
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES  = FLEET_VEHICLE_IDS;
 const VEHICLE_NAMES     = {
-  slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (Unit 2)",
-  slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
 };

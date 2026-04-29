@@ -17,7 +17,6 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 // Allowlist of mutable settings keys (flat string keys only).
 const ALLOWED_KEYS = new Set([
   "business_name",
-  "slingshot_business_name",
   "phone",
   "whatsapp",
   "email",
@@ -41,7 +40,6 @@ const ALLOWED_KEYS = new Set([
 // Default values returned when Supabase is not configured.
 const DEFAULT_SETTINGS = {
   business_name:          "SLY Transportation Services",
-  slingshot_business_name: "SLY SLINGSHOT RENTALS",
   phone:                  "",
   whatsapp:               "",
   email:                  "",
