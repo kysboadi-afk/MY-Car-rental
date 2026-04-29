@@ -1983,23 +1983,6 @@ export default async function handler(req, res) {
             console.log(
               `stripe-webhook: rental_extension already applied for booking ${bookingRef} return_date=${new_return_date}`
             );
-            // Extension date was already updated on a prior delivery (JSON has new
-            // return_date).  Before recovering revenue, ensure Supabase also has the
-            // updated return_date — this fixes stale state from a prior attempt that
-            // updated the JSON but failed to sync Supabase and returned 500.
-            // strict: true means the upsert must succeed; if it fails we return 500
-            // so Stripe retries until Supabase is consistent before revenue lands.
-            if (updatedBooking) {
-              try {
-                await autoUpsertBooking(updatedBooking, { strict: true });
-              } catch (retrySyncErr) {
-                console.error("stripe-webhook: alreadyApplied Supabase sync failed — blocking revenue recovery:", retrySyncErr.message);
-                return res.status(500).json({
-                  received: false,
-                  error: `extension retry booking sync failed for ${paymentIntent.id}`,
-                });
-              }
-            }
             // Extension date was already updated on a prior delivery.
             // Attempt idempotent revenue record creation in case it was missed —
             // e.g. the first delivery updated the booking but returned 500 before
@@ -2094,8 +2077,8 @@ export default async function handler(req, res) {
 
           // Sync updated booking to Supabase.  Fatal: if the return_date update
           // does not reach Supabase, do NOT insert revenue — return 500 so Stripe
-          // retries.  The alreadyApplied branch on the next delivery will re-sync
-          // Supabase and recover the revenue record idempotently.
+          // retries.  On the next delivery the booking will be in alreadyApplied
+          // state and revenue recovery will be attempted idempotently.
           try {
             await autoUpsertBooking(updatedBooking, { strict: true });
           } catch (syncErr) {
