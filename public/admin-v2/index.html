@@ -4835,6 +4835,7 @@ function fmtRevDate(dateStr) {
 }
 
 function renderRevenue(groups) {
+  console.log('[renderRevenue] called with', groups?.length, 'groups', groups);
   const tbody = document.getElementById('revenue-table-body');
   const wrap  = document.getElementById('revenue-table-wrap');
   const empty = document.getElementById('revenue-empty');
