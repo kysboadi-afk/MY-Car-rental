@@ -56,14 +56,14 @@ These must be configured in the Vercel dashboard — never hardcode them:
 
 ## Vehicles
 
-Currently two vehicles are configured:
+Currently configured vehicles:
 
 | Key         | Name         | Daily Rate | Deposit | Weekly Rate |
 |-------------|--------------|------------|---------|-------------|
-| `slingshot` | Slingshot R  | $300/day   | $150    | N/A         |
-| `camry`     | Camry 2012   | $50/day    | N/A     | $300/week   |
+| `camry`     | Camry 2012   | $55/day    | N/A     | $350/week   |
+| `camry2013` | Camry 2013 SE| $55/day    | N/A     | $350/week   |
 
-Vehicle data lives in `car.js`. To add a new vehicle: update `car.js`, add a card in `index.html`, and add the car image to `images/`.
+Vehicle data lives in `_pricing.js`. To add a new vehicle: update `CARS` in `api/_pricing.js`, add it to `vehicles.json`, add a card in `index.html`, and add the car image to `images/`.
 
 ## Deployment
 

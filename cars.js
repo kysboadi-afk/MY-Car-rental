@@ -235,7 +235,7 @@ async function loadFleet() {
   }
 
   const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
-    (!v.status || v.status === "active") && (v.type || "").toLowerCase() !== "slingshot"
+    !v.status || v.status === "active"
   );
 
   // Only replace the grid if the API returned valid vehicles.

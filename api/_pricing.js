@@ -87,6 +87,7 @@ export function computeProtectionPlanCost(days, tier = null) {
   }
   cost += remaining * PROTECTION_PLAN_DAILY;
   return cost;
+
 }
 
 /**
