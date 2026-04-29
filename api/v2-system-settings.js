@@ -28,20 +28,12 @@ function getSupabase() {
 // Used when Supabase is unavailable or the table is empty.
 const DEFAULT_SETTINGS = [
   { key: "la_tax_rate",                 value: 0.1025,  description: "Los Angeles combined sales tax rate",             category: "tax" },
-  // Slingshot tier rates (rental price before security deposit)
-  { key: "slingshot_3hr_rate",          value: 200,     description: "Slingshot R 3-hour tier rate (USD)",              category: "pricing" },
-  { key: "slingshot_6hr_rate",          value: 250,     description: "Slingshot R 6-hour tier rate (USD)",              category: "pricing" },
-  { key: "slingshot_daily_rate",        value: 350,     description: "Slingshot R 1-day (24 hr) tier rate (USD)",       category: "pricing" },
-  { key: "slingshot_2day_rate",         value: 700,     description: "Slingshot R 2-day (48 hr) tier rate (USD)",       category: "pricing" },
-  { key: "slingshot_3day_rate",         value: 1050,    description: "Slingshot R 3-day (72 hr) tier rate (USD)",       category: "pricing" },
   // Economy car rates — Camry 2012 AND Camry 2013 SE share identical rates
   { key: "camry_daily_rate",            value: 55,      description: "Economy car (Camry 2012 & Camry 2013 SE) daily rate — same for both (USD)", category: "pricing" },
   { key: "camry_weekly_rate",           value: 350,     description: "Economy car (Camry 2012 & Camry 2013 SE) weekly rate — same for both (USD)", category: "pricing" },
   { key: "camry_biweekly_rate",         value: 650,     description: "Economy car (Camry 2012 & Camry 2013 SE) bi-weekly rate — same for both (USD)", category: "pricing" },
   { key: "camry_monthly_rate",          value: 1300,    description: "Economy car (Camry 2012 & Camry 2013 SE) monthly rate — same for both (USD)", category: "pricing" },
   // Deposits / booking fees
-  { key: "slingshot_security_deposit",  value: 150,     description: "Slingshot refundable security deposit (USD)",     category: "pricing" },
-  { key: "slingshot_booking_deposit",   value: 50,      description: "Slingshot non-refundable booking deposit (USD)",  category: "pricing" },
   { key: "camry_booking_deposit",       value: 50,      description: "Economy car (Camry 2012 & Camry 2013 SE) non-refundable booking deposit — same for both (USD)", category: "pricing" },
   { key: "booking_change_fee",          value: 25,      description: "Fee charged for each booking change after the first free change (USD)", category: "pricing" },
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },

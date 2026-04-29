@@ -34,7 +34,7 @@
 const GITHUB_REPO         = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH  = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKINGS_PATH       = "bookings.json";
-const EMPTY_BOOKINGS      = { slingshot: [], slingshot2: [], slingshot3: [], camry: [], camry2013: [] };
+const EMPTY_BOOKINGS      = { camry: [], camry2013: [] };
 
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 

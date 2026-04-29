@@ -13,7 +13,6 @@ const CACHE_SECONDS   = 60; // public CDN/browser cache
 
 const DEFAULT_SETTINGS = {
   business_name:          "SLY Transportation Services",
-  slingshot_business_name: "SLY SLINGSHOT RENTALS",
   phone:                  "",
   whatsapp:              "",
   email:                 "",

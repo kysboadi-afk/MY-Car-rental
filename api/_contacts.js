@@ -10,7 +10,6 @@
 //   approved     — application was approved
 //   waitlist     — joined the waitlist
 //   booked       — confirmed booking paid
-//   slingshot    — rented / applied for a Slingshot
 //   economy      — rented / applied for a Camry
 //   past_customer — rental has been completed and returned
 //
@@ -22,7 +21,6 @@ const TM_BASE = "https://rest.textmagic.com/api/v2";
 
 /** Map vehicle IDs to tag names for contact categorization. */
 const VEHICLE_TAG_MAP = {
-  slingshot:  "slingshot",
   camry:      "economy",
   camry2013:  "economy",
 };

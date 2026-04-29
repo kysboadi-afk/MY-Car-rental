@@ -219,31 +219,6 @@ export async function isDatesAndTimesAvailable(vehicleId, from, to, fromTime, to
   }
 }
 
-// All Slingshot unit IDs. The customer books a generic "Slingshot" and the
-// server assigns whichever unit is free — customers never choose a specific unit.
-export const SLINGSHOT_UNIT_IDS = ["slingshot", "slingshot2", "slingshot3"];
-
-/**
- * Find the first Slingshot unit that is both datetime-available and fleet-available
- * for the given pickup→return window.  When pickup/return times are provided the
- * check is time-aware so back-to-back same-date bookings work correctly.
- *
- * @param {string} pickup       - ISO date "YYYY-MM-DD"
- * @param {string} returnDate   - ISO date "YYYY-MM-DD"
- * @param {string} [pickupTime] - optional "H:MM AM/PM" pickup time
- * @param {string} [returnTime] - optional "H:MM AM/PM" computed return time
- * @returns {Promise<string|null>} unit ID (e.g. "slingshot2") or null if all busy
- */
-export async function findAvailableSlingshotUnit(pickup, returnDate, pickupTime, returnTime) {
-  for (const unitId of SLINGSHOT_UNIT_IDS) {
-    const [datesOk, fleetOk] = await Promise.all([
-      isDatesAndTimesAvailable(unitId, pickup, returnDate, pickupTime, returnTime),
-      isVehicleAvailable(unitId),
-    ]);
-    if (datesOk && fleetOk) return unitId;
-  }
-  return null;
-}
 
 /**
  * Returns true if the vehicle is NOT in maintenance mode.
