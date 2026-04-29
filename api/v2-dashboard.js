@@ -26,9 +26,6 @@ import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicl
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
-  slingshot:  "Slingshot R",
-  slingshot2: "Slingshot R (Unit 2)",
-  slingshot3: "Slingshot R (Unit 3)",
   camry:      "Camry 2012",
   camry2012:  "Camry 2012",
   camry2013:  "Camry 2013 SE",
@@ -217,18 +214,14 @@ export default async function handler(req, res) {
     const viewOk = !!metricsView && !metricsViewResult?.error;
 
     // Scope prefix selects the right pre-aggregated column set:
-    //   "car"/"cars" → car_  prefix
-    //   "slingshot"  → slingshot_ prefix
+    //   "car"/"cars" → car_ prefix
     //   (none)       → total_ prefix
-    const vp = scope === "slingshot"
-      ? "slingshot"
-      : (scope === "car" || scope === "cars") ? "car" : "total";
+    const vp = (scope === "car" || scope === "cars") ? "car" : "total";
 
-    // Filter vehicles by scope: "car" → exclude slingshots; "slingshot" → only slingshots
+    // Filter vehicles by scope: "car" → exclude non-car types
     const filteredVehicleEntries = Object.entries(vehicles).filter(([, v]) => {
       const type = v.type || "";
       if (scope === "car" || scope === "cars") return type !== "slingshot";
-      if (scope === "slingshot") return type === "slingshot";
       return true;
     });
     const filteredVehicles   = Object.fromEntries(filteredVehicleEntries);

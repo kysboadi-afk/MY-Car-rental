@@ -68,14 +68,6 @@
         <p class="earnings-row" data-i18n-html="booking.earningsRow3Html"><span class="earnings-green">Estimated take-home:</span> $850 – $1,250</p>
         <p class="earnings-cta" data-i18n-html="booking.earningsCtaHtml"><span class="earnings-yellow">Limited vehicles available</span> — reserve today</p>
       </div>
-      <div class="earnings-block" id="slingshotDesc" style="display:none">
-        <p class="earnings-tagline" data-i18n="booking.slingshotTagline">🏎️ Built for Thrills &bull; Pure Fun</p>
-        <p class="earnings-title" data-i18n="fleet.slingshotSub">Experience the Ultimate City Ride</p>
-        <p class="earnings-row" data-i18n="fleet.slingshotLi1">🌴 Cruise the streets of Los Angeles in style</p>
-        <p class="earnings-row" data-i18n="fleet.slingshotLi2">⚡ Feel the open-air rush of a 3-wheeled sports car</p>
-        <p class="earnings-row" data-i18n="fleet.slingshotLi3">🎯 Perfect for exploring LA, photo shoots &amp; special occasions</p>
-        <p class="earnings-cta" data-i18n="fleet.slingshotCta"><span class="earnings-yellow">Limited availability</span> — reserve yours today</p>
-      </div>
       <p class="car-subtitle" id="carSubtitle"></p>
       <p class="price" id="carPrice"></p>
     </div>
@@ -98,13 +90,9 @@
     </select>
     <div id="noTimesMsg" style="display:none;color:#c62828;font-size:.875rem;margin-top:.25rem" role="alert">No times available today. Please select a different date.</div>
 
-    <!-- Slingshot hourly duration selector (shown for Slingshot only, populated by car.js) -->
-    <div id="slingshotDurationSection" style="display:none">
-      <label data-i18n="booking.rentalDuration">Rental Duration</label>
-      <div class="duration-options" id="durationOptions"></div>
     </div>
 
-    <!-- Return date/time: user-selected for daily vehicles; auto-computed for Slingshot -->
+    <!-- Return date/time -->
     <div id="returnDateSection">
       <label for="return" data-i18n="booking.returnDate">Return Date</label>
       <input type="date" id="return" required>
@@ -149,8 +137,6 @@
         </label>
       </div>
 
-      <!-- Slingshot-only: deposit info box, updated dynamically based on the chosen option -->
-      <div id="slingshotInsuranceInfo" style="display:none"></div>
 
       <div id="insuranceUploadSection" style="display:none">
         <label for="insuranceUpload"><span data-i18n="booking.uploadInsuranceLabel">📎 Upload Proof of Insurance</span> <span class="required">*</span></label>
@@ -217,7 +203,6 @@
           <h4 data-i18n="agreement.rentalPeriodHeading">RENTAL PERIOD</h4>
           <p data-i18n="agreement.rentalPeriodBody">Rental start and end dates/times are as specified at the time of booking. The vehicle must be returned to the same location at the agreed return date and time.</p>
           <p id="lateFeeGeneric" data-i18n-html="agreement.lateFeeBody"><strong>Late Fee:</strong> $50/day after a 2-hour grace period.</p>
-          <p id="slingshotLateFeeBody" data-i18n-html="agreement.slingshotLateFeeBody" style="display:none"><strong>Late Fee:</strong> $100/hour after a 30-minute grace period.</p>
 
           <h4 data-i18n-html="agreement.mileageFuelHeading">MILEAGE, GEOGRAPHIC USE &amp; VEHICLE TRACKING POLICY</h4>
           <p data-i18n-html="agreement.mileageLimitBody">Mileage is unlimited within a designated local area only. All vehicle use must remain within <strong>Los Angeles County</strong> or within a <strong>50-mile radius of Los Angeles</strong>, unless otherwise approved in writing by the host.</p>
@@ -268,22 +253,7 @@
           <p data-i18n-html="agreement.useRestrictionsRow1">No smoking &nbsp; No pets &nbsp; No off-road use &nbsp; No subleasing</p>
           <p data-i18n-html="agreement.useRestrictionsRow2">Approved drivers only &nbsp; No racing or towing &nbsp; No commercial hauling</p>
 
-          <!-- Slingshot Speed &amp; Strike Policy (shown for Slingshot only) -->
-          <div id="slingshotSpeedSection" style="display:none">
-            <h4 data-i18n="agreement.slingshotSpeedHeading">SLINGSHOT SPEED POLICY</h4>
-            <p data-i18n-html="agreement.slingshotSpeedBody"><strong>Speed Limit:</strong> The posted speed limit is 65 mph. Renters may not exceed <strong>75 mph</strong> under any circumstances. Exceeding 75 mph at any time constitutes a violation of this agreement.</p>
-            <p data-i18n-html="agreement.slingshotStrikePolicy"><strong>Strike Policy:</strong> After two (2) speed or agreement violations ("strikes"), the renter's security deposit becomes <strong>non-refundable</strong>.</p>
-          </div>
 
-          <!-- Slingshot Security Deposit Policy (shown for Slingshot only) -->
-          <div id="slingshotBookingDepositSection" style="display:none">
-            <p id="slingshotDepositAgreementBody"></p>
-            <ul id="slingshotDepositAgreementList">
-              <li id="slingshotDepositAgreementOptionA" style="display:none">You have provided your own personal auto insurance — proof of insurance must be presented at pickup.</li>
-              <li id="slingshotDepositAgreementOptionB" style="display:none">You do not have personal auto insurance — renter assumes <strong>full financial liability</strong> for any damage to the vehicle. No Damage Protection Plan is offered for Slingshot rentals.</li>
-              <li>The security deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel if applicable.</li>
-            </ul>
-          </div>
 
           <h4 data-i18n="agreement.conditionHeading">CONDITION INSPECTION</h4>
           <p data-i18n="agreement.conditionBody">Vehicle is inspected and accepted as-is at time of pickup. Condition photos are taken at pickup. Renter must report any pre-existing damage within 24 hours of pickup.</p>
@@ -340,32 +310,6 @@
 
     <p class="refund-notice" data-i18n-html="booking.refundNotice">⚠️ <strong>No-Refund Policy:</strong> All payments are final once a booking is confirmed. Cancellations or no-shows after booking are not eligible for a refund. Please review your reservation details carefully before completing payment. Refunds may be issued only if the company cancels or cannot fulfill the rental.</p>
 
-    <!-- Slingshot payment options — shown by car.js for slingshot only -->
-    <div id="slingshotPaymentOptions" style="display:none">
-      <label style="font-weight:600;display:block;margin-bottom:8px">💳 Payment Option</label>
-      <div class="duration-options">
-        <label class="duration-option" id="slingshotPayFullLabel">
-          <input type="radio" name="slingshotPaymentMode" id="slingshotPayFull" value="full" checked>
-          <span id="slingshotPayFullText">Pay in Full (Rental + Security Deposit)</span>
-        </label>
-        <label class="duration-option" id="slingshotPayDepositLabel">
-          <input type="radio" name="slingshotPaymentMode" id="slingshotPayDeposit" value="deposit">
-          <span id="slingshotPayDepositText">Reserve with Security Deposit Only</span>
-        </label>
-      </div>
-      <div id="slingshotDepositOnlyNotice" class="deposit-notice" style="display:none;margin-top:10px">
-        <strong>🔒 Reserve with Security Deposit</strong>
-        <ul>
-          <li>Only the <strong>security deposit</strong> (equal to your rental fee) is charged now.</li>
-          <li>A unique link will be emailed and texted to you to complete the remaining rental payment.</li>
-          <li>Full payment must be completed before the vehicle is handed over.</li>
-          <li>Dates are held for you once the deposit is paid.</li>
-        </ul>
-      </div>
-    </div>
-
-    <!-- Slingshot non-refundable deposit notice — legacy element kept for JS compatibility -->
-    <div id="slingshotDepositNotice" style="display:none"></div>
 
     <!-- Camry non-refundable deposit notice — shown by car.js for camry/camry2013 only -->
     <div id="camryDepositNotice" class="deposit-notice" style="display:none">

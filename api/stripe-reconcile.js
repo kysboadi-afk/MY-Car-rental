@@ -146,7 +146,7 @@ function escHtml(str) {
  */
 function classifyPaymentType(rawType) {
   if (rawType === "rental_extension") return "rental_extension";
-  if (rawType === "reservation_deposit" || rawType === "slingshot_security_deposit") return "deposit";
+  if (rawType === "reservation_deposit") return "deposit";
   return "rental";
 }
 
@@ -1035,7 +1035,7 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!matchedRecord && (payment.payment_type === "reservation_deposit" || payment.payment_type === "slingshot_security_deposit")) {
+      if (!matchedRecord && payment.payment_type === "reservation_deposit") {
         const bookingRef = payment.metadata_booking_id;
         if (!bookingRef) {
           console.error("[BOOKING_RESOLVE_FAILED]", {

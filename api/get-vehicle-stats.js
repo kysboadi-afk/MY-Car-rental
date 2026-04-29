@@ -123,7 +123,7 @@ export default async function handler(req, res) {
     if (sb && Object.keys(sbVehicleCols).length > 0) {
       try {
         const mileageInput = Object.entries(sbVehicleCols)
-          .filter(([, c]) => c.bouncie_device_id && (c.type || "") !== "slingshot")
+          .filter(([, c]) => c.bouncie_device_id)
           .map(([vehicleId, c]) => ({
             vehicle_id:               vehicleId,
             total_mileage:            Number(c.mileage) || 0,
@@ -163,9 +163,6 @@ export default async function handler(req, res) {
       if (sbCols.decision_status   !== undefined) vehicle.decision_status   = sbCols.decision_status;
       if (sbCols.action_status     !== undefined) vehicle.action_status     = sbCols.action_status;
       if (sbCols.type && !vehicle.type)           vehicle.type              = sbCols.type;
-
-      // Skip slingshots — they are managed by the dedicated slingshot admin
-      if ((vehicle.type || "") === "slingshot") continue;
 
       // Tracking warning for cars without a Bouncie device
       if (!vehicle.bouncie_device_id) {

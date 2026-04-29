@@ -12,13 +12,11 @@
 //   PROCESSED (creates/upserts booking via persistBooking):
 //     - full_payment            — standard full rental payment
 //     - reservation_deposit     — Camry deposit-only; booking saved as reserved_unpaid
-//     - slingshot_security_deposit — Slingshot deposit-only; saved as reserved_unpaid
 //     - unrecognised / missing payment_type with complete metadata (safe fallback)
 //
 //   SKIPPED (webhook mutates an existing booking, not a new one):
 //     - rental_extension        — updates existing booking's return date; own revenue row
 //     - balance_payment         — updates existing booking to booked_paid; no new booking
-//     - slingshot_balance_payment — finalises existing slingshot booking; no new booking
 //     - PIs without vehicle_id / pickup_date / return_date in metadata
 //
 // Other design principles:
@@ -60,7 +58,6 @@ const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const SKIP_PAYMENT_TYPES = new Set([
   "rental_extension",           // updates existing booking's return date; own revenue row per extension
   "balance_payment",            // updates existing reserved_unpaid booking to booked_paid; no new booking
-  "slingshot_balance_payment",  // finalises existing slingshot booking; no new booking
 ]);
 
 // Payment types that represent deposit-only (partial) bookings where the renter
@@ -68,7 +65,6 @@ const SKIP_PAYMENT_TYPES = new Set([
 // mark them reserved_unpaid so operators know the balance hasn't been paid.
 const DEPOSIT_PAYMENT_TYPES = new Set([
   "reservation_deposit",
-  "slingshot_security_deposit",
 ]);
 
 /**

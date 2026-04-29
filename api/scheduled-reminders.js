@@ -88,11 +88,8 @@ import {
 // charge is always 1 hour, so a renter who is 1–59 minutes late is charged
 // the same as one who is exactly 1 hour late.
 const LATE_FEE_AMOUNTS = {
-  slingshot:  100,  // $100/hour (rounded up, min 1 h)
-  slingshot2: 100,  // $100/hour — same rate as slingshot (Unit 2)
-  slingshot3: 100,  // $100/hour — same rate as slingshot (Unit 3)
-  camry:       50,  // $50/hour  (rounded up, min 1 h)
-  camry2013:   50,  // $50/hour  (rounded up, min 1 h)
+  camry:     50,  // $50/hour  (rounded up, min 1 h)
+  camry2013: 50,  // $50/hour  (rounded up, min 1 h)
 };
 
 // Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
@@ -1996,12 +1993,11 @@ async function runReconciliation() {
     // All steps are idempotent — safe to call even if a partial record already exists.
     //
     // Payment types that mutate an existing booking (rental_extension,
-    // balance_payment, slingshot_balance_payment) are excluded — they must be
-    // reviewed manually if they appear here.
+    // balance_payment) are excluded — they must be reviewed manually if they
+    // appear here.
     const NON_NEW_BOOKING_TYPES = new Set([
       "rental_extension",
       "balance_payment",
-      "slingshot_balance_payment",
     ]);
 
     const repairedPIIds = [];

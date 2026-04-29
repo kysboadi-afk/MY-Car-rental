@@ -79,14 +79,7 @@
       var vehicleId = new URLSearchParams(window.location.search).get("vehicle");
       var btn = document.getElementById("cancelActionBtn");
       if (btn && vehicleId) {
-        btn.href = vehicleId.startsWith("slingshot")
-          ? "slingshot.html"
-          : "car.html?vehicle=" + encodeURIComponent(vehicleId);
-      }
-      // For slingshot bookings, also update the secondary "Back to Homepage" link.
-      if (vehicleId && vehicleId.startsWith("slingshot")) {
-        var secondary = document.querySelector('a[data-i18n="cancel.homeBtn"]');
-        if (secondary) { secondary.href = "slingshot.html"; }
+        btn.href = "car.html?vehicle=" + encodeURIComponent(vehicleId);
       }
     })();
   </script>

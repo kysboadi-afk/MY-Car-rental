@@ -249,9 +249,6 @@ async function fetchAllData() {
         .select("vehicle_id, data, rental_status, bouncie_device_id, last_synced_at, decision_status, action_status, last_auto_action_at, last_auto_action_reason");
       if (!error && data) {
         for (const row of data) {
-          // Skip slingshots — they are managed by the dedicated slingshot admin
-          const type = row.data?.type || row.data?.vehicle_type || "";
-          if (type === "slingshot") continue;
           vehicles[row.vehicle_id] = {
             vehicle_id:              row.vehicle_id,
             ...(row.data || {}),
@@ -272,7 +269,6 @@ async function fetchAllData() {
   if (Object.keys(vehicles).length === 0) {
     const { data } = await loadVehicles();
     for (const [id, v] of Object.entries(data)) {
-      if ((v.type || "") === "slingshot") continue;
       vehicles[id] = v;
     }
   }
@@ -293,10 +289,6 @@ async function fetchAllData() {
           .gte("trip_at", new Date(Date.now() - 30 * 86400000).toISOString()),
       ]);
       mileageData = (vehicleRows || [])
-        .filter((r) => {
-          const type = r.data?.type || r.data?.vehicle_type || "";
-          return type !== "slingshot";
-        })
         .map((r) => ({
           vehicle_id:           r.vehicle_id,
           vehicle_name:         r.data?.vehicle_name || r.vehicle_id,
@@ -330,7 +322,6 @@ async function fetchAllData() {
   }
 
   // Build active booking map (vehicle → booking with active_rental status)
-  // Only include car vehicles (slingshots already excluded from vehicles map)
   const carVehicleIds = new Set(Object.keys(vehicles));
   const filteredBookings = allBookings.filter((b) => !b.vehicleId || carVehicleIds.has(b.vehicleId));
 

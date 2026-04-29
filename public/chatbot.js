@@ -10,12 +10,6 @@ function escHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-// Returns true when the chatbot is embedded in a Slingshot-specific page.
-// Set window.slyChatbotMode = "slingshot" before loading this script to activate.
-function isSlingshotMode() {
-  return window.slyChatbotMode === "slingshot";
-}
-
 // ── Los Angeles timezone helper ───────────────────────────────────────────────
 // SlyLA is provided by la-date.js; if that script wasn't loaded (e.g., on a
 // page that only embeds the chatbot widget), define a self-contained fallback.
@@ -70,24 +64,16 @@ var slyChatPricing  = null;
 
 /**
  * Returns live pricing from the API if loaded, otherwise hardcoded fallback.
- * @returns {{ slingshot: {3hr,6hr,24hr,48hr,72hr,booking_deposit},
- *             economy:   {daily,weekly,biweekly,monthly,booking_deposit},
- *             tax_rate:  number }}
- * Note: Slingshot security deposit = rental tier price (no flat security_deposit field).
+ * @returns {{ economy: {daily,weekly,biweekly,monthly,booking_deposit}, tax_rate: number }}
  */
 function getChatPricing() {
   return slyChatPricing || {
-    slingshot: { "3hr": 200, "6hr": 250, "24hr": 350, "48hr": 700, "72hr": 1050,
-                 booking_deposit: 50 },
     economy:   { daily: 55, weekly: 350, biweekly: 650, monthly: 1300, booking_deposit: 50 },
     tax_rate:  0.1025,
   };
 }
 
 var KNOWN_VEHICLE_META = {
-  slingshot:  { name: "Slingshot R", icon: "🔴", type: "slingshot" },
-  slingshot2: { name: "Slingshot R (Unit 2)", icon: "🔴", type: "slingshot" },
-  slingshot3: { name: "Slingshot R (Unit 3)", icon: "🔴", type: "slingshot" },
   camry:      { name: "Camry 2012", icon: "🔵", type: "economy" },
   camry2013:  { name: "Camry 2013 SE", icon: "🟢", type: "economy" }
 };

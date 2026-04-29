@@ -5,7 +5,7 @@
 // POST /api/update-vehicle
 // Body: {
 //   "secret":         "<ADMIN_SECRET>",
-//   "vehicle_id":     "slingshot" | "slingshot2" | "camry" | "camry2013",
+//   "vehicle_id":     "camry" | "camry2013",
 //   "vehicle_year":   number | null  (optional, model year e.g. 2021),
 //   "purchase_date":  "YYYY-MM-DD"  (optional),
 //   "purchase_price": number        (optional),
@@ -19,7 +19,7 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_STATUSES = ["active", "maintenance", "inactive"];
-const ALLOWED_IDS      = ["slingshot", "slingshot2", "slingshot3", "camry", "camry2013"];
+const ALLOWED_IDS      = ["camry", "camry2013"];
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;

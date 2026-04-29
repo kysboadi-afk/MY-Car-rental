@@ -6,83 +6,15 @@ const API_BASE = "https://sly-rides.vercel.app";
 // Timezone helpers are provided by la-date.js (loaded before this script).
 const SlyLA = window.SlyLA;
 
-// Non-refundable reservation deposit for Slingshot bookings (charged via Stripe now).
-// Must mirror SLINGSHOT_BOOKING_DEPOSIT in api/_pricing.js.
-const SLINGSHOT_BOOKING_DEPOSIT = 50;
 // Upfront hold amount for Camry "Reserve with Deposit" option ($50 charged now; rest at pickup).
 const CAMRY_BOOKING_DEPOSIT = 50;
-// Slingshot authorization hold amounts — kept for reference but no longer used for payment.
-// Slingshot now charges the full rental amount online; these constants are retained for
-// any legacy references.
-const SLINGSHOT_DEPOSIT_WITH_INSURANCE    = 500;
-const SLINGSHOT_DEPOSIT_WITHOUT_INSURANCE = 300;
 // Los Angeles combined sales tax rate — must mirror LA_TAX_RATE in api/_pricing.js.
+// Use getTaxRate() in calculations so the admin-configurable value is always used.
 const LA_TAX_RATE = 0.1025;
+function getTaxRate() { return window._dynamicTaxRate || LA_TAX_RATE; }
 
 // ----- Car Data -----
 const cars = {
-  slingshot: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    // Sub-day tiers (3 hr, 6 hr) and daily tiers (1–3 days at $350/day, max 3 days).
-    // Multi-day durations are stored as hours (days × 24) to stay consistent with
-    // the existing applySlingshotDuration() auto-return-date logic.
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    // Security deposit = rental tier price (charged at booking, refundable after return).
-    // No fixed deposit — computed dynamically from the selected tier.
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: ["images/slingshot.jpg"],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: "57XAARHB8P8156561",
-    color: null
-  },
-  slingshot2: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: ["images/slingshot.jpg"],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: null,
-    color: null
-  },
-  slingshot3: {
-    name: "Slingshot R",
-    subtitle: "Sports \u2022 2-Seater",
-    subtitleKey: "fleet.sports2seater",
-    hourlyTiers: [
-      { hours: 3,  price: 200,  label: "3 Hours" },
-      { hours: 6,  price: 250,  label: "6 Hours" },
-      { hours: 24, price: 350,  label: "1 Day" },
-      { hours: 48, price: 700,  label: "2 Days" },
-      { hours: 72, price: 1050, label: "3 Days" },
-    ],
-    bookingDeposit: SLINGSHOT_BOOKING_DEPOSIT,
-    images: ["images/slingshot.jpg"],
-    make: "Polaris",
-    model: "Slingshot XR",
-    year: 2023,
-    vin: null,
-    color: null
-  },
   camry: {
     name: "Camry 2012",
     subtitle: "",
@@ -118,8 +50,6 @@ const cars = {
 };
 
 // ----- Insurance / Protection Plan -----
-// Slingshot Option B: DPP rate — kept for backward compat with Slingshot Option B info display.
-const PROTECTION_PLAN_DAILY    = 13;   // $13/day (Slingshot Option B only)
 // Economy car protection plan tiers (flat daily rates — must mirror api/_pricing.js).
 const PROTECTION_PLAN_BASIC    = 15;   // Basic: $15/day
 const PROTECTION_PLAN_STANDARD = 30;   // Standard: $30/day (default)
@@ -151,7 +81,73 @@ function _fmt(key, vars, fallback) {
   return s;
 }
 
-// ----- Load Car Data -----
+// Show an inline error near the pay buttons (replaces alert() which Chrome can suppress).
+function showPayError(msg) {
+  const el = document.getElementById("payError");
+  if (!el) { console.error("Payment error:", msg); return; }
+  el.textContent = msg;
+  el.style.display = "block";
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+function clearPayError() {
+  const el = document.getElementById("payError");
+  if (el) { el.textContent = ""; el.style.display = "none"; }
+}
+
+// ----- Dynamic Pricing -----
+// Fetches live prices from the admin System Settings (Supabase) so that any
+// rate change in the admin panel is immediately reflected on the booking page.
+// Runs asynchronously after page load — falls back to the hard-coded values
+// above if the API is unreachable or returns an error.
+(function loadDynamicPricing() {
+  fetch(API_BASE + "/api/public-pricing")
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+    .then(function(pricing) {
+      // ── Economy cars ──────────────────────────────────────────────────────
+      var ecDaily   = (pricing.economy && pricing.economy.daily)   ? Number(pricing.economy.daily)   : 0;
+      var ecWeekly  = (pricing.economy && pricing.economy.weekly)  ? Number(pricing.economy.weekly)  : 0;
+      var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
+      var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
+
+      ["camry","camry2013"].forEach(function(vid) {
+        if (!cars[vid]) return;
+        if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
+        if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
+        if (ecBiWeek  > 0) cars[vid].biweekly    = ecBiWeek;
+        if (ecMonthly > 0) cars[vid].monthly     = ecMonthly;
+      });
+
+          }
+        });
+      });
+
+      // ── Tax rate ─────────────────────────────────────────────────────────
+      // (already set as a module-level const; we update the global so
+      //  any later calculation that references LA_TAX_RATE by closure reads
+      //  the updated value — functions that captured it directly are re-called
+      //  naturally through user interaction.)
+      if (pricing.tax_rate) {
+        window._dynamicTaxRate = Number(pricing.tax_rate);
+      }
+
+      // Refresh the displayed price for the current vehicle
+      if (carData) {
+        var priceEl = document.getElementById("carPrice");
+        if (priceEl) {
+          priceEl.textContent = carData.hourlyTiers
+            ? carData.hourlyTiers.map(function(t) { return "$" + t.price + " / " + t.label; }).join(" \u2022 ")
+            : (carData.weekly
+                ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
+                : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day"));
+        }
+      }
+    })
+    .catch(function(err) {
+      // Non-fatal — hard-coded values remain in effect
+      console.warn("car.js: could not load dynamic pricing, using defaults:", err.message);
+    });
+}());
+
 const vehicleId = getVehicleFromURL();
 if (!vehicleId || !cars[vehicleId]) {
   alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
@@ -162,7 +158,7 @@ const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent =
   (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
-document.getElementById("carPrice").textContent = (carData.hourlyTiers)
+document.getElementById("carPrice").textContent = carData.pricePerDay ? "$" + carData.pricePerDay + "/day" : "";
   ? carData.hourlyTiers.map(t => `$${t.price} / ${t.label}`).join(" \u2022 ")
   : (carData.weekly)
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
@@ -179,41 +175,7 @@ if (IS_TEST_MODE_OVERRIDE) {
   }
 }
 
-// Hide the nav bar entirely for slingshot booking pages (slingshot has its own landing page)
-if (vehicleId.startsWith("slingshot")) {
-  const siteNav = document.querySelector(".site-nav");
-  if (siteNav) siteNav.style.display = "none";
-  const logoLink = document.querySelector(".logo-link");
-  if (logoLink) logoLink.href = "slingshot.html";
-}
 
-// Show the Slingshot fun description instead of the Uber/Lyft earnings block
-if (carData.hourlyTiers) {
-  document.getElementById("earningsBlock").style.display = "none";
-  document.getElementById("slingshotDesc").style.display = "block";
-  // Populate duration options dynamically from hourlyTiers (single source of truth)
-  const optionsContainer = document.getElementById("durationOptions");
-  if (optionsContainer && carData.hourlyTiers) {
-    carData.hourlyTiers.forEach(function(tier) {
-      const lbl = document.createElement("label");
-      lbl.className = "duration-option";
-      const radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "slingshotDuration";
-      radio.value = String(tier.hours);
-      const span = document.createElement("span");
-      span.textContent = `${tier.label} \u2014 $${tier.price}`;
-      lbl.appendChild(radio);
-      lbl.appendChild(span);
-      optionsContainer.appendChild(lbl);
-      radio.addEventListener("change", applySlingshotDuration);
-    });
-  }
-  // Show the hourly duration selector and hide the manual return-date picker
-  document.getElementById("slingshotDurationSection").style.display = "";
-  document.getElementById("returnDateSection").style.display = "none";
-  // Return date/time will be auto-computed once pickup date/time + duration are set
-}
 
 const sliderContainer = document.getElementById("sliderContainer");
 const sliderDots = document.getElementById("sliderDots");
@@ -250,7 +212,7 @@ function goToSlide(idx){ showSlide(idx); }
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = vehicleId.startsWith("slingshot") ? "slingshot.html" : "index.html";
+  window.location.href = "index.html";
 });
 
 // ----- Booking Form Automation -----
@@ -267,71 +229,18 @@ const stripeBtn = document.getElementById("stripePay");
 let uploadedFile = null;
 let uploadedInsurance = null;
 let currentDayCount = 1;
-let currentSlingshotDuration = null; // selected hourly tier in hours (3 | 6 | 24) for Slingshot
 let currentSubtotal = 0;
 let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Payment mode for the current payment attempt: 'deposit' | 'full'.
 // Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
-// Slingshot always uses 'deposit' (driven by carData.bookingDeposit).
 // Camry renters choose via the two-button UI.
 let _pendingPaymentMode = null;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
-// Slingshot payment mode — 'full' (rental + deposit) or 'deposit' (security deposit only).
-// Updated by the payment option radio buttons shown for Slingshot vehicles.
-let slingshotPaymentMode = 'full';
 
-// ----- Slingshot: set up the insurance/protection UI -----
-// For Slingshot: simplify the insurance question — no Damage Protection Plan offered.
-if (carData.hourlyTiers) {
-  // Update the question heading
-  const qEl = document.getElementById("insuranceQuestionText");
-  if (qEl) {
-    qEl.removeAttribute("data-i18n");
-    qEl.textContent = "\uD83D\uDEE1\uFE0F Do you have personal auto insurance?";
-  }
-  // Update "Yes" label — upload required
-  const hasInsTextEl = document.getElementById("hasInsuranceText");
-  if (hasInsTextEl) {
-    hasInsTextEl.removeAttribute("data-i18n");
-    hasInsTextEl.innerHTML = `<strong>Yes</strong> \u2014 I have valid personal auto insurance<br><small style='color:#ffb400'>Upload required before checkout</small>`;
-  }
-  // Update "No" label — no DPP; renter assumes full liability
-  const noInsTextEl = document.getElementById("noInsuranceText");
-  if (noInsTextEl) {
-    noInsTextEl.removeAttribute("data-i18n");
-    noInsTextEl.innerHTML = `<strong>No</strong> \u2014 I do not have personal auto insurance<br><small style='color:#aaa'>No Damage Protection Plan \u2014 renter assumes full liability for damages</small>`;
-  }
-  // Show the Slingshot payment options selector and hide the old deposit notice
-  const payOptSection = document.getElementById("slingshotPaymentOptions");
-  if (payOptSection) payOptSection.style.display = "";
-  const oldDepositNotice = document.getElementById("slingshotDepositNotice");
-  if (oldDepositNotice) oldDepositNotice.style.display = "none";
-  const reserveBtnEl = document.getElementById("reserveBtn");
-  if (reserveBtnEl) reserveBtnEl.style.display = "none";
-
-  // Wire up payment option radio buttons
-  const payFullRadio = document.getElementById("slingshotPayFull");
-  const payDepositRadio = document.getElementById("slingshotPayDeposit");
-  const depositOnlyNotice = document.getElementById("slingshotDepositOnlyNotice");
-  function onSlingshotPaymentModeChange() {
-    const checked = document.querySelector('input[name="slingshotPaymentMode"]:checked');
-    slingshotPaymentMode = checked ? checked.value : 'full';
-    if (depositOnlyNotice) {
-      depositOnlyNotice.style.display = slingshotPaymentMode === 'deposit' ? "" : "none";
-    }
-    updateTotal();
-    updatePayBtn();
-  }
-  if (payFullRadio) payFullRadio.addEventListener("change", onSlingshotPaymentModeChange);
-  if (payDepositRadio) payDepositRadio.addEventListener("change", onSlingshotPaymentModeChange);
-}
-
-// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
-// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
-if (!carData.hourlyTiers) {
+if (true) {
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) {
     reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
@@ -422,8 +331,7 @@ function isValidName(val) {
     if (data.phone && phoneField && !phoneField.value) { phoneField.value = data.phone; updatePayBtn(); }
 
     // For Economy cars only: pre-select insurance choice and protection plan tier.
-    // Slingshot uses its own Option A / Option B UI (set up separately).
-    if (!carData.hourlyTiers) {
+    {
       // Pre-select protection plan tier (default to standard if not stored)
       const pref = data.protectionPlanPref || data.protectionPlan;
       if (pref === "basic" || pref === "standard" || pref === "premium") {
@@ -489,13 +397,9 @@ document.getElementById("hasInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "yes";
   document.getElementById("insuranceUploadSection").style.display = "";
-  // For Slingshot: hide generic DPP notice, show auth-hold info box instead
-  if (carData.hourlyTiers) {
+
     document.getElementById("protectionPlanSection").style.display = "none";
-    _updateSlingshotInsuranceInfo("yes");
-  } else {
-    document.getElementById("protectionPlanSection").style.display = "none";
-  }
+  
   // Clear any protection-plan file state if previously "no"
   updateTotal();
   updatePayBtn();
@@ -505,57 +409,17 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-  // For Slingshot: show auth-hold info box; for Camry: show tier-selection DPP notice
-  if (carData.hourlyTiers) {
-    document.getElementById("protectionPlanSection").style.display = "none";
-    _updateSlingshotInsuranceInfo("no");
-  } else {
+
     document.getElementById("protectionPlanSection").style.display = "";
     // Ensure the pre-selected tier radio is checked in the UI
     _syncProtectionTierRadio(selectedProtectionTier);
-  }
+  
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
   updateTotal();
   updatePayBtn();
 });
 
-// Update the Slingshot insurance info box (shown below the radio buttons)
-// to reflect the selected option. No DPP is offered for Slingshot.
-function _updateSlingshotInsuranceInfo(choice) {
-  const infoEl = document.getElementById("slingshotInsuranceInfo");
-  if (!infoEl) return;
-  // Determine the security deposit for the currently selected tier (= rental fee)
-  const selectedTier = carData.hourlyTiers && currentSlingshotDuration
-    ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
-    : null;
-  const depositAmt = selectedTier ? `$${selectedTier.price}` : "equal to your rental fee";
-  if (choice === "yes") {
-    infoEl.innerHTML = `
-      <div class="deposit-notice" style="margin-top:10px">
-        <strong>✅ Insurance confirmed</strong>
-        <ul>
-          <li>Upload your proof of insurance below (required before checkout).</li>
-          <li>A <strong>${depositAmt} refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
-        </ul>
-      </div>`;
-    infoEl.style.display = "";
-  } else if (choice === "no") {
-    infoEl.innerHTML = `
-      <div class="deposit-notice" style="margin-top:10px">
-        <strong>⚠️ No personal insurance on file</strong>
-        <ul>
-          <li>No Damage Protection Plan is available for Slingshot rentals.</li>
-          <li>Renter assumes <strong>full financial liability</strong> for any damage to the vehicle.</li>
-          <li>A <strong>${depositAmt} refundable security deposit</strong> is included in your total and will be released after the vehicle is returned and inspected with no issues.</li>
-        </ul>
-      </div>`;
-    infoEl.style.display = "";
-  } else {
-    infoEl.innerHTML = "";
-    infoEl.style.display = "none";
-  }
-}
 
 // ----- Economy Car: Protection Plan Tier Selection -----
 // Syncs the tier radio buttons in #protectionPlanSection to the given tier value.
@@ -565,7 +429,6 @@ function _syncProtectionTierRadio(tier) {
 }
 
 // Attach change handlers to the tier radios (Economy cars only).
-// Slingshot vehicles never show #protectionPlanSection, so this is safe for all vehicles.
 (function setupProtectionTierListeners() {
   document.querySelectorAll('input[name="bookingProtectionPlan"]').forEach(function(radio) {
     radio.addEventListener("change", function() {
@@ -664,6 +527,7 @@ returnDate.setAttribute("min", todayStr);
 agreeCheckbox.addEventListener("change", updatePayBtn);
 document.getElementById("name").addEventListener("input", updatePayBtn);
 document.getElementById("email").addEventListener("input", updatePayBtn);
+document.getElementById("phone").addEventListener("input", updatePayBtn);
 
 // ----- Inline Rental Agreement / Signing -----
 // Opens the inline agreement panel pre-filled with the current booking details.
@@ -707,59 +571,14 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Update the Security Deposit section.
-  // Slingshot: deposit = rental tier price (dynamic), charged at booking, refundable.
-  // Camry vehicles have no security deposit — the entire section is hidden for economy cars.
-  const depositHeadingEl  = document.getElementById("agreementDepositHeading");
-  const depositIntroEl    = document.getElementById("agreementDepositIntro");
-  const depositInsEl      = document.getElementById("agreementDepositInsurance");
-  const depositDppEl      = document.getElementById("agreementDepositDpp");
-  const depositNeitherEl  = document.getElementById("agreementDepositNeither");
-  const speedSection      = document.getElementById("slingshotSpeedSection");
-  const lateFeeGenericEl  = document.getElementById("lateFeeGeneric");
-  const slingshotLateFeeEl = document.getElementById("slingshotLateFeeBody");
-  if (carData.hourlyTiers) {
-    // Compute the deposit for the currently selected tier (= rental fee)
-    const currentTier = currentSlingshotDuration
-      ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
-      : null;
-    const depositDisplay = currentTier ? `$${currentTier.price}` : "an amount equal to your rental fee";
-
-    // Slingshot: full payment (including security deposit) charged at booking
-    if (depositHeadingEl) {
-      depositHeadingEl.removeAttribute("data-i18n");
-      depositHeadingEl.textContent = "SECURITY DEPOSIT (Refundable)";
-      depositHeadingEl.style.display = "";
-    }
-    if (depositIntroEl) {
-      depositIntroEl.innerHTML =
-        `A <strong>${depositDisplay} refundable security deposit</strong> (equal to your rental fee) is included in your total payment. ` +
-        `It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days). ` +
-        `The deposit may be fully or partially retained to cover damages, loss of use, cleaning, tolls, or fuel.`;
-    }
-    // No DPP for Slingshot — hide DPP element
-    if (depositDppEl) depositDppEl.style.display = "none";
-    if (depositInsEl) depositInsEl.style.display = "none";
-    if (depositNeitherEl) depositNeitherEl.style.display = "none";
-
-    // Show Slingshot speed & strike policy
-    if (speedSection) speedSection.style.display = "";
-
-    // Show Slingshot-specific late fee, hide generic late fee
-    if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "none";
-    if (slingshotLateFeeEl) slingshotLateFeeEl.style.display = "";
-  } else {
+  {
     // For Camry (economy): no security deposit — hide the entire deposit section.
     if (depositHeadingEl) depositHeadingEl.style.display = "none";
     if (depositIntroEl)   depositIntroEl.style.display   = "none";
     if (depositInsEl)     depositInsEl.style.display     = "none";
     if (depositDppEl)     depositDppEl.style.display     = "none";
     if (depositNeitherEl) depositNeitherEl.style.display = "none";
-    // Hide Slingshot speed & strike policy for non-Slingshot vehicles
-    if (speedSection) speedSection.style.display = "none";
-
-    // Show generic late fee, hide Slingshot-specific late fee
     if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "";
-    if (slingshotLateFeeEl) slingshotLateFeeEl.style.display = "none";
 
     // For economy cars: populate the protection choice summary and update the
     // tier-specific liability cap text in the Insurance & Liability section.
@@ -813,29 +632,6 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
     }
   } // end economy (non-hourly) branch
 
-  // Show/hide the booking deposit policy section (Slingshot only)
-  const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
-  if (bookingDepositSection) {
-    bookingDepositSection.style.display = carData.hourlyTiers ? "" : "none";
-    if (carData.hourlyTiers) {
-      // Dynamically populate the deposit body text with the tier-specific amount
-      const slingshotDepBodyEl = document.getElementById("slingshotDepositAgreementBody");
-      if (slingshotDepBodyEl) {
-        const currentTierForDep = currentSlingshotDuration
-          ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
-          : null;
-        const depositDisplayDep = currentTierForDep ? `$${currentTierForDep.price}` : "an amount equal to your rental fee";
-        slingshotDepBodyEl.innerHTML =
-          `A <strong>${depositDisplayDep} refundable security deposit</strong> (equal to your rental fee) is included in your total payment. ` +
-          `It will be released after the vehicle is returned and inspected with no issues (typically within 5&ndash;7 business days).`;
-      }
-      // Update option A / option B bullet visibility in the agreement section
-      const optAEl = document.getElementById("slingshotDepositAgreementOptionA");
-      const optBEl = document.getElementById("slingshotDepositAgreementOptionB");
-      if (optAEl) optAEl.style.display = insuranceCoverageChoice === "yes" ? "" : "none";
-      if (optBEl) optBEl.style.display = insuranceCoverageChoice === "no"  ? "" : "none";
-    }
-  }
 
   // Update Payment Terms body to accurately describe when/how payment is collected.
   // Removing data-i18n prevents applyTranslations() from overwriting the corrected text.
@@ -843,12 +639,7 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
     if (carData.hourlyTiers) {
-      // Slingshot: full payment (rental + refundable security deposit equal to rental fee) charged online
-      const currentTierForTerms = currentSlingshotDuration
-        ? carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration)
-        : null;
-      const depositForTerms = currentTierForTerms ? `$${currentTierForTerms.price}` : "an amount equal to your rental fee";
-      paymentTermsBodyEl.textContent = `Full payment (including a ${depositForTerms} refundable security deposit equal to your rental fee) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
+      paymentTermsBodyEl.textContent = `Full payment (including a refundable security deposit equal to your rental fee) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
     } else {
       // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
       paymentTermsBodyEl.textContent = lang === "es"
@@ -923,80 +714,8 @@ document.getElementById("cancelSignBtn").addEventListener("click", function () {
   document.getElementById("rentalAgreementBox").style.display = "none";
   document.getElementById("signAgreementBtn").style.display  = "";
 });
-
-// Promote return pickers to module scope so applySlingshotDuration() can update them
 let returnPicker = null;
 
-// ----- Slingshot: auto-compute return date/time from pickup + duration -----
-function applySlingshotDuration() {
-  if (!carData.hourlyTiers) return;
-  const selectedDuration = document.querySelector('input[name="slingshotDuration"]:checked');
-  if (!selectedDuration) return;
-
-  const hours = parseInt(selectedDuration.value, 10);
-  currentSlingshotDuration = hours;
-
-  const dateStr = pickup.value; // "YYYY-MM-DD"
-  if (!dateStr) { updatePayBtn(); return; }
-  if (!pickupTime.value) {
-    if (returnPicker) {
-      returnPicker.clear();
-    } else {
-      returnDate.value = "";
-    }
-    returnTime.value = "";
-    updatePayBtn();
-    return;
-  }
-
-  // pickupTime is a <select> whose option values are stored as HH:MM (24-hour).
-  // The AM/PM display label is separate from the value sent here.
-  // timeSlotToHH handles legacy AM/PM values that may be present in memory;
-  // the fallback treats a valid HH:MM string directly.
-  let timeStr = timeSlotToHH(pickupTime.value);
-  if (!timeStr) {
-    // Fallback: value is already HH:MM
-    const nativeTest = new Date("1970-01-01T" + pickupTime.value);
-    if (!isNaN(nativeTest)) timeStr = pickupTime.value.slice(0, 5);
-  }
-
-  // Build pickup moment and add duration.
-  // Use the multi-argument constructor (y, m, d, h, min) so the Date is always
-  // created as local time — avoids UTC mis-interpretation of ISO strings.
-  const [pY, pM, pD] = dateStr.split("-").map(Number);
-  const [pH, pMin]   = timeStr.split(":").map(Number);
-  const pickupMoment = new Date(pY, pM - 1, pD, pH, pMin || 0);
-  if (isNaN(pickupMoment.getTime())) { updatePayBtn(); return; }
-  const returnMoment = new Date(pickupMoment.getTime() + hours * 60 * 60 * 1000);
-
-  // Format return date as "YYYY-MM-DD"
-  const y  = returnMoment.getFullYear();
-  const mo = String(returnMoment.getMonth() + 1).padStart(2, "0");
-  const dd = String(returnMoment.getDate()).padStart(2, "0");
-  const retDateStr = `${y}-${mo}-${dd}`;
-
-  // Format return time as "HH:MM"
-  const retH = String(returnMoment.getHours()).padStart(2, "0");
-  const retM = String(returnMoment.getMinutes()).padStart(2, "0");
-  const retTimeStr = `${retH}:${retM}`;
-
-  // Update return date (via Flatpickr API if available, otherwise direct)
-  if (returnPicker) {
-    returnPicker.setDate(retDateStr, true);
-  } else {
-    returnDate.value = retDateStr;
-  }
-
-  // returnTime is always set directly (no Flatpickr for returnTime)
-  returnTime.value = retTimeStr;
-
-  // Show the return section so the renter can see their auto-computed return time
-  const retSection = document.getElementById("returnDateSection");
-  if (retSection) retSection.style.display = "";
-
-  updateTotal();
-  updatePayBtn();
-}
 
 // Fixed time slots available for booking (displayed as options in the pickup time select).
 const TIME_SLOTS = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM"];
@@ -1006,7 +725,6 @@ const PICKUP_BUFFER_HOURS = 2;
 // Module-level cache of booked ranges used by updatePickupTimeSlots().
 // Populated (and refreshed) each time initDatePickers() fetches from the API.
 let bookedRangesCache = [];
-let allUnitRangesCache = []; // one array of raw ranges per Slingshot unit
 
 // Parse any supported time string ("HH:MM" or "h:MM AM/PM") combined with a
 // YYYY-MM-DD date into a Unix-millisecond timestamp.  Returns NaN on failure.
@@ -1074,7 +792,6 @@ function updatePickupTimeSlots(selectedDate) {
     return;
   }
 
-  const isSlingshot = vehicleId.startsWith("slingshot");
 
   TIME_SLOTS.forEach(function(slot) {
     const opt = document.createElement("option");
@@ -1085,134 +802,6 @@ function updatePickupTimeSlots(selectedDate) {
 
     if (IS_TEST_MODE_OVERRIDE) {
       opt.disabled = false;
-    } else if (isSlingshot) {
-      // Slot is available for Slingshot when at least one unit is free.
-      // Disable only when EVERY unit is blocked.
-      const allBlocked = allUnitRangesCache.every(function(unitRanges) {
-        return isSlotBlocked(selectedDate, slot, unitRanges);
-      });
-      opt.disabled = allBlocked;
-    } else {
-      opt.disabled = isSlotBlocked(selectedDate, slot, bookedRangesCache);
-    }
-
-    pickupTime.appendChild(opt);
-  });
-
-  // Auto-select the first non-disabled slot, or show "no times" warning.
-  const firstAvail = pickupTime.querySelector("option:not([disabled]):not([value=''])");
-  if (firstAvail) {
-    firstAvail.selected = true;
-    // Value is already HH:MM — assign directly without conversion.
-    returnTime.value = firstAvail.value;
-    if (noTimesMsg) noTimesMsg.style.display = "none";
-  } else {
-    returnTime.value = "";
-    if (noTimesMsg) noTimesMsg.style.display = "";
-  }
-
-  if (carData.hourlyTiers) {
-    applySlingshotDuration();
-  } else {
-    updateTotal();
-  }
-  updatePayBtn();
-}
-
-// Flag set to true inside initDatePickers() once Flatpickr takes over.
-// Flatpickr already fires native change events after its own onChange, so
-// the native listeners below must skip when Flatpickr is active to avoid
-// calling updateTotal() / applySlingshotDuration() twice on every selection.
-// pickupTime is now a <select> and is handled by its own dedicated listener below.
-let flatpickrActive = false;
-[pickup, returnDate, returnTime].forEach(function(inp) {
-  inp.addEventListener("change", function() {
-    if (flatpickrActive) return; // Flatpickr's own onChange handles this
-    if (carData.hourlyTiers) {
-      applySlingshotDuration();
-    } else {
-      updateTotal();
-    }
-  });
-});
-
-// Dedicated change listener for the pickupTime <select>.
-// Values are already HH:MM so returnTime is assigned directly.
-pickupTime.addEventListener("change", function() {
-  const slot = this.value; // HH:MM
-  returnTime.value = slot || "";
-  if (carData.hourlyTiers) {
-    applySlingshotDuration();
-  } else {
-    updateTotal();
-  }
-  updatePayBtn();
-});
-
-// ----- Date Pickers (Flatpickr) -----
-async function initDatePickers() {
-  if (typeof flatpickr === "undefined") return; // fallback to native inputs
-
-  // For Slingshot: a date is only truly blocked when ALL units are booked on
-  // that date.  Customers book a generic Slingshot; we assign whichever unit
-  // is free at payment time.
-  const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
-  const isSlingshot = vehicleId.startsWith("slingshot");
-
-  // allUnitRanges: array-of-arrays (one per slingshot unit) for the combined
-  // disable check; unused for non-slingshot vehicles (uses bookedRanges instead).
-  let allUnitRanges = [];
-  let bookedRanges = [];
-  try {
-    // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
-    // GitHub Pages CDN caches files for several minutes after a commit, so the
-    // static file often shows stale (empty) data even after a booking is saved.
-    // The /api/booked-dates endpoint reads directly from the GitHub Contents API
-    // with Cache-Control: no-store, so new bookings appear immediately.
-    const resp = await fetch(`${API_BASE}/api/booked-dates`);
-    if (resp.ok) {
-      const data = await resp.json();
-      if (isSlingshot) {
-        // Collect each unit's ranges; missing unit = no bookings (empty array).
-        // Keep raw ranges (with fromTime/toTime) for the time-slot buffer check.
-        allUnitRanges = SLINGSHOT_IDS.map(function(id) {
-          return (data[id] || []).map(function(r) {
-            return {
-              // Exclusive end: the return date itself is NOT blocked in the
-              // calendar — time slots on that day handle granularity.
-              from: new Date(r.from + "T00:00:00").getTime(),
-              to:   new Date(r.to   + "T00:00:00").getTime(),
-            };
-          });
-        });
-        // Store raw ranges per unit for the time-slot availability check.
-        allUnitRangesCache = SLINGSHOT_IDS.map(function(id) { return data[id] || []; });
-      } else {
-        bookedRanges = data[vehicleId] || [];
-        bookedRangesCache = bookedRanges;
-      }
-    }
-  } catch (e) { console.error("Failed to load booked dates:", e); }
-
-  // Pre-compile range boundaries to millisecond timestamps once so the
-  // disable callback never allocates new Date objects per calendar cell.
-  // End date is exclusive: the return date is not blocked in the calendar.
-  const compiledRanges = bookedRanges.map(function(r) {
-    return {
-      from: new Date(r.from + "T00:00:00").getTime(),
-      to:   new Date(r.to   + "T00:00:00").getTime()
-    };
-  });
-
-  function isBooked(date) {
-    if (IS_TEST_MODE_OVERRIDE) return false;
-    const t = date.getTime();
-    if (isSlingshot) {
-      // Date is blocked only when EVERY Slingshot unit is booked on that day.
-      // Uses exclusive end so the return date itself can accept new pickups.
-      return allUnitRanges.every(function(unitRanges) {
-        return unitRanges.some(function(r) { return t >= r.from && t < r.to; });
-      });
     }
     return compiledRanges.some(function(r) { return t >= r.from && t < r.to; });
   }
@@ -1245,7 +834,7 @@ async function initDatePickers() {
     minDate: "today",
     disable: [isBooked],
     onChange: function() {
-      if (!carData.hourlyTiers) updateTotal();
+      updateTotal();
     }
   });
 
@@ -1260,63 +849,30 @@ initDatePickers();
 
 // ----- Fleet Status Check -----
 // Fetch the vehicle's availability from the fleet-status API.  If the vehicle
-// is unavailable (active booking exists), show a "Currently Rented" notice and
-// replace the booking form with the Extend Rental section.
+// is unavailable (active booking exists), replace the booking form with the
+// Extend Rental section.
 // Fails open on any API error so transient outages do not lock out the form.
 //
-// For Slingshot: multiple interchangeable units exist (slingshot, slingshot2,
-// slingshot3).  The notice is shown only when ALL units are simultaneously
-// unavailable.  For display, the earliest next_available_at (or available_at)
-// across booked units is used so the customer sees the soonest a unit frees up.
-
-(async function checkFleetStatus() {
-  if (IS_TEST_MODE_OVERRIDE) return;
-  try {
-    const SLINGSHOT_IDS = ["slingshot", "slingshot2", "slingshot3"];
-    const isSlingshot = vehicleId.startsWith("slingshot");
-
-    const fleetResp = await fetch(`${API_BASE}/api/fleet-status`);
-    if (!fleetResp.ok) return;
-    const status = await fleetResp.json();
-
-    let isUnavailable;
-    if (isSlingshot) {
-      // Unavailable only when every Slingshot unit is marked unavailable.
-      isUnavailable = SLINGSHOT_IDS.every(function(id) {
-        return status[id] && status[id].available === false;
-      });
-    } else {
-      const entry = status[vehicleId];
-      isUnavailable = !!(entry && entry.available === false);
-    }
-
-    if (isUnavailable) {
-      // For Slingshot: pick the entry with the earliest available_at so the
-      // customer sees the soonest any unit becomes free.
-      const idsToCheck = isSlingshot ? SLINGSHOT_IDS : [vehicleId];
+const idsToCheck = [vehicleId];
 
       let availableAt = null;
-      let availableAtDisplay = null;
+      let nextAvailableDisplay = null;
       for (const id of idsToCheck) {
         const entry = status[id];
         if (entry && entry.available === false) {
-          // Prefer next_available_at (timestamp with time) over available_at.
-          const tsField = entry.next_available_at || entry.available_at;
-          if (tsField && (!availableAt || tsField < availableAt)) {
-            availableAt = tsField;
-            // Format with time when next_available_at is present; else use pre-built string.
-            availableAtDisplay = entry.next_available_at
-              ? (SlyLA.formatTimestamp(entry.next_available_at) || entry.next_available_display || null)
-              : (entry.next_available_display || null);
-          } else if (!availableAt && entry.next_available_display) {
-            // next_available_display is set even when return_time was absent
-            // (date-only format); capture it so we still show the right date.
-            availableAtDisplay = entry.next_available_display;
+          if (entry.available_at) {
+            if (!availableAt || entry.available_at < availableAt) {
+              availableAt = entry.available_at;
+              nextAvailableDisplay = entry.next_available_display || null;
+            }
+          } else if (!nextAvailableDisplay && entry.next_available_display) {
+            // Date-only block (no end_time): capture display string for date-only unavailability.
+            nextAvailableDisplay = entry.next_available_display;
           }
         }
       }
 
-      showVehicleUnavailable(availableAt, availableAtDisplay);
+      showVehicleUnavailable(availableAt, nextAvailableDisplay);
     }
   } catch (err) {
     console.warn("Could not check fleet status:", err);
@@ -1329,12 +885,14 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
 
   if (nextAvailableISO) {
     // Set minimum new return date in the extend form to the current return date
-    // so the customer cannot pick a date before the active rental ends.
+    // (i.e. the date the vehicle becomes available) so the customer cannot pick
+    // a date before the active rental ends.
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn) {
       let minDate = SlyLA.todayISO();
       const d2 = new Date(nextAvailableISO);
       if (Number.isFinite(d2.getTime())) {
+        // Compare LA-timezone date strings to avoid timezone/DST edge cases.
         const returnDateISO = SlyLA.isoDateInLA(d2);
         if (returnDateISO > minDate) minDate = returnDateISO;
       }
@@ -1350,7 +908,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
 
   const regularIds = [
     "paymentRetryBanner",
-    "pickup", "pickupTime", "slingshotDurationSection", "returnDateSection",
+    "pickup", "pickupTime", "returnDateSection",
     "name", "email", "phone",
     "nameError",
     "idSection", "idUpload", "fileInfo",
@@ -1358,7 +916,7 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     "hasInsurance", "noInsurance",
     "insuranceUploadSection", "protectionPlanSection",
     "signAgreementBtn", "signAgreementStatus", "rentalAgreementBox",
-    "slingshotDepositNotice", "camryDepositNotice",
+    "camryDepositNotice",
     "priceBreakdown", "subtotal", "taxLine", "taxNote",
     "payHint", "reserveBtn", "stripePay",
     "payment-request-button", "payment-form",
@@ -1391,6 +949,15 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     const extReturn = document.getElementById("extNewReturn");
     if (extReturn && !extReturn.getAttribute("min")) {
       extReturn.setAttribute("min", SlyLA.todayISO());
+    }
+    // Update subtitle to show when the car is next available, if known.
+    const subtitle = extendSection.querySelector(".waitlist-subtitle");
+    if (subtitle) {
+      if (nextAvailableDisplay) {
+        subtitle.textContent = `This vehicle is currently rented \u2014 available again: ${nextAvailableDisplay}. If you are the current renter, enter your contact info below to extend your rental period.`;
+      } else {
+        subtitle.textContent = "This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.";
+      }
     }
     // Initialize the extend rental form interactions
     initExtendRentalForm();
@@ -1440,7 +1007,6 @@ function initExtendRentalForm() {
       return;
     }
 
-    var isSlingshot = carData.hourlyTiers;
 
     // Base date for computing extra days: use the current booking's return date
     // (stored as the min attribute on the date input) so the estimate matches
@@ -1449,27 +1015,6 @@ function initExtendRentalForm() {
     var minDate = extNewReturn.getAttribute("min") || today;
     var baseDate = minDate > today ? minDate : today;
 
-    if (isSlingshot) {
-      var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
-      var dailyRate = (carData.hourlyTiers && carData.hourlyTiers.find(function(t){ return t.hours === 24; }));
-      var estCost = extraDays * (dailyRate ? dailyRate.price : 350);
-      if (extPriceAmount) extPriceAmount.textContent = estCost.toFixed(0);
-    } else {
-      var extraDays2 = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
-      var daily   = carData.pricePerDay  || 55;
-      var weekly  = carData.weekly       || 350;
-      var biweek  = carData.biweekly     || 650;
-      var monthly = carData.monthly      || 1300;
-
-      var cost2 = 0;
-      var rem   = extraDays2;
-      if (rem >= 30) { cost2 += Math.floor(rem / 30) * monthly;  rem = rem % 30; }
-      if (rem >= 14) { cost2 += Math.floor(rem / 14) * biweek;   rem = rem % 14; }
-      if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
-      cost2 += rem * daily;
-
-      if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
-    }
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
   }
@@ -1683,16 +1228,8 @@ function restoreFailedBooking() {
     // Sync returnTime to match restored pickupTime
     // pickupTime.value is HH:MM; if legacy stored value is AM/PM, convert it.
     if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime) || data.pickupTime;
-    if (!carData.hourlyTiers) {
+    {
       fpSet(returnDate, data.returnDate);
-    }
-
-    // Restore Slingshot hourly-duration selection
-    if (data.slingshotDuration && carData.hourlyTiers) {
-      currentSlingshotDuration = data.slingshotDuration;
-      const radio = document.querySelector(`input[name="slingshotDuration"][value="${data.slingshotDuration}"]`);
-      if (radio) radio.checked = true;
-      applySlingshotDuration();
     }
 
     // Restore insurance / protection-plan choice.
@@ -1711,25 +1248,15 @@ function restoreFailedBooking() {
         if (hasInsuranceRadio) hasInsuranceRadio.checked = true;
         if (insuranceSection)  insuranceSection.style.display  = "";
         if (protectionSection) protectionSection.style.display = "none";
-        // For Slingshot: restore info box instead of generic DPP section
-        if (carData.hourlyTiers) {
-          if (protectionSection) protectionSection.style.display = "none";
-          _updateSlingshotInsuranceInfo("yes");
-        }
-      } else {
+          } else {
         if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
         if (insuranceSection)  insuranceSection.style.display  = "none";
-        if (carData.hourlyTiers) {
-          if (protectionSection) protectionSection.style.display = "none";
-          _updateSlingshotInsuranceInfo("no");
-        } else {
           // Restore the protection plan tier for economy cars
           if (data.protectionPlanTier) {
             selectedProtectionTier = data.protectionPlanTier;
           }
           if (protectionSection) protectionSection.style.display = "";
           _syncProtectionTierRadio(selectedProtectionTier);
-        }
       }
     }
 
@@ -1831,25 +1358,10 @@ window.addEventListener("pageshow", function(e) {
   if (hasInsuranceRadio) hasInsuranceRadio.checked = false;
   if (noInsuranceRadio) noInsuranceRadio.checked = false;
   insuranceCoverageChoice = null;
-  // Reset hourly-tier duration selection (Slingshot vehicles)
-  if (carData.hourlyTiers) {
-    currentSlingshotDuration = null;
-    document.querySelectorAll('input[name="slingshotDuration"]').forEach(function(r) { r.checked = false; });
-    const retSection = document.getElementById("returnDateSection");
-    if (retSection) retSection.style.display = "none";
-    // Reset Slingshot payment mode to 'full' and hide deposit-only notice
-    slingshotPaymentMode = 'full';
-    const payFullRadioReset = document.getElementById("slingshotPayFull");
-    if (payFullRadioReset) payFullRadioReset.checked = true;
-    const depositOnlyNoticeReset = document.getElementById("slingshotDepositOnlyNotice");
-    if (depositOnlyNoticeReset) depositOnlyNoticeReset.style.display = "none";
-  }
   const insuranceUploadSection = document.getElementById("insuranceUploadSection");
   const protectionPlanSection = document.getElementById("protectionPlanSection");
   if (insuranceUploadSection) insuranceUploadSection.style.display = "none";
   if (protectionPlanSection) protectionPlanSection.style.display = "none";
-  // Reset Slingshot insurance info box
-  if (carData.hourlyTiers) { _updateSlingshotInsuranceInfo(null); }
   const signBtn = document.getElementById("signAgreementBtn");
   signBtn.classList.remove("signed");
   signBtn.textContent = window.slyI18n ? window.slyI18n.t("booking.signAgreementBtn") : "✍ Review & Sign Rental Agreement";
@@ -1875,8 +1387,7 @@ window.addEventListener("pageshow", function(e) {
   stripeBtn.textContent = window.slyI18n.t("booking.payNow");
   const _reserveBtnReset = document.getElementById("reserveBtn");
   if (_reserveBtnReset) {
-    // reserveBtn is only shown for Camry (not Slingshot — Slingshot uses auth-hold system)
-    _reserveBtnReset.style.display = carData.hourlyTiers ? "none" : "";
+    _reserveBtnReset.style.display = "";
     _reserveBtnReset.disabled = true;
   }
   _pendingPaymentMode = null;
@@ -1903,21 +1414,20 @@ function updatePayBtn() {
   const emailVal = document.getElementById("email").value.trim();
   // Insurance readiness:
   //   "yes"  → requires an uploaded file (own insurance)
-  //   "no"   → for Slingshot: DPP auto-included (always ready)
   //           → for Economy: requires a valid tier selection (basic/standard/premium)
-  const isEconomy = !carData.hourlyTiers;
+  const isEconomy = true;
   const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
                           (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
   const nameValid = isValidName(nameVal);
+  const phoneVal = document.getElementById("phone").value.trim();
   // Hourly-tier vehicles need pickup + duration + pickup time;
   // other vehicles need pickup + return date + pickup time.
-  // Pickup time is required for all vehicles.
+  // Pickup time is required for all vehicles: it anchors the rental window and
+  // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
-  const datesReady = carData.hourlyTiers
-    ? pickup.value && currentSlingshotDuration && hasTimeWindow
-    : pickup.value && hasTimeWindow;
-  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal;
+  const datesReady = pickup.value && returnDatePicker.value && hasTimeWindow;
+  const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
   if (_reserveBtnPayBtn) _reserveBtnPayBtn.disabled = !ready;
@@ -1926,76 +1436,6 @@ function updatePayBtn() {
 }
 
 function updateTotal() {
-  // ----- Hourly-tier vehicles (Slingshot) -----
-  if (carData.hourlyTiers) {
-    if (!pickup.value || !currentSlingshotDuration) return;
-    const tier = carData.hourlyTiers.find(t => t.hours === currentSlingshotDuration);
-    if (!tier) return;
-    // For day-count purposes: 3hr/6hr = 1 day; 24hr = 1 day; 48hr = 2 days; 72hr = 3 days.
-    const slingshotDays = Math.max(1, Math.ceil(currentSlingshotDuration / 24));
-    currentDayCount = slingshotDays;
-
-    // Security deposit = rental tier price (refundable after return).
-    // No DPP for Slingshot. No tax — total is rental fee + security deposit only.
-    const securityDeposit = tier.price;
-    const fullTotal = tier.price + securityDeposit; // rental + deposit, no tax
-
-    // Determine the payment amount based on the selected payment mode.
-    // 'full': charge rental + security deposit; 'deposit': charge security deposit only.
-    const isDepositMode = slingshotPaymentMode === 'deposit';
-    const chargeNow = isDepositMode ? securityDeposit : fullTotal;
-
-    // Show the rental breakdown so renters know exactly what they're paying.
-    const lines = [];
-    if (!isDepositMode) {
-      lines.push({ label: _fmt("booking.tierRentalFmt", { label: tier.label }, `${tier.label} rental`), amount: tier.price });
-      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 equals rental fee)`, amount: securityDeposit });
-    } else {
-      lines.push({ label: `\uD83D\uDCB0 Security Deposit (refundable \u2014 reserves your dates)`, amount: securityDeposit });
-      lines.push({ label: `\u23F3 Remaining rental fee (due before pickup \u2014 NOT charged now)`, amount: tier.price });
-    }
-
-    currentSubtotal = chargeNow;
-    carData._fullRentalCost = fullTotal.toFixed(2);
-    carData._rentalPrice = tier.price;
-    carData._securityDeposit = securityDeposit;
-
-    const rowsEl = document.getElementById("breakdownRows");
-    const frag = document.createDocumentFragment();
-    lines.forEach(function(l) {
-      const row = document.createElement("div");
-      row.className = "breakdown-row";
-      const labelSpan = document.createElement("span");
-      labelSpan.className = "breakdown-label";
-      labelSpan.textContent = l.label;
-      const valueSpan = document.createElement("span");
-      valueSpan.className = "breakdown-value";
-      valueSpan.textContent = "$" + l.amount;
-      row.appendChild(labelSpan);
-      row.appendChild(valueSpan);
-      frag.appendChild(row);
-    });
-    rowsEl.innerHTML = "";
-    rowsEl.appendChild(frag);
-    document.getElementById("priceBreakdown").style.display = "";
-
-    // Hide tax line — no tax on Slingshot bookings
-    document.getElementById("subtotal").textContent = chargeNow;
-    const taxLineEl = document.getElementById("taxLine");
-    const taxNoteEl = document.getElementById("taxNote");
-    taxLineEl.style.display = "none";
-    if (taxNoteEl) taxNoteEl.style.display = "none";
-    // Total reflects only what is charged now
-    totalEl.textContent = chargeNow.toFixed(2);
-    // Pay button text reflects the selected mode
-    if (isDepositMode) {
-      stripeBtn.textContent = `\uD83D\uDD12 Reserve with $${chargeNow.toFixed(2)} Deposit`;
-    } else {
-      stripeBtn.textContent = window.slyI18n.t("booking.payNow");
-    }
-    updatePayBtn();
-    return;
-  }
 
   // ----- Daily/weekly vehicles -----
   if(!pickup.value || !returnDate.value) return;
@@ -2066,9 +1506,9 @@ function updateTotal() {
   currentSubtotal = rentalSubtotal;
 
   // Compute LA sales tax (10.25%) on the pre-tax total and include it in the charge.
-  const taxAmount = Math.round(rentalSubtotal * LA_TAX_RATE * 100) / 100;
+  const taxAmount = Math.round(rentalSubtotal * getTaxRate() * 100) / 100;
   const afterTaxTotal = Math.round((rentalSubtotal + taxAmount) * 100) / 100;
-  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (LA_TAX_RATE * 100).toFixed(2) }, `Sales tax (${(LA_TAX_RATE * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
+  lines.push({ label: _fmt("booking.salesTaxFmt", { rate: (getTaxRate() * 100).toFixed(2) }, `Sales tax (${(getTaxRate() * 100).toFixed(2)}%)`), amount: taxAmount.toFixed(2) });
 
   const rowsEl = document.getElementById("breakdownRows");
   const frag = document.createDocumentFragment();
@@ -2104,10 +1544,9 @@ function updateTotal() {
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
   // Resolve payment mode:
-  // - For Slingshot: use slingshotPaymentMode ('full' or 'deposit') set by the radio buttons.
   // - For Camry: _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
   if (_pendingPaymentMode === null) {
-    _pendingPaymentMode = carData.hourlyTiers ? slingshotPaymentMode : 'full';
+    _pendingPaymentMode = 'full';
   }
   const paymentMode = _pendingPaymentMode;
   _pendingPaymentMode = null; // consume and reset
@@ -2115,14 +1554,14 @@ stripeBtn.addEventListener("click", async () => {
   const email = document.getElementById("email").value;
   const nameVal = document.getElementById("name").value.trim();
   const phone = document.getElementById("phone").value.trim();
-  if (!email) { alert(window.slyI18n.t("booking.alertEmail")); return; }
-  if (!nameVal) { alert(window.slyI18n.t("booking.alertName")); return; }
-  if (!phone) { alert(window.slyI18n.t("booking.alertPhone")); return; }
-  if (!returnDate.value) { alert(window.slyI18n.t("booking.alertReturnDate")); return; }
-  if (!pickupTime.value) { alert(window.slyI18n.t("booking.alertPickupTime")); return; }
-  if (!returnTime.value) { alert(window.slyI18n.t("booking.alertReturnTime")); return; }
-  const isSlingshotDepositMode = carData.hourlyTiers && paymentMode === 'deposit';
-  const isCamryDepositMode = !carData.hourlyTiers && paymentMode === 'deposit';
+  clearPayError();
+  if (!email) { showPayError(window.slyI18n.t("booking.alertEmail")); return; }
+  if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
+  if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
+  if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
+  if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
+  if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
+  const isCamryDepositMode = paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
   const displayPayNow = isCamryDepositMode ? camryDepositAmount.toFixed(2) : totalEl.textContent;
@@ -2203,8 +1642,7 @@ stripeBtn.addEventListener("click", async () => {
         returnTime: returnTime.value,
         protectionPlan: insuranceCoverageChoice === "no",
         // For Economy cars: pass the selected tier so the server uses the correct flat rate.
-        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
-        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
+        ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
         paymentMode,
@@ -2221,7 +1659,7 @@ stripeBtn.addEventListener("click", async () => {
       throw Object.assign(new Error(data.error || "Server error (" + res.status + ")"), { isDatesError });
     }
 
-    const { clientSecret, publishableKey } = data;
+    const { clientSecret, publishableKey, bookingId: pendingBookingId } = data;
     if (!clientSecret) {
       throw new Error("No clientSecret returned from server. Check that STRIPE_SECRET_KEY is set in your Vercel environment variables.");
     }
@@ -2288,6 +1726,7 @@ stripeBtn.addEventListener("click", async () => {
       paymentReq.on("paymentmethod", async (ev) => {
         const prBookingPayload = {
           vehicleId,
+          bookingId: pendingBookingId || null,
           car: carData.name,
           vehicleMake: carData.make || null,
           vehicleModel: carData.model || null,
@@ -2302,23 +1741,21 @@ stripeBtn.addEventListener("click", async () => {
           email,
           phone,
           total: displayPayNow,
-          // For Slingshot, fullRentalCost and balanceAtPickup are not applicable (full payment online).
-          fullRentalCost: carData.hourlyTiers ? null : (carData._fullRentalCost || totalEl.textContent),
-          balanceAtPickup: carData.hourlyTiers ? null : (carData._balanceAtPickup || null),
+          fullRentalCost: (carData._fullRentalCost || totalEl.textContent),
+          balanceAtPickup: (carData._balanceAtPickup || null),
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
           pricePerBiWeekly: carData.biweekly || null,
           pricePerMonthly: carData.monthly || null,
           deposit: carData.deposit || 0,
           days: currentDayCount,
-          ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
           idFileName,
           idMimeType,
           insuranceFileName,
           insuranceMimeType,
           insuranceCoverageChoice,
           protectionPlan: insuranceCoverageChoice === "no",
-          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+          ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
           signature: agreementSignature || null,
         };
         sessionStorage.setItem("slyRidesBooking", JSON.stringify(prBookingPayload));
@@ -2341,6 +1778,34 @@ stripeBtn.addEventListener("click", async () => {
             });
           } catch (idbErr) {
             console.warn("Could not save ID to IndexedDB:", idbErr);
+          }
+        }
+
+        // Upload booking docs server-side so the Stripe webhook can send the
+        // owner the full email (agreement PDF + ID + insurance) reliably,
+        // even if the customer's browser does not reach success.html.
+        if (pendingBookingId) {
+          try {
+            await Promise.race([
+              fetch(API_BASE + "/api/store-booking-docs", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  bookingId: pendingBookingId,
+                  signature: agreementSignature || null,
+                  idBase64: idBase64 || null,
+                  idFileName: idFileName || null,
+                  idMimeType: idMimeType || null,
+                  insuranceBase64: insuranceBase64 || null,
+                  insuranceFileName: insuranceFileName || null,
+                  insuranceMimeType: insuranceMimeType || null,
+                  insuranceCoverageChoice,
+                }),
+              }),
+              new Promise(resolve => setTimeout(resolve, 5000)),
+            ]);
+          } catch (e) {
+            console.warn("Could not upload booking docs:", e);
           }
         }
 
@@ -2400,6 +1865,7 @@ stripeBtn.addEventListener("click", async () => {
     if (payHint) payHint.style.display = "none";
 
     paymentElement.mount("#payment-element");
+    paymentForm.scrollIntoView({ behavior: "smooth", block: "start" });
 
     // Handle cancel — go back to booking form.
     // { once: true } is intentional: each "Pay Now" click registers a fresh cancel
@@ -2420,6 +1886,7 @@ stripeBtn.addEventListener("click", async () => {
       // (A fire-and-forget fetch here is cancelled by the browser redirect.)
       const bookingPayload = {
         vehicleId,
+        bookingId: pendingBookingId || null,
         car: carData.name,
         vehicleMake: carData.make || null,
         vehicleModel: carData.model || null,
@@ -2434,23 +1901,21 @@ stripeBtn.addEventListener("click", async () => {
         email,
         phone,
         total: displayPayNow,
-        // For Slingshot, fullRentalCost and balanceAtPickup are not applicable (full payment online).
-        fullRentalCost: carData.hourlyTiers ? null : (carData._fullRentalCost || totalEl.textContent),
-        balanceAtPickup: carData.hourlyTiers ? null : (carData._balanceAtPickup || null),
+        fullRentalCost: (carData._fullRentalCost || totalEl.textContent),
+        balanceAtPickup: (carData._balanceAtPickup || null),
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
         pricePerBiWeekly: carData.biweekly || null,
         pricePerMonthly: carData.monthly || null,
         deposit: carData.deposit || 0,
         days: currentDayCount,
-        ...(carData.hourlyTiers ? { slingshotDuration: currentSlingshotDuration } : {}),
         idFileName,
         idMimeType,
         insuranceFileName,
         insuranceMimeType,
         insuranceCoverageChoice,
         protectionPlan: insuranceCoverageChoice === "no",
-        ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+        ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         signature: agreementSignature || null,
       };
       // Store booking metadata in sessionStorage and the large ID binary in
@@ -2470,6 +1935,34 @@ stripeBtn.addEventListener("click", async () => {
           } catch (idbErr) { db.close(); }
         };
         idbReq.onerror = () => {};
+      }
+
+      // Upload booking docs server-side so the Stripe webhook can send the
+      // owner the full email (agreement PDF + ID + insurance) reliably,
+      // even if the customer's browser does not reach success.html.
+      if (pendingBookingId) {
+        try {
+          await Promise.race([
+            fetch(API_BASE + "/api/store-booking-docs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bookingId: pendingBookingId,
+                signature: agreementSignature || null,
+                idBase64: idBase64 || null,
+                idFileName: idFileName || null,
+                idMimeType: idMimeType || null,
+                insuranceBase64: insuranceBase64 || null,
+                insuranceFileName: insuranceFileName || null,
+                insuranceMimeType: insuranceMimeType || null,
+                insuranceCoverageChoice,
+              }),
+            }),
+            new Promise(resolve => setTimeout(resolve, 5000)),
+          ]);
+        } catch (docsErr) {
+          console.warn("store-booking-docs: non-critical upload failed:", docsErr);
+        }
       }
 
       const { error } = await stripe.confirmPayment({
@@ -2493,7 +1986,7 @@ stripeBtn.addEventListener("click", async () => {
           ...bookingPayload,
           paymentFailed: true,
           insuranceCoverageChoice,
-          ...(!carData.hourlyTiers && insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
+          ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         }));
         msgEl.textContent = error.message;
         submitBtn.disabled = false;
@@ -2516,7 +2009,6 @@ stripeBtn.addEventListener("click", async () => {
       document.getElementById("payment-form").style.display = "none";
       document.getElementById("payment-message").textContent = "";
       stripeBtn.style.display = "";
-      // Restore the correct button text for Slingshot vs Camry
       stripeBtn.textContent = window.slyI18n.t("booking.payNow");
       const _reserveBtnCancel = document.getElementById("reserveBtn");
       if (_reserveBtnCancel) _reserveBtnCancel.disabled = false;
@@ -2534,7 +2026,7 @@ stripeBtn.addEventListener("click", async () => {
     _pendingPaymentMode = null;
     if (err.isDatesError) {
       // Dates were booked by someone else — refresh the calendar and tell the user
-      alert(err.message);
+      showPayError(err.message);
       initDatePickers(); // reload availability so the calendar reflects the new booking
       return;
     }
@@ -2548,7 +2040,7 @@ stripeBtn.addEventListener("click", async () => {
     const userMessage = isSetupError
       ? "Payment setup error:\n\n" + err.message
       : window.slyI18n.t("booking.loadError");
-    alert(userMessage);
+    showPayError(userMessage);
   }
 });
 
