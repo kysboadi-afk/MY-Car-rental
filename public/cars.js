@@ -64,7 +64,6 @@ function buildEconomyCard(v, pricing) {
   return `<div class="car-card" data-category="economy" data-vehicle="${vid}">
     <img src="${img}" alt="${name}" loading="lazy">
     <div class="car-info">
-      <span class="status-badge available" id="status-badge-${vid}" data-i18n="fleet.available">● ${t("fleet.available", "Available")}</span>
       <h3>${name}</h3>
       <p class="car-subtitle" data-i18n="fleet.sedan5seater">${subtitle}</p>
       <div class="rideshare-badges">
@@ -141,23 +140,15 @@ function applyFleetStatus(fleetStatus) {
     const vid = card.dataset.vehicle;
     if (!vid) return;
 
-    const badge = document.getElementById("status-badge-" + vid);
-    const btn   = document.getElementById("select-btn-" + vid);
-    const link  = document.getElementById("select-link-" + vid);
-    if (!badge || !btn || !link) return;
+    const btn  = document.getElementById("select-btn-" + vid);
+    const link = document.getElementById("select-link-" + vid);
+    if (!btn || !link) return;
 
     const status    = fleetStatus[vid];
     const available = status ? status.available !== false : true;
 
-    card.querySelector(".available-today-badge")?.remove();
-    card.querySelector(".next-available-badge")?.remove();
-
     if (available) {
       const i18nKey = originalBtnI18nKey[vid] || "fleet.bookNow";
-      badge.setAttribute("data-i18n", "fleet.available");
-      badge.textContent = i18n.t("fleet.available");
-      badge.className   = "status-badge available";
-
       btn.setAttribute("data-i18n", i18nKey);
       btn.textContent = i18n.t(i18nKey);
       btn.disabled = false;
@@ -165,32 +156,8 @@ function applyFleetStatus(fleetStatus) {
       btn.classList.remove("btn-booked");
       link.style.pointerEvents = "";
       link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
-
-      const todayBadge = document.createElement("span");
-      todayBadge.className = "available-today-badge";
-      todayBadge.setAttribute("data-i18n", "fleet.availableToday");
-      todayBadge.textContent = i18n.t("fleet.availableToday");
-      badge.insertAdjacentElement("afterend", todayBadge);
     } else {
       const isReserved = status && status.rental_status === "reserved";
-      const badgeKey = isReserved ? "fleet.pendingPickup" : "fleet.currentlyBooked";
-      badge.setAttribute("data-i18n", badgeKey);
-      badge.textContent = i18n.t(badgeKey);
-      badge.className   = "status-badge unavailable booked";
-
-      // Prefer available_at (timestamp with time) when available;
-      // fall back to the date-only next_available_display string.
-      const nextAvailDisplay = status
-        ? (SlyLA.formatTimestamp(status.available_at) || status.next_available_display || null)
-        : null;
-      if (nextAvailDisplay) {
-        const nextBadge = document.createElement("span");
-        nextBadge.className = "next-available-badge";
-        const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
-        nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
-        badge.insertAdjacentElement("afterend", nextBadge);
-      }
-
       if (isReserved) {
         btn.setAttribute("data-i18n", "fleet.completeBooking");
         btn.textContent = i18n.t("fleet.completeBooking") || "✅ Complete Booking";
