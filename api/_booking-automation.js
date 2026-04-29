@@ -145,7 +145,9 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
   }
 
   try {
-    const bookingRef = String(booking.bookingId || "").trim();
+    // Prefer explicit booking_ref when provided (rental_extension callers set
+    // this alongside bookingId so the mapping is unambiguous).
+    const bookingRef = String(booking.booking_ref || booking.bookingId || "").trim();
     if (!bookingRef) {
       throw new Error("missing bookingId for revenue record");
     }

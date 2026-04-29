@@ -1191,11 +1191,59 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
   }
 
   if (!booking_id) {
-    console.warn("[processStripePayment] booking_id not resolved — revenue not recorded", {
-      paymentIntentId: paymentIntent.id,
-      type:            type || "<untyped>",
-    });
-    return;
+    // Recovery: for new-booking payment types, attempt to create the booking via
+    // the full pipeline before giving up.  This guards against timing windows
+    // where processStripePayment fires before the primary persistence path has
+    // written the booking row.  saveWebhookBookingRecord / persistBooking are
+    // idempotent (deduplicate by paymentIntentId), so this is a safe no-op when
+    // the booking already exists.
+    const isNewBookingType =
+      !type || type === "full_payment" || type === "reservation_deposit";
+    if (isNewBookingType) {
+      console.warn("[processStripePayment] booking_id not resolved — attempting auto-create via saveWebhookBookingRecord", {
+        paymentIntentId: paymentIntent.id,
+        type: type || "<untyped>",
+      });
+      try {
+        await saveWebhookBookingRecord(paymentIntent);
+        // Retry booking lookup after creation.
+        const recRef =
+          paymentIntent.metadata?.booking_id ||
+          paymentIntent.metadata?.booking_ref ||
+          paymentIntent.metadata?.original_booking_id;
+        if (recRef) booking_id = (await resolveBookingId(recRef)) || recRef;
+        if (!booking_id) {
+          try {
+            const supabaseClient = getSupabaseAdmin();
+            if (supabaseClient) {
+              const { data: bookingRow } = await supabaseClient
+                .from("bookings")
+                .select("booking_ref")
+                .eq("payment_intent_id", paymentIntent.id)
+                .maybeSingle();
+              if (bookingRow?.booking_ref) booking_id = bookingRow.booking_ref;
+            }
+          } catch (fbRecErr) {
+            console.warn("[processStripePayment] retry PI-ID fallback failed:", fbRecErr.message);
+          }
+        }
+      } catch (recErr) {
+        console.error("[processStripePayment] auto-create booking failed:", recErr.message, {
+          paymentIntentId: paymentIntent.id,
+          type: type || "<untyped>",
+          vehicle_id: paymentIntent.metadata?.vehicle_id || "<missing>",
+          booking_id: paymentIntent.metadata?.booking_id || "<missing>",
+        });
+      }
+    }
+
+    if (!booking_id) {
+      console.error("[processStripePayment] booking_id not resolved after recovery — revenue not recorded", {
+        paymentIntentId: paymentIntent.id,
+        type:            type || "<untyped>",
+      });
+      return;
+    }
   }
 
   // Step 3 — ALWAYS record revenue.
@@ -1880,9 +1928,10 @@ export default async function handler(req, res) {
                   sbRow.customer_email || renter_email || "",
                 );
                 await autoCreateRevenueRecord({
+                  booking_ref:     resolvedBookingId,
                   bookingId:       resolvedBookingId,
                   paymentIntentId: paymentIntent.id,
-                  vehicleId:       vehicle_id,
+                  vehicleId:       sbRow.vehicle_id || vehicle_id,
                   customerId:      fallbackCustomerId,
                   name:            sbRow.customer_name || renter_name || "",
                   phone:           sbRow.customer_phone || "",
@@ -1952,9 +2001,10 @@ export default async function handler(req, res) {
                 updatedBooking.email || renter_email || "",
               );
               await autoCreateRevenueRecord({
+                booking_ref:     resolvedBookingId,
                 bookingId:       resolvedBookingId,
                 paymentIntentId: paymentIntent.id,
-                vehicleId:       vehicle_id,
+                vehicleId:       updatedBooking.vehicleId || vehicle_id,
                 customerId:      extCustomerId,
                 name:            updatedBooking.name || renter_name || "",
                 phone:           updatedBooking.phone || "",
@@ -2024,11 +2074,18 @@ export default async function handler(req, res) {
             return res.status(200).json({ received: true });
           }
 
-          // Sync updated booking to Supabase.
+          // Sync updated booking to Supabase.  Fatal: if the return_date update
+          // does not reach Supabase, do NOT insert revenue — return 500 so Stripe
+          // retries.  On the next delivery the booking will be in alreadyApplied
+          // state and revenue recovery will be attempted idempotently.
           try {
-            await autoUpsertBooking(updatedBooking);
+            await autoUpsertBooking(updatedBooking, { strict: true });
           } catch (syncErr) {
-            console.error("stripe-webhook: Supabase extension sync error (non-fatal):", syncErr.message);
+            console.error("stripe-webhook: Supabase extension booking sync failed — blocking revenue insertion to prevent detached extension:", syncErr.message);
+            return res.status(500).json({
+              received: false,
+              error: `extension booking sync failed for ${paymentIntent.id}`,
+            });
           }
 
           // Clear extension-pending fields in Supabase now that payment succeeded.
@@ -2097,9 +2154,10 @@ export default async function handler(req, res) {
             );
 
             await autoCreateRevenueRecord({
+              booking_ref:     resolvedBookingId,
               bookingId:       resolvedBookingId,
               paymentIntentId: paymentIntent.id,
-              vehicleId:       vehicle_id,
+              vehicleId:       updatedBooking.vehicleId || vehicle_id,
               customerId:      extCustomerId,
               name:            updatedBooking.name || renter_name || "",
               phone:           updatedBooking.phone || "",
@@ -2235,13 +2293,19 @@ export default async function handler(req, res) {
       // time — it has never been written to Supabase yet (create-payment-intent
       // only embeds the ID in PI metadata), so resolveBookingId would always
       // return null (not-found).  Use the booking_id from metadata directly;
-      // autoUpsertBooking below will INSERT the row into Supabase.
-      if (!bookingRef) {
-        console.error("[BOOKING_RESOLVE_FAILED]", {
-          bookingRef: "<missing>",
+      // persistBooking below will INSERT the row into Supabase via the pipeline.
+      // Guard: all required booking fields must be present.
+      // A reservation_deposit without vehicle_id / dates cannot produce a valid
+      // booking row and must never reach the persistence or revenue steps.
+      if (!bookingRef || !vehicle_id || !pickup_date || !return_date) {
+        console.error("[BOOKING_MISSING_REQUIRED_FIELDS]", {
+          bookingRef:  bookingRef  || "<missing>",
+          vehicleId:   vehicle_id  || "<missing>",
+          pickupDate:  pickup_date || "<missing>",
+          returnDate:  return_date || "<missing>",
           paymentIntentId: paymentIntent.id,
         });
-        return res.status(200).json({ received: true });
+        return res.status(500).json({ received: false, error: "reservation_deposit missing required booking fields" });
       }
       const resolvedBookingId = bookingRef;
 
@@ -2378,42 +2442,43 @@ export default async function handler(req, res) {
         console.error("stripe-webhook: reservation_deposit balance SMS failed:", smsErr.message);
       }
 
-      // ── Step 2: Persist booking to Supabase ───────────────────────────────
+      // ── Step 2+3: Persist booking through unified pipeline ───────────────────
       // Runs AFTER all notifications so DB failures never silence owner/renter alerts.
+      // Uses persistBooking() — identical to the full_payment path — which runs:
+      //   customer upsert → booking upsert → revenue record → blocked_dates
+      // and deduplicates by paymentIntentId so re-runs (Stripe retries) are safe.
+      // autoUpsertBooking must NOT be called directly here; going through
+      // persistBooking() guarantees the canonical order and customer row creation.
       try {
-        await autoUpsertBooking(bookingForSync, { strict: true });
-      } catch (syncErr) {
-        console.error("stripe-webhook: reservation_deposit booking sync failed:", syncErr.message);
-        return res.status(500).json({ received: false, error: `reservation deposit booking sync failed for ${paymentIntent.id}` });
-      }
-
-      // ── Step 3: Create revenue record ─────────────────────────────────────
-      try {
-        const customerId = await resolveCustomerIdFromSupabase(
-          bookingForSync.phone || "",
-          bookingForSync.email || "",
-        );
-        await autoCreateRevenueRecord({
-          bookingId: resolvedBookingId,
-          paymentIntentId: paymentIntent.id,
-          vehicleId: bookingForSync.vehicleId,
-          customerId,
-          name: bookingForSync.name,
-          phone: bookingForSync.phone,
-          email: bookingForSync.email,
-          pickupDate: bookingForSync.pickupDate,
-          returnDate: bookingForSync.returnDate,
-          amountPaid,
-          paymentMethod: "stripe",
-          type: "reservation_deposit",
-          ...depositFeeFields,
-        }, {
-          strict: true,
+        await persistBooking({
+          bookingId:        resolvedBookingId,
+          vehicleId:        bookingForSync.vehicleId,
+          vehicleName:      bookingForSync.vehicleName,
+          name:             bookingForSync.name,
+          phone:            bookingForSync.phone,
+          email:            bookingForSync.email,
+          pickupDate:       bookingForSync.pickupDate,
+          pickupTime:       bookingForSync.pickupTime,
+          returnDate:       bookingForSync.returnDate,
+          returnTime:       bookingForSync.returnTime,
+          amountPaid:       bookingForSync.amountPaid,
+          totalPrice:       bookingForSync.totalPrice,
+          paymentIntentId:  bookingForSync.paymentIntentId,
+          status:           "reserved",
+          paymentStatus:    "partial",
+          type:             "reservation_deposit",
+          paymentMethod:    "stripe",
+          source:           "stripe_webhook",
+          strictPersistence: true,
+          // requireStripeFee: false — Stripe fee fields are resolved separately via
+          // depositFeeFields (spread below) and may be null on transient API errors;
+          // stripe-reconcile.js backfills any missing fee data later.
           requireStripeFee: false,
+          ...depositFeeFields,
         });
-      } catch (revErr) {
-        console.error("stripe-webhook: reservation_deposit revenue error:", revErr.message);
-        return res.status(500).json({ received: false, error: `reservation deposit revenue persistence failed for ${paymentIntent.id}` });
+      } catch (persistErr) {
+        console.error("stripe-webhook: reservation_deposit persistBooking failed:", persistErr.message);
+        return res.status(500).json({ received: false, error: `reservation deposit booking persistence failed for ${paymentIntent.id}` });
       }
 
       // ── Step 4: Persist balance link and manage token ─────────────────────
