@@ -93,26 +93,9 @@ export async function loadBookings() {
  * @param {string|null} sha - current file sha (null when creating for first time)
  * @param {string} message  - commit message
  */
-export async function saveBookings(data, sha, message) {
-  if (!process.env.GITHUB_TOKEN) {
-    console.warn("_bookings: GITHUB_TOKEN not set — bookings.json will not be updated");
-    return;
-  }
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKINGS_PATH}`;
-  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content, branch: GITHUB_DATA_BRANCH };
-  if (sha) body.sha = sha;
-
-  const resp = await fetch(apiUrl, {
-    method:  "PUT",
-    headers: { ...ghHeaders(), "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`GitHub PUT bookings.json failed: ${resp.status} ${text}`);
-  }
+export async function saveBookings(_data, _sha, _message) {
+  // Phase 4: bookings.json writes disabled — Supabase is the only write source.
+  console.log("_bookings: saveBookings() called but writes are disabled (Phase 4)");
 }
 
 /**
@@ -120,93 +103,19 @@ export async function saveBookings(data, sha, message) {
  * @param {object} booking - booking record (must include vehicleId)
  * @returns {Promise<void>}
  */
-export async function appendBooking(booking) {
-  if (!process.env.GITHUB_TOKEN) {
-    console.warn("_bookings: GITHUB_TOKEN not set — booking will not be persisted");
-    return;
-  }
-  const vehicleId = booking.vehicleId;
-  await updateJsonFileWithRetry({
-    load:  loadBookings,
-    apply: (data) => {
-      if (!Array.isArray(data[vehicleId])) data[vehicleId] = [];
-      // Guard: don't duplicate by paymentIntentId
-      if (
-        booking.paymentIntentId &&
-        data[vehicleId].some((b) => b.paymentIntentId === booking.paymentIntentId)
-      ) {
-        console.log(`_bookings: booking ${booking.paymentIntentId} already exists — skipping`);
-        return;
-      }
-      data[vehicleId].push(booking);
-    },
-    save:    saveBookings,
-    message: `Add booking for ${vehicleId}: ${booking.name} (${booking.bookingId})`,
-  });
+export async function appendBooking(_booking) {
+  // Phase 4: bookings.json writes disabled — Supabase is the only write source.
+  console.log("_bookings: appendBooking() called but writes are disabled (Phase 4)");
 }
 
-/**
- * Update a specific booking record in place (matched by bookingId or paymentIntentId).
- * @param {string} vehicleId
- * @param {string} id - bookingId or paymentIntentId
- * @param {Partial<object>} updates - fields to merge
- * @returns {Promise<boolean>} true if found and updated
- */
-export async function updateBooking(vehicleId, id, updates) {
-  if (!process.env.GITHUB_TOKEN) {
-    console.warn("_bookings: GITHUB_TOKEN not set — booking update skipped");
-    return false;
-  }
-  let found = false;
-  try {
-    await updateJsonFileWithRetry({
-      load:  loadBookings,
-      apply: (data) => {
-        if (!Array.isArray(data[vehicleId])) return;
-        const idx = data[vehicleId].findIndex(
-          (b) => b.bookingId === id || b.paymentIntentId === id
-        );
-        if (idx === -1) return;
-        data[vehicleId][idx] = { ...data[vehicleId][idx], ...updates };
-        found = true;
-      },
-      save:    saveBookings,
-      message: `Update booking ${id} for ${vehicleId}: ${JSON.stringify(Object.keys(updates))}`,
-    });
-  } catch (err) {
-    console.error(`_bookings: updateBooking failed for ${id}:`, err);
-    return false;
-  }
-  return found;
+export async function updateBooking(_vehicleId, _id, _updates) {
+  // Phase 4: bookings.json writes disabled — Supabase is the only write source.
+  console.log("_bookings: updateBooking() called but writes are disabled (Phase 4)");
+  return false;
 }
 
-/**
- * Mark a reminder as sent by recording the current timestamp.
- * Non-fatal: logs on failure so the reminder is not re-sent unnecessarily.
- * @param {string} vehicleId
- * @param {string} id - bookingId or paymentIntentId
- * @param {string} reminderKey - e.g. "pickup_24h", "active_mid"
- */
-export async function markReminderSent(vehicleId, id, reminderKey) {
-  if (!process.env.GITHUB_TOKEN) return;
-  try {
-    await updateJsonFileWithRetry({
-      load:  loadBookings,
-      apply: (data) => {
-        if (!Array.isArray(data[vehicleId])) return;
-        const idx = data[vehicleId].findIndex(
-          (b) => b.bookingId === id || b.paymentIntentId === id
-        );
-        if (idx === -1) return;
-        if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
-        data[vehicleId][idx].smsSentAt[reminderKey] = new Date().toISOString();
-      },
-      save:    saveBookings,
-      message: `Mark reminder ${reminderKey} sent for booking ${id}`,
-    });
-  } catch (err) {
-    console.error(`_bookings: markReminderSent failed for ${id}/${reminderKey}:`, err);
-  }
+export async function markReminderSent(_vehicleId, _id, _reminderKey) {
+  // Phase 4: bookings.json writes disabled — Supabase is the only write source.
 }
 
 /**

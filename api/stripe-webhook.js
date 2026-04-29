@@ -58,114 +58,9 @@ const DEFAULT_RETURN_TIME_PG = parseTime12h(DEFAULT_RETURN_TIME);
  * time-aware overlap checks (hasDateTimeOverlap) work correctly for same-day
  * back-to-back bookings and same-day return/pickup windows.
  */
-async function blockBookedDates(vehicleId, from, to, fromTime = "", toTime = "") {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.warn("stripe-webhook: GITHUB_TOKEN not set — skipping date blocking");
-    return;
-  }
-  if (!vehicleId || !from || !to) return;
-
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadBookedDates() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      return { data: {}, sha: null }; // non-fatal: don't throw, keep existing dates
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-    } catch {
-      data = {};
-    }
-    return { data, sha: file.sha };
-  }
-
-  async function saveBookedDates(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-    }
-  }
-
-  await updateJsonFileWithRetry({
-    load:  loadBookedDates,
-    apply: (data) => {
-      if (!Array.isArray(data[vehicleId])) {
-        if (data[vehicleId] != null) {
-          console.warn(`stripe-webhook: booked-dates entry for ${vehicleId} is not an array; resetting`);
-        }
-        data[vehicleId] = [];
-      }
-      const originalCount = data[vehicleId].length;
-      const existing = data[vehicleId].filter((r) => r && r.from && r.to);
-      if (existing.length !== originalCount) {
-        console.warn(
-          `stripe-webhook: dropped ${originalCount - existing.length} malformed booked-dates entries for ${vehicleId}`
-        );
-      }
-
-      // Merge with any overlapping ranges so extension replays (same pickup date,
-      // later return date) replace the old window instead of being skipped.
-      // Times from the incoming range are carried through: if the incoming range
-      // starts earlier than an existing one, its fromTime wins; if it ends later,
-      // its toTime wins. When ranges share a boundary date the time from the
-      // earlier/later extreme is preserved.
-      let mergedFrom     = from;
-      let mergedTo       = to;
-      let mergedFromTime = fromTime || "";
-      let mergedToTime   = toTime   || "";
-      const kept = [];
-
-      for (const range of existing) {
-        // ISO dates (YYYY-MM-DD) compare correctly with lexicographic operators.
-        const overlaps = mergedFrom <= range.to && range.from <= mergedTo;
-        if (overlaps) {
-          if (range.from < mergedFrom) {
-            mergedFrom     = range.from;
-            mergedFromTime = range.fromTime || "";
-          } else if (range.from === mergedFrom && !mergedFromTime) {
-            mergedFromTime = range.fromTime || "";
-          }
-          if (range.to > mergedTo) {
-            mergedTo     = range.to;
-            mergedToTime = range.toTime || "";
-          } else if (range.to === mergedTo && !mergedToTime) {
-            mergedToTime = range.toTime || "";
-          }
-        } else {
-          kept.push(range);
-        }
-      }
-
-      // Build the merged entry — only include time fields when they are non-empty
-      // so legacy readers that don't understand time fields are unaffected.
-      const entry = { from: mergedFrom, to: mergedTo };
-      if (mergedFromTime) entry.fromTime = mergedFromTime;
-      if (mergedToTime)   entry.toTime   = mergedToTime;
-      kept.push(entry);
-      kept.sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
-      data[vehicleId] = kept;
-    },
-    save:    saveBookedDates,
-    message: `Block dates for ${vehicleId}: ${from}${fromTime ? " " + fromTime : ""} to ${to}${toTime ? " " + toTime : ""} (webhook)`,
-  });
+async function blockBookedDates(_vehicleId, _from, _to, _fromTime = "", _toTime = "") {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("stripe-webhook: blockBookedDates() called but writes are disabled (Phase 4)");
 }
 
 /**
@@ -2718,58 +2613,8 @@ export default async function handler(req, res) {
           return res.status(200).json({ received: true });
         }
 
-        // Update booked-dates.json
-        try {
-          const bookingChangeFeeDateUpdate = async () => {
-            const token = process.env.GITHUB_TOKEN;
-            if (!token) return;
-            const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-            const ghhdrs = {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-            };
-            await updateJsonFileWithRetry({
-              load: async () => {
-                const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghhdrs });
-                if (!resp.ok) return { data: {}, sha: null };
-                const file = await resp.json();
-                let data = {};
-                try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); } catch { /* ignore */ }
-                return { data, sha: file.sha };
-              },
-              apply: (data) => {
-                if (!Array.isArray(data[pendingUiVehicleId])) data[pendingUiVehicleId] = [];
-                data[pendingUiVehicleId] = data[pendingUiVehicleId].filter(
-                  (r) => !(r.from === bkRow.pickup_date && r.to === bkRow.return_date)
-                );
-                const entry = { from: newPickupDate, to: newReturnDate };
-                if (newPickupTime) entry.fromTime = newPickupTime;
-                if (newReturnTime) entry.toTime   = newReturnTime;
-                data[pendingUiVehicleId].push(entry);
-                data[pendingUiVehicleId].sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
-              },
-              save: async (data, sha, message) => {
-                const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-                const body = { message, content, branch: GITHUB_DATA_BRANCH };
-                if (sha) body.sha = sha;
-                const resp = await fetch(apiUrl, {
-                  method: "PUT",
-                  headers: { ...ghhdrs, "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-                if (!resp.ok) {
-                  const text = await resp.text().catch(() => "");
-                  throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-                }
-              },
-              message: `booking_change_fee: update dates for ${pendingUiVehicleId}: ${bkRow.pickup_date}→${bkRow.return_date} replaced by ${newPickupDate}→${newReturnDate}`,
-            });
-          };
-          await bookingChangeFeeDateUpdate();
-        } catch (dateErr) {
-          console.error("stripe-webhook: booking_change_fee booked-dates update error (non-fatal):", dateErr.message);
-        }
+        // Update booked-dates.json — disabled (Phase 4: Supabase is the only write source)
+        // try { await bookingChangeFeeDateUpdate(); }
 
         // Update bookings.json
         try {

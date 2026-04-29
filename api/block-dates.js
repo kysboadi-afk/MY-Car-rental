@@ -46,10 +46,7 @@ export default async function handler(req, res) {
   }
 
   // Guard: GITHUB_TOKEN must be configured to write the file
-  if (!process.env.GITHUB_TOKEN) {
-    console.error("GITHUB_TOKEN environment variable is not set");
-    return res.status(500).json({ error: "Server configuration error: GITHUB_TOKEN is not set." });
-  }
+  // (Phase 4: JSON write disabled, guard kept for compatibility but no longer blocks)
 
   const { secret, vehicleId, from, to } = req.body || {};
 
@@ -73,69 +70,15 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "from must not be after to" });
   }
 
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const ghHeaders = {
-    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadBookedDates() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-      if (typeof data !== "object" || Array.isArray(data)) data = {};
-    } catch { data = {}; }
-    return { data, sha: file.sha };
-  }
-
-  async function saveBookedDates(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method: "PUT",
-      headers: { ...ghHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-    }
-  }
-
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  // The JSON load/save infrastructure is removed; Supabase is written directly.
   try {
     let added = 0;
-    await updateJsonFileWithRetry({
-      load:    loadBookedDates,
-      apply:   (data) => {
-        if (!data[vehicleId]) data[vehicleId] = [];
-        if (!hasOverlap(data[vehicleId], from, to)) {
-          data[vehicleId].push({ from, to });
-          added = 1;
-        } else {
-          added = 0;
-        }
-      },
-      save:    saveBookedDates,
-      message: `Block dates for ${vehicleId}: ${from} to ${to}`,
-    });
-
-    // Also sync to Supabase blocked_dates table so both stores stay consistent.
-    // Non-fatal — a Supabase failure must not prevent the GitHub write from succeeding.
-    if (added > 0) {
-      try {
-        await autoCreateBlockedDate(vehicleId, from, to, "manual");
-      } catch (sbErr) {
-        console.warn("block-dates: Supabase sync failed (non-fatal):", sbErr.message);
-      }
+    try {
+      await autoCreateBlockedDate(vehicleId, from, to, "manual");
+      added = 1;
+    } catch (sbErr) {
+      console.warn("block-dates: Supabase sync failed (non-fatal):", sbErr.message);
     }
 
     return res.status(200).json({ success: true, added });

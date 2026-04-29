@@ -2425,48 +2425,14 @@ async function toolBlockDates({ vehicleId, from, to }) {
   if (!from || !ISO_DATE_PATTERN.test(from)) throw new Error("from must be in YYYY-MM-DD format");
   if (!to   || !ISO_DATE_PATTERN.test(to))   throw new Error("to must be in YYYY-MM-DD format");
   if (from > to) throw new Error("from must not be after to");
-  if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
+  // Phase 4: GITHUB_TOKEN no longer required — booked-dates.json writes are disabled.
 
-  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const ghHdrs  = {
-    Authorization:          `Bearer ${process.env.GITHUB_TOKEN}`,
-    Accept:                 "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  async function loadBD() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHdrs });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); if (typeof data !== "object" || Array.isArray(data)) data = {}; } catch { data = {}; }
-    return { data, sha: file.sha };
-  }
-  async function saveBD(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...ghHdrs, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!resp.ok) throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status}`);
-  }
-
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
   let added = 0;
-  await updateJsonFileWithRetry({
-    load:    loadBD,
-    apply:   (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      if (!hasOverlap(data[vehicleId], from, to)) { data[vehicleId].push({ from, to }); added = 1; } else { added = 0; }
-    },
-    save:    saveBD,
-    message: `Block dates for ${vehicleId}: ${from} to ${to}`,
-  });
-
-  if (added > 0) {
-    try { await autoCreateBlockedDate(vehicleId, from, to, "manual"); }
-    catch (sbErr) { console.warn("toolBlockDates: Supabase sync failed (non-fatal):", sbErr.message); }
-  }
+  try {
+    await autoCreateBlockedDate(vehicleId, from, to, "manual");
+    added = 1;
+  } catch (sbErr) { console.warn("toolBlockDates: Supabase sync failed (non-fatal):", sbErr.message); }
 
   return {
     success:  true,
@@ -2482,58 +2448,22 @@ async function toolOpenDates({ vehicleId, from, to }) {
   if (!from || !ISO_DATE_PATTERN.test(from)) throw new Error("from must be in YYYY-MM-DD format");
   if (!to   || !ISO_DATE_PATTERN.test(to))   throw new Error("to must be in YYYY-MM-DD format");
   if (from > to) throw new Error("from must not be after to");
-  if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
+  // Phase 4: GITHUB_TOKEN no longer required — booked-dates.json writes are disabled.
 
-  const apiUrl  = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const ghHdrs  = {
-    Authorization:          `Bearer ${process.env.GITHUB_TOKEN}`,
-    Accept:                 "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  async function loadBD() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHdrs });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try { data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8")); if (typeof data !== "object" || Array.isArray(data)) data = {}; } catch { data = {}; }
-    return { data, sha: file.sha };
-  }
-  async function saveBD(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, { method: "PUT", headers: { ...ghHdrs, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!resp.ok) throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status}`);
-  }
-
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
   let removed = 0;
-  await updateJsonFileWithRetry({
-    load:  loadBD,
-    apply: (data) => {
-      const before = (data[vehicleId] || []).length;
-      data[vehicleId] = (data[vehicleId] || []).filter((r) => !(r.from <= to && r.to >= from));
-      removed = before - data[vehicleId].length;
-    },
-    save:    saveBD,
-    message: `Open dates for ${vehicleId}: ${from} to ${to}`,
-  });
-
-  if (removed > 0) {
-    try {
-      const sb = getSupabaseAdmin();
-      if (sb) {
-        await sb
-          .from("blocked_dates")
-          .delete()
-          .eq("vehicle_id", vehicleId)
-          .lte("start_date", to)
-          .gte("end_date", from);
-      }
-    } catch (sbErr) { console.warn("toolOpenDates: Supabase sync failed (non-fatal):", sbErr.message); }
-  }
+  try {
+    const sb = getSupabaseAdmin();
+    if (sb) {
+      await sb
+        .from("blocked_dates")
+        .delete()
+        .eq("vehicle_id", vehicleId)
+        .lte("start_date", to)
+        .gte("end_date", from);
+      removed = 1;
+    }
+  } catch (sbErr) { console.warn("toolOpenDates: Supabase sync failed (non-fatal):", sbErr.message); }
 
   return {
     success:  true,
@@ -2871,57 +2801,9 @@ const BUSINESS_TZ        = "America/Los_Angeles";
  * Block a date range in booked-dates.json for the given vehicle.
  * Used by toolCreateManualBooking to mark calendar dates unavailable.
  */
-async function blockBookedDatesForManualBooking(vehicleId, from, to) {
-  const token = process.env.GITHUB_TOKEN;
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const ghHeaders = {
-    Authorization:          `Bearer ${token}`,
-    Accept:                 "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadBookedDates() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-      if (typeof data !== "object" || Array.isArray(data)) data = {};
-    } catch { data = {}; }
-    return { data, sha: file.sha };
-  }
-
-  async function saveBookedDates(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method:  "PUT",
-      headers: { ...ghHeaders, "Content-Type": "application/json" },
-      body:    JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-    }
-  }
-
-  await updateJsonFileWithRetry({
-    load:    loadBookedDates,
-    apply:   (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      if (!hasOverlap(data[vehicleId], from, to)) {
-        data[vehicleId].push({ from, to });
-      }
-    },
-    save:    saveBookedDates,
-    message: `Block dates for ${vehicleId}: ${from} to ${to} (manual booking via admin AI)`,
-  });
+async function blockBookedDatesForManualBooking(_vehicleId, _from, _to) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("_admin-actions: blockBookedDatesForManualBooking() called but writes are disabled (Phase 4)");
 }
 
 function normalizeCurrency(value) {
@@ -3108,9 +2990,7 @@ async function toolCreateManualBooking({
     throw new Error("returnTime is required and must be a valid time (e.g. 5:00 PM or 08:00).");
   }
 
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error("GITHUB_TOKEN is not configured — cannot update booked-dates.json.");
-  }
+  // Phase 4: GITHUB_TOKEN no longer required — booked-dates.json writes are disabled.
 
   // Use the real Stripe Payment Intent ID when the customer paid on the website,
   // or generate a synthetic identifier for cash/phone bookings.
