@@ -78,14 +78,6 @@ function buildEconomyCard(v, pricing) {
         <div class="price-item">${biweekly} / <span data-i18n="fleet.unitBiweek">${t("fleet.unitBiweek", "2 weeks")}</span></div>
         <div class="price-item">${monthly} / <span data-i18n="fleet.unitMonth">${t("fleet.unitMonth", "month")}</span> <span class="best-value-tag" data-i18n="fleet.bestValue">${t("fleet.bestValue", "Best Value")}</span></div>
       </div>
-      <div class="earnings-breakdown">
-        <p class="earnings-breakdown-title" data-i18n="fleet.driverEarnings">${t("fleet.driverEarnings", "💰 Driver Earnings Example (Los Angeles)")}</p>
-        <ul class="earnings-breakdown-list">
-          <li><span data-i18n="fleet.earningsLi1">${t("fleet.earningsLi1", "Avg. weekly Uber/Lyft earnings:")}</span> <strong>$1,200 – $1,600</strong></li>
-          <li><span data-i18n="fleet.earningsLi2">${t("fleet.earningsLi2", "Weekly rental:")}</span> <strong>${weekly}</strong></li>
-          <li><span data-i18n="fleet.earningsLi3">${t("fleet.earningsLi3", "Est. driver take-home:")}</span> <strong>$850 – $1,250</strong></li>
-        </ul>
-      </div>
       ${scarcity}
       <a href="car.html?vehicle=${vid}" class="select-link" id="select-link-${vid}">
         <button class="select-btn" id="select-btn-${vid}" data-i18n="fleet.bookNow">${t("fleet.bookNow", "Book Now")}</button>
