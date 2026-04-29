@@ -331,12 +331,12 @@ Ask for any fields that were not already provided. Collect all of the following 
 Generate the vehicle_id as: **model + year** — lowercase letters and digits only, no spaces or separators.
 
 Examples:
-- Toyota Camry 2014 → `camry2014`
-- Honda Civic 2019 → `civic2019`
-- Ford F-150 2022 → `f1502022`
-- Nissan Altima 2016 → `altima2016`
+- Toyota Camry 2014 → \`camry2014\`
+- Honda Civic 2019 → \`civic2019\`
+- Ford F-150 2022 → \`f1502022\`
+- Nissan Altima 2016 → \`altima2016\`
 
-If the generated ID would conflict with an existing vehicle (check via get_vehicles), append a short suffix (e.g. `camry2014b`).
+If the generated ID would conflict with an existing vehicle (check via get_vehicles), append a short suffix (e.g. \`camry2014b\`).
 
 ### Step 3 — Show confirmation summary
 
@@ -349,7 +349,7 @@ ALWAYS show this full summary before calling create_vehicle and ask for approval
 - Name: [vehicle name]
 - Year / Make / Model: [year] [make] [model]
 - Color: [color or "Not specified"]
-- Vehicle ID: `[vehicle_id]`
+- Vehicle ID: \`[vehicle_id]\`
 
 **Stripe Metadata** *(attached to every payment)*
 \`\`\`json
@@ -385,30 +385,30 @@ Shall I create this vehicle now?
 
 ### Step 4 — Call create_vehicle with confirmed: true
 
-Only call `create_vehicle` after the admin says yes. Pass:
-- `vehicle_id` — the generated slug (e.g. `camry2014`)
-- `name` — the full display name
-- `type` — always `"car"`
-- `price_per_day` — daily rate
-- `weekly_rate` — weekly rate (if provided)
-- `deposit` — deposit amount (if provided)
-- `purchase_price` — acquisition cost
-- `purchase_date` — YYYY-MM-DD
-- `bouncie_device_id` — IMEI (if provided)
-- `confirmed: true`
+Only call \`create_vehicle\` after the admin says yes. Pass:
+- \`vehicle_id\` — the generated slug (e.g. \`camry2014\`)
+- \`name\` — the full display name
+- \`type\` — always \`"car"\`
+- \`price_per_day\` — daily rate
+- \`weekly_rate\` — weekly rate (if provided)
+- \`deposit\` — deposit amount (if provided)
+- \`purchase_price\` — acquisition cost
+- \`purchase_date\` — YYYY-MM-DD
+- \`bouncie_device_id\` — IMEI (if provided)
+- \`confirmed: true\`
 
 ### Step 5 — Post-creation verification
 
 After create_vehicle succeeds:
 
-1. Call `get_vehicles` to confirm the new vehicle appears in the fleet list.
+1. Call \`get_vehicles\` to confirm the new vehicle appears in the fleet list.
 2. Report the integration status:
 
 ---
-**✅ Vehicle [vehicle name] (`[vehicle_id]`) is now live.**
+**✅ Vehicle [vehicle name] (\`[vehicle_id]\`) is now live.**
 
 **System Integration Status**
-- ✅ Fleet record created — vehicle_id: `[vehicle_id]`
+- ✅ Fleet record created — vehicle_id: \`[vehicle_id]\`
 - ✅ Pricing stored — $[daily]/day[, $[weekly]/week] [, deposit: $[deposit]]
 - ✅ Dashboard — vehicle now visible in admin fleet view
 - ✅ Stripe metadata — vehicle_id + vehicle_name will attach to all future payments
@@ -420,13 +420,13 @@ After create_vehicle succeeds:
 1. Go to the Cars page and book this vehicle for a short date range
 2. Complete Stripe payment (use a test card if in test mode)
 3. Confirm:
-   - ✅ Payment succeeds and Stripe metadata includes `vehicle_id` = `[vehicle_id]`
+   - ✅ Payment succeeds and Stripe metadata includes \`vehicle_id\` = \`[vehicle_id]\`
    - ✅ Confirmation email sent to renter and owner
    - ✅ SMS notifications sent with correct vehicle name
    - ✅ Rental agreement PDF generated with correct vehicle name
    - ✅ Booking appears in dashboard with correct vehicle
-   - ✅ Calendar shows dates as blocked for `[vehicle_id]`
-   - ✅ Revenue recorded under `[vehicle_id]`
+   - ✅ Calendar shows dates as blocked for \`[vehicle_id]\`
+   - ✅ Revenue recorded under \`[vehicle_id]\`
 
 ---
 
