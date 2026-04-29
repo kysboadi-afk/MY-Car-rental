@@ -215,7 +215,10 @@ async function loadFleetStatus() {
 async function loadFleet() {
   const grid = document.getElementById("car-grid");
   if (!grid) return;
-  showLoadingState(grid);
+
+  // Only show loading spinner if no static cards are already present
+  const hasStaticCards = grid.querySelector(".car-card");
+  if (!hasStaticCards) showLoadingState(grid);
 
   let vehicles = [];
   let pricing  = null;
@@ -231,10 +234,16 @@ async function loadFleet() {
     console.warn("Could not load fleet data:", err);
   }
 
-  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => !v.status || v.status === "active");
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v =>
+    (!v.status || v.status === "active") && (v.type || "").toLowerCase() !== "slingshot"
+  );
 
+  // Only replace the grid if the API returned valid vehicles.
+  // If the API failed or returned nothing, keep any static cards already in the HTML.
   if (!active.length) {
-    grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles available at this time. Please check back soon.")}</p>`;
+    if (!grid.querySelector(".car-card")) {
+      grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles available at this time. Please check back soon.")}</p>`;
+    }
     return;
   }
 
