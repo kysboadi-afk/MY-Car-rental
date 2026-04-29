@@ -319,20 +319,9 @@ async function loadBookedDates() {
   return { data, sha: fileData.sha };
 }
 
-async function saveBookedDates(data, sha, message) {
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content, branch: GITHUB_DATA_BRANCH };
-  if (sha) body.sha = sha;
-  const resp = await fetch(apiUrl, {
-    method:  "PUT",
-    headers: { ...ghHeaders(), "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-  }
+async function saveBookedDates(_data, _sha, _message) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("scheduled-reminders: saveBookedDates() called but writes are disabled (Phase 4)");
 }
 
 /**
@@ -1379,36 +1368,8 @@ async function processCompleted(allBookings, now, sentMarks) {
  * Persist all reminder sent-marks back to bookings.json.
  * Uses updateJsonFileWithRetry so stale-SHA conflicts are retried automatically.
  */
-async function persistSentMarks(sentMarks) {
-  if (sentMarks.length === 0) return;
-  if (!process.env.GITHUB_TOKEN) return;
-
-  try {
-    await updateJsonFileWithRetry({
-      load:  loadBookings,
-      apply: (data) => {
-        for (const mark of sentMarks) {
-          const { vehicleId, id, key, value } = mark;
-          if (!Array.isArray(data[vehicleId])) continue;
-          const idx = data[vehicleId].findIndex(
-            (b) => b.bookingId === id || b.paymentIntentId === id
-          );
-          if (idx === -1) continue;
-
-          if (key === "_late_fee_amount") {
-            data[vehicleId][idx].lateFeeApplied = value;
-          } else {
-            if (!data[vehicleId][idx].smsSentAt) data[vehicleId][idx].smsSentAt = {};
-            data[vehicleId][idx].smsSentAt[key] = new Date().toISOString();
-          }
-        }
-      },
-      save:    saveBookings,
-      message: `scheduled-reminders: record ${sentMarks.length} sent marks`,
-    });
-  } catch (err) {
-    console.error("scheduled-reminders: failed to persist sent marks:", err);
-  }
+async function persistSentMarks(_sentMarks) {
+  // Phase 4: bookings.json writes disabled — sent marks are tracked in sms_logs (Supabase).
 }
 
 /**

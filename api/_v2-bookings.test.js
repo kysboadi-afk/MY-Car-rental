@@ -609,7 +609,7 @@ test("lifecycle: activating a booking auto-sets activatedAt", async () => {
   assert.ok(r2._body.booking.activatedAt, "activatedAt must be set automatically on activation");
 });
 
-test("lifecycle: completing a booking removes its date range from booked-dates.json", async () => {
+test("lifecycle: completing a booking does NOT write to booked-dates.json (Phase 4)", async () => {
   resetStore(); resetCalls();
   // Track GitHub API calls
   const githubPuts = [];
@@ -649,11 +649,12 @@ test("lifecycle: completing a booking removes its date range from booked-dates.j
   }), makeRes());
 
   global.fetch = origFetch;
-  assert.ok(githubPuts.some((u) => u.includes("booked-dates")),
-    "booked-dates.json must be updated when rental completes");
+  // Phase 4: booked-dates.json writes are disabled
+  assert.ok(!githubPuts.some((u) => u.includes("booked-dates")),
+    "Phase 4: booked-dates.json must NOT be written when rental completes");
 });
 
-test("lifecycle: cancelling a booking removes its date range from booked-dates.json", async () => {
+test("lifecycle: cancelling a booking does NOT write to booked-dates.json (Phase 4)", async () => {
   resetStore(); resetCalls();
   const githubPuts = [];
   const origFetch = global.fetch;
@@ -682,8 +683,9 @@ test("lifecycle: cancelling a booking removes its date range from booked-dates.j
   }), makeRes());
 
   global.fetch = origFetch;
-  assert.ok(githubPuts.some((u) => u.includes("booked-dates")),
-    "booked-dates.json must be updated when rental is cancelled");
+  // Phase 4: booked-dates.json writes are disabled
+  assert.ok(!githubPuts.some((u) => u.includes("booked-dates")),
+    "Phase 4: booked-dates.json must NOT be written when rental is cancelled");
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

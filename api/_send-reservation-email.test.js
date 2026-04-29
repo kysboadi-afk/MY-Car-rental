@@ -305,7 +305,7 @@ function makeGitHubFetchMock(calls) {
 // blockBookedDates and markVehicleUnavailable are both awaited before res.json()
 // so no extra delay is needed.
 
-test("blockBookedDates: GitHub API is called with correct params when vehicleId and GITHUB_TOKEN are set", async () => {
+test("blockBookedDates: GitHub API is NOT called for booked-dates.json (Phase 4: writes disabled)", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -322,28 +322,18 @@ test("blockBookedDates: GitHub API is called with correct params when vehicleId 
   globalThis.fetch = originalFetch;
 
   assert.equal(res._status, 200);
-  // Phase 3 fix: booking is persisted (appendBooking → bookings.json) BEFORE emails.
-  // Then availability is updated (blockBookedDates + markVehicleUnavailable) after emails.
-  // A confirmed booking triggers 6 GitHub API calls:
-  // 1. GET bookings.json      (persistBooking → appendBooking)
-  // 2. PUT bookings.json
-  // 3. GET booked-dates.json  (blockBookedDates)
-  // 4. PUT booked-dates.json
-  // 5. GET fleet-status.json  (markVehicleUnavailable)
-  // 6. PUT fleet-status.json
-  assert.equal(fetchCalls.length, 6, "Should make 6 GitHub API calls (2 each for bookings, booked-dates, fleet-status)");
-  assert.ok(fetchCalls[0].url.includes("bookings.json"), "First call should GET bookings.json (persist before email)");
-  assert.equal(fetchCalls[1].method, "PUT", "Second call should PUT bookings.json");
-  assert.ok(fetchCalls[1].url.includes("bookings.json"), "Second call should target bookings.json");
-  assert.ok(fetchCalls[2].url.includes("booked-dates.json"), "Third call should GET booked-dates.json");
-  assert.equal(fetchCalls[3].method, "PUT", "Fourth call should PUT booked-dates.json");
-  assert.ok(fetchCalls[3].url.includes("booked-dates.json"), "Fourth call should target booked-dates.json");
-  assert.ok(fetchCalls[4].url.includes("fleet-status.json"), "Fifth call should GET fleet-status.json");
-  assert.equal(fetchCalls[5].method, "PUT", "Sixth call should PUT fleet-status.json");
-  assert.ok(fetchCalls[5].url.includes("fleet-status.json"), "Sixth call should target fleet-status.json");
+  // Phase 4: bookings.json and booked-dates.json writes are disabled.
+  // Only fleet-status.json still gets a GET+PUT (markVehicleUnavailable still active).
+  const bookedDatesCalls = fetchCalls.filter(c => c.url.includes("booked-dates.json"));
+  assert.equal(bookedDatesCalls.length, 0, "Phase 4: no GitHub calls for booked-dates.json");
+  const bookingsCalls = fetchCalls.filter(c => c.url.includes("bookings.json"));
+  assert.equal(bookingsCalls.length, 0, "Phase 4: no GitHub calls for bookings.json");
+  // fleet-status.json still written (markVehicleUnavailable not disabled)
+  assert.equal(fetchCalls.filter(c => c.url.includes("fleet-status.json")).length, 2,
+    "fleet-status.json should still receive GET + PUT");
 });
 
-test("blockBookedDates: PUT body includes the new date range for the correct vehicle", async () => {
+test("blockBookedDates: no PUT to booked-dates.json (Phase 4: writes disabled)", async () => {
   mockSendMail.mock.resetCalls();
   sentMails.length = 0;
 
@@ -359,14 +349,9 @@ test("blockBookedDates: PUT body includes the new date range for the correct veh
   delete process.env.GITHUB_TOKEN;
   globalThis.fetch = originalFetch;
 
-  // fetchCalls[1] is the PUT for booked-dates.json
+  // Phase 4: no PUT to booked-dates.json should be made
   const bookedDatesPut = fetchCalls.find(c => c.method === "PUT" && c.url.includes("booked-dates.json"));
-  assert.ok(bookedDatesPut, "PUT to booked-dates.json should have been made");
-  const putBody = JSON.parse(bookedDatesPut.body);
-  const updated = JSON.parse(Buffer.from(putBody.content, "base64").toString("utf-8"));
-  assert.equal(updated.camry.length, 1, "camry should have one booked range");
-  assert.equal(updated.camry[0].from, VALID_BODY.pickup);
-  assert.equal(updated.camry[0].to, VALID_BODY.returnDate);
+  assert.equal(bookedDatesPut, undefined, "Phase 4: PUT to booked-dates.json must not be made");
 });
 
 test("blockBookedDates: GitHub API failure does not change the 200 response", async () => {

@@ -46,64 +46,9 @@ const FLEET_STATUS_PATH  = "fleet-status.json";
  * Requires GITHUB_TOKEN env var with contents:write permission on the repo.
  * Failures are logged but do not abort the email response.
  */
-async function blockBookedDates(vehicleId, from, to) {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.warn("GITHUB_TOKEN not set — booked-dates.json will not be updated automatically");
-    return;
-  }
-  if (!vehicleId || !from || !to) return;
-
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadBookedDates() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      const errText = await resp.text().catch(() => "");
-      throw new Error(`GitHub GET failed: ${resp.status} ${errText}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-    } catch {
-      data = {};
-    }
-    return { data, sha: file.sha };
-  }
-
-  async function saveBookedDates(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method: "PUT",
-      headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT failed: ${resp.status} ${errText}`);
-    }
-  }
-
-  await updateJsonFileWithRetry({
-    load:  loadBookedDates,
-    apply: (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      if (!hasOverlap(data[vehicleId], from, to)) {
-        data[vehicleId].push({ from, to });
-      }
-    },
-    save:    saveBookedDates,
-    message: `Block dates for ${vehicleId}: ${from} to ${to}`,
-  });
+async function blockBookedDates(_vehicleId, _from, _to) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("send-reservation-email: blockBookedDates() called but writes are disabled (Phase 4)");
 }
 
 /**

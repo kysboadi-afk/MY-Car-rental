@@ -122,47 +122,19 @@ async function loadBookedDates() {
   return { data, sha: fileData.sha };
 }
 
-async function saveBookedDates(data, sha, message) {
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-  const body = { message, content };
-  if (sha) body.sha = sha;
-  const resp = await fetch(apiUrl, {
-    method:  "PUT",
-    headers: { ...ghHeaders(), "Content-Type": "application/json" },
-    body:    JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-  }
+async function saveBookedDates(_data, _sha, _message) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("v2-bookings: saveBookedDates() called but writes are disabled (Phase 4)");
 }
 
-async function blockBookedDates(vehicleId, from, to) {
-  await updateJsonFileWithRetry({
-    load:    loadBookedDates,
-    apply:   (data) => {
-      if (!data[vehicleId]) data[vehicleId] = [];
-      if (!hasOverlap(data[vehicleId], from, to)) {
-        data[vehicleId].push({ from, to });
-      }
-    },
-    save:    saveBookedDates,
-    message: `Block dates for ${vehicleId}: ${from} to ${to} (v2 manual booking)`,
-  });
+async function blockBookedDates(_vehicleId, _from, _to) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("v2-bookings: blockBookedDates() called but writes are disabled (Phase 4)");
 }
 
-async function unblockBookedDates(vehicleId, from, to) {
-  if (!vehicleId || !from || !to) return;
-  await updateJsonFileWithRetry({
-    load:    loadBookedDates,
-    apply:   (data) => {
-      if (!Array.isArray(data[vehicleId])) return;
-      data[vehicleId] = data[vehicleId].filter((r) => !(r.from <= to && r.to >= from));
-    },
-    save:    saveBookedDates,
-    message: `Unblock dates for ${vehicleId}: ${from} to ${to}`,
-  });
+async function unblockBookedDates(_vehicleId, _from, _to) {
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  console.log("v2-bookings: unblockBookedDates() called but writes are disabled (Phase 4)");
 }
 
 export default async function handler(req, res) {

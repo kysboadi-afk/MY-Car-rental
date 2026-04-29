@@ -43,10 +43,7 @@ export default async function handler(req, res) {
   }
 
   // Guard: GITHUB_TOKEN must be configured to write the file
-  if (!process.env.GITHUB_TOKEN) {
-    console.error("GITHUB_TOKEN environment variable is not set");
-    return res.status(500).json({ error: "Server configuration error: GITHUB_TOKEN is not set." });
-  }
+  // (Phase 4: JSON write disabled, guard kept for compatibility but no longer blocks)
 
   const { secret, vehicleId, from, to } = req.body || {};
 
@@ -70,91 +67,38 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "from must not be after to" });
   }
 
-  const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/${BOOKED_DATES_PATH}`;
-  const ghHeaders = {
-    Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  async function loadBookedDates() {
-    const resp = await fetch(`${apiUrl}?ref=${encodeURIComponent(GITHUB_DATA_BRANCH)}`, { headers: ghHeaders });
-    if (!resp.ok) {
-      if (resp.status === 404) return { data: {}, sha: null };
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub GET booked-dates.json failed: ${resp.status} ${text}`);
-    }
-    const file = await resp.json();
-    let data = {};
-    try {
-      data = JSON.parse(Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-      if (typeof data !== "object" || Array.isArray(data)) data = {};
-    } catch { data = {}; }
-    return { data, sha: file.sha };
-  }
-
-  async function saveBookedDates(data, sha, message) {
-    const content = Buffer.from(JSON.stringify(data, null, 2) + "\n").toString("base64");
-    const body = { message, content, branch: GITHUB_DATA_BRANCH };
-    if (sha) body.sha = sha;
-    const resp = await fetch(apiUrl, {
-      method: "PUT",
-      headers: { ...ghHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => "");
-      throw new Error(`GitHub PUT booked-dates.json failed: ${resp.status} ${text}`);
-    }
-  }
-
+  // Phase 4: booked-dates.json writes disabled — Supabase is the only write source.
+  // The JSON load/save infrastructure is removed; Supabase is written directly.
   try {
     let removed = 0;
-    await updateJsonFileWithRetry({
-      load:    loadBookedDates,
-      // apply is idempotent: filter removes overlaps; if already gone, it's a no-op
-      apply:   (data) => {
-        const before = (data[vehicleId] || []).length;
-        data[vehicleId] = (data[vehicleId] || []).filter(
-          (r) => !(r.from <= to && r.to >= from)
-        );
-        removed = before - data[vehicleId].length;
-      },
-      save:    saveBookedDates,
-      message: `Open dates for ${vehicleId}: ${from} to ${to}`,
-    });
-
-    // Also remove from Supabase blocked_dates so both stores stay consistent.
-    // Booking-generated ranges are protected from manual unblocks.
-    // Non-fatal — a Supabase failure must not block the GitHub remove from succeeding.
     let locked = 0;
-    if (removed > 0) {
-      try {
-        const sb = getSupabaseAdmin();
-        if (sb) {
-          const { count: lockedCount, error: countErr } = await sb
-            .from("blocked_dates")
-            .select("id", { head: true, count: "exact" })
-            .eq("vehicle_id", vehicleId)
-            .lte("start_date", to)
-            .gte("end_date", from)
-            .eq("reason", "booking");
-          if (!countErr) locked = Number(lockedCount || 0);
+    try {
+      const sb = getSupabaseAdmin();
+      if (sb) {
+        const { count: lockedCount, error: countErr } = await sb
+          .from("blocked_dates")
+          .select("id", { head: true, count: "exact" })
+          .eq("vehicle_id", vehicleId)
+          .lte("start_date", to)
+          .gte("end_date", from)
+          .eq("reason", "booking");
+        if (!countErr) locked = Number(lockedCount || 0);
 
-          const { error: sbErr } = await sb
-            .from("blocked_dates")
-            .delete()
-            .eq("vehicle_id", vehicleId)
-            .lte("start_date", to)
-            .gte("end_date", from)
-            .or("reason.is.null,reason.neq.booking");
-          if (sbErr) {
-            console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
-          }
+        const { error: sbErr } = await sb
+          .from("blocked_dates")
+          .delete()
+          .eq("vehicle_id", vehicleId)
+          .lte("start_date", to)
+          .gte("end_date", from)
+          .or("reason.is.null,reason.neq.booking");
+        if (sbErr) {
+          console.warn("open-dates: Supabase delete failed (non-fatal):", sbErr.message);
+        } else {
+          removed = 1;
         }
-      } catch (sbErr) {
-        console.warn("open-dates: Supabase sync failed (non-fatal):", sbErr.message);
       }
+    } catch (sbErr) {
+      console.warn("open-dates: Supabase sync failed (non-fatal):", sbErr.message);
     }
 
     return res.status(200).json({ success: true, removed, locked });

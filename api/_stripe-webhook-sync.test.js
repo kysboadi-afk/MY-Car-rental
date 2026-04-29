@@ -773,7 +773,7 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
   assert.equal(upsert.amountPaid, 220, "upserted booking must have combined amountPaid = 220");
 });
 
-test("webhook rental_extension: booked-dates.json range is extended to the new return date", async () => {
+test("webhook rental_extension: booked-dates.json is NOT written (Phase 4: writes disabled)", async () => {
   resetStore(); resetCalls();
   const origBookingId = "bk-ext-booked-dates";
   bookingsStore["camry"] = [{
@@ -809,10 +809,11 @@ test("webhook rental_extension: booked-dates.json range is extended to the new r
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
+  // Phase 4: booked-dates.json writes are disabled — the store must NOT be modified.
   assert.deepEqual(
     bookedDatesStore.camry,
-    [{ from: "2026-12-10", to: "2026-12-14", toTime: "15:00" }],
-    "booked-dates.json must be extended to the new return date so public availability stays in sync"
+    [{ from: "2026-12-10", to: "2026-12-12" }],
+    "Phase 4: booked-dates.json must NOT be written after rental_extension"
   );
 });
 
