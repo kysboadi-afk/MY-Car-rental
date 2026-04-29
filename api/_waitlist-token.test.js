@@ -50,8 +50,8 @@ test("two different entries produce different tokens", () => {
 });
 
 test("two different vehicles produce different tokens", () => {
-  const t1 = createDecisionToken("camry", "entry001");
-  const t2 = createDecisionToken("camry",     "entry001");
+  const t1 = createDecisionToken("camry",   "entry001");
+  const t2 = createDecisionToken("camry2013", "entry001");
   assert.notEqual(t1, t2);
 });
 

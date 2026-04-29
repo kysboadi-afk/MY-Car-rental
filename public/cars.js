@@ -211,6 +211,35 @@ async function loadFleetStatus() {
   }
 }
 
+// ─── Fleet loader ─────────────────────────────────────────────────────────────
+async function loadFleet() {
+  const grid = document.getElementById("car-grid");
+  if (!grid) return;
+  showLoadingState(grid);
+
+  let vehicles = [];
+  let pricing  = null;
+
+  try {
+    const [vRes, pRes] = await Promise.all([
+      fetch(API_BASE + "/api/v2-vehicles"),
+      fetch(API_BASE + "/api/public-pricing"),
+    ]);
+    if (vRes.ok) vehicles = await vRes.json();
+    if (pRes.ok) pricing  = await pRes.json();
+  } catch (err) {
+    console.warn("Could not load fleet data:", err);
+  }
+
+  const active = (Array.isArray(vehicles) ? vehicles : []).filter(v => !v.status || v.status === "active");
+
+  if (!active.length) {
+    grid.innerHTML = `<p class="fleet-empty">${t("fleet.noVehicles", "No vehicles available at this time. Please check back soon.")}</p>`;
+    return;
+  }
+
+  grid.innerHTML = active.map(v => buildCardHTML(v, pricing)).join("");
+  captureButtonKeys();
 
   // Fetch and apply live availability badges
   loadFleetStatus();
