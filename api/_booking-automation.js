@@ -172,7 +172,8 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     // Use the booking's vehicle_id / return_date as fallbacks when the caller
     // did not supply them — this covers processStripePayment and other callers
     // that pass only payment identifiers without full booking context.
-    const resolvedVehicleId = booking.vehicleId || normalizeVehicleId(bookingRow.vehicle_id);
+    // Apply normalizeVehicleId to both sources consistently.
+    const resolvedVehicleId = normalizeVehicleId(booking.vehicleId) || normalizeVehicleId(bookingRow.vehicle_id);
     const resolvedReturnDate = booking.returnDate ||
       (bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null);
 
