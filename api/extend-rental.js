@@ -17,7 +17,7 @@
 
 import Stripe from "stripe";
 import { getVehicleById } from "./_vehicles.js";
-import { getVehiclePricing } from "./_pricing.js";
+import { getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
@@ -449,17 +449,7 @@ export default async function handler(req, res) {
       const days = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
       extensionLabel  = `+${days} day${days !== 1 ? "s" : ""}`;
 
-      let price;
-
-      if (days === 7) {
-        price = pricing.weekly_price;
-      } else if (days === 14) {
-        price = pricing.biweekly_price;
-      } else if (days >= 28) {
-        price = pricing.monthly_price;
-      } else {
-        price = pricing.daily_price * days;
-      }
+      const price = computeAmountFromPricing(pricing, days);
 
       console.log('[pricing-extension]', {
         vehicle: vehicleId,

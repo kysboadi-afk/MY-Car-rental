@@ -13,6 +13,7 @@ import Stripe from "stripe";
 import {
   computeRentalDays,
   getVehiclePricing,
+  computeAmountFromPricing,
 } from "./_pricing.js";
 import {
   loadPricingSettings,
@@ -85,18 +86,9 @@ export default async function handler(req, res) {
     }
     const pricing = await getVehiclePricing(sb, vehicleId);
 
-    // Compute rental days and apply flat tier pricing — no greedy chains.
+    // Compute rental days and apply flat tier pricing via shared helper.
     const days = computeRentalDays(pickup, returnDate);
-    let computedFullRental;
-    if (days === 7) {
-      computedFullRental = pricing.weekly_price;
-    } else if (days === 14) {
-      computedFullRental = pricing.biweekly_price;
-    } else if (days >= 28) {
-      computedFullRental = pricing.monthly_price;
-    } else {
-      computedFullRental = pricing.daily_price * days;
-    }
+    const computedFullRental = computeAmountFromPricing(pricing, days);
     console.log('[pricing-booking]', { vehicle: vehicleId, days, pricing, price: computedFullRental });
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
 

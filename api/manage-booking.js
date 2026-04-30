@@ -33,7 +33,7 @@ import {
   computeDppCostFromSettings,
   applyTax,
 } from "./_settings.js";
-import { computeRentalDays, getVehiclePricing } from "./_pricing.js";
+import { computeRentalDays, getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
@@ -156,16 +156,7 @@ async function recomputePricing(vehicleData, pickupDate, returnDate, protectionP
   if (!sb) return null;
   const pricing = await getVehiclePricing(sb, vehicleData.vehicleId);
   const days = computeRentalDays(pickupDate, returnDate);
-  let rentalCost;
-  if (days === 7) {
-    rentalCost = pricing.weekly_price;
-  } else if (days === 14) {
-    rentalCost = pricing.biweekly_price;
-  } else if (days >= 28) {
-    rentalCost = pricing.monthly_price;
-  } else {
-    rentalCost = pricing.daily_price * days;
-  }
+  const rentalCost = computeAmountFromPricing(pricing, days);
   console.log('[pricing-booking]', { vehicle: vehicleData.vehicleId, days, pricing, price: rentalCost });
   const dppCost = protectionPlan ? computeDppCostFromSettings(days, protectionPlanTier || null) : 0;
   const preTax = rentalCost + dppCost;

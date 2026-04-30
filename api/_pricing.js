@@ -138,11 +138,30 @@ export async function getVehiclePricing(supabase, vehicleId) {
     .single();
 
   if (error) {
-    console.error('[pricing] fetch failed', error);
-    throw new Error('Failed to load pricing');
+    console.error('[pricing] fetch failed', { vehicleId, error });
+    throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
   }
 
   return data;
+}
+
+/**
+ * Compute the rental cost from a vehicle_pricing row and a day count.
+ * Applies flat tier pricing (no greedy chain):
+ *   7 days  → weekly_price
+ *   14 days → biweekly_price
+ *   ≥28 days → monthly_price
+ *   else    → daily_price × days
+ *
+ * @param {object} pricing  - vehicle_pricing row from getVehiclePricing()
+ * @param {number} days     - number of rental days (min 1)
+ * @returns {number} rental cost in dollars (pre-tax, no DPP)
+ */
+export function computeAmountFromPricing(pricing, days) {
+  if (days === 7)       return pricing.weekly_price;
+  if (days === 14)      return pricing.biweekly_price;
+  if (days >= 28)       return pricing.monthly_price;
+  return pricing.daily_price * days;
 }
 
 /**
