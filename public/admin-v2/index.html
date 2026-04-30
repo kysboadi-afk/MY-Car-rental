@@ -5815,27 +5815,60 @@ function renderVehiclePricing(rows) {
     monthly_price:  'Monthly Price (28+ days) ($)',
   };
 
-  container.innerHTML = rows.map((row) => `
-    <div class="form-section" style="max-width:520px;margin-bottom:20px;" id="vp-card-${esc(row.vehicle_id)}">
-      <div class="form-section-title">🚗 ${esc(row.vehicle_id)}</div>
-      <div class="form-grid">
-        ${Object.keys(fieldLabels).map((field) => `
-          <div class="form-group">
-            <label class="form-label">${esc(fieldLabels[field])}</label>
-            <input type="number" min="0" step="0.01" class="form-input"
-              id="vp-${esc(row.vehicle_id)}-${esc(field)}"
-              value="${esc(String(row[field] ?? ''))}"
-              placeholder="0">
-          </div>
-        `).join('')}
-      </div>
-      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-primary" onclick="saveVehiclePricing('${esc(row.vehicle_id)}')" id="vp-save-btn-${esc(row.vehicle_id)}">Save</button>
-        <span id="vp-status-${esc(row.vehicle_id)}" style="font-size:13px;"></span>
-      </div>
-      ${row.updated_at ? `<div style="margin-top:8px;font-size:11px;color:var(--text-sub);">Last updated: ${esc(new Date(row.updated_at).toLocaleString())}</div>` : ''}
+  container.innerHTML = `
+    <div style="margin-bottom:16px;">
+      <input type="text" id="vp-search" class="form-input" placeholder="Search by vehicle ID…"
+        oninput="filterVehiclePricing(this.value)"
+        style="max-width:320px;">
+      <span id="vp-search-count" style="margin-left:12px;font-size:13px;color:var(--text-sub);"></span>
     </div>
-  `).join('');
+    <div id="vp-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:20px;">
+      ${rows.map((row) => `
+        <div class="form-section" style="margin:0;" id="vp-card-${esc(row.vehicle_id)}" data-vehicle-id="${esc(row.vehicle_id.toLowerCase())}">
+          <div class="form-section-title">🚗 ${esc(row.vehicle_id)}</div>
+          <div class="form-grid">
+            ${Object.keys(fieldLabels).map((field) => `
+              <div class="form-group">
+                <label class="form-label">${esc(fieldLabels[field])}</label>
+                <input type="number" min="0" step="0.01" class="form-input"
+                  id="vp-${esc(row.vehicle_id)}-${esc(field)}"
+                  value="${esc(String(row[field] ?? ''))}"
+                  placeholder="0">
+              </div>
+            `).join('')}
+          </div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+            <button class="btn btn-primary" onclick="saveVehiclePricing('${esc(row.vehicle_id)}')" id="vp-save-btn-${esc(row.vehicle_id)}">Save</button>
+            <span id="vp-status-${esc(row.vehicle_id)}" style="font-size:13px;"></span>
+          </div>
+          ${row.updated_at ? `<div style="margin-top:8px;font-size:11px;color:var(--text-sub);">Last updated: ${esc(new Date(row.updated_at).toLocaleString())}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  updateVpSearchCount();
+}
+
+function filterVehiclePricing(query) {
+  const term = query.trim().toLowerCase();
+  const cards = document.querySelectorAll('#vp-grid [data-vehicle-id]');
+  let visible = 0;
+  cards.forEach((card) => {
+    const show = !term || card.dataset.vehicleId.includes(term);
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const countEl = document.getElementById('vp-search-count');
+  if (countEl) {
+    countEl.textContent = term ? `${visible} of ${cards.length} vehicles` : `${cards.length} vehicle${cards.length !== 1 ? 's' : ''}`;
+  }
+}
+
+function updateVpSearchCount() {
+  const cards = document.querySelectorAll('#vp-grid [data-vehicle-id]');
+  const countEl = document.getElementById('vp-search-count');
+  if (countEl) countEl.textContent = `${cards.length} vehicle${cards.length !== 1 ? 's' : ''}`;
 }
 
 function saveVehiclePricing(vehicleId) {
