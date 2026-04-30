@@ -89,6 +89,21 @@ mock.module("./_supabase.js", {
   namedExports: { getSupabaseAdmin: () => sbClient },
 });
 
+// _pricing.js mock — returns a static pricing row matching CAMRY_VEHICLE so tests
+// are not blocked by Supabase availability.  computeAmountFromPricing is kept real
+// so pricing arithmetic is exercised (same pattern as _availability.js above).
+mock.module("./_pricing.js", {
+  namedExports: {
+    getVehiclePricing: async (_sb, _id) => ({
+      daily_price:    55,
+      weekly_price:   300,
+      biweekly_price: null,
+      monthly_price:  null,
+    }),
+    computeAmountFromPricing: (await import("./_pricing.js")).computeAmountFromPricing,
+  },
+});
+
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
 // capturedStripeParams stores the last params passed to paymentIntents.create so
 // metadata-content tests can assert on what was sent to Stripe.
