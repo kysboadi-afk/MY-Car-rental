@@ -943,7 +943,7 @@ if (/^(true|1)$/i.test(pageParams.get("extend") || "")) {
     const isUnavailable = !!(entry && entry.available === false);
 
     if (isUnavailable) {
-      const idsToCheck = [vehicleId];
+      const idsToCheck = [vehicleId]; // single vehicle for Camry
 
       let availableAt = null;
       let nextAvailableDisplay = null;
@@ -1104,7 +1104,7 @@ function initExtendRentalForm() {
     var minDate = extNewReturn.getAttribute("min") || today;
     var baseDate = minDate > today ? minDate : today;
 
-    // Economy cars: use the same tiered pricing as the main booking flow
+    // Use the same tiered pricing as the main booking flow
     var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
     var daily   = carData.pricePerDay  || 55;
     var weekly  = carData.weekly       || 350;
@@ -1353,7 +1353,7 @@ function restoreFailedBooking() {
       } else {
         if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
         if (insuranceSection)  insuranceSection.style.display  = "none";
-        // Restore the protection plan tier for economy cars
+        // Restore the protection plan tier
         if (data.protectionPlanTier) {
           selectedProtectionTier = data.protectionPlanTier;
         }
