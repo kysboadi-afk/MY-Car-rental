@@ -1134,15 +1134,6 @@ body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   max-width: 560px;
   position: relative;
-  overflow: hidden;
-}
-
-.booking::before {
-  /* Containment anchor: ensures any diagonal decoration pseudo-element
-     stays inside .booking via the parent's overflow:hidden. */
-  content: '';
-  position: absolute;
-  z-index: 0;
 }
 
 .booking h2 {
