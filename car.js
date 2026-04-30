@@ -564,21 +564,15 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const depositInsEl      = document.getElementById("agreementDepositInsurance");
   const depositDppEl      = document.getElementById("agreementDepositDpp");
   const depositNeitherEl  = document.getElementById("agreementDepositNeither");
-  const speedSection      = document.getElementById("slingshotSpeedSection");
   const lateFeeGenericEl  = document.getElementById("lateFeeGeneric");
-  const slingshotLateFeeEl = document.getElementById("slingshotLateFeeBody"); // template element ID
   // For Camry (economy): no security deposit — hide the entire deposit section.
   if (depositHeadingEl) depositHeadingEl.style.display = "none";
   if (depositIntroEl)   depositIntroEl.style.display   = "none";
   if (depositInsEl)     depositInsEl.style.display     = "none";
   if (depositDppEl)     depositDppEl.style.display     = "none";
   if (depositNeitherEl) depositNeitherEl.style.display = "none";
-  // Hide speed & strike policy section (not applicable for Camry)
-  if (speedSection) speedSection.style.display = "none";
-
-  // Show generic late fee; hide vehicle-specific late fee section if present
-  if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "";
-  if (slingshotLateFeeEl) slingshotLateFeeEl.style.display = "none";
+  // Show generic late fee
+  if (lateFeeGenericEl) lateFeeGenericEl.style.display = "";
 
   // Populate the protection choice summary and update the
   // tier-specific liability cap text in the Insurance & Liability section.
@@ -630,10 +624,6 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
         withPlanEl.setAttribute("data-i18n-html", "agreement.withPlanBody");
       }
     }
-
-  // Always hide the booking deposit section (Camry uses full-payment or $50 reserve flow)
-  const bookingDepositSection = document.getElementById("slingshotBookingDepositSection");
-  if (bookingDepositSection) bookingDepositSection.style.display = "none";
 
   // Update Payment Terms body to accurately describe when/how payment is collected.
   // Removing data-i18n prevents applyTranslations() from overwriting the corrected text.
