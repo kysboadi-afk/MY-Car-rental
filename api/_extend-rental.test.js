@@ -89,16 +89,16 @@ mock.module("./_supabase.js", {
   namedExports: { getSupabaseAdmin: () => sbClient },
 });
 
-// _pricing.js mock — returns a fake vehicle_pricing row so the handler never
-// hits the real Supabase vehicle_pricing table during tests.
+// _pricing.js mock — returns a static pricing row matching CAMRY_VEHICLE so tests
+// are not blocked by Supabase availability.  computeAmountFromPricing is kept real
+// so pricing arithmetic is exercised (same pattern as _availability.js above).
 mock.module("./_pricing.js", {
   namedExports: {
     getVehiclePricing: async (_sb, _id) => ({
-      vehicle_id:     "camry",
       daily_price:    55,
-      weekly_price:   350,
-      biweekly_price: 650,
-      monthly_price:  1300,
+      weekly_price:   300,
+      biweekly_price: null,
+      monthly_price:  null,
     }),
     computeAmountFromPricing: (await import("./_pricing.js")).computeAmountFromPricing,
   },
