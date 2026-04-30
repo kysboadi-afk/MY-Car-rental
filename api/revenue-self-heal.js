@@ -153,6 +153,9 @@ export default async function handler(req, res) {
   let repaired = 0;
   let failed = 0;
   const failures = [];
+  let backfilled = 0;
+  let backfillFailed = 0;
+  const backfillFailures = [];
 
   try {
     // Fetch rows that need attention:
@@ -254,12 +257,114 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Phase 2: Backfill bookings without any revenue record ─────────────────
+    // Finds every paid non-cancelled booking that has no revenue_records row
+    // with type='rental' and creates one from booking data.  This catches gaps
+    // left by non-fatal autoCreateRevenueRecord failures in the write pipeline
+    // (add-manual-booking.js, v2-bookings.js status transitions, stripe-webhook).
+    //
+    // Cash/manual bookings get stripe_fee=0 immediately so analytics are correct.
+    // Stripe bookings get stripe_fee=null — stripe-reconcile.js fills that in.
+    const CASH_METHODS = new Set(["cash", "zelle", "venmo", "manual", "external"]);
+
+    const { data: paidBookings, error: paidBookingsErr } = await sb
+      .from("bookings")
+      .select("id, booking_ref, vehicle_id, pickup_date, return_date, deposit_paid, payment_method, payment_intent_id, customer_name, customer_phone, customer_email")
+      .gt("deposit_paid", 0)
+      .not("status", "in", "(cancelled,cancelled_rental)");
+
+    if (paidBookingsErr) {
+      console.error("revenue-self-heal Phase 2: bookings query error:", formatSupabaseError(paidBookingsErr));
+    } else {
+      for (const bk of paidBookings || []) {
+        if (!bk.booking_ref) continue;
+
+        try {
+          // Check for an existing rental revenue record keyed by booking_ref.
+          const { data: existingByRef, error: refLookupErr } = await sb
+            .from("revenue_records")
+            .select("id")
+            .eq("booking_id", bk.booking_ref)
+            .eq("type", "rental")
+            .maybeSingle();
+          if (refLookupErr) {
+            throw new Error(`revenue_records booking_id lookup failed: ${formatSupabaseError(refLookupErr)}`);
+          }
+          if (existingByRef?.id) continue;
+
+          // Also check by payment_intent_id — covers cases where an orphan or
+          // differently-keyed row already accounts for this payment.
+          if (bk.payment_intent_id) {
+            const { data: existingByPi, error: piLookupErr } = await sb
+              .from("revenue_records")
+              .select("id")
+              .eq("payment_intent_id", bk.payment_intent_id)
+              .maybeSingle();
+            if (piLookupErr) {
+              throw new Error(`revenue_records payment_intent_id lookup failed: ${formatSupabaseError(piLookupErr)}`);
+            }
+            if (existingByPi?.id) continue;
+          }
+
+          // Insert the missing revenue record.
+          const isCash = CASH_METHODS.has(String(bk.payment_method || "").toLowerCase());
+          const gross = Number(bk.deposit_paid || 0);
+          const revRow = {
+            booking_id:        bk.booking_ref,
+            payment_intent_id: bk.payment_intent_id || null,
+            vehicle_id:        bk.vehicle_id        || null,
+            customer_name:     bk.customer_name     || null,
+            customer_phone:    bk.customer_phone    || null,
+            customer_email:    bk.customer_email    || null,
+            pickup_date:       bk.pickup_date       || null,
+            return_date:       bk.return_date       || null,
+            gross_amount:      gross,
+            deposit_amount:    0,
+            refund_amount:     0,
+            payment_method:    bk.payment_method    || "stripe",
+            payment_status:    "paid",
+            type:              "rental",
+            is_no_show:        false,
+            is_cancelled:      false,
+            override_by_admin: false,
+            stripe_fee:        isCash ? 0    : null,
+            stripe_net:        isCash ? gross : null,
+          };
+
+          const { error: insertErr } = await sb.from("revenue_records").insert(revRow);
+          if (insertErr) {
+            throw new Error(`revenue_records insert failed: ${formatSupabaseError(insertErr)}`);
+          }
+
+          backfilled += 1;
+          console.log("revenue-self-heal Phase 2: created missing revenue record for booking", bk.booking_ref, {
+            vehicle_id:     bk.vehicle_id,
+            payment_method: bk.payment_method,
+            gross_amount:   gross,
+          });
+        } catch (err) {
+          backfillFailed += 1;
+          console.error("revenue-self-heal Phase 2: backfill failed", {
+            booking_ref: bk.booking_ref,
+            error: err?.message || String(err),
+          });
+          backfillFailures.push({
+            booking_ref: bk.booking_ref,
+            error: err?.message || String(err),
+          });
+        }
+      }
+    }
+
     return res.status(200).json({
-      ok: failed === 0,
+      ok: failed === 0 && backfillFailed === 0,
       scanned,
       repaired,
       failed,
       failures,
+      backfilled,
+      backfill_failed: backfillFailed,
+      backfill_failures: backfillFailures,
     });
   } catch (err) {
     console.error("revenue-self-heal: fatal error:", err?.message || err);
@@ -270,6 +375,9 @@ export default async function handler(req, res) {
       repaired,
       failed,
       failures,
+      backfilled,
+      backfill_failed: backfillFailed,
+      backfill_failures: backfillFailures,
     });
   }
 }
