@@ -1507,10 +1507,9 @@ function updatePayBtn() {
   // Insurance readiness:
   //   "yes"  → requires an uploaded file (own insurance)
   //   "no"   → requires a valid tier selection (basic/standard/premium)
-  const isEconomy = true;
   const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
-                          (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
+                          (insuranceCoverageChoice === "no" && tierReady);
   const nameValid = isValidName(nameVal);
   const phoneVal = document.getElementById("phone").value.trim();
   // Requires pickup + return date + pickup time.
