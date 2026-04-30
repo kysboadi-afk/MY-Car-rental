@@ -124,6 +124,28 @@ export function computeAmount(vehicleId, pickup, returnDate) {
 }
 
 /**
+ * Fetch pricing data for a single vehicle from the Supabase `vehicle_pricing` table.
+ * Throws if the record is missing or the query fails — the DB is the source of truth.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} vehicleId - vehicle_id value stored in the DB
+ * @returns {Promise<object>} the vehicle_pricing row
+ */
+export async function getVehiclePricing(supabase, vehicleId) {
+  const { data, error } = await supabase
+    .from('vehicle_pricing')
+    .select('*')
+    .eq('vehicle_id', vehicleId)
+    .single();
+
+  if (error) {
+    console.error('[pricing] fetch failed', error);
+    throw new Error('Failed to load pricing');
+  }
+
+  return data;
+}
+
+/**
  * Compute human-readable pricing breakdown lines for a daily/weekly rental.
  * Uses the same greedy tier logic as computeAmount.
  * @param {string} vehicleId   - key from CARS
