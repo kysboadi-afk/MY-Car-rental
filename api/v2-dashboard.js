@@ -26,9 +26,8 @@ import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicl
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
-  camry:      "Camry 2012",
-  camry2012:  "Camry 2012",
-  camry2013:  "Camry 2013 SE",
+  camry:     "Camry 2012",
+  camry2013: "Camry 2013 SE",
 };
 const DB_TO_APP_STATUS = {
   pending:              "reserved_unpaid",
@@ -347,9 +346,8 @@ export default async function handler(req, res) {
 
         // Populate per-vehicle revenue map (used by vehicleStats computation below).
         // view includes both revenue_records and supplemental charges.
-        // Accumulate (+=) rather than assign so that legacy vehicle_id aliases
-        // ("camry2012") that uiVehicleId() maps to the same canonical key ("camry")
-        // are merged instead of one entry silently overwriting the other.
+        // Accumulate (+=) rather than assign so that any vehicle_id aliases that
+        // uiVehicleId() maps to the same canonical key are merged correctly.
         const vRevJson = metricsView.vehicle_revenue_json || {};
         for (const [vid, vr] of Object.entries(vRevJson)) {
           const normVid = uiVehicleId(vid);

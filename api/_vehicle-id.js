@@ -15,20 +15,18 @@ const LEGACY_ID_NORMALIZE = {
   "camry2012": "camry",
 };
 
-// All DB-side vehicle IDs: canonical fleet IDs plus any legacy IDs that were
-// stored in old database records before normalisation was enforced.
-// Use this list (instead of FLEET_VEHICLE_IDS) for Supabase `.in("vehicle_id", …)`
-// filters so that legacy-stored bookings (e.g. vehicle_id="camry2012") are never missed.
+// All DB-side vehicle IDs: canonical fleet IDs only.
+// "camry2012" was a legacy alias stored in old DB records before normalisation
+// was enforced; migration 0110 normalised all such rows to "camry".
+// FLEET_DB_VEHICLE_IDS no longer needs to include "camry2012".
 // Adding a new car to CARS in _pricing.js automatically includes it here.
-export const FLEET_DB_VEHICLE_IDS = [
-  ...FLEET_VEHICLE_IDS,
-  ...Object.keys(LEGACY_ID_NORMALIZE),
-].filter((v, i, arr) => arr.indexOf(v) === i);
+export const FLEET_DB_VEHICLE_IDS = [...FLEET_VEHICLE_IDS];
 
-// All known DB-stored IDs (canonical + legacy) that belong to each canonical vehicle.
-// Used to expand query filters so legacy-stored records are never missed.
+// All known DB-stored IDs (canonical only) that belong to each canonical vehicle.
+// "camry2012" was a legacy alias normalised to "camry" by migration 0110;
+// it is no longer present in the database so there is no need to expand queries.
 const VEHICLE_ID_FAMILY = {
-  camry: ["camry", "camry2012"],
+  camry: ["camry"],
 };
 
 /**
@@ -66,13 +64,13 @@ export function uiVehicleId(dbId) {
 }
 
 /**
- * Returns all DB-stored vehicle IDs (canonical + legacy aliases) that belong
- * to the same logical vehicle as the given ID.  Use this to expand Supabase
- * `.eq("vehicle_id", id)` filters into `.in("vehicle_id", vehicleIdFamily(id))`
- * so that records stored under legacy IDs (e.g. "camry2012") are never missed.
+ * Returns all DB-stored vehicle IDs that belong to the same logical vehicle
+ * as the given ID.  Use this to expand Supabase `.eq("vehicle_id", id)` filters
+ * into `.in("vehicle_id", vehicleIdFamily(id))` when backward compatibility is
+ * needed during a data migration window.
  *
- * @param {string} id - canonical or legacy vehicle ID
- * @returns {string[]} - e.g. vehicleIdFamily("camry") → ["camry", "camry2012"]
+ * @param {string} id - canonical vehicle ID
+ * @returns {string[]} - e.g. vehicleIdFamily("camry") → ["camry"]
  */
 export function vehicleIdFamily(id) {
   const canonical = normalizeVehicleId(id);

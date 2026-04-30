@@ -172,15 +172,10 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     // Use the booking's vehicle_id / return_date as fallbacks when the caller
     // did not supply them — this covers processStripePayment and other callers
     // that pass only payment identifiers without full booking context.
-    //
-    // Normalize caller-supplied vehicleId (may be a display name like "Camry 2012"
-    // or a legacy alias like "camry2012" that needs mapping).  When falling back to
-    // the DB row, use the stored value as-is so the revenue record carries the same
-    // vehicle_id as the booking — preserving consistency between the two tables even
-    // when the booking holds a legacy alias (e.g. "camry2012").
-    const resolvedVehicleId = booking.vehicleId
-      ? normalizeVehicleId(booking.vehicleId)
-      : (bookingRow.vehicle_id || null);
+    // normalizeVehicleId is applied unconditionally so that any stale legacy
+    // value retrieved from the DB (e.g. a booking row still holding "camry2012"
+    // before a data migration runs) is always written as the canonical "camry".
+    const resolvedVehicleId = normalizeVehicleId(booking.vehicleId || bookingRow.vehicle_id);
     const resolvedReturnDate = booking.returnDate ||
       (bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null);
 
