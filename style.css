@@ -940,34 +940,7 @@ body {
 }
 
 /* BOOKING PAGE TWO-COLUMN LAYOUT */
-.booking-layout {
-  display: flex;
-  gap: 40px;
-  align-items: flex-start;
-}
 
-.booking-layout .car-slider {
-  flex: 1 1 45%;
-  min-width: 0;
-  position: sticky;
-  top: 20px;
-  margin-bottom: 0;
-}
-
-.booking-layout .booking {
-  flex: 1 1 55%;
-  min-width: 0;
-  max-width: none;
-}
-
-@media (max-width: 900px) {
-  .booking-layout {
-    flex-direction: column;
-  }
-  .booking-layout .car-slider {
-    position: static;
-  }
-}
 
 /* BOOKING PAGE */
 .back-btn {
