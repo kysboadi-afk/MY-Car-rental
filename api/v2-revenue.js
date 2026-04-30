@@ -22,7 +22,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { normalizeVehicleId, vehicleIdFamily } from "./_vehicle-id.js";
+import { normalizeVehicleId, vehicleIdFamily, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -348,7 +348,36 @@ export default async function handler(req, res) {
             .from("revenue_records_effective")
             .select("vehicle_id, gross_amount, stripe_fee, stripe_net, refund_amount, deposit_amount, is_cancelled, is_no_show")
             .eq("payment_status", "paid");
-          if (!recsErr) return res.status(200).json(aggregateRecords(recs));
+          if (!recsErr) {
+            const result = aggregateRecords(recs);
+            // Override booking_count with counts from the bookings table (source of truth).
+            // This ensures camry/camry2012 legacy IDs are collapsed and every booking
+            // is counted exactly once, regardless of how many revenue_records it has.
+            try {
+              const { data: bRows, error: bErr } = await sb
+                .from("bookings")
+                .select("vehicle_id")
+                .in("vehicle_id", FLEET_DB_VEHICLE_IDS);
+              if (!bErr && bRows) {
+                const countsByVehicle = {};
+                for (const row of bRows) {
+                  const vid = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+                  countsByVehicle[vid] = (countsByVehicle[vid] || 0) + 1;
+                }
+                let totalBookingCount = 0;
+                for (const s of result.summary) {
+                  s.booking_count = countsByVehicle[s.vehicle_id] ?? 0;
+                  totalBookingCount += s.booking_count;
+                }
+                result.totals.bookingCount = totalBookingCount;
+              } else if (bErr) {
+                console.warn("v2-revenue summary: bookings count query failed (non-fatal):", bErr.message);
+              }
+            } catch (bEx) {
+              console.warn("v2-revenue summary: bookings count query error (non-fatal):", bEx.message);
+            }
+            return res.status(200).json(result);
+          }
           if (!isSchemaError(recsErr)) console.error("v2-revenue summary error (revenue_records_effective):", recsErr.message);
         } catch (sumErr) {
           console.error("v2-revenue summary error:", sumErr);
