@@ -59,6 +59,7 @@ import { isAdminAuthorized, isAdminConfigured } from "./_admin-auth.js";
 import { autoCreateRevenueRecord, buildBufferedEnd } from "./_booking-automation.js";
 import { normalizeVehicleId }                        from "./_vehicle-id.js";
 import { runAvailabilitySyncFix }                   from "./system-health-fix-availability.js";
+import { buildDateTimeLA, DEFAULT_RETURN_TIME }      from "./_time.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const OWNER_EMAIL = process.env.OWNER_EMAIL || "slyservices@supports-info.com";
@@ -689,17 +690,40 @@ async function checkExtensionReturnDateSync(sb) {
 // Detects active/overdue rentals that are missing required SMS communication:
 //   • Active rentals with zero sms_logs entries (silent bookings)
 //   • Overdue/recently-past-return bookings missing critical return-window SMS
-//   • Active bookings with no customer_phone (cannot receive SMS)
+//   • Active bookings with no phone number (cannot receive SMS)
+//
+// Critical window offsets relative to return_datetime:
+//   late_warning_30min fires at [-30 min, -15 min]
+//   late_at_return     fires at [+0 min,  +15 min]
+//   late_grace_expired fires at [+60 min, +75 min]
+//
+// A booking is only evaluated for missed critical SMS once ALL three windows
+// have closed, i.e. now > return_datetime + 75 min.  This prevents false
+// positives for same-day bookings whose return time is still in the future
+// (e.g. at 4 AM a booking returning at 11 PM would previously be flagged
+// because return_date == today even though the windows haven't opened yet).
+//
+// If sms_delivery_logs shows a "skipped" entry for a critical key, it is
+// classified as [SKIPPED: OUTSIDE WINDOW] (warning) rather than [MISSED
+// CRITICAL] (error), because the skip was intentional (e.g. no phone number
+// at send time or other business-rule suppression).
 async function checkSmsDeliveryHealth(sb) {
   try {
-    const today     = new Date().toISOString().slice(0, 10);
+    const now       = new Date(); // UTC; compared against returnDt which is also a UTC Date (LA offset baked in by buildDateTimeLA)
     // Look back 48 h for recently-past-return bookings that may have missed critical SMS.
     const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const ACTIVE_STATUSES = ["active_rental", "active", "overdue"];
 
+    // The three critical keys checked for post-return coverage.
+    const CRITICAL_KEYS = ["late_warning_30min", "late_at_return", "late_grace_expired"];
+
+    // All three critical windows close 75 minutes after return_datetime.
+    // We wait this long before declaring a missing key as "missed".
+    const LAST_WINDOW_CLOSE_MS = 75 * 60 * 1000;
+
     const { data: activeRows, error: activeErr } = await sb
       .from("bookings")
-      .select("booking_ref, status, customer_phone, renter_phone, customer_name, return_date, vehicle_id")
+      .select("booking_ref, status, customer_phone, renter_phone, customer_name, return_date, return_time, vehicle_id")
       .in("status", ACTIVE_STATUSES)
       .limit(200);
 
@@ -726,6 +750,30 @@ async function checkSmsDeliveryHealth(sb) {
       return check("SMS Delivery Health", "error", "Could not query sms_logs: " + smsErr.message);
     }
 
+    // Fetch sms_delivery_logs 'skipped' entries to distinguish intentional skips
+    // (e.g. outside the SMS send window, no phone at send time) from genuine
+    // misses.  Non-fatal: a query error leaves skippedDelivery empty so the
+    // check degrades gracefully to the previous "missed" classification.
+    const skippedDelivery = new Set(); // "booking_ref|message_type" pairs
+    try {
+      const { data: deliveryRows, error: deliveryErr } = await sb
+        .from("sms_delivery_logs")
+        .select("booking_ref, message_type")
+        .in("booking_ref", refs)
+        .in("message_type", CRITICAL_KEYS)
+        .eq("status", "skipped");
+      if (deliveryErr) {
+        console.warn("[v2-system-health] smsDeliveryHealth sms_delivery_logs query error (non-fatal):", deliveryErr.message);
+      }
+      for (const log of deliveryRows || []) {
+        if (log.booking_ref && log.message_type) {
+          skippedDelivery.add(`${log.booking_ref}|${log.message_type}`);
+        }
+      }
+    } catch (deliveryErr) {
+      console.warn("[v2-system-health] smsDeliveryHealth sms_delivery_logs query failed (non-fatal):", deliveryErr.message);
+    }
+
     // Build a set of "template_key|return_date_at_send" tuples per booking.
     const smsByBooking = {};
     for (const log of smsRows || []) {
@@ -733,9 +781,10 @@ async function checkSmsDeliveryHealth(sb) {
       smsByBooking[log.booking_id].add(`${log.template_key}|${log.return_date_at_send}`);
     }
 
-    const missingPhone   = [];
-    const noSmsContact   = [];
-    const missedCritical = [];
+    const missingPhone         = [];
+    const noSmsContact         = [];
+    const missedCritical       = [];
+    const skippedOutsideWindow = [];
 
     for (const b of rows) {
       const ref = b.booking_ref;
@@ -762,21 +811,50 @@ async function checkSmsDeliveryHealth(sb) {
         });
       }
 
-      // Sub-check C: overdue / recently-past-return without critical return-window SMS
+      // Sub-check C: overdue / recently-past-return without critical return-window SMS.
+      //
+      // We evaluate a booking only once ALL three critical trigger windows have
+      // closed.  The last window (late_grace_expired) closes at return_datetime
+      // + 75 min.  Using the actual return_datetime (date + time in LA timezone)
+      // prevents false positives when return_date == today but return_time is
+      // still in the future (e.g. a check running at 4 AM for a 11 PM return).
       const returnDate = b.return_date ? String(b.return_date).split("T")[0] : null;
-      if (returnDate && returnDate <= today && returnDate >= cutoff48h) {
-        const criticalKeys = ["late_warning_30min", "late_at_return", "late_grace_expired"];
-        const missed = criticalKeys.filter((k) => !logs.has(`${k}|${returnDate}`));
-        if (missed.length > 0) {
-          missedCritical.push({
-            id:   ref,
-            info: `status=${b.status} return=${returnDate} missed=[${missed.join(",")}] vehicle=${b.vehicle_id || "?"}`,
-          });
+      if (returnDate && returnDate >= cutoff48h) {
+        const returnTime = b.return_time
+          ? String(b.return_time).substring(0, 5)
+          : DEFAULT_RETURN_TIME;
+        const returnDt       = buildDateTimeLA(returnDate, returnTime);
+        const allWindowsClosed = !isNaN(returnDt.getTime()) &&
+          now.getTime() > returnDt.getTime() + LAST_WINDOW_CLOSE_MS;
+
+        if (allWindowsClosed) {
+          const missing = CRITICAL_KEYS.filter((k) => !logs.has(`${k}|${returnDate}`));
+          if (missing.length > 0) {
+            // Split: keys with a sms_delivery_logs 'skipped' entry are classified
+            // as skipped_outside_window (expected behaviour, not an error).
+            // Keys with no evidence of a send attempt are genuinely missed.
+            const windowSkipped  = missing.filter((k) =>  skippedDelivery.has(`${ref}|${k}`));
+            const actuallyMissed = missing.filter((k) => !skippedDelivery.has(`${ref}|${k}`));
+
+            if (windowSkipped.length > 0) {
+              skippedOutsideWindow.push({
+                id:   ref,
+                info: `status=${b.status} return=${returnDate} skipped=[${windowSkipped.join(",")}] vehicle=${b.vehicle_id || "?"}`,
+              });
+            }
+            if (actuallyMissed.length > 0) {
+              missedCritical.push({
+                id:   ref,
+                info: `status=${b.status} return=${returnDate} missed=[${actuallyMissed.join(",")}] vehicle=${b.vehicle_id || "?"}`,
+              });
+            }
+          }
         }
       }
     }
 
-    const totalIssues = missingPhone.length + noSmsContact.length + missedCritical.length;
+    const totalIssues = missingPhone.length + noSmsContact.length +
+      missedCritical.length + skippedOutsideWindow.length;
     if (totalIssues === 0) {
       return check(
         "SMS Delivery Health",
@@ -786,31 +864,42 @@ async function checkSmsDeliveryHealth(sb) {
     }
 
     const allItems = [
-      ...missedCritical.map((i) => ({ id: i.id, info: `[MISSED CRITICAL] ${i.info}` })),
-      ...noSmsContact.map((i)   => ({ id: i.id, info: `[NO SMS] ${i.info}` })),
-      ...missingPhone.map((i)   => ({ id: i.id, info: `[NO PHONE] ${i.info}` })),
+      ...missedCritical.map((i)       => ({ id: i.id, info: `[MISSED CRITICAL] ${i.info}` })),
+      ...skippedOutsideWindow.map((i) => ({ id: i.id, info: `[SKIPPED: OUTSIDE WINDOW] ${i.info}` })),
+      ...noSmsContact.map((i)         => ({ id: i.id, info: `[NO SMS] ${i.info}` })),
+      ...missingPhone.map((i)         => ({ id: i.id, info: `[NO PHONE] ${i.info}` })),
     ];
 
     const parts = [];
     if (missedCritical.length > 0)
       parts.push(`${missedCritical.length} booking${missedCritical.length !== 1 ? "s" : ""} missed critical return-window SMS`);
+    if (skippedOutsideWindow.length > 0)
+      parts.push(`${skippedOutsideWindow.length} booking${skippedOutsideWindow.length !== 1 ? "s" : ""} skipped outside the send window`);
     if (noSmsContact.length > 0)
       parts.push(`${noSmsContact.length} active rental${noSmsContact.length !== 1 ? "s" : ""} with no SMS contact`);
     if (missingPhone.length > 0)
       parts.push(`${missingPhone.length} booking${missingPhone.length !== 1 ? "s" : ""} without a phone number`);
 
-    console.error(
+    console.log(
       `[v2-system-health] smsDeliveryHealth: missedCritical=${missedCritical.length}` +
+      ` skippedOutsideWindow=${skippedOutsideWindow.length}` +
       ` noSmsContact=${noSmsContact.length} missingPhone=${missingPhone.length}`
     );
 
+    // Status is "error" only for genuine misses.
+    // skipped_outside_window entries are "warning" — expected behaviour due to
+    // business rules (send window, no phone at time of send, etc.).
+    const overallStatus = missedCritical.length > 0
+      ? "error"
+      : "warning";
+
     return check(
       "SMS Delivery Health",
-      missedCritical.length > 0 ? "error" : "warning",
+      overallStatus,
       parts.join("; ") + ".",
       allItems,
       "Click 'Fix Now' to send any missing critical SMS. Bookings without a phone number require manual intervention.",
-      true, // fixable — frontend routes Fix Now to /api/system-health-fix-sms
+      missedCritical.length > 0 || noSmsContact.length > 0, // fixable: missed critical SMS or rentals with no SMS history
     );
   } catch (err) {
     console.error("[v2-system-health] smsDeliveryHealth exception:", err);
