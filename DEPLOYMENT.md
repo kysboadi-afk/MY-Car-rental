@@ -159,7 +159,7 @@ After uploading, verify:
 - [ ] Homepage loads: `https://yourdomain.com`
 - [ ] Logo appears at the top
 - [ ] Stats widget shows (10+, 7,500, 100%, 99%)
-- [ ] Both car cards display (Slingshot & Camry)
+- [ ] Both car cards display (Camry 2012 & Camry 2013 SE)
 - [ ] Clicking "Select" opens booking page
 - [ ] Car images show in slideshow (one at a time)
 - [ ] Navigation arrows work (❮ ❯)

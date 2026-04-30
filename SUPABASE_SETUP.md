@@ -193,10 +193,8 @@ create table if not exists vehicles (
 
 create index if not exists vehicles_updated_at_idx on vehicles (updated_at);
 
--- Seed the four known fleet vehicles (safe to re-run; ignores conflicts)
+-- Seed the two known fleet vehicles (safe to re-run; ignores conflicts)
 insert into vehicles (vehicle_id, data) values
-  ('slingshot',  '{"vehicle_id":"slingshot",  "vehicle_name":"Slingshot R",     "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"../images/car2.jpg"}'::jsonb),
-  ('slingshot2', '{"vehicle_id":"slingshot2", "vehicle_name":"Slingshot R (2)", "type":"slingshot","vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"../images/car3.jpg"}'::jsonb),
   ('camry',      '{"vehicle_id":"camry",      "vehicle_name":"Camry 2012",      "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"../images/car1.jpg"}'::jsonb),
   ('camry2013',  '{"vehicle_id":"camry2013",  "vehicle_name":"Camry 2013 SE",   "type":"economy",  "vehicle_year":null,"purchase_date":"","purchase_price":0,"status":"active","cover_image":"../images/camry-beach-hero.png"}'::jsonb)
 on conflict (vehicle_id) do nothing;
@@ -303,11 +301,11 @@ INSERT INTO public.content_blocks (type, title, body, sort_order, active) VALUES
   ('faq', 'What is your minimum rental age?',   'The minimum age to rent is 21 years old. A valid driver''s license is required.', 1, true),
   ('faq', 'Do you offer airport pickup?',        'Yes, we offer pickup and drop-off at major LA area airports. Please contact us to arrange.', 2, true),
   ('faq', 'What forms of payment do you accept?','We accept all major credit cards via Stripe. Payments are processed securely online.', 3, true),
-  ('faq', 'Is there a security deposit?',        'The Slingshot requires a $150 refundable security deposit collected at pickup. The Camry has no deposit.', 4, true);
+  ('faq', 'Is there a security deposit?',        'The Camry has no security deposit.', 4, true);
 
 -- Example announcement
 INSERT INTO public.content_blocks (type, title, body, sort_order, active) VALUES
-  ('announcement', '🎉 Summer Special!', 'Book the Slingshot for 3 days and save 10%. Use code SUMMER24 at checkout.', 1, false);
+  ('announcement', '🎉 Summer Special!', 'Book a Camry for a week and save 10%. Use code SUMMER24 at checkout.', 1, false);
 
 -- Example site settings
 INSERT INTO public.site_settings (key, value) VALUES
@@ -355,7 +353,7 @@ that they all exist and are correct, and run any missing SQL to create them.
    - vehicle_id text PRIMARY KEY
    - data jsonb NOT NULL DEFAULT '{}'
    - updated_at timestamptz NOT NULL DEFAULT now()
-   Seed rows: slingshot, slingshot2, camry, camry2013
+   Seed rows: camry, camry2013
 
 2. protection_plans
    - id uuid PRIMARY KEY DEFAULT gen_random_uuid()
@@ -375,8 +373,8 @@ that they all exist and are correct, and run any missing SQL to create them.
    - category text DEFAULT 'general'
    - updated_at timestamptz NOT NULL DEFAULT now()
    - updated_by text
-   Seed rows: la_tax_rate (0.1025), slingshot_daily_rate (350), camry_daily_rate (55),
-              camry_weekly_rate (350), camry_biweekly_rate (650), slingshot_security_deposit (150),
+   Seed rows: la_tax_rate (0.1025), camry_daily_rate (55),
+              camry_weekly_rate (350), camry_biweekly_rate (650),
               automation_enabled (false), reminder_hours_before (24)
 
 4. revenue_records
@@ -587,12 +585,12 @@ WHERE vehicle_id = 'camry2013';
 -- Mark a vehicle as inactive (hides it from fleet page)
 UPDATE vehicles 
 SET data = data || '{"status": "inactive"}'::jsonb
-WHERE vehicle_id = 'slingshot2';
+WHERE vehicle_id = 'camry2013';
 
 -- Reactivate a vehicle
 UPDATE vehicles 
 SET data = data || '{"status": "active"}'::jsonb
-WHERE vehicle_id = 'slingshot2';
+WHERE vehicle_id = 'camry2013';
 
 -- Control the order vehicles appear on the page (lower = first)
 UPDATE vehicles 
@@ -614,12 +612,6 @@ WHERE vehicle_id = 'camry';
 | `camry_weekly_rate` | Weekly rental price |
 | `camry_biweekly_rate` | 2-week rental price |
 | `camry_monthly_rate` | Monthly rental price |
-| `slingshot_3hr_rate` | Slingshot 3-hour tier |
-| `slingshot_6hr_rate` | Slingshot 6-hour tier |
-| `slingshot_daily_rate` | Slingshot 24-hour tier |
-| `slingshot_2day_rate` | Slingshot 2-day tier |
-| `slingshot_3day_rate` | Slingshot 3-day tier |
-| `slingshot_security_deposit` | Refundable security deposit (Slingshot) |
 | `la_tax_rate` | Los Angeles sales tax rate (e.g. `0.1025` = 10.25%) |
 
 **Result:** Payment amounts, email receipts, and chatbot price quotes all update **immediately** — no deployment needed.
@@ -629,12 +621,8 @@ WHERE vehicle_id = 'camry';
 -- Run a 20% off promo on the Camry weekly rate ($350 → $280)
 UPDATE system_settings SET value = '280' WHERE key = 'camry_weekly_rate';
 
--- Change Slingshot 24-hour rate from $350 to $300
-UPDATE system_settings SET value = '300' WHERE key = 'slingshot_daily_rate';
-
 -- Restore original prices
 UPDATE system_settings SET value = '350' WHERE key = 'camry_weekly_rate';
-UPDATE system_settings SET value = '350' WHERE key = 'slingshot_daily_rate';
 ```
 
 ---
@@ -694,7 +682,7 @@ INSERT INTO content_blocks (type, title, body, sort_order, active)
 VALUES (
   'faq',
   'What is your cancellation policy?',
-  'All payments are final once a booking is confirmed. The Slingshot $50 booking deposit is non-refundable. Refunds are only issued if we cancel or cannot fulfill the rental.',
+  'All payments are final once a booking is confirmed. Refunds are only issued if we cancel or cannot fulfill the rental.',
   10,
   true
 );

@@ -116,13 +116,10 @@ automatically seeded on the first `list` call.
 
 | Category     | Key                            | Default  |
 |--------------|-------------------------------|---------|
-| pricing      | slingshot_daily_rate           | 350      |
 | pricing      | camry_daily_rate               | 55       |
 | pricing      | camry_weekly_rate              | 350      |
 | pricing      | camry_biweekly_rate            | 650      |
 | pricing      | camry_monthly_rate             | 1300     |
-| pricing      | slingshot_security_deposit     | 150      |
-| pricing      | slingshot_booking_deposit      | 50       |
 | tax          | la_tax_rate                    | 0.1025   |
 | automation   | auto_block_dates_on_approve    | true     |
 | automation   | auto_create_revenue_on_pay     | true     |
