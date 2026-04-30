@@ -54,7 +54,20 @@ export default async function handler(req, res) {
 
   // ── Dependencies check ─────────────────────────────────────────────────────
   const sb = getSupabaseAdmin();
-  if (!sb) return res.status(500).json({ error: "Supabase not configured." });
+  if (!sb) {
+    console.error("[system-health-fix-sms] Supabase client not created — SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing");
+    return res.status(500).json({ error: "Supabase not configured." });
+  }
+  console.log("[system-health-fix-sms] Supabase client created — testing connectivity...");
+
+  // Quick connectivity probe so any DB-level error is surfaced in the response
+  // (not just buried in Vercel function logs) for easier admin diagnostics.
+  const { error: probeErr } = await sb.from("bookings").select("booking_ref").limit(1);
+  if (probeErr) {
+    console.error("[system-health-fix-sms] Supabase connectivity probe failed:", probeErr.message, probeErr.code || "");
+    return res.status(500).json({ error: `Supabase connectivity error: ${probeErr.message}` });
+  }
+  console.log("[system-health-fix-sms] Supabase connection OK");
 
   if (!process.env.TEXTMAGIC_USERNAME || !process.env.TEXTMAGIC_API_KEY) {
     return res.status(200).json({
@@ -67,10 +80,15 @@ export default async function handler(req, res) {
   }
 
   // ── Load bookings from Supabase (same source as scheduled-reminders) ───────
+  // No fallback to bookings.json — this fix endpoint requires live Supabase data.
   const allBookings = await loadBookingsFromSupabase(sb);
   if (allBookings === null) {
-    return res.status(500).json({ error: "Failed to load bookings from Supabase." });
+    console.error("[system-health-fix-sms] loadBookingsFromSupabase returned null — see Vercel logs for query details");
+    return res.status(500).json({ error: "Database query error while loading bookings. This may be a permissions issue or a missing column — check Vercel function logs (tagged [system-health-fix-sms]) for the specific error." });
   }
+
+  const totalBookings = Object.values(allBookings).flat().length;
+  console.log(`[system-health-fix-sms] Loaded ${totalBookings} booking(s) from Supabase`);
 
   // Count only active/overdue bookings (the set processActiveRentals will touch)
   const processed = Object.values(allBookings)

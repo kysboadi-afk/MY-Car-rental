@@ -699,7 +699,7 @@ async function checkSmsDeliveryHealth(sb) {
 
     const { data: activeRows, error: activeErr } = await sb
       .from("bookings")
-      .select("booking_ref, status, customer_phone, customer_name, return_date, vehicle_id")
+      .select("booking_ref, status, customer_phone, renter_phone, customer_name, return_date, vehicle_id")
       .in("status", ACTIVE_STATUSES)
       .limit(200);
 
@@ -741,8 +741,10 @@ async function checkSmsDeliveryHealth(sb) {
       const ref = b.booking_ref;
       if (!ref) continue;
 
-      // Sub-check A: booking missing a phone number
-      if (!b.customer_phone) {
+      // Sub-check A: booking missing a phone number.
+      // renter_phone is the canonical SMS field (migration 0101); fall back to
+      // customer_phone for rows written before that migration.
+      if (!b.renter_phone && !b.customer_phone) {
         missingPhone.push({
           id:   ref,
           info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${b.return_date || "?"}`,
