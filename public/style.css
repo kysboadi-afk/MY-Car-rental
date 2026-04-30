@@ -754,6 +754,8 @@ body {
   border-radius: 16px;
   padding: 28px 24px;
   margin-top: 8px;
+  position: relative;
+  z-index: 1;
 }
 
 .waitlist-heading {
@@ -1131,6 +1133,16 @@ body {
   border: 1px solid #2a2a2a;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   max-width: 560px;
+  position: relative;
+  overflow: hidden;
+}
+
+.booking::before {
+  /* Containment anchor: ensures any diagonal decoration pseudo-element
+     stays inside .booking via the parent's overflow:hidden. */
+  content: '';
+  position: absolute;
+  z-index: 0;
 }
 
 .booking h2 {
