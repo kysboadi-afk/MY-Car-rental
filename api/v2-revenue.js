@@ -19,7 +19,6 @@
 //     unavailable or the table does not yet exist, so saves never fail silently.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
@@ -154,47 +153,7 @@ export default async function handler(req, res) {
       if (body.limit) records = records.slice(0, Number(body.limit));
       if (records.length > 0) return res.status(200).json({ records });
 
-      // Both Supabase and revenue-records.json are empty.
-      // Derive a live view directly from bookings.json so the Finance tab
-      // is always populated without requiring a manual "Sync" step.
-      try {
-        const { data: bookingsData } = await loadBookings();
-        const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
-        let derived = Object.values(bookingsData).flat()
-          .filter((b) => paidStatuses.has(b.status) && b.bookingId && Number(b.amountPaid || 0) > 0)
-          .map((b) => ({
-            id:             b.bookingId,
-            booking_id:     b.bookingId,
-            vehicle_id:     b.vehicleId   || null,
-            customer_name:  b.name        || null,
-            customer_phone: b.phone       || null,
-            customer_email: b.email       || null,
-            pickup_date:    b.pickupDate  || null,
-            return_date:    b.returnDate  || null,
-            gross_amount:   Number(b.amountPaid || 0),
-            deposit_amount: 0,
-            refund_amount:  0,
-            payment_method: b.paymentMethod || "cash",
-            payment_status: "paid",
-            notes:          b.notes       || null,
-            is_no_show:     false,
-            is_cancelled:   false,
-            override_by_admin: false,
-            created_at:     b.createdAt   || null,
-            updated_at:     b.updatedAt   || null,
-            _derived:       true,
-          }));
-        if (body.vehicleId) derived = derived.filter((r) => vehicleIdFamily(body.vehicleId).includes(r.vehicle_id));
-        if (body.status)    derived = derived.filter((r) => r.payment_status === body.status);
-        if (body.startDate) derived = derived.filter((r) => r.pickup_date   >= body.startDate);
-        if (body.endDate)   derived = derived.filter((r) => r.return_date   <= body.endDate);
-        if (scopedVehicleIds) derived = derived.filter((r) => scopedVehicleIds.includes(r.vehicle_id));
-        derived.sort((a, b) => (b.created_at || "") > (a.created_at || "") ? 1 : -1);
-        if (body.limit) derived = derived.slice(0, Number(body.limit));
-        return res.status(200).json({ records: derived, _source: "bookings_derived" });
-      } catch (bookingsErr) {
-        console.error("v2-revenue: bookings fallback error:", bookingsErr.message);
-      }
+      // Both Supabase and revenue-records.json are empty — return empty.
       return res.status(200).json({ records: [] });
     }
 
@@ -400,136 +359,14 @@ export default async function handler(req, res) {
       return res.status(200).json(aggregateRecords(ghRecords.filter((r) => !r.sync_excluded && r.payment_status === "paid")));
     }
 
-    // ── SYNC — build/refresh revenue_records from bookings.json ─────────────
-    // Finds all paid bookings in bookings.json that don't yet have a revenue
-    // record and creates them. Falls back to GitHub when Supabase table is missing.
+    // ── SYNC — deprecated (Supabase is the only source of truth) ────────────
+    // bookings.json has been retired. Revenue records are created atomically
+    // with bookings via the webhook pipeline. This action is a no-op.
     if (action === "sync") {
-      const { data: bookingsData } = await loadBookings();
-      const paidStatuses = new Set(["booked_paid", "active_rental", "completed_rental"]);
-      const paidBookings = Object.values(bookingsData).flat()
-        .filter((b) => paidStatuses.has(b.status) && b.bookingId && Number(b.amountPaid || 0) > 0);
-
-      if (paidBookings.length === 0) {
-        return res.status(200).json({ synced: 0, skipped: 0, message: "No paid bookings found to sync." });
-      }
-
-      // Build records without `id` so Supabase can generate it via gen_random_uuid()
-      const toInsertBase = paidBookings.map((b) => ({
-        booking_id:        b.bookingId,
-        vehicle_id:        b.vehicleId || null,
-        customer_name:     b.name        || null,
-        customer_phone:    b.phone       || null,
-        customer_email:    b.email       || null,
-        pickup_date:       b.pickupDate  || null,
-        return_date:       b.returnDate  || null,
-        gross_amount:      Number(b.amountPaid || 0),
-        deposit_amount:    0,
-        refund_amount:     0,
-        payment_method:    b.paymentMethod || "cash",
-        payment_status:    "paid",
-        payment_intent_id: b.paymentIntentId || null,
-        notes:             b.notes || null,
-        is_no_show:        false,
-        is_cancelled:      b.status === "cancelled_rental",
-        override_by_admin: true,
-        created_at:        new Date().toISOString(),
-        updated_at:        new Date().toISOString(),
-      }));
-
-      if (sb) {
-        let useGithubFallback = false;
-        // Pre-check existing booking_ids to compute accurate counts
-        let existingIds = new Set();
-        try {
-          const { data: existing, error: existErr } = await sb.from("revenue_records_effective").select("booking_id");
-          if (existErr) {
-            // Any error (schema or otherwise) on the pre-check: fall through to GitHub
-            useGithubFallback = true;
-          } else {
-            existingIds = new Set((existing || []).map((r) => r.booking_id));
-          }
-        } catch (_) { useGithubFallback = true; /* if SELECT throws, fall through to GitHub */ }
-
-        if (!useGithubFallback) {
-          const newRecords = toInsertBase.filter((r) => !existingIds.has(r.booking_id));
-          const skipped = toInsertBase.length - newRecords.length;
-
-          let synced = 0;
-          const BATCH = 100;
-          let batchFailed = false;
-
-          if (newRecords.length > 0) {
-            for (let i = 0; i < newRecords.length; i += BATCH) {
-              const batch = newRecords.slice(i, i + BATCH);
-              const { error: insertErr } = await sb.from("revenue_records").insert(batch);
-              if (insertErr) {
-                if (isSchemaError(insertErr)) { batchFailed = true; useGithubFallback = true; break; }
-                throw insertErr;
-              }
-              synced += batch.length;
-            }
-          }
-
-          if (!batchFailed) {
-            // Backfill payment_intent_id on existing records that are missing it.
-            // This stamps Stripe PI IDs onto records created before migration 0043
-            // so the Stripe reconciler can match them by PI ID.
-            const toBackfill = toInsertBase.filter(
-              (r) => existingIds.has(r.booking_id) && r.payment_intent_id
-            );
-            if (toBackfill.length > 0) {
-              const updatedAt = new Date().toISOString();
-              const CONC = 10;
-              for (let i = 0; i < toBackfill.length; i += CONC) {
-                const batch = toBackfill.slice(i, i + CONC);
-                await Promise.all(batch.map((r) =>
-                  sb.from("revenue_records")
-                    .update({ payment_intent_id: r.payment_intent_id, updated_at: updatedAt })
-                    .eq("booking_id", r.booking_id)
-                    .is("payment_intent_id", null)
-                ));
-              }
-            }
-
-            return res.status(200).json({
-              synced,
-              skipped,
-              message: `Synced ${synced} revenue record${synced !== 1 ? "s" : ""} from bookings.${skipped > 0 ? ` ${skipped} already existed and were skipped.` : ""}`,
-            });
-          }
-        }
-        console.warn("v2-revenue sync: Supabase unavailable or error, falling back to GitHub");
-      }
-
-      // GitHub fallback for sync — include client-generated UUIDs
-      const toInsert = toInsertBase.map((r) => ({ id: crypto.randomUUID(), ...r }));
-      let synced = 0;
-      let skipped = 0;
-      let needsGithubWrite = false;
-      await updateJsonFileWithRetry({
-        load:    loadRecordsFromGitHub,
-        apply:   (data) => {
-          const existingBookingIds = new Set(data.map((r) => r.booking_id));
-          synced = 0; skipped = 0; needsGithubWrite = false;
-          for (const r of toInsert) {
-            if (existingBookingIds.has(r.booking_id)) { skipped++; continue; }
-            data.push(r);
-            existingBookingIds.add(r.booking_id);
-            synced++;
-          }
-          needsGithubWrite = synced > 0;
-        },
-        save:    async (data, sha, message) => {
-          if (!needsGithubWrite) return; // nothing changed — skip the commit
-          return saveRecordsToGitHub(data, sha, message);
-        },
-        message: `v2: Sync ${toInsert.length} revenue records from bookings`,
-      });
-
       return res.status(200).json({
-        synced,
-        skipped,
-        message: `Synced ${synced} revenue record${synced !== 1 ? "s" : ""} from bookings.${skipped > 0 ? ` ${skipped} already existed and were skipped.` : ""}`,
+        synced: 0,
+        skipped: 0,
+        message: "Sync from bookings.json is no longer supported — Supabase is the only source of truth. Revenue records are created automatically by the booking pipeline.",
       });
     }
 

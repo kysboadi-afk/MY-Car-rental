@@ -478,9 +478,11 @@ test("webhook new booking: pre-write guarantees Supabase row and idempotent json
     // Pipeline must have run at least once.
     assert.ok(automationCalls.booking.length >= 1, "pipeline must call autoUpsertBooking at least once");
 
-    // Idempotency: bookings.json must contain exactly one entry for this PI.
-    const jsonRows = (bookingsStore.camry || []).filter((b) => b.paymentIntentId === "pi_retry_booking");
-    assert.equal(jsonRows.length, 1, "idempotency guard must prevent duplicate bookings");
+    // Idempotency: Supabase must contain exactly one booking entry for this PI.
+    const sbEntries = Object.values(supabaseBookingsStore).filter(
+      (r) => r.payment_intent_id === "pi_retry_booking"
+    );
+    assert.equal(sbEntries.length, 1, "idempotency guard must prevent duplicate bookings in Supabase");
   } finally {
     skipSupabaseUpsertPi = null;
     skipSupabaseUpsertCount = 0;
@@ -659,23 +661,20 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
   // cannot prevent the admin dashboard from seeing the new return date.
   resetStore(); resetCalls();
   const origBookingId = "bk-sha-conflict-test";
-  bookingsStore["camry"] = [{
-    bookingId:  origBookingId,
-    vehicleId:  "camry",
-    name:       "SHA Conflict Customer",
-    phone:      "+13105555555",
-    pickupDate: "2026-12-01",
-    returnDate: "2026-12-03",
-    returnTime: "5:00 PM",
-    status:     "active_rental",
-    amountPaid: 150,
-    extensionPendingPayment: {
-      newReturnDate: "2026-12-06",
-      newReturnTime: "5:00 PM",
-      label:         "+3 days",
-    },
-  }];
-  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
+  supabaseBookingsStore[origBookingId] = {
+    id:             `sb_${origBookingId}`,
+    booking_ref:    origBookingId,
+    status:         "active_rental",
+    return_date:    "2026-12-03",
+    return_time:    "17:00:00",
+    vehicle_id:     "camry",
+    customer_name:  "SHA Conflict Customer",
+    customer_phone: "+13105555555",
+    customer_email: null,
+    pickup_date:    "2026-12-01",
+    extension_count: 0,
+    deposit_paid:   150,
+  };
 
   const event = piSucceededEvent({
     payment_type:        "rental_extension",
@@ -704,24 +703,20 @@ test("webhook rental_extension: PREFLIGHT — autoUpsertBooking fires before boo
 test("webhook rental_extension: creates a new extension revenue record (type=extension)", async () => {
   resetStore(); resetCalls();
   const origBookingId = "bk-ext-revenue-test";
-  bookingsStore["camry"] = [{
-    bookingId:  origBookingId,
-    vehicleId:  "camry",
-    name:       "Revenue Test Renter",
-    phone:      "+13105556666",
-    email:      "revenue@example.com",
-    pickupDate: "2026-12-10",
-    returnDate: "2026-12-12",
-    status:     "active_rental",
-    amountPaid: 110,
-    extensionPendingPayment: {
-      newReturnDate: "2026-12-14",
-      newReturnTime: "3:00 PM",
-      label:         "+2 days",
-      price:         110,
-    },
-  }];
-  supabaseBookingsStore[origBookingId] = { id: `sb_${origBookingId}`, booking_ref: origBookingId };
+  supabaseBookingsStore[origBookingId] = {
+    id:             `sb_${origBookingId}`,
+    booking_ref:    origBookingId,
+    status:         "active_rental",
+    return_date:    "2026-12-12",
+    return_time:    "15:00:00",
+    vehicle_id:     "camry",
+    customer_name:  "Revenue Test Renter",
+    customer_phone: "+13105556666",
+    customer_email: "revenue@example.com",
+    pickup_date:    "2026-12-10",
+    extension_count: 0,
+    deposit_paid:   110,
+  };
 
   // amountCents = 11000 → $110.00 extension
   const event = piSucceededEvent({
@@ -762,12 +757,7 @@ test("webhook rental_extension: creates a new extension revenue record (type=ext
   );
   assert.equal(revUpdate, undefined, "original revenue_records row must NOT be updated — extension gets its own row");
 
-  // bookings.json amountPaid must still be incremented so the booking reflects the total collected.
-  const saved = (bookingsStore["camry"] || []).find((b) => b.bookingId === origBookingId);
-  assert.ok(saved, "original booking must still exist in bookings.json");
-  assert.equal(saved.amountPaid, 220, "bookings.json amountPaid must be updated to 220 after extension");
-
-  // autoUpsertBooking must carry the updated amountPaid.
+  // The autoUpsertBooking call must carry the updated amountPaid.
   const upsert = automationCalls.booking.find((b) => b.bookingId === origBookingId);
   assert.ok(upsert, "autoUpsertBooking must be called for the original booking");
   assert.equal(upsert.amountPaid, 220, "upserted booking must have combined amountPaid = 220");
@@ -845,20 +835,21 @@ test("webhook rental_extension: missing booking is logged and not mutated", asyn
 test("webhook rental_extension: idempotency guard skips re-application when returnDate already matches metadata", async () => {
   resetStore(); resetCalls();
   const bookingId = "bk-ext-idempotent";
-  bookingsStore["camry"] = [{
-    bookingId,
-    vehicleId: "camry",
-    name: "Idempotent Renter",
-    phone: "+13105557777",
-    pickupDate: "2026-12-10",
-    pickupTime: "3:00 PM",
-    returnDate: "2026-12-14",
-    returnTime: "3:00 PM",
-    status: "active_rental",
-    amountPaid: 220,
-    extensionCount: 1,
-  }];
-  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
+  // return_date already matches new_return_date → alreadyApplied=true
+  supabaseBookingsStore[bookingId] = {
+    id:             `sb_${bookingId}`,
+    booking_ref:    bookingId,
+    status:         "active_rental",
+    return_date:    "2026-12-14",
+    return_time:    "15:00:00",
+    vehicle_id:     "camry",
+    customer_name:  "Idempotent Renter",
+    customer_phone: "+13105557777",
+    customer_email: null,
+    pickup_date:    "2026-12-10",
+    extension_count: 1,
+    deposit_paid:   220,
+  };
 
   const event = piSucceededEvent({
     payment_type: "rental_extension",
@@ -871,9 +862,9 @@ test("webhook rental_extension: idempotency guard skips re-application when retu
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
-  const saved = bookingsStore.camry.find((b) => b.bookingId === bookingId);
-  assert.equal(saved.amountPaid, 220, "idempotent retry must not increment amountPaid");
-  assert.equal(saved.extensionCount, 1, "idempotent retry must not increment extensionCount");
+  // Supabase booking must not be re-mutated by the idempotent retry.
+  const sbEntry = supabaseBookingsStore[bookingId];
+  assert.equal(sbEntry.return_date, "2026-12-14", "idempotent retry must not change the return date");
   assert.equal(automationCalls.booking.length, 0, "idempotent retry must not upsert booking");
   assert.equal(automationCalls.revenue.length, 1, "idempotent retry must attempt extension revenue recovery (PI dedup prevents actual duplicate)");
   assert.equal(automationCalls.blocked.length, 0, "idempotent retry must not create blocked dates");
@@ -888,22 +879,21 @@ test("webhook rental_extension: alreadyApplied path recovers missing revenue rec
   // and must still attempt revenue creation (idempotent via payment_intent_id dedup).
   resetStore(); resetCalls();
   const bookingId = "bk-ext-revenue-recovery";
-  bookingsStore["camry"] = [{
-    bookingId,
-    vehicleId: "camry",
-    name: "Recovery Renter",
-    phone: "+13105559900",
-    email: "recovery@example.com",
-    pickupDate: "2026-12-10",
-    pickupTime: "3:00 PM",
-    // returnDate already matches new_return_date — booking was updated on first delivery
-    returnDate: "2026-12-17",
-    returnTime: "15:00",
-    status: "active_rental",
-    amountPaid: 330,
-    extensionCount: 1,
-  }];
-  supabaseBookingsStore[bookingId] = { id: `sb_${bookingId}`, booking_ref: bookingId };
+  // return_date already matches new_return_date → alreadyApplied=true
+  supabaseBookingsStore[bookingId] = {
+    id:             `sb_${bookingId}`,
+    booking_ref:    bookingId,
+    status:         "active_rental",
+    return_date:    "2026-12-17",
+    return_time:    "15:00:00",
+    vehicle_id:     "camry",
+    customer_name:  "Recovery Renter",
+    customer_phone: "+13105559900",
+    customer_email: "recovery@example.com",
+    pickup_date:    "2026-12-10",
+    extension_count: 1,
+    deposit_paid:   330,
+  };
 
   const event = piSucceededEvent({
     payment_type:    "rental_extension",
@@ -916,10 +906,9 @@ test("webhook rental_extension: alreadyApplied path recovers missing revenue rec
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
-  // Booking JSON must NOT be re-mutated.
-  const saved = bookingsStore.camry.find((b) => b.bookingId === bookingId);
-  assert.equal(saved.amountPaid,    330, "alreadyApplied must not increment amountPaid");
-  assert.equal(saved.extensionCount, 1, "alreadyApplied must not increment extensionCount");
+  // Supabase booking must NOT be re-mutated.
+  const sbEntry = supabaseBookingsStore[bookingId];
+  assert.equal(sbEntry.return_date, "2026-12-17", "alreadyApplied must not change the return date");
 
   // Side-effect helpers must NOT fire.
   assert.equal(automationCalls.booking.length, 0, "alreadyApplied must not upsert booking");
@@ -971,11 +960,10 @@ test("webhook rental_extension: Supabase-only booking — updates bookings.retur
   await handler(makeWebhookReq(event), res);
   assert.equal(res._status, 200);
 
-  // bookings.return_date must have been advanced to 2026-04-25.
-  const returnDateUpdate = supabaseDirectUpdates.find(
-    (u) => u.table === "bookings" && u.payload.return_date === "2026-04-25"
-  );
-  assert.ok(returnDateUpdate, "Supabase bookings.return_date must be updated to new_return_date");
+  // bookings.return_date must have been advanced to 2026-04-25 via autoUpsertBooking.
+  const upsert = automationCalls.booking.find((b) => b.bookingId === bookingId);
+  assert.ok(upsert, "autoUpsertBooking must be called for the Supabase-only booking");
+  assert.equal(upsert.returnDate, "2026-04-25", "autoUpsertBooking must carry the new return date");
 
   // Extension revenue record must have been created.
   assert.ok(automationCalls.revenue.length > 0, "extension revenue record must be created");
@@ -984,9 +972,6 @@ test("webhook rental_extension: Supabase-only booking — updates bookings.retur
   assert.equal(rev.bookingId,       bookingId,    "revenue booking_id must equal the original booking_ref");
   assert.equal(rev.pickupDate,      "2026-04-24", "extension pickupDate must equal previous_return_date");
   assert.equal(rev.returnDate,      "2026-04-25", "extension returnDate must equal new_return_date");
-
-  // autoUpsertBooking must NOT be called (booking.json was not updated).
-  assert.equal(automationCalls.booking.length, 0, "Supabase fallback must not call autoUpsertBooking");
 });
 
 test("webhook reservation_deposit: uses customer_details.phone when renter_phone absent from metadata", async () => {

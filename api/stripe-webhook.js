@@ -19,10 +19,9 @@
 import Stripe from "stripe";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
-import { updateBooking, loadBookings, saveBookings, normalizePhone } from "./_bookings.js";
+import { normalizePhone } from "./_bookings.js";
 import { sendSms } from "./_textmagic.js";
 import { render, BOOKING_CONFIRMED, RESERVATION_DEPOSIT_CONFIRMED, EXTEND_CONFIRMED_ECONOMY, DEFAULT_LOCATION, LATE_FEE_APPLIED, POST_RENTAL_CHARGE } from "./_sms-templates.js";
-import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { hasOverlap } from "./_availability.js";
 import { autoCreateRevenueRecord, createOrphanRevenueRecord, autoUpsertCustomer, autoUpsertBooking, autoCreateBlockedDate, extendBlockedDateForBooking, autoActivateIfPickupArrived, parseTime12h } from "./_booking-automation.js";
 import { persistBooking } from "./_booking-pipeline.js";
@@ -353,21 +352,6 @@ async function resolveStripeFeeFields(stripe, paymentIntent) {
   };
 }
 
-async function bookingExistsInJson(vehicleId, bookingId, paymentIntentId) {
-  if (!vehicleId) return false;
-  try {
-    const { data } = await loadBookings();
-    const list = Array.isArray(data?.[vehicleId]) ? data[vehicleId] : [];
-    return list.some((b) =>
-      (bookingId && b.bookingId === bookingId) ||
-      (paymentIntentId && b.paymentIntentId === paymentIntentId)
-    );
-  } catch (err) {
-    console.error("stripe-webhook: bookingExistsInJson lookup error:", err.message);
-    return false;
-  }
-}
-
 async function sendBookingPersistenceAlert(paymentIntent, reason, details = {}) {
   const alertLines = [
     "🚨 Stripe webhook booking persistence failure",
@@ -606,7 +590,6 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
   let result = null;
   let supabaseExists = false;
-  let jsonExists = false;
   let revenueComplete = false;
   let lastPersistError = null;
   const envAttempts = parseInt(process.env.WEBHOOK_BOOKING_RETRY_ATTEMPTS || "", 10);
@@ -626,9 +609,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
     }
     supabaseExists = await bookingExistsInSupabase(persistPayload.bookingId, paymentIntent.id);
     revenueComplete = await revenueRecordCompleteInSupabase(persistPayload.bookingId, paymentIntent.id);
-    jsonExists = await bookingExistsInJson(vehicleId, persistPayload.bookingId, paymentIntent.id);
 
-    if (supabaseExists && jsonExists && revenueComplete) {
+    if (supabaseExists && revenueComplete) {
       if (!result.ok) {
         console.warn(
           `stripe-webhook: PI ${paymentIntent.id} persisted after recovery attempt ${attempt}; initial errors: ${result.errors.join("; ")}`
@@ -648,16 +630,16 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
 
     console.error(
       `stripe-webhook: booking persistence verification failed for PI ${paymentIntent.id} attempt=${attempt} ` +
-      `supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists} ` +
+      `supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} ` +
       `errors=${(result.errors || []).join("; ")}`,
       lastPersistError || ""
     );
   }
 
-  if (!supabaseExists || !jsonExists || !revenueComplete) {
+  if (!supabaseExists || !revenueComplete) {
     const failureReason =
       `stripe-webhook: booking persistence guarantee failed for PI ${paymentIntent.id} ` +
-      `(supabaseExists=${supabaseExists} revenueComplete=${revenueComplete} jsonExists=${jsonExists})`;
+      `(supabaseExists=${supabaseExists} revenueComplete=${revenueComplete})`;
     await sendBookingPersistenceAlert(paymentIntent, failureReason, {
       booking_id: persistPayload.bookingId,
       vehicle_id: vehicleId,
@@ -678,6 +660,8 @@ async function saveWebhookBookingRecord(paymentIntent, extraFields = {}) {
       console.error("stripe-webhook: autoActivateIfPickupArrived error (non-fatal):", err.message);
     }
   }
+
+  return { bookingId: persistPayload.bookingId };
 }
 
 /**
@@ -1064,24 +1048,6 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
         paymentIntent.metadata?.booking_ref ||
         paymentIntent.metadata?.original_booking_id;
       if (ref) booking_id = (await resolveBookingId(ref)) || ref;
-
-      // Fallback: look up by payment_intent_id (covers auto-generated wh- IDs
-      // for full_payment bookings where booking_id is not set in metadata).
-      if (!booking_id) {
-        try {
-          const sbFb = getSupabaseAdmin();
-          if (sbFb) {
-            const { data: piRow } = await sbFb
-              .from("bookings")
-              .select("booking_ref")
-              .eq("payment_intent_id", paymentIntent.id)
-              .maybeSingle();
-            if (piRow?.booking_ref) booking_id = piRow.booking_ref;
-          }
-        } catch (fbErr) {
-          console.warn("[processStripePayment] PI-ID fallback lookup failed (non-fatal):", fbErr.message);
-        }
-      }
     }
   }
 
@@ -1107,21 +1073,6 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
           paymentIntent.metadata?.booking_ref ||
           paymentIntent.metadata?.original_booking_id;
         if (recRef) booking_id = (await resolveBookingId(recRef)) || recRef;
-        if (!booking_id) {
-          try {
-            const supabaseClient = getSupabaseAdmin();
-            if (supabaseClient) {
-              const { data: bookingRow } = await supabaseClient
-                .from("bookings")
-                .select("booking_ref")
-                .eq("payment_intent_id", paymentIntent.id)
-                .maybeSingle();
-              if (bookingRow?.booking_ref) booking_id = bookingRow.booking_ref;
-            }
-          } catch (fbRecErr) {
-            console.warn("[processStripePayment] retry PI-ID fallback failed:", fbRecErr.message);
-          }
-        }
       } catch (recErr) {
         console.error("[processStripePayment] auto-create booking failed:", recErr.message, {
           paymentIntentId: paymentIntent.id,
@@ -1630,240 +1581,51 @@ export default async function handler(req, res) {
             );
           }
 
-          let foundBooking = false;
-          let alreadyApplied = false;
-          let invalidStatus = null;
-          let oldReturnDate = "";
-          let updatedBooking = null;
-          let extensionAmountDollars = 0;
-
-          await updateJsonFileWithRetry({
-            load: loadBookings,
-            apply: (freshData) => {
-              const list = Array.isArray(freshData[vehicle_id]) ? freshData[vehicle_id] : [];
-              const idx = list.findIndex(
-                (b) => b.bookingId === bookingRef || b.paymentIntentId === bookingRef
-              );
-              if (idx === -1) return;
-
-              foundBooking = true;
-              const cur = list[idx];
-              const normalizedCurrentReturnTime = normalizeClockTime(cur.returnTime);
-              const resolvedReturnTime = normalizedCurrentReturnTime || DEFAULT_RETURN_TIME;
-              const shouldPersistReturnTime = !cur.returnTime || cur.returnTime !== resolvedReturnTime;
-
-              if (cur.returnDate === new_return_date) {
-                alreadyApplied = true;
-                if (shouldPersistReturnTime) {
-                  cur.returnTime = resolvedReturnTime;
-                }
-                // Always capture a snapshot so the alreadyApplied branch can
-                // attempt idempotent revenue recovery when needed.
-                updatedBooking = { ...cur };
-                return;
-              }
-
-              const isActiveRental = cur.status === "active_rental" || cur.status === "active";
-              if (!isActiveRental && cur.status !== "reserved") {
-                invalidStatus = cur.status || "<missing>";
-                return;
-              }
-              if (cur.status === "active") cur.status = "active_rental";
-
-              oldReturnDate = cur.returnDate || "";
-
-              const metadataReturnTime = normalizeClockTime(new_return_time);
-              if (metadataReturnTime && metadataReturnTime !== resolvedReturnTime) {
-                console.warn(
-                  `stripe-webhook: rental_extension return_time "${metadataReturnTime}" ignored ` +
-                  `for booking ${bookingRef}; preserving "${resolvedReturnTime}"`
-                );
-              }
-
-              const ext = cur.extensionPendingPayment || {};
-              extensionAmountDollars = Math.round(
-                ((ext.price != null ? ext.price : paymentIntent.amount / 100) || 0) * 100
-              ) / 100;
-
-              const existingPayments = Array.isArray(cur.payments) ? cur.payments : [];
-              const paymentAlreadyRecorded = existingPayments.some(
-                (p) => p && (p.paymentIntentId === paymentIntent.id || p.id === paymentIntent.id)
-              );
-              const updatedPayments = paymentAlreadyRecorded
-                ? existingPayments
-                : [
-                    ...existingPayments,
-                    {
-                      paymentIntentId: paymentIntent.id,
-                      type: "rental_extension",
-                      amount: extensionAmountDollars,
-                      appliedAt: new Date().toISOString(),
-                    },
-                  ];
-
-              cur.amountPaid = Math.round(((cur.amountPaid || 0) + extensionAmountDollars) * 100) / 100;
-              cur.returnDate = new_return_date;
-              cur.returnTime = resolvedReturnTime;
-              cur.extensionPendingPayment = null;
-              cur.extensionCount = (cur.extensionCount || 0) + 1;
-              cur.lastExtensionAt = new Date().toISOString();
-              cur.payments = updatedPayments;
-
-              // Clear late-return and end-of-rental markers so they re-fire for the new return date.
-              if (cur.smsSentAt) {
-                delete cur.smsSentAt.late_warning_30min;
-                delete cur.smsSentAt.late_at_return;
-                delete cur.smsSentAt.late_grace_expired;
-                delete cur.smsSentAt.late_fee_pending;
-                delete cur.smsSentAt.active_1h;
-                delete cur.smsSentAt.active_15min;
-              }
-              delete cur.lateFeeApplied;
-              updatedBooking = { ...cur };
-            },
-            save: saveBookings,
-            message: `Confirm extension for booking ${bookingRef}`,
-          });
-
-          if (!foundBooking) {
-            // Booking not found in bookings.json.  Attempt a direct Supabase update so
-            // extensions for Supabase-only bookings (records that were never mirrored
-            // back to the JSON file) are still applied correctly.
-            console.warn(
-              `stripe-webhook: rental_extension booking not found in bookings.json — ` +
-              `attempting Supabase-only fallback vehicle_id=${vehicle_id} booking_id=${bookingRef}`
-            );
-            try {
-              const sbFallback = getSupabaseAdmin();
-              if (!sbFallback) {
-                console.error("stripe-webhook: Supabase not available for extension fallback");
-                return res.status(200).json({ received: true });
-              }
-              const { data: sbRow, error: sbRowErr } = await sbFallback
-                .from("bookings")
-                .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date")
-                .eq("booking_ref", bookingRef)
-                .maybeSingle();
-              if (sbRowErr || !sbRow) {
-                console.error(
-                  `stripe-webhook: rental_extension Supabase fallback — booking not found: ${bookingRef}`
-                );
-                return res.status(200).json({ received: true });
-              }
-              const sbStatus = sbRow.status;
-              const isValidStatus = sbStatus === "active_rental" || sbStatus === "active" || sbStatus === "reserved";
-              if (!isValidStatus) {
-                console.error(
-                  `stripe-webhook: rental_extension Supabase fallback invalid status "${sbStatus}" for ${bookingRef}`
-                );
-                return res.status(200).json({ received: true });
-              }
-              const sbCurrentReturnDate = sbRow.return_date ? String(sbRow.return_date).split("T")[0] : null;
-              const fallbackOldReturnDate = sbCurrentReturnDate || "";
-              const fallbackExtAmount = Math.round(paymentIntent.amount) / 100;
-              if (sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date) {
-                // Already applied in Supabase — attempt idempotent revenue recovery.
-                console.log(
-                  `stripe-webhook: rental_extension Supabase fallback already applied for ${bookingRef} ` +
-                  `current=${sbCurrentReturnDate} >= new=${new_return_date}`
-                );
-              } else {
-                // Advance bookings.return_date.
-                const { error: sbUpdateErr } = await sbFallback
-                  .from("bookings")
-                  .update({ return_date: new_return_date, updated_at: new Date().toISOString() })
-                  .eq("booking_ref", bookingRef);
-                if (sbUpdateErr) {
-                  console.error(
-                    `stripe-webhook: rental_extension Supabase fallback update failed: ${sbUpdateErr.message}`
-                  );
-                  return res.status(500).json({
-                    received: false,
-                    error: `extension fallback booking update failed for ${paymentIntent.id}`,
-                  });
-                }
-                // Insert booking_extensions row.
-                try {
-                  const { error: beErr } = await sbFallback
-                    .from("booking_extensions")
-                    .upsert(
-                      {
-                        booking_id:        resolvedBookingId,
-                        payment_intent_id: paymentIntent.id,
-                        amount:            fallbackExtAmount,
-                        new_return_date:   new_return_date,
-                        new_return_time:   sbRow.return_time || null,
-                      },
-                      { onConflict: "payment_intent_id", ignoreDuplicates: true }
-                    );
-                  if (beErr) {
-                    console.error(
-                      "stripe-webhook: Supabase fallback booking_extensions upsert failed:",
-                      beErr.message, { resolvedBookingId, paymentIntentId: paymentIntent.id }
-                    );
-                  }
-                } catch (beErr) {
-                  console.warn(
-                    "stripe-webhook: Supabase fallback booking_extensions error (non-fatal):",
-                    beErr.message
-                  );
-                }
-                console.log("EXTENSION_APPLIED_SUPABASE_FALLBACK", {
-                  booking_id: bookingRef,
-                  old_return: fallbackOldReturnDate,
-                  new_return: new_return_date,
-                  payment_intent_id: paymentIntent.id,
-                });
-              }
-              // Create extension revenue record (idempotent via payment_intent_id).
-              try {
-                const fallbackFeeFields = await resolveStripeFeeFields(stripe, paymentIntent);
-                const fallbackCustomerId = await resolveCustomerIdFromSupabase(
-                  sbRow.customer_phone || "",
-                  sbRow.customer_email || renter_email || "",
-                );
-                await autoCreateRevenueRecord({
-                  booking_ref:     resolvedBookingId,
-                  bookingId:       resolvedBookingId,
-                  paymentIntentId: paymentIntent.id,
-                  vehicleId:       sbRow.vehicle_id || vehicle_id,
-                  customerId:      fallbackCustomerId,
-                  name:            sbRow.customer_name || renter_name || "",
-                  phone:           sbRow.customer_phone || "",
-                  email:           sbRow.customer_email || renter_email || "",
-                  pickupDate:      previous_return_date || fallbackOldReturnDate || "",
-                  returnDate:      new_return_date || "",
-                  amountPaid:      fallbackExtAmount,
-                  paymentMethod:   "stripe",
-                  type:            "extension",
-                  ...fallbackFeeFields,
-                }, { strict: true, requireStripeFee: true });
-              } catch (revErr) {
-                console.error(
-                  "stripe-webhook: Supabase fallback extension revenue error:",
-                  revErr.message
-                );
-                return res.status(500).json({
-                  received: false,
-                  error: `extension fallback revenue persistence failed for ${paymentIntent.id}`,
-                });
-              }
-              // Update blocked_dates to reflect the new return date.
-              if (vehicle_id && new_return_date) {
-                try {
-                  await extendBlockedDateForBooking(vehicle_id, bookingRef, new_return_date, sbRow.return_time || null);
-                } catch (sbBlockErr) {
-                  console.error("stripe-webhook: Supabase fallback blocked_dates extension update failed (non-fatal):", sbBlockErr.message);
-                }
-              }
-            } catch (fallbackErr) {
-              console.error(
-                "stripe-webhook: rental_extension Supabase fallback error:",
-                fallbackErr.message
-              );
-            }
+          // Fetch booking directly from Supabase — the sole source of truth.
+          const sbExtClient = getSupabaseAdmin();
+          if (!sbExtClient) {
+            console.error("stripe-webhook: rental_extension — Supabase unavailable for booking lookup");
             return res.status(200).json({ received: true });
           }
+          const { data: sbExtRow, error: sbExtRowErr } = await sbExtClient
+            .from("bookings")
+            .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid")
+            .eq("booking_ref", bookingRef)
+            .maybeSingle();
+          if (sbExtRowErr || !sbExtRow) {
+            console.error(
+              `stripe-webhook: rental_extension booking not found in Supabase: ${bookingRef}`,
+              sbExtRowErr?.message || ""
+            );
+            return res.status(200).json({ received: true });
+          }
+
+          const sbStatus = sbExtRow.status;
+          const isValidStatus = sbStatus === "active_rental" || sbStatus === "active" || sbStatus === "reserved";
+          const invalidStatus = isValidStatus ? null : (sbStatus || "<missing>");
+
+          const normalizedCurrentReturnTime = normalizeClockTime(
+            sbExtRow.return_time ? String(sbExtRow.return_time).substring(0, 5) : null
+          );
+          const resolvedReturnTime = normalizedCurrentReturnTime || DEFAULT_RETURN_TIME;
+          const sbCurrentReturnDate = sbExtRow.return_date ? String(sbExtRow.return_date).split("T")[0] : null;
+          const alreadyApplied = !!(sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date);
+          const oldReturnDate = sbCurrentReturnDate || "";
+          const extensionAmountDollars = Math.round((paymentIntent.amount || 0) / 100 * 100) / 100;
+
+          // Build normalized booking snapshot for downstream reuse.
+          const updatedBooking = {
+            bookingId:      sbExtRow.booking_ref,
+            vehicleId:      sbExtRow.vehicle_id || vehicle_id,
+            name:           sbExtRow.customer_name || renter_name || "",
+            phone:          sbExtRow.customer_phone || "",
+            email:          sbExtRow.customer_email || renter_email || "",
+            pickupDate:     sbExtRow.pickup_date ? String(sbExtRow.pickup_date).split("T")[0] : "",
+            returnDate:     alreadyApplied ? (sbCurrentReturnDate || new_return_date) : new_return_date,
+            returnTime:     resolvedReturnTime,
+            extensionCount: (Number(sbExtRow.extension_count) || 0) + (alreadyApplied ? 0 : 1),
+            amountPaid:     Math.round(((Number(sbExtRow.deposit_paid) || 0) + extensionAmountDollars) * 100) / 100,
+          };
 
           if (invalidStatus) {
             console.error(
@@ -2125,30 +1887,21 @@ export default async function handler(req, res) {
           }
 
           // Send extension confirmation emails (with updated agreement PDF) to owner and renter.
-          if (!updatedBooking.extensionEmailSent) {
-            try {
-              await sendExtensionConfirmationEmails({
-                paymentIntent,
-                booking: updatedBooking,
-                updatedReturnDate: updatedBooking.returnDate || "",
-                updatedReturnTime: updatedBooking.returnTime || "",
-                extensionLabel: extension_label || "",
-                vehicleId: vehicle_id,
-                renterEmail: updatedBooking.email || renter_email || "",
-                renterName: updatedBooking.name || renter_name || "",
-                originalReturnDate: oldReturnDate,
-                extensionCount: updatedBooking.extensionCount || 1,
-              });
-              try {
-                await updateBooking(vehicle_id, original_booking_id, { extensionEmailSent: true });
-              } catch (markErr) {
-                console.warn("stripe-webhook: could not mark extensionEmailSent (non-fatal):", markErr.message);
-              }
-            } catch (emailErr) {
-              console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
-            }
-          } else {
-            console.log(`stripe-webhook: extension emails already sent for booking ${original_booking_id} — skipping`);
+          try {
+            await sendExtensionConfirmationEmails({
+              paymentIntent,
+              booking: updatedBooking,
+              updatedReturnDate: updatedBooking.returnDate || "",
+              updatedReturnTime: updatedBooking.returnTime || "",
+              extensionLabel: extension_label || "",
+              vehicleId: vehicle_id,
+              renterEmail: updatedBooking.email || renter_email || "",
+              renterName: updatedBooking.name || renter_name || "",
+              originalReturnDate: oldReturnDate,
+              extensionCount: updatedBooking.extensionCount || 1,
+            });
+          } catch (emailErr) {
+            console.error("stripe-webhook: extension email failed (non-fatal):", emailErr.message);
           }
 
           console.log("EXTENSION_APPLIED", {
@@ -2208,25 +1961,6 @@ export default async function handler(req, res) {
       const totalPrice = normalizeCurrency(full_rental_amount || amountPaid);
       const remainingBalance = Math.max(0, normalizeCurrency(totalPrice - amountPaid));
 
-      let updatedBooking = null;
-      try {
-        if (vehicle_id) {
-          await updateBooking(vehicle_id, resolvedBookingId, {
-            status: "reserved",
-            paymentStatus: "partial",
-            amountPaid,
-            totalPrice,
-            remainingBalance,
-          });
-          const { data } = await loadBookings();
-          updatedBooking = (data[vehicle_id] || []).find(
-            (b) => b.bookingId === resolvedBookingId || b.paymentIntentId === resolvedBookingId
-          ) || null;
-        }
-      } catch (bookingErr) {
-        console.error("stripe-webhook: reservation_deposit updateBooking error:", bookingErr.message);
-      }
-
       // Resolve Stripe fee fields early so billingPhone can be used as a phone
       // fallback below.  This piggybacks on the existing fee lookup; no extra
       // Stripe API call is needed.  Failure is non-fatal: feeFields defaults to
@@ -2240,16 +1974,16 @@ export default async function handler(req, res) {
 
       const bookingForSync = {
         bookingId: resolvedBookingId,
-        vehicleId: updatedBooking?.vehicleId || vehicle_id || "",
-        vehicleName: updatedBooking?.vehicleName || vehicle_name || vehicle_id || "",
-        name: updatedBooking?.name || renter_name || "",
-        phone: updatedBooking?.phone || (renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || depositFeeFields.billingPhone || "")),
-        email: updatedBooking?.email || email || meta.customer_email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
-        pickupDate: updatedBooking?.pickupDate || pickup_date || "",
-        pickupTime: updatedBooking?.pickupTime || pickup_time || "",
-        returnDate: updatedBooking?.returnDate || return_date || "",
-        returnTime: updatedBooking?.returnTime || return_time || "",
-        paymentIntentId: updatedBooking?.paymentIntentId || paymentIntent.id,
+        vehicleId: vehicle_id || "",
+        vehicleName: vehicle_name || vehicle_id || "",
+        name: renter_name || "",
+        phone: renter_phone ? normalizePhone(renter_phone) : normalizePhone(meta.customer_phone || paymentIntent.customer_details?.phone || depositFeeFields.billingPhone || ""),
+        email: email || meta.customer_email || paymentIntent.customer_details?.email || paymentIntent.receipt_email || "",
+        pickupDate: pickup_date || "",
+        pickupTime: pickup_time || "",
+        returnDate: return_date || "",
+        returnTime: return_time || "",
+        paymentIntentId: paymentIntent.id,
         amountPaid,
         totalPrice,
         remainingBalance,
@@ -2376,17 +2110,9 @@ export default async function handler(req, res) {
         return res.status(500).json({ received: false, error: `reservation deposit booking persistence failed for ${paymentIntent.id}` });
       }
 
-      // ── Step 4: Persist balance link and manage token ─────────────────────
-      try {
-        if (vehicle_id) {
-          await updateBooking(vehicle_id, resolvedBookingId, { balancePaymentLink: balanceLink });
-        }
-      } catch (linkErr) {
-        console.warn("stripe-webhook: could not persist balancePaymentLink in bookings.json (non-fatal):", linkErr.message);
-      }
-
-      // Generate a manage token and persist it so the customer can access the
-      // booking portal to update dates / vehicle / protection plan.
+      // ── Step 4: Persist manage token and balance link ─────────────────────
+      // balance_payment_link is stored directly in Supabase via persistBooking above.
+      // Persist manage_token and contact fields via a Supabase update.
       try {
         const manageToken = createManageToken(resolvedBookingId);
         const sbForToken = getSupabaseAdmin();
@@ -2616,24 +2342,6 @@ export default async function handler(req, res) {
         // Update booked-dates.json — disabled (Phase 4: Supabase is the only write source)
         // try { await bookingChangeFeeDateUpdate(); }
 
-        // Update bookings.json
-        try {
-          const currentUiVid = uiVehicleId(bkRow.vehicle_id || "");
-          await updateBooking(currentUiVid, bookingRef, {
-            vehicleId:          pendingUiVehicleId,
-            pickupDate:         newPickupDate,
-            returnDate:         newReturnDate,
-            pickupTime:         newPickupTime || undefined,
-            returnTime:         newReturnTime || undefined,
-            totalPrice:         newTotal,
-            remainingBalance:   newBalanceDue,
-            balancePaymentLink: newBalanceLink,
-            updatedAt:          new Date().toISOString(),
-          });
-        } catch (jsonErr) {
-          console.error("stripe-webhook: booking_change_fee bookings.json update error (non-fatal):", jsonErr.message);
-        }
-
         // Revenue record for the change fee itself
         try {
           const customerId = await resolveCustomerIdFromSupabase("", bkRow.customer_email || "");
@@ -2842,95 +2550,94 @@ export default async function handler(req, res) {
         // ── Step 2: DB writes (booking update + revenue record) ─────────────
         // Runs AFTER notifications — DB failures are logged but do not prevent
         // the owner/customer from being notified.
+        // Look up the existing booking in Supabase to get current deposit_paid
+        // and all other fields needed for the patch.
         let bookingPatch = null;
         try {
           const lookupId = bookingRef || originalPiId;
-          await updateBooking(vehicle_id, lookupId, {
-            status: "active_rental",
-            paymentStatus: "paid",
-          });
-          const { data: updatedData } = await loadBookings();
-          const updatedBooking = (updatedData[vehicle_id] || []).find(
-            (b) => b.bookingId === lookupId || b.paymentIntentId === lookupId
-          );
-          if (updatedBooking) {
-            const baseAmount = Number(updatedBooking.amountPaid || 0);
+          if (!lookupId) throw new Error("balance_payment: no bookingRef or originalPiId to look up booking");
+
+          const sbBal = getSupabaseAdmin();
+          let sbBalRow = null;
+          if (sbBal && bookingRef) {
+            const { data: balRow } = await sbBal
+              .from("bookings")
+              .select("booking_ref, vehicle_id, customer_name, customer_phone, renter_phone, customer_email, pickup_date, return_date, pickup_time, return_time, deposit_paid, total_price")
+              .eq("booking_ref", bookingRef)
+              .maybeSingle();
+            sbBalRow = balRow || null;
+          }
+
+          if (sbBalRow) {
+            const existingDeposit = Number(sbBalRow.deposit_paid || 0);
+            const resolvedPid = sbBalRow.pickup_date ? String(sbBalRow.pickup_date).split("T")[0] : (meta.pickup_date || "");
+            const resolvedRtd = sbBalRow.return_date ? String(sbBalRow.return_date).split("T")[0] : (meta.return_date || "");
+            const resolvedPt  = (sbBalRow.pickup_time ? String(sbBalRow.pickup_time).substring(0, 5) : null) || meta.pickup_time || "";
+            const resolvedRt  = (sbBalRow.return_time ? String(sbBalRow.return_time).substring(0, 5) : null) || meta.return_time || DEFAULT_RETURN_TIME;
             bookingPatch = {
-              ...updatedBooking,
-              amountPaid: Math.round((baseAmount + paidAmount) * 100) / 100,
+              bookingId:     sbBalRow.booking_ref,
+              vehicleId:     sbBalRow.vehicle_id || vehicle_id,
+              vehicleName:   meta.vehicle_name || sbBalRow.vehicle_id || vehicle_id || "",
+              name:          sbBalRow.customer_name || meta.renter_name || "",
+              phone:         sbBalRow.customer_phone || sbBalRow.renter_phone || (meta.renter_phone ? normalizePhone(meta.renter_phone) : ""),
+              email:         sbBalRow.customer_email || meta.email || "",
+              pickupDate:    resolvedPid,
+              pickupTime:    resolvedPt,
+              returnDate:    resolvedRtd,
+              returnTime:    resolvedRt,
+              amountPaid:    Math.round((existingDeposit + paidAmount) * 100) / 100,
+              totalPrice:    normalizeCurrency(meta.full_rental_amount || Number(sbBalRow.total_price) || existingDeposit + paidAmount),
               paymentStatus: "paid",
-              status: "active_rental",
+              status:        "active_rental",
             };
-            await updateBooking(vehicle_id, lookupId, {
-              amountPaid: bookingPatch.amountPaid,
-              paymentStatus: "paid",
-              status: "active_rental",
-            });
-            await autoUpsertBooking(bookingPatch, { strict: true });
-            const customerId = await resolveCustomerIdFromSupabase(
-              bookingPatch.phone || "",
-              bookingPatch.email || "",
-            );
-            await autoCreateRevenueRecord({
-              bookingId: bookingPatch.bookingId || bookingRef,
-              paymentIntentId: paymentIntent.id,
-              vehicleId: bookingPatch.vehicleId || vehicle_id,
-              customerId,
-              name: bookingPatch.name || meta.renter_name || "",
-              phone: bookingPatch.phone || "",
-              email: bookingPatch.email || meta.email || "",
-              pickupDate: bookingPatch.pickupDate || meta.pickup_date || "",
-              returnDate: bookingPatch.returnDate || meta.return_date || "",
-              amountPaid: paidAmount,
-              paymentMethod: "stripe",
-              type: "rental_balance",
-            }, { strict: true, requireStripeFee: false });
-            // Auto-activate if the renter's pickup time has already arrived —
-            // e.g. they paid the balance on the day of pickup.
-            try {
-              await autoActivateIfPickupArrived(bookingPatch);
-            } catch (activErr) {
-              console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
-            }
-          } else if (bookingRef) {
-            const fallbackBooking = {
-              bookingId: bookingRef,
-              vehicleId: vehicle_id,
+          } else {
+            // Booking not found in Supabase — build from metadata.
+            bookingPatch = {
+              bookingId:   bookingRef,
+              vehicleId:   vehicle_id,
               vehicleName: meta.vehicle_name || vehicle_id || "",
-              name: meta.renter_name || "",
-              phone: meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
-              email: meta.email || "",
-              pickupDate: meta.pickup_date || "",
-              pickupTime: meta.pickup_time || "",
-              returnDate: meta.return_date || "",
-              returnTime: meta.return_time || DEFAULT_RETURN_TIME,
-              amountPaid: paidAmount,
-              totalPrice: normalizeCurrency(meta.full_rental_amount || paidAmount),
+              name:        meta.renter_name || "",
+              phone:       meta.renter_phone ? normalizePhone(meta.renter_phone) : "",
+              email:       meta.email || "",
+              pickupDate:  meta.pickup_date || "",
+              pickupTime:  meta.pickup_time || "",
+              returnDate:  meta.return_date || "",
+              returnTime:  meta.return_time || DEFAULT_RETURN_TIME,
+              amountPaid:  paidAmount,
+              totalPrice:  normalizeCurrency(meta.full_rental_amount || paidAmount),
               paymentStatus: "paid",
-              status: "active_rental",
+              status:        "active_rental",
             };
-            await autoUpsertBooking(fallbackBooking, { strict: true });
-            const customerId = await resolveCustomerIdFromSupabase(
-              fallbackBooking.phone || "",
-              fallbackBooking.email || "",
-            );
-            await autoCreateRevenueRecord({
-              bookingId: bookingRef,
-              paymentIntentId: paymentIntent.id,
-              vehicleId: fallbackBooking.vehicleId,
-              customerId,
-              name: fallbackBooking.name,
-              phone: fallbackBooking.phone,
-              email: fallbackBooking.email,
-              pickupDate: fallbackBooking.pickupDate,
-              returnDate: fallbackBooking.returnDate,
-              amountPaid: paidAmount,
-              paymentMethod: "stripe",
-              type: "rental_balance",
-            }, { strict: true, requireStripeFee: false });
+          }
+
+          await autoUpsertBooking(bookingPatch, { strict: true });
+          const customerId = await resolveCustomerIdFromSupabase(
+            bookingPatch.phone || "",
+            bookingPatch.email || "",
+          );
+          await autoCreateRevenueRecord({
+            bookingId:       bookingPatch.bookingId || bookingRef,
+            paymentIntentId: paymentIntent.id,
+            vehicleId:       bookingPatch.vehicleId || vehicle_id,
+            customerId,
+            name:            bookingPatch.name || meta.renter_name || "",
+            phone:           bookingPatch.phone || "",
+            email:           bookingPatch.email || meta.email || "",
+            pickupDate:      bookingPatch.pickupDate || meta.pickup_date || "",
+            returnDate:      bookingPatch.returnDate || meta.return_date || "",
+            amountPaid:      paidAmount,
+            paymentMethod:   "stripe",
+            type:            "rental_balance",
+          }, { strict: true, requireStripeFee: false });
+          // Auto-activate if the renter's pickup time has already arrived —
+          // e.g. they paid the balance on the day of pickup.
+          try {
+            await autoActivateIfPickupArrived(bookingPatch);
+          } catch (activErr) {
+            console.error("stripe-webhook: autoActivateIfPickupArrived (balance) error (non-fatal):", activErr.message);
           }
         } catch (err) {
-          console.error("stripe-webhook: updateBooking (balance) error:", err);
+          console.error("stripe-webhook: balance_payment DB write error:", err);
         }
       } else {
         logWebhookSkip(
@@ -3021,12 +2728,14 @@ export default async function handler(req, res) {
       );
     }
 
-    // ── Step 3: Persist booking (Supabase + JSON + revenue record) ───────────
+    // ── Step 3: Persist booking (Supabase + revenue record) ──────────────────
     // Runs AFTER notifications so DB failures never silence owner/renter alerts.
     // Returns 500 at the end so Stripe retries if persistence fails.
     let persistenceFailed = false;
+    let savedBookingId = null;
     try {
-      await saveWebhookBookingRecord(paymentIntent, feeFields || {});
+      const saveResult = await saveWebhookBookingRecord(paymentIntent, feeFields || {});
+      savedBookingId = saveResult?.bookingId || null;
     } catch (bookingErr) {
       persistenceFailed = true;
       // Log the full error (including stack) so the cause is visible in Vercel logs.
@@ -3065,6 +2774,7 @@ export default async function handler(req, res) {
     // above already recorded it via persistBooking; this is a safety net).
     try {
       await processStripePayment(stripe, paymentIntent, {
+        bookingId:        savedBookingId || undefined,
         preResolvedGross: feeFields ? ((paymentIntent.amount_received || paymentIntent.amount || 0) / 100) : undefined,
         preResolvedFee:   feeFields?.stripeFee  ?? undefined,
         preResolvedNet:   feeFields?.stripeNet  ?? undefined,

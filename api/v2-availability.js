@@ -15,7 +15,7 @@
 //   Same as GET but accepts JSON body.
 
 import { getSupabaseAdmin } from "./_supabase.js";
-import { hasOverlap, hasDateTimeOverlap } from "./_availability.js";
+import { hasDateTimeOverlap } from "./_availability.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_final-return-date.js";
 import { FLEET_VEHICLE_IDS } from "./_pricing.js";
@@ -23,37 +23,15 @@ import { FLEET_VEHICLE_IDS } from "./_pricing.js";
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
-const GITHUB_REPO      = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
-
-/**
- * Fetch booked-dates.json from GitHub as a fallback when Supabase is not
- * configured.  Returns {} on any error.
- */
-async function fetchGitHubBookedDates() {
-  try {
-    const apiUrl = `https://api.github.com/repos/${GITHUB_REPO}/contents/booked-dates.json`;
-    const headers = {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    };
-    if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    const resp = await fetch(apiUrl, { headers });
-    if (!resp.ok) return {};
-    const fileData = await resp.json();
-    return JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf-8"));
-  } catch {
-    return {};
-  }
-}
 
 /**
  * Check availability for one vehicle against the Supabase bookings table.
- * Falls back to booked-dates.json when Supabase is not configured.
+ * Supabase is the sole source of truth; if it is not configured or encounters
+ * an error, an exception is thrown so the caller can return 503/500.
  * When fromTime/toTime are provided the check is time-aware so back-to-back
  * bookings sharing a return/pickup date at the same time are correctly allowed.
  *
- * @param {object} sb         - Supabase admin client (may be null)
- * @param {object} fallback   - booked-dates.json data (fallback)
+ * @param {object} sb         - Supabase admin client (must not be null)
  * @param {string} vehicleId
  * @param {string} from       - YYYY-MM-DD
  * @param {string} to         - YYYY-MM-DD
@@ -61,7 +39,7 @@ async function fetchGitHubBookedDates() {
  * @param {string} [toTime]   - optional "H:MM AM/PM" return time
  * @returns {{ available: boolean, conflicts: object[], source: string }}
  */
-async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime) {
+async function checkVehicleAvailability(sb, vehicleId, from, to, fromTime, toTime) {
   const dbVehicleId = normalizeVehicleId(vehicleId);
   console.log("[VEHICLE_ID_LOOKUP]", JSON.stringify({ vehicleId_ui: vehicleId, vehicleId_db: dbVehicleId, from, to }));
   if (sb) {
@@ -117,43 +95,39 @@ async function checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromT
 
       if (error) {
         console.error(`v2-availability: Supabase query error for ${vehicleId}:`, error.message);
-        // Fall through to JSON fallback
-      } else {
-        // If times were provided, refine the date-level hits with time-aware checking.
-        // Supabase stores times as "HH:MM:SS" (24-hour); convert them to "H:MM AM/PM"
-        // for hasDateTimeOverlap which uses parseDateTimeMs from _availability.js.
-        let conflicts = rows || [];
-        if (fromTime && toTime && conflicts.length > 0) {
-          // Build ranges array from Supabase rows and run the datetime overlap check.
-          const sbRanges = conflicts.map((r) => ({
-            from:     r.pickup_date,
-            to:       r.return_date,
-            fromTime: pgTimeTo12h(r.pickup_time),
-            toTime:   pgTimeTo12h(r.return_time),
-          }));
-          const overlaps = hasDateTimeOverlap(sbRanges, from, to, fromTime, toTime);
-          if (!overlaps) {
-            // Time-level check shows no actual overlap — vehicle is available.
-            return { available: true, conflicts: [], source: "supabase" };
-          }
-        }
-        return {
-          available: conflicts.length === 0,
-          conflicts,
-          source: "supabase",
-        };
+        throw new Error(`v2-availability: Supabase query failed for ${vehicleId}: ${error.message}`);
       }
+      // If times were provided, refine the date-level hits with time-aware checking.
+      // Supabase stores times as "HH:MM:SS" (24-hour); convert them to "H:MM AM/PM"
+      // for hasDateTimeOverlap which uses parseDateTimeMs from _availability.js.
+      let conflicts = rows || [];
+      if (fromTime && toTime && conflicts.length > 0) {
+        // Build ranges array from Supabase rows and run the datetime overlap check.
+        const sbRanges = conflicts.map((r) => ({
+          from:     r.pickup_date,
+          to:       r.return_date,
+          fromTime: pgTimeTo12h(r.pickup_time),
+          toTime:   pgTimeTo12h(r.return_time),
+        }));
+        const overlaps = hasDateTimeOverlap(sbRanges, from, to, fromTime, toTime);
+        if (!overlaps) {
+          // Time-level check shows no actual overlap — vehicle is available.
+          return { available: true, conflicts: [], source: "supabase" };
+        }
+      }
+      return {
+        available: conflicts.length === 0,
+        conflicts,
+        source: "supabase",
+      };
     } catch (err) {
       console.error(`v2-availability: Supabase exception for ${vehicleId}:`, err.message);
+      throw err;
     }
   }
 
-  // Fallback: booked-dates.json (time-aware when both fromTime and toTime are provided)
-  const ranges = (fallback[vehicleId] || []);
-  const available = (fromTime && toTime)
-    ? !hasDateTimeOverlap(ranges, from, to, fromTime, toTime)
-    : !hasOverlap(ranges, from, to);
-  return { available, conflicts: available ? [] : ranges.filter((r) => from <= r.to && r.from <= to), source: "booked-dates-json" };
+  // Supabase must be configured — no fallback.
+  throw new Error("v2-availability: Supabase is not configured; cannot check availability");
 }
 
 /**
@@ -207,33 +181,42 @@ export default async function handler(req, res) {
   }
 
   const sb = getSupabaseAdmin();
-  // Always pre-fetch booked-dates.json so that if Supabase IS configured but a
-  // query fails we still return accurate data instead of treating every vehicle
-  // as available (which could allow double-bookings during Supabase outages).
-  const fallback = await fetchGitHubBookedDates();
+  if (!sb) {
+    return res.status(503).json({ error: "Supabase is not configured; availability check unavailable" });
+  }
 
   if (vehicleId) {
     // Single vehicle check
-    const result = await checkVehicleAvailability(sb, fallback, vehicleId, from, to, fromTime, toTime);
-    return res.status(200).json({
-      vehicleId,
-      from,
-      to,
-      available:  result.available,
-      conflicts:  result.conflicts,
-      source:     result.source,
-    });
+    try {
+      const result = await checkVehicleAvailability(sb, vehicleId, from, to, fromTime, toTime);
+      return res.status(200).json({
+        vehicleId,
+        from,
+        to,
+        available:  result.available,
+        conflicts:  result.conflicts,
+        source:     result.source,
+      });
+    } catch (err) {
+      console.error(`v2-availability: checkVehicleAvailability error for ${vehicleId}:`, err.message);
+      return res.status(500).json({ error: "availability check failed" });
+    }
   }
 
   // All vehicles
   const results = {};
   for (const vid of ALLOWED_VEHICLES) {
-    const result = await checkVehicleAvailability(sb, fallback, vid, from, to, fromTime, toTime);
-    results[vid] = {
-      available: result.available,
-      conflicts: result.conflicts,
-      source:    result.source,
-    };
+    try {
+      const result = await checkVehicleAvailability(sb, vid, from, to, fromTime, toTime);
+      results[vid] = {
+        available: result.available,
+        conflicts: result.conflicts,
+        source:    result.source,
+      };
+    } catch (err) {
+      console.error(`v2-availability: checkVehicleAvailability error for ${vid}:`, err.message);
+      results[vid] = { available: false, conflicts: [], source: "error", error: err.message };
+    }
   }
 
   return res.status(200).json({ from, to, vehicles: results });
