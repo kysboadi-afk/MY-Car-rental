@@ -124,6 +124,47 @@ export function computeAmount(vehicleId, pickup, returnDate) {
 }
 
 /**
+ * Fetch pricing data for a single vehicle from the Supabase `vehicle_pricing` table.
+ * Throws if the record is missing or the query fails — the DB is the source of truth.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} vehicleId - vehicle_id value stored in the DB
+ * @returns {Promise<object>} the vehicle_pricing row
+ */
+export async function getVehiclePricing(supabase, vehicleId) {
+  const { data, error } = await supabase
+    .from('vehicle_pricing')
+    .select('*')
+    .eq('vehicle_id', vehicleId)
+    .single();
+
+  if (error) {
+    console.error('[pricing] fetch failed', { vehicleId, error });
+    throw new Error(`Failed to load pricing for vehicle: ${vehicleId}`);
+  }
+
+  return data;
+}
+
+/**
+ * Compute the rental cost from a vehicle_pricing row and a day count.
+ * Applies flat tier pricing (no greedy chain):
+ *   7 days  → weekly_price
+ *   14 days → biweekly_price
+ *   ≥28 days → monthly_price
+ *   else    → daily_price × days
+ *
+ * @param {object} pricing  - vehicle_pricing row from getVehiclePricing()
+ * @param {number} days     - number of rental days (min 1)
+ * @returns {number} rental cost in dollars (pre-tax, no DPP)
+ */
+export function computeAmountFromPricing(pricing, days) {
+  if (days === 7)       return pricing.weekly_price;
+  if (days === 14)      return pricing.biweekly_price;
+  if (days >= 28)       return pricing.monthly_price;
+  return pricing.daily_price * days;
+}
+
+/**
  * Compute human-readable pricing breakdown lines for a daily/weekly rental.
  * Uses the same greedy tier logic as computeAmount.
  * @param {string} vehicleId   - key from CARS

@@ -17,6 +17,7 @@
 
 import Stripe from "stripe";
 import { getVehicleById } from "./_vehicles.js";
+import { getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
@@ -433,6 +434,7 @@ export default async function handler(req, res) {
     }
     // ── Compute extension price ────────────────────────────────────────────
     const settings = await loadPricingSettings();
+    const pricing = await getVehiclePricing(sb, vehicleId);
 
     let extensionAmountPreTax;
     let extensionLabel;
@@ -440,59 +442,28 @@ export default async function handler(req, res) {
     let pricePerDay   = null;
 
     {
-      // Economy/car vehicles: bill by extra days using the same tiered pricing as
-      // the main booking flow (monthly → bi-weekly → weekly → daily).
       // Extension days are counted from effectiveReturnDate (the authoritative
       // current return date, preferring Supabase over bookings.json) to
       // newReturnDate — never from today or pickup_date.
       const extraMs   = newReturnMs - currentReturnMs;
-      const extraDays = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
-      extensionLabel  = `+${extraDays} day${extraDays !== 1 ? "s" : ""}`;
+      const days = Math.max(1, Math.ceil(extraMs / (24 * 3600000)));
+      extensionLabel  = `+${days} day${days !== 1 ? "s" : ""}`;
 
-      const dailyRate   = vehicleData.pricePerDay    || settings.camry_daily_rate    || 55;
-      const weeklyRate  = vehicleData.weekly         || settings.camry_weekly_rate   || null;
-      const biweekRate  = vehicleData.biweekly       || settings.camry_biweekly_rate || null;
-      const monthlyRate = vehicleData.monthly        || settings.camry_monthly_rate  || null;
+      const price = computeAmountFromPricing(pricing, days);
 
-      let cost      = 0;
-      let remaining = extraDays;
+      console.log('[pricing-extension]', {
+        vehicle: vehicleId,
+        days,
+        pricing,
+        price
+      });
 
-      if (monthlyRate && remaining >= 30) {
-        const months = Math.floor(remaining / 30);
-        cost      += months * monthlyRate;
-        remaining  = remaining % 30;
-      }
-      if (biweekRate && remaining >= 14) {
-        const periods = Math.floor(remaining / 14);
-        cost      += periods * biweekRate;
-        remaining  = remaining % 14;
-      }
-      if (weeklyRate && remaining >= 7) {
-        const weeks = Math.floor(remaining / 7);
-        cost      += weeks * weeklyRate;
-        remaining  = remaining % 7;
-      }
-      cost += remaining * dailyRate;
-
-      extensionAmountPreTax = cost;
-      extensionDays = extraDays;
-      pricePerDay   = dailyRate;
+      extensionAmountPreTax = price;
+      extensionDays = days;
+      pricePerDay   = pricing.daily_price;
     }
 
     const extensionAmount = applyTax(extensionAmountPreTax, settings);
-
-    // Temporary debug log — compare Camry 2012 vs Camry 2013 outputs to
-    // identify stale returnDate or rate mismatch.
-    console.log({
-      vehicle_id:      vehicleId,
-      booking_ref:     activeBooking?.bookingId,
-      current_return:  activeBooking?.returnDate,
-      effective_return: effectiveReturnDate,
-      requested_return: newReturnDate,
-      extension_days:  extensionDays,
-      daily_rate:      pricePerDay,
-      total_amount:    extensionAmount,
-    });
 
     // ── Create Stripe PaymentIntent ─────────────────────────────────────────
     const stripe  = new Stripe(process.env.STRIPE_SECRET_KEY);

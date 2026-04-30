@@ -12,12 +12,14 @@
 import Stripe from "stripe";
 import {
   computeRentalDays,
+  getVehiclePricing,
+  computeAmountFromPricing,
 } from "./_pricing.js";
 import {
   loadPricingSettings,
-  computeCarAmountFromVehicleData,
   computeDppCostFromSettings,
 } from "./_settings.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { getVehicleById } from "./_vehicles.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -77,10 +79,17 @@ export default async function handler(req, res) {
     // Load live pricing from Supabase system_settings (admin-configurable).
     const settings = await loadPricingSettings();
 
-    // Compute amounts server-side — never trust a client-supplied amount.
-    const computedFullRental = computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
+    // Fetch vehicle pricing from the vehicle_pricing table — DB is the sole source of truth.
+    const sb = getSupabaseAdmin();
+    if (!sb) {
+      return res.status(503).json({ error: "Database unavailable. Please try again." });
+    }
+    const pricing = await getVehiclePricing(sb, vehicleId);
 
+    // Compute rental days and apply flat tier pricing via shared helper.
     const days = computeRentalDays(pickup, returnDate);
+    const computedFullRental = computeAmountFromPricing(pricing, days);
+    console.log('[pricing-booking]', { vehicle: vehicleId, days, pricing, price: computedFullRental });
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, null) : 0;
 
     const depositPaid = settings.camry_booking_deposit;
