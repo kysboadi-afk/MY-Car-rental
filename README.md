@@ -67,21 +67,21 @@ The booking page shows a photo slideshow for each vehicle. Here's how to add new
 
 Put your photo in the **`images/`** folder in the root of the repository.  
 Accepted formats: `.jpg`, `.jpeg`, `.png`, `.webp`  
-Example: `images/slingshot-front.jpg`
+Example: `images/camry-front.jpg`
 
 ### Step 2 — Reference the photo in `car.js`
 
 Open `car.js` and find the vehicle you want to update.  
 Add the new filename to that vehicle's `images` array:
 
-**Slingshot 1** (look for the comment `// TO ADD PHOTOS FOR SLINGSHOT 1:`):
+**Camry 2012** (look for the comment `// TO ADD PHOTOS FOR CAMRY:`):
 ```js
-images: ["images/car2.jpg", "images/car1.jpg", "images/car3.jpg", "images/slingshot-front.jpg"],
+images: ["images/car1.jpg", "images/camry-front.jpg"],
 ```
 
-**Slingshot 2** (look for the comment `// TO ADD PHOTOS FOR SLINGSHOT 2:`):
+**Camry 2013 SE** (look for the comment `// TO ADD PHOTOS FOR CAMRY 2013:`):
 ```js
-images: ["images/IMG_1749.jpeg", "images/IMG_1750.jpeg", "images/IMG_1751.jpeg", "images/slingshot2-front.jpg"],
+images: ["images/camry2013-front.jpg", "images/camry2013-side.jpg"],
 ```
 
 Photos appear in the slider in the order they are listed.  

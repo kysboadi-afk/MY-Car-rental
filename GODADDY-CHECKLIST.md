@@ -65,13 +65,13 @@ Visit your website and check:
 - [ ] SLY Rides logo appears at top
 - [ ] Hero section displays
 - [ ] Stats widget shows (10+, 7,500, 100%, 99%)
-- [ ] Slingshot card shows front view
-- [ ] Camry card shows back view
+- [ ] Camry card shows front view
+- [ ] Camry 2013 SE card shows front view
 - [ ] Footer shows "© 2026 SLY Rides"
 
 ### Booking Pages
-- [ ] Click "Select" on Slingshot - opens car.html?vehicle=slingshot
-- [ ] First image shows (Slingshot front view)
+- [ ] Click "Select" on Camry - opens car.html?vehicle=camry
+- [ ] First image shows (Camry front view)
 - [ ] Click ❯ arrow - changes to next image
 - [ ] Click ❮ arrow - goes back
 - [ ] Dots below image work

@@ -17,13 +17,13 @@ CREATE OR REPLACE wherever possible so the script is safe to re-run.
 1. VEHICLES TABLE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 One row per vehicle. vehicle_id is the text key used throughout the codebase
-(e.g. "slingshot", "slingshot2", "slingshot3", "camry", "camry2013").
+(e.g. "camry", "camry2013").
 
 CREATE TABLE IF NOT EXISTS vehicles (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_id    text UNIQUE NOT NULL,
   vehicle_name  text,
-  type          text CHECK (type IN ('slingshot','economy')),
+  type          text CHECK (type IN ('economy')),
   data          jsonb DEFAULT '{}',
   rental_status text NOT NULL DEFAULT 'available'
                   CHECK (rental_status IN ('available','reserved','rented','maintenance')),
@@ -36,13 +36,10 @@ CREATE TABLE IF NOT EXISTS vehicles (
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
-Seed the five vehicles if they do not already exist:
+Seed the two vehicles if they do not already exist:
 
 INSERT INTO vehicles (vehicle_id, vehicle_name, type, status)
 VALUES
-  ('slingshot',  'Slingshot R',         'slingshot', 'active'),
-  ('slingshot2', 'Slingshot R (Unit 2)','slingshot', 'active'),
-  ('slingshot3', 'Slingshot R (Unit 3)','slingshot', 'active'),
   ('camry',      'Camry 2012',          'economy',   'active'),
   ('camry2013',  'Camry 2013 SE',       'economy',   'active')
 ON CONFLICT (vehicle_id) DO NOTHING;
