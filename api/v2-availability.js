@@ -42,8 +42,8 @@ const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved
 async function checkVehicleAvailability(sb, vehicleId, from, to, fromTime, toTime) {
   const dbVehicleId = normalizeVehicleId(vehicleId);
   console.log("[VEHICLE_ID_LOOKUP]", JSON.stringify({ vehicleId_ui: vehicleId, vehicleId_db: dbVehicleId, from, to }));
-  if (sb) {
-    try {
+  if (!sb) throw new Error("v2-availability: Supabase client is required");
+  try {
       // Active rental override: if the vehicle has an active_rental booking whose
       // finalReturnDate (accounting for paid extensions) extends into or past the
       // requested range, it is unavailable.  If the final return + prep buffer is
@@ -124,10 +124,6 @@ async function checkVehicleAvailability(sb, vehicleId, from, to, fromTime, toTim
       console.error(`v2-availability: Supabase exception for ${vehicleId}:`, err.message);
       throw err;
     }
-  }
-
-  // Supabase must be configured — no fallback.
-  throw new Error("v2-availability: Supabase is not configured; cannot check availability");
 }
 
 /**

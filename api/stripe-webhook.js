@@ -1611,7 +1611,7 @@ export default async function handler(req, res) {
           const sbCurrentReturnDate = sbExtRow.return_date ? String(sbExtRow.return_date).split("T")[0] : null;
           const alreadyApplied = !!(sbCurrentReturnDate && sbCurrentReturnDate >= new_return_date);
           const oldReturnDate = sbCurrentReturnDate || "";
-          const extensionAmountDollars = Math.round((paymentIntent.amount || 0) / 100 * 100) / 100;
+          const extensionAmountDollars = Math.round(paymentIntent.amount || 0) / 100;
 
           // Build normalized booking snapshot for downstream reuse.
           const updatedBooking = {
@@ -2610,11 +2610,11 @@ export default async function handler(req, res) {
             };
           }
 
-          await autoUpsertBooking(bookingPatch, { strict: true });
           const customerId = await resolveCustomerIdFromSupabase(
             bookingPatch.phone || "",
             bookingPatch.email || "",
           );
+          await autoUpsertBooking({ ...bookingPatch, customerId }, { strict: true });
           await autoCreateRevenueRecord({
             bookingId:       bookingPatch.bookingId || bookingRef,
             paymentIntentId: paymentIntent.id,
