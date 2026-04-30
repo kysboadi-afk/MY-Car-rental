@@ -546,7 +546,7 @@ function formatTime(d) {
 async function safeSend(phone, body, logCtx = null) {
   const normalized = normalizePhone(phone);
   if (!normalized) {
-    console.warn("scheduled-reminders: no phone number — skipping");
+    console.log("[SMS SKIPPED — NO PHONE]", logCtx?.booking_ref || "(no ref)");
     if (logCtx) {
       await logSmsDelivery({
         booking_ref:  logCtx.booking_ref  || null,
@@ -555,7 +555,7 @@ async function safeSend(phone, body, logCtx = null) {
         message_type: logCtx.message_type || null,
         message_body: body,
         status:       "skipped",
-        error:        "Missing phone number",
+        error:        "[SMS SKIPPED — NO PHONE]",
       });
     }
     return false;
@@ -731,7 +731,10 @@ async function processUnpaid(allBookings, now, sentMarks) {
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "reserved_unpaid") continue;
-      if (!booking.phone) continue;
+      if (!booking.phone) {
+        console.log(`[SMS SKIPPED — NO PHONE] ${booking.bookingId || booking.paymentIntentId || "?"}: status=${booking.status} vehicle=${vehicleId}`);
+        continue;
+      }
 
       // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
       const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
@@ -780,7 +783,10 @@ async function processPaidBookings(allBookings, now, sentMarks) {
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
       if (booking.status !== "booked_paid") continue;
-      if (!booking.phone) continue;
+      if (!booking.phone) {
+        console.log(`[SMS SKIPPED — NO PHONE] ${booking.bookingId || booking.paymentIntentId || "?"}: status=${booking.status} vehicle=${vehicleId}`);
+        continue;
+      }
 
       // Use LA-timezone datetime so SMS fires at the correct wall-clock time in LA
       const pickupDt = parseBookingDateTimeLA(booking.pickupDate, booking.pickupTime);
@@ -878,7 +884,10 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       const isActiveStatus = booking.status === "active_rental" || booking.status === "active" || booking.status === "overdue";
       const hasFutureReturn = booking.returnDate && booking.returnDate >= todayStr;
       if (!isActiveStatus && !hasFutureReturn) continue;
-      if (!booking.phone) continue;
+      if (!booking.phone) {
+        console.log(`[SMS SKIPPED — NO PHONE] ${booking.bookingId || booking.paymentIntentId || "?"}: status=${booking.status} vehicle=${vehicleId}`);
+        continue;
+      }
 
       // Per-run anti-spam: skip if we already sent to this phone this run.
       if (phonesContactedThisRun.has(booking.phone)) {
