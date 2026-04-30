@@ -837,6 +837,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Protection Plans
       </a>
+      <a class="nav-item" data-page="vehicle-pricing" href="#" onclick="navigate('vehicle-pricing');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Vehicle Pricing
+      </a>
       <a class="nav-item" data-page="system-settings" href="#" onclick="navigate('system-settings');return false;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         System Settings
@@ -1661,6 +1665,14 @@
             <p>No protection plans configured.</p>
           </div>
         </div>
+      </div>
+
+      <!-- VEHICLE PRICING PAGE -->
+      <div class="page" id="page-vehicle-pricing">
+        <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;">💲 Vehicle Pricing</div>
+        <div style="font-size:13px;color:var(--text-sub);margin-bottom:20px;">All booking, extension, and quote amounts are computed from these values. Changes take effect immediately on the next booking.</div>
+        <div id="vp-loading" class="loading"><div class="loading-spinner"></div><div>Loading pricing…</div></div>
+        <div id="vp-content" style="display:none;"></div>
       </div>
 
       <!-- SYSTEM SETTINGS PAGE -->
@@ -2530,6 +2542,7 @@ function navigate(page) {
     analytics:          'Fleet Analytics',
     customers:          'Customer Management',
     'protection-plans': 'Protection Plans',
+    'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
     'ai':               'AI Assistant',
     'driver-mileage':   'Driver Mileage Report',
@@ -2554,6 +2567,7 @@ function navigate(page) {
   else if (page === 'analytics') loadAnalytics();
   else if (page === 'customers') loadCustomers();
   else if (page === 'protection-plans') loadProtectionPlans();
+  else if (page === 'vehicle-pricing') loadVehiclePricing();
   else if (page === 'system-settings') loadSystemSettings();
   else if (page === 'fleet-status') loadFleetStatusPage();
   else if (page === 'gps') loadGpsTracking();
@@ -2586,6 +2600,7 @@ function refreshCurrentPage() {
   else if (currentPage === 'analytics') loadAnalytics();
   else if (currentPage === 'customers') loadCustomers();
   else if (currentPage === 'protection-plans') loadProtectionPlans();
+  else if (currentPage === 'vehicle-pricing') loadVehiclePricing();
   else if (currentPage === 'system-settings') loadSystemSettings();
   else if (currentPage === 'fleet-status') loadFleetStatusPage();
   else if (currentPage === 'gps') loadGpsTracking();
@@ -5820,6 +5835,91 @@ function deletePlan(id) {
   apiPost('/api/v2-protection-plans', { secret: adminSecret, action: 'delete', id })
     .then(() => { showToast('Deleted.', 'success'); loadProtectionPlans(); })
     .catch((err) => showToast('Error: ' + err.message, 'error'));
+}
+
+// ── Vehicle Pricing ───────────────────────────────────────────────────────
+function loadVehiclePricing() {
+  document.getElementById('vp-loading').style.display = '';
+  document.getElementById('vp-content').style.display = 'none';
+
+  apiPost('/api/admin-update-pricing', { secret: adminSecret, action: 'get' })
+    .then((data) => {
+      renderVehiclePricing(data.pricing || []);
+      document.getElementById('vp-loading').style.display = 'none';
+      document.getElementById('vp-content').style.display = '';
+    })
+    .catch((err) => {
+      document.getElementById('vp-loading').innerHTML = `<p style="color:var(--danger)">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function renderVehiclePricing(rows) {
+  const container = document.getElementById('vp-content');
+  if (!rows.length) {
+    container.innerHTML = '<p style="color:var(--text-sub);padding:16px;">No vehicle pricing rows found. Add rows to the vehicle_pricing table in Supabase.</p>';
+    return;
+  }
+
+  const fieldLabels = {
+    daily_price:    'Daily Price ($)',
+    weekly_price:   'Weekly Price (7 days) ($)',
+    biweekly_price: '2-Week Price (14 days) ($)',
+    monthly_price:  'Monthly Price (28+ days) ($)',
+  };
+
+  container.innerHTML = rows.map((row) => `
+    <div class="form-section" style="max-width:520px;margin-bottom:20px;" id="vp-card-${esc(row.vehicle_id)}">
+      <div class="form-section-title">🚗 ${esc(row.vehicle_id)}</div>
+      <div class="form-grid">
+        ${Object.keys(fieldLabels).map((field) => `
+          <div class="form-group">
+            <label class="form-label">${esc(fieldLabels[field])}</label>
+            <input type="number" min="0" step="1" class="form-input"
+              id="vp-${esc(row.vehicle_id)}-${esc(field)}"
+              value="${esc(String(row[field] ?? ''))}"
+              placeholder="0">
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-primary" onclick="saveVehiclePricing('${esc(row.vehicle_id)}')" id="vp-save-btn-${esc(row.vehicle_id)}">Save</button>
+        <span id="vp-status-${esc(row.vehicle_id)}" style="font-size:13px;"></span>
+      </div>
+      ${row.updated_at ? `<div style="margin-top:8px;font-size:11px;color:var(--text-sub);">Last updated: ${esc(new Date(row.updated_at).toLocaleString())}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function saveVehiclePricing(vehicleId) {
+  const fields = ['daily_price', 'weekly_price', 'biweekly_price', 'monthly_price'];
+  const payload = { secret: adminSecret, action: 'update', vehicle_id: vehicleId };
+
+  for (const field of fields) {
+    const el = document.getElementById(`vp-${vehicleId}-${field}`);
+    if (!el) return;
+    const raw = el.value.trim();
+    if (raw === '') { showToast(`${field} is required.`, 'error'); return; }
+    const val = Number(raw);
+    if (isNaN(val) || val < 0) { showToast(`${field} must be a non-negative number.`, 'error'); return; }
+    payload[field] = val;
+  }
+
+  const btn = document.getElementById(`vp-save-btn-${vehicleId}`);
+  const status = document.getElementById(`vp-status-${vehicleId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  if (status) { status.textContent = ''; status.style.color = ''; }
+
+  apiPost('/api/admin-update-pricing', payload)
+    .then(() => {
+      showToast(`✓ Pricing saved for ${vehicleId}.`, 'success');
+      if (status) { status.textContent = '✓ Saved'; status.style.color = 'var(--success)'; }
+      setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+    })
+    .catch((err) => {
+      showToast('Error: ' + err.message, 'error');
+      if (status) { status.textContent = '✗ Error: ' + err.message; status.style.color = 'var(--danger)'; }
+    })
+    .finally(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save'; } });
 }
 
 // ── System Settings ───────────────────────────────────────────────────────
