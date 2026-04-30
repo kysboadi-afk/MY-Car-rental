@@ -347,15 +347,17 @@ export default async function handler(req, res) {
 
         // Populate per-vehicle revenue map (used by vehicleStats computation below).
         // view includes both revenue_records and supplemental charges.
+        // Accumulate (+=) rather than assign so that legacy vehicle_id aliases
+        // ("camry2012") that uiVehicleId() maps to the same canonical key ("camry")
+        // are merged instead of one entry silently overwriting the other.
         const vRevJson = metricsView.vehicle_revenue_json || {};
         for (const [vid, vr] of Object.entries(vRevJson)) {
           const normVid = uiVehicleId(vid);
-          rrByVehicle[normVid] = {
-            gross: Number(vr.gross || 0),
-            net:   Number(vr.net   || 0),
-            count: Number(vr.count || 0),
-          };
-          bookingsPerVehicle[normVid] = Number(vr.count || 0);
+          if (!rrByVehicle[normVid]) rrByVehicle[normVid] = { gross: 0, net: 0, count: 0 };
+          rrByVehicle[normVid].gross += Number(vr.gross || 0);
+          rrByVehicle[normVid].net   += Number(vr.net   || 0);
+          rrByVehicle[normVid].count += Number(vr.count || 0);
+          bookingsPerVehicle[normVid] = (bookingsPerVehicle[normVid] || 0) + Number(vr.count || 0);
         }
       }
     }
