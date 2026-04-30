@@ -28,7 +28,7 @@ import nodemailer from "nodemailer";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { loadBookings } from "./_bookings.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
-import { autoCreateRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
+import { autoCreateRevenueRecord, createOrphanRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
 
 /**
  * Resolves a raw booking reference to the canonical booking_ref confirmed in
@@ -652,12 +652,40 @@ export default async function handler(req, res) {
       const neededIds = new Set(orphans.map((r) => r.booking_id).filter(Boolean));
       const bookingVehicleMap = {};
       if (neededIds.size > 0) {
-        const { data: bookingsData } = await loadBookings();
-        for (const list of Object.values(bookingsData)) {
-          for (const b of (list || [])) {
-            if (b.bookingId && neededIds.has(b.bookingId)) {
-              bookingVehicleMap[b.bookingId] = b.vehicleId || null;
+        // Primary: look up vehicle_id directly from Supabase bookings (the canonical
+        // source of truth).  This removes the dependency on bookings.json for repair.
+        const neededArr = [...neededIds];
+        try {
+          const { data: sbBookings } = await sb
+            .from("bookings")
+            .select("booking_ref, vehicle_id")
+            .in("booking_ref", neededArr);
+          for (const b of sbBookings || []) {
+            if (b.booking_ref && b.vehicle_id) {
+              bookingVehicleMap[b.booking_ref] = b.vehicle_id;
             }
+          }
+        } catch (_sbErr) {
+          // Non-fatal — fall through to bookings.json fallback below.
+          console.warn("stripe-reconcile cleanup_orphans: Supabase vehicle_id lookup failed (non-fatal) — will try bookings.json");
+        }
+
+        // Fallback: for any booking_ids still unresolved, try bookings.json.
+        // This handles legacy bookings whose booking_ref may differ from the
+        // booking_id stored in revenue_records (e.g. old pi_xxx IDs).
+        const stillNeeded = neededArr.filter((id) => !bookingVehicleMap[id]);
+        if (stillNeeded.length > 0) {
+          try {
+            const { data: bookingsData } = await loadBookings();
+            for (const list of Object.values(bookingsData)) {
+              for (const b of (list || [])) {
+                if (b.bookingId && stillNeeded.includes(b.bookingId) && b.vehicleId) {
+                  bookingVehicleMap[b.bookingId] = b.vehicleId;
+                }
+              }
+            }
+          } catch (_) {
+            // Non-fatal — bookings.json may be unavailable.
           }
         }
       }
@@ -884,6 +912,36 @@ export default async function handler(req, res) {
       }
     } catch (_) {
       // Non-fatal — if bookings.json is unavailable we still create stub records.
+    }
+
+    // Also load bookings from Supabase, keyed by payment_intent_id, so the
+    // auto-create path can use the canonical booking_ref rather than a synthetic
+    // "stripe-pi_xxx" key when the booking already exists in the database.
+    // This prevents creating orphan revenue records for bookings that are fully
+    // present in Supabase but were not yet written to bookings.json.
+    const supabaseBookingsByPI = new Map(); // payment_intent_id → { bookingRef, vehicleId, ... }
+    try {
+      const { data: sbBookings } = await sb
+        .from("bookings")
+        .select("booking_ref, payment_intent_id, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, return_date")
+        .not("payment_intent_id", "is", null)
+        .limit(500);
+      for (const b of sbBookings || []) {
+        if (b.payment_intent_id) {
+          supabaseBookingsByPI.set(b.payment_intent_id, {
+            bookingRef:  b.booking_ref,
+            bookingId:   b.booking_ref,   // alias kept for compatibility with bookings.json object shape
+            vehicleId:   b.vehicle_id,
+            name:        b.customer_name,
+            phone:       b.customer_phone,
+            email:       b.customer_email,
+            pickupDate:  b.pickup_date,
+            returnDate:  b.return_date,
+          });
+        }
+      }
+    } catch (_) {
+      // Non-fatal — Supabase bookings lookup is best-effort.
     }
 
     // Build lookup maps for matching
@@ -1162,83 +1220,110 @@ export default async function handler(req, res) {
       if (!matchedRecord) {
         // AUTO-CREATE: build a new revenue_record from Stripe + booking data
         // so the payment appears in the Revenue Tracker without manual intervention.
+        // Priority order for booking lookup:
+        //   1. bookings.json (in-memory) — fastest, already loaded
+        //   2. Supabase bookings by payment_intent_id — catches bookings that are in
+        //      Supabase but were not synced to bookings.json (e.g. after manual edits)
         const booking =
           (payment.metadata_booking_id ? bookingsByBookingId.get(payment.metadata_booking_id) : null) ||
           bookingsByPI.get(payment.payment_intent_id) ||
+          supabaseBookingsByPI.get(payment.payment_intent_id) ||
           null;
 
-        // Derive a stable, unique booking_id — prefer the one from metadata/bookings.
-        const newBookingId =
-          (booking?.bookingId) ||
-          payment.metadata_booking_id ||
-          ("stripe-" + payment.payment_intent_id);
-
-        // Mark as orphan when booking_id is a synthetic "stripe-<pi>" key — no real
-        // booking row was found in either bookings.json or Stripe metadata.
-        // Real "bk-…" refs from metadata or bookings.json are left as is_orphan=false
-        // so the DB trigger enforces they have a matching bookings row.
-        const isOrphanAutoCreate = newBookingId.startsWith("stripe-");
+        // Resolve a canonical booking_id — prefer the one from metadata/bookings.
+        // Only use a real booking_ref that can be verified against Supabase.
+        // Never fall back to a synthetic "stripe-pi_xxx" value: those strings look
+        // like real booking refs but have no matching bookings row, causing false-
+        // positive orphan alerts and breaking the booking_ref integrity trigger.
+        // When no real booking can be found, use createOrphanRevenueRecord instead
+        // (booking_id=NULL, is_orphan=true) — the correct escape hatch.
+        const resolvedBookingId = booking?.bookingId || payment.metadata_booking_id || null;
 
         // Derive the record type: extension PIs always produce a separate 'extension' row.
         const newRecordType = payment.payment_type === "rental_extension" ? "extension" : "rental";
+
+        if (!resolvedBookingId) {
+          // No booking reference available — write a proper orphan record.
+          // This is the intentional escape hatch for unresolvable payments;
+          // the record will surface in System Health for manual resolution.
+          console.warn("stripe-reconcile: no booking ref for PI", payment.payment_intent_id, "— writing orphan record");
+          const paymentDate = new Date(payment.created_at_unix * 1000).toISOString().slice(0, 10);
+          if (dryRun) {
+            results.preview.push({
+              status:    "will_create_orphan",
+              pi_id:     payment.payment_intent_id,
+              booking_id: null,
+              type:      newRecordType,
+              gross:     payment.amount_gross,
+              fee:       payment.stripe_fee,
+              net:       payment.stripe_net,
+              email:     payment.customer_email,
+              is_orphan: true,
+            });
+            results.created++;
+          } else {
+            try {
+              await createOrphanRevenueRecord({
+                paymentIntentId: payment.payment_intent_id,
+                vehicleId:       booking?.vehicleId || null,
+                name:            booking?.name || null,
+                phone:           booking?.phone || null,
+                email:           payment.customer_email || booking?.email || null,
+                pickupDate:      booking?.pickupDate || paymentDate,
+                returnDate:      booking?.returnDate || null,
+                amountPaid:      payment.amount_gross,
+                type:            newRecordType,
+                stripeFee:       payment.stripe_fee,
+                stripeNet:       payment.stripe_net,
+              });
+              results.created++;
+            } catch (orphanErr) {
+              console.error("stripe-reconcile orphan record error for PI", payment.payment_intent_id, ":", orphanErr.message);
+              results.unmatched++;
+            }
+          }
+          continue;
+        }
 
         if (dryRun) {
           results.preview.push({
             status:     "will_create",
             pi_id:      payment.payment_intent_id,
-            booking_id: newBookingId,
+            booking_id: resolvedBookingId,
             type:       newRecordType,
             gross:      payment.amount_gross,
             fee:        payment.stripe_fee,
             net:        payment.stripe_net,
             email:      payment.customer_email,
-            is_orphan:  isOrphanAutoCreate,
+            is_orphan:  false,
           });
           results.created++;
           continue;
         }
 
-        const paymentDate = new Date(payment.created_at_unix * 1000).toISOString().slice(0, 10);
-
-        const newRecord = {
-          booking_id:        newBookingId,
-          vehicle_id:        booking?.vehicleId    || null,
-          customer_name:     booking?.name         || null,
-          customer_phone:    booking?.phone        || null,
-          customer_email:    payment.customer_email || booking?.email || null,
-          pickup_date:       booking?.pickupDate   || paymentDate,
-          return_date:       booking?.returnDate   || null,
-          gross_amount:      payment.amount_gross,
-          deposit_amount:    0,
-          refund_amount:     0,
-          type:              newRecordType,
-          payment_method:    "stripe",
-          payment_status:    "paid",
-          payment_intent_id: payment.payment_intent_id,
-          stripe_charge_id:  payment.stripe_charge_id || null,
-          stripe_fee:        payment.stripe_fee,
-          stripe_net:        payment.stripe_net,
-          is_no_show:        false,
-          is_cancelled:      false,
-          override_by_admin: false,
-          sync_excluded:     false,
-          // Synthetic booking_id (no matching booking found) → flag as orphan so it
-          // is excluded from financial reporting and passes the booking_ref integrity
-          // trigger added by migration 0060.
-          is_orphan:         isOrphanAutoCreate,
-          created_at:        new Date().toISOString(),
-          updated_at:        new Date().toISOString(),
-        };
-
-        const { error: insertErr } = await sb
-          .from("revenue_records")
-          .insert(newRecord);
-
-        if (insertErr) {
-          console.error("stripe-reconcile auto-create error for PI", payment.payment_intent_id, ":", insertErr.message);
-          results.unmatched++;
-        } else {
+        // A booking ref is known — use the validated autoCreateRevenueRecord path.
+        // This verifies the booking row exists in Supabase before writing revenue
+        // and backfills vehicle_id/return_date from the booking when not provided.
+        try {
+          await autoCreateRevenueRecord({
+            bookingId:       resolvedBookingId,
+            paymentIntentId: payment.payment_intent_id,
+            vehicleId:       booking?.vehicleId || null,
+            name:            booking?.name || null,
+            phone:           booking?.phone || null,
+            email:           payment.customer_email || booking?.email || null,
+            pickupDate:      booking?.pickupDate || null,
+            returnDate:      booking?.returnDate || null,
+            amountPaid:      payment.amount_gross,
+            paymentMethod:   "stripe",
+            type:            newRecordType,
+            stripeFee:       payment.stripe_fee,
+            stripeNet:       payment.stripe_net,
+          }, { strict: false, requireStripeFee: false });
           results.created++;
+        } catch (createErr) {
+          console.error("stripe-reconcile auto-create error for PI", payment.payment_intent_id, ":", createErr.message);
+          results.unmatched++;
         }
         continue;
       }
@@ -1328,10 +1413,13 @@ export default async function handler(req, res) {
 
     // STEP 10: Auto-dedup — collapse any duplicate records created in prior runs
     // (e.g. "stripe-pi_xxx" auto-creates that overlap with booking-synced "bk-xxx" records).
+    // Merge bookingsByPI (from bookings.json) with supabaseBookingsByPI (from Supabase)
+    // so the dedup step can resolve synthetic records against Supabase-only bookings too.
     let deduped = 0;
     if (!dryRun) {
       try {
-        const { merged } = await deduplicateRevenueRecords(sb, bookingsByPI);
+        const mergedBookingsByPI = new Map([...bookingsByPI, ...supabaseBookingsByPI]);
+        const { merged } = await deduplicateRevenueRecords(sb, mergedBookingsByPI);
         deduped = merged;
       } catch (dedupErr) {
         console.warn("stripe-reconcile: auto-dedup failed (non-fatal):", dedupErr.message);

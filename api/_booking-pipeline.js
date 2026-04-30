@@ -272,6 +272,26 @@ export async function persistBooking(opts) {
   const fatalErrors = [];
 
   // ── 2. Build booking record ───────────────────────────────────────────────
+  // Pre-flight: validate that the three fields now enforced as NOT NULL in
+  // Supabase are present before we build the booking object.  Failing fast
+  // here gives a clear, actionable error rather than a generic DB constraint
+  // violation deep in autoUpsertBooking or the atomic RPC.
+  const preflight = [];
+  if (!opts.vehicleId)   preflight.push("vehicleId");
+  if (!opts.pickupDate)  preflight.push("pickupDate");
+  if (!opts.returnDate)  preflight.push("returnDate");
+  if (preflight.length > 0) {
+    const msg = `persistBooking: missing required booking fields: ${preflight.join(", ")} — ` +
+      "all bookings must be created with vehicleId, pickupDate, and returnDate";
+    pipelineLog("error", traceId, "booking_validation_failed", {
+      missingFields: preflight,
+      vehicleId:   opts.vehicleId || null,
+      pickupDate:  opts.pickupDate || null,
+      returnDate:  opts.returnDate || null,
+    });
+    throw new Error(msg);
+  }
+
   const bookingId = opts.bookingId || crypto.randomBytes(16).toString("hex");
 
   const booking = {

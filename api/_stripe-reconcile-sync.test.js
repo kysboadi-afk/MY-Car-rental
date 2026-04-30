@@ -100,6 +100,7 @@ mock.module("./_booking-automation.js", {
         };
       }
     },
+    createOrphanRevenueRecord: async () => {},
     extendBlockedDateForBooking: async () => {},
   },
 });

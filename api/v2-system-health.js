@@ -327,7 +327,7 @@ async function checkOrphanRevenue(sb) {
   try {
     const { data: orphanRows, error: oErr } = await sb
       .from("revenue_records")
-      .select("id, booking_id, vehicle_id, gross_amount, created_at, type")
+      .select("id, booking_id, payment_intent_id, vehicle_id, gross_amount, created_at, type")
       .eq("is_orphan", false)
       .eq("sync_excluded", false)
       .in("type", ["rental", "extension"])
@@ -355,8 +355,35 @@ async function checkOrphanRevenue(sb) {
       return check("Orphan Revenue Records", "error", "Could not verify booking refs: " + bErr.message);
     }
 
-    const validRefs   = new Set((bookingRows || []).map((b) => b.booking_ref));
-    const trueOrphans = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
+    const validRefs = new Set((bookingRows || []).map((b) => b.booking_ref));
+
+    // Secondary cross-reference by payment_intent_id: a record whose booking_id no
+    // longer exists but whose payment_intent_id matches a booking is re-linkable —
+    // do not flag it as a true orphan.
+    const candidatePIIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.booking_id && !validRefs.has(r.booking_id) && r.payment_intent_id)
+          .map((r) => r.payment_intent_id),
+      ),
+    ];
+    let piLinkedRefs = new Set();
+    if (candidatePIIds.length > 0) {
+      const { data: bookingsByPI } = await sb
+        .from("bookings")
+        .select("payment_intent_id")
+        .in("payment_intent_id", candidatePIIds);
+      for (const b of bookingsByPI || []) {
+        if (b.payment_intent_id) piLinkedRefs.add(b.payment_intent_id);
+      }
+    }
+
+    const trueOrphans = rows.filter(
+      (r) =>
+        r.booking_id &&
+        !validRefs.has(r.booking_id) &&
+        !(r.payment_intent_id && piLinkedRefs.has(r.payment_intent_id)),
+    );
 
     if (trueOrphans.length === 0) {
       return check(
@@ -484,14 +511,35 @@ async function checkStripePaymentNoBooking(sb) {
       }
     }
 
-    // Only surface rows where booking_id is absent from bookings (true orphans).
-    const rows = allRows.filter((r) => !r.booking_id || !existingRefs.has(r.booking_id));
+    // Secondary cross-reference by payment_intent_id.
+    // Revenue records that have a synthetic "stripe-pi_xxx" booking_id (or NULL)
+    // are not truly orphaned when a booking stores the same payment_intent_id.
+    const candidatePIIds = [...new Set(allRows.map((r) => r.payment_intent_id).filter(Boolean))];
+    let bookingsLinkedByPI = new Set();
+    if (candidatePIIds.length > 0) {
+      const { data: bookingsByPI, error: piErr } = await sb
+        .from("bookings")
+        .select("payment_intent_id")
+        .in("payment_intent_id", candidatePIIds);
+      if (!piErr) {
+        for (const b of bookingsByPI || []) {
+          if (b.payment_intent_id) bookingsLinkedByPI.add(b.payment_intent_id);
+        }
+      }
+    }
+
+    // Only surface rows where neither booking_id nor payment_intent_id links to a real booking.
+    const rows = allRows.filter(
+      (r) =>
+        (!r.booking_id || !existingRefs.has(r.booking_id)) &&
+        !(r.payment_intent_id && bookingsLinkedByPI.has(r.payment_intent_id)),
+    );
     const legacyFalsePositives = allRows.length - rows.length;
 
     if (legacyFalsePositives > 0) {
       console.log(
         `[v2-system-health] stripePaymentNoBooking: ${legacyFalsePositives} record(s) skipped — ` +
-        "is_orphan=true but booking exists (legacy stale flag); use Fix Now to clear.",
+        "is_orphan=true but booking exists (by booking_ref or payment_intent_id); use Fix Now to clear.",
       );
     }
 
@@ -1089,9 +1137,11 @@ async function fixPaymentBookingRevenue(sb) {
 //     Clear is_orphan=true on any rental/extension records whose booking_id
 //     already matches a real booking_ref.  These were incorrectly flagged by
 //     old code that queried the non-existent bookings.booking_id column.
-//   Pass B — Flag true orphans:
-//     Set is_orphan=true on any is_orphan=false records whose booking_id has
-//     no matching booking_ref (genuine missing-booking situations).
+//   Pass B — Re-link or flag broken records:
+//     For is_orphan=false records whose booking_id has no matching booking_ref:
+//       • If a matching booking is found via payment_intent_id → update booking_id
+//         to the correct booking_ref (re-link rather than orphan-flag).
+//       • Otherwise → set is_orphan=true (genuine missing-booking situation).
 async function fixOrphanRevenue(sb) {
   // ── Pass A: un-orphan stale false-positive records ─────────────────────────
   let unorphaned = 0;
@@ -1126,10 +1176,10 @@ async function fixOrphanRevenue(sb) {
     }
   }
 
-  // ── Pass B: flag records with no matching booking ──────────────────────────
+  // ── Pass B: re-link or flag records with no matching booking ───────────────
   const { data: orphanRows, error: oErr } = await sb
     .from("revenue_records")
-    .select("id, booking_id")
+    .select("id, booking_id, payment_intent_id")
     .eq("is_orphan", false)
     .eq("sync_excluded", false)
     .in("type", ["rental", "extension"])
@@ -1151,29 +1201,73 @@ async function fixOrphanRevenue(sb) {
     .in("booking_ref", bookingIds);
   if (bErr) throw new Error("Could not verify booking refs: " + bErr.message);
 
-  const validRefs   = new Set((bookingRows || []).map((b) => b.booking_ref));
-  const trueOrphans = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
+  const validRefs      = new Set((bookingRows || []).map((b) => b.booking_ref));
+  const unlinkedRows   = rows.filter((r) => r.booking_id && !validRefs.has(r.booking_id));
 
-  if (trueOrphans.length === 0) {
+  if (unlinkedRows.length === 0) {
     const msg = unorphaned > 0
       ? `Cleared ${unorphaned} stale orphan flag${unorphaned !== 1 ? "s" : ""}. No true orphans found.`
       : "No true orphans found.";
     return { fixed: 0, unorphaned, message: msg };
   }
 
-  const ids = trueOrphans.map((r) => r.id);
-  const { error: updateErr } = await sb
-    .from("revenue_records")
-    .update({ is_orphan: true })
-    .in("id", ids);
-  if (updateErr) throw new Error("Could not flag orphans: " + updateErr.message);
+  // For unlinked records that carry a payment_intent_id, try to find the booking
+  // via bookings.payment_intent_id before flagging them as orphans.
+  const piIds = [...new Set(unlinkedRows.map((r) => r.payment_intent_id).filter(Boolean))];
+  const piToBookingRef = new Map(); // payment_intent_id → booking_ref
+  if (piIds.length > 0) {
+    const { data: bookingsByPI } = await sb
+      .from("bookings")
+      .select("booking_ref, payment_intent_id")
+      .in("payment_intent_id", piIds);
+    for (const b of bookingsByPI || []) {
+      if (b.payment_intent_id && b.booking_ref) piToBookingRef.set(b.payment_intent_id, b.booking_ref);
+    }
+  }
 
-  console.log(`[v2-system-health] fix_orphans: flagged ${trueOrphans.length} records as is_orphan=true`);
+  let relinked   = 0;
+  const trueOrphans = [];
+
+  for (const row of unlinkedRows) {
+    const correctRef = row.payment_intent_id ? piToBookingRef.get(row.payment_intent_id) : null;
+    if (correctRef) {
+      // A booking with this PI exists — update booking_id to the correct booking_ref
+      // (re-link) rather than flagging as orphan.
+      const { error: relinkErr } = await sb
+        .from("revenue_records")
+        .update({ booking_id: correctRef })
+        .eq("id", row.id);
+      if (relinkErr) {
+        console.error(`[v2-system-health] fix_orphans: relink failed for ${row.id}:`, relinkErr.message);
+        trueOrphans.push(row); // fall through to orphan-flag on relink failure
+      } else {
+        relinked++;
+        console.log(`[v2-system-health] fix_orphans: relinked revenue ${row.id} → booking_ref=${correctRef}`);
+      }
+    } else {
+      trueOrphans.push(row);
+    }
+  }
+
+  let fixed = 0;
+  if (trueOrphans.length > 0) {
+    const ids = trueOrphans.map((r) => r.id);
+    const { error: updateErr } = await sb
+      .from("revenue_records")
+      .update({ is_orphan: true })
+      .in("id", ids);
+    if (updateErr) throw new Error("Could not flag orphans: " + updateErr.message);
+    fixed = trueOrphans.length;
+    console.log(`[v2-system-health] fix_orphans: flagged ${fixed} records as is_orphan=true`);
+  }
+
   const parts = [];
-  if (trueOrphans.length > 0) parts.push(`Flagged ${trueOrphans.length} true orphan${trueOrphans.length !== 1 ? "s" : ""}`);
-  if (unorphaned > 0)         parts.push(`Cleared ${unorphaned} stale flag${unorphaned !== 1 ? "s" : ""}`);
+  if (fixed > 0)      parts.push(`Flagged ${fixed} true orphan${fixed !== 1 ? "s" : ""}`);
+  if (relinked > 0)   parts.push(`Relinked ${relinked} record${relinked !== 1 ? "s" : ""} via payment_intent_id`);
+  if (unorphaned > 0) parts.push(`Cleared ${unorphaned} stale flag${unorphaned !== 1 ? "s" : ""}`);
   return {
-    fixed: trueOrphans.length,
+    fixed,
+    relinked,
     unorphaned,
     message: parts.join("; ") + ".",
   };
@@ -1262,12 +1356,27 @@ async function fixStripePaymentNoBooking(sb) {
         continue;
       }
 
-      // Guard 2: metadata.booking_id must be present
-      const bookingRef = pi.metadata?.booking_id;
+      // Guard 2: metadata.booking_id must be present; fallback to PI-based booking lookup.
+      // When Stripe metadata lacks booking_id (e.g. very old PIs or non-standard flows),
+      // try to find the booking by matching payment_intent_id in the bookings table.
+      let bookingRef = pi.metadata?.booking_id || null;
+      if (!bookingRef) {
+        const { data: bookingByPI, error: piLookupErr } = await sb
+          .from("bookings")
+          .select("booking_ref")
+          .eq("payment_intent_id", piId)
+          .maybeSingle();
+        if (!piLookupErr && bookingByPI?.booking_ref) {
+          bookingRef = bookingByPI.booking_ref;
+          console.log(
+            `[v2-system-health] fix_pi_no_booking: resolved booking_ref=${bookingRef} via payment_intent_id for ${piId}`,
+          );
+        }
+      }
       if (!bookingRef) {
         skippedIncomplete++;
         console.warn(
-          `[v2-system-health] fix_pi_no_booking: flagged ${piId} — metadata.booking_id missing, not auto-repairing`,
+          `[v2-system-health] fix_pi_no_booking: skipped ${piId} — metadata.booking_id missing and no booking found by PI`,
         );
         continue;
       }
@@ -1288,9 +1397,15 @@ async function fixStripePaymentNoBooking(sb) {
         // Booking exists — this is a legacy false-positive orphan flag.  Clear it
         // so the revenue record re-appears in financial reports and the health
         // panel no longer surfaces it as an unlinked payment.
+        // Also fix booking_id when it was absent or a synthetic "stripe-<pi>" placeholder
+        // so that the revenue record is properly linked to the canonical booking_ref.
+        const updateFields = { is_orphan: false };
+        if (!row.booking_id || row.booking_id.startsWith("stripe-")) {
+          updateFields.booking_id = existing.booking_ref;
+        }
         const { error: clearErr } = await sb
           .from("revenue_records")
-          .update({ is_orphan: false })
+          .update(updateFields)
           .eq("id", row.id);
         if (clearErr) {
           failures.push({ id: piId, error: `is_orphan clear failed: ${clearErr.message}` });
@@ -1304,15 +1419,25 @@ async function fixStripePaymentNoBooking(sb) {
         continue;
       }
 
-      // Booking does not exist — queue for reconstruction.
-      const { error: updateErr } = await sb
-        .from("revenue_records")
-        .update({ is_orphan: false, sync_excluded: false })
-        .eq("id", row.id);
-      if (updateErr) {
-        failures.push({ id: piId, error: `revenue_records update failed: ${updateErr.message}` });
-        console.error(`[v2-system-health] fix_pi_no_booking: update error for ${piId}:`, updateErr.message);
-        continue;
+      // Booking does not exist — update the booking_id to the resolved ref (fixes any
+      // synthetic "stripe-pi_xxx" key) and queue the revenue row for reconstruction by
+      // revenue-self-heal.  The row is kept is_orphan=true so the DB trigger allows the
+      // booking_id update even though the booking doesn't exist yet.  Revenue-self-heal
+      // will reconstruct the booking and then clear is_orphan=false.
+      const queueFields = {};
+      if (!row.booking_id || row.booking_id.startsWith("stripe-")) {
+        queueFields.booking_id = bookingRef;
+      }
+      if (Object.keys(queueFields).length > 0) {
+        const { error: prepErr } = await sb
+          .from("revenue_records")
+          .update(queueFields)
+          .eq("id", row.id);
+        if (prepErr) {
+          failures.push({ id: piId, error: `revenue_records booking_id update failed: ${prepErr.message}` });
+          console.error(`[v2-system-health] fix_pi_no_booking: prep error for ${piId}:`, prepErr.message);
+          continue;
+        }
       }
 
       queued++;
