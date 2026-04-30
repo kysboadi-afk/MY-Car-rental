@@ -939,6 +939,36 @@ body {
   margin-top: 8px;
 }
 
+/* BOOKING PAGE TWO-COLUMN LAYOUT */
+.booking-layout {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+}
+
+.booking-layout .car-slider {
+  flex: 1 1 45%;
+  min-width: 0;
+  position: sticky;
+  top: 20px;
+  margin-bottom: 0;
+}
+
+.booking-layout .booking {
+  flex: 1 1 55%;
+  min-width: 0;
+  max-width: none;
+}
+
+@media (max-width: 900px) {
+  .booking-layout {
+    flex-direction: column;
+  }
+  .booking-layout .car-slider {
+    position: static;
+  }
+}
+
 /* BOOKING PAGE */
 .back-btn {
   background: #000;
@@ -1148,7 +1178,9 @@ body {
 .booking input[type="date"],
 .booking input[type="time"],
 .booking input[type="email"],
-.booking input[type="tel"] {
+.booking input[type="tel"],
+.booking input[type="text"],
+.booking select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #333;
@@ -1159,7 +1191,18 @@ body {
   background: #111;
   color: #fff;
 }
-.booking input:focus { border-color: #ffb400; }
+.booking select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23ffb400' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+  padding-right: 36px;
+  cursor: pointer;
+}
+.booking input:focus,
+.booking select:focus { border-color: #ffb400; }
 
 .booking label.agree {
   display: flex;
