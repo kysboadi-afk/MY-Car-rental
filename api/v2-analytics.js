@@ -26,7 +26,7 @@ import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { uiVehicleId } from "./_vehicle-id.js";
+import { uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
 
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
@@ -239,6 +239,40 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Booking counts from bookings table (source of truth for counts) ──────
+    // Queried independently of revenue_records so that bookings stored under
+    // legacy vehicle IDs (e.g. "camry2012") or without a revenue_record are
+    // never missed.  FLEET_DB_VEHICLE_IDS includes both canonical and legacy
+    // IDs; uiVehicleId() normalises results back to canonical IDs.
+    // bookingMonthlyByVehicle is used by the revenue_trend action for per-month
+    // booking counts without relying on revenue_records as the count source.
+    const bookingCountsByVehicle  = {};
+    const bookingMonthlyByVehicle = {};
+    if (sb) {
+      try {
+        const { data: bRows, error: bErr } = await sb
+          .from("bookings")
+          .select("vehicle_id, pickup_date")
+          .in("vehicle_id", FLEET_DB_VEHICLE_IDS)
+          .in("status", [...paidStatuses]);
+        if (!bErr && bRows) {
+          for (const row of bRows) {
+            const vid = uiVehicleId(row.vehicle_id) || row.vehicle_id;
+            bookingCountsByVehicle[vid] = (bookingCountsByVehicle[vid] || 0) + 1;
+            const monthKey = (row.pickup_date || "").slice(0, 7);
+            if (monthKey) {
+              if (!bookingMonthlyByVehicle[vid]) bookingMonthlyByVehicle[vid] = {};
+              bookingMonthlyByVehicle[vid][monthKey] = (bookingMonthlyByVehicle[vid][monthKey] || 0) + 1;
+            }
+          }
+        } else if (bErr) {
+          console.warn("v2-analytics: bookings count query failed (non-fatal):", bErr.message);
+        }
+      } catch (bEx) {
+        console.warn("v2-analytics: bookings count query error (non-fatal):", bEx.message);
+      }
+    }
+
     // ── FLEET OVERVIEW ───────────────────────────────────────────────────────
     if (!action || action === "fleet") {
       const now = new Date();
@@ -249,19 +283,22 @@ export default async function handler(req, res) {
         const vBookings    = (bookingsData[vehicleId] || []);
         const paidBookings = vBookings.filter((b) => paidStatuses.has(b.status));
 
-        // Financial figures — from revenue_records when available, bookings.json otherwise
+        // Financial figures — from revenue_records when available, bookings.json otherwise.
+        // Booking count always comes from the bookings table (source of truth); financial
+        // totals still come from revenue_records when available.
         let gross, fees, net, totalBookings;
         if (financialsFromRevRecords) {
-          const vr    = rrByVehicle[vehicleId] || { gross: 0, fees: 0, net: 0, count: 0 };
-          gross        = vr.gross;
-          fees         = vr.fees;
-          net          = vr.net;
-          totalBookings = vr.count;
+          const vr = rrByVehicle[vehicleId] || { gross: 0, fees: 0, net: 0 };
+          gross = vr.gross;
+          fees  = vr.fees;
+          net   = vr.net;
+          // Prefer bookings table count; fall back to bookings.json paid count.
+          totalBookings = bookingCountsByVehicle[vehicleId] ?? paidBookings.length;
         } else {
-          gross        = paidBookings.reduce((s, b) => s + bookingRevenue(b), 0);
-          fees         = 0;
-          net          = gross;
-          totalBookings = paidBookings.length;
+          gross         = paidBookings.reduce((s, b) => s + bookingRevenue(b), 0);
+          fees          = 0;
+          net           = gross;
+          totalBookings = bookingCountsByVehicle[vehicleId] ?? paidBookings.length;
         }
 
         const vExpenses = expenses
@@ -365,7 +402,8 @@ export default async function handler(req, res) {
         totalRevenue  = vr.gross;
         totalFees     = vr.fees;
         totalNet      = vr.net;
-        bookingCount  = vr.count;
+        // Count comes from bookings table (source of truth), not revenue_records.
+        bookingCount  = bookingCountsByVehicle[vehicleId] ?? vr.count;
         monthlyTrend  = Object.entries(vr.monthly)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
@@ -378,7 +416,7 @@ export default async function handler(req, res) {
         totalRevenue = paid.reduce((s, b) => s + bookingRevenue(b), 0);
         totalFees    = 0;
         totalNet     = totalRevenue;
-        bookingCount = paid.length;
+        bookingCount = bookingCountsByVehicle[vehicleId] ?? paid.length;
         monthlyTrend = Object.entries(monthly)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([month, amount]) => ({ month, amount: Math.round(amount * 100) / 100 }));
@@ -418,24 +456,33 @@ export default async function handler(req, res) {
       const monthly = {};
 
       if (financialsFromRevRecords) {
-        // Aggregate from revenue_records (already grouped by vehicle+month in rrByVehicle)
+        // Aggregate revenue from revenue_records (already grouped by vehicle+month in rrByVehicle)
         for (const [vid, vr] of Object.entries(rrByVehicle)) {
           if (!inScope(vid)) continue;
           for (const [m, amount] of Object.entries(vr.monthly)) {
             if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
-            monthly[m].revenue  += amount;
-            monthly[m].bookings += vr.count; // approximate; exact count not tracked per-month
+            monthly[m].revenue += amount;
           }
         }
-        // Fix: recompute bookings per month using the full rrRows is not available here,
-        // so use revenue_records' per-vehicle monthly maps (revenue only, bookings count approximate).
-        // Reset bookings to 0 and recount from bookings.json to keep the count accurate.
-        for (const m of Object.keys(monthly)) monthly[m].bookings = 0;
-        for (const b of allBookings) {
-          if (!paidStatuses.has(b.status)) continue;
-          if (!inScope(b.vehicleId)) continue;
-          const m = (b.pickupDate || "").slice(0, 7);
-          if (m && monthly[m]) monthly[m].bookings += 1;
+        // Booking counts per month come from the bookings table (source of truth).
+        // If the bookings table query succeeded, use those per-month counts directly.
+        // Fall back to bookings.json when the Supabase query was unavailable.
+        if (Object.keys(bookingMonthlyByVehicle).length > 0) {
+          for (const [vid, monthMap] of Object.entries(bookingMonthlyByVehicle)) {
+            if (!inScope(vid)) continue;
+            for (const [m, count] of Object.entries(monthMap)) {
+              if (!monthly[m]) monthly[m] = { month: m, revenue: 0, bookings: 0 };
+              monthly[m].bookings += count;
+            }
+          }
+        } else {
+          // Fallback: recount from bookings.json
+          for (const b of allBookings) {
+            if (!paidStatuses.has(b.status)) continue;
+            if (!inScope(b.vehicleId)) continue;
+            const m = (b.pickupDate || "").slice(0, 7);
+            if (m && monthly[m]) monthly[m].bookings += 1;
+          }
         }
       } else {
         // Fallback: bookings.json
