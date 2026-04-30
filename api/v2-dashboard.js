@@ -26,9 +26,8 @@ import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicl
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
-  camry:      "Camry 2012",
-  camry2012:  "Camry 2012",
-  camry2013:  "Camry 2013 SE",
+  camry:     "Camry 2012",
+  camry2013: "Camry 2013 SE",
 };
 const DB_TO_APP_STATUS = {
   pending:              "reserved_unpaid",
@@ -347,15 +346,16 @@ export default async function handler(req, res) {
 
         // Populate per-vehicle revenue map (used by vehicleStats computation below).
         // view includes both revenue_records and supplemental charges.
+        // Accumulate (+=) rather than assign so that any vehicle_id aliases that
+        // uiVehicleId() maps to the same canonical key are merged correctly.
         const vRevJson = metricsView.vehicle_revenue_json || {};
         for (const [vid, vr] of Object.entries(vRevJson)) {
           const normVid = uiVehicleId(vid);
-          rrByVehicle[normVid] = {
-            gross: Number(vr.gross || 0),
-            net:   Number(vr.net   || 0),
-            count: Number(vr.count || 0),
-          };
-          bookingsPerVehicle[normVid] = Number(vr.count || 0);
+          if (!rrByVehicle[normVid]) rrByVehicle[normVid] = { gross: 0, net: 0, count: 0 };
+          rrByVehicle[normVid].gross += Number(vr.gross || 0);
+          rrByVehicle[normVid].net   += Number(vr.net   || 0);
+          rrByVehicle[normVid].count += Number(vr.count || 0);
+          bookingsPerVehicle[normVid] = (bookingsPerVehicle[normVid] || 0) + Number(vr.count || 0);
         }
       }
     }
