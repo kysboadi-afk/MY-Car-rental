@@ -7,8 +7,9 @@
 //   STRIPE_PUBLISHABLE_KEY  — starts with pk_live_ or pk_test_
 import crypto from "crypto";
 import Stripe from "stripe";
-import { computeRentalDays } from "./_pricing.js";
-import { loadPricingSettings, computeCarAmountFromVehicleData, computeDppCostFromSettings, applyTax } from "./_settings.js";
+import { computeRentalDays, getVehiclePricing } from "./_pricing.js";
+import { loadPricingSettings, computeDppCostFromSettings, applyTax } from "./_settings.js";
+import { getSupabaseAdmin } from "./_supabase.js";
 import { isDatesAndTimesAvailable, isVehicleAvailable } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
 import { normalizeClockTime, formatTime12h } from "./_time.js";
@@ -159,14 +160,28 @@ export default async function handler(req, res) {
     }
 
     // Load live pricing from Supabase system_settings (admin-configurable).
-    // Falls back to hardcoded _pricing.js defaults when Supabase is unavailable.
     const settings = await loadPricingSettings();
 
-    // Compute amount server-side — never trust a client-supplied amount.
-    const computedFullRental = computeCarAmountFromVehicleData(vehicleData, pickup, returnDate, settings);
+    // Fetch vehicle pricing from the vehicle_pricing table — DB is the sole source of truth.
+    const sb = getSupabaseAdmin();
+    if (!sb) {
+      return res.status(503).json({ error: "Database unavailable. Please try again." });
+    }
+    const pricing = await getVehiclePricing(sb, vehicleId);
 
-    // Add DPP cost when the renter opted in.
+    // Compute rental days and apply flat tier pricing — no greedy chains.
     const days = computeRentalDays(pickup, returnDate);
+    let computedFullRental;
+    if (days === 7) {
+      computedFullRental = pricing.weekly_price;
+    } else if (days === 14) {
+      computedFullRental = pricing.biweekly_price;
+    } else if (days >= 28) {
+      computedFullRental = pricing.monthly_price;
+    } else {
+      computedFullRental = pricing.daily_price * days;
+    }
+    console.log('[pricing-booking]', { vehicle: vehicleId, days, pricing, price: computedFullRental });
     const tier = protectionPlanTier || null;
     const protectionCost = protectionPlan ? computeDppCostFromSettings(days, tier) : 0;
 

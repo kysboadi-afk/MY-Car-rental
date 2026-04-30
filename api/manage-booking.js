@@ -30,11 +30,10 @@ import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { getVehicleById } from "./_vehicles.js";
 import {
   loadPricingSettings,
-  computeCarAmountFromVehicleData,
   computeDppCostFromSettings,
   applyTax,
 } from "./_settings.js";
-import { computeRentalDays } from "./_pricing.js";
+import { computeRentalDays, getVehiclePricing } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com", "https://sly-rides.vercel.app"];
@@ -153,9 +152,21 @@ function effectiveBalanceDue(row) {
  */
 async function recomputePricing(vehicleData, pickupDate, returnDate, protectionPlan, protectionPlanTier, depositPaid) {
   const settings = await loadPricingSettings();
-  const rentalCost = computeCarAmountFromVehicleData(vehicleData, pickupDate, returnDate, settings);
-  if (rentalCost == null) return null;
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  const pricing = await getVehiclePricing(sb, vehicleData.vehicleId);
   const days = computeRentalDays(pickupDate, returnDate);
+  let rentalCost;
+  if (days === 7) {
+    rentalCost = pricing.weekly_price;
+  } else if (days === 14) {
+    rentalCost = pricing.biweekly_price;
+  } else if (days >= 28) {
+    rentalCost = pricing.monthly_price;
+  } else {
+    rentalCost = pricing.daily_price * days;
+  }
+  console.log('[pricing-booking]', { vehicle: vehicleData.vehicleId, days, pricing, price: rentalCost });
   const dppCost = protectionPlan ? computeDppCostFromSettings(days, protectionPlanTier || null) : 0;
   const preTax = rentalCost + dppCost;
   const newTotal = applyTax(preTax, settings);
