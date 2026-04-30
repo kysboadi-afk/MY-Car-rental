@@ -21,6 +21,7 @@
     "api/v2-customers.js":                  { "maxDuration": 25 },
     "api/revenue-self-heal.js":             { "maxDuration": 60 },
     "api/v2-system-health.js":              { "maxDuration": 30 },
+    "api/system-health-fix-sms.js":         { "maxDuration": 30 },
     "api/system-health-fix-availability.js": { "maxDuration": 30 },
     "api/scheduled-reminders.js":            { "maxDuration": 60 }
   },
