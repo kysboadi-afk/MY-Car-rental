@@ -89,6 +89,21 @@ mock.module("./_supabase.js", {
   namedExports: { getSupabaseAdmin: () => sbClient },
 });
 
+// _pricing.js mock — returns a fake vehicle_pricing row so the handler never
+// hits the real Supabase vehicle_pricing table during tests.
+mock.module("./_pricing.js", {
+  namedExports: {
+    getVehiclePricing: async (_sb, _id) => ({
+      vehicle_id:     "camry",
+      daily_price:    55,
+      weekly_price:   350,
+      biweekly_price: 650,
+      monthly_price:  1300,
+    }),
+    computeAmountFromPricing: (await import("./_pricing.js")).computeAmountFromPricing,
+  },
+});
+
 // Stripe mock — returns a minimal fake PaymentIntent so the handler can reach 200.
 // capturedStripeParams stores the last params passed to paymentIntents.create so
 // metadata-content tests can assert on what was sent to Stripe.
