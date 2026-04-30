@@ -210,7 +210,11 @@ function goToSlide(idx){ showSlide(idx); }
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = "index.html";
+  if (document.referrer) {
+    window.history.back();
+  } else {
+    window.location.href = `car.html?vehicle=${vehicleId}`;
+  }
 });
 
 // ----- Booking Form Automation -----
