@@ -150,6 +150,12 @@ if (!vehicleId || !cars[vehicleId]) {
 
 const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
+
+// Point the "Complete Booking" header button to the booking section of this vehicle's page.
+const completeBookingBtn = document.getElementById("completeBookingBtn");
+if (completeBookingBtn) {
+  completeBookingBtn.href = `car.html?vehicle=${vehicleId}#booking`;
+}
 document.getElementById("carSubtitle").textContent =
   (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
 document.getElementById("carPrice").textContent = carData.weekly
