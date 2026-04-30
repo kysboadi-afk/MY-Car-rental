@@ -117,10 +117,6 @@ function clearPayError() {
         if (ecMonthly > 0) cars[vid].monthly     = ecMonthly;
       });
 
-          }
-        });
-      });
-
       // ── Tax rate ─────────────────────────────────────────────────────────
       // (already set as a module-level const; we update the global so
       //  any later calculation that references LA_TAX_RATE by closure reads
@@ -134,11 +130,9 @@ function clearPayError() {
       if (carData) {
         var priceEl = document.getElementById("carPrice");
         if (priceEl) {
-          priceEl.textContent = carData.hourlyTiers
-            ? carData.hourlyTiers.map(function(t) { return "$" + t.price + " / " + t.label; }).join(" \u2022 ")
-            : (carData.weekly
-                ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
-                : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day"));
+          priceEl.textContent = carData.weekly
+            ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
+            : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day");
         }
       }
     })
@@ -158,11 +152,9 @@ const carData = cars[vehicleId];
 document.getElementById("carName").textContent = carData.name;
 document.getElementById("carSubtitle").textContent =
   (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
-document.getElementById("carPrice").textContent = carData.pricePerDay ? "$" + carData.pricePerDay + "/day" : "";
-  ? carData.hourlyTiers.map(t => `$${t.price} / ${t.label}`).join(" \u2022 ")
-  : (carData.weekly)
-    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
-    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+document.getElementById("carPrice").textContent = carData.weekly
+  ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
+  : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
 
 if (IS_TEST_MODE_OVERRIDE) {
   const bookingSection = document.querySelector(".booking");
@@ -234,13 +226,15 @@ let agreementSignature = ""; // typed signature from the inline agreement panel
 let insuranceCoverageChoice = null; // 'yes' | 'no' | null
 // Payment mode for the current payment attempt: 'deposit' | 'full'.
 // Set by reserveBtn before delegating to stripeBtn; reset after each attempt.
-// Camry renters choose via the two-button UI.
 let _pendingPaymentMode = null;
 // Economy car protection plan tier selected on the booking page: basic | standard | premium
 // Defaults to "standard" (pre-populated from Apply Now / Waitlist preference).
 let selectedProtectionTier = "standard";
 
-if (true) {
+
+// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
+// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
+{
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) {
     reserveBtnEl.textContent = `\uD83D\uDD12 Reserve with $${CAMRY_BOOKING_DEPOSIT} Deposit`;
@@ -330,34 +324,31 @@ function isValidName(val) {
     if (data.email && emailField && !emailField.value) { emailField.value = data.email; updatePayBtn(); }
     if (data.phone && phoneField && !phoneField.value) { phoneField.value = data.phone; updatePayBtn(); }
 
-    // For Economy cars only: pre-select insurance choice and protection plan tier.
-    {
-      // Pre-select protection plan tier (default to standard if not stored)
-      const pref = data.protectionPlanPref || data.protectionPlan;
-      if (pref === "basic" || pref === "standard" || pref === "premium") {
-        selectedProtectionTier = pref;
-      }
-      // Pre-select insurance radio and show/hide appropriate sections
-      const hasInsurance = data.hasInsurance;
-      if (hasInsurance === "yes") {
-        insuranceCoverageChoice = "yes";
-        const hasInsRadio = document.getElementById("hasInsurance");
-        const insSection  = document.getElementById("insuranceUploadSection");
-        if (hasInsRadio) hasInsRadio.checked = true;
-        if (insSection)  insSection.style.display = "";
-        document.getElementById("protectionPlanSection").style.display = "none";
-      } else if (hasInsurance === "no") {
-        insuranceCoverageChoice = "no";
-        const noInsRadio     = document.getElementById("noInsurance");
-        const protSection    = document.getElementById("protectionPlanSection");
-        const insSection     = document.getElementById("insuranceUploadSection");
-        if (noInsRadio)   noInsRadio.checked = true;
-        if (insSection)   insSection.style.display = "none";
-        if (protSection)  protSection.style.display = "";
-        _syncProtectionTierRadio(selectedProtectionTier);
-      }
-      updatePayBtn();
+    // Pre-select protection plan tier (default to standard if not stored)
+    const pref = data.protectionPlanPref || data.protectionPlan;
+    if (pref === "basic" || pref === "standard" || pref === "premium") {
+      selectedProtectionTier = pref;
     }
+    // Pre-select insurance radio and show/hide appropriate sections
+    const hasInsurance = data.hasInsurance;
+    if (hasInsurance === "yes") {
+      insuranceCoverageChoice = "yes";
+      const hasInsRadio = document.getElementById("hasInsurance");
+      const insSection  = document.getElementById("insuranceUploadSection");
+      if (hasInsRadio) hasInsRadio.checked = true;
+      if (insSection)  insSection.style.display = "";
+      document.getElementById("protectionPlanSection").style.display = "none";
+    } else if (hasInsurance === "no") {
+      insuranceCoverageChoice = "no";
+      const noInsRadio     = document.getElementById("noInsurance");
+      const protSection    = document.getElementById("protectionPlanSection");
+      const insSection     = document.getElementById("insuranceUploadSection");
+      if (noInsRadio)   noInsRadio.checked = true;
+      if (insSection)   insSection.style.display = "none";
+      if (protSection)  protSection.style.display = "";
+      _syncProtectionTierRadio(selectedProtectionTier);
+    }
+    updatePayBtn();
   } catch (_) { /* storage may be blocked in private mode */ }
 }());
 
@@ -397,9 +388,7 @@ document.getElementById("hasInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "yes";
   document.getElementById("insuranceUploadSection").style.display = "";
-
-    document.getElementById("protectionPlanSection").style.display = "none";
-  
+  document.getElementById("protectionPlanSection").style.display = "none";
   // Clear any protection-plan file state if previously "no"
   updateTotal();
   updatePayBtn();
@@ -409,11 +398,9 @@ document.getElementById("noInsurance").addEventListener("change", function() {
   if (!this.checked) return;
   insuranceCoverageChoice = "no";
   document.getElementById("insuranceUploadSection").style.display = "none";
-
-    document.getElementById("protectionPlanSection").style.display = "";
-    // Ensure the pre-selected tier radio is checked in the UI
-    _syncProtectionTierRadio(selectedProtectionTier);
-  
+  document.getElementById("protectionPlanSection").style.display = "";
+  // Ensure the pre-selected tier radio is checked in the UI
+  _syncProtectionTierRadio(selectedProtectionTier);
   // Clear the uploaded insurance file since it's no longer needed
   clearInsuranceFile();
   updateTotal();
@@ -428,7 +415,7 @@ function _syncProtectionTierRadio(tier) {
   if (radio) radio.checked = true;
 }
 
-// Attach change handlers to the tier radios (Economy cars only).
+// Attach change handlers to the tier radios.
 (function setupProtectionTierListeners() {
   document.querySelectorAll('input[name="bookingProtectionPlan"]').forEach(function(radio) {
     radio.addEventListener("change", function() {
@@ -571,17 +558,24 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   if (colorRow) colorRow.style.display = carData.color ? "" : "none";
 
   // Update the Security Deposit section.
-  {
-    // For Camry (economy): no security deposit — hide the entire deposit section.
-    if (depositHeadingEl) depositHeadingEl.style.display = "none";
-    if (depositIntroEl)   depositIntroEl.style.display   = "none";
-    if (depositInsEl)     depositInsEl.style.display     = "none";
-    if (depositDppEl)     depositDppEl.style.display     = "none";
-    if (depositNeitherEl) depositNeitherEl.style.display = "none";
-    if (lateFeeGenericEl)   lateFeeGenericEl.style.display   = "";
+  // Camry vehicles have no security deposit — the entire section is hidden.
+  const depositHeadingEl  = document.getElementById("agreementDepositHeading");
+  const depositIntroEl    = document.getElementById("agreementDepositIntro");
+  const depositInsEl      = document.getElementById("agreementDepositInsurance");
+  const depositDppEl      = document.getElementById("agreementDepositDpp");
+  const depositNeitherEl  = document.getElementById("agreementDepositNeither");
+  const lateFeeGenericEl  = document.getElementById("lateFeeGeneric");
+  // For Camry (economy): no security deposit — hide the entire deposit section.
+  if (depositHeadingEl) depositHeadingEl.style.display = "none";
+  if (depositIntroEl)   depositIntroEl.style.display   = "none";
+  if (depositInsEl)     depositInsEl.style.display     = "none";
+  if (depositDppEl)     depositDppEl.style.display     = "none";
+  if (depositNeitherEl) depositNeitherEl.style.display = "none";
+  // Show generic late fee
+  if (lateFeeGenericEl) lateFeeGenericEl.style.display = "";
 
-    // For economy cars: populate the protection choice summary and update the
-    // tier-specific liability cap text in the Insurance & Liability section.
+  // Populate the protection choice summary and update the
+  // tier-specific liability cap text in the Insurance & Liability section.
     const protChoiceEl = document.getElementById("agreementProtectionChoice");
     const dppReducesEl = document.getElementById("agreementDppReduces");
     const withPlanEl   = document.getElementById("agreementWithPlanBody");
@@ -630,22 +624,16 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
         withPlanEl.setAttribute("data-i18n-html", "agreement.withPlanBody");
       }
     }
-  } // end economy (non-hourly) branch
-
 
   // Update Payment Terms body to accurately describe when/how payment is collected.
   // Removing data-i18n prevents applyTranslations() from overwriting the corrected text.
   const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
-    if (carData.hourlyTiers) {
-      paymentTermsBodyEl.textContent = `Full payment (including a refundable security deposit equal to your rental fee) is charged online at the time of booking. The security deposit will be released within 5–7 business days after the vehicle is returned and inspected with no issues. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.`;
-    } else {
-      // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
-      paymentTermsBodyEl.textContent = lang === "es"
-        ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
-        : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
-    }
+    // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
+    paymentTermsBodyEl.textContent = lang === "es"
+      ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+      : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
@@ -714,8 +702,8 @@ document.getElementById("cancelSignBtn").addEventListener("click", function () {
   document.getElementById("rentalAgreementBox").style.display = "none";
   document.getElementById("signAgreementBtn").style.display  = "";
 });
-let returnPicker = null;
 
+let returnPicker = null;
 
 // Fixed time slots available for booking (displayed as options in the pickup time select).
 const TIME_SLOTS = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM"];
@@ -792,7 +780,6 @@ function updatePickupTimeSlots(selectedDate) {
     return;
   }
 
-
   TIME_SLOTS.forEach(function(slot) {
     const opt = document.createElement("option");
     // Store the value as HH:MM (24-hour) so the backend always receives a
@@ -802,7 +789,83 @@ function updatePickupTimeSlots(selectedDate) {
 
     if (IS_TEST_MODE_OVERRIDE) {
       opt.disabled = false;
+    } else {
+      opt.disabled = isSlotBlocked(selectedDate, slot, bookedRangesCache);
     }
+
+    pickupTime.appendChild(opt);
+  });
+
+  // Auto-select the first non-disabled slot, or show "no times" warning.
+  const firstAvail = pickupTime.querySelector("option:not([disabled]):not([value=''])");
+  if (firstAvail) {
+    firstAvail.selected = true;
+    // Value is already HH:MM — assign directly without conversion.
+    returnTime.value = firstAvail.value;
+    if (noTimesMsg) noTimesMsg.style.display = "none";
+  } else {
+    returnTime.value = "";
+    if (noTimesMsg) noTimesMsg.style.display = "";
+  }
+
+  updateTotal();
+  updatePayBtn();
+}
+
+// Flag set to true inside initDatePickers() once Flatpickr takes over.
+// Flatpickr already fires native change events after its own onChange, so
+// the native listeners below must skip when Flatpickr is active to avoid
+// calling updateTotal() twice on every selection.
+// pickupTime is now a <select> and is handled by its own dedicated listener below.
+let flatpickrActive = false;
+[pickup, returnDate, returnTime].forEach(function(inp) {
+  inp.addEventListener("change", function() {
+    if (flatpickrActive) return; // Flatpickr's own onChange handles this
+    updateTotal();
+  });
+});
+
+// Dedicated change listener for the pickupTime <select>.
+// Values are already HH:MM so returnTime is assigned directly.
+pickupTime.addEventListener("change", function() {
+  const slot = this.value; // HH:MM
+  returnTime.value = slot || "";
+  updateTotal();
+  updatePayBtn();
+});
+
+  // ----- Date Pickers (Flatpickr) -----
+async function initDatePickers() {
+  if (typeof flatpickr === "undefined") return; // fallback to native inputs
+
+  let bookedRanges = [];
+  try {
+    // Fetch from the Vercel API endpoint instead of the GitHub Pages static file.
+    // GitHub Pages CDN caches files for several minutes after a commit, so the
+    // static file often shows stale (empty) data even after a booking is saved.
+    // The /api/booked-dates endpoint reads directly from the GitHub Contents API
+    // with Cache-Control: no-store, so new bookings appear immediately.
+    const resp = await fetch(`${API_BASE}/api/booked-dates`);
+    if (resp.ok) {
+      const data = await resp.json();
+      bookedRanges = data[vehicleId] || [];
+      bookedRangesCache = bookedRanges;
+    }
+  } catch (e) { console.error("Failed to load booked dates:", e); }
+
+  // Pre-compile range boundaries to millisecond timestamps once so the
+  // disable callback never allocates new Date objects per calendar cell.
+  // End date is exclusive: the return date is not blocked in the calendar.
+  const compiledRanges = bookedRanges.map(function(r) {
+    return {
+      from: new Date(r.from + "T00:00:00").getTime(),
+      to:   new Date(r.to   + "T00:00:00").getTime()
+    };
+  });
+
+  function isBooked(date) {
+    if (IS_TEST_MODE_OVERRIDE) return false;
+    const t = date.getTime();
     return compiledRanges.some(function(r) { return t >= r.from && t < r.to; });
   }
 
@@ -852,8 +915,25 @@ initDatePickers();
 // is unavailable (active booking exists), replace the booking form with the
 // Extend Rental section.
 // Fails open on any API error so transient outages do not lock out the form.
-//
-const idsToCheck = [vehicleId];
+
+// When ?extend=1 is present the user came from the "Extend Rental" button on
+// cars.html — show the extend section immediately without waiting for fleet-status.
+if (/^(true|1)$/i.test(pageParams.get("extend") || "")) {
+  showVehicleUnavailable(null, null);
+}
+
+(async function checkFleetStatus() {
+  if (IS_TEST_MODE_OVERRIDE) return;
+  try {
+    const fleetResp = await fetch(`${API_BASE}/api/fleet-status`);
+    if (!fleetResp.ok) return;
+    const status = await fleetResp.json();
+
+    const entry = status[vehicleId];
+    const isUnavailable = !!(entry && entry.available === false);
+
+    if (isUnavailable) {
+      const idsToCheck = [vehicleId]; // single vehicle for Camry
 
       let availableAt = null;
       let nextAvailableDisplay = null;
@@ -1007,7 +1087,6 @@ function initExtendRentalForm() {
       return;
     }
 
-
     // Base date for computing extra days: use the current booking's return date
     // (stored as the min attribute on the date input) so the estimate matches
     // what the server charges.  Falls back to today if min is not set or is in
@@ -1015,6 +1094,21 @@ function initExtendRentalForm() {
     var minDate = extNewReturn.getAttribute("min") || today;
     var baseDate = minDate > today ? minDate : today;
 
+    // Use the same tiered pricing as the main booking flow
+    var extraDays = Math.max(1, Math.ceil((new Date(newReturn) - new Date(baseDate)) / (1000 * 3600 * 24)));
+    var daily   = carData.pricePerDay  || 55;
+    var weekly  = carData.weekly       || 350;
+    var biweek  = carData.biweekly     || 650;
+    var monthly = carData.monthly      || 1300;
+
+    var cost2 = 0;
+    var rem   = extraDays;
+    if (rem >= 30) { cost2 += Math.floor(rem / 30) * monthly;  rem = rem % 30; }
+    if (rem >= 14) { cost2 += Math.floor(rem / 14) * biweek;   rem = rem % 14; }
+    if (rem >= 7)  { cost2 += Math.floor(rem / 7)  * weekly;   rem = rem % 7;  }
+    cost2 += rem * daily;
+
+    if (extPriceAmount) extPriceAmount.textContent = cost2.toFixed(0);
 
     if (extPriceDisplay) extPriceDisplay.style.display = "";
   }
@@ -1228,9 +1322,7 @@ function restoreFailedBooking() {
     // Sync returnTime to match restored pickupTime
     // pickupTime.value is HH:MM; if legacy stored value is AM/PM, convert it.
     if (data.pickupTime) returnTime.value = timeSlotToHH(data.pickupTime) || data.pickupTime;
-    {
-      fpSet(returnDate, data.returnDate);
-    }
+    fpSet(returnDate, data.returnDate);
 
     // Restore insurance / protection-plan choice.
     // insuranceCoverageChoice is saved explicitly in the failed-payment entry
@@ -1248,15 +1340,15 @@ function restoreFailedBooking() {
         if (hasInsuranceRadio) hasInsuranceRadio.checked = true;
         if (insuranceSection)  insuranceSection.style.display  = "";
         if (protectionSection) protectionSection.style.display = "none";
-          } else {
+      } else {
         if (noInsuranceRadio)  noInsuranceRadio.checked  = true;
         if (insuranceSection)  insuranceSection.style.display  = "none";
-          // Restore the protection plan tier for economy cars
-          if (data.protectionPlanTier) {
-            selectedProtectionTier = data.protectionPlanTier;
-          }
-          if (protectionSection) protectionSection.style.display = "";
-          _syncProtectionTierRadio(selectedProtectionTier);
+        // Restore the protection plan tier
+        if (data.protectionPlanTier) {
+          selectedProtectionTier = data.protectionPlanTier;
+        }
+        if (protectionSection) protectionSection.style.display = "";
+        _syncProtectionTierRadio(selectedProtectionTier);
       }
     }
 
@@ -1414,19 +1506,17 @@ function updatePayBtn() {
   const emailVal = document.getElementById("email").value.trim();
   // Insurance readiness:
   //   "yes"  → requires an uploaded file (own insurance)
-  //           → for Economy: requires a valid tier selection (basic/standard/premium)
-  const isEconomy = true;
+  //   "no"   → requires a valid tier selection (basic/standard/premium)
   const tierReady = selectedProtectionTier === "basic" || selectedProtectionTier === "standard" || selectedProtectionTier === "premium";
   const insuranceReady = (insuranceCoverageChoice === "yes" && (insuranceUpload.files.length > 0 || uploadedInsurance !== null)) ||
-                          (insuranceCoverageChoice === "no" && (!isEconomy || tierReady));
+                          (insuranceCoverageChoice === "no" && tierReady);
   const nameValid = isValidName(nameVal);
   const phoneVal = document.getElementById("phone").value.trim();
-  // Hourly-tier vehicles need pickup + duration + pickup time;
-  // other vehicles need pickup + return date + pickup time.
-  // Pickup time is required for all vehicles: it anchors the rental window and
+  // Requires pickup + return date + pickup time.
+  // Pickup time is required: it anchors the rental window and
   // is used as the return time (return_time = pickup_time) for overlap prevention.
   const hasTimeWindow = returnDate.value && pickupTime.value && returnTime.value;
-  const datesReady = pickup.value && returnDatePicker.value && hasTimeWindow;
+  const datesReady = pickup.value && hasTimeWindow;
   const ready = datesReady && agreeCheckbox.checked && (idUpload.files.length > 0 || uploadedFile !== null) && insuranceReady && nameValid && emailVal && phoneVal;
   stripeBtn.disabled = !ready;
   const _reserveBtnPayBtn = document.getElementById("reserveBtn");
@@ -1436,7 +1526,6 @@ function updatePayBtn() {
 }
 
 function updateTotal() {
-
   // ----- Daily/weekly vehicles -----
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
@@ -1543,8 +1632,7 @@ function updateTotal() {
 
 // ----- Pay Now -----
 stripeBtn.addEventListener("click", async () => {
-  // Resolve payment mode:
-  // - For Camry: _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
+  // Resolve payment mode: _pendingPaymentMode is set by reserveBtn before it calls stripeBtn.click().
   if (_pendingPaymentMode === null) {
     _pendingPaymentMode = 'full';
   }
@@ -1641,7 +1729,7 @@ stripeBtn.addEventListener("click", async () => {
         returnDate: returnDate.value,
         returnTime: returnTime.value,
         protectionPlan: insuranceCoverageChoice === "no",
-        // For Economy cars: pass the selected tier so the server uses the correct flat rate.
+        // Pass the selected tier so the server uses the correct flat rate.
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
@@ -1741,8 +1829,8 @@ stripeBtn.addEventListener("click", async () => {
           email,
           phone,
           total: displayPayNow,
-          fullRentalCost: (carData._fullRentalCost || totalEl.textContent),
-          balanceAtPickup: (carData._balanceAtPickup || null),
+          fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+          balanceAtPickup: carData._balanceAtPickup || null,
           pricePerDay: carData.pricePerDay || null,
           pricePerWeek: carData.weekly || null,
           pricePerBiWeekly: carData.biweekly || null,
@@ -1901,8 +1989,8 @@ stripeBtn.addEventListener("click", async () => {
         email,
         phone,
         total: displayPayNow,
-        fullRentalCost: (carData._fullRentalCost || totalEl.textContent),
-        balanceAtPickup: (carData._balanceAtPickup || null),
+        fullRentalCost: carData._fullRentalCost || totalEl.textContent,
+        balanceAtPickup: carData._balanceAtPickup || null,
         pricePerDay: carData.pricePerDay || null,
         pricePerWeek: carData.weekly || null,
         pricePerBiWeekly: carData.biweekly || null,
@@ -2019,7 +2107,6 @@ stripeBtn.addEventListener("click", async () => {
   } catch (err) {
     console.error("Stripe error:", err);
     stripeBtn.disabled = false;
-    // Restore the correct button text
     stripeBtn.textContent = window.slyI18n.t("booking.payNow");
     const _reserveBtnErr = document.getElementById("reserveBtn");
     if (_reserveBtnErr) _reserveBtnErr.disabled = false;

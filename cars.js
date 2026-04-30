@@ -190,7 +190,7 @@ function applyFleetStatus(fleetStatus) {
       } else {
         btn.setAttribute("data-i18n", "fleet.extendRental");
         btn.textContent = i18n.t("fleet.extendRental") || "⏱️ Extend Rental";
-        link.href = `car.html?vehicle=${encodeURIComponent(vid)}`;
+        link.href = `car.html?vehicle=${encodeURIComponent(vid)}&extend=1`;
       }
       btn.disabled = false;
       btn.style.display = "";
