@@ -853,7 +853,25 @@ initDatePickers();
 // Extend Rental section.
 // Fails open on any API error so transient outages do not lock out the form.
 //
-const idsToCheck = [vehicleId];
+// When ?extend=1 is present the user came from the "Extend Rental" button on
+// cars.html and the vehicle is known to be booked — show the extend section
+// immediately without waiting for the async fleet-status response.
+if (/^(true|1)$/i.test(pageParams.get("extend") || "")) {
+  showVehicleUnavailable(null, null);
+}
+
+(async function checkFleetStatus() {
+  if (IS_TEST_MODE_OVERRIDE) return;
+  try {
+    const fleetResp = await fetch(`${API_BASE}/api/fleet-status`);
+    if (!fleetResp.ok) return;
+    const status = await fleetResp.json();
+
+    const entry = status[vehicleId];
+    const isUnavailable = !!(entry && entry.available === false);
+
+    if (isUnavailable) {
+      const idsToCheck = [vehicleId];
 
       let availableAt = null;
       let nextAvailableDisplay = null;
