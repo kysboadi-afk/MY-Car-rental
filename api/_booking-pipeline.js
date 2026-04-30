@@ -19,7 +19,6 @@
 //   • No silent failures — every error is logged with enough context to debug.
 
 import crypto from "crypto";
-import { appendBooking } from "./_bookings.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import {
   autoCreateRevenueRecord,
@@ -479,20 +478,7 @@ export async function persistBooking(opts) {
     throw new Error(`booking persistence failed: ${fatalErrors.join("; ")}`);
   }
 
-  // ── 4. bookings.json persistence ─────────────────────────────────────────
-  pipelineLog("info", traceId, "json_save_start", { bookingId });
-  try {
-    await appendBooking(booking);
-    pipelineLog("info", traceId, "json_save_success", { bookingId });
-  } catch (err) {
-    const jsonErr = formatError(err);
-    pipelineLog("error", traceId, "json_save_error", { bookingId, error: jsonErr });
-    const jsonMsg = `json_save: ${jsonErr}`;
-    errors.push(jsonMsg);
-    if (strictPersistence) throw new Error(jsonMsg);
-  }
-
-  // ── 5. Final status ───────────────────────────────────────────────────────
+  // ── 4. Final status ───────────────────────────────────────────────────────
   const ok = strictPersistence ? errors.length === 0 : (errors.length === 0 || supabaseOk);
   pipelineLog(ok ? "info" : "error", traceId, "booking_persist_result", {
     bookingId,

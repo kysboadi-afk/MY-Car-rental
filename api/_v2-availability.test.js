@@ -260,66 +260,45 @@ test("single vehicle: reserved status blocks availability", async () => {
   }
 });
 
-// ─── Single-vehicle — Supabase fails → must use GitHub fallback ───────────────
-// This is the bug fixed in this PR: previously fallback was {} so the vehicle
-// would always appear available, allowing double-bookings.
+// ─── Single-vehicle — Supabase fails → must return error (no JSON fallback) ──
 
-test("single vehicle: falls back to booked-dates.json when Supabase query errors", async () => {
-  githubBookedDates = {
-    camry: [{ from: "2026-05-03", to: "2026-05-09" }],
-  };
+test("single vehicle: returns 500 when Supabase query errors", async () => {
   setupFetchMock();
   // Supabase is configured but returns an error
   supabaseMock.client = makeSupabaseClient({ error: { message: "connection timeout" } });
   try {
     const res = makeRes();
     await handler(makeReq({ query: { vehicleId: "camry", from: "2026-05-01", to: "2026-05-07" } }), res);
-    assert.equal(res._status, 200);
-    // Must be unavailable — using GitHub fallback which has the conflict
-    assert.equal(res._body.available, false, "vehicle must appear unavailable from GitHub fallback");
-    assert.equal(res._body.source, "booked-dates-json");
+    assert.equal(res._status, 500);
   } finally {
     supabaseMock.client = null;
-    githubBookedDates = {};
     teardownFetchMock();
   }
 });
 
-test("single vehicle: available via GitHub fallback when Supabase errors and no overlap in fallback data", async () => {
-  githubBookedDates = {
-    camry: [{ from: "2026-04-01", to: "2026-04-10" }],
-  };
+test("single vehicle: returns 500 when Supabase errors (even if no overlap in old fallback data)", async () => {
   setupFetchMock();
   supabaseMock.client = makeSupabaseClient({ error: { message: "503" } });
   try {
     const res = makeRes();
     await handler(makeReq({ query: { vehicleId: "camry", from: "2026-05-01", to: "2026-05-07" } }), res);
-    assert.equal(res._status, 200);
-    assert.equal(res._body.available, true);
-    assert.equal(res._body.source, "booked-dates-json");
+    assert.equal(res._status, 500);
   } finally {
     supabaseMock.client = null;
-    githubBookedDates = {};
     teardownFetchMock();
   }
 });
 
-// ─── No Supabase → pure GitHub fallback ──────────────────────────────────────
+// ─── No Supabase → returns 503 ────────────────────────────────────────────────
 
-test("single vehicle: no Supabase → uses GitHub fallback only", async () => {
-  githubBookedDates = {
-    camry: [{ from: "2026-05-03", to: "2026-05-09" }],
-  };
+test("single vehicle: no Supabase → returns 503", async () => {
   setupFetchMock();
   supabaseMock.client = null;
   try {
     const res = makeRes();
     await handler(makeReq({ query: { vehicleId: "camry", from: "2026-05-01", to: "2026-05-07" } }), res);
-    assert.equal(res._status, 200);
-    assert.equal(res._body.available, false);
-    assert.equal(res._body.source, "booked-dates-json");
+    assert.equal(res._status, 503);
   } finally {
-    githubBookedDates = {};
     teardownFetchMock();
   }
 });
@@ -345,25 +324,22 @@ test("all vehicles: returns map of vehicleId → availability when Supabase OK",
   }
 });
 
-// ─── All-vehicles — Supabase fails → fallback must be used ───────────────────
+// ─── All-vehicles — Supabase fails → errors per vehicle ──────────────────────
 
-test("all vehicles: falls back to GitHub when Supabase errors — unavailable vehicles must not appear available", async () => {
-  githubBookedDates = {
-    camry: [{ from: "2026-05-03", to: "2026-05-09" }],
-  };
+test("all vehicles: returns error per-vehicle when Supabase errors", async () => {
   setupFetchMock();
   supabaseMock.client = makeSupabaseClient({ error: { message: "timeout" } });
   try {
     const res = makeRes();
     await handler(makeReq({ query: { from: "2026-05-01", to: "2026-05-07" } }), res);
     assert.equal(res._status, 200);
-    // camry is blocked in booked-dates.json — must appear unavailable
-    assert.equal(res._body.vehicles.camry.available, false, "camry must not appear available during Supabase outage");
-    assert.equal(res._body.vehicles.camry.source, "booked-dates-json");
-    // Other vehicles with no bookings in fallback must appear available
+    // All vehicles should have source "error" since Supabase failed
+    for (const vid of ["camry", "camry2013"]) {
+      assert.ok(Object.prototype.hasOwnProperty.call(res._body.vehicles, vid), `missing vehicle ${vid}`);
+      assert.equal(res._body.vehicles[vid].source, "error", `${vid} should have source=error`);
+    }
   } finally {
     supabaseMock.client = null;
-    githubBookedDates = {};
     teardownFetchMock();
   }
 });

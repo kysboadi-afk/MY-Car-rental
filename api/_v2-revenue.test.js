@@ -187,63 +187,27 @@ test("list: returns empty array when Supabase not configured and no GitHub file"
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. LIST — derived from bookings.json when both Supabase and GitHub are empty
+// 2. LIST — returns empty records when both Supabase and GitHub are empty
 // ═══════════════════════════════════════════════════════════════════════════════
-test("list: derives records from bookings.json when Supabase+GitHub both empty", async () => {
+test("list: returns empty records when Supabase+GitHub both empty (no bookings.json fallback)", async () => {
   resetState();
-  // Supabase not configured
-  // GitHub 404 → empty
-  bookingsStore = {
-    camry: [
-      {
-        bookingId:     "bk-001",
-        vehicleId:     "camry",
-        name:          "Alice Smith",
-        phone:         "+13105550001",
-        email:         "alice@example.com",
-        pickupDate:    "2026-05-01",
-        returnDate:    "2026-05-03",
-        amountPaid:    100,
-        paymentMethod: "stripe",
-        status:        "booked_paid",
-        createdAt:     "2026-04-20T10:00:00.000Z",
-      },
-    ],
-  };
+  // Supabase not configured, GitHub 404 → empty
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
   assert.equal(res._status, 200);
-  assert.equal(res._body.records.length, 1, "should derive 1 record from bookings.json");
-  const r = res._body.records[0];
-  assert.equal(r.booking_id,    "bk-001");
-  assert.equal(r.vehicle_id,    "camry");
-  assert.equal(r.customer_name, "Alice Smith");
-  assert.equal(r.gross_amount,  100);
-  assert.equal(r.payment_status,"paid");
-  assert.equal(r._derived,      true, "should mark records as derived");
-  assert.equal(res._body._source, "bookings_derived");
+  assert.equal(res._body.records.length, 0, "should return empty records when no data in Supabase or GitHub");
 });
 
-test("list: skips non-paid bookings when deriving from bookings.json", async () => {
+test("list: returns empty records when Supabase is empty and GitHub is empty", async () => {
   resetState();
-  bookingsStore = {
-    camry: [
-      { bookingId:"bk-paid", vehicleId:"camry", name:"Bob", amountPaid:50, status:"booked_paid",  createdAt:"2026-05-01T00:00:00.000Z" },
-      { bookingId:"bk-unpaid", vehicleId:"camry", name:"Carol", amountPaid:0, status:"reserved_unpaid", createdAt:"2026-05-02T00:00:00.000Z" },
-      { bookingId:"bk-cancelled", vehicleId:"camry", name:"Dave", amountPaid:75, status:"cancelled_rental", createdAt:"2026-05-03T00:00:00.000Z" },
-    ],
-  };
+  supabaseRecords = []; // configured but empty
+  ghRecords = [];
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "list" }), res);
   assert.equal(res._status, 200);
-  const ids = res._body.records.map((r) => r.booking_id);
-  assert.ok(ids.includes("bk-paid"),   "paid booking should be included");
-  assert.ok(!ids.includes("bk-unpaid"),"unpaid booking should be excluded (amountPaid=0)");
-  // cancelled_rental is intentionally excluded from the derived revenue view
-  // (same behaviour as the sync action — only active/completed paid bookings count as revenue)
-  assert.ok(!ids.includes("bk-cancelled"), "cancelled booking should be excluded from revenue view");
+  assert.deepEqual(res._body.records, []);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -290,45 +254,31 @@ test("create: saves to GitHub when Supabase not configured", async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 6. SYNC — builds records from bookings.json
+// 6. SYNC — deprecated (Supabase is the only source of truth)
 // ═══════════════════════════════════════════════════════════════════════════════
-test("sync: creates GitHub records from paid bookings when Supabase not configured", async () => {
+test("sync: returns no-op message (bookings.json sync is deprecated)", async () => {
   resetState();
   ghSha     = "sha-existing";
   ghRecords = [];
-  bookingsStore = {
-    camry: [
-      { bookingId:"bk-s1", vehicleId:"camry", name:"Sync User", amountPaid:100, paymentMethod:"cash", status:"completed_rental" },
-      { bookingId:"bk-s2", vehicleId:"camry", name:"No Pay",    amountPaid:0,   paymentMethod:"cash", status:"booked_paid" },
-    ],
-  };
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "sync" }), res);
   assert.equal(res._status, 200);
-  assert.equal(res._body.synced, 1, "only the paid booking should be synced");
-  assert.equal(res._body.skipped, 0);
-  assert.equal(ghRecords.length, 1, "one record written to GitHub");
-  assert.equal(ghRecords[0].booking_id, "bk-s1");
+  assert.equal(res._body.synced, 0);
+  assert.ok(res._body.message.includes("no longer supported"), "message should indicate sync is deprecated");
 });
 
-test("sync: skips already-synced bookings (idempotent)", async () => {
+test("sync: always returns synced=0 regardless of input (idempotent no-op)", async () => {
   resetState();
   ghSha     = "sha-existing";
   ghRecords = [
     { id: "existing", booking_id: "bk-s1", vehicle_id: "camry", gross_amount: 100 },
   ];
-  bookingsStore = {
-    camry: [
-      { bookingId:"bk-s1", vehicleId:"camry", name:"Sync User", amountPaid:100, status:"completed_rental" },
-    ],
-  };
 
   const res = makeRes();
   await handler(makeReq({ secret: "test-admin-secret", action: "sync" }), res);
   assert.equal(res._status, 200);
-  assert.equal(res._body.synced,  0, "already-synced booking should be skipped");
-  assert.equal(res._body.skipped, 1);
+  assert.equal(res._body.synced, 0);
 });
 
 test("delete: removes record from Supabase list results", async () => {
