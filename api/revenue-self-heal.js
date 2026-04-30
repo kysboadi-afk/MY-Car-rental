@@ -265,6 +265,9 @@ export default async function handler(req, res) {
     //
     // Cash/manual bookings get stripe_fee=0 immediately so analytics are correct.
     // Stripe bookings get stripe_fee=null — stripe-reconcile.js fills that in.
+    // Cash payment methods that have no Stripe fee — must match the CASE
+    // expression in migrations 0089 and 0108 and autoCreateRevenueRecord
+    // in _booking-automation.js.
     const CASH_METHODS = new Set(["cash", "zelle", "venmo", "manual", "external"]);
 
     const { data: paidBookings, error: paidBookingsErr } = await sb
