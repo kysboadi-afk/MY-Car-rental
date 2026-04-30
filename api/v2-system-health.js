@@ -803,51 +803,50 @@ async function checkSmsDeliveryHealth(sb) {
 
       const logs = smsByBooking[ref] || new Set();
 
-      // Sub-check B: active rental with zero SMS contact ever
-      if (logs.size === 0) {
+      // Compute return datetime and whether all SMS windows have closed.
+      // The last critical window (late_grace_expired) closes at return_datetime
+      // + 75 min.  We must not evaluate SMS coverage before that point to avoid
+      // false positives for active bookings whose return time is still in the
+      // future (e.g. a check running at 4 AM for an 11 PM return).
+      const returnDate = b.return_date ? String(b.return_date).split("T")[0] : null;
+      const returnTime = b.return_time
+        ? String(b.return_time).substring(0, 5)
+        : DEFAULT_RETURN_TIME;
+      const returnDt = returnDate ? buildDateTimeLA(returnDate, returnTime) : new Date(NaN);
+      const allWindowsClosed = !isNaN(returnDt.getTime()) &&
+        now.getTime() > returnDt.getTime() + LAST_WINDOW_CLOSE_MS;
+
+      // Sub-check B: active rental with zero SMS contact — only flag after all
+      // windows have closed.  Before that point the system simply hasn't had a
+      // chance to send anything yet, so silence is expected.
+      if (logs.size === 0 && allWindowsClosed) {
         noSmsContact.push({
           id:   ref,
-          info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${b.return_date || "?"}`,
+          info: `status=${b.status} vehicle=${b.vehicle_id || "?"} return=${returnDate || "?"}`,
         });
       }
 
       // Sub-check C: overdue / recently-past-return without critical return-window SMS.
-      //
-      // We evaluate a booking only once ALL three critical trigger windows have
-      // closed.  The last window (late_grace_expired) closes at return_datetime
-      // + 75 min.  Using the actual return_datetime (date + time in LA timezone)
-      // prevents false positives when return_date == today but return_time is
-      // still in the future (e.g. a check running at 4 AM for a 11 PM return).
-      const returnDate = b.return_date ? String(b.return_date).split("T")[0] : null;
-      if (returnDate && returnDate >= cutoff48h) {
-        const returnTime = b.return_time
-          ? String(b.return_time).substring(0, 5)
-          : DEFAULT_RETURN_TIME;
-        const returnDt       = buildDateTimeLA(returnDate, returnTime);
-        const allWindowsClosed = !isNaN(returnDt.getTime()) &&
-          now.getTime() > returnDt.getTime() + LAST_WINDOW_CLOSE_MS;
+      if (returnDate && returnDate >= cutoff48h && allWindowsClosed) {
+        const missing = CRITICAL_KEYS.filter((k) => !logs.has(`${k}|${returnDate}`));
+        if (missing.length > 0) {
+          // Split: keys with a sms_delivery_logs 'skipped' entry are classified
+          // as skipped_outside_window (expected behaviour, not an error).
+          // Keys with no evidence of a send attempt are genuinely missed.
+          const windowSkipped  = missing.filter((k) =>  skippedDelivery.has(`${ref}|${k}`));
+          const actuallyMissed = missing.filter((k) => !skippedDelivery.has(`${ref}|${k}`));
 
-        if (allWindowsClosed) {
-          const missing = CRITICAL_KEYS.filter((k) => !logs.has(`${k}|${returnDate}`));
-          if (missing.length > 0) {
-            // Split: keys with a sms_delivery_logs 'skipped' entry are classified
-            // as skipped_outside_window (expected behaviour, not an error).
-            // Keys with no evidence of a send attempt are genuinely missed.
-            const windowSkipped  = missing.filter((k) =>  skippedDelivery.has(`${ref}|${k}`));
-            const actuallyMissed = missing.filter((k) => !skippedDelivery.has(`${ref}|${k}`));
-
-            if (windowSkipped.length > 0) {
-              skippedOutsideWindow.push({
-                id:   ref,
-                info: `status=${b.status} return=${returnDate} skipped=[${windowSkipped.join(",")}] vehicle=${b.vehicle_id || "?"}`,
-              });
-            }
-            if (actuallyMissed.length > 0) {
-              missedCritical.push({
-                id:   ref,
-                info: `status=${b.status} return=${returnDate} missed=[${actuallyMissed.join(",")}] vehicle=${b.vehicle_id || "?"}`,
-              });
-            }
+          if (windowSkipped.length > 0) {
+            skippedOutsideWindow.push({
+              id:   ref,
+              info: `status=${b.status} return=${returnDate} skipped=[${windowSkipped.join(",")}] vehicle=${b.vehicle_id || "?"}`,
+            });
+          }
+          if (actuallyMissed.length > 0) {
+            missedCritical.push({
+              id:   ref,
+              info: `status=${b.status} return=${returnDate} missed=[${actuallyMissed.join(",")}] vehicle=${b.vehicle_id || "?"}`,
+            });
           }
         }
       }
