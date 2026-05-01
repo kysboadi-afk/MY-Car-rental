@@ -309,15 +309,15 @@
       // ── Build booking summary table ───────────────────────────────────────
       function buildSummaryTable(balanceAmount, fullTotal, depositPaid) {
         var rows = [
-          ["Vehicle",       carName],
-          ["Renter",        renterName || "—"],
-          ["Email",         renterEmail],
+          ["Vehicle",       escHtml(carName)],
+          ["Renter",        escHtml(renterName || "—")],
+          ["Email",         escHtml(renterEmail)],
         ];
-        rows.push(["Pickup",  pickup + (pickupTime  ? " at " + pickupTime  : "")]);
-        rows.push(["Return",  returnDate + (returnTime ? " at " + returnTime : "")]);
+        rows.push(["Pickup",  escHtml(pickup + (pickupTime  ? " at " + pickupTime  : ""))]);
+        rows.push(["Return",  escHtml(returnDate + (returnTime ? " at " + returnTime : ""))]);
         rows.push(["Insurance", protectionPlan ? "Damage Protection Plan" : "Own insurance"]);
-        rows.push(["Deposit Paid", "$" + depositPaid + " (non-refundable)"]);
-        rows.push(["Rental Subtotal", "$" + fullTotal + " (+ applicable tax)"]);
+        rows.push(["Deposit Paid", escHtml("$" + depositPaid + " (non-refundable)")]);
+        rows.push(["Rental Subtotal", escHtml("$" + fullTotal + " (+ applicable tax)")]);
         rows.push(["Balance Remaining", "<strong style='color:#ffb400'>$" + escHtml(balanceAmount) + "</strong>"]);
 
         return rows.map(function (r) {
