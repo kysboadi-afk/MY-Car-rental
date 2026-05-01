@@ -436,10 +436,16 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
     const pricing = await getVehiclePricing(sb, vehicleId);
 
+    // Fixed late-fee constants.  These are included in the extension total
+    // when the renter is overdue — the fee is never charged separately.
+    const SHORT_LATE_FEE    = 25;  // applied after 30-minute grace period
+    const EXTENDED_LATE_FEE = 35;  // applied after the 3-hour reset window
+
     let extensionAmountPreTax;
     let extensionLabel;
     let extensionDays = null;
     let pricePerDay   = null;
+    let lateFeeIncluded = 0;
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -451,14 +457,30 @@ export default async function handler(req, res) {
 
       const price = computeAmountFromPricing(pricing, days);
 
+      // ── Time-based late fee ─────────────────────────────────────────────────
+      // grace_end  = return_time + 30 min  → SHORT_LATE_FEE applies
+      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE applies
+      // Always ONE PaymentIntent; late fee is folded into the total.
+      const graceEndMs  = currentReturnMs + 30 * 60 * 1000;        // +30 min
+      const resetTimeMs = currentReturnMs + 3  * 60 * 60 * 1000;   // +3 h
+      const nowMs = Date.now();
+      if (nowMs > resetTimeMs) {
+        lateFeeIncluded = EXTENDED_LATE_FEE;
+      } else if (nowMs > graceEndMs) {
+        lateFeeIncluded = SHORT_LATE_FEE;
+      }
+
       console.log('[pricing-extension]', {
         vehicle: vehicleId,
         days,
         pricing,
-        price
+        price,
+        late_fee: lateFeeIncluded,
+        grace_end_iso:  new Date(graceEndMs).toISOString(),
+        reset_time_iso: new Date(resetTimeMs).toISOString(),
       });
 
-      extensionAmountPreTax = price;
+      extensionAmountPreTax = price + lateFeeIncluded;
       extensionDays = days;
       pricePerDay   = pricing.daily_price;
     }
@@ -504,6 +526,8 @@ export default async function handler(req, res) {
         // Return date in effect before this extension — used by the webhook to set
         // the correct pickup_date on the extension revenue record (extension start).
         previous_return_date:  effectiveReturnDate || "",
+        // Late fee folded into total — never charged separately.
+        late_fee_included:     String(lateFeeIncluded),
       },
     });
 
@@ -518,6 +542,7 @@ export default async function handler(req, res) {
           extensionPendingPayment: {
             label:           extensionLabel,
             price:           extensionAmount,
+            lateFeeIncluded,
             newReturnDate,
             newReturnTime:   resolvedReturnTime,
             paymentIntentId: pi.id,
@@ -532,14 +557,15 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      clientSecret:    pi.client_secret,
-      publishableKey:  process.env.STRIPE_PUBLISHABLE_KEY,
-      extensionAmount: extensionAmount.toFixed(2),
+      clientSecret:      pi.client_secret,
+      publishableKey:    process.env.STRIPE_PUBLISHABLE_KEY,
+      extensionAmount:   extensionAmount.toFixed(2),
       extensionLabel,
+      lateFeeIncluded,
       newReturnDate,
-      newReturnTime:   resolvedReturnTime,
-      vehicleName:     vehicleData.name,
-      renterName:      activeBooking.name || "",
+      newReturnTime:     resolvedReturnTime,
+      vehicleName:       vehicleData.name,
+      renterName:        activeBooking.name || "",
     });
   } catch (err) {
     console.error("extend-rental error:", err);

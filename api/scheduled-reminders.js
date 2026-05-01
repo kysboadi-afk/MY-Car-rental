@@ -46,6 +46,10 @@ import {
   RETURN_REMINDER_24H,
   ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
+  PRE_RETURN_LATE_FEE_WARNING,
+  LATE_GRACE_STARTED,
+  LATE_ESCALATION,
+  PAYMENT_FAILED_BALANCE,
   LATE_WARNING_30MIN,
   LATE_AT_RETURN_TIME,
   LATE_GRACE_EXPIRED,
@@ -80,17 +84,11 @@ import {
   mapVehicleId,
 } from "./stripe-webhook.js";
 
-// ─── Late fee amounts ($ per hour) per vehicle type ──────────────────────────
-// Fee = Math.max(1, Math.ceil(hoursOverdue)) × rate, calculated from actual
-// return datetime vs. expected return datetime (HH:MM 24-hour).
-// The grace period gates when the fee is *assessed*, but the hourly count
-// starts from the scheduled return time (not from grace expiry).  The minimum
-// charge is always 1 hour, so a renter who is 1–59 minutes late is charged
-// the same as one who is exactly 1 hour late.
-const LATE_FEE_AMOUNTS = {
-  camry:     50,  // $50/hour  (rounded up, min 1 h)
-  camry2013: 50,  // $50/hour  (rounded up, min 1 h)
-};
+// ─── Fixed late-fee amounts ────────────────────────────────────────────────────
+// Applied as a single lump sum included in the extension PaymentIntent total.
+// These constants are the source of truth; they must match extend-rental.js.
+const SHORT_LATE_FEE    = 25;  // applied after 30-minute grace period
+const EXTENDED_LATE_FEE = 35;  // applied after the 3-hour reset window
 
 // Hard cap on any single late-fee assessment.  Prevents runaway fees caused by
 // stale bookings.json entries that remain as "active_rental" for days/weeks.
@@ -123,8 +121,10 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
-const GRACE_OFFSET_MS    = 60 * 60 * 1000;
-const LATE_FEE_OFFSET_MS = 2 * 60 * 60 * 1000;
+// grace_end  = return_time + 30 minutes
+const GRACE_OFFSET_MS    = 30 * 60 * 1000;
+// reset_time = return_time + 3 hours (escalation to higher late fee)
+const LATE_FEE_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 // Boundaries (in minutes) for the end-of-rental warning SMS window.
 // Cron runs every 5 min so a 15-min window ensures the message fires exactly once.
@@ -620,6 +620,7 @@ function vars(booking) {
     return_date:   booking.returnDate ? formatDate(returnDt) : booking.returnDate || "",
     location:      booking.location || DEFAULT_LOCATION,
     payment_link:  booking.paymentLink || "https://www.slytrans.com/balance.html",
+    extend_link:   "https://www.slytrans.com/manage-booking.html",
   };
 }
 
@@ -1009,11 +1010,14 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         ? (minutesUntilReturn > REPAIR_RETURN_24H_LOWER_MIN && minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN)
         : (minutesUntilReturn <= RETURN_REMINDER_24H_UPPER_MIN && minutesUntilReturn > RETURN_REMINDER_24H_LOWER_MIN);
 
-      // ── P1: Late fee at return_datetime + 2 h (once per return_date) ─────────
+      // ── P1: Late escalation at return_datetime + 3 h (reset_time) ────────────
+      // Informs the renter that the higher ($35) late fee now applies.
+      // No admin approval, no hourly calculation, no separate charge.
+      // The late fee is included in the extension total when the renter extends.
       // Evaluated FIRST so that if a stale booking is overdue on both the grace
-      // and late-fee windows simultaneously, the more critical fee fires.
+      // and late-fee windows simultaneously, the more critical message fires.
       // The late_fee_pending key is scoped to the current return_date via
-      // isSmsLogged so that a new late fee can be assessed after an extension.
+      // isSmsLogged so that a new alert can fire after an extension.
       if (
         !sentThisBooking &&
         now >= lateFeeAt &&
@@ -1024,27 +1028,25 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       ) {
         const hoursOverdue = minsOverdue / 60;
 
-        // ── Guard 1: maximum overdue window ───────────────────────────────────
-        // The late fee may only fire within MAX_FEE_OVERDUE_HOURS of the
+        // Guard: maximum overdue window
+        // The escalation alert may only fire within MAX_FEE_OVERDUE_HOURS of the
         // scheduled return.  Beyond that threshold the booking should already
-        // have been auto-completed (AUTO_COMPLETE_HOURS = 4 h).  A booking
+        // have been auto-completed (AUTO_COMPLETE_HOURS = 24 h).  A booking
         // that is still "active_rental" after 8+ hours has a stale status
         // (cron outage, Supabase write failure, etc.) and must NOT generate
-        // a fee — doing so produced the $15,900 alert on bk-bb-2026-0407.
+        // an alert.
         if (hoursOverdue > MAX_FEE_OVERDUE_HOURS) {
           console.warn(
-            `[LATE_FEE] SKIPPED booking ${id}: ` +
+            `[LATE_ESCALATION] SKIPPED booking ${id}: ` +
             `${hoursOverdue.toFixed(1)}h overdue exceeds MAX_FEE_OVERDUE_HOURS ` +
             `(${MAX_FEE_OVERDUE_HOURS}h). Booking has stale active_rental status — ` +
             `auto-complete should have closed this at ${AUTO_COMPLETE_HOURS}h. ` +
-            `No late-fee alert will be sent.`
+            `No escalation alert will be sent.`
           );
         } else {
-          // ── Guard 2: live Supabase status check ─────────────────────────────
           // Verify the booking is STILL active_rental in Supabase before
           // firing any alert.  A booking completed in Supabase but not yet
-          // flushed from bookings.json would otherwise send alerts to past
-          // renters.
+          // flushed from bookings.json would otherwise send alerts to past renters.
           let bookingStillActive = true;
           if (sb) {
             try {
@@ -1055,7 +1057,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
                 .maybeSingle();
               if (sbStatusRow && !["active_rental", "active", "overdue"].includes(sbStatusRow.status)) {
                 console.warn(
-                  `[LATE_FEE] SKIPPED booking ${id}: Supabase status is ` +
+                  `[LATE_ESCALATION] SKIPPED booking ${id}: Supabase status is ` +
                   `"${sbStatusRow.status}" (expected active_rental). ` +
                   `This booking is no longer active; no alert will be sent.`
                 );
@@ -1063,79 +1065,45 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
               }
             } catch (statusCheckErr) {
               console.warn(
-                `[LATE_FEE] Supabase status check failed (non-fatal, proceeding): ` +
+                `[LATE_ESCALATION] Supabase status check failed (non-fatal, proceeding): ` +
                 statusCheckErr.message
               );
             }
           }
 
           if (bookingStillActive) {
-            logSmsTrigger(id, returnIso, nowIso, "late_fee");
-            // Calculate fee based on actual hours overdue:
-            //   lateHours = ceil(minsOverdue / 60), minimum 1 hour
-            //   feeAmount = min(lateHours × hourlyRate, MAX_LATE_FEE_USD)
-            // Both the hourly calc and the hard cap prevent extreme values.
-            const hourlyRate   = LATE_FEE_AMOUNTS[vehicleId] || 50;
-            const lateHours    = Math.max(1, Math.ceil(minsOverdue / 60));
-            const rawFeeAmount = Math.round(lateHours * hourlyRate);
-            const feeAmount    = Math.min(rawFeeAmount, MAX_LATE_FEE_USD);
-
-            // Always log so any future anomaly is visible in Vercel logs.
-            console.log("[LATE_FEE]", {
-              booking_id:     id,
-              vehicle_id:     vehicleId,
-              hours_overdue:  lateHours,
-              rate_per_hour:  hourlyRate,
-              calculated_fee: rawFeeAmount,
-              capped_fee:     feeAmount,
-              capped:         rawFeeAmount > MAX_LATE_FEE_USD,
+            logSmsTrigger(id, returnIso, nowIso, "late_escalation");
+            console.log("[LATE_ESCALATION]", {
+              booking_id:    id,
+              vehicle_id:    vehicleId,
+              hours_overdue: hoursOverdue.toFixed(1),
+              late_fee:      EXTENDED_LATE_FEE,
             });
 
-            const feeVars = { ...v, late_fee: String(feeAmount) };
-            // 1. Notify customer that a late fee has been assessed
-            const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_fee_pending" });
-            // 2. Request owner approval before charging
-            const approvalSent = await requestLateFeeApproval(booking, feeAmount);
+            // Notify customer that the higher late fee now applies.
+            // The fee will be included in the total when they extend.
+            const smsSent = await safeSend(booking.phone, render(LATE_ESCALATION, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_fee_pending" });
 
-            // Always mark as attempted — even if both SMS and email failed — so the
-            // dedup guard (isSmsLogged) prevents infinite retries on subsequent cron
-            // ticks when the delivery provider is temporarily unavailable.
+            // Always mark as attempted to prevent infinite retries.
             sentThisBooking = true;
             sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
-            sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+            sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: EXTENDED_LATE_FEE });
             await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
-
-            if (smsSent || approvalSent) {
-              // Persist late_fee_status to Supabase for audit trail (non-fatal).
-              try {
-                const sbFee = getSupabaseAdmin();
-                if (sbFee && id) {
-                  await sbFee
-                    .from("bookings")
-                    .update({
-                      late_fee_status: "pending_approval",
-                      late_fee_amount: feeAmount,
-                      updated_at:      new Date().toISOString(),
-                    })
-                    .eq("booking_ref", id);
-                }
-              } catch (sbFeeErr) {
-                console.warn("scheduled-reminders: late_fee_status write failed (non-fatal):", sbFeeErr.message);
-              }
-            }
           }
         }
       }
 
-      // ── P1: Grace expired at return_datetime + 1 h (15 min window) ───────────
+      // ── P1: Grace started at return_datetime + 30 min ────────────────────────
+      // Informs the renter that the $25 grace-period fee now applies.
+      // Uses a 15-min trigger window around grace_end.
       if (
         !sentThisBooking &&
         wndLateGrace &&
         !alreadySent(booking, "late_grace_expired") &&
         !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
       ) {
-        logSmsTrigger(id, returnIso, nowIso, "grace");
-        const sent = await safeSend(booking.phone, render(LATE_GRACE_EXPIRED, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_grace_expired" });
+        logSmsTrigger(id, returnIso, nowIso, "grace_started");
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_STARTED, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_grace_expired" });
         if (sent) {
           sentThisBooking = true;
           sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
@@ -1224,6 +1192,27 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         }
       } else if (wndExt1h) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
+      }
+
+      // ── P3: 1–2 hours before return — late-fee warning ──────────────────────
+      // Fires once in the 60–120 min window before return.
+      // Informs renters of the late-fee schedule and provides an extend link.
+      // Cross-cron cooldown is bypassed because this is time-critical information.
+      if (
+        !sentThisBooking &&
+        minutesUntilReturn <= 120 && minutesUntilReturn > 60 &&
+        !alreadySent(booking, "pre_return_late_fee_warning") &&
+        !(await isSmsLogged(id, "pre_return_late_fee_warning", returnDateStr))
+      ) {
+        logSmsTrigger(id, returnIso, nowIso, "pre_return_late_fee_warning");
+        const sent = await safeSend(booking.phone, render(PRE_RETURN_LATE_FEE_WARNING, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "pre_return_late_fee_warning" });
+        if (sent) {
+          sentThisBooking = true;
+          sentMarks.push({ vehicleId, id, key: "pre_return_late_fee_warning" });
+          await logSmsToSupabase(id, "pre_return_late_fee_warning", returnDateStr);
+        }
+      } else if (minutesUntilReturn <= 120 && minutesUntilReturn > 60) {
+        console.log(`[SMS_SKIP] ${id} pre_return_late_fee_warning: already sent (dedup)`);
       }
 
       // ── P3: ~7–8 hours before return — same-day reminder ────────────────────
@@ -1400,7 +1389,8 @@ async function persistSentMarks(_sentMarks) {
  */
 export async function loadBookingsFromSupabase(sb) {
   try {
-    // SELECT_COLS includes renter_phone (added in migration 0101/0104).
+    // SELECT_COLS includes renter_phone (added in migration 0101/0104) and
+    // balance_due (added in migration 0115).
     // SELECT_COLS_FALLBACK is used if renter_phone doesn't exist yet on the DB
     // (e.g. dual-0101 conflict where only 0101_sms_delivery_logs ran before
     // 0103/0104 catch-up migrations were applied).  In that case we fall back to
@@ -1409,7 +1399,7 @@ export async function loadBookingsFromSupabase(sb) {
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
-      "late_fee_status, late_fee_amount, created_at";
+      "late_fee_status, late_fee_amount, balance_due, updated_at, created_at";
 
     const SELECT_COLS_FALLBACK =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
@@ -1524,8 +1514,10 @@ export async function loadBookingsFromSupabase(sb) {
         returnTime:     row.return_time  ? String(row.return_time).substring(0, 5) : "",
         status:         REVERSE_STATUS[row.status] || row.status || "reserved_unpaid",
         completedAt:    row.completed_at || null,
+        updatedAt:      row.updated_at   || row.created_at || null,
         extensionCount: row.extension_count || 0,
         lateFeeApplied: row.late_fee_status === "approved" ? (row.late_fee_amount || undefined) : undefined,
+        balanceDue:     Number(row.balance_due || 0),
         paymentLink:    "https://www.slytrans.com/balance.html",
         smsSentAt:      {},   // populated below from sms_logs
         createdAt:      row.created_at || null,
@@ -2222,6 +2214,64 @@ async function runReconciliation() {
 }
 
 
+/**
+ * Process bookings with outstanding balance_due — send payment-failed reminders.
+ *
+ * Retry schedule (based on hours since balance_due was set, using updated_at):
+ *   +1 h   → first reminder
+ *   +12 h  → second reminder
+ *   +24 h  → third reminder
+ *   +48 h  → final reminder
+ *
+ * Each retry window fires once and is deduplicated via sms_logs.
+ * The template key encodes the retry index so all four reminders can fire
+ * for the same booking.
+ */
+async function processBalanceDue(allBookings, now, sentMarks) {
+  const RETRY_HOURS = [1, 12, 24, 48];
+
+  for (const [vehicleId, bookings] of Object.entries(allBookings)) {
+    for (const booking of bookings) {
+      if (!booking.balanceDue || booking.balanceDue <= 0) continue;
+      if (!booking.phone) continue;
+
+      const id = booking.bookingId || booking.paymentIntentId;
+      if (!id) continue;
+
+      // Compute hours since balance_due was set (proxy: booking.updatedAt)
+      const sinceMs = now.getTime() - new Date(booking.updatedAt || booking.createdAt || 0).getTime();
+      const sinceHours = sinceMs / 3_600_000;
+
+      const v = vars(booking);
+
+      for (let i = 0; i < RETRY_HOURS.length; i++) {
+        const targetHours = RETRY_HOURS[i];
+        const windowHours = i + 1 < RETRY_HOURS.length
+          ? RETRY_HOURS[i + 1] - targetHours
+          : 24; // last retry: 24-hour window
+        const templateKey = `payment_failed_balance_r${i + 1}`;
+
+        if (
+          sinceHours >= targetHours &&
+          sinceHours < targetHours + windowHours &&
+          !(await isSmsLogged(id, templateKey))
+        ) {
+          const sent = await safeSend(booking.phone, render(PAYMENT_FAILED_BALANCE, v), {
+            booking_ref:  id,
+            vehicle_id:   vehicleId,
+            message_type: templateKey,
+          });
+          if (sent) {
+            sentMarks.push({ vehicleId, id, key: templateKey });
+            await logSmsToSupabase(id, templateKey);
+          }
+          break; // only one retry per cron tick per booking
+        }
+      }
+    }
+  }
+}
+
 export default async function handler(req, res) {
   // Accept GET (Vercel cron) or POST (manual admin trigger)
   if (req.method !== "GET" && req.method !== "POST") {
@@ -2309,6 +2359,7 @@ export default async function handler(req, res) {
     processPaidBookings(allBookings, now, sentMarks),
     processActiveRentals(allBookings, now, sentMarks),
     processCompleted(allBookings, now, sentMarks),
+    processBalanceDue(allBookings, now, sentMarks),
   ]);
 
   await persistSentMarks(sentMarks);

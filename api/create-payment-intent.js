@@ -183,6 +183,32 @@ export default async function handler(req, res) {
     if (!sb) {
       return res.status(503).json({ error: "Database unavailable. Please try again." });
     }
+
+    // ── Balance-due enforcement ──────────────────────────────────────────────
+    // Block new bookings when the customer has an outstanding unpaid balance
+    // from a previous failed payment.  Check by email (primary key) and phone.
+    if (email) {
+      try {
+        const trimmedEmailLower = email.toLowerCase().trim();
+        const { data: balanceRows } = await sb
+          .from("bookings")
+          .select("booking_ref, balance_due")
+          .eq("customer_email", trimmedEmailLower)
+          .gt("balance_due", 0)
+          .limit(1);
+        if (balanceRows && balanceRows.length > 0) {
+          const outstanding = Number(balanceRows[0].balance_due || 0);
+          return res.status(402).json({
+            error: `You have an outstanding balance of $${outstanding.toFixed(2)} from a previous booking. ` +
+              "Please complete your payment at https://www.slytrans.com/balance.html before booking again.",
+          });
+        }
+      } catch (balanceErr) {
+        // Non-fatal: log and proceed so a DB hiccup never blocks a valid booking.
+        console.warn("[BALANCE_DUE_CHECK] Supabase check failed (non-fatal, proceeding):", balanceErr.message);
+      }
+    }
+
     const pricing = await getVehiclePricing(sb, vehicleId);
 
     // Compute rental days and apply flat tier pricing via shared helper.
