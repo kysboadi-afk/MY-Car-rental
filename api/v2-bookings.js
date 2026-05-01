@@ -1101,6 +1101,36 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true });
     }
 
+    // ── SET_LATE_FEE ────────────────────────────────────────────────────────
+    // Allows the admin to update the late fee amount and/or status directly
+    // from the Late Fees page edit modal.
+    if (action === "set_late_fee") {
+      const { bookingId, lateFeeAmount, lateFeeStatus } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+
+      const VALID_STATUSES = ["pending_approval", "approved", "paid", "failed", "dismissed"];
+      if (lateFeeStatus && !VALID_STATUSES.includes(lateFeeStatus)) {
+        return res.status(400).json({ error: "Invalid lateFeeStatus" });
+      }
+      if (lateFeeAmount != null && (typeof lateFeeAmount !== "number" || lateFeeAmount < 0)) {
+        return res.status(400).json({ error: "lateFeeAmount must be a non-negative number" });
+      }
+
+      const sbEdit = getSupabaseAdmin();
+      if (!sbEdit) return res.status(500).json({ error: "Database not configured" });
+
+      const patch = { updated_at: new Date().toISOString() };
+      if (lateFeeAmount != null) patch.late_fee_amount = lateFeeAmount;
+      if (lateFeeStatus)         patch.late_fee_status = lateFeeStatus;
+
+      const { error: editErr } = await sbEdit
+        .from("bookings")
+        .update(patch)
+        .eq("booking_ref", bookingId);
+      if (editErr) return res.status(500).json({ error: editErr.message });
+      return res.status(200).json({ success: true });
+    }
+
     // ── CREATE (manual booking) ─────────────────────────────────────────────
     if (action === "create") {
       if (!process.env.GITHUB_TOKEN) {
