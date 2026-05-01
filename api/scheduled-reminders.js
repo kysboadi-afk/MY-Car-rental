@@ -1406,13 +1406,13 @@ export async function loadBookingsFromSupabase(sb) {
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
-      "late_fee_status, late_fee_amount, balance_due, updated_at, created_at";
+      "late_fee_status, late_fee_amount, balance_due, balance_due_set_at, updated_at, created_at";
 
     const SELECT_COLS_FALLBACK =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
-      "late_fee_status, late_fee_amount, created_at";
+      "late_fee_status, late_fee_amount, balance_due_set_at, created_at";
 
     const ACTIVE_STATUSES = [
       // Modern app-layer values
@@ -1525,6 +1525,7 @@ export async function loadBookingsFromSupabase(sb) {
         extensionCount: row.extension_count || 0,
         lateFeeApplied: row.late_fee_status === "approved" ? (row.late_fee_amount || undefined) : undefined,
         balanceDue:     Number(row.balance_due || 0),
+        balanceDueSetAt: row.balance_due_set_at || null,
         paymentLink:    "https://www.slytrans.com/balance.html",
         smsSentAt:      {},   // populated below from sms_logs
         createdAt:      row.created_at || null,
@@ -2224,18 +2225,28 @@ async function runReconciliation() {
 /**
  * Process bookings with outstanding balance_due — send payment-failed reminders.
  *
- * Retry schedule (based on hours since balance_due was set, using updated_at):
+ * Retry schedule (based on hours since balance_due was first set):
  *   +1 h   → first reminder
  *   +12 h  → second reminder
  *   +24 h  → third reminder
  *   +48 h  → final reminder
  *
- * Each retry window fires once and is deduplicated via sms_logs.
- * The template key encodes the retry index so all four reminders can fire
- * for the same booking.
+ * The base time is balance_due_set_at (migration 0120) — a timestamp that is
+ * pinned to the moment balance_due first went positive and is NOT updated on
+ * subsequent row changes.  This prevents past/completed renters from receiving
+ * reminders when their booking is touched for unrelated reasons.  For rows
+ * written before migration 0120, updated_at is used as a fallback.
+ *
+ * After 72 hours (last retry window closed) no further reminders are sent
+ * regardless of booking status.  Each retry fires once and is deduplicated via
+ * sms_logs.  The template key encodes the retry index so all four reminders
+ * can fire for the same booking.
  */
 async function processBalanceDue(allBookings, now, sentMarks) {
   const RETRY_HOURS = [1, 12, 24, 48];
+  // Total hours after which all retry windows have closed.  After this point
+  // the booking is considered "past" and no further reminders are sent.
+  const MAX_RETRY_HOURS = RETRY_HOURS[RETRY_HOURS.length - 1] + 24; // 72 h
 
   for (const [vehicleId, bookings] of Object.entries(allBookings)) {
     for (const booking of bookings) {
@@ -2245,9 +2256,22 @@ async function processBalanceDue(allBookings, now, sentMarks) {
       const id = booking.bookingId || booking.paymentIntentId;
       if (!id) continue;
 
-      // Compute hours since balance_due was set (proxy: booking.updatedAt)
-      const sinceMs = now.getTime() - new Date(booking.updatedAt || booking.createdAt || 0).getTime();
+      // Use balance_due_set_at as the authoritative base time for retry
+      // windows.  This timestamp is set once when balance_due first goes
+      // positive and is NOT updated on subsequent booking row changes
+      // (migration 0120 trigger).  Falling back to updatedAt only when
+      // balance_due_set_at is absent (rows written before migration 0120).
+      const baseTime = booking.balanceDueSetAt || booking.updatedAt || booking.createdAt;
+      if (!baseTime) continue;
+
+      const sinceMs    = now.getTime() - new Date(baseTime).getTime();
       const sinceHours = sinceMs / MS_PER_HOUR;
+
+      // If every retry window has already passed, treat this booking as past
+      // and stop sending reminders entirely.  This prevents old unsent
+      // messages from firing when a booking row is touched after the retry
+      // schedule has expired (e.g. an admin edit on a completed rental).
+      if (sinceHours >= MAX_RETRY_HOURS) continue;
 
       const v = vars(booking);
 

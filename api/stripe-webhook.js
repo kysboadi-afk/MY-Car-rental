@@ -2905,17 +2905,29 @@ export default async function handler(req, res) {
       try {
         const sbFail = getSupabaseAdmin();
         if (sbFail) {
+          const nowIso = new Date().toISOString();
           const { error: failErr } = await sbFail
             .from("bookings")
             .update({
               balance_due: amountDue,
-              updated_at:  new Date().toISOString(),
+              updated_at:  nowIso,
             })
             .eq("booking_ref", bookingRef);
           if (failErr) {
             console.warn("[PAYMENT_FAILED] balance_due update failed (non-fatal):", failErr.message);
           } else {
             console.log("[PAYMENT_FAILED] balance_due set", { bookingRef, amountDue });
+            // Belt-and-suspenders: set balance_due_set_at only when not already
+            // set.  The DB trigger (migration 0120) handles this automatically,
+            // but this guard ensures correctness if the migration has not run yet.
+            const { error: setAtErr } = await sbFail
+              .from("bookings")
+              .update({ balance_due_set_at: nowIso })
+              .eq("booking_ref", bookingRef)
+              .is("balance_due_set_at", null);
+            if (setAtErr) {
+              console.warn("[PAYMENT_FAILED] balance_due_set_at update failed (non-fatal):", setAtErr.message);
+            }
           }
         }
       } catch (failCatchErr) {
