@@ -116,6 +116,7 @@ export const RESERVATION_DEPOSIT_CONFIRMED =
 export const BOOKING_CONFIRMED =
   "Your {vehicle} is confirmed, {customer_name}.\n\n" +
   "Pickup: {pickup_date} at {pickup_time}\n" +
+  "Return: {return_date}{return_time_line}" +
   "\uD83D\uDCCD {location}\n\n" +
   "We\u2019ll have everything ready for you.\n\n" +
   "Reply STOP to opt out.";
