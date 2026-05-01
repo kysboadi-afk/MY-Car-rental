@@ -621,13 +621,28 @@ export default async function handler(req, res) {
     // Recent bookings (last 10 across all vehicles).
     // When the view is available, use the dedicated bookings query (pre-sorted, limit 20).
     // Otherwise slice from the full allBookings list.
-    //
-    // Note: amountPaid in the view path always reflects deposit_paid because
-    // rrByBookingId (which holds full Stripe gross amounts per booking) is only
-    // populated in the non-view (revenue_records loop) path.  Both paths surface
-    // the deposit amount in practice when the fallback also lacks rrByBookingId.
     let recentBookings;
     if (viewOk && recentBkResult?.data) {
+      // Build a per-booking revenue map from revenue_records so that active rentals
+      // paid via Stripe (where deposit_paid on the bookings row is 0/null) show the
+      // correct amount instead of $0.
+      const recentRefs = recentBkResult.data.map((r) => r.booking_ref).filter(Boolean);
+      const rrRecentMap = {};
+      if (sb && recentRefs.length > 0) {
+        try {
+          const { data: rrRecent } = await sb
+            .from("revenue_records_effective")
+            .select("booking_id, gross_amount")
+            .eq("payment_status", "paid")
+            .in("booking_id", recentRefs);
+          for (const rr of (rrRecent || [])) {
+            if (rr.booking_id && rr.gross_amount != null) {
+              rrRecentMap[rr.booking_id] = (rrRecentMap[rr.booking_id] || 0) + Number(rr.gross_amount);
+            }
+          }
+        } catch (_) { /* non-fatal — fall back to deposit_paid */ }
+      }
+
       recentBookings = recentBkResult.data.slice(0, 10).map((r) => ({
         bookingId:   r.booking_ref || "",
         name:        r.customers?.name || "",
@@ -636,7 +651,9 @@ export default async function handler(req, res) {
         pickupDate:  r.pickup_date  || "",
         returnDate:  r.return_date  || "",
         status:      DB_TO_APP_STATUS[r.status] || r.status,
-        amountPaid:  Number(r.deposit_paid || 0),
+        amountPaid:  r.booking_ref && rrRecentMap[r.booking_ref] != null
+          ? rrRecentMap[r.booking_ref]
+          : Number(r.deposit_paid || 0),
         createdAt:   r.created_at,
       }));
     } else {
