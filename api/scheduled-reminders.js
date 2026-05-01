@@ -2307,7 +2307,12 @@ export default async function handler(req, res) {
       .from("bookings")
       .select("booking_ref, renter_phone")
       .limit(1);
-    console.log("DEBUG bookings renter_phone:", { error: _dbgErr?.message, data: _dbg });
+    console.log("DEBUG bookings renter_phone:", {
+      supabaseUrl: process.env.SUPABASE_URL,
+      errorCode:   _dbgErr?.code,
+      errorMsg:    _dbgErr?.message,
+      data:        _dbg,
+    });
     allBookings = await loadBookingsFromSupabase(sbClient);
     if (allBookings === null) {
       console.warn("scheduled-reminders: Supabase load failed — falling back to bookings.json");
