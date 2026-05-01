@@ -1,11 +1,11 @@
 // api/admin-resend-extension.js
-// Vercel serverless function — admin-only endpoint to manually resend
-// rental extension confirmation emails (owner + renter) with an updated
-// rental agreement PDF.
+// Vercel serverless function — admin-only endpoint to apply a rental extension:
+// updates the booking return date, creates a revenue record (type='extension'),
+// inserts a booking_extensions row (triggers extension_count update), extends
+// blocked_dates, and optionally resends confirmation emails.
 //
-// Use this when the automatic email flow fails (webhook didn't fire, SMTP
-// was misconfigured at the time of payment, etc.) or when you need to
-// resend the confirmation for an existing extension.
+// Use this from the admin "Extend" button whenever a rental is extended manually
+// (cash / Zelle / Venmo) or to recover from a failed Stripe webhook delivery.
 //
 // POST /api/admin-resend-extension
 // Body (JSON):
@@ -19,14 +19,15 @@
 //   "renter_phone":        "3463814616",        (optional)
 //   "extension_label":     "+3 days",
 //   "new_return_date":     "2026-04-14",
-//   "amount":              165,                 (optional, dollars — shown in email)
-//   "payment_intent_id":   "pi_xxx",            (optional — shown in agreement)
+//   "amount":              165,                 (optional, dollars)
+//   "payment_intent_id":   "pi_xxx",            (optional — Stripe PI for fee reconciliation)
+//   "skip_email":          false,               (optional — set true to skip email resend)
 // }
 //
 // Returns: { ok: true } on success or { error: "..." } on failure.
 
 import { loadBookings, updateBooking } from "./_bookings.js";
-import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
+import { autoUpsertBooking, parseTime12h, autoCreateRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
@@ -59,6 +60,7 @@ export default async function handler(req, res) {
     new_return_date,
     amount,
     payment_intent_id,
+    skip_email,
   } = req.body || {};
 
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "new_return_date must be in YYYY-MM-DD format." });
   }
 
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  if (!skip_email && (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS)) {
     return res.status(500).json({ error: "SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS in Vercel." });
   }
 
@@ -181,24 +183,119 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── Send emails ────────────────────────────────────────────────────────
-    await sendExtensionConfirmationEmails({
-      paymentIntent:      syntheticPi,
-      booking:            bookingRecord,
-      updatedReturnDate:  new_return_date,
-      updatedReturnTime:  resolvedReturnTime,
-      extensionLabel:     extension_label || "",
-      vehicleId:          vehicle_id,
-      renterEmail:        renter_email,
-      renterName:         renter_name || "",
-      originalReturnDate: oldReturnDate,
-      extensionCount:     newExtensionCount || (booking ? (booking.extensionCount || 1) : 1),
-    });
+    // ── Extend blocked_dates so fleet availability reflects the new return date ──
+    // This keeps fleet-status, booked-dates, and fleet-analysis in sync without
+    // waiting for any Stripe webhook (covers cash/manual extensions too).
+    if (needsReturnDateUpdate) {
+      const resolvedBookingRef = booking ? booking.bookingId : original_booking_id;
+      try {
+        await extendBlockedDateForBooking(vehicle_id, resolvedBookingRef, new_return_date, resolvedReturnTime);
+      } catch (bdErr) {
+        console.warn("admin-resend-extension: blocked_dates extend failed (non-fatal):", bdErr.message);
+      }
+    }
 
-    console.log(`admin-resend-extension: emails sent for booking ${original_booking_id} (${vehicle_id})`);
+    // ── Create revenue record when an amount was supplied ─────────────────
+    // Payment method heuristic: if a real Stripe PI id was given (pi_xxx) the
+    // record is Stripe-sourced; otherwise treat it as a cash/manual payment so
+    // stripe_fee=0 and stripe_net=gross are filled in immediately (no waiting
+    // for a reconcile pass).
+    //
+    // NOTE: type must be "extension" (not "rental_extension") so that
+    // autoCreateRevenueRecord sets original_booking_id = bookingRef and fleet
+    // analysis / revenue dashboard group the row under the parent booking.
+    const isStripePi = typeof payment_intent_id === "string" && payment_intent_id.startsWith("pi_");
+    if (amount && Number(amount) > 0) {
+      const resolvedBookingRef = booking ? booking.bookingId : original_booking_id;
+      try {
+        await autoCreateRevenueRecord({
+          booking_ref:     resolvedBookingRef,
+          bookingId:       resolvedBookingRef,
+          type:            "extension",
+          vehicleId:       vehicle_id,
+          amountPaid:      Number(amount),
+          paymentIntentId: isStripePi ? payment_intent_id : null,
+          name:            renter_name  || booking?.name  || "",
+          email:           renter_email,
+          phone:           renter_phone || booking?.phone || "",
+          // pickupDate for an extension = the pre-extension return date (extension start).
+          pickupDate:      oldReturnDate || booking?.pickupDate || "",
+          returnDate:      new_return_date,
+          paymentMethod:   isStripePi ? "stripe" : "cash",
+        });
+      } catch (revErr) {
+        console.warn("admin-resend-extension: revenue record creation failed (non-fatal):", revErr.message);
+      }
+
+      // ── Insert booking_extensions row (links extension to parent booking) ───
+      // This triggers the sync_booking_extension_stats DB trigger which keeps
+      // bookings.extension_count and bookings.last_extension_at accurate so that
+      // fleet analysis shows the correct "Extended ×N" count.
+      const resolvedBookingRef2 = booking ? booking.bookingId : original_booking_id;
+      try {
+        const sbBE = getSupabaseAdmin();
+        if (sbBE && resolvedBookingRef2 && new_return_date) {
+          // For cash extensions (no PI), guard against duplicates manually since
+          // UNIQUE on payment_intent_id doesn't protect NULL values in Postgres.
+          let skipBEInsert = false;
+          if (!isStripePi) {
+            const { data: existingBE } = await sbBE
+              .from("booking_extensions")
+              .select("id")
+              .eq("booking_id", resolvedBookingRef2)
+              .eq("new_return_date", new_return_date)
+              .maybeSingle();
+            if (existingBE?.id) skipBEInsert = true;
+          }
+          if (!skipBEInsert) {
+            const { error: beErr } = await sbBE
+              .from("booking_extensions")
+              .upsert(
+                {
+                  booking_id:        resolvedBookingRef2,
+                  payment_intent_id: isStripePi ? payment_intent_id : null,
+                  amount:            Number(amount),
+                  new_return_date:   new_return_date,
+                  new_return_time:   resolvedReturnTime || null,
+                },
+                { onConflict: "payment_intent_id", ignoreDuplicates: true }
+              );
+            if (beErr) {
+              console.warn("admin-resend-extension: booking_extensions upsert failed (non-fatal):", beErr.message);
+            } else {
+              console.log(`admin-resend-extension: booking_extensions upserted for ${resolvedBookingRef2} → ${new_return_date}`);
+            }
+          } else {
+            console.log(`admin-resend-extension: booking_extensions row already exists for ${resolvedBookingRef2} + ${new_return_date} — skipping`);
+          }
+        }
+      } catch (beErr) {
+        console.warn("admin-resend-extension: booking_extensions upsert threw (non-fatal):", beErr.message);
+      }
+    }
+
+    // ── Send emails (skipped when skip_email=true) ─────────────────────────
+    if (!skip_email) {
+      await sendExtensionConfirmationEmails({
+        paymentIntent:      syntheticPi,
+        booking:            bookingRecord,
+        updatedReturnDate:  new_return_date,
+        updatedReturnTime:  resolvedReturnTime,
+        extensionLabel:     extension_label || "",
+        vehicleId:          vehicle_id,
+        renterEmail:        renter_email,
+        renterName:         renter_name || "",
+        originalReturnDate: oldReturnDate,
+        extensionCount:     newExtensionCount || (booking ? (booking.extensionCount || 1) : 1),
+      });
+      console.log(`admin-resend-extension: emails sent for booking ${original_booking_id} (${vehicle_id})`);
+    } else {
+      console.log(`admin-resend-extension: email skipped (skip_email=true) for booking ${original_booking_id} (${vehicle_id})`);
+    }
+
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("admin-resend-extension: error:", err);
-    return res.status(500).json({ error: err.message || "Unexpected error sending extension emails." });
+    return res.status(500).json({ error: err.message || "Unexpected error processing extension." });
   }
 }

@@ -379,16 +379,19 @@
     .modal {
       background: var(--surface); border-radius: 12px; padding: 24px;
       width: 100%; max-width: 520px; box-shadow: var(--shadow-md);
-      max-height: 90vh; overflow-y: auto;
+      max-height: 90vh; overflow: hidden;
+      display: flex; flex-direction: column;
     }
-    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    /* pin header and footer; scroll only the content in between */
+    .modal > *:not(.modal-header):not(.modal-footer) { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-shrink: 0; }
     .modal-title { font-size: 17px; font-weight: 700; }
     .modal-close {
       background: none; border: none; cursor: pointer; color: var(--text-sub);
       padding: 4px; border-radius: 4px; transition: color 0.15s; font-size: 18px;
     }
     .modal-close:hover { color: var(--text); }
-    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
 
     /* ── Filters ────────────────────────────────────────────────── */
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
@@ -2124,17 +2127,102 @@
   </div>
 </div>
 
+<!-- Edit Booking Modal -->
+<div class="modal-overlay" id="booking-edit-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Edit Booking</div>
+      <button class="modal-close" onclick="closeModal('booking-edit-modal')">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Customer Name</label>
+        <input type="text" class="form-input" id="be-name" placeholder="Full name">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Phone</label>
+        <input type="tel" class="form-input" id="be-phone" placeholder="(310) 555-0100">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="be-email" placeholder="customer@email.com">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Pickup Date</label>
+        <input type="date" class="form-input" id="be-pickup-date">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Pickup Time</label>
+        <input type="text" class="form-input" id="be-pickup-time" placeholder="10:00 AM">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Return Date</label>
+        <input type="date" class="form-input" id="be-return-date">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Return Time</label>
+        <input type="text" class="form-input" id="be-return-time" placeholder="5:00 PM">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Vehicle</label>
+        <select class="form-input" id="be-vehicle">
+          <option value="camry">Camry 2012</option>
+          <option value="camry2013">Camry 2013 SE</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Booking Status</label>
+        <select class="form-input" id="be-booking-status">
+          <option value="reserved_unpaid">Reserved (Unpaid)</option>
+          <option value="booked_paid">Booked (Paid)</option>
+          <option value="active_rental">Active Rental</option>
+          <option value="overdue">Overdue</option>
+          <option value="completed_rental">Completed</option>
+          <option value="cancelled_rental">Cancelled</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Payment Status</label>
+        <select class="form-input" id="be-payment-status">
+          <option value="">— unchanged —</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Payment Method</label>
+        <select class="form-input" id="be-payment-method">
+          <option value="">— unchanged —</option>
+          <option value="stripe">Stripe</option>
+          <option value="cash">Cash</option>
+          <option value="zelle">Zelle</option>
+          <option value="venmo">Venmo</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="be-notes" rows="3" placeholder="Internal notes…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('booking-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditBooking(this)">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sync Extension Modal -->
 <div class="modal-overlay" id="resend-extension-modal">
   <div class="modal" style="max-width:460px;">
     <div class="modal-header">
-      <div class="modal-title">🔄 Sync / Resend Extension</div>
+      <div class="modal-title">🔄 Extend Rental</div>
       <button class="modal-close" onclick="closeModal('resend-extension-modal')">✕</button>
     </div>
     <div style="padding:4px 0 12px;">
       <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
-        Use this to manually sync an extension payment that wasn't reflected in the dashboard,
-        or to resend the extension confirmation email.
+        Sets the new return date, records a revenue entry, and updates fleet analysis.
+        Check "Skip email" if confirmation emails were already sent.
       </p>
       <input type="hidden" id="re-booking-id">
       <input type="hidden" id="re-vehicle-id">
@@ -2148,14 +2236,18 @@
           <input type="text" id="re-ext-label" class="form-input" placeholder="e.g. +3 days" style="font-size:13px;">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Amount Charged (optional, $)</label>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Amount Charged ($) <span style="font-size:10px;color:var(--text-sub);">— required for revenue record</span></label>
           <input type="number" id="re-amount" class="form-input" placeholder="e.g. 165" step="0.01" min="0" style="font-size:13px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="re-skip-email" style="width:16px;height:16px;cursor:pointer;">
+          <label for="re-skip-email" style="font-size:13px;color:var(--text);cursor:pointer;">Skip email resend (emails already sent)</label>
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('resend-extension-modal')">Cancel</button>
-      <button class="btn btn-success" id="re-submit-btn" onclick="submitResendExtension(this)">✓ Sync & Resend Email</button>
+      <button class="btn btn-success" id="re-submit-btn" onclick="submitResendExtension(this)">✓ Apply Extension</button>
     </div>
   </div>
 </div>
@@ -3689,6 +3781,7 @@ function applyBookingFilters() {
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
@@ -3813,10 +3906,106 @@ function viewBooking(bookingId, vehicleId) {
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
+    <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit Booking</button>
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');
+}
+
+function openEditBookingModal(bookingId) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) { showToast('Booking not found.', 'error'); return; }
+  // Store the bookingId being edited
+  document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
+  document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
+  // Pre-fill fields
+  document.getElementById('be-name').value           = b.name          || '';
+  document.getElementById('be-phone').value          = b.phone         || '';
+  document.getElementById('be-email').value          = b.email         || '';
+  document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
+  document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
+  document.getElementById('be-return-date').value    = b.returnDate    || '';
+  document.getElementById('be-return-time').value    = b.returnTime    || '';
+  document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
+  document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
+  document.getElementById('be-booking-status').value   = b.status         || '';
+  document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
+  document.getElementById('be-notes').value            = b.notes          || '';
+  closeModal('booking-detail-modal');
+  openModal('booking-edit-modal');
+}
+
+async function saveEditBooking(btn) {
+  const modal     = document.getElementById('booking-edit-modal');
+  const bookingId = modal.dataset.bookingId;
+  const vehicleId = modal.dataset.vehicleId;
+  if (!bookingId || !vehicleId) { showToast('Unable to identify booking.', 'error'); return; }
+
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) { showToast('Booking not found.', 'error'); return; }
+
+  // Build patch — only include fields that actually changed
+  const updates = {};
+  const name      = document.getElementById('be-name').value.trim();
+  const phone     = document.getElementById('be-phone').value.trim();
+  const email     = document.getElementById('be-email').value.trim();
+  const pickup    = document.getElementById('be-pickup-date').value;
+  const pickupT   = document.getElementById('be-pickup-time').value.trim();
+  const ret       = document.getElementById('be-return-date').value;
+  const retT      = document.getElementById('be-return-time').value.trim();
+  const newVehicle  = document.getElementById('be-vehicle').value;
+  const bkgStatus   = document.getElementById('be-booking-status').value;
+  const payStatus   = document.getElementById('be-payment-status').value;
+  const pm        = document.getElementById('be-payment-method').value;
+  const notes     = document.getElementById('be-notes').value;
+
+  if (name      !== (b.name           || ''))  updates.customerName  = name;
+  if (phone     !== (b.phone          || ''))  updates.customerPhone = phone;
+  if (email     !== (b.email          || ''))  updates.customerEmail = email;
+  if (pickup    !== (b.pickupDate     || ''))  updates.pickupDate    = pickup;
+  if (pickupT   !== (b.pickupTime     || ''))  updates.pickupTime    = pickupT;
+  if (ret       !== (b.returnDate     || ''))  updates.returnDate    = ret;
+  if (retT      !== (b.returnTime     || ''))  updates.returnTime    = retT;
+  if (newVehicle && newVehicle !== (b.vehicleId     || ''))  updates.vehicleId     = newVehicle;
+  if (bkgStatus  && bkgStatus  !== (b.status        || ''))  updates.status        = bkgStatus;
+  if (payStatus  && payStatus  !== (b.paymentStatus || ''))  updates.paymentStatus = payStatus;
+  if (pm         && pm         !== (b.paymentMethod || ''))  updates.paymentMethod = pm;
+  if (notes     !== (b.notes         || ''))  updates.notes         = notes;
+
+  if (!Object.keys(updates).length) {
+    showToast('No changes detected.', 'info');
+    closeModal('booking-edit-modal');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
+    // Patch local cache
+    const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+    if (idx !== -1) {
+      if (updates.customerName  !== undefined) allBookings[idx].name          = updates.customerName;
+      if (updates.customerPhone !== undefined) allBookings[idx].phone         = updates.customerPhone;
+      if (updates.customerEmail !== undefined) allBookings[idx].email         = updates.customerEmail;
+      if (updates.pickupDate    !== undefined) allBookings[idx].pickupDate    = updates.pickupDate;
+      if (updates.pickupTime    !== undefined) allBookings[idx].pickupTime    = updates.pickupTime;
+      if (updates.returnDate    !== undefined) allBookings[idx].returnDate    = updates.returnDate;
+      if (updates.returnTime    !== undefined) allBookings[idx].returnTime    = updates.returnTime;
+      if (updates.vehicleId     !== undefined) allBookings[idx].vehicleId     = updates.vehicleId;
+      if (updates.status        !== undefined) allBookings[idx].status        = updates.status;
+      if (updates.paymentStatus !== undefined) allBookings[idx].paymentStatus = updates.paymentStatus;
+      if (updates.paymentMethod !== undefined) allBookings[idx].paymentMethod = updates.paymentMethod;
+      if (updates.notes         !== undefined) allBookings[idx].notes         = updates.notes;
+    }
+    closeModal('booking-edit-modal');
+    renderBookings();
+    showToast('Booking updated.', 'success');
+  } catch (err) {
+    showToast('Error saving booking: ' + err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function deleteBooking(bookingId, btn) {
@@ -3921,6 +4110,9 @@ function openResendExtensionModal(bookingId, vehicleId, _btn) {
   document.getElementById('re-return-date').value = (b && b.returnDate) || '';
   document.getElementById('re-ext-label').value   = '';
   document.getElementById('re-amount').value      = '';
+  // Pre-tick "skip email" if the booking has already been extended at least once
+  // (emails were sent during the previous extension, so no need to resend on re-sync).
+  document.getElementById('re-skip-email').checked = !!(b && b.extensionCount > 0);
   closeModal('booking-detail-modal');
   openModal('resend-extension-modal');
 }
@@ -3931,6 +4123,7 @@ function submitResendExtension(btn) {
   const returnDate = (document.getElementById('re-return-date').value || '').trim();
   const extLabel   = (document.getElementById('re-ext-label').value  || '').trim();
   const amount     = (document.getElementById('re-amount').value     || '').trim();
+  const skipEmail  = document.getElementById('re-skip-email').checked;
 
   if (!returnDate || !/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) {
     showToast('Please enter a valid new return date (YYYY-MM-DD).', 'error');
@@ -3938,12 +4131,21 @@ function submitResendExtension(btn) {
   }
 
   const b = allBookings.find((x) => x.bookingId === bookingId) || {};
-  if (!b.email) {
+  if (!skipEmail && !b.email) {
+    showToast('Cannot send email: renter email is missing from this booking record.', 'error');
+    return;
+  }
+  if (!b.email && skipEmail) {
+    // Still need email for the API validation — use a placeholder so we can skip sending
+    // but the server won't reject the request. Actually the server requires renter_email,
+    // so if email is truly missing and skip_email is true, warn but don't block.
+  }
+  if (!b.email && !skipEmail) {
     showToast('Cannot sync extension: renter email is missing from this booking record.', 'error');
     return;
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
 
   apiPost('/api/admin-resend-extension', {
     secret:              adminSecret,
@@ -3956,9 +4158,13 @@ function submitResendExtension(btn) {
     extension_label:     extLabel,
     new_return_date:     returnDate,
     amount:              amount ? Number(amount) : undefined,
+    skip_email:          skipEmail,
   })
     .then(() => {
-      showToast('✅ Extension synced and confirmation email resent.', 'success');
+      const msg = skipEmail
+        ? '✅ Extension applied — revenue and fleet analysis updated.'
+        : '✅ Extension applied and confirmation email sent.';
+      showToast(msg, 'success');
       closeModal('resend-extension-modal');
       loadBookings();
     })
@@ -3966,7 +4172,7 @@ function submitResendExtension(btn) {
       showToast('Error: ' + (err.message || 'Unknown error'), 'error');
     })
     .finally(() => {
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Sync & Resend Email'; }
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Apply Extension'; }
     });
 }
 
