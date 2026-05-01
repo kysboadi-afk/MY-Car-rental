@@ -762,9 +762,14 @@ export async function autoUpsertBooking(booking, opts = {}) {
       // enforces NOT NULL on vehicle_id, pickup_date and return_date, so sending
       // NULL would cause an update failure and corrupt the existing values.
       const patchRecord = { ...record, updated_at: new Date().toISOString() };
-      if (!patchRecord.vehicle_id)  delete patchRecord.vehicle_id;
-      if (!patchRecord.pickup_date) delete patchRecord.pickup_date;
-      if (!patchRecord.return_date) delete patchRecord.return_date;
+      if (!patchRecord.vehicle_id)              delete patchRecord.vehicle_id;
+      if (!patchRecord.pickup_date)             delete patchRecord.pickup_date;
+      if (!patchRecord.return_date)             delete patchRecord.return_date;
+      // Never wipe Stripe saved-card fields with null — callers that don't pass
+      // these (e.g. extension / balance-payment updates) must not overwrite the
+      // values written by the initial payment_intent.succeeded webhook.
+      if (!patchRecord.stripe_customer_id)      delete patchRecord.stripe_customer_id;
+      if (!patchRecord.stripe_payment_method_id) delete patchRecord.stripe_payment_method_id;
       if (fixBookingRef) patchRecord.booking_ref = booking.bookingId;
       const { error } = await sb
         .from("bookings")

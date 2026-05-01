@@ -1674,7 +1674,7 @@ export default async function handler(req, res) {
           }
           const { data: sbExtRow, error: sbExtRowErr } = await sbExtClient
             .from("bookings")
-            .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid")
+            .select("id, booking_ref, status, return_date, return_time, vehicle_id, customer_name, customer_phone, customer_email, pickup_date, extension_count, deposit_paid, stripe_customer_id, stripe_payment_method_id")
             .eq("booking_ref", bookingRef)
             .maybeSingle();
           if (sbExtRowErr || !sbExtRow) {
@@ -1702,17 +1702,20 @@ export default async function handler(req, res) {
           // Preserve the current DB status so autoUpsertBooking does not
           // default a missing status to "pending" and downgrade active_rental.
           const updatedBooking = {
-            bookingId:      sbExtRow.booking_ref,
-            vehicleId:      sbExtRow.vehicle_id || vehicle_id,
-            status:         sbExtRow.status,
-            name:           sbExtRow.customer_name || renter_name || "",
-            phone:          sbExtRow.customer_phone || "",
-            email:          sbExtRow.customer_email || renter_email || "",
-            pickupDate:     sbExtRow.pickup_date ? String(sbExtRow.pickup_date).split("T")[0] : "",
-            returnDate:     alreadyApplied ? (sbCurrentReturnDate || new_return_date) : new_return_date,
-            returnTime:     resolvedReturnTime,
-            extensionCount: (Number(sbExtRow.extension_count) || 0) + (alreadyApplied ? 0 : 1),
-            amountPaid:     Math.round(((Number(sbExtRow.deposit_paid) || 0) + extensionAmountDollars) * 100) / 100,
+            bookingId:              sbExtRow.booking_ref,
+            vehicleId:              sbExtRow.vehicle_id || vehicle_id,
+            status:                 sbExtRow.status,
+            name:                   sbExtRow.customer_name || renter_name || "",
+            phone:                  sbExtRow.customer_phone || "",
+            email:                  sbExtRow.customer_email || renter_email || "",
+            pickupDate:             sbExtRow.pickup_date ? String(sbExtRow.pickup_date).split("T")[0] : "",
+            returnDate:             alreadyApplied ? (sbCurrentReturnDate || new_return_date) : new_return_date,
+            returnTime:             resolvedReturnTime,
+            extensionCount:         (Number(sbExtRow.extension_count) || 0) + (alreadyApplied ? 0 : 1),
+            amountPaid:             Math.round(((Number(sbExtRow.deposit_paid) || 0) + extensionAmountDollars) * 100) / 100,
+            // Preserve saved-card references so autoUpsertBooking does not wipe them.
+            stripeCustomerId:       sbExtRow.stripe_customer_id      || null,
+            stripePaymentMethodId:  sbExtRow.stripe_payment_method_id || null,
           };
 
           if (invalidStatus) {
@@ -2653,7 +2656,7 @@ export default async function handler(req, res) {
           if (sbBal && bookingRef) {
             const { data: balRow } = await sbBal
               .from("bookings")
-              .select("booking_ref, vehicle_id, customer_name, customer_phone, renter_phone, customer_email, pickup_date, return_date, pickup_time, return_time, deposit_paid, total_price")
+              .select("booking_ref, vehicle_id, customer_name, customer_phone, renter_phone, customer_email, pickup_date, return_date, pickup_time, return_time, deposit_paid, total_price, stripe_customer_id, stripe_payment_method_id")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
             sbBalRow = balRow || null;
@@ -2666,20 +2669,23 @@ export default async function handler(req, res) {
             const resolvedPt  = (sbBalRow.pickup_time ? String(sbBalRow.pickup_time).substring(0, 5) : null) || meta.pickup_time || "";
             const resolvedRt  = (sbBalRow.return_time ? String(sbBalRow.return_time).substring(0, 5) : null) || meta.return_time || DEFAULT_RETURN_TIME;
             bookingPatch = {
-              bookingId:     sbBalRow.booking_ref,
-              vehicleId:     sbBalRow.vehicle_id || vehicle_id,
-              vehicleName:   meta.vehicle_name || sbBalRow.vehicle_id || vehicle_id || "",
-              name:          sbBalRow.customer_name || meta.renter_name || "",
-              phone:         sbBalRow.customer_phone || sbBalRow.renter_phone || (meta.renter_phone ? normalizePhone(meta.renter_phone) : ""),
-              email:         sbBalRow.customer_email || meta.email || "",
-              pickupDate:    resolvedPid,
-              pickupTime:    resolvedPt,
-              returnDate:    resolvedRtd,
-              returnTime:    resolvedRt,
-              amountPaid:    Math.round((existingDeposit + paidAmount) * 100) / 100,
-              totalPrice:    normalizeCurrency(meta.full_rental_amount || Number(sbBalRow.total_price) || existingDeposit + paidAmount),
-              paymentStatus: "paid",
-              status:        "active_rental",
+              bookingId:              sbBalRow.booking_ref,
+              vehicleId:              sbBalRow.vehicle_id || vehicle_id,
+              vehicleName:            meta.vehicle_name || sbBalRow.vehicle_id || vehicle_id || "",
+              name:                   sbBalRow.customer_name || meta.renter_name || "",
+              phone:                  sbBalRow.customer_phone || sbBalRow.renter_phone || (meta.renter_phone ? normalizePhone(meta.renter_phone) : ""),
+              email:                  sbBalRow.customer_email || meta.email || "",
+              pickupDate:             resolvedPid,
+              pickupTime:             resolvedPt,
+              returnDate:             resolvedRtd,
+              returnTime:             resolvedRt,
+              amountPaid:             Math.round((existingDeposit + paidAmount) * 100) / 100,
+              totalPrice:             normalizeCurrency(meta.full_rental_amount || Number(sbBalRow.total_price) || existingDeposit + paidAmount),
+              paymentStatus:          "paid",
+              status:                 "active_rental",
+              // Preserve saved-card references so autoUpsertBooking does not wipe them.
+              stripeCustomerId:       sbBalRow.stripe_customer_id       || null,
+              stripePaymentMethodId:  sbBalRow.stripe_payment_method_id  || null,
             };
           } else {
             // Booking not found in Supabase — build from metadata.
