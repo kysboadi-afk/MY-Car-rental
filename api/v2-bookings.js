@@ -510,6 +510,11 @@ export default async function handler(req, res) {
         if (!safeUpdates.actualReturnTime) {
           safeUpdates.actualReturnTime = safeUpdates.updatedAt;
         }
+        // Auto-dismiss any pending late fee when completing a rental.
+        // If the booking is being closed without charging the fee, clear the
+        // pending_approval status so the admin UI no longer shows it as an
+        // unresolved action item.
+        safeUpdates._autoDismissLateFee = true;
       }
 
       // ── Supabase direct update (primary path when configured) ──────────────
@@ -611,6 +616,27 @@ export default async function handler(req, res) {
             console.error("v2-bookings: Supabase direct update threw (non-fatal):", sbCatchErr.message);
           }
         }
+      }
+
+      // Auto-dismiss pending late fee on rental completion (non-fatal, fire-and-forget).
+      // Only overrides late_fee_status if it is currently 'pending_approval' or NULL,
+      // so 'paid' / 'failed' / 'approved' fees are preserved.
+      if (safeUpdates._autoDismissLateFee && sbInstance) {
+        (async () => {
+          try {
+            await sbInstance
+              .from("bookings")
+              .update({
+                late_fee_status:      "dismissed",
+                late_fee_approved_at: new Date().toISOString(),
+                late_fee_approved_by: "auto_dismiss",
+              })
+              .eq("booking_ref", bookingId)
+              .or("late_fee_status.eq.pending_approval,late_fee_status.is.null");
+          } catch (dismissErr) {
+            console.warn("v2-bookings: auto-dismiss late fee failed (non-fatal):", dismissErr.message);
+          }
+        })();
       }
 
       let updatedBooking;
@@ -1049,6 +1075,29 @@ export default async function handler(req, res) {
         .update(flagPayload)
         .eq("booking_ref", bookingId);
       if (flagErr) return res.status(500).json({ error: flagErr.message });
+      return res.status(200).json({ success: true });
+    }
+
+    // ── DISMISS_LATE_FEE ────────────────────────────────────────────────────
+    // Sets late_fee_status = 'dismissed' on a booking so the pending badge
+    // is cleared without charging the customer.  Used by the admin Late Fees
+    // page when the owner decides not to collect the fee.
+    if (action === "dismiss_late_fee") {
+      const { bookingId } = body;
+      if (!bookingId) return res.status(400).json({ error: "bookingId is required" });
+      const sbDismiss = getSupabaseAdmin();
+      if (!sbDismiss) return res.status(500).json({ error: "Database not configured" });
+
+      const { error: dismissErr } = await sbDismiss
+        .from("bookings")
+        .update({
+          late_fee_status:      "dismissed",
+          late_fee_approved_at: new Date().toISOString(),
+          late_fee_approved_by: "admin_panel",
+          updated_at:           new Date().toISOString(),
+        })
+        .eq("booking_ref", bookingId);
+      if (dismissErr) return res.status(500).json({ error: dismissErr.message });
       return res.status(200).json({ success: true });
     }
 
