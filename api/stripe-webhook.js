@@ -1699,9 +1699,12 @@ export default async function handler(req, res) {
           const extensionAmountDollars = Math.round(paymentIntent.amount || 0) / 100;
 
           // Build normalized booking snapshot for downstream reuse.
+          // Preserve the current DB status so autoUpsertBooking does not
+          // default a missing status to "pending" and downgrade active_rental.
           const updatedBooking = {
             bookingId:      sbExtRow.booking_ref,
             vehicleId:      sbExtRow.vehicle_id || vehicle_id,
+            status:         sbExtRow.status,
             name:           sbExtRow.customer_name || renter_name || "",
             phone:          sbExtRow.customer_phone || "",
             email:          sbExtRow.customer_email || renter_email || "",
