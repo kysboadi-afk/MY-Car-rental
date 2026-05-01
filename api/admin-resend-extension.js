@@ -26,7 +26,7 @@
 // Returns: { ok: true } on success or { error: "..." } on failure.
 
 import { loadBookings, updateBooking } from "./_bookings.js";
-import { autoUpsertBooking, parseTime12h } from "./_booking-automation.js";
+import { autoUpsertBooking, parseTime12h, autoCreateRevenueRecord, extendBlockedDateForBooking } from "./_booking-automation.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
@@ -178,6 +178,46 @@ export default async function handler(req, res) {
         }
       } catch (sbErr) {
         console.warn("admin-resend-extension: Supabase direct update threw (non-fatal):", sbErr.message);
+      }
+    }
+
+    // ── Extend blocked_dates so fleet availability reflects the new return date ──
+    // This keeps fleet-status, booked-dates, and fleet-analysis in sync without
+    // waiting for any Stripe webhook (covers cash/manual extensions too).
+    if (needsReturnDateUpdate) {
+      const resolvedBookingRef = booking ? booking.bookingId : original_booking_id;
+      try {
+        await extendBlockedDateForBooking(vehicle_id, resolvedBookingRef, new_return_date, resolvedReturnTime);
+      } catch (bdErr) {
+        console.warn("admin-resend-extension: blocked_dates extend failed (non-fatal):", bdErr.message);
+      }
+    }
+
+    // ── Create revenue record when an amount was supplied ─────────────────
+    // Payment method heuristic: if a real Stripe PI id was given (pi_xxx) the
+    // record is Stripe-sourced; otherwise treat it as a cash/manual payment so
+    // stripe_fee=0 and stripe_net=gross are filled in immediately (no waiting
+    // for a reconcile pass).
+    if (amount && Number(amount) > 0) {
+      const resolvedBookingRef = booking ? booking.bookingId : original_booking_id;
+      const isStripePi = typeof payment_intent_id === "string" && payment_intent_id.startsWith("pi_");
+      try {
+        await autoCreateRevenueRecord({
+          booking_ref:     resolvedBookingRef,
+          bookingId:       resolvedBookingRef,
+          type:            "rental_extension",
+          vehicleId:       vehicle_id,
+          amountPaid:      Number(amount),
+          paymentIntentId: isStripePi ? payment_intent_id : null,
+          name:            renter_name  || booking?.name  || "",
+          email:           renter_email,
+          phone:           renter_phone || booking?.phone || "",
+          pickupDate:      booking?.pickupDate || "",
+          returnDate:      new_return_date,
+          paymentMethod:   isStripePi ? "stripe" : "cash",
+        });
+      } catch (revErr) {
+        console.warn("admin-resend-extension: revenue record creation failed (non-fatal):", revErr.message);
       }
     }
 
