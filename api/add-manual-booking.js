@@ -29,13 +29,12 @@ import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeClockTime } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { getActiveVehicleIds } from "./_pricing.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const ALLOWED_ORIGINS   = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES  = FLEET_VEHICLE_IDS;
 const VEHICLE_NAMES     = {
   camry:      "Camry 2012",
   camry2013:  "Camry 2013 SE",
@@ -79,7 +78,7 @@ export default async function handler(req, res) {
   }
 
   // Validation
-  if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
+  if (!vehicleId || !(await getActiveVehicleIds(getSupabaseAdmin())).includes(vehicleId)) {
     return res.status(400).json({ error: "Invalid or missing vehicleId" });
   }
   if (!name || typeof name !== "string" || !name.trim()) {

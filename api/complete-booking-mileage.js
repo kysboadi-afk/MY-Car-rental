@@ -16,10 +16,9 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { getActiveVehicleIds } from "./_pricing.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 
 export default async function handler(req, res) {
   const origin = req.headers.origin;
@@ -46,7 +45,7 @@ export default async function handler(req, res) {
   if (!bookingId) {
     return res.status(400).json({ error: "bookingId is required." });
   }
-  if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
+  if (!vehicleId || !(await getActiveVehicleIds(getSupabaseAdmin())).includes(vehicleId)) {
     return res.status(400).json({ error: "A valid vehicleId is required." });
   }
   const start = Number(startMileage);

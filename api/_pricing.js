@@ -124,6 +124,31 @@ export function computeAmount(vehicleId, pickup, returnDate) {
 }
 
 /**
+ * Get the current active vehicle IDs, merging the static FLEET_VEHICLE_IDS list with
+ * any vehicles registered in the Supabase `vehicles` table.  Falls back to the static
+ * list when Supabase is unavailable or the query fails, so cold-start / no-DB paths
+ * are unaffected.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient|null} supabase
+ * @returns {Promise<string[]>} deduped list of vehicle IDs
+ */
+export async function getActiveVehicleIds(supabase) {
+  if (!supabase) return FLEET_VEHICLE_IDS;
+  try {
+    const { data, error } = await supabase
+      .from("vehicles")
+      .select("vehicle_id, data");
+    if (error || !data?.length) return FLEET_VEHICLE_IDS;
+    const dynamic = data
+      .filter(row => !row.data?.status || row.data.status === "active")
+      .map(row => row.vehicle_id);
+    return [...new Set([...FLEET_VEHICLE_IDS, ...dynamic])];
+  } catch {
+    return FLEET_VEHICLE_IDS;
+  }
+}
+
+/**
  * Fetch pricing data for a single vehicle from the Supabase `vehicle_pricing` table.
  * Throws if the record is missing or the query fails — the DB is the source of truth.
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase

@@ -2030,6 +2030,16 @@
         <div id="ev-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Once set, mileage syncs automatically every 5 minutes.</div>
       </div>
+      <div class="form-group full">
+        <label class="form-label">VIN</label>
+        <input type="text" class="form-input" id="ev-vin" placeholder="e.g. 1HGCM82633A123456" maxlength="50">
+        <div class="form-hint">17-character Vehicle Identification Number (optional).</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Scarcity Notice</label>
+        <input type="text" class="form-input" id="ev-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
+        <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('edit-vehicle-modal')">Cancel</button>
@@ -2103,6 +2113,38 @@
         <input type="text" class="form-input" id="av-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('av')">
         <div id="av-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
         <div class="form-hint">15-digit IMEI from the Bouncie tracker. Enables automatic mileage tracking.</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">VIN</label>
+        <input type="text" class="form-input" id="av-vin" placeholder="e.g. 1HGCM82633A123456" maxlength="50">
+        <div class="form-hint">17-character Vehicle Identification Number (optional).</div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Scarcity Notice</label>
+        <input type="text" class="form-input" id="av-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
+        <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
+      </div>
+      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing</div>
+        <div class="form-grid" style="margin:0;">
+          <div class="form-group">
+            <label class="form-label">Daily Rate ($)</label>
+            <input type="number" class="form-input" id="av-daily-rate" min="0" step="1" placeholder="e.g. 55">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Weekly Rate / 7 days ($)</label>
+            <input type="number" class="form-input" id="av-weekly-rate" min="0" step="1" placeholder="e.g. 350">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Biweekly Rate / 14 days ($)</label>
+            <input type="number" class="form-input" id="av-biweekly-rate" min="0" step="1" placeholder="e.g. 650">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Monthly Rate / 28 days ($)</label>
+            <input type="number" class="form-input" id="av-monthly-rate" min="0" step="1" placeholder="e.g. 1300">
+          </div>
+        </div>
+        <div class="form-hint">Rates are saved to the booking database so renters are charged correctly. Leave blank to set up later.</div>
       </div>
     </div>
     <div id="av-msg" style="margin-top:8px;font-size:13px;"></div>
@@ -3127,6 +3169,8 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-purchase-date').value = v.purchase_date || '';
   document.getElementById('ev-cover-image').value = v.cover_image || '';
   document.getElementById('ev-bouncie-id').value = v.bouncie_device_id || '';
+  document.getElementById('ev-vin').value = v.vin || '';
+  document.getElementById('ev-scarcity').value = v.scarcity_text || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
   updateBouncieWarning('ev');
@@ -3144,6 +3188,8 @@ async function saveVehicle() {
     purchase_date:     document.getElementById('ev-purchase-date').value,
     cover_image:       document.getElementById('ev-cover-image').value.trim(),
     bouncie_device_id: document.getElementById('ev-bouncie-id').value.trim() || null,
+    vin:               document.getElementById('ev-vin').value.trim() || null,
+    scarcity_text:     document.getElementById('ev-scarcity').value.trim() || null,
   };
 
   const btn = document.querySelector('#edit-vehicle-modal .modal-footer .btn-primary');
@@ -3508,6 +3554,12 @@ function openAddVehicle() {
   document.getElementById('av-purchase-date').value = '';
   document.getElementById('av-cover-image').value = '';
   document.getElementById('av-bouncie-id').value = '';
+  document.getElementById('av-vin').value = '';
+  document.getElementById('av-scarcity').value = '';
+  document.getElementById('av-daily-rate').value = '';
+  document.getElementById('av-weekly-rate').value = '';
+  document.getElementById('av-biweekly-rate').value = '';
+  document.getElementById('av-monthly-rate').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
   document.getElementById('av-save-btn').disabled = false;
@@ -3526,6 +3578,12 @@ async function saveNewVehicle() {
   const purchaseDate    = document.getElementById('av-purchase-date').value;
   const coverImage      = document.getElementById('av-cover-image').value.trim();
   const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
+  const vin             = document.getElementById('av-vin').value.trim() || null;
+  const scarcityText    = document.getElementById('av-scarcity').value.trim() || null;
+  const dailyRate       = parseFloat(document.getElementById('av-daily-rate').value)    || null;
+  const weeklyRate      = parseFloat(document.getElementById('av-weekly-rate').value)   || null;
+  const biweeklyRate    = parseFloat(document.getElementById('av-biweekly-rate').value) || null;
+  const monthlyRate     = parseFloat(document.getElementById('av-monthly-rate').value)  || null;
 
   const msgEl = document.getElementById('av-msg');
   const btn   = document.getElementById('av-save-btn');
@@ -3551,6 +3609,12 @@ async function saveNewVehicle() {
       secret: adminSecret, action: 'create',
       vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
+      ...(vin          ? { vin }          : {}),
+      ...(scarcityText ? { scarcityText } : {}),
+      ...(dailyRate    ? { dailyRate }    : {}),
+      ...(weeklyRate   ? { weeklyRate }   : {}),
+      ...(biweeklyRate ? { biweeklyRate } : {}),
+      ...(monthlyRate  ? { monthlyRate }  : {}),
     });
     closeModal('add-vehicle-modal');
     showToast('Vehicle added successfully.', 'success');

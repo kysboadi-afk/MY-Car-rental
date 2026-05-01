@@ -240,7 +240,7 @@ export default async function handler(req, res) {
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
         "vehicle_name", "vehicle_year", "type", "cover_image",
-        "bouncie_device_id",
+        "bouncie_device_id", "vin", "scarcity_text",
       ];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
@@ -366,7 +366,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, bouncieDeviceId } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -421,6 +421,8 @@ export default async function handler(req, res) {
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
         cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
+        ...(vin           ? { vin:           String(vin).trim().slice(0, 50) }         : {}),
+        ...(scarcityText  ? { scarcity_text: String(scarcityText).trim().slice(0, 200) } : {}),
         ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
       };
 
@@ -449,6 +451,23 @@ export default async function handler(req, res) {
             .single();
 
           if (!insertErr) {
+            // Upsert vehicle_pricing row if any rates were provided
+            if (dailyRate || weeklyRate || biweeklyRate || monthlyRate) {
+              const pricingRow = {
+                vehicle_id:     vehicleId,
+                daily_price:    dailyRate    ? Math.round(parseFloat(dailyRate)    * 100) / 100 : null,
+                weekly_price:   weeklyRate   ? Math.round(parseFloat(weeklyRate)   * 100) / 100 : null,
+                biweekly_price: biweeklyRate ? Math.round(parseFloat(biweeklyRate) * 100) / 100 : null,
+                monthly_price:  monthlyRate  ? Math.round(parseFloat(monthlyRate)  * 100) / 100 : null,
+                updated_at:     new Date().toISOString(),
+              };
+              const { error: pricingErr } = await supabase
+                .from("vehicle_pricing")
+                .upsert(pricingRow, { onConflict: "vehicle_id" });
+              if (pricingErr) {
+                console.warn("v2-vehicles create: vehicle_pricing upsert failed:", pricingErr.message);
+              }
+            }
             return res.status(201).json({
               success: true,
               vehicle: {

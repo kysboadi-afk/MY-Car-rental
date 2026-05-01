@@ -7,7 +7,8 @@
     "purchase_date": "",
     "purchase_price": 0,
     "status": "active",
-    "cover_image": "images/IMG_0046.png"
+    "cover_image": "images/IMG_0046.png",
+    "scarcity_text": "🔥 High demand — reserve today"
   },
   "camry2013": {
     "vehicle_id": "camry2013",
@@ -17,6 +18,7 @@
     "purchase_date": "",
     "purchase_price": 0,
     "status": "active",
-    "cover_image": "images/IMG_5144.png"
+    "cover_image": "images/IMG_5144.png",
+    "scarcity_text": "⚡ Limited vehicles available"
   }
 }

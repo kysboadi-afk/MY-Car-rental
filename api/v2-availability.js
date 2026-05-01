@@ -18,10 +18,9 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { hasDateTimeOverlap } from "./_availability.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
 import { buildDateTimeLA, computeFinalReturnDate, PREP_BUFFER_MS } from "./_final-return-date.js";
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { getActiveVehicleIds } from "./_pricing.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 const ACTIVE_STATUSES  = ["pending", "approved", "active", "reserved", "reserved_unpaid", "booked_paid", "active_rental", "overdue"];
 
 /**
@@ -172,13 +171,15 @@ export default async function handler(req, res) {
   if (to < from) {
     return res.status(400).json({ error: "to must not be before from" });
   }
-  if (vehicleId && !ALLOWED_VEHICLES.includes(vehicleId)) {
-    return res.status(400).json({ error: "Invalid vehicleId" });
-  }
 
   const sb = getSupabaseAdmin();
   if (!sb) {
     return res.status(503).json({ error: "Supabase is not configured; availability check unavailable" });
+  }
+
+  const allowedVehicles = await getActiveVehicleIds(sb);
+  if (vehicleId && !allowedVehicles.includes(vehicleId)) {
+    return res.status(400).json({ error: "Invalid vehicleId" });
   }
 
   if (vehicleId) {
@@ -201,7 +202,7 @@ export default async function handler(req, res) {
 
   // All vehicles
   const results = {};
-  for (const vid of ALLOWED_VEHICLES) {
+  for (const vid of allowedVehicles) {
     try {
       const result = await checkVehicleAvailability(sb, vid, from, to, fromTime, toTime);
       results[vid] = {

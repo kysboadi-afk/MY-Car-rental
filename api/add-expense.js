@@ -19,10 +19,9 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadExpenses, saveExpenses } from "./_expenses.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { getActiveVehicleIds } from "./_pricing.js";
 
 const ALLOWED_ORIGINS    = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES   = FLEET_VEHICLE_IDS;
 const ALLOWED_CATEGORIES = ["maintenance", "insurance", "repair", "fuel", "registration", "other"];
 
 export default async function handler(req, res) {
@@ -45,7 +44,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  if (!vehicle_id || !ALLOWED_VEHICLES.includes(vehicle_id)) {
+  if (!vehicle_id || !(await getActiveVehicleIds(getSupabaseAdmin())).includes(vehicle_id)) {
     return res.status(400).json({ error: "Invalid or missing vehicle_id" });
   }
 
