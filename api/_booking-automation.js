@@ -779,6 +779,17 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
     throw new Error("Missing required block data: vehicleId, startDate, and endDate are required");
   }
 
+  // booking-reason rows require a booking_ref so the row satisfies any NOT NULL
+  // constraint and can be linked back to its booking.  Skipping here is safer than
+  // attempting an insert that will fail and silently corrupt pipeline state.
+  if (reason === "booking" && !bookingRef) {
+    console.warn(
+      `_booking-automation autoCreateBlockedDate: skipping insert for vehicle=${normalizedVehicleId} ` +
+      `${startDate}–${endDate} — bookingRef is required for reason='booking' but was not provided`
+    );
+    return;
+  }
+
   // Compute the buffered end date/time when a return time is available.
   const { date: bufferedEndDate, time: bufferedEndTime } = returnTime
     ? buildBufferedEnd(endDate, returnTime)

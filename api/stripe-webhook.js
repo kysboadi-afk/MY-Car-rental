@@ -1084,10 +1084,34 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
     }
 
     if (!booking_id) {
-      console.error("[processStripePayment] booking_id not resolved after recovery — revenue not recorded", {
+      // Last-resort fallback: record an orphan revenue row so no payment is ever
+      // lost from the ledger.  The orphan can be manually linked to a booking later.
+      console.error("[processStripePayment] booking_id not resolved after recovery — recording orphan revenue to preserve payment", {
         paymentIntentId: paymentIntent.id,
         type:            type || "<untyped>",
       });
+      try {
+        const orphanGross = opts.preResolvedGross ?? ((paymentIntent.amount_received || paymentIntent.amount || 0) / 100);
+        let orphanVehicleId = paymentIntent.metadata?.vehicle_id || null;
+        try { orphanVehicleId = mapVehicleId(paymentIntent.metadata || {}); } catch { /* non-fatal */ }
+        await createOrphanRevenueRecord({
+          paymentIntentId: paymentIntent.id,
+          vehicleId:       orphanVehicleId,
+          name:            paymentIntent.metadata?.renter_name || null,
+          email:           paymentIntent.metadata?.renter_email || paymentIntent.metadata?.email || null,
+          pickupDate:      paymentIntent.metadata?.pickup_date || null,
+          returnDate:      paymentIntent.metadata?.return_date || null,
+          amountPaid:      orphanGross,
+          type:            type || "rental",
+          notes:           `unresolved booking_ref — PI=${paymentIntent.id} type=${type || "<untyped>"}`,
+          stripeFee:       opts.preResolvedFee ?? null,
+          stripeNet:       opts.preResolvedNet ?? null,
+        });
+      } catch (orphanErr) {
+        console.error("[processStripePayment] orphan revenue recording failed:", orphanErr.message, {
+          paymentIntentId: paymentIntent.id,
+        });
+      }
       return;
     }
   }
