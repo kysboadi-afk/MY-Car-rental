@@ -1521,6 +1521,7 @@
           <button class="btn btn-secondary btn-sm" id="btn-stripe-reconcile" onclick="runStripeReconcile(this)">⚡ Sync from Stripe</button>
           <button class="btn btn-secondary btn-sm" id="btn-dedup" onclick="runDedup(this)" title="Remove duplicate revenue records created by Sync from Stripe">🔁 Fix Duplicates</button>
           <button class="btn btn-secondary btn-sm" id="btn-cleanup-orphans" onclick="runCleanupOrphans(this)" title="Fix revenue records with missing or unknown vehicle — links them to bookings or hides unresolvable ones">🧹 Fix Unknown</button>
+          <button class="btn btn-secondary btn-sm" id="btn-revenue-heal" onclick="runRevenueHeal(this)" title="Relinks orphaned revenue records to their bookings — fixes undercounts in Fleet Analytics and Revenue Tracker">⚕️ Relink Orphans</button>
           <button class="btn btn-primary btn-sm" onclick="openAddRevenueModal()">+ Add Record</button>
         </div>
         <div class="kpi-grid" id="rev-kpi-grid" style="margin-bottom:16px;"></div>
@@ -5328,6 +5329,35 @@ async function runCleanupOrphans(btn) {
     showToast('Cleanup error: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🧹 Fix Unknown'; }
+  }
+}
+
+async function runRevenueHeal(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Relinking…'; }
+  try {
+    const data = await apiPost('/api/revenue-self-heal', { secret: adminSecret });
+    const relinked   = data.relinked   || 0;
+    const backfilled = data.backfilled || 0;
+    const repaired   = data.repaired   || 0;
+    const parts = [];
+    if (relinked   > 0) parts.push(`${relinked} orphan(s) relinked`);
+    if (backfilled > 0) parts.push(`${backfilled} missing record(s) backfilled`);
+    if (repaired   > 0) parts.push(`${repaired} Stripe fee(s) repaired`);
+    const msg = parts.length
+      ? `✅ ${parts.join(', ')}.`
+      : '✅ All revenue records healthy — nothing to fix.';
+    showToast(msg, data.ok ? 'success' : 'warning');
+    allRevenueRecords = [];
+    allRevenueGroups  = [];
+    revenueKpiTotal   = null;
+    loadRevenue();
+    dashboardData = null;
+    refreshDashboard();
+    recomputeCustomerTotals({ silent: true });
+  } catch (err) {
+    showToast('Relink error: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⚕️ Relink Orphans'; }
   }
 }
 

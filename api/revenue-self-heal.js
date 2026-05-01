@@ -140,6 +140,15 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
+  if (!process.env.ADMIN_SECRET) {
+    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
+  }
+  const body = req.body || {};
+  const secret = body.secret || req.query?.secret;
+  if (!secret || secret !== process.env.ADMIN_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   if (!process.env.STRIPE_SECRET_KEY) {
     return res.status(503).json({ error: "STRIPE_SECRET_KEY is not configured." });
   }
@@ -156,6 +165,9 @@ export default async function handler(req, res) {
   let backfilled = 0;
   let backfillFailed = 0;
   const backfillFailures = [];
+  let relinked = 0;
+  let relinkFailed = 0;
+  const relinkFailures = [];
 
   try {
     // Fetch rows that need attention:
@@ -359,8 +371,82 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Phase 3: Relink is_orphan=true rows that can be matched to a booking ──
+    // The last-resort createOrphanRevenueRecord path in the webhook pipeline sets
+    // is_orphan=true when no booking row can be resolved at event time.  Once the
+    // booking is persisted (e.g. by the self-heal booking-reconstruction above or
+    // by normal booking creation), those revenue rows can be reunited with their
+    // booking by matching booking_ref or payment_intent_id.  Clearing is_orphan
+    // causes them to appear in revenue_records_effective and revenue_reporting_base,
+    // which fixes fleet booking counts and per-vehicle revenue totals.
+    const { data: orphanRows, error: orphanQueryErr } = await sb
+      .from("revenue_records")
+      .select("id, booking_id, payment_intent_id, vehicle_id")
+      .eq("is_orphan", true)
+      .eq("payment_status", "paid")
+      .eq("sync_excluded", false);
+
+    if (orphanQueryErr) {
+      console.error("revenue-self-heal Phase 3: orphan query error:", formatSupabaseError(orphanQueryErr));
+    } else {
+      for (const row of orphanRows || []) {
+        try {
+          let matchedRef = null;
+
+          // Try matching by booking_ref first (most precise).
+          if (row.booking_id) {
+            const { data: byRef } = await sb
+              .from("bookings")
+              .select("id, booking_ref")
+              .eq("booking_ref", row.booking_id)
+              .maybeSingle();
+            if (byRef?.id) matchedRef = byRef.booking_ref;
+          }
+
+          // Fall back to payment_intent_id match.
+          if (!matchedRef && row.payment_intent_id) {
+            const { data: byPi } = await sb
+              .from("bookings")
+              .select("id, booking_ref")
+              .eq("payment_intent_id", row.payment_intent_id)
+              .maybeSingle();
+            if (byPi?.id) matchedRef = byPi.booking_ref;
+          }
+
+          if (!matchedRef) continue; // No resolvable booking — leave as orphan.
+
+          const relinkPatch = {
+            is_orphan: false,
+            updated_at: new Date().toISOString(),
+            ...((!row.booking_id && matchedRef) ? { booking_id: matchedRef } : {}),
+          };
+          const { error: relinkErr } = await sb
+            .from("revenue_records")
+            .update(relinkPatch)
+            .eq("id", row.id);
+          if (relinkErr) {
+            throw new Error(`relink update failed: ${formatSupabaseError(relinkErr)}`);
+          }
+
+          relinked += 1;
+          console.log("revenue-self-heal Phase 3: relinked orphan revenue record", {
+            revenue_id: row.id,
+            booking_ref: matchedRef,
+            vehicle_id: row.vehicle_id,
+          });
+        } catch (err) {
+          relinkFailed += 1;
+          console.error("revenue-self-heal Phase 3: relink failed", {
+            revenue_id: row.id,
+            error: err?.message || String(err),
+          });
+          relinkFailures.push({ revenue_id: row.id, error: err?.message || String(err) });
+        }
+      }
+    }
+
     return res.status(200).json({
-      ok: failed === 0 && backfillFailed === 0,
+      ok: failed === 0 && backfillFailed === 0 && relinkFailed === 0,
       scanned,
       repaired,
       failed,
@@ -368,6 +454,9 @@ export default async function handler(req, res) {
       backfilled,
       backfill_failed: backfillFailed,
       backfill_failures: backfillFailures,
+      relinked,
+      relink_failed: relinkFailed,
+      relink_failures: relinkFailures,
     });
   } catch (err) {
     console.error("revenue-self-heal: fatal error:", err?.message || err);
@@ -381,6 +470,9 @@ export default async function handler(req, res) {
       backfilled,
       backfill_failed: backfillFailed,
       backfill_failures: backfillFailures,
+      relinked,
+      relink_failed: relinkFailed,
+      relink_failures: relinkFailures,
     });
   }
 }
