@@ -16,10 +16,12 @@ import assert from "node:assert/strict";
 // ─── Shared mock state ────────────────────────────────────────────────────────
 
 const sbState = {
-  existingRow:   null,   // returned by maybeSingle — null means no row found
+  existingRow:   null,   // returned by maybySingle — null means no row found
   findError:     null,
   upsertError:   null,
+  updateError:   null,
   upsertCalls:   [],
+  updateCalls:   [],
   configured:    true,
 };
 
@@ -27,7 +29,9 @@ function resetSbState(overrides = {}) {
   sbState.existingRow = null;
   sbState.findError   = null;
   sbState.upsertError = null;
+  sbState.updateError = null;
   sbState.upsertCalls = [];
+  sbState.updateCalls = [];
   sbState.configured  = true;
   Object.assign(sbState, overrides);
 }
@@ -51,6 +55,12 @@ function makeSupabase() {
       upsert: (payload, opts) => {
         sbState.upsertCalls.push({ payload, opts });
         return Promise.resolve({ error: sbState.upsertError ? { message: sbState.upsertError } : null });
+      },
+      update: (payload) => {
+        sbState.updateCalls.push({ payload });
+        return {
+          eq: () => Promise.resolve({ error: sbState.updateError ? { message: sbState.updateError } : null }),
+        };
       },
     };
     return c;
@@ -102,14 +112,38 @@ const { ensureBlockedDate } = await import("./_booking-automation.js");
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-test("ensureBlockedDate: returns {created:false, reason:'already_exists'} when row exists", async () => {
-  resetSbState({ existingRow: { id: "existing-uuid" } });
+test("ensureBlockedDate: returns {created:false, reason:'already_exists'} when row exists with end_time set", async () => {
+  resetSbState({ existingRow: { id: "existing-uuid", end_time: "12:00:00" } });
 
   const result = await ensureBlockedDate("camry", "bk-test-001", "2026-04-30", "18:00", "2026-04-27");
 
   assert.equal(result.created, false);
   assert.equal(result.reason, "already_exists");
   assert.equal(sbState.upsertCalls.length, 0, "should not attempt upsert when row already exists");
+  assert.equal(sbState.updateCalls.length, 0, "should not attempt update when end_time is already set");
+});
+
+test("ensureBlockedDate: patches end_time when row exists with null end_time and returnTime is provided", async () => {
+  resetSbState({ existingRow: { id: "existing-uuid", end_time: null } });
+
+  const result = await ensureBlockedDate("camry", "bk-test-001b", "2026-04-30", "18:00", "2026-04-27");
+
+  assert.equal(result.created, false);
+  assert.equal(result.reason, "end_time_patched");
+  assert.equal(sbState.upsertCalls.length, 0, "should not upsert when patching");
+  assert.equal(sbState.updateCalls.length, 1, "should call update to patch end_time");
+  const updatePayload = sbState.updateCalls[0]?.payload;
+  assert.ok(updatePayload?.end_time, "update payload should include end_time");
+});
+
+test("ensureBlockedDate: returns already_exists when row has null end_time but no returnTime to patch with", async () => {
+  resetSbState({ existingRow: { id: "existing-uuid", end_time: null } });
+
+  const result = await ensureBlockedDate("camry", "bk-test-001c", "2026-04-30", null, "2026-04-27");
+
+  assert.equal(result.created, false);
+  assert.equal(result.reason, "already_exists");
+  assert.equal(sbState.updateCalls.length, 0, "should not update when returnTime is absent");
 });
 
 test("ensureBlockedDate: creates row and returns {created:true} when no row found", async () => {
