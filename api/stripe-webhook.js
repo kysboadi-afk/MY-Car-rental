@@ -30,7 +30,7 @@ import { loadPricingSettings, computeBreakdownLinesFromSettings, computeCarAmoun
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { sendExtensionConfirmationEmails } from "./_extension-email.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { normalizeClockTime, DEFAULT_RETURN_TIME } from "./_time.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h } from "./_time.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes } from "./_booking-confirmation-template.js";
 import { createManageToken } from "./_manage-booking-token.js";
 import { getVehicleById } from "./_vehicles.js";
@@ -2540,7 +2540,7 @@ export default async function handler(req, res) {
                 pickup_date:      preContact.pickupDate || "",
                 pickup_time:      preContact.pickupTime || "",
                 return_date:      preContact.returnDate || "",
-                return_time_line: preContact.returnTime ? ` at ${preContact.returnTime}\n` : "\n",
+                return_time_line: preContact.returnTime ? ` at ${formatTime12h(preContact.returnTime) || preContact.returnTime}\n` : "\n",
                 location:         DEFAULT_LOCATION,
               })
             );
@@ -2710,7 +2710,7 @@ export default async function handler(req, res) {
               pickup_date:      _notifyMeta.pickup_date || "",
               pickup_time:      _notifyMeta.pickup_time || "",
               return_date:      _notifyMeta.return_date || "",
-              return_time_line: _notifyMeta.return_time ? ` at ${_notifyMeta.return_time}\n` : "\n",
+              return_time_line: _notifyMeta.return_time ? ` at ${formatTime12h(_notifyMeta.return_time) || _notifyMeta.return_time}\n` : "\n",
               location:         DEFAULT_LOCATION,
             })
           );
