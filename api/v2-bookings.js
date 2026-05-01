@@ -490,7 +490,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime", "customerName", "customerPhone", "customerEmail", "pickupDate", "pickupTime"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -538,10 +538,12 @@ export default async function handler(req, res) {
       let sbUpdateSuccess = false;
       let sbOnlyRowUpdateError = null;
       const sbInstance = getSupabaseAdmin();
-      const hasReturnUpdate = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
-      if (sbInstance && (safeUpdates.status || hasReturnUpdate)) {
+      const hasReturnUpdate  = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
+      const hasContactUpdate = safeUpdates.customerName !== undefined || safeUpdates.customerPhone !== undefined || safeUpdates.customerEmail !== undefined;
+      const hasPickupUpdate  = safeUpdates.pickupDate !== undefined || safeUpdates.pickupTime !== undefined;
+      if (sbInstance && (safeUpdates.status || hasReturnUpdate || hasContactUpdate || hasPickupUpdate)) {
         const dbStatus = safeUpdates.status ? APP_TO_DB_STATUS[safeUpdates.status] : null;
-        if (dbStatus || hasReturnUpdate) {
+        if (dbStatus || hasReturnUpdate || hasContactUpdate || hasPickupUpdate) {
           try {
             const sbPayload = {
               ...(dbStatus ? { status: dbStatus } : {}),
@@ -552,6 +554,11 @@ export default async function handler(req, res) {
               ...(safeUpdates.notes !== undefined  ? { notes: safeUpdates.notes } : {}),
               ...(safeUpdates.returnDate !== undefined ? { return_date: safeUpdates.returnDate } : {}),
               ...(safeUpdates.returnTime !== undefined ? { return_time: parseTime12h(safeUpdates.returnTime) } : {}),
+              ...(safeUpdates.customerName  !== undefined ? { customer_name:  safeUpdates.customerName  } : {}),
+              ...(safeUpdates.customerPhone !== undefined ? { customer_phone: safeUpdates.customerPhone, renter_phone: safeUpdates.customerPhone } : {}),
+              ...(safeUpdates.customerEmail !== undefined ? { customer_email: safeUpdates.customerEmail } : {}),
+              ...(safeUpdates.pickupDate !== undefined ? { pickup_date: safeUpdates.pickupDate } : {}),
+              ...(safeUpdates.pickupTime !== undefined ? { pickup_time: parseTime12h(safeUpdates.pickupTime) } : {}),
             };
 
             // If we already located the Supabase row during validation (Supabase-only

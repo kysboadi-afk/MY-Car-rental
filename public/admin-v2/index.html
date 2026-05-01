@@ -2162,6 +2162,66 @@
   </div>
 </div>
 
+<!-- Edit Booking Modal -->
+<div class="modal-overlay" id="booking-edit-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">✏️ Edit Booking</div>
+      <button class="modal-close" onclick="closeModal('booking-edit-modal')">✕</button>
+    </div>
+    <div class="modal-body" style="display:grid;gap:14px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="form-label">Customer Name</label>
+          <input type="text" class="form-input" id="be-name" placeholder="Full name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input type="tel" class="form-input" id="be-phone" placeholder="e.g. (310) 555-0100">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" id="be-email" placeholder="customer@email.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pickup Date</label>
+          <input type="date" class="form-input" id="be-pickup-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pickup Time</label>
+          <input type="text" class="form-input" id="be-pickup-time" placeholder="e.g. 10:00 AM">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Return Date</label>
+          <input type="date" class="form-input" id="be-return-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Return Time</label>
+          <input type="text" class="form-input" id="be-return-time" placeholder="e.g. 5:00 PM">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment Method</label>
+          <select class="form-input" id="be-payment-method">
+            <option value="">— unchanged —</option>
+            <option value="stripe">Stripe</option>
+            <option value="cash">Cash</option>
+            <option value="zelle">Zelle</option>
+            <option value="venmo">Venmo</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" id="be-notes" rows="3" placeholder="Internal notes…" style="font-size:13px;"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('booking-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditBooking(this)">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sync Extension Modal -->
 <div class="modal-overlay" id="resend-extension-modal">
   <div class="modal" style="max-width:460px;">
@@ -3732,6 +3792,7 @@ function applyBookingFilters() {
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}', '${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit</button>
           ${b.status === 'reserved_unpaid' ? `
             <button class="btn btn-success btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','booked_paid',this)">Approve</button>
             <button class="btn btn-danger btn-sm" onclick="updateBookingStatus('${esc(b.vehicleId || '')}','${esc(b.bookingId || '')}','cancelled_rental',this)">Decline</button>
@@ -3856,10 +3917,94 @@ function viewBooking(bookingId, vehicleId) {
     ` : ''}
     <button class="btn ${b.flagged ? 'btn-danger' : 'btn-secondary'}" onclick="toggleBookingFlag('${esc(b.bookingId || '')}',${!b.flagged},this);closeModal('booking-detail-modal')" title="${b.flagged ? 'Remove flag' : 'Flag issue'}">🚩 ${b.flagged ? 'Remove Flag' : 'Flag Issue'}</button>
     <button class="btn btn-secondary" onclick="resendBookingEmail('${esc(b.bookingId || '')}', this)">📧 Resend Email</button>
+    <button class="btn btn-secondary" onclick="openEditBookingModal('${esc(b.bookingId || '')}')">✏️ Edit Booking</button>
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
   openModal('booking-detail-modal');
+}
+
+function openEditBookingModal(bookingId) {
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) { showToast('Booking not found.', 'error'); return; }
+  // Store the bookingId being edited
+  document.getElementById('booking-edit-modal').dataset.bookingId = bookingId;
+  document.getElementById('booking-edit-modal').dataset.vehicleId  = b.vehicleId || '';
+  // Pre-fill fields
+  document.getElementById('be-name').value           = b.name          || '';
+  document.getElementById('be-phone').value          = b.phone         || '';
+  document.getElementById('be-email').value          = b.email         || '';
+  document.getElementById('be-pickup-date').value    = b.pickupDate    || '';
+  document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
+  document.getElementById('be-return-date').value    = b.returnDate    || '';
+  document.getElementById('be-return-time').value    = b.returnTime    || '';
+  document.getElementById('be-payment-method').value = b.paymentMethod || '';
+  document.getElementById('be-notes').value          = b.notes         || '';
+  closeModal('booking-detail-modal');
+  openModal('booking-edit-modal');
+}
+
+async function saveEditBooking(btn) {
+  const modal     = document.getElementById('booking-edit-modal');
+  const bookingId = modal.dataset.bookingId;
+  const vehicleId = modal.dataset.vehicleId;
+  if (!bookingId || !vehicleId) { showToast('Unable to identify booking.', 'error'); return; }
+
+  const b = allBookings.find((x) => x.bookingId === bookingId);
+  if (!b) { showToast('Booking not found.', 'error'); return; }
+
+  // Build patch — only include fields that actually changed
+  const updates = {};
+  const name    = document.getElementById('be-name').value.trim();
+  const phone   = document.getElementById('be-phone').value.trim();
+  const email   = document.getElementById('be-email').value.trim();
+  const pickup  = document.getElementById('be-pickup-date').value;
+  const pickupT = document.getElementById('be-pickup-time').value.trim();
+  const ret     = document.getElementById('be-return-date').value;
+  const retT    = document.getElementById('be-return-time').value.trim();
+  const pm      = document.getElementById('be-payment-method').value;
+  const notes   = document.getElementById('be-notes').value;
+
+  if (name    !== (b.name         || ''))  updates.customerName  = name;
+  if (phone   !== (b.phone        || ''))  updates.customerPhone = phone;
+  if (email   !== (b.email        || ''))  updates.customerEmail = email;
+  if (pickup  !== (b.pickupDate   || ''))  updates.pickupDate    = pickup;
+  if (pickupT !== (b.pickupTime   || ''))  updates.pickupTime    = pickupT;
+  if (ret     !== (b.returnDate   || ''))  updates.returnDate    = ret;
+  if (retT    !== (b.returnTime   || ''))  updates.returnTime    = retT;
+  if (pm      && pm !== (b.paymentMethod || ''))  updates.paymentMethod = pm;
+  if (notes   !== (b.notes        || ''))  updates.notes         = notes;
+
+  if (!Object.keys(updates).length) {
+    showToast('No changes detected.', 'info');
+    closeModal('booking-edit-modal');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  try {
+    await apiPost('/api/v2-bookings', { secret: adminSecret, action: 'update', vehicleId, bookingId, updates });
+    // Patch local cache
+    const idx = allBookings.findIndex((x) => x.bookingId === bookingId);
+    if (idx !== -1) {
+      if (updates.customerName  !== undefined) allBookings[idx].name          = updates.customerName;
+      if (updates.customerPhone !== undefined) allBookings[idx].phone         = updates.customerPhone;
+      if (updates.customerEmail !== undefined) allBookings[idx].email         = updates.customerEmail;
+      if (updates.pickupDate    !== undefined) allBookings[idx].pickupDate    = updates.pickupDate;
+      if (updates.pickupTime    !== undefined) allBookings[idx].pickupTime    = updates.pickupTime;
+      if (updates.returnDate    !== undefined) allBookings[idx].returnDate    = updates.returnDate;
+      if (updates.returnTime    !== undefined) allBookings[idx].returnTime    = updates.returnTime;
+      if (updates.paymentMethod !== undefined) allBookings[idx].paymentMethod = updates.paymentMethod;
+      if (updates.notes         !== undefined) allBookings[idx].notes         = updates.notes;
+    }
+    closeModal('booking-edit-modal');
+    renderBookings();
+    showToast('Booking updated.', 'success');
+  } catch (err) {
+    showToast('Error saving booking: ' + err.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function deleteBooking(bookingId, btn) {
