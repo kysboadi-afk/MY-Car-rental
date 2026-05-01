@@ -17,10 +17,10 @@ export default async function handler(req, res) {
   if (ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return res.status(405).send("Method Not Allowed");
+  if (req.method !== "GET" && req.method !== "DELETE") return res.status(405).send("Method Not Allowed");
 
   if (!isAdminConfigured()) {
     return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
@@ -36,6 +36,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Supabase not configured." });
   }
 
+  // DELETE — clear all SMS delivery logs
+  if (req.method === "DELETE") {
+    try {
+      const { error } = await sb
+        .from("sms_delivery_logs")
+        .delete()
+        .not("id", "is", null); // delete all rows
+
+      if (error) {
+        console.error("[sms-logs] Delete error:", error.message);
+        return res.status(500).json({ error: "Failed to clear SMS logs: " + error.message });
+      }
+
+      return res.status(200).json({ ok: true });
+    } catch (err) {
+      console.error("[sms-logs] Unexpected delete error:", err.message);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // GET — return last 100 log entries
   try {
     const { data, error } = await sb
       .from("sms_delivery_logs")
