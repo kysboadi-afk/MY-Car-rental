@@ -137,10 +137,10 @@ export async function getActiveVehicleIds(supabase) {
   try {
     const { data, error } = await supabase
       .from("vehicles")
-      .select("vehicle_id, data");
+      .select("vehicle_id, data->status");
     if (error || !data?.length) return FLEET_VEHICLE_IDS;
     const dynamic = data
-      .filter(row => !row.data?.status || row.data.status === "active")
+      .filter(row => !row.status || row.status === "active")
       .map(row => row.vehicle_id);
     return [...new Set([...FLEET_VEHICLE_IDS, ...dynamic])];
   } catch {
