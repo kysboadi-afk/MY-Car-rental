@@ -184,6 +184,9 @@ export default async function handler(req, res) {
 
       const commonFields = {
         booking_id,
+        // booking_ref mirrors booking_id when it is a real bk- reference; null for
+        // auto-generated "manual-…" ids (no corresponding bookings row to FK against).
+        booking_ref:        body.booking_id || null,
         vehicle_id,
         customer_name:      body.customer_name   || null,
         customer_phone:     body.customer_phone  || null,
@@ -410,6 +413,7 @@ export default async function handler(req, res) {
 
       const commonFields = {
         booking_id:          original_booking_id,
+        booking_ref:         original_booking_id,
         original_booking_id: original_booking_id,
         vehicle_id,
         gross_amount:        resolvedAmount,
@@ -564,12 +568,13 @@ export default async function handler(req, res) {
       }
 
       // Aggregate: group by effective_booking_id, MIN(pickup_date), MAX(return_date), SUM.
-      // Use original_booking_id when set so that extension records created with a
-      // different booking_id (e.g. legacy "pi_xxx" or "ext-..." keys) still collapse
-      // under their parent rental row.
+      // Use booking_id as the primary group key (canonical booking_ref after migration 0084).
+      // Fall back to original_booking_id only when booking_id is absent — this prevents
+      // stale/legacy original_booking_id values (e.g. old PI ids) from creating phantom
+      // groups that display as standalone rows in the Revenue Tracker.
       const groups = {};
       for (const r of allRows) {
-        const key = r.original_booking_id ?? r.booking_id ?? r.id;
+        const key = r.booking_id ?? r.original_booking_id ?? r.id;
         if (!groups[key]) {
           groups[key] = {
             booking_id:     key,
