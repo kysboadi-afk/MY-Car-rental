@@ -112,7 +112,13 @@ export default async function handler(req, res) {
   // Resolve the waived amount.
   let resolvedWaivedAmount;
   if (waiver_type === "full") {
-    // Full waiver: waive the entire maximum late fee.
+    // Full waiver: waive the entire maximum late fee (EXTENDED_LATE_FEE = $35).
+    // We always use the maximum rather than a timing-based amount so that the
+    // waiver remains valid regardless of when the renter eventually extends.
+    // In practice this means a full waiver covers any late fee the renter
+    // might incur — either SHORT_LATE_FEE ($25) or EXTENDED_LATE_FEE ($35).
+    // The extend-rental flow caps the actual deduction at the late fee in
+    // effect at extension time, so no overpayment occurs.
     resolvedWaivedAmount = maxLateFee;
   } else {
     // Partial waiver: caller must provide the amount.

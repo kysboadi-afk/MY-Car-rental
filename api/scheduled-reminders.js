@@ -101,9 +101,11 @@ const MAX_LATE_FEE_USD = 500;
 const BOOKING_BUFFER_HOURS = 2;
 
 // Maximum hours-overdue window in which a late fee may be triggered.
-// If minsOverdue exceeds this threshold the booking was never auto-completed
-// (stale status, cron outage, etc.) and firing a fee would produce unrealistic
-// amounts.  Skip it and warn instead.
+// If hoursOverdue exceeds this threshold the booking was never auto-completed
+// (stale status, cron outage, etc.).  The system now uses fixed late fees
+// ($25 at +30 min, $35 at +3 h) rather than hourly amounts, so this guard
+// prevents escalation SMS alerts from firing on long-stale bookings that
+// should have already been marked completed by the AUTO_COMPLETE_HOURS path.
 const MAX_FEE_OVERDUE_HOURS = 8;
 
 // ─── Auto-completion threshold ────────────────────────────────────────────────
