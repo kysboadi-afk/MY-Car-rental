@@ -1045,6 +1045,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !alreadySent(booking, "late_fee_applied") &&
         !alreadySent(booking, "late_fee_pending") &&
         !booking.lateFeeApplied &&
+        booking.lateFeeStatus !== "dismissed" &&
         !(await isSmsLogged(id, "late_fee_pending", returnDateStr))
       ) {
         const hoursOverdue = minsOverdue / 60;
@@ -1122,6 +1123,7 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
       if (
         !sentThisBooking &&
         wndLateGrace &&
+        booking.lateFeeStatus !== "dismissed" &&
         !alreadySent(booking, "late_grace_expired") &&
         !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
       ) {
@@ -1529,6 +1531,7 @@ export async function loadBookingsFromSupabase(sb) {
         updatedAt:      row.updated_at   || row.created_at || null,
         extensionCount: row.extension_count || 0,
         lateFeeApplied: row.late_fee_status === "approved" ? (row.late_fee_amount || undefined) : undefined,
+        lateFeeStatus:  row.late_fee_status || null,
         balanceDue:     Number(row.balance_due || 0),
         balanceDueSetAt: row.balance_due_set_at || null,
         paymentLink:    "https://www.slytrans.com/balance.html",
