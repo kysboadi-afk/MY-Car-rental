@@ -40,20 +40,19 @@ import {
 } from "./_booking-automation.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { persistBooking } from "./_booking-pipeline.js";
-import { CARS, computeRentalDays, FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { CARS, computeRentalDays, getAllVehicleIds, getActiveVehicleIds } from "./_pricing.js";
 import { loadPricingSettings, computeBreakdownLinesFromSettings } from "./_settings.js";
 import { generateRentalAgreementPdf } from "./_rental-agreement-pdf.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { sendSms } from "./_textmagic.js";
 import { normalizePhone } from "./_bookings.js";
-import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 import { render, DEFAULT_LOCATION, BOOKING_CONFIRMED } from "./_sms-templates.js";
 import { triggerMaintenanceUpdate } from "./update-maintenance-status.js";
 import { normalizeClockTime } from "./_time.js";
 import { createManageToken } from "./_manage-booking-token.js";
 
 const ALLOWED_ORIGINS  = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
@@ -158,6 +157,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Resolve the full set of known vehicle IDs from the DB on each request so
+    // newly-added vehicles are immediately visible in all list/create actions
+    // without requiring a code re-deploy.  Falls back to the static list when
+    // Supabase is unavailable.
+    const ALLOWED_VEHICLES = await getAllVehicleIds(getSupabaseAdmin());
+
     // ── LIST ────────────────────────────────────────────────────────────────
     // Primary source: Supabase bookings table (includes all Stripe webhook
     // bookings saved by saveWebhookBookingRecord).  Falls back to bookings.json

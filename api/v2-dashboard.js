@@ -17,14 +17,13 @@
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { loadBookings, isNetworkError } from "./_bookings.js";
-import { computeAmount } from "./_pricing.js";
+import { computeAmount, getAllVehicleIds } from "./_pricing.js";
 import { normalizeClockTime } from "./_time.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { normalizeVehicleId, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
+import { normalizeVehicleId, uiVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = FLEET_DB_VEHICLE_IDS;
 const VEHICLE_NAMES    = {
   camry:     "Camry 2012",
   camry2013: "Camry 2013 SE",
@@ -108,6 +107,11 @@ export default async function handler(req, res) {
 
   try {
     const sb = getSupabaseAdmin();
+
+    // Resolve vehicle IDs dynamically so newly-added vehicles appear in dashboard
+    // queries without requiring a code re-deploy.  Falls back to the static list
+    // when Supabase is unavailable.
+    const ALLOWED_VEHICLES = await getAllVehicleIds(sb);
 
     // Load expenses: prefer Supabase (matches the write path in add-expense.js),
     // fall back to GitHub expenses.json when Supabase is unavailable or errors.

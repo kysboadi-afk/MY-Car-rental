@@ -17,13 +17,12 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { adminErrorMessage } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
-import { FLEET_VEHICLE_IDS } from "./_pricing.js";
+import { getActiveVehicleIds } from "./_pricing.js";
 
 const GITHUB_REPO        = process.env.GITHUB_REPO || "kysboadi-afk/SLY-RIDES";
 const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
-const ALLOWED_VEHICLES = FLEET_VEHICLE_IDS;
 
 const DEFAULT_STATUS = {
   camry:     { available: true },
@@ -94,7 +93,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  if (!vehicleId || !ALLOWED_VEHICLES.includes(vehicleId)) {
+  if (!vehicleId || !(await getActiveVehicleIds(getSupabaseAdmin())).includes(vehicleId)) {
     return res.status(400).json({ error: "Invalid or missing vehicleId" });
   }
 

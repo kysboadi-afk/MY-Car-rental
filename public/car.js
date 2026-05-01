@@ -109,7 +109,13 @@ function clearPayError() {
       var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
-      ["camry","camry2013"].forEach(function(vid) {
+      // Apply economy-wide pricing to all vehicles currently in `cars`.
+      // Vehicles loaded dynamically from the API (non-static) already have their
+      // own per-vehicle pricing from the DB stored in cars[vid]; the economy
+      // global rates only update the original static entries (camry, camry2013)
+      // and any future vehicle that has been cached into `cars` before this
+      // callback fires.
+      Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
         if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
@@ -143,50 +149,77 @@ function clearPayError() {
 }());
 
 const vehicleId = getVehicleFromURL();
-if (!vehicleId || !cars[vehicleId]) {
+if (!vehicleId) {
   alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
   window.location.href = "index.html";
 }
 
-const carData = cars[vehicleId];
-document.getElementById("carName").textContent = carData.name;
-document.getElementById("carSubtitle").textContent =
-  (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
-document.getElementById("carPrice").textContent = carData.weekly
-  ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
-  : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+// carData is populated synchronously for the two existing hardcoded vehicles, or
+// asynchronously via the API for any new vehicle registered in the admin portal.
+let carData = null;
 
-if (IS_TEST_MODE_OVERRIDE) {
-  const bookingSection = document.querySelector(".booking");
-  if (bookingSection) {
-    const testModeBanner = document.createElement("div");
-    testModeBanner.id = "testModeBanner";
-    testModeBanner.textContent = "TEST MODE – availability override active";
-    testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
-    bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
-  }
+// Builds a cars-compatible data object from a v2-vehicles API response entry so
+// new vehicles work identically to the hardcoded ones without any code changes.
+function buildCarDataFromAPI(v) {
+  return {
+    name:          v.vehicle_name || v.vehicle_id,
+    subtitle:      v.subtitle     || "",
+    // Prefer per-vehicle pricing stored in the data blob (set at creation time),
+    // then fall through to sensible economy defaults.
+    pricePerDay:   v.daily_price    || 55,
+    weekly:        v.weekly_price   || 350,
+    biweekly:      v.biweekly_price || 650,
+    monthly:       v.monthly_price  || 1300,
+    minRentalDays: 1,
+    images:        v.cover_image ? [v.cover_image] : ["/images/car1.jpg"],
+    make:          v.make          || "",
+    model:         v.model         || v.vehicle_name || vehicleId,
+    year:          v.vehicle_year  || null,
+    vin:           v.vin           || "",
+    color:         v.color         || "",
+  };
 }
 
+// Initializes all DOM content that depends on carData.  Called synchronously for
+// the hardcoded vehicles and from the .then() callback for API-loaded vehicles.
+function initCarPage() {
+  document.getElementById("carName").textContent = carData.name;
+  document.getElementById("carSubtitle").textContent =
+    (carData.subtitleKey && window.slyI18n) ? window.slyI18n.t(carData.subtitleKey) : carData.subtitle;
+  document.getElementById("carPrice").textContent = carData.weekly
+    ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
+    : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
 
+  if (IS_TEST_MODE_OVERRIDE) {
+    const bookingSection = document.querySelector(".booking");
+    if (bookingSection) {
+      const testModeBanner = document.createElement("div");
+      testModeBanner.id = "testModeBanner";
+      testModeBanner.textContent = "TEST MODE \u2013 availability override active";
+      testModeBanner.style.cssText = "background:#fff3cd;color:#7a4f01;border:1px solid #ffe69c;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-weight:700;";
+      bookingSection.insertBefore(testModeBanner, bookingSection.firstChild);
+    }
+  }
+
+  // Load images into the slider
+  carData.images.forEach((imgSrc, idx) => {
+    const img = document.createElement("img");
+    img.src = imgSrc;
+    img.classList.add("slide");
+    if (idx === 0) img.classList.add("active");
+    sliderContainer.appendChild(img);
+
+    const dot = document.createElement("span");
+    dot.classList.add("dot");
+    if (idx === 0) dot.classList.add("active");
+    dot.addEventListener("click", () => goToSlide(idx));
+    sliderDots.appendChild(dot);
+  });
+}
 
 const sliderContainer = document.getElementById("sliderContainer");
 const sliderDots = document.getElementById("sliderDots");
 let currentSlide = 0;
-
-// Load images
-carData.images.forEach((imgSrc, idx) => {
-  const img = document.createElement("img");
-  img.src = imgSrc;
-  img.classList.add("slide");
-  if (idx === 0) img.classList.add("active");
-  sliderContainer.appendChild(img);
-
-  const dot = document.createElement("span");
-  dot.classList.add("dot");
-  if (idx === 0) dot.classList.add("active");
-  dot.addEventListener("click", () => goToSlide(idx));
-  sliderDots.appendChild(dot);
-});
 
 function showSlide(index) {
   const slides = sliderContainer.querySelectorAll(".slide");
@@ -202,9 +235,35 @@ document.getElementById("nextSlide").addEventListener("click", nextSlide);
 document.getElementById("prevSlide").addEventListener("click", prevSlide);
 function goToSlide(idx){ showSlide(idx); }
 
+// Initialize page: synchronous path for hardcoded vehicles, async API fetch for new ones.
+if (cars[vehicleId]) {
+  carData = cars[vehicleId];
+  initCarPage();
+} else {
+  // Show a loading indicator while the vehicle data is fetched from the API.
+  sliderContainer.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:220px;color:#888;font-size:15px;">Loading vehicle\u2026</div>';
+  fetch(API_BASE + "/api/v2-vehicles")
+    .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+    .then(function(vehicles) {
+      var v = Array.isArray(vehicles) ? vehicles.find(function(x) { return x.vehicle_id === vehicleId; }) : null;
+      if (!v) throw new Error("not found");
+      carData = cars[vehicleId] = buildCarDataFromAPI(v);
+      sliderContainer.innerHTML = "";
+      initCarPage();
+    })
+    .catch(function() {
+      alert(window.slyI18n ? window.slyI18n.t("booking.alertVehicleNotFound") : "Vehicle not found.");
+      window.location.href = "index.html";
+    });
+}
+
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = "index.html";
+  if (document.referrer) {
+    window.history.back();
+  } else {
+    window.location.href = `car.html?vehicle=${vehicleId}`;
+  }
 });
 
 // ----- Booking Form Automation -----
@@ -1527,6 +1586,7 @@ function updatePayBtn() {
 
 function updateTotal() {
   // ----- Daily/weekly vehicles -----
+  if (!carData) return; // vehicle data not yet loaded (async init path)
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
   // Use explicit UTC arithmetic to count whole calendar days without any
