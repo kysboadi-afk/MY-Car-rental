@@ -1115,6 +1115,9 @@ export default async function handler(req, res) {
       if (lateFeeAmount != null && (typeof lateFeeAmount !== "number" || lateFeeAmount < 0)) {
         return res.status(400).json({ error: "lateFeeAmount must be a non-negative number" });
       }
+      if (lateFeeAmount == null && !lateFeeStatus) {
+        return res.status(400).json({ error: "At least one of lateFeeAmount or lateFeeStatus is required" });
+      }
 
       const sbEdit = getSupabaseAdmin();
       if (!sbEdit) return res.status(500).json({ error: "Database not configured" });
