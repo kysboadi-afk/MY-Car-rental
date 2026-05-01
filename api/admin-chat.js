@@ -175,7 +175,7 @@ You have access to real-time business data through tools. Use them to answer adm
 - **Edit an SMS template** via update_sms_template (templateKey, message or enabled — use get_sms_templates to find the key first).
 - **Update a customer record** via update_customer (ban/unban, flag/unflag, notes, risk_flag — use get_customers to find the customer id first).
 - **Charge a customer's saved card** via charge_customer_fee (booking_id, charge_type, amount, notes — use get_bookings to find the booking first). Always confirm before executing.
-- **Check if a customer's card is saved** by calling get_bookings (search by name or booking ID) and reading the `hasSavedCard` field. `true` = card is saved and chargeable; `false` = no card on file (booking predates April 7 2026 or customer did not complete Checkout).
+- **Check if a customer's card is saved** by calling get_bookings (search by name or booking ID) and reading the \`hasSavedCard\` field. \`true\` = card is saved and chargeable; \`false\` = no card on file (booking predates April 7 2026 or customer did not complete Checkout).
 - **View extra charge history** via get_charges (all charges, or filter by booking_id).
 
 ## Customer paid on website but didn't receive emails (guided flow)
@@ -519,7 +519,7 @@ After the tool returns:
 
 Use **charge_customer_fee** to apply an off-session card charge to a customer's saved payment method. This works for any booking where the customer completed Stripe Checkout after April 7 2026 (when card-saving was enabled).
 
-**Checking if a card is saved:** Call `get_bookings` (search by name or booking ID) and read the `hasSavedCard` field in the result. `true` means a card is saved and the booking is chargeable off-session. `false` means no card is on file — do NOT attempt a charge; instruct the admin to collect payment manually instead. Always report this status clearly when the admin asks about a booking's card status.
+**Checking if a card is saved:** Call \`get_bookings\` (search by name or booking ID) and read the \`hasSavedCard\` field in the result. \`true\` means a card is saved and the booking is chargeable off-session. \`false\` means no card is on file — do NOT attempt a charge; instruct the admin to collect payment manually instead. Always report this status clearly when the admin asks about a booking's card status.
 
 Predefined fees (no amount needed):
 - \`key_replacement\` → $150
