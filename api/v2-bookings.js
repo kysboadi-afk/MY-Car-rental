@@ -196,6 +196,11 @@ export default async function handler(req, res) {
             notes,
             created_at,
             updated_at,
+            late_fee_amount,
+            late_fee_status,
+            late_fee_approved_at,
+            late_fee_waived,
+            late_fee_waived_amount,
             customers ( id, name, phone, email, risk_flag, flagged, banned, total_profit, total_bookings, no_show_count )
           `);
 
@@ -302,6 +307,11 @@ export default async function handler(req, res) {
               smsSentAt:       {},
               createdAt:       r.created_at,
               updatedAt:       r.updated_at || null,
+              lateFeeAmount:   r.late_fee_amount != null ? Number(r.late_fee_amount) : null,
+              lateFeeStatus:   r.late_fee_status || null,
+              lateFeeApprovedAt: r.late_fee_approved_at || null,
+              lateFeeWaived:   r.late_fee_waived || false,
+              lateFeeWaivedAmount: r.late_fee_waived_amount != null ? Number(r.late_fee_waived_amount) : null,
               _source:         "supabase",
             };
           });
