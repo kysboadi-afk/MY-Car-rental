@@ -3788,14 +3788,21 @@ function loadLateFees() {
 }
 
 function updateLateFeeBadge() {
-  const pending = allLateFeesData.filter(
-    (b) => b.lateFeeStatus === 'pending_approval' || (!b.lateFeeStatus && b.lateFeeAmount != null)
-  ).length;
+  const pending = (allLateFeesData.length ? allLateFeesData : allBookings).filter(isActionablePendingLateFee).length;
   const badge = document.getElementById('late-fees-badge');
   if (badge) {
     if (pending > 0) { badge.style.display = ''; badge.textContent = pending; }
     else { badge.style.display = 'none'; }
   }
+}
+
+/** Returns true when a booking has an unresolved late fee that needs admin action. */
+function isActionablePendingLateFee(b) {
+  const s = b.lateFeeStatus;
+  // Include: no status yet but fee was assessed, or status is explicitly pending_approval or failed
+  if (!s && b.lateFeeAmount != null) return true;
+  if (s === 'pending_approval' || s === 'failed') return true;
+  return false;
 }
 
 function applyLateFeeFilters() {
@@ -3834,6 +3841,7 @@ function applyLateFeeFilters() {
     const status    = b.lateFeeStatus || 'pending_approval';
     const sc        = statusColors[status] || statusColors['pending_approval'];
     const amountTxt = b.lateFeeAmount != null ? `$${formatMoney(b.lateFeeAmount)}` : '—';
+    const safeFeeAmt = parseFloat(b.lateFeeAmount) || 0;
     const canCharge = (status === 'pending_approval' || status === 'failed');
     const canDismiss = (status !== 'paid' && status !== 'dismissed');
 
@@ -3853,8 +3861,8 @@ function applyLateFeeFilters() {
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
-          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">💳 Charge</button>` : ''}
-          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">🚫 Waive</button>` : ''}
+          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
+          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${safeFeeAmt})">🚫 Waive</button>` : ''}
           ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(b.bookingId || '')}',this)">✗ Dismiss</button>` : ''}
         </div>
       </td>
@@ -4019,10 +4027,7 @@ function loadBookings() {
       // Update the Late Fees badge count using the already-loaded bookings data
       const lfBadge = document.getElementById('late-fees-badge');
       if (lfBadge) {
-        const pendingLf = normalizedBookings.filter(
-          (b) => b.lateFeeStatus && b.lateFeeStatus !== 'dismissed' && b.lateFeeStatus !== 'paid' &&
-                 b.status !== 'completed_rental' && b.status !== 'cancelled_rental'
-        ).length;
+        const pendingLf = normalizedBookings.filter(isActionablePendingLateFee).length;
         if (pendingLf > 0) { lfBadge.style.display = ''; lfBadge.textContent = pendingLf; }
         else { lfBadge.style.display = 'none'; }
       }
@@ -4194,8 +4199,8 @@ function viewBooking(bookingId, vehicleId) {
       </div>
       ${(b.lateFeeStatus !== 'paid' && b.lateFeeStatus !== 'dismissed') ? `
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">💳 Charge Fee</button>
-        <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeWaiveModal('${esc(b.bookingId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">🚫 Waive Fee</button>
+        <button class="btn btn-primary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${parseFloat(b.lateFeeAmount) || 0})">💳 Charge Fee</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeWaiveModal('${esc(b.bookingId || '')}',${parseFloat(b.lateFeeAmount) || 0})">🚫 Waive Fee</button>
         <button class="btn btn-danger btn-sm" onclick="closeModal('booking-detail-modal');dismissLateFee('${esc(b.bookingId || '')}',null)">✗ Dismiss</button>
       </div>` : ''}
     </div>

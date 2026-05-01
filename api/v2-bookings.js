@@ -629,7 +629,7 @@ export default async function handler(req, res) {
               .update({
                 late_fee_status:      "dismissed",
                 late_fee_approved_at: new Date().toISOString(),
-                late_fee_approved_by: "auto_complete",
+                late_fee_approved_by: "auto_dismiss",
               })
               .eq("booking_ref", bookingId)
               .or("late_fee_status.eq.pending_approval,late_fee_status.is.null");
