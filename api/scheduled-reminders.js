@@ -1314,7 +1314,12 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
 /**
  * Process completed_rental bookings — post-rental and retention SMS.
  */
-async function processCompleted(allBookings, now, sentMarks) {
+export async function processCompleted(allBookings, now, sentMarks) {
+  // Anti-spam: retention SMS fires in the first 4 hours after the target day
+  // so that a transient Supabase outage can at most produce 48 duplicate sends
+  // (at 5-min cron intervals) instead of 288 (the old 24-hour window).
+  const RETENTION_WINDOW_HOURS = 4;
+
   const retentionSchedule = [
     { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
   ];
@@ -1329,8 +1334,11 @@ async function processCompleted(allBookings, now, sentMarks) {
       const completedAt = new Date(booking.completedAt);
       const hoursSinceComplete = (now - completedAt) / 3600000;
 
-      // Thank-you immediately on completion (within 1 hour)
-      if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you") &&
+      // Thank-you immediately on completion (within 30 minutes).
+      // Anti-spam: 30-min window (6 cron ticks) is sufficient since processAutoCompletions
+      // and processCompleted run in the same cron tick; the 0.5h cap prevents up to
+      // 12 sends under a Supabase outage (vs. the old 60-min / 12-tick window).
+      if (hoursSinceComplete < 0.5 && !alreadySent(booking, "post_thank_you") &&
           !(await isSmsLogged(id, "post_thank_you"))) {
         const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "post_thank_you" });
         if (sent) {
@@ -1355,7 +1363,7 @@ async function processCompleted(allBookings, now, sentMarks) {
         const targetHours = item.days * 24;
         if (
           hoursSinceComplete >= targetHours &&
-          hoursSinceComplete < targetHours + 24 &&
+          hoursSinceComplete < targetHours + RETENTION_WINDOW_HOURS &&
           !alreadySent(booking, item.key) &&
           !(await isSmsLogged(id, item.key))
         ) {
@@ -1422,7 +1430,7 @@ export async function loadBookingsFromSupabase(sb) {
       "pending_verification",
     ];
 
-    // Recently completed = last 9 days (covers 7-day retention + buffer)
+    // Recently completed = last 8 days (covers 7-day retention window + 4h window + buffer)
     const cutoffDate = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
 
     let [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =

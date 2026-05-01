@@ -146,7 +146,7 @@ global.fetch = async (url, opts) => {
   return { ok: false, text: async () => "not found" };
 };
 
-const { processAutoCompletions, processActiveRentals, loadBookingsFromSupabase } = await import("./scheduled-reminders.js");
+const { processAutoCompletions, processActiveRentals, loadBookingsFromSupabase, processCompleted } = await import("./scheduled-reminders.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -799,3 +799,159 @@ test("loadBookingsFromSupabase: does NOT pre-populate smsSentAt for old return-d
   );
 });
 
+
+// ─── processCompleted: post_thank_you and retention_7d window tests ───────────
+
+function makeCompletedBooking(overrides = {}) {
+  return {
+    bookingId:   "bk-completed-001",
+    vehicleId:   "camry",
+    name:        "Test Renter",
+    phone:       "+13105550001",
+    email:       "test@example.com",
+    status:      "completed_rental",
+    pickupDate:  "2026-06-10",
+    pickupTime:  "10:00 AM",
+    returnDate:  "2026-06-15",
+    returnTime:  "10:00 AM",
+    completedAt: null,
+    amountPaid:  150,
+    smsSentAt:   {},
+    ...overrides,
+  };
+}
+
+test("processCompleted: sends post_thank_you within 30 min of completion", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z"); // 5 min ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    true,
+    "post_thank_you should fire within 30 min of completion"
+  );
+});
+
+test("processCompleted: does NOT send post_thank_you if 31 min have passed (window closed)", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:40:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z"); // 35 min ago — outside 30-min window
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    false,
+    "post_thank_you must NOT fire after 30-min window closes"
+  );
+});
+
+test("processCompleted: does NOT resend post_thank_you when smsSentAt flag is set", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z");
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      completedAt: completedAt.toISOString(),
+      smsSentAt:   { post_thank_you: completedAt.toISOString() },
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    false,
+    "post_thank_you must not be resent when smsSentAt flag is set"
+  );
+});
+
+test("processCompleted: sends retention_7d within 4 hours of 7-day mark", async () => {
+  reset();
+  // completedAt = 7 days + 1 hour ago → inside 4-hour window
+  const now         = new Date("2026-06-22T11:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // exactly 7 days + 1h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    true,
+    "retention_7d should fire 1h after the 7-day mark (inside 4-hour window)"
+  );
+});
+
+test("processCompleted: does NOT send retention_7d before 7-day mark", async () => {
+  reset();
+  // completedAt = 6 days + 23 hours ago → just before the 7-day mark
+  const now         = new Date("2026-06-22T09:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 6d23h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must NOT fire before 7-day mark"
+  );
+});
+
+test("processCompleted: does NOT send retention_7d after 4-hour window closes", async () => {
+  reset();
+  // completedAt = 7 days + 5 hours ago → outside 4-hour window
+  const now         = new Date("2026-06-22T15:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 7d+5h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must NOT fire after the 4-hour window closes"
+  );
+});
+
+test("processCompleted: does NOT resend retention_7d when smsSentAt flag is set", async () => {
+  reset();
+  const now         = new Date("2026-06-22T11:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 7d+1h ago (inside window)
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      completedAt: completedAt.toISOString(),
+      smsSentAt:   { retention_7d: "2026-06-22T10:30:00Z" },
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must not be resent when smsSentAt flag is set"
+  );
+});
