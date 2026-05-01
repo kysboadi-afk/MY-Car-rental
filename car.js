@@ -281,11 +281,7 @@ if (!vehicleId) {
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  if (document.referrer) {
-    window.history.back();
-  } else {
-    window.location.href = `car.html?vehicle=${vehicleId}`;
-  }
+  window.location.href = `car.html?vehicle=${vehicleId}`;
 });
 
 // ----- Booking Form Automation -----
