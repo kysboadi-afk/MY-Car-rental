@@ -176,6 +176,22 @@
     #mbStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #mbStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
 
+    /* ── Waive Late Fee ──────────────────────────────────────────────── */
+    .waive-fee-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .waive-fee-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .waive-fee-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    #waiveFeeAmountGroup { display: none; }
+    #waiveFeeMsg {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #waiveFeeMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #waiveFeeMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #waiveFeeMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
     /* ── Vehicle Tracking & Profit ───────────────────────────────────── */
     .profit-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
     .profit-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
@@ -569,6 +585,43 @@
 
       <div id="profitMsg"></div>
     </div><!-- /profit-section -->
+
+    <!-- ── Waive Late Fee ────────────────────────────────────────────── -->
+    <div class="waive-fee-section">
+      <h2>🚫 Waive Late Fee</h2>
+      <p class="subtitle">Apply a full or partial late-fee waiver to a booking. A reason is required and every waiver is logged in the audit trail. This does <strong>not</strong> automatically issue a Stripe refund.</p>
+
+      <div class="form-group">
+        <label for="wfBookingId">Booking Reference <span style="color:#f44336">*</span></label>
+        <input type="text" id="wfBookingId" placeholder="e.g. SLY-ABC123" maxlength="50" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="wfWaiverType">Waiver Type <span style="color:#f44336">*</span></label>
+        <select id="wfWaiverType">
+          <option value="full">Full — waive the entire late fee</option>
+          <option value="partial">Partial — waive a specific amount</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="waiveFeeAmountGroup">
+        <label for="wfAmount">Amount to Waive ($) <span style="color:#f44336">*</span></label>
+        <input type="number" id="wfAmount" placeholder="0.00" min="0.01" max="35" step="0.01">
+      </div>
+
+      <div class="form-group">
+        <label for="wfReason">Reason <span style="color:#f44336">*</span></label>
+        <input type="text" id="wfReason" placeholder="e.g. Customer emergency, accident, courtesy waiver…" maxlength="300" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="wfWaivedBy">Applied By (optional)</label>
+        <input type="text" id="wfWaivedBy" placeholder="Your name or initials" maxlength="80" autocomplete="off">
+      </div>
+
+      <button class="btn-block" id="waiveFeeBtn" style="max-width:220px">🚫 Apply Waiver</button>
+      <div id="waiveFeeMsg"></div>
+    </div><!-- /waive-fee-section -->
   </div>
 
   <footer>
@@ -1219,6 +1272,85 @@
           .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); })
           .finally(function () { btn.disabled = false; });
       });
+      // ── Waive Late Fee ─────────────────────────────────────────────────────
+      (function () {
+        var waiverTypeEl  = document.getElementById("wfWaiverType");
+        var amountGroup   = document.getElementById("waiveFeeAmountGroup");
+        var waiveFeeMsg   = document.getElementById("waiveFeeMsg");
+
+        function showWfMsg(msg, type) {
+          waiveFeeMsg.textContent = msg;
+          waiveFeeMsg.className   = type;
+          waiveFeeMsg.style.display = "block";
+        }
+
+        waiverTypeEl.addEventListener("change", function () {
+          amountGroup.style.display = (this.value === "partial") ? "block" : "none";
+        });
+
+        document.getElementById("waiveFeeBtn").addEventListener("click", function () {
+          var secret      = document.getElementById("adminSecret").value;
+          var bookingId   = document.getElementById("wfBookingId").value.trim();
+          var waiverType  = waiverTypeEl.value;
+          var waivedAmt   = document.getElementById("wfAmount").value;
+          var reason      = document.getElementById("wfReason").value.trim();
+          var waivedBy    = document.getElementById("wfWaivedBy").value.trim();
+
+          if (!secret)    { showWfMsg("Please enter the admin password first.", "error"); return; }
+          if (!bookingId) { showWfMsg("Booking reference is required.", "error"); return; }
+          if (!reason)    { showWfMsg("A reason is required for every waiver.", "error"); return; }
+          if (waiverType === "partial") {
+            var parsed = parseFloat(waivedAmt);
+            if (isNaN(parsed) || parsed <= 0) {
+              showWfMsg("Enter a valid amount to waive for a partial waiver.", "error");
+              return;
+            }
+          }
+
+          var body = {
+            secret:      secret,
+            booking_id:  bookingId,
+            waiver_type: waiverType,
+            reason:      reason,
+          };
+          if (waiverType === "partial") body.waived_amount = parseFloat(waivedAmt);
+          if (waivedBy) body.waived_by = waivedBy;
+
+          var btn = this;
+          btn.disabled = true;
+          showWfMsg("Applying waiver…", "info");
+
+          fetch(API_BASE + "/api/waive-late-fee", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify(body),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (result) {
+              if (!result.ok) {
+                showWfMsg("Error: " + (result.data.error || "Unknown error"), "error");
+              } else {
+                var d = result.data;
+                var msg = "✅ " + (d.waiver_type === "full" ? "Full" : "Partial") +
+                  " waiver applied to " + d.booking_ref +
+                  ". Waived: $" + d.waived_amount.toFixed(2) +
+                  ". Remaining max late fee: $" + d.new_late_fee.toFixed(2) + ".";
+                if (d.is_update) msg += " (Updated existing waiver.)";
+                showWfMsg(msg, "success");
+                // Reset form
+                document.getElementById("wfBookingId").value = "";
+                document.getElementById("wfReason").value    = "";
+                document.getElementById("wfWaivedBy").value  = "";
+                document.getElementById("wfAmount").value    = "";
+                waiverTypeEl.value = "full";
+                amountGroup.style.display = "none";
+              }
+            })
+            .catch(function (err) { showWfMsg("Network error: " + err.message, "error"); })
+            .finally(function () { btn.disabled = false; });
+        });
+      })();
+
     })();
   </script>
 </body>
