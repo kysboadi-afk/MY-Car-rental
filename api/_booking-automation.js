@@ -153,13 +153,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     }
 
     // Application-level guard: verify the booking row exists before writing revenue.
-    // Also read vehicle_id and return_date so we can backfill them on the revenue
-    // record when the caller did not provide them (e.g. processStripePayment, which
-    // passes only bookingId + payment data).  This ensures every revenue record
+    // Also read vehicle_id, pickup_date, and return_date so we can backfill them on
+    // the revenue record when the caller did not provide them (e.g. processStripePayment,
+    // which passes only bookingId + payment data).  This ensures every revenue record
     // written at insert time carries correct linking fields.
     const { data: bookingRow, error: bookingLookupErr } = await sb
       .from("bookings")
-      .select("id, vehicle_id, return_date")
+      .select("id, vehicle_id, pickup_date, return_date")
       .eq("booking_ref", bookingRef)
       .maybeSingle();
     if (bookingLookupErr) {
@@ -169,15 +169,34 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       throw new Error(`missing booking for revenue booking_id=${bookingRef}`);
     }
 
-    // Use the booking's vehicle_id / return_date as fallbacks when the caller
-    // did not supply them — this covers processStripePayment and other callers
+    // Use the booking's vehicle_id / pickup_date / return_date as fallbacks when the
+    // caller did not supply them — this covers processStripePayment and other callers
     // that pass only payment identifiers without full booking context.
     // normalizeVehicleId is applied unconditionally so that any stale legacy
     // value retrieved from the DB (e.g. a booking row still holding "camry2012"
     // before a data migration runs) is always written as the canonical "camry".
     const resolvedVehicleId = normalizeVehicleId(booking.vehicleId || bookingRow.vehicle_id);
-    const resolvedReturnDate = booking.returnDate ||
-      (bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null);
+    const resolvedPickupDate = booking.pickupDate ||
+      (bookingRow.pickup_date ? String(bookingRow.pickup_date).split("T")[0] : null);
+
+    // SOURCE OF TRUTH for extension rows: return_date must always match
+    // bookings.return_date.  If the caller supplied a different value (e.g. a
+    // stale new_return_date from PI metadata on an alreadyApplied replay), log
+    // an error and override with the DB value so the ledger stays consistent.
+    const dbReturnDate = bookingRow.return_date ? String(bookingRow.return_date).split("T")[0] : null;
+    let resolvedReturnDate;
+    if (booking.type === "extension" && dbReturnDate) {
+      if (booking.returnDate && booking.returnDate !== dbReturnDate) {
+        console.error(
+          `_booking-automation autoCreateRevenueRecord: extension return_date mismatch for ` +
+          `booking ${bookingRef} — caller provided ${booking.returnDate}, ` +
+          `bookings.return_date=${dbReturnDate}. Using bookings.return_date as source of truth.`,
+        );
+      }
+      resolvedReturnDate = dbReturnDate;
+    } else {
+      resolvedReturnDate = booking.returnDate || dbReturnDate || null;
+    }
 
     if (!resolvedVehicleId) {
       console.warn(
@@ -222,7 +241,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
     if (!existingRecord && piId) {
       const { data: existingByPI, error: existingByPIErr } = await sb
         .from("revenue_records")
-        .select("id, stripe_fee, stripe_net")
+        .select("id, stripe_fee, stripe_net, return_date")
         .eq("payment_intent_id", piId)
         .maybeSingle();
       if (existingByPIErr) {
@@ -253,7 +272,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       customer_name:       normalizeCustomerName(booking.name) || null,
       customer_phone:      booking.phone || null,
       customer_email:      normalizeEmail(booking.email),
-      pickup_date:         booking.pickupDate  || null,
+      pickup_date:         resolvedPickupDate || null,
       return_date:         resolvedReturnDate  || null,
       gross_amount:        gross,
       deposit_amount:      0,
@@ -280,9 +299,39 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       // For rental records, only backfill stripe fee data that was missing on the
       // initial write (e.g. webhook fired before balance_transaction was settled).
       if (recordType === "extension") {
-        console.log(
-          `_booking-automation: extension revenue record for PI ${piId} already exists (id=${existingRecord.id}) — skipping`
-        );
+        // Idempotent: if the record already exists but has a stale return_date
+        // (e.g. written by a prior replay before a second extension was applied),
+        // correct it so the ledger always reflects bookings.return_date.
+        const existingReturnDate = existingRecord.return_date
+          ? String(existingRecord.return_date).split("T")[0]
+          : null;
+        if (dbReturnDate && existingReturnDate && existingReturnDate !== dbReturnDate) {
+          console.error(
+            `_booking-automation autoCreateRevenueRecord: existing extension revenue record ` +
+            `(id=${existingRecord.id}) for booking ${bookingRef} has stale ` +
+            `return_date=${existingReturnDate}, bookings.return_date=${dbReturnDate} — correcting.`,
+          );
+          const { error: fixErr } = await sb
+            .from("revenue_records")
+            .update({ return_date: dbReturnDate, updated_at: new Date().toISOString() })
+            .eq("id", existingRecord.id);
+          if (fixErr) {
+            console.error(
+              `_booking-automation: failed to correct extension return_date for ${bookingRef} ` +
+              `(id=${existingRecord.id}): ${fixErr.message}`,
+            );
+          } else {
+            console.log(
+              `_booking-automation: corrected extension return_date for booking ${bookingRef} ` +
+              `(id=${existingRecord.id}) from ${existingReturnDate} to ${dbReturnDate}`,
+            );
+          }
+        } else {
+          console.log(
+            `_booking-automation: extension revenue record for PI ${piId} already exists ` +
+            `(id=${existingRecord.id}) — skipping`,
+          );
+        }
         return;
       }
 
@@ -316,6 +365,16 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
         throw new Error(`revenue_records insert failed: ${formatSupabaseError(error)}`);
       }
       console.log(`_booking-automation: created ${recordType} revenue record for booking ${bookingRef}`);
+      // Post-write consistency guard for extension rows: the written return_date
+      // must always equal bookings.return_date.  A mismatch here indicates a bug
+      // in the date-resolution logic above and should be investigated immediately.
+      if (recordType === "extension" && dbReturnDate && record.return_date !== dbReturnDate) {
+        console.error(
+          `_booking-automation autoCreateRevenueRecord: CONSISTENCY ERROR — extension ` +
+          `revenue record for booking ${bookingRef} PI ${piId} was written with ` +
+          `return_date=${record.return_date} but bookings.return_date=${dbReturnDate}`,
+        );
+      }
     }
   } catch (err) {
     const msg = `_booking-automation autoCreateRevenueRecord error${strict ? "" : " (non-fatal)"}: ${err.message}`;

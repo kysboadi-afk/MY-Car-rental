@@ -1768,7 +1768,7 @@ export default async function handler(req, res) {
                   }
                   return "";
                 })(),
-                returnDate:      new_return_date || updatedBooking.returnDate || "",
+                returnDate:      sbCurrentReturnDate || new_return_date || updatedBooking.returnDate || "",
                 amountPaid:      Math.round(paymentIntent.amount_received || paymentIntent.amount || 0) / 100,
                 paymentMethod:   "stripe",
                 type:            "extension",
