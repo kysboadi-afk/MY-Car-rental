@@ -842,6 +842,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         System Settings
       </a>
+      <a class="nav-item" data-page="late-fees" href="#" onclick="navigate('late-fees');return false;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Late Fees
+        <span class="nav-badge" id="late-fees-badge" style="display:none">0</span>
+      </a>
     </nav>
 
     <nav class="nav-section">
@@ -1810,6 +1815,49 @@
         </div>
       </div>
 
+      <!-- LATE FEES PAGE -->
+      <div class="page" id="page-late-fees">
+        <div class="filters-row">
+          <select class="filter-select" id="lf-filter-status" onchange="applyLateFeeFilters()">
+            <option value="">All Statuses</option>
+            <option value="pending_approval">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="paid">Paid</option>
+            <option value="failed">Failed</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
+          <select class="filter-select" id="lf-filter-vehicle" onchange="applyLateFeeFilters()">
+            <option value="">All Vehicles</option>
+            <option value="camry">Camry 2012</option>
+            <option value="camry2013">Camry 2013 SE</option>
+          </select>
+          <input type="text" class="filter-input" id="lf-search" placeholder="Search name or ID…" oninput="applyLateFeeFilters()">
+        </div>
+        <div class="card">
+          <div id="lf-loading" class="loading"><div class="loading-spinner"></div><div>Loading late fees…</div></div>
+          <div id="lf-table-wrap" style="display:none" class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Vehicle</th>
+                  <th>Rental Dates</th>
+                  <th>Late Fee</th>
+                  <th>Booking Status</th>
+                  <th>Fee Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="lf-tbody"></tbody>
+            </table>
+          </div>
+          <div id="lf-empty" class="empty-state" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <p>No late fee records found.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- AI ASSISTANT PAGE -->
       <div class="page" id="page-ai">
         <div class="ai-layout">
@@ -2627,6 +2675,7 @@ function navigate(page) {
     'protection-plans': 'Protection Plans',
     'vehicle-pricing':  'Vehicle Pricing',
     'system-settings':  'System Settings',
+    'late-fees':        'Late Fees',
     'ai':               'AI Assistant',
     'system-health':    'System Health',
   };
@@ -2657,6 +2706,7 @@ function navigate(page) {
   else if (page === 'settings') loadSiteContent();
   else if (page === 'ai') loadAiInsights();
   else if (page === 'system-health') { loadSystemHealth(); loadSmsLogs(); }
+  else if (page === 'late-fees') loadLateFees();
 }
 
 function refreshCurrentPage() {
@@ -3708,6 +3758,228 @@ function bookingStatusBadge(b, derived) {
   return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
+// ── Late Fees Page ──────────────────────────────────────────────────────────
+
+let allLateFeesData = [];
+
+function loadLateFees() {
+  document.getElementById('lf-loading').style.display = '';
+  document.getElementById('lf-table-wrap').style.display = 'none';
+  document.getElementById('lf-empty').style.display = 'none';
+
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'list' })
+    .then((data) => {
+      // Keep bookings that have any late fee activity:
+      //  (a) lateFeeStatus is set, OR
+      //  (b) lateFeeAmount is set (fee was assessed but status not yet written)
+      const raw = (data.bookings || []).map((b) => ({
+        ...b,
+        status: b && b.status === 'active' ? 'active_rental' : b.status,
+      }));
+      allLateFeesData = raw.filter((b) => b.lateFeeStatus || b.lateFeeAmount != null);
+      document.getElementById('lf-loading').style.display = 'none';
+      updateLateFeeBadge();
+      applyLateFeeFilters();
+    })
+    .catch((err) => {
+      document.getElementById('lf-loading').innerHTML =
+        `<p style="color:var(--danger);padding:16px;">Error: ${esc(err.message)}</p>`;
+    });
+}
+
+function updateLateFeeBadge() {
+  const pending = allLateFeesData.filter(
+    (b) => b.lateFeeStatus === 'pending_approval' || (!b.lateFeeStatus && b.lateFeeAmount != null)
+  ).length;
+  const badge = document.getElementById('late-fees-badge');
+  if (badge) {
+    if (pending > 0) { badge.style.display = ''; badge.textContent = pending; }
+    else { badge.style.display = 'none'; }
+  }
+}
+
+function applyLateFeeFilters() {
+  const statusF  = document.getElementById('lf-filter-status')?.value  || '';
+  const vehicleF = document.getElementById('lf-filter-vehicle')?.value || '';
+  const search   = (document.getElementById('lf-search')?.value || '').toLowerCase().trim();
+
+  const filtered = allLateFeesData.filter((b) => {
+    if (statusF  && (b.lateFeeStatus || 'pending_approval') !== statusF) return false;
+    if (vehicleF && b.vehicleId !== vehicleF) return false;
+    if (search   && !(b.name || '').toLowerCase().includes(search) &&
+                    !(b.bookingId || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById('lf-loading').style.display = 'none';
+  if (filtered.length === 0) {
+    document.getElementById('lf-table-wrap').style.display = 'none';
+    document.getElementById('lf-empty').style.display = '';
+    return;
+  }
+
+  document.getElementById('lf-table-wrap').style.display = '';
+  document.getElementById('lf-empty').style.display = 'none';
+
+  const statusColors = {
+    pending_approval: { bg: 'rgba(217,119,6,0.12)',   color: 'var(--warning)',  label: '⏰ Pending' },
+    approved:         { bg: 'rgba(37,99,235,0.12)',   color: 'var(--primary)',  label: '✓ Approved' },
+    paid:             { bg: 'rgba(22,163,74,0.12)',   color: 'var(--success)',  label: '✓ Paid' },
+    failed:           { bg: 'rgba(220,38,38,0.12)',   color: 'var(--danger)',   label: '✗ Failed' },
+    dismissed:        { bg: 'rgba(156,163,175,0.2)',  color: 'var(--text-sub)', label: '— Dismissed' },
+  };
+
+  document.getElementById('lf-tbody').innerHTML = filtered.map((b) => {
+    const derived   = bookingDerivedStatus(b, new Date());
+    const status    = b.lateFeeStatus || 'pending_approval';
+    const sc        = statusColors[status] || statusColors['pending_approval'];
+    const amountTxt = b.lateFeeAmount != null ? `$${formatMoney(b.lateFeeAmount)}` : '—';
+    const canCharge = (status === 'pending_approval' || status === 'failed');
+    const canDismiss = (status !== 'paid' && status !== 'dismissed');
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600;">${esc(b.name || '–')}</div>
+        <div style="font-size:11px;color:var(--text-sub);">${esc(b.email || b.phone || '')}</div>
+      </td>
+      <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
+      <td>
+        <div>${esc(b.pickupDate || '–')}${b.pickupTime ? ' ' + esc(fmt12h(b.pickupTime)) : ''}</div>
+        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(fmt12h(b.returnTime)) : ''}</div>
+      </td>
+      <td style="font-weight:700;color:#c2410c;">${esc(amountTxt)}</td>
+      <td>${bookingStatusBadge(b, derived)}</td>
+      <td><span class="badge" style="background:${sc.bg};color:${sc.color};">${sc.label}</span></td>
+      <td>
+        <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
+          <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
+          ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">💳 Charge</button>` : ''}
+          ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">🚫 Waive</button>` : ''}
+          ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(b.bookingId || '')}',this)">✗ Dismiss</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function dismissLateFee(bookingId, btn) {
+  if (!confirm('Dismiss this late fee? The customer will NOT be charged and the fee will be cleared.')) return;
+  if (btn) btn.disabled = true;
+  apiPost('/api/v2-bookings', { secret: adminSecret, action: 'dismiss_late_fee', bookingId })
+    .then(() => {
+      showToast('Late fee dismissed.', 'success');
+      loadLateFees();
+    })
+    .catch((err) => {
+      showToast('Error: ' + err.message, 'error');
+      if (btn) btn.disabled = false;
+    });
+}
+
+let _lfChargeBookingId = null;
+let _lfChargeVehicleId = null;
+
+function openLateFeeChargeModal(bookingId, vehicleId, suggestedAmount) {
+  _lfChargeBookingId = bookingId;
+  _lfChargeVehicleId = vehicleId;
+  document.getElementById('lf-charge-amount').value = suggestedAmount > 0 ? suggestedAmount : '';
+  document.getElementById('lf-charge-notes').value  = '';
+  document.getElementById('lf-charge-msg').textContent = '';
+  openModal('lf-charge-modal');
+}
+
+function confirmLateFeeCharge() {
+  const amount = parseFloat(document.getElementById('lf-charge-amount').value);
+  const notes  = document.getElementById('lf-charge-notes').value.trim();
+  const msgEl  = document.getElementById('lf-charge-msg');
+
+  if (!amount || amount <= 0) { msgEl.textContent = 'Enter a valid amount.'; msgEl.style.color = 'var(--danger)'; return; }
+  if (!_lfChargeBookingId)    { msgEl.textContent = 'No booking selected.';  msgEl.style.color = 'var(--danger)'; return; }
+
+  const btn = document.getElementById('lf-charge-confirm-btn');
+  if (btn) btn.disabled = true;
+  msgEl.textContent = 'Charging…';
+  msgEl.style.color = 'var(--text-sub)';
+
+  apiPost('/api/charge-fee', {
+    secret:      adminSecret,
+    booking_id:  _lfChargeBookingId,
+    charge_type: 'late_fee',
+    amount,
+    notes:       notes || `Late fee charged from admin panel`,
+    charged_by:  'admin',
+  })
+    .then(() => {
+      closeModal('lf-charge-modal');
+      showToast(`Late fee $${formatMoney(amount)} charged successfully.`, 'success');
+      loadLateFees();
+    })
+    .catch((err) => {
+      msgEl.textContent = 'Charge failed: ' + err.message;
+      msgEl.style.color = 'var(--danger)';
+      if (btn) btn.disabled = false;
+    });
+}
+
+let _lfWaiveBookingId = null;
+
+function openLateFeeWaiveModal(bookingId, suggestedAmount) {
+  _lfWaiveBookingId = bookingId;
+  document.getElementById('lf-waive-type').value   = 'full';
+  document.getElementById('lf-waive-amount').value = suggestedAmount > 0 ? suggestedAmount : '';
+  document.getElementById('lf-waive-reason').value = '';
+  document.getElementById('lf-waive-msg').textContent = '';
+  toggleLateFeeWaiveAmount();
+  openModal('lf-waive-modal');
+}
+
+function toggleLateFeeWaiveAmount() {
+  const t = document.getElementById('lf-waive-type').value;
+  const row = document.getElementById('lf-waive-amount-row');
+  if (row) row.style.display = (t === 'partial') ? '' : 'none';
+}
+
+function confirmLateFeeWaive() {
+  const wType   = document.getElementById('lf-waive-type').value;
+  const reason  = document.getElementById('lf-waive-reason').value.trim();
+  const msgEl   = document.getElementById('lf-waive-msg');
+
+  if (!reason) { msgEl.textContent = 'A reason is required.'; msgEl.style.color = 'var(--danger)'; return; }
+  if (!_lfWaiveBookingId) { msgEl.textContent = 'No booking selected.'; msgEl.style.color = 'var(--danger)'; return; }
+
+  let waived_amount = undefined;
+  if (wType === 'partial') {
+    waived_amount = parseFloat(document.getElementById('lf-waive-amount').value);
+    if (!waived_amount || waived_amount <= 0) { msgEl.textContent = 'Enter a valid partial amount.'; msgEl.style.color = 'var(--danger)'; return; }
+  }
+
+  const btn = document.getElementById('lf-waive-confirm-btn');
+  if (btn) btn.disabled = true;
+  msgEl.textContent = 'Applying waiver…';
+  msgEl.style.color = 'var(--text-sub)';
+
+  apiPost('/api/waive-late-fee', {
+    secret:        adminSecret,
+    booking_id:    _lfWaiveBookingId,
+    action:        'apply',
+    fee_type:      'late_fee',
+    waiver_type:   wType,
+    waived_amount,
+    reason,
+    waived_by:     'admin_panel',
+  })
+    .then(() => {
+      closeModal('lf-waive-modal');
+      showToast('Late fee waived successfully.', 'success');
+      loadLateFees();
+    })
+    .catch((err) => {
+      msgEl.textContent = 'Waive failed: ' + err.message;
+      msgEl.style.color = 'var(--danger)';
+      if (btn) btn.disabled = false;
+    });
+}
+
 /** Derive customer tier from booking customer fields. */
 function computeBookingCustomerTier(b) {
   if (b.custBanned)   return 'risky';
@@ -3744,6 +4016,16 @@ function loadBookings() {
         status: b && b.status === 'active' ? 'active_rental' : b.status,
       }));
       allBookings = normalizedBookings;
+      // Update the Late Fees badge count using the already-loaded bookings data
+      const lfBadge = document.getElementById('late-fees-badge');
+      if (lfBadge) {
+        const pendingLf = normalizedBookings.filter(
+          (b) => b.lateFeeStatus && b.lateFeeStatus !== 'dismissed' && b.lateFeeStatus !== 'paid' &&
+                 b.status !== 'completed_rental' && b.status !== 'cancelled_rental'
+        ).length;
+        if (pendingLf > 0) { lfBadge.style.display = ''; lfBadge.textContent = pendingLf; }
+        else { lfBadge.style.display = 'none'; }
+      }
       renderBookings();
     })
     .catch((err) => {
@@ -3843,7 +4125,7 @@ function applyBookingFilters() {
         ${b.custTotalProfit != null ? `<div style="font-size:11px;color:var(--text-sub);margin-top:2px;" title="Lifetime profit from this customer">Lifetime: $${formatMoney(b.custTotalProfit)}</div>` : ''}
       </td>
       <td>${bookingStatusBadge(b, derived)}
-        ${b.lateFeeStatus && b.lateFeeStatus !== 'dismissed' ? `<div style="margin-top:3px;"><span class="badge" style="background:rgba(249,115,22,0.12);color:#c2410c;font-size:10px;">⏰ Late fee${b.lateFeeAmount != null ? ' $' + formatMoney(b.lateFeeAmount) : ''}${b.lateFeeStatus === 'paid' ? ' ✓ paid' : b.lateFeeStatus === 'approved' ? ' approved' : b.lateFeeStatus === 'failed' ? ' failed' : ' pending'}</span></div>` : ''}
+        ${b.lateFeeStatus && b.lateFeeStatus !== 'dismissed' && (b.lateFeeStatus === 'paid' || b.lateFeeStatus === 'failed' || (b.status !== 'completed_rental' && b.status !== 'cancelled_rental')) ? `<div style="margin-top:3px;"><span class="badge" style="background:rgba(249,115,22,0.12);color:#c2410c;font-size:10px;">⏰ Late fee${b.lateFeeAmount != null ? ' $' + formatMoney(b.lateFeeAmount) : ''}${b.lateFeeStatus === 'paid' ? ' ✓ paid' : b.lateFeeStatus === 'approved' ? ' approved' : b.lateFeeStatus === 'failed' ? ' failed' : ' pending'}</span></div>` : ''}
       </td>
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
@@ -3905,11 +4187,17 @@ function viewBooking(bookingId, vehicleId) {
     ${b.lateFeeAmount != null || b.lateFeeStatus ? `
     <div style="margin-top:14px;padding:12px;background:#fff8f0;border-radius:8px;border:1px solid #f97316;">
       <div style="font-size:12px;font-weight:700;color:#c2410c;text-transform:uppercase;margin-bottom:8px;">⏰ Late Fee</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;font-size:13px;margin-bottom:10px;">
         <div><span style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:2px;">Amount</span><strong style="color:#c2410c;">${b.lateFeeAmount != null ? '$' + formatMoney(b.lateFeeAmount) : '—'}</strong></div>
-        <div><span style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:2px;">Status</span><strong>${b.lateFeeStatus ? `<span class="badge" style="background:${b.lateFeeStatus === 'paid' ? 'rgba(22,163,74,0.12)' : b.lateFeeStatus === 'approved' ? 'rgba(37,99,235,0.12)' : b.lateFeeStatus === 'dismissed' ? 'rgba(156,163,175,0.2)' : b.lateFeeStatus === 'failed' ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.12)'};color:${b.lateFeeStatus === 'paid' ? 'var(--success)' : b.lateFeeStatus === 'approved' ? 'var(--primary)' : b.lateFeeStatus === 'dismissed' ? 'var(--text-sub)' : b.lateFeeStatus === 'failed' ? 'var(--danger)' : 'var(--warning)'};text-transform:capitalize;">${esc(b.lateFeeStatus.replace(/_/g,' '))}</span>` : '—'}</strong></div>
+        <div><span style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:2px;">Status</span><strong>${b.lateFeeStatus ? `<span class="badge" style="background:${b.lateFeeStatus === 'paid' ? 'rgba(22,163,74,0.12)' : b.lateFeeStatus === 'approved' ? 'rgba(37,99,235,0.12)' : b.lateFeeStatus === 'dismissed' ? 'rgba(156,163,175,0.2)' : b.lateFeeStatus === 'failed' ? 'rgba(220,38,38,0.12)' : 'rgba(217,119,6,0.12)'};color:${b.lateFeeStatus === 'paid' ? 'var(--success)' : b.lateFeeStatus === 'approved' ? 'var(--primary)' : b.lateFeeStatus === 'dismissed' ? 'var(--text-sub)' : b.lateFeeStatus === 'failed' ? 'var(--danger)' : 'var(--warning)'};text-transform:capitalize;">${esc(b.lateFeeStatus.replace(/_/g,' '))}</span>` : '<span style="color:var(--warning);">Pending</span>'}</strong></div>
         <div><span style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:2px;">Waived</span><strong>${b.lateFeeWaived ? `<span style="color:var(--success);">✓ $${formatMoney(b.lateFeeWaivedAmount || 0)}</span>` : '<span style="color:var(--text-sub);">No</span>'}</strong></div>
       </div>
+      ${(b.lateFeeStatus !== 'paid' && b.lateFeeStatus !== 'dismissed') ? `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">💳 Charge Fee</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('booking-detail-modal');openLateFeeWaiveModal('${esc(b.bookingId || '')}',${b.lateFeeAmount != null ? b.lateFeeAmount : 0})">🚫 Waive Fee</button>
+        <button class="btn btn-danger btn-sm" onclick="closeModal('booking-detail-modal');dismissLateFee('${esc(b.bookingId || '')}',null)">✗ Dismiss</button>
+      </div>` : ''}
     </div>
     ` : ''}
     <!-- Customer Insight panel -->
@@ -7574,6 +7862,65 @@ async function loadAiInsights() {
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
       <button class="btn btn-secondary" onclick="closeModal('customer-edit-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveCustomer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LATE FEE — CHARGE MODAL -->
+<div class="modal-overlay" id="lf-charge-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 class="modal-title">💳 Charge Late Fee</h3>
+      <button class="modal-close" onclick="closeModal('lf-charge-modal')">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
+      This will immediately charge the customer's saved card on file. Confirm the amount before proceeding.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Amount (USD) *</label>
+      <input type="number" class="form-input" id="lf-charge-amount" min="1" max="500" step="1" placeholder="e.g. 25">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <input type="text" class="form-input" id="lf-charge-notes" placeholder="e.g. Vehicle returned 3 hours late">
+    </div>
+    <div id="lf-charge-msg" style="font-size:13px;min-height:18px;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal('lf-charge-modal')">Cancel</button>
+      <button class="btn btn-primary" id="lf-charge-confirm-btn" onclick="confirmLateFeeCharge()">Confirm &amp; Charge</button>
+    </div>
+  </div>
+</div>
+
+<!-- LATE FEE — WAIVE MODAL -->
+<div class="modal-overlay" id="lf-waive-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 class="modal-title">🚫 Waive Late Fee</h3>
+      <button class="modal-close" onclick="closeModal('lf-waive-modal')">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
+      Apply a full or partial waiver to the late fee. A reason is required and every waiver is logged in the audit trail.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Waiver Type *</label>
+      <select class="form-select" id="lf-waive-type" onchange="toggleLateFeeWaiveAmount()">
+        <option value="full">Full — waive the entire fee</option>
+        <option value="partial">Partial — waive a specific amount</option>
+      </select>
+    </div>
+    <div class="form-group" id="lf-waive-amount-row" style="display:none;">
+      <label class="form-label">Waived Amount (USD) *</label>
+      <input type="number" class="form-input" id="lf-waive-amount" min="1" step="1" placeholder="e.g. 15">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reason *</label>
+      <input type="text" class="form-input" id="lf-waive-reason" maxlength="300" placeholder="e.g. Customer emergency, courtesy waiver…">
+    </div>
+    <div id="lf-waive-msg" style="font-size:13px;min-height:18px;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal('lf-waive-modal')">Cancel</button>
+      <button class="btn btn-primary" id="lf-waive-confirm-btn" onclick="confirmLateFeeWaive()">Apply Waiver</button>
     </div>
   </div>
 </div>
