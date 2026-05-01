@@ -815,7 +815,12 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
       .from("blocked_dates")
       .upsert(
         row,
-        { onConflict: "vehicle_id,start_date,end_date,reason", ignoreDuplicates: true }
+        // ignoreDuplicates:false so that when a row already exists (e.g. created
+        // by the on_booking_create DB trigger without end_time), the upsert
+        // patches end_time with the correct buffered value.  Columns absent from
+        // `row` (such as end_time when returnTime is null) are not in the UPDATE
+        // SET clause and therefore do not overwrite existing values.
+        { onConflict: "vehicle_id,start_date,end_date,reason", ignoreDuplicates: false }
       );
     if (error) {
       console.error("_booking-automation autoCreateBlockedDate error (non-fatal):", error.message);
@@ -1057,9 +1062,10 @@ export async function ensureBlockedDate(vehicleId, bookingRef, returnDate, retur
 
   try {
     // Check whether a booking-linked blocked_dates row already exists.
+    // Also fetch end_time so we can patch it when it's null but returnTime is known.
     const { data: existing, error: findErr } = await sb
       .from("blocked_dates")
-      .select("id")
+      .select("id, end_time")
       .eq("vehicle_id", normalizedVehicleId)
       .eq("booking_ref", bookingRef)
       .eq("reason", "booking")
@@ -1071,6 +1077,36 @@ export async function ensureBlockedDate(vehicleId, bookingRef, returnDate, retur
     }
 
     if (existing?.id) {
+      // Row exists but end_time is null — patch it when returnTime is available.
+      // This heals rows created by the on_booking_create trigger before the
+      // trigger was updated to include the buffered end_time (migration 0114).
+      // Both end_date and end_time are patched to stay consistent with the trigger
+      // (migration 0114 lines 57-63 which updates both fields).  The UPDATE targets
+      // the specific row by primary key (id), so the unique constraint on
+      // (vehicle_id, start_date, end_date, reason) is only a concern if another row
+      // already has the new (vehicle_id, start_date, buffEndDate, reason) — which
+      // would only happen if two bookings for the same vehicle share the same pickup
+      // and return date, which the availability check prevents.
+      if (!existing.end_time && returnTime) {
+        const { date: buffEndDate, time: buffEndTime } = buildBufferedEnd(returnDate, returnTime);
+        if (buffEndTime) {
+          const { error: patchErr } = await sb
+            .from("blocked_dates")
+            .update({ end_date: buffEndDate, end_time: buffEndTime })
+            .eq("id", existing.id);
+          if (patchErr) {
+            console.error("_booking-automation ensureBlockedDate patch error (non-fatal):", patchErr.message);
+          } else {
+            console.log("[BLOCKED_DATE_END_TIME_PATCHED]", {
+              vehicle_id:  normalizedVehicleId,
+              booking_ref: bookingRef,
+              end_date:    buffEndDate,
+              end_time:    buffEndTime,
+            });
+          }
+        }
+        return { created: false, reason: "end_time_patched" };
+      }
       return { created: false, reason: "already_exists" };
     }
 

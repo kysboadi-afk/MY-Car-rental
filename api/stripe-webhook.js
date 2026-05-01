@@ -2070,7 +2070,7 @@ export default async function handler(req, res) {
         pickupDate: pickup_date || "",
         pickupTime: pickup_time || "",
         returnDate: return_date || "",
-        returnTime: return_time || "",
+        returnTime: return_time || DEFAULT_RETURN_TIME,
         paymentIntentId: paymentIntent.id,
         amountPaid,
         totalPrice,
