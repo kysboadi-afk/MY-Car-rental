@@ -21,7 +21,7 @@ import { getVehiclePricing, computeAmountFromPricing } from "./_pricing.js";
 import { loadPricingSettings, applyTax } from "./_settings.js";
 import { loadBookings, updateBooking, normalizePhone } from "./_bookings.js";
 import { hasDateTimeOverlap, parseDateTimeMs } from "./_availability.js";
-import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h } from "./_time.js";
+import { normalizeClockTime, DEFAULT_RETURN_TIME, formatTime12h, buildDateTimeLA } from "./_time.js";
 import { getSupabaseAdmin } from "./_supabase.js";
 import { computeFinalReturnDate } from "./_final-return-date.js";
 
@@ -472,8 +472,15 @@ export default async function handler(req, res) {
       // grace_end  = return_time + 30 min  → SHORT_LATE_FEE applies
       // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE applies
       // Always ONE PaymentIntent; late fee is folded into the total.
-      const graceEndMs  = currentReturnMs + 30 * 60 * 1000;        // +30 min
-      const resetTimeMs = currentReturnMs + 3  * 60 * 60 * 1000;   // +3 h
+      //
+      // IMPORTANT: Use buildDateTimeLA so that a stored return_time of "10:00"
+      // is interpreted as 10:00 AM Los Angeles time (e.g. 17:00 UTC in PDT),
+      // not 10:00 UTC.  parseDateTimeMs treats the time as server-local (UTC
+      // on Vercel), which shifts the grace/reset windows ~7–8 h too early and
+      // falsely charges late fees to renters who extend before their return time.
+      const currentReturnMsLA = buildDateTimeLA(effectiveReturnDate, resolvedReturnTime).getTime();
+      const graceEndMs  = currentReturnMsLA + 30 * 60 * 1000;        // +30 min
+      const resetTimeMs = currentReturnMsLA + 3  * 60 * 60 * 1000;   // +3 h
       const nowMs = Date.now();
       if (nowMs > resetTimeMs) {
         lateFeeIncluded = EXTENDED_LATE_FEE;
