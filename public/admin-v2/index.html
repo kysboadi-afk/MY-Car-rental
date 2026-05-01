@@ -3861,6 +3861,7 @@ function applyLateFeeFilters() {
       <td>
         <div class="td-actions" style="flex-wrap:wrap;gap:4px;">
           <button class="btn btn-secondary btn-sm" onclick="viewBooking('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}')">View</button>
+          <button class="btn btn-secondary btn-sm" onclick="openLateFeeEditModal('${esc(b.bookingId || '')}',${safeFeeAmt},'${esc(status)}')">✏️ Edit</button>
           ${canCharge ? `<button class="btn btn-primary btn-sm" onclick="openLateFeeChargeModal('${esc(b.bookingId || '')}','${esc(b.vehicleId || '')}',${safeFeeAmt})">💳 Charge</button>` : ''}
           ${canCharge ? `<button class="btn btn-secondary btn-sm" onclick="openLateFeeWaiveModal('${esc(b.bookingId || '')}',${safeFeeAmt})">🚫 Waive</button>` : ''}
           ${canDismiss ? `<button class="btn btn-danger btn-sm" onclick="dismissLateFee('${esc(b.bookingId || '')}',this)">✗ Dismiss</button>` : ''}
@@ -3880,6 +3881,54 @@ function dismissLateFee(bookingId, btn) {
     })
     .catch((err) => {
       showToast('Error: ' + err.message, 'error');
+      if (btn) btn.disabled = false;
+    });
+}
+
+let _lfEditBookingId = null;
+
+function openLateFeeEditModal(bookingId, currentAmount, currentStatus) {
+  _lfEditBookingId = bookingId;
+  document.getElementById('lf-edit-amount').value = currentAmount > 0 ? currentAmount : '';
+  document.getElementById('lf-edit-status').value = currentStatus || 'pending_approval';
+  document.getElementById('lf-edit-msg').textContent = '';
+  openModal('lf-edit-modal');
+}
+
+function confirmLateFeeEdit() {
+  const amountRaw = document.getElementById('lf-edit-amount').value;
+  const status    = document.getElementById('lf-edit-status').value;
+  const msgEl     = document.getElementById('lf-edit-msg');
+
+  if (!_lfEditBookingId) { msgEl.textContent = 'No booking selected.'; msgEl.style.color = 'var(--danger)'; return; }
+
+  const lateFeeAmount = amountRaw !== '' ? parseFloat(amountRaw) : null;
+  if (lateFeeAmount !== null && (isNaN(lateFeeAmount) || lateFeeAmount < 0)) {
+    msgEl.textContent = 'Enter a valid amount (or leave blank to keep unchanged).';
+    msgEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  const btn = document.getElementById('lf-edit-confirm-btn');
+  if (btn) btn.disabled = true;
+  msgEl.textContent = 'Saving…';
+  msgEl.style.color = 'var(--text-sub)';
+
+  apiPost('/api/v2-bookings', {
+    secret:        adminSecret,
+    action:        'set_late_fee',
+    bookingId:     _lfEditBookingId,
+    lateFeeAmount: lateFeeAmount !== null ? lateFeeAmount : undefined,
+    lateFeeStatus: status || undefined,
+  })
+    .then(() => {
+      closeModal('lf-edit-modal');
+      showToast('Late fee updated.', 'success');
+      loadLateFees();
+    })
+    .catch((err) => {
+      msgEl.textContent = 'Error: ' + err.message;
+      msgEl.style.color = 'var(--danger)';
       if (btn) btn.disabled = false;
     });
 }
@@ -7867,6 +7916,39 @@ async function loadAiInsights() {
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
       <button class="btn btn-secondary" onclick="closeModal('customer-edit-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveCustomer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LATE FEE — CHARGE MODAL -->
+<!-- LATE FEE — EDIT MODAL -->
+<div class="modal-overlay" id="lf-edit-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 class="modal-title">✏️ Edit Late Fee</h3>
+      <button class="modal-close" onclick="closeModal('lf-edit-modal')">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
+      Update the late fee amount and/or status for this booking.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Amount (USD)</label>
+      <input type="number" class="form-input" id="lf-edit-amount" min="0" step="1" placeholder="e.g. 50">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Fee Status *</label>
+      <select class="form-select" id="lf-edit-status">
+        <option value="pending_approval">⏰ Pending Approval</option>
+        <option value="approved">✓ Approved</option>
+        <option value="paid">✓ Paid</option>
+        <option value="failed">✗ Failed</option>
+        <option value="dismissed">— Dismissed</option>
+      </select>
+    </div>
+    <div id="lf-edit-msg" style="font-size:13px;min-height:18px;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal('lf-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" id="lf-edit-confirm-btn" onclick="confirmLateFeeEdit()">Save Changes</button>
     </div>
   </div>
 </div>
