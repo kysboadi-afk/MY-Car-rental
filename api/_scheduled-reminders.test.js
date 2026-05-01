@@ -83,7 +83,6 @@ mock.module("./_sms-templates.js", {
     PICKUP_REMINDER_24H:             "",
     RETURN_REMINDER_24H:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
-    PRE_RETURN_LATE_FEE_WARNING:     "",
     ACTIVE_RENTAL_MID:               "",
     LATE_GRACE_STARTED:              "",
     LATE_ESCALATION:                 "",
@@ -147,7 +146,7 @@ global.fetch = async (url, opts) => {
   return { ok: false, text: async () => "not found" };
 };
 
-const { processAutoCompletions, processActiveRentals } = await import("./scheduled-reminders.js");
+const { processAutoCompletions, processActiveRentals, loadBookingsFromSupabase } = await import("./scheduled-reminders.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -676,5 +675,127 @@ test("processActiveRentals: sends only one SMS when two active bookings share th
     "only one late_at_return SMS must be sent per phone per run");
   assert.equal(smsCalls.length, 1,
     "only one outbound SMS must be sent when two bookings share a phone");
+});
+
+// ─── loadBookingsFromSupabase smsSentAt dedup (anti-spam regression tests) ───
+
+/**
+ * Build a minimal Supabase stub for loadBookingsFromSupabase.
+ * bookingRows  → what bookings.select() returns
+ * smsLogRows   → what sms_logs.select() returns
+ */
+function makeLoadSbClient(bookingRows, smsLogRows = []) {
+  return {
+    from(table) {
+      const self = {
+        _filters: {},
+        select(cols) { return self; },
+        in(col, vals) { self._filters[col] = vals; return self; },
+        eq(col, val) { self._filters[col] = val; return self; },
+        gte(col, val) { return self; },
+        order(col, opts) { return self; },
+        limit(n) { return self; },
+        schema() { return self; },
+        // Terminal — resolve with the appropriate data set
+        async then(resolve) {
+          if (table === "sms_logs") return resolve({ data: smsLogRows, error: null });
+          if (table === "bookings") return resolve({ data: bookingRows, error: null });
+          return resolve({ data: [], error: null });
+        },
+      };
+      return self;
+    },
+  };
+}
+
+test("loadBookingsFromSupabase: pre-populates smsSentAt for return-time keys matching current returnDate", async () => {
+  reset();
+
+  const bookingRow = {
+    booking_ref:       "bk-dedup-001",
+    vehicle_id:        "camry",
+    customer_name:     "Test Renter",
+    customer_email:    "test@example.com",
+    customer_phone:    "+13105550001",
+    renter_phone:      "+13105550001",
+    pickup_date:       "2026-06-14",
+    return_date:       "2026-06-15",
+    pickup_time:       "10:00",
+    return_time:       "08:00",
+    status:            "active_rental",
+    payment_intent_id: "pi_test",
+    completed_at:      null,
+    extension_count:   0,
+    late_fee_status:   null,
+    late_fee_amount:   null,
+    balance_due:       0,
+    balance_due_set_at: null,
+    updated_at:        "2026-06-14T10:00:00Z",
+    created_at:        "2026-06-14T09:00:00Z",
+  };
+
+  // sms_logs has a late_warning_30min row for the CURRENT return date
+  const smsLogRow = {
+    booking_id:          "bk-dedup-001",
+    template_key:        "late_warning_30min",
+    sent_at:             "2026-06-15T14:30:00Z",
+    return_date_at_send: "2026-06-15",  // matches current returnDate
+  };
+
+  const sbClient = makeLoadSbClient([bookingRow], [smsLogRow]);
+  const allBookings = await loadBookingsFromSupabase(sbClient);
+
+  assert.ok(allBookings, "should return allBookings");
+  const booking = (allBookings["camry"] || [])[0];
+  assert.ok(booking, "booking should be present");
+  assert.ok(
+    booking.smsSentAt && booking.smsSentAt["late_warning_30min"],
+    "smsSentAt should include late_warning_30min for current return date"
+  );
+});
+
+test("loadBookingsFromSupabase: does NOT pre-populate smsSentAt for old return-date rows (extension-awareness)", async () => {
+  reset();
+
+  const bookingRow = {
+    booking_ref:       "bk-ext-001",
+    vehicle_id:        "camry",
+    customer_name:     "Test Renter",
+    customer_email:    "test@example.com",
+    customer_phone:    "+13105550001",
+    renter_phone:      "+13105550001",
+    pickup_date:       "2026-06-14",
+    return_date:       "2026-06-16",  // extended to June 16
+    pickup_time:       "10:00",
+    return_time:       "08:00",
+    status:            "active_rental",
+    payment_intent_id: "pi_test",
+    completed_at:      null,
+    extension_count:   1,
+    late_fee_status:   null,
+    late_fee_amount:   null,
+    balance_due:       0,
+    balance_due_set_at: null,
+    updated_at:        "2026-06-15T10:00:00Z",
+    created_at:        "2026-06-14T09:00:00Z",
+  };
+
+  // sms_logs has a late_at_return row from the OLD return date (2026-06-15)
+  const oldDateSmsRow = {
+    booking_id:          "bk-ext-001",
+    template_key:        "late_at_return",
+    sent_at:             "2026-06-15T15:00:00Z",
+    return_date_at_send: "2026-06-15",  // OLD return date — should NOT block new-date send
+  };
+
+  const sbClient = makeLoadSbClient([bookingRow], [oldDateSmsRow]);
+  const allBookings = await loadBookingsFromSupabase(sbClient);
+
+  const booking = (allBookings["camry"] || [])[0];
+  assert.ok(booking, "booking should be present");
+  assert.ok(
+    !booking.smsSentAt || !booking.smsSentAt["late_at_return"],
+    "smsSentAt must NOT include late_at_return from the old return date (extension-awareness)"
+  );
 });
 

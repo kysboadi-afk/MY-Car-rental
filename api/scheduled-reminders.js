@@ -221,38 +221,57 @@ async function isSmsLogged(bookingId, templateKey, returnDateStr) {
  * Uses upsert so duplicate calls are idempotent.
  * Always stores `{ priority }` in metadata so the cross-cron cooldown gate
  * can compare priorities of messages from different cron jobs.
+ *
+ * Retries up to MAX_SMS_LOG_RETRIES times with an exponential back-off so
+ * that transient Supabase errors do not leave the dedup table empty (which
+ * would allow the next cron tick to re-send the same message).
+ *
  * @param {string} bookingId
  * @param {string} templateKey
  * @param {string} [returnDateStr] - YYYY-MM-DD; omit for non-return-time messages
  * @param {object} [metadata]      - optional JSON payload (e.g. link validation result)
  */
+const MAX_SMS_LOG_RETRIES  = 3;
+const SMS_LOG_RETRY_BASE_MS = 300; // 300 ms → 600 ms → 1 200 ms
+
 async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata) {
   const sb = getSupabaseAdmin();
   if (!sb || !bookingId) return;
-  try {
-    const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
-    const row = {
-      booking_id:          bookingId,
-      template_key:        templateKey,
-      return_date_at_send: date,
-      // Always include priority so cross-cron cooldown queries are accurate.
-      metadata: {
-        priority: getSmsPriority(templateKey),
-        ...(metadata && typeof metadata === "object" ? metadata : {}),
-      },
-    };
-    const { error } = await sb
-      .from("sms_logs")
-      .upsert(
-        row,
-        { onConflict: "booking_id,template_key,return_date_at_send" }
+  const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
+  const row = {
+    booking_id:          bookingId,
+    template_key:        templateKey,
+    return_date_at_send: date,
+    // Always include priority so cross-cron cooldown queries are accurate.
+    metadata: {
+      priority: getSmsPriority(templateKey),
+      ...(metadata && typeof metadata === "object" ? metadata : {}),
+    },
+  };
+  for (let attempt = 1; attempt <= MAX_SMS_LOG_RETRIES; attempt++) {
+    try {
+      const { error } = await sb
+        .from("sms_logs")
+        .upsert(row, { onConflict: "booking_id,template_key,return_date_at_send" });
+      if (!error) return; // success
+      console.warn(
+        `scheduled-reminders: sms_logs write error (attempt ${attempt}/${MAX_SMS_LOG_RETRIES}):`,
+        error.message
       );
-    if (error) {
-      console.warn("scheduled-reminders: sms_logs write error (non-fatal):", error.message);
+    } catch (err) {
+      console.warn(
+        `scheduled-reminders: sms_logs write failed (attempt ${attempt}/${MAX_SMS_LOG_RETRIES}):`,
+        err.message
+      );
     }
-  } catch (err) {
-    console.warn("scheduled-reminders: sms_logs write failed (non-fatal):", err.message);
+    if (attempt < MAX_SMS_LOG_RETRIES) {
+      await new Promise((r) => setTimeout(r, SMS_LOG_RETRY_BASE_MS * attempt));
+    }
   }
+  console.error(
+    `scheduled-reminders: sms_logs write FAILED after ${MAX_SMS_LOG_RETRIES} attempts ` +
+    `for ${bookingId}/${templateKey}/${date} — dedup record is missing, duplicate risk elevated`
+  );
 }
 
 // ─── SMS delivery visibility log ──────────────────────────────────────────────
@@ -1510,22 +1529,52 @@ export async function loadBookingsFromSupabase(sb) {
       });
     }
 
-    // Pre-populate smsSentAt from sms_logs sentinel rows (once-per-booking SMS
-    // types logged without a return date).  Return-time keys are intentionally
-    // excluded so alreadySent() never blocks a re-fire after an extension.
+    // Pre-populate smsSentAt from sms_logs so alreadySent() works as a robust
+    // first-line guard, reducing dependence on the per-tick isSmsLogged() queries.
+    //
+    // Two categories of rows are included:
+    //   1. Sentinel rows (return_date_at_send = SMS_LOGS_SENTINEL_DATE) — once-per-
+    //      booking messages (pickup_24h, post_thank_you, etc.) that are not scoped to
+    //      a return date.
+    //   2. Current-return-date rows (return_date_at_send = booking.returnDate) — return-
+    //      time messages (late_warning_30min, late_at_return, etc.) for the booking's
+    //      CURRENT return date.  Old-return-date rows (from before an extension) are
+    //      intentionally excluded: when a rental is extended the return_date changes, so
+    //      those rows no longer match and the messages correctly re-fire for the new date.
+    //
+    // This means that even if a later isSmsLogged() read fails (non-fatal), alreadySent()
+    // catches return-time messages that were already sent in a previous cron tick.
     const bookingRefs = allRows.map((r) => r.booking_ref).filter((ref) => ref && ref.trim());
     if (bookingRefs.length > 0) {
+      // Build bookingRef → current returnDate for extension-aware row filtering.
+      const returnDateByRef = {};
+      for (const bookings of Object.values(allBookings)) {
+        for (const booking of bookings) {
+          if (booking.bookingId) returnDateByRef[booking.bookingId] = booking.returnDate || "";
+        }
+      }
+
       try {
+        // Fetch all sms_logs rows for these booking refs written in the last 30 days.
+        // 30 days covers the longest retention window (7-day retention SMS) plus buffer.
+        const cutoff30d = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
         const { data: smsRows, error: smsErr } = await sb
           .from("sms_logs")
-          .select("booking_id, template_key, sent_at")
+          .select("booking_id, template_key, sent_at, return_date_at_send")
           .in("booking_id", bookingRefs)
-          .eq("return_date_at_send", SMS_LOGS_SENTINEL_DATE);
+          .gte("sent_at", cutoff30d);
         if (smsErr) {
           console.warn("scheduled-reminders loadBookingsFromSupabase: sms_logs lookup failed (non-fatal):", smsErr.message);
         } else {
           const smsByRef = {};
           for (const log of smsRows || []) {
+            const currentReturnDate = returnDateByRef[log.booking_id] || "";
+            // Include only sentinel rows OR rows matching the booking's current return date.
+            // Old-return-date rows (pre-extension) are excluded to preserve extension-awareness.
+            const isSentinel    = log.return_date_at_send === SMS_LOGS_SENTINEL_DATE;
+            const isCurrentDate = log.return_date_at_send === currentReturnDate && currentReturnDate !== "";
+            if (!isSentinel && !isCurrentDate) continue;
+
             if (!smsByRef[log.booking_id]) smsByRef[log.booking_id] = {};
             const existing = smsByRef[log.booking_id][log.template_key];
             if (!existing || new Date(log.sent_at) > new Date(existing)) {
