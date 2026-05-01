@@ -391,7 +391,7 @@
       padding: 4px; border-radius: 4px; transition: color 0.15s; font-size: 18px;
     }
     .modal-close:hover { color: var(--text); }
-    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
 
     /* ── Filters ────────────────────────────────────────────────── */
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
@@ -448,8 +448,6 @@
       .topbar { padding: 0 12px; gap: 8px; }
       .topbar-actions { gap: 6px; }
       .btn-label { display: none; }
-      /* Modal footer wraps so action buttons don't overflow */
-      .modal-footer { flex-wrap: wrap; }
       /* SMS template preview stays within card */
       .sms-item-preview { max-width: 100%; }
     }
