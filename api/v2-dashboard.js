@@ -211,6 +211,35 @@ export default async function handler(req, res) {
         kpiPromise,
       ]);
 
+    // ── Self-heal: deactivate Supabase vehicle rows absent from vehicles.json ──────
+    // Phantom rows (e.g. legacy "camry2012", "slingshot" left over from old
+    // migrations, or admin-UI vehicles whose GitHub save failed) inflate
+    // admin_metrics_v2's available-vehicles count.  Silently mark them inactive so
+    // the DB stays consistent with vehicles.json — the canonical vehicle source.
+    if (sb) {
+      try {
+        const canonicalIds = new Set(Object.keys(vehicles));
+        const { data: sbRows, error: sbRowsErr } = await sb.from("vehicles").select("vehicle_id, data");
+        if (sbRowsErr) throw sbRowsErr;
+        const deactivations = [];
+        for (const row of (sbRows || [])) {
+          if (canonicalIds.has(row.vehicle_id)) continue; // canonical — keep
+          if (row.data?.status === "inactive")  continue; // already deactivated
+          const newData = { ...(row.data || {}), status: "inactive" };
+          deactivations.push(
+            sb.from("vehicles")
+              .update({ data: newData })
+              .eq("vehicle_id", row.vehicle_id)
+              .then(() => console.log(`v2-dashboard: deactivated phantom vehicle "${row.vehicle_id}"`))
+              .catch((e) => console.warn(`v2-dashboard: could not deactivate "${row.vehicle_id}":`, e?.message))
+          );
+        }
+        if (deactivations.length > 0) await Promise.all(deactivations);
+      } catch (healErr) {
+        console.warn("v2-dashboard: phantom vehicle self-heal skipped:", healErr?.message);
+      }
+    }
+
     // admin_metrics_v2: pre-aggregated dashboard KPIs.
     // When available it replaces the sequential revenue_records and charges queries.
     const metricsView = metricsViewResult?.data ?? null;

@@ -1,4 +1,4 @@
--- Migration 0121: Remove phantom/stale vehicle rows from Supabase vehicles table.
+-- Migration 0124: Remove phantom/stale vehicle rows from Supabase vehicles table.
 --
 -- Root cause: the dashboard's "Available Vehicles" KPI was showing 3 instead of 2.
 -- The canonical fleet is exactly two vehicles: "camry" and "camry2013".
