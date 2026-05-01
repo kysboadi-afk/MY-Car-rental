@@ -844,6 +844,18 @@ pickupTime.addEventListener("change", function() {
   updatePayBtn();
 });
 
+// Tamper-prevention: returnTime must always equal pickupTime.
+// These listeners fire if anyone manually edits the hidden input via DevTools.
+returnTime.addEventListener("input", function() {
+  this.value = pickupTime.value || "";
+  updatePayBtn();
+});
+returnTime.addEventListener("change", function() {
+  if (flatpickrActive) return; // let Flatpickr's onChange handle the returnDate sibling
+  this.value = pickupTime.value || "";
+  updatePayBtn();
+});
+
   // ----- Date Pickers (Flatpickr) -----
 async function initDatePickers() {
   if (typeof flatpickr === "undefined") return; // fallback to native inputs
@@ -1661,9 +1673,47 @@ stripeBtn.addEventListener("click", async () => {
   if (!email) { showPayError(window.slyI18n.t("booking.alertEmail")); return; }
   if (!nameVal) { showPayError(window.slyI18n.t("booking.alertName")); return; }
   if (!phone) { showPayError(window.slyI18n.t("booking.alertPhone")); return; }
+  if (!pickup.value) { showPayError(window.slyI18n.t("booking.alertPickupDate") || "Please select a pickup date."); return; }
   if (!returnDate.value) { showPayError(window.slyI18n.t("booking.alertReturnDate")); return; }
   if (!pickupTime.value) { showPayError(window.slyI18n.t("booking.alertPickupTime")); return; }
+
+  // Force returnTime to match pickupTime — no user-visible message needed here because
+  // returnTime is a readonly input; this branch only fires if DevTools was used to edit it.
+  // The server always derives return_time = pickup_time anyway, so this is a belt-and-suspenders sync.
+  returnTime.value = pickupTime.value;
   if (!returnTime.value) { showPayError(window.slyI18n.t("booking.alertReturnTime")); return; }
+
+  // Re-validate all required booking fields — guards against DevTools button enablement.
+  // These checks mirror updatePayBtn() so bypassing the button state has no effect.
+  if (!agreeCheckbox.checked) {
+    showPayError("Please read and accept the Rental Agreement before proceeding.");
+    return;
+  }
+  if (!isValidName(nameVal)) {
+    showPayError(window.slyI18n.t("booking.alertName") || "Please enter your full first and last name.");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showPayError(window.slyI18n.t("booking.alertEmail") || "Please enter a valid email address.");
+    return;
+  }
+  if (uploadedFile === null && idUpload.files.length === 0) {
+    showPayError("Please upload your Driver's License or government-issued ID before proceeding.");
+    return;
+  }
+  if (insuranceCoverageChoice !== "yes" && insuranceCoverageChoice !== "no") {
+    showPayError("Please indicate whether you have personal auto insurance or would like a Damage Protection Plan.");
+    return;
+  }
+  if (insuranceCoverageChoice === "yes" && uploadedInsurance === null && insuranceUpload.files.length === 0) {
+    showPayError("Please upload proof of insurance before proceeding.");
+    return;
+  }
+  if (insuranceCoverageChoice === "no" &&
+      selectedProtectionTier !== "basic" && selectedProtectionTier !== "standard" && selectedProtectionTier !== "premium") {
+    showPayError("Please select a Damage Protection Plan tier (Basic, Standard, or Premium).");
+    return;
+  }
   const isCamryDepositMode = paymentMode === 'deposit';
   const camryDepositAmount = CAMRY_BOOKING_DEPOSIT;
   // totalEl already reflects the correct amount for the selected mode (set by updateTotal).
@@ -1748,6 +1798,9 @@ stripeBtn.addEventListener("click", async () => {
         ...(insuranceCoverageChoice === "no" ? { protectionPlanTier: selectedProtectionTier } : {}),
         // Pass insurance choice for all vehicles so the server can enforce coverage requirements.
         insuranceCoverageChoice,
+        // Pass file names so the server can enforce upload requirements as a server-side gate.
+        idFileName: idFileName || null,
+        insuranceFileName: insuranceCoverageChoice === "yes" ? (insuranceFileName || null) : null,
         paymentMode,
         adminOverride: ADMIN_OVERRIDE,
         testMode: TEST_MODE,
