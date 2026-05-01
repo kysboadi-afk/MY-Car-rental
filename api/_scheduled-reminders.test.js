@@ -83,7 +83,6 @@ mock.module("./_sms-templates.js", {
     PICKUP_REMINDER_24H:             "",
     RETURN_REMINDER_24H:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
-    PRE_RETURN_LATE_FEE_WARNING:     "",
     ACTIVE_RENTAL_MID:               "",
     LATE_GRACE_STARTED:              "",
     LATE_ESCALATION:                 "",
@@ -147,7 +146,7 @@ global.fetch = async (url, opts) => {
   return { ok: false, text: async () => "not found" };
 };
 
-const { processAutoCompletions, processActiveRentals } = await import("./scheduled-reminders.js");
+const { processAutoCompletions, processActiveRentals, loadBookingsFromSupabase, processCompleted } = await import("./scheduled-reminders.js");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -678,3 +677,281 @@ test("processActiveRentals: sends only one SMS when two active bookings share th
     "only one outbound SMS must be sent when two bookings share a phone");
 });
 
+// ─── loadBookingsFromSupabase smsSentAt dedup (anti-spam regression tests) ───
+
+/**
+ * Build a minimal Supabase stub for loadBookingsFromSupabase.
+ * bookingRows  → what bookings.select() returns
+ * smsLogRows   → what sms_logs.select() returns
+ */
+function makeLoadSbClient(bookingRows, smsLogRows = []) {
+  return {
+    from(table) {
+      const self = {
+        _filters: {},
+        select(cols) { return self; },
+        in(col, vals) { self._filters[col] = vals; return self; },
+        eq(col, val) { self._filters[col] = val; return self; },
+        gte(col, val) { return self; },
+        order(col, opts) { return self; },
+        limit(n) { return self; },
+        schema() { return self; },
+        // Terminal — resolve with the appropriate data set
+        async then(resolve) {
+          if (table === "sms_logs") return resolve({ data: smsLogRows, error: null });
+          if (table === "bookings") return resolve({ data: bookingRows, error: null });
+          return resolve({ data: [], error: null });
+        },
+      };
+      return self;
+    },
+  };
+}
+
+test("loadBookingsFromSupabase: pre-populates smsSentAt for return-time keys matching current returnDate", async () => {
+  reset();
+
+  const bookingRow = {
+    booking_ref:       "bk-dedup-001",
+    vehicle_id:        "camry",
+    customer_name:     "Test Renter",
+    customer_email:    "test@example.com",
+    customer_phone:    "+13105550001",
+    renter_phone:      "+13105550001",
+    pickup_date:       "2026-06-14",
+    return_date:       "2026-06-15",
+    pickup_time:       "10:00",
+    return_time:       "08:00",
+    status:            "active_rental",
+    payment_intent_id: "pi_test",
+    completed_at:      null,
+    extension_count:   0,
+    late_fee_status:   null,
+    late_fee_amount:   null,
+    balance_due:       0,
+    balance_due_set_at: null,
+    updated_at:        "2026-06-14T10:00:00Z",
+    created_at:        "2026-06-14T09:00:00Z",
+  };
+
+  // sms_logs has a late_warning_30min row for the CURRENT return date
+  const smsLogRow = {
+    booking_id:          "bk-dedup-001",
+    template_key:        "late_warning_30min",
+    sent_at:             "2026-06-15T14:30:00Z",
+    return_date_at_send: "2026-06-15",  // matches current returnDate
+  };
+
+  const sbClient = makeLoadSbClient([bookingRow], [smsLogRow]);
+  const allBookings = await loadBookingsFromSupabase(sbClient);
+
+  assert.ok(allBookings, "should return allBookings");
+  const booking = (allBookings["camry"] || [])[0];
+  assert.ok(booking, "booking should be present");
+  assert.ok(
+    booking.smsSentAt && booking.smsSentAt["late_warning_30min"],
+    "smsSentAt should include late_warning_30min for current return date"
+  );
+});
+
+test("loadBookingsFromSupabase: does NOT pre-populate smsSentAt for old return-date rows (extension-awareness)", async () => {
+  reset();
+
+  const bookingRow = {
+    booking_ref:       "bk-ext-001",
+    vehicle_id:        "camry",
+    customer_name:     "Test Renter",
+    customer_email:    "test@example.com",
+    customer_phone:    "+13105550001",
+    renter_phone:      "+13105550001",
+    pickup_date:       "2026-06-14",
+    return_date:       "2026-06-16",  // extended to June 16
+    pickup_time:       "10:00",
+    return_time:       "08:00",
+    status:            "active_rental",
+    payment_intent_id: "pi_test",
+    completed_at:      null,
+    extension_count:   1,
+    late_fee_status:   null,
+    late_fee_amount:   null,
+    balance_due:       0,
+    balance_due_set_at: null,
+    updated_at:        "2026-06-15T10:00:00Z",
+    created_at:        "2026-06-14T09:00:00Z",
+  };
+
+  // sms_logs has a late_at_return row from the OLD return date (2026-06-15)
+  const oldDateSmsRow = {
+    booking_id:          "bk-ext-001",
+    template_key:        "late_at_return",
+    sent_at:             "2026-06-15T15:00:00Z",
+    return_date_at_send: "2026-06-15",  // OLD return date — should NOT block new-date send
+  };
+
+  const sbClient = makeLoadSbClient([bookingRow], [oldDateSmsRow]);
+  const allBookings = await loadBookingsFromSupabase(sbClient);
+
+  const booking = (allBookings["camry"] || [])[0];
+  assert.ok(booking, "booking should be present");
+  assert.ok(
+    !booking.smsSentAt || !booking.smsSentAt["late_at_return"],
+    "smsSentAt must NOT include late_at_return from the old return date (extension-awareness)"
+  );
+});
+
+
+// ─── processCompleted: post_thank_you and retention_7d window tests ───────────
+
+function makeCompletedBooking(overrides = {}) {
+  return {
+    bookingId:   "bk-completed-001",
+    vehicleId:   "camry",
+    name:        "Test Renter",
+    phone:       "+13105550001",
+    email:       "test@example.com",
+    status:      "completed_rental",
+    pickupDate:  "2026-06-10",
+    pickupTime:  "10:00 AM",
+    returnDate:  "2026-06-15",
+    returnTime:  "10:00 AM",
+    completedAt: null,
+    amountPaid:  150,
+    smsSentAt:   {},
+    ...overrides,
+  };
+}
+
+test("processCompleted: sends post_thank_you within 30 min of completion", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z"); // 5 min ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    true,
+    "post_thank_you should fire within 30 min of completion"
+  );
+});
+
+test("processCompleted: does NOT send post_thank_you if 31 min have passed (window closed)", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:40:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z"); // 35 min ago — outside 30-min window
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    false,
+    "post_thank_you must NOT fire after 30-min window closes"
+  );
+});
+
+test("processCompleted: does NOT resend post_thank_you when smsSentAt flag is set", async () => {
+  reset();
+  const now         = new Date("2026-06-15T17:10:00Z");
+  const completedAt = new Date("2026-06-15T17:05:00Z");
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      completedAt: completedAt.toISOString(),
+      smsSentAt:   { post_thank_you: completedAt.toISOString() },
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "post_thank_you"),
+    false,
+    "post_thank_you must not be resent when smsSentAt flag is set"
+  );
+});
+
+test("processCompleted: sends retention_7d within 4 hours of 7-day mark", async () => {
+  reset();
+  // completedAt = 7 days + 1 hour ago → inside 4-hour window
+  const now         = new Date("2026-06-22T11:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // exactly 7 days + 1h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    true,
+    "retention_7d should fire 1h after the 7-day mark (inside 4-hour window)"
+  );
+});
+
+test("processCompleted: does NOT send retention_7d before 7-day mark", async () => {
+  reset();
+  // completedAt = 6 days + 23 hours ago → just before the 7-day mark
+  const now         = new Date("2026-06-22T09:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 6d23h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must NOT fire before 7-day mark"
+  );
+});
+
+test("processCompleted: does NOT send retention_7d after 4-hour window closes", async () => {
+  reset();
+  // completedAt = 7 days + 5 hours ago → outside 4-hour window
+  const now         = new Date("2026-06-22T15:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 7d+5h ago
+  const allBookings = {
+    camry: [makeCompletedBooking({ completedAt: completedAt.toISOString() })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must NOT fire after the 4-hour window closes"
+  );
+});
+
+test("processCompleted: does NOT resend retention_7d when smsSentAt flag is set", async () => {
+  reset();
+  const now         = new Date("2026-06-22T11:00:00Z");
+  const completedAt = new Date("2026-06-15T10:00:00Z"); // 7d+1h ago (inside window)
+  const allBookings = {
+    camry: [makeCompletedBooking({
+      completedAt: completedAt.toISOString(),
+      smsSentAt:   { retention_7d: "2026-06-22T10:30:00Z" },
+    })],
+  };
+  const sentMarks = [];
+
+  await processCompleted(allBookings, now, sentMarks);
+
+  assert.equal(
+    sentMarks.some((m) => m.key === "retention_7d"),
+    false,
+    "retention_7d must not be resent when smsSentAt flag is set"
+  );
+});

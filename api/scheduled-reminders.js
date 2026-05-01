@@ -46,7 +46,6 @@ import {
   RETURN_REMINDER_24H,
   ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
-  PRE_RETURN_LATE_FEE_WARNING,
   LATE_GRACE_STARTED,
   LATE_ESCALATION,
   PAYMENT_FAILED_BALANCE,
@@ -222,38 +221,57 @@ async function isSmsLogged(bookingId, templateKey, returnDateStr) {
  * Uses upsert so duplicate calls are idempotent.
  * Always stores `{ priority }` in metadata so the cross-cron cooldown gate
  * can compare priorities of messages from different cron jobs.
+ *
+ * Retries up to MAX_SMS_LOG_RETRIES times with an exponential back-off so
+ * that transient Supabase errors do not leave the dedup table empty (which
+ * would allow the next cron tick to re-send the same message).
+ *
  * @param {string} bookingId
  * @param {string} templateKey
  * @param {string} [returnDateStr] - YYYY-MM-DD; omit for non-return-time messages
  * @param {object} [metadata]      - optional JSON payload (e.g. link validation result)
  */
+const MAX_SMS_LOG_RETRIES  = 3;
+const SMS_LOG_RETRY_BASE_MS = 300; // 300 ms → 600 ms → 1200 ms
+
 async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata) {
   const sb = getSupabaseAdmin();
   if (!sb || !bookingId) return;
-  try {
-    const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
-    const row = {
-      booking_id:          bookingId,
-      template_key:        templateKey,
-      return_date_at_send: date,
-      // Always include priority so cross-cron cooldown queries are accurate.
-      metadata: {
-        priority: getSmsPriority(templateKey),
-        ...(metadata && typeof metadata === "object" ? metadata : {}),
-      },
-    };
-    const { error } = await sb
-      .from("sms_logs")
-      .upsert(
-        row,
-        { onConflict: "booking_id,template_key,return_date_at_send" }
+  const date = returnDateStr || SMS_LOGS_SENTINEL_DATE;
+  const row = {
+    booking_id:          bookingId,
+    template_key:        templateKey,
+    return_date_at_send: date,
+    // Always include priority so cross-cron cooldown queries are accurate.
+    metadata: {
+      priority: getSmsPriority(templateKey),
+      ...(metadata && typeof metadata === "object" ? metadata : {}),
+    },
+  };
+  for (let attempt = 1; attempt <= MAX_SMS_LOG_RETRIES; attempt++) {
+    try {
+      const { error } = await sb
+        .from("sms_logs")
+        .upsert(row, { onConflict: "booking_id,template_key,return_date_at_send" });
+      if (!error) return; // success
+      console.warn(
+        `scheduled-reminders: sms_logs write error (attempt ${attempt}/${MAX_SMS_LOG_RETRIES}):`,
+        error.message
       );
-    if (error) {
-      console.warn("scheduled-reminders: sms_logs write error (non-fatal):", error.message);
+    } catch (err) {
+      console.warn(
+        `scheduled-reminders: sms_logs write failed (attempt ${attempt}/${MAX_SMS_LOG_RETRIES}):`,
+        err.message
+      );
     }
-  } catch (err) {
-    console.warn("scheduled-reminders: sms_logs write failed (non-fatal):", err.message);
+    if (attempt < MAX_SMS_LOG_RETRIES) {
+      await new Promise((r) => setTimeout(r, SMS_LOG_RETRY_BASE_MS * attempt));
+    }
   }
+  console.error(
+    `scheduled-reminders: sms_logs write FAILED after ${MAX_SMS_LOG_RETRIES} attempts ` +
+    `for ${bookingId}/${templateKey}/${date} — dedup record is missing, duplicate risk elevated`
+  );
 }
 
 // ─── SMS delivery visibility log ──────────────────────────────────────────────
@@ -1203,28 +1221,6 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
       }
 
-      // ── P3: 1–2 hours before return — late-fee warning ──────────────────────
-      // Fires once in the 60–120 min window before return.
-      // Informs renters of the late-fee schedule and provides an extend link.
-      // Cross-cron cooldown is bypassed because this is time-critical information.
-      if (
-        !sentThisBooking &&
-        minutesUntilReturn <= 120 && minutesUntilReturn > 60 &&
-        booking.lateFeeStatus !== "dismissed" &&
-        !alreadySent(booking, "pre_return_late_fee_warning") &&
-        !(await isSmsLogged(id, "pre_return_late_fee_warning", returnDateStr))
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "pre_return_late_fee_warning");
-        const sent = await safeSend(booking.phone, render(PRE_RETURN_LATE_FEE_WARNING, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "pre_return_late_fee_warning" });
-        if (sent) {
-          sentThisBooking = true;
-          sentMarks.push({ vehicleId, id, key: "pre_return_late_fee_warning" });
-          await logSmsToSupabase(id, "pre_return_late_fee_warning", returnDateStr);
-        }
-      } else if (minutesUntilReturn <= 120 && minutesUntilReturn > 60) {
-        console.log(`[SMS_SKIP] ${id} pre_return_late_fee_warning: already sent (dedup)`);
-      }
-
       // ── P3: ~7–8 hours before return — same-day reminder ────────────────────
       // Fires once in the 420–480 min window (7–8 h before return), bridging
       // the gap between the 24h return reminder and the 1h extension invite.
@@ -1320,7 +1316,12 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
 /**
  * Process completed_rental bookings — post-rental and retention SMS.
  */
-async function processCompleted(allBookings, now, sentMarks) {
+export async function processCompleted(allBookings, now, sentMarks) {
+  // Anti-spam: retention SMS fires in the first 4 hours after the target day
+  // so that a transient Supabase outage can at most produce 48 duplicate sends
+  // (at 5-min cron intervals) instead of 288 (the old 24-hour window).
+  const RETENTION_WINDOW_HOURS = 4;
+
   const retentionSchedule = [
     { days: 7,  key: "retention_7d",  template: RETENTION_DAY_7 },
   ];
@@ -1335,8 +1336,11 @@ async function processCompleted(allBookings, now, sentMarks) {
       const completedAt = new Date(booking.completedAt);
       const hoursSinceComplete = (now - completedAt) / 3600000;
 
-      // Thank-you immediately on completion (within 1 hour)
-      if (hoursSinceComplete < 1 && !alreadySent(booking, "post_thank_you") &&
+      // Thank-you immediately on completion (within 30 minutes).
+      // Anti-spam: 30-min window (6 cron ticks) is sufficient since processAutoCompletions
+      // and processCompleted run in the same cron tick; the 0.5h cap prevents up to
+      // 12 sends under a Supabase outage (vs. the old 60-min / 12-tick window).
+      if (hoursSinceComplete < 0.5 && !alreadySent(booking, "post_thank_you") &&
           !(await isSmsLogged(id, "post_thank_you"))) {
         const sent = await safeSend(booking.phone, render(POST_RENTAL_THANK_YOU, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "post_thank_you" });
         if (sent) {
@@ -1361,7 +1365,7 @@ async function processCompleted(allBookings, now, sentMarks) {
         const targetHours = item.days * 24;
         if (
           hoursSinceComplete >= targetHours &&
-          hoursSinceComplete < targetHours + 24 &&
+          hoursSinceComplete < targetHours + RETENTION_WINDOW_HOURS &&
           !alreadySent(booking, item.key) &&
           !(await isSmsLogged(id, item.key))
         ) {
@@ -1428,7 +1432,7 @@ export async function loadBookingsFromSupabase(sb) {
       "pending_verification",
     ];
 
-    // Recently completed = last 9 days (covers 7-day retention + buffer)
+    // Recently completed = last 9 days (covers 7-day retention window + 4h window + buffer)
     const cutoffDate = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
 
     let [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
@@ -1536,22 +1540,52 @@ export async function loadBookingsFromSupabase(sb) {
       });
     }
 
-    // Pre-populate smsSentAt from sms_logs sentinel rows (once-per-booking SMS
-    // types logged without a return date).  Return-time keys are intentionally
-    // excluded so alreadySent() never blocks a re-fire after an extension.
+    // Pre-populate smsSentAt from sms_logs so alreadySent() works as a robust
+    // first-line guard, reducing dependence on the per-tick isSmsLogged() queries.
+    //
+    // Two categories of rows are included:
+    //   1. Sentinel rows (return_date_at_send = SMS_LOGS_SENTINEL_DATE) — once-per-
+    //      booking messages (pickup_24h, post_thank_you, etc.) that are not scoped to
+    //      a return date.
+    //   2. Current-return-date rows (return_date_at_send = booking.returnDate) — return-
+    //      time messages (late_warning_30min, late_at_return, etc.) for the booking's
+    //      CURRENT return date.  Old-return-date rows (from before an extension) are
+    //      intentionally excluded: when a rental is extended the return_date changes, so
+    //      those rows no longer match and the messages correctly re-fire for the new date.
+    //
+    // This means that even if a later isSmsLogged() read fails (non-fatal), alreadySent()
+    // catches return-time messages that were already sent in a previous cron tick.
     const bookingRefs = allRows.map((r) => r.booking_ref).filter((ref) => ref && ref.trim());
     if (bookingRefs.length > 0) {
+      // Build bookingRef → current returnDate for extension-aware row filtering.
+      const returnDateByRef = {};
+      for (const bookings of Object.values(allBookings)) {
+        for (const booking of bookings) {
+          if (booking.bookingId) returnDateByRef[booking.bookingId] = booking.returnDate || "";
+        }
+      }
+
       try {
+        // Fetch all sms_logs rows for these booking refs written in the last 30 days.
+        // 30 days covers the longest retention window (7-day retention SMS) plus buffer.
+        const smsLogsCutoffDate = new Date(Date.now() - 30 * 24 * MS_PER_HOUR).toISOString();
         const { data: smsRows, error: smsErr } = await sb
           .from("sms_logs")
-          .select("booking_id, template_key, sent_at")
+          .select("booking_id, template_key, sent_at, return_date_at_send")
           .in("booking_id", bookingRefs)
-          .eq("return_date_at_send", SMS_LOGS_SENTINEL_DATE);
+          .gte("sent_at", smsLogsCutoffDate);
         if (smsErr) {
           console.warn("scheduled-reminders loadBookingsFromSupabase: sms_logs lookup failed (non-fatal):", smsErr.message);
         } else {
           const smsByRef = {};
           for (const log of smsRows || []) {
+            const currentReturnDate = returnDateByRef[log.booking_id] || "";
+            // Include only sentinel rows OR rows matching the booking's current return date.
+            // Old-return-date rows (pre-extension) are excluded to preserve extension-awareness.
+            const isSentinel    = log.return_date_at_send === SMS_LOGS_SENTINEL_DATE;
+            const isCurrentDate = log.return_date_at_send === currentReturnDate && currentReturnDate !== "";
+            if (!isSentinel && !isCurrentDate) continue;
+
             if (!smsByRef[log.booking_id]) smsByRef[log.booking_id] = {};
             const existing = smsByRef[log.booking_id][log.template_key];
             if (!existing || new Date(log.sent_at) > new Date(existing)) {
