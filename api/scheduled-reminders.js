@@ -2301,6 +2301,13 @@ export default async function handler(req, res) {
   // when Supabase is unavailable (e.g. missing credentials, network error).
   const sbClient = getSupabaseAdmin();
   if (sbClient) {
+    // DEBUG: confirm which DB project the cron is connected to.
+    // Remove after renter_phone column issue is confirmed resolved.
+    const { data: _dbg, error: _dbgErr } = await sbClient
+      .from("bookings")
+      .select("booking_ref, renter_phone")
+      .limit(1);
+    console.log("DEBUG bookings renter_phone:", { error: _dbgErr?.message, data: _dbg });
     allBookings = await loadBookingsFromSupabase(sbClient);
     if (allBookings === null) {
       console.warn("scheduled-reminders: Supabase load failed — falling back to bookings.json");

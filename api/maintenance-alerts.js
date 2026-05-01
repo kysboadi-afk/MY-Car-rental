@@ -236,7 +236,9 @@ async function logHighMileageAlert(sb, bookingId) {
       template_key:        TEMPLATE_KEY_HIGH_MILEAGE,
       return_date_at_send: today,
     });
-    if (error) {
+    // 23505 = unique_violation: a duplicate same-day entry is acceptable because
+    // the SMS was already sent and checkHighMileageQuota enforces the hard cap.
+    if (error && error.code !== "23505") {
       console.warn("maintenance-alerts: sms_logs insert for HIGH_DAILY_MILEAGE failed (non-fatal):", error.message);
     }
   } catch (err) {
