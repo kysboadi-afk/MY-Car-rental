@@ -176,6 +176,34 @@
     #mbStatusMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
     #mbStatusMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
 
+    /* ── Waive Fees ────────────────────────────────────────────────── */
+    .waive-fee-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
+    .waive-fee-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 6px; }
+    .waive-fee-section .subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+    #wfBookingInfo {
+      background: #111;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #ccc;
+    }
+    #wfBookingInfo .bk-row { display: flex; justify-content: space-between; padding: 3px 0; gap: 12px; }
+    #wfBookingInfo .bk-label { color: #888; white-space: nowrap; }
+    #wfBookingInfo .bk-value { color: #fff; font-weight: 500; text-align: right; }
+    #waiveFeeAmountGroup { display: none; }
+    #waiveFeeMsg {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    #waiveFeeMsg.success { background: #1b3a1b; color: #4caf50; border: 1px solid #2e5e2e; }
+    #waiveFeeMsg.error   { background: #3a1b1b; color: #f44336; border: 1px solid #5e2e2e; }
+    #waiveFeeMsg.info    { background: #1b2a3a; color: #64b5f6; border: 1px solid #2e4a5e; }
+
     /* ── Vehicle Tracking & Profit ───────────────────────────────────── */
     .profit-section { margin-top: 40px; border-top: 1px solid #2a2a2a; padding-top: 28px; }
     .profit-section h2 { font-size: 18px; color: #ffb400; margin-bottom: 4px; }
@@ -569,6 +597,67 @@
 
       <div id="profitMsg"></div>
     </div><!-- /profit-section -->
+
+    <!-- ── Waive Fees ─────────────────────────────────────────────── -->
+    <div class="waive-fee-section">
+      <h2>🚫 Waive Fees</h2>
+      <p class="subtitle">Apply a full, partial, or complete waiver to any booking fee — overdue return penalty, remaining rental balance, or all outstanding fees. A reason is required and every waiver is logged in the audit trail. This does <strong>not</strong> automatically issue a Stripe refund.</p>
+
+      <div class="form-group">
+        <label for="wfBookingId">Booking Reference <span style="color:#f44336">*</span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="wfBookingId" placeholder="e.g. bk-abc123" maxlength="50" autocomplete="off" style="flex:1">
+          <button class="btn-block" id="wfLookupBtn" style="max-width:110px;padding:10px 14px;font-size:13px;flex-shrink:0">🔍 Look Up</button>
+        </div>
+      </div>
+
+      <!-- Booking details panel — shown after a successful lookup -->
+      <div id="wfBookingInfo" style="display:none">
+        <div class="bk-row"><span class="bk-label">Customer</span><span class="bk-value" id="wfInfoName">—</span></div>
+        <div class="bk-row"><span class="bk-label">Vehicle</span><span class="bk-value" id="wfInfoVehicle">—</span></div>
+        <div class="bk-row"><span class="bk-label">Pickup → Return</span><span class="bk-value" id="wfInfoDates">—</span></div>
+        <div class="bk-row"><span class="bk-label">Base Rental Total</span><span class="bk-value" id="wfInfoTotal">—</span></div>
+        <div class="bk-row"><span class="bk-label">Deposit Paid</span><span class="bk-value" id="wfInfoDeposit">—</span></div>
+        <div class="bk-row"><span class="bk-label">Remaining Balance</span><span class="bk-value" id="wfInfoBalance">—</span></div>
+        <div class="bk-row" id="wfInfoLateFeeRow" style="display:none"><span class="bk-label">Late Fee Waiver</span><span class="bk-value" id="wfInfoLateFee">—</span></div>
+        <div class="bk-row" id="wfInfoRentalFeeRow" style="display:none"><span class="bk-label">Rental Balance Waiver</span><span class="bk-value" id="wfInfoRentalFee">—</span></div>
+      </div>
+
+      <div class="form-group">
+        <label for="wfFeeType">Fee Type <span style="color:#f44336">*</span></label>
+        <select id="wfFeeType">
+          <option value="late_fee">Late Fee — waive the overdue return penalty</option>
+          <option value="rental_balance">Remaining Balance — waive the base rental balance owed</option>
+          <option value="all_fees">All Fees — waive late penalty + entire remaining balance</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="wfWaiverTypeGroup">
+        <label for="wfWaiverType">Waiver Type <span style="color:#f44336">*</span></label>
+        <select id="wfWaiverType">
+          <option value="full">Full — waive the entire amount</option>
+          <option value="partial">Partial — waive a specific dollar amount</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="waiveFeeAmountGroup">
+        <label for="wfAmount">Amount to Waive ($) <span style="color:#f44336">*</span></label>
+        <input type="number" id="wfAmount" placeholder="0.00" min="0.01" step="0.01">
+      </div>
+
+      <div class="form-group">
+        <label for="wfReason">Reason <span style="color:#f44336">*</span></label>
+        <input type="text" id="wfReason" placeholder="e.g. Customer emergency, accident, courtesy waiver…" maxlength="300" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="wfWaivedBy">Applied By (optional)</label>
+        <input type="text" id="wfWaivedBy" placeholder="Your name or initials" maxlength="80" autocomplete="off">
+      </div>
+
+      <button class="btn-block" id="waiveFeeBtn" style="max-width:220px">🚫 Apply Waiver</button>
+      <div id="waiveFeeMsg"></div>
+    </div><!-- /waive-fee-section -->
   </div>
 
   <footer>
@@ -1219,6 +1308,174 @@
           .catch(function (err) { showMbMsg("Network error: " + err.message, "error"); })
           .finally(function () { btn.disabled = false; });
       });
+      // ── Waive Fees ─────────────────────────────────────────────────────────
+      (function () {
+        var feeTypeEl     = document.getElementById("wfFeeType");
+        var waiverTypeGrp = document.getElementById("wfWaiverTypeGroup");
+        var waiverTypeEl  = document.getElementById("wfWaiverType");
+        var amountGroup   = document.getElementById("waiveFeeAmountGroup");
+        var bookingInfoEl = document.getElementById("wfBookingInfo");
+        var waiveFeeMsg   = document.getElementById("waiveFeeMsg");
+
+        function showWfMsg(msg, type) {
+          waiveFeeMsg.textContent = msg;
+          waiveFeeMsg.className   = type;
+          waiveFeeMsg.style.display = "block";
+        }
+
+        function fmt(n) { return "$" + Number(n).toFixed(2); }
+
+        // Show/hide amount input based on fee type + waiver type
+        function updateAmountVisibility() {
+          var isAllFees = feeTypeEl.value === "all_fees";
+          // all_fees is always full — hide waiver type selector
+          waiverTypeGrp.style.display = isAllFees ? "none" : "block";
+          var isPartial = !isAllFees && waiverTypeEl.value === "partial";
+          amountGroup.style.display = isPartial ? "block" : "none";
+        }
+
+        feeTypeEl.addEventListener("change",    updateAmountVisibility);
+        waiverTypeEl.addEventListener("change", updateAmountVisibility);
+
+        // ── Lookup ────────────────────────────────────────────────────────────
+        document.getElementById("wfLookupBtn").addEventListener("click", function () {
+          var secret    = document.getElementById("adminSecret").value;
+          var bookingId = document.getElementById("wfBookingId").value.trim();
+          if (!secret)    { showWfMsg("Please enter the admin password first.", "error"); return; }
+          if (!bookingId) { showWfMsg("Enter a booking reference to look up.", "error"); return; }
+
+          var btn = this;
+          btn.disabled = true;
+          showWfMsg("Looking up booking…", "info");
+          bookingInfoEl.style.display = "none";
+
+          fetch(API_BASE + "/api/waive-late-fee", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ secret: secret, booking_id: bookingId, action: "lookup" }),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (result) {
+              if (!result.ok) {
+                showWfMsg("Error: " + (result.data.error || "Unknown error"), "error");
+                return;
+              }
+              var d = result.data;
+              document.getElementById("wfInfoName").textContent    = d.customer_name || "—";
+              document.getElementById("wfInfoVehicle").textContent = d.vehicle_id    || "—";
+              document.getElementById("wfInfoDates").textContent   = (d.pickup_date && d.return_date)
+                ? d.pickup_date + " → " + d.return_date : "—";
+              document.getElementById("wfInfoTotal").textContent   = fmt(d.total_price);
+              document.getElementById("wfInfoDeposit").textContent = fmt(d.deposit_paid);
+              document.getElementById("wfInfoBalance").textContent = fmt(d.remaining_balance);
+
+              var lateFeeRow = document.getElementById("wfInfoLateFeeRow");
+              if (d.late_fee_waived) {
+                document.getElementById("wfInfoLateFee").textContent = fmt(d.late_fee_waived_amount) + " waived";
+                lateFeeRow.style.display = "flex";
+              } else {
+                lateFeeRow.style.display = "none";
+              }
+
+              var rentalFeeRow = document.getElementById("wfInfoRentalFeeRow");
+              if (d.rental_balance_waived) {
+                document.getElementById("wfInfoRentalFee").textContent = fmt(d.rental_balance_waived_amount) + " waived";
+                rentalFeeRow.style.display = "flex";
+              } else {
+                rentalFeeRow.style.display = "none";
+              }
+
+              bookingInfoEl.style.display = "block";
+              waiveFeeMsg.style.display   = "none";
+            })
+            .catch(function (err) { showWfMsg("Network error: " + err.message, "error"); })
+            .finally(function () { btn.disabled = false; });
+        });
+
+        // ── Apply Waiver ──────────────────────────────────────────────────────
+        document.getElementById("waiveFeeBtn").addEventListener("click", function () {
+          var secret     = document.getElementById("adminSecret").value;
+          var bookingId  = document.getElementById("wfBookingId").value.trim();
+          var feeType    = feeTypeEl.value;
+          var waiverType = feeType === "all_fees" ? "full" : waiverTypeEl.value;
+          var waivedAmt  = document.getElementById("wfAmount").value;
+          var reason     = document.getElementById("wfReason").value.trim();
+          var waivedBy   = document.getElementById("wfWaivedBy").value.trim();
+
+          if (!secret)    { showWfMsg("Please enter the admin password first.", "error"); return; }
+          if (!bookingId) { showWfMsg("Booking reference is required.", "error"); return; }
+          if (!reason)    { showWfMsg("A reason is required for every waiver.", "error"); return; }
+          if (waiverType === "partial") {
+            var parsed = parseFloat(waivedAmt);
+            if (isNaN(parsed) || parsed <= 0) {
+              showWfMsg("Enter a valid dollar amount for a partial waiver.", "error");
+              return;
+            }
+          }
+
+          var body = {
+            secret:      secret,
+            booking_id:  bookingId,
+            fee_type:    feeType,
+            waiver_type: waiverType,
+            reason:      reason,
+          };
+          if (waiverType === "partial") body.waived_amount = parseFloat(waivedAmt);
+          if (waivedBy) body.waived_by = waivedBy;
+
+          var btn = this;
+          btn.disabled = true;
+          showWfMsg("Applying waiver…", "info");
+
+          fetch(API_BASE + "/api/waive-late-fee", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify(body),
+          })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (result) {
+              if (!result.ok) {
+                showWfMsg("Error: " + (result.data.error || "Unknown error"), "error");
+              } else {
+                var d   = result.data;
+                var msg = "✅ Waiver applied to " + d.booking_ref + ".";
+                if (d.late_fee_waived_amount !== null) {
+                  msg += " Late fee waived: " + fmt(d.late_fee_waived_amount) + ".";
+                }
+                if (d.rental_balance_waived_amount !== null) {
+                  msg += " Rental balance waived: " + fmt(d.rental_balance_waived_amount)
+                    + " (new balance: " + fmt(d.new_remaining_balance) + ").";
+                }
+                if (d.is_update) msg += " (Updated existing waiver.)";
+                showWfMsg(msg, "success");
+                // Reset action fields but keep booking ref + info panel so the
+                // admin can apply another waiver to the same booking if needed.
+                document.getElementById("wfReason").value    = "";
+                document.getElementById("wfWaivedBy").value  = "";
+                document.getElementById("wfAmount").value    = "";
+                feeTypeEl.value    = "late_fee";
+                waiverTypeEl.value = "full";
+                waiverTypeGrp.style.display = "block";
+                amountGroup.style.display   = "none";
+                // Refresh the booking info panel to reflect the new state
+                if (bookingInfoEl.style.display !== "none") {
+                  if (d.late_fee_waived_amount !== null) {
+                    document.getElementById("wfInfoLateFee").textContent = fmt(d.late_fee_waived_amount) + " waived";
+                    document.getElementById("wfInfoLateFeeRow").style.display = "flex";
+                  }
+                  if (d.rental_balance_waived_amount !== null) {
+                    document.getElementById("wfInfoBalance").textContent  = fmt(d.new_remaining_balance);
+                    document.getElementById("wfInfoRentalFee").textContent = fmt(d.rental_balance_waived_amount) + " waived";
+                    document.getElementById("wfInfoRentalFeeRow").style.display = "flex";
+                  }
+                }
+              }
+            })
+            .catch(function (err) { showWfMsg("Network error: " + err.message, "error"); })
+            .finally(function () { btn.disabled = false; });
+        });
+      })();
+
     })();
   </script>
 </body>
