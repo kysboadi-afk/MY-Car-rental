@@ -1,4 +1,14 @@
 {
+  "headers": [
+    {
+      "source": "/api/admin-chat",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "https://www.slytrans.com" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    }
+  ],
   "functions": {
     "api/admin-chat.js":                    { "maxDuration": 60 },
     "api/sms-webhook.js":                   { "maxDuration": 30 },
