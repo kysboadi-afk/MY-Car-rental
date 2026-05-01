@@ -1088,16 +1088,35 @@ export default async function handler(req, res) {
       const sbDismiss = getSupabaseAdmin();
       if (!sbDismiss) return res.status(500).json({ error: "Database not configured" });
 
-      const { error: dismissErr } = await sbDismiss
+      const dismissPatch = {
+        late_fee_status:      "dismissed",
+        late_fee_approved_at: new Date().toISOString(),
+        late_fee_approved_by: "admin_panel",
+        updated_at:           new Date().toISOString(),
+      };
+      const { data: dismissedByRef, error: dismissErr } = await sbDismiss
         .from("bookings")
-        .update({
-          late_fee_status:      "dismissed",
-          late_fee_approved_at: new Date().toISOString(),
-          late_fee_approved_by: "admin_panel",
-          updated_at:           new Date().toISOString(),
-        })
-        .eq("booking_ref", bookingId);
+        .update(dismissPatch)
+        .eq("booking_ref", bookingId)
+        .select("id");
       if (dismissErr) return res.status(500).json({ error: dismissErr.message });
+
+      if (!dismissedByRef || dismissedByRef.length === 0) {
+        const numericId = parseInt(bookingId, 10);
+        if (!isNaN(numericId)) {
+          const { data: dismissedById, error: dismissErr2 } = await sbDismiss
+            .from("bookings")
+            .update(dismissPatch)
+            .eq("id", numericId)
+            .select("id");
+          if (dismissErr2) return res.status(500).json({ error: dismissErr2.message });
+          if (!dismissedById || dismissedById.length === 0) {
+            return res.status(404).json({ error: "Booking not found" });
+          }
+        } else {
+          return res.status(404).json({ error: "Booking not found" });
+        }
+      }
       return res.status(200).json({ success: true });
     }
 
@@ -1126,11 +1145,30 @@ export default async function handler(req, res) {
       if (lateFeeAmount != null) patch.late_fee_amount = lateFeeAmount;
       if (lateFeeStatus)         patch.late_fee_status = lateFeeStatus;
 
-      const { error: editErr } = await sbEdit
+      const { data: updatedByRef, error: editErr } = await sbEdit
         .from("bookings")
         .update(patch)
-        .eq("booking_ref", bookingId);
+        .eq("booking_ref", bookingId)
+        .select("id");
       if (editErr) return res.status(500).json({ error: editErr.message });
+
+      if (!updatedByRef || updatedByRef.length === 0) {
+        // Fallback: bookingId may be a numeric row id when booking_ref is null
+        const numericId = parseInt(bookingId, 10);
+        if (!isNaN(numericId)) {
+          const { data: updatedById, error: editErr2 } = await sbEdit
+            .from("bookings")
+            .update(patch)
+            .eq("id", numericId)
+            .select("id");
+          if (editErr2) return res.status(500).json({ error: editErr2.message });
+          if (!updatedById || updatedById.length === 0) {
+            return res.status(404).json({ error: "Booking not found" });
+          }
+        } else {
+          return res.status(404).json({ error: "Booking not found" });
+        }
+      }
       return res.status(200).json({ success: true });
     }
 
