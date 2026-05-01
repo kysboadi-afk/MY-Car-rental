@@ -82,9 +82,14 @@ export async function logAiAction(action, input, output, adminId = "admin") {
       admin_id: adminId,
     });
     if (!error) return;
-    // If ai_logs table doesn't exist yet, fall through to legacy table
-    if (!error.message?.includes("relation") && !error.message?.includes("does not exist")) {
-      console.warn("_admin-actions: ai_logs insert error:", error.message);
+    // If ai_logs table/column doesn't exist yet, fall through to legacy table
+    const msg = error.message || "";
+    const isSchemaError =
+      msg.includes("relation") ||
+      msg.includes("does not exist") ||
+      (msg.includes("Could not find") && msg.includes("column"));
+    if (!isSchemaError) {
+      console.warn("_admin-actions: ai_logs insert error:", msg);
       return;
     }
   } catch {
