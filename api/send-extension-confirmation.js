@@ -99,7 +99,7 @@ export default async function handler(req, res) {
 
     if (!vehicle_id || !bookingRef) {
       console.error("send-extension-confirmation: missing vehicle_id or booking_id in PI metadata", pi.id);
-      return res.status(422).json({ error: "Extension metadata is incomplete. Please contact us at (213) 916-6606." });
+      return res.status(422).json({ error: "Extension metadata is incomplete. Please contact us at (833) 252-1093." });
     }
 
     // ── Load booking ───────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ export default async function handler(req, res) {
 
     if (!ext) {
       console.error(`send-extension-confirmation: no extension data for PI ${pi.id}`);
-      return res.status(422).json({ error: "Extension details are unavailable. Please contact us at (213) 916-6606." });
+      return res.status(422).json({ error: "Extension details are unavailable. Please contact us at (833) 252-1093." });
     }
 
     const updatedReturnDate = ext.newReturnDate || booking.returnDate;
@@ -311,6 +311,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("send-extension-confirmation: unexpected error:", err);
-    return res.status(500).json({ error: "Unexpected error. Please contact us at (213) 916-6606." });
+    return res.status(500).json({ error: "Unexpected error. Please contact us at (833) 252-1093." });
   }
 }

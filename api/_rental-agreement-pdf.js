@@ -133,7 +133,7 @@ export function generateRentalAgreementPdf(body, ipAddress, cardLast4) {
 
     // ── Parties ────────────────────────────────────────────────────────────────
     sectionHeader("Parties");
-    bodyText(`Owner:   SLY Transportation Services — (213) 916-6606 — info@slytrans.com`);
+    bodyText(`Owner:   SLY Transportation Services — (833) 252-1093 — info@slytrans.com`);
     bodyText(`Renter:  ${name || "Not provided"}`);
 
     // ── Renter Information ─────────────────────────────────────────────────────

@@ -312,7 +312,7 @@ export const LATE_GRACE_EXPIRED =
 export const LATE_FEE_APPLIED =
   "A late fee has been applied.\n\n" +
   "Amount: \${late_fee}\n\n" +
-  "Questions? Call (213) 916-6606.\n\n" +
+  "Questions? Call (833) 252-1093.\n\n" +
   "Reply STOP to opt out.";
 
 /**
@@ -324,7 +324,7 @@ export const POST_RENTAL_CHARGE =
   "Type: {charge_label}\n" +
   "Amount: \${amount}\n" +
   "{reason}" +
-  "\nQuestions? Call (213) 916-6606.\n\n" +
+  "\nQuestions? Call (833) 252-1093.\n\n" +
   "Reply STOP to opt out.";
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -191,7 +191,7 @@ async function sendCustomerFallbackSms(bookingId, amount, phone) {
     const msg =
       `A late fee of $${amount} is owed on your rental.\n\n` +
       `Please complete payment here:\n${paymentLink}\n\n` +
-      `Questions? Call (213) 916-6606.\n\nReply STOP to opt out.`;
+      `Questions? Call (833) 252-1093.\n\nReply STOP to opt out.`;
     await sendSms(normalizePhone(phone), msg);
   } catch (smsErr) {
     console.warn("approve-late-fee: fallback SMS to customer failed (non-fatal):", smsErr.message);

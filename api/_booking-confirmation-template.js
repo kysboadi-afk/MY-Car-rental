@@ -159,7 +159,7 @@ export function buildUnifiedConfirmationEmail({
     <table style="border-collapse:collapse;width:100%">${tableRows}</table>
     ${breakdownHtml}
     ${notesHtml}
-    <p style="margin-top:16px">If any booking details are incorrect (especially pickup/return dates or times), reply to this email or call (213) 916-6606 so we can correct it right away.</p>
+    <p style="margin-top:16px">If any booking details are incorrect (especially pickup/return dates or times), reply to this email or call (833) 252-1093 so we can correct it right away.</p>
     <p style="margin-top:16px">Thank you for choosing Sly Transportation Services LLC.</p>
   `;
 
@@ -195,7 +195,7 @@ export function buildUnifiedConfirmationEmail({
     notes.length ? "Notes:" : "",
     ...(notes.length ? notes.map((n) => `- ${n}`) : []),
     "",
-    "If any booking details are incorrect (especially pickup/return dates or times), reply to this email or call (213) 916-6606 so we can correct it right away.",
+    "If any booking details are incorrect (especially pickup/return dates or times), reply to this email or call (833) 252-1093 so we can correct it right away.",
   ].filter(Boolean).join("\n");
 
   return { subject, html, text };

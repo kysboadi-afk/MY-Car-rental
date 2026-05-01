@@ -24,7 +24,7 @@ export const config = {
   api: { bodyParser: false },
 };
 
-const OWNER_PHONE = process.env.OWNER_PHONE || "+12139166606";
+const OWNER_PHONE = process.env.OWNER_PHONE || "+18332521093";
 const VALID_LEVELS = new Set(["full", "mid", "low"]);
 
 // ── Reply templates ───────────────────────────────────────────────────────────

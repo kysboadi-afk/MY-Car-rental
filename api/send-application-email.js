@@ -84,7 +84,7 @@ function buildApplicantEmailHtml(decision, firstName) {
         <li>Select your preferred car and complete your booking online.</li>
         <li>Our team will reach out if we need anything else before your rental begins.</li>
       </ul>
-      <p>Questions? Call us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+      <p>Questions? Call us at <strong>(833) 252-1093</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
       <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
     `;
   }
@@ -97,7 +97,7 @@ function buildApplicantEmailHtml(decision, firstName) {
         <strong>&#x26A0;&#xFE0F; Status: Under Review</strong> &mdash; Our team will get back to you within <strong>24 hours</strong>.
       </p>
       <p>Please keep an eye on your email and phone for updates from us.</p>
-      <p>Questions? Call us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+      <p>Questions? Call us at <strong>(833) 252-1093</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
       <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
     `;
   }
@@ -107,7 +107,7 @@ function buildApplicantEmailHtml(decision, firstName) {
     <p>Hi <strong>${esc(firstName)}</strong>,</p>
     <p>Thank you for your interest in renting with <strong>Sly Transportation Services LLC</strong>.</p>
     <p>After reviewing your application, we are unable to approve your request at this time as it does not meet our current rental requirements.</p>
-    <p>If you have questions or believe this was an error, please contact us at <strong>(213) 916-6606</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
+    <p>If you have questions or believe this was an error, please contact us at <strong>(833) 252-1093</strong> or email <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a>.</p>
     <p><strong>Sly Transportation Services LLC Team &#x1F697;</strong></p>
   `;
 }
@@ -124,7 +124,7 @@ function buildApplicantEmailText(decision, firstName) {
       "• Select your preferred car and complete your booking online.",
       "• Our team will reach out if we need anything else before your rental begins.",
       "",
-      `Questions? Call us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+      `Questions? Call us at (833) 252-1093 or email ${OWNER_EMAIL}.`,
       "",
       "— Sly Transportation Services LLC Team",
     ].join("\n");
@@ -137,7 +137,7 @@ function buildApplicantEmailText(decision, firstName) {
       "",
       "Our team will get back to you within 24 hours. Please keep an eye on your email and phone for updates.",
       "",
-      `Questions? Call us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+      `Questions? Call us at (833) 252-1093 or email ${OWNER_EMAIL}.`,
       "",
       "— Sly Transportation Services LLC Team",
     ].join("\n");
@@ -149,7 +149,7 @@ function buildApplicantEmailText(decision, firstName) {
     "Thank you for your interest in renting with Sly Transportation Services LLC.",
     "After reviewing your application, we are unable to approve your request at this time as it does not meet our current rental requirements.",
     "",
-    `If you have questions, please contact us at (213) 916-6606 or email ${OWNER_EMAIL}.`,
+    `If you have questions, please contact us at (833) 252-1093 or email ${OWNER_EMAIL}.`,
     "",
     "— Sly Transportation Services LLC Team",
   ].join("\n");
