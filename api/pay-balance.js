@@ -2,9 +2,10 @@
 // Vercel serverless function — creates a Stripe PaymentIntent for the
 // remaining rental balance after a reservation deposit has already been paid.
 //
-// The balance is computed server-side (full amount + tax – deposit paid).
-// The client never supplies an amount; it is always derived from vehicleId,
-// dates, and the protectionPlan flag so it cannot be tampered with.
+// The balance is computed server-side (full amount + tax – deposit paid –
+// any admin-granted rental balance waiver).  The client never supplies an
+// amount; it is always derived from vehicleId, dates, and the protectionPlan
+// flag so it cannot be tampered with.
 //
 // Required environment variables (set in Vercel dashboard):
 //   STRIPE_SECRET_KEY       — starts with sk_live_ or sk_test_
@@ -96,7 +97,39 @@ export default async function handler(req, res) {
     const preTaxAmount = computedFullRental + protectionCost;
     // Balance = pre-tax rental amount minus the deposit already paid.
     // Tax is calculated by Stripe automatically at checkout.
-    const balanceAmount = preTaxAmount - depositPaid;
+    let balanceAmount = preTaxAmount - depositPaid;
+
+    // ── Apply admin-granted rental balance waiver ──────────────────────────────
+    // If an admin previously waived part or all of the remaining balance via
+    // /api/waive-late-fee (fee_type: "rental_balance" or "all_fees"), honour
+    // that waiver so the customer is charged the reduced amount.
+    let waiverApplied = 0;
+    const bookingRef = typeof bookingId === "string" ? bookingId.trim() : "";
+    if (bookingRef) {
+      try {
+        const { data: bkRow } = await sb
+          .from("bookings")
+          .select("rental_balance_waived, rental_balance_waived_amount")
+          .eq("booking_ref", bookingRef)
+          .maybeSingle();
+
+        if (bkRow && bkRow.rental_balance_waived && bkRow.rental_balance_waived_amount) {
+          const waived = Math.max(0, Number(bkRow.rental_balance_waived_amount) || 0);
+          if (waived > 0) {
+            waiverApplied = Math.min(waived, balanceAmount);
+            balanceAmount = Math.max(0, balanceAmount - waiverApplied);
+            console.log("[pricing-balance-waiver]", {
+              booking_ref:    bookingRef,
+              waiver_applied: waiverApplied,
+              new_balance:    balanceAmount,
+            });
+          }
+        }
+      } catch (waiverErr) {
+        // Non-fatal: proceed with the full computed balance if the lookup fails.
+        console.warn("pay-balance: waiver lookup failed (non-fatal):", waiverErr.message);
+      }
+    }
 
     if (balanceAmount <= 0) {
       return res.status(400).json({ error: "No balance due for this booking." });
@@ -149,6 +182,7 @@ export default async function handler(req, res) {
         deposit_already_paid:  depositPaid.toFixed(2),
         full_rental_amount:    (computedFullRental + protectionCost).toFixed(2),
         balance_paid:          balanceAmount.toFixed(2),
+        waiver_applied:        waiverApplied.toFixed(2),
       },
     });
 
@@ -158,6 +192,7 @@ export default async function handler(req, res) {
       balanceAmount:  balanceAmount.toFixed(2),
       preTaxAmount:   preTaxAmount.toFixed(2),
       depositPaid:    depositPaid.toFixed(2),
+      waiverApplied:  waiverApplied.toFixed(2),
     });
   } catch (err) {
     console.error("Stripe PaymentIntent (balance) error:", err);

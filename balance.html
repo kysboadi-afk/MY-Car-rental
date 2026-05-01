@@ -307,7 +307,7 @@
       }
 
       // ── Build booking summary table ───────────────────────────────────────
-      function buildSummaryTable(balanceAmount, fullTotal, depositPaid) {
+      function buildSummaryTable(balanceAmount, fullTotal, depositPaid, waiverApplied) {
         var rows = [
           ["Vehicle",       escHtml(carName)],
           ["Renter",        escHtml(renterName || "—")],
@@ -318,6 +318,9 @@
         rows.push(["Insurance", protectionPlan ? "Damage Protection Plan" : "Own insurance"]);
         rows.push(["Deposit Paid", escHtml("$" + depositPaid + " (non-refundable)")]);
         rows.push(["Rental Subtotal", escHtml("$" + fullTotal + " (+ applicable tax)")]);
+        if (waiverApplied && parseFloat(waiverApplied) > 0) {
+          rows.push(["Admin Waiver", "<span style='color:#4caf50'>-$" + escHtml(waiverApplied) + " (applied)</span>"]);
+        }
         rows.push(["Balance Remaining", "<strong style='color:#ffb400'>$" + escHtml(balanceAmount) + "</strong>"]);
 
         return rows.map(function (r) {
@@ -350,11 +353,12 @@
           var balanceAmount  = data.balanceAmount;
           var fullTotal      = data.preTaxAmount;
           var depositPaid    = data.depositPaid;
+          var waiverApplied  = data.waiverApplied || "0.00";
 
           // Show main content now that we have the amounts
           document.getElementById("loadingSection").style.display = "none";
           document.getElementById("mainSection").style.display    = "";
-          document.getElementById("bookingTable").innerHTML = buildSummaryTable(balanceAmount, fullTotal, depositPaid);
+          document.getElementById("bookingTable").innerHTML = buildSummaryTable(balanceAmount, fullTotal, depositPaid, waiverApplied);
           document.getElementById("balanceDisplay").textContent   = "Balance Due: $" + balanceAmount;
 
           // ── Mount Stripe Payment Element ──────────────────────────────────
