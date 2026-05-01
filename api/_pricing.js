@@ -149,6 +149,30 @@ export async function getActiveVehicleIds(supabase) {
 }
 
 /**
+ * Get all known vehicle IDs (active, inactive, and maintenance), merging the
+ * static FLEET_VEHICLE_IDS list with every vehicle registered in the Supabase
+ * `vehicles` table.  Used by admin-only endpoints (v2-bookings, v2-dashboard)
+ * so historical bookings for retired vehicles remain visible.  Falls back to
+ * the static list when Supabase is unavailable.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient|null} supabase
+ * @returns {Promise<string[]>} deduped list of all known vehicle IDs
+ */
+export async function getAllVehicleIds(supabase) {
+  if (!supabase) return FLEET_VEHICLE_IDS;
+  try {
+    const { data, error } = await supabase
+      .from("vehicles")
+      .select("vehicle_id");
+    if (error || !data?.length) return FLEET_VEHICLE_IDS;
+    const dynamic = data.map(row => row.vehicle_id);
+    return [...new Set([...FLEET_VEHICLE_IDS, ...dynamic])];
+  } catch {
+    return FLEET_VEHICLE_IDS;
+  }
+}
+
+/**
  * Fetch pricing data for a single vehicle from the Supabase `vehicle_pricing` table.
  * Throws if the record is missing or the query fails — the DB is the source of truth.
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
