@@ -367,12 +367,13 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       console.log(`_booking-automation: created ${recordType} revenue record for booking ${bookingRef}`);
       // Post-write consistency guard for extension rows: the written return_date
       // must always equal bookings.return_date.  A mismatch here indicates a bug
-      // in the date-resolution logic above and should be investigated immediately.
+      // in the date-resolution logic above and must not be silently accepted —
+      // throw so strict callers (e.g. the main extension path) return HTTP 500
+      // and Stripe retries, giving the corrected DB state a chance to settle.
       if (recordType === "extension" && dbReturnDate && (record.return_date ? String(record.return_date).split("T")[0] : null) !== dbReturnDate) {
-        console.error(
-          `_booking-automation autoCreateRevenueRecord: CONSISTENCY ERROR — extension ` +
-          `revenue record for booking ${bookingRef} PI ${piId} was written with ` +
-          `return_date=${record.return_date} but bookings.return_date=${dbReturnDate}`,
+        throw new Error(
+          `CONSISTENCY ERROR — extension revenue record for booking ${bookingRef} PI ${piId} ` +
+          `was written with return_date=${record.return_date} but bookings.return_date=${dbReturnDate}`,
         );
       }
     }
