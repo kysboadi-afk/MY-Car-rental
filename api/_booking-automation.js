@@ -305,7 +305,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
         const existingReturnDate = existingRecord.return_date
           ? String(existingRecord.return_date).split("T")[0]
           : null;
-        if (dbReturnDate && existingReturnDate && existingReturnDate !== dbReturnDate) {
+        if (dbReturnDate && existingReturnDate !== dbReturnDate) {
           console.error(
             `_booking-automation autoCreateRevenueRecord: existing extension revenue record ` +
             `(id=${existingRecord.id}) for booking ${bookingRef} has stale ` +
@@ -368,7 +368,7 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
       // Post-write consistency guard for extension rows: the written return_date
       // must always equal bookings.return_date.  A mismatch here indicates a bug
       // in the date-resolution logic above and should be investigated immediately.
-      if (recordType === "extension" && dbReturnDate && record.return_date !== dbReturnDate) {
+      if (recordType === "extension" && dbReturnDate && (record.return_date ? String(record.return_date).split("T")[0] : null) !== dbReturnDate) {
         console.error(
           `_booking-automation autoCreateRevenueRecord: CONSISTENCY ERROR — extension ` +
           `revenue record for booking ${bookingRef} PI ${piId} was written with ` +
