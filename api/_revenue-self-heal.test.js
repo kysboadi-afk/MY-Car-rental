@@ -2,6 +2,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.STRIPE_SECRET_KEY = "sk_test_fake";
+process.env.ADMIN_SECRET = "test-admin-secret";
 
 const revenueRows = [];
 const bookingsByRef = {};
@@ -165,7 +166,7 @@ test("revenue-self-heal repairs incomplete revenue row", async () => {
   bookingsByRef["bk-1"] = { id: "b_1", payment_intent_id: "pi_1" };
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.failed, 0);
@@ -198,7 +199,7 @@ test("revenue-self-heal reconstructs missing booking from revenue + Stripe data"
   delete bookingsByRef["bk-missing"];
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.failed, 0);
@@ -229,7 +230,7 @@ test("revenue-self-heal Phase 2: creates missing revenue record for cash booking
   });
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 1);
@@ -263,7 +264,7 @@ test("revenue-self-heal Phase 2: creates missing revenue record for Stripe booki
   });
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 1);
@@ -303,7 +304,7 @@ test("revenue-self-heal Phase 2: skips booking that already has a revenue record
   });
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 0, "should not create duplicate revenue record");
@@ -338,7 +339,7 @@ test("revenue-self-heal Phase 2: skips booking covered by payment_intent_id matc
   });
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 0, "should not create record when PI already covered");
@@ -365,7 +366,7 @@ test("revenue-self-heal Phase 2: skips booking without booking_ref", async () =>
   });
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 0, "booking without booking_ref must be skipped");
@@ -407,7 +408,7 @@ test("revenue-self-heal Phase 2: backfills multiple missing bookings in one pass
   );
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.equal(res._body.backfilled, 2);
@@ -425,7 +426,7 @@ test("revenue-self-heal Phase 2: response includes backfill stats alongside Phas
   insertedRevenue.length = 0;
 
   const res = makeRes();
-  await handler({ method: "GET", headers: {} }, res);
+  await handler({ method: "GET", headers: {}, body: { secret: "test-admin-secret" } }, res);
 
   assert.equal(res._status, 200);
   assert.ok("backfilled" in res._body, "response must include backfilled count");
