@@ -1851,6 +1851,20 @@ export default async function handler(req, res) {
                   updated_at:                new Date().toISOString(),
                 })
                 .eq("booking_ref", bookingRef);
+
+              // Auto-dismiss any pending late fee: by paying for an extension the
+              // renter has resolved their overdue situation.  Only clears statuses
+              // that have not yet been acted on (pending_approval or null) — paid /
+              // approved / failed fees are left untouched.
+              await sbExt
+                .from("bookings")
+                .update({
+                  late_fee_status:      "dismissed",
+                  late_fee_approved_at: new Date().toISOString(),
+                  late_fee_approved_by: "auto_extension",
+                })
+                .eq("booking_ref", bookingRef)
+                .or("late_fee_status.eq.pending_approval,late_fee_status.is.null");
             }
           } catch (extClrErr) {
             console.error("stripe-webhook: Supabase extension field clear error (non-fatal):", extClrErr.message);
