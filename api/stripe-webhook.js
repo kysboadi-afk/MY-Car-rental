@@ -1093,7 +1093,13 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
       try {
         const orphanGross = opts.preResolvedGross ?? ((paymentIntent.amount_received || paymentIntent.amount || 0) / 100);
         let orphanVehicleId = paymentIntent.metadata?.vehicle_id || null;
-        try { orphanVehicleId = mapVehicleId(paymentIntent.metadata || {}); } catch { /* non-fatal */ }
+        try { orphanVehicleId = mapVehicleId(paymentIntent.metadata || {}); } catch (mapErr) {
+          console.warn("[processStripePayment] vehicle mapping failed for orphan revenue (using raw metadata value):", {
+            rawVehicleId:  paymentIntent.metadata?.vehicle_id || null,
+            vehicleName:   paymentIntent.metadata?.vehicle_name || null,
+            error:         mapErr.message,
+          });
+        }
         await createOrphanRevenueRecord({
           paymentIntentId: paymentIntent.id,
           vehicleId:       orphanVehicleId,

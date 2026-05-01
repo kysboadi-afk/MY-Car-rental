@@ -785,7 +785,7 @@ export async function autoCreateBlockedDate(vehicleId, startDate, endDate, reaso
   if (reason === "booking" && !bookingRef) {
     console.warn(
       `_booking-automation autoCreateBlockedDate: skipping insert for vehicle=${normalizedVehicleId} ` +
-      `${startDate}–${endDate} — bookingRef is required for reason='booking' but was not provided`
+      `${startDate}-${endDate} -- bookingRef is required for reason='booking' but was not provided`
     );
     return;
   }
