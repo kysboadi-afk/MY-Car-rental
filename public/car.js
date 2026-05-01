@@ -109,7 +109,13 @@ function clearPayError() {
       var ecBiWeek  = (pricing.economy && pricing.economy.biweekly)? Number(pricing.economy.biweekly): 0;
       var ecMonthly = (pricing.economy && pricing.economy.monthly) ? Number(pricing.economy.monthly) : 0;
 
-      ["camry","camry2013"].forEach(function(vid) {
+      // Apply economy-wide pricing to all vehicles currently in `cars`.
+      // Vehicles loaded dynamically from the API (non-static) already have their
+      // own per-vehicle pricing from the DB stored in cars[vid]; the economy
+      // global rates only update the original static entries (camry, camry2013)
+      // and any future vehicle that has been cached into `cars` before this
+      // callback fires.
+      Object.keys(cars).forEach(function(vid) {
         if (!cars[vid]) return;
         if (ecDaily   > 0) cars[vid].pricePerDay = ecDaily;
         if (ecWeekly  > 0) cars[vid].weekly      = ecWeekly;
@@ -253,7 +259,11 @@ if (cars[vehicleId]) {
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = "index.html";
+  if (document.referrer) {
+    window.history.back();
+  } else {
+    window.location.href = `car.html?vehicle=${vehicleId}`;
+  }
 });
 
 // ----- Booking Form Automation -----
@@ -1576,6 +1586,7 @@ function updatePayBtn() {
 
 function updateTotal() {
   // ----- Daily/weekly vehicles -----
+  if (!carData) return; // vehicle data not yet loaded (async init path)
   if(!pickup.value || !returnDate.value) return;
   const minDays = carData.minRentalDays || 1;
   // Use explicit UTC arithmetic to count whole calendar days without any
