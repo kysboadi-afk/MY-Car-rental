@@ -233,7 +233,7 @@ test("waive-late-fee: 400 partial waiver requires positive waived_amount", async
   assert.equal(res._status, 400);
 });
 
-test("waive-late-fee: 400 partial waiver cannot exceed max late fee (35)", async () => {
+test("waive-late-fee: 200 partial waiver with large amount is allowed (no cap)", async () => {
   reset();
   sbClient = makeSupabaseClient({ bookingRow: makeBookingRow() });
   const res = makeRes();
@@ -241,11 +241,11 @@ test("waive-late-fee: 400 partial waiver cannot exceed max late fee (35)", async
     secret:        process.env.ADMIN_SECRET,
     booking_id:    "bk-test-001",
     waiver_type:   "partial",
-    waived_amount: 100,  // exceeds max of 35
+    waived_amount: 100,  // no longer capped — any positive amount is valid
     reason:        "goodwill",
   }), res);
-  assert.equal(res._status, 400);
-  assert.ok(res._body?.error?.includes("35"), "error must mention the max late fee");
+  assert.equal(res._status, 200);
+  assert.equal(res._body.waived_amount, 100);
 });
 
 test("waive-late-fee: audit log is written with correct fields", async () => {
@@ -325,4 +325,162 @@ test("waive-late-fee: defaults waived_by to 'admin' when not supplied", async ()
 
   assert.equal(res._status, 200);
   assert.equal(res._body.applied_by, "admin");
+});
+
+// ── Lookup action ──────────────────────────────────────────────────────────────
+
+test("waive-late-fee: action=lookup returns booking details without applying waiver", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({
+      customer_name:     "Jane Renter",
+      pickup_date:       "2026-05-01",
+      return_date:       "2026-05-05",
+      total_price:       275,
+      deposit_paid:      75,
+      remaining_balance: 200,
+    }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:     process.env.ADMIN_SECRET,
+    booking_id: "bk-test-001",
+    action:     "lookup",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.success, true);
+  assert.equal(res._body.customer_name,    "Jane Renter");
+  assert.equal(res._body.total_price,      275);
+  assert.equal(res._body.remaining_balance, 200);
+  assert.equal(res._body.late_fee_waived,  false);
+  // no reason required for lookup
+  assert.equal(auditCalls.length, 0, "lookup must not write audit log");
+});
+
+// ── fee_type: rental_balance ───────────────────────────────────────────────────
+
+test("waive-late-fee: fee_type=rental_balance full waiver zeros remaining_balance", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({ remaining_balance: 150 }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:      process.env.ADMIN_SECRET,
+    booking_id:  "bk-test-001",
+    fee_type:    "rental_balance",
+    waiver_type: "full",
+    reason:      "financial hardship",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.fee_type,                     "rental_balance");
+  assert.equal(res._body.rental_balance_waived_amount, 150);
+  assert.equal(res._body.new_remaining_balance,        0);
+  assert.equal(res._body.late_fee_waived_amount,       null, "late fee untouched");
+  assert.equal(auditCalls.length, 1);
+  const rentalField = auditCalls[0].changes.find((c) => c.field === "rental_balance_waived");
+  assert.ok(rentalField, "audit log must include rental_balance_waived");
+  assert.equal(rentalField.newValue, "true");
+});
+
+test("waive-late-fee: fee_type=rental_balance partial waiver reduces remaining_balance", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({ remaining_balance: 200 }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:        process.env.ADMIN_SECRET,
+    booking_id:    "bk-test-001",
+    fee_type:      "rental_balance",
+    waiver_type:   "partial",
+    waived_amount: 50,
+    reason:        "courtesy discount",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.rental_balance_waived_amount, 50);
+  assert.equal(res._body.new_remaining_balance,        150);
+});
+
+test("waive-late-fee: fee_type=rental_balance partial requires positive amount", async () => {
+  reset();
+  sbClient = makeSupabaseClient({ bookingRow: makeBookingRow() });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:        process.env.ADMIN_SECRET,
+    booking_id:    "bk-test-001",
+    fee_type:      "rental_balance",
+    waiver_type:   "partial",
+    waived_amount: -5,
+    reason:        "test",
+  }), res);
+  assert.equal(res._status, 400);
+});
+
+// ── fee_type: all_fees ────────────────────────────────────────────────────────
+
+test("waive-late-fee: fee_type=all_fees waives both late fee and remaining balance", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({ remaining_balance: 120 }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:      process.env.ADMIN_SECRET,
+    booking_id:  "bk-test-001",
+    fee_type:    "all_fees",
+    reason:      "full courtesy waiver",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.fee_type,                     "all_fees");
+  assert.equal(res._body.waiver_type,                  "full");
+  assert.equal(res._body.late_fee_waived_amount,       35, "late fee = EXTENDED_LATE_FEE");
+  assert.equal(res._body.rental_balance_waived_amount, 120);
+  assert.equal(res._body.new_late_fee,                 0);
+  assert.equal(res._body.new_remaining_balance,        0);
+  assert.equal(res._body.total_waived,                 155);
+  assert.equal(auditCalls.length, 1);
+  const lateField   = auditCalls[0].changes.find((c) => c.field === "late_fee_waived");
+  const rentalField = auditCalls[0].changes.find((c) => c.field === "rental_balance_waived");
+  assert.ok(lateField,   "audit log must include late_fee_waived");
+  assert.ok(rentalField, "audit log must include rental_balance_waived");
+});
+
+test("waive-late-fee: fee_type=all_fees ignores any provided waiver_type and waived_amount", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({ remaining_balance: 80 }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:        process.env.ADMIN_SECRET,
+    booking_id:    "bk-test-001",
+    fee_type:      "all_fees",
+    waiver_type:   "partial",   // should be overridden to "full"
+    waived_amount: 10,          // should be ignored
+    reason:        "admin override",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.waiver_type, "full", "all_fees always forces full waiver");
+});
+
+// ── fee_type validation ───────────────────────────────────────────────────────
+
+test("waive-late-fee: 400 for unknown fee_type", async () => {
+  reset();
+  sbClient = makeSupabaseClient({ bookingRow: makeBookingRow() });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:      process.env.ADMIN_SECRET,
+    booking_id:  "bk-test-001",
+    fee_type:    "unknown",
+    waiver_type: "full",
+    reason:      "test",
+  }), res);
+  assert.equal(res._status, 400);
 });
