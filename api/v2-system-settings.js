@@ -36,6 +36,9 @@ const DEFAULT_SETTINGS = [
   // Deposits / booking fees
   { key: "camry_booking_deposit",       value: 50,      description: "Economy car (Camry 2012 & Camry 2013 SE) non-refundable booking deposit — same for both (USD)", category: "pricing" },
   { key: "booking_change_fee",          value: 25,      description: "Fee charged for each booking change after the first free change (USD)", category: "pricing" },
+  // Late fees
+  { key: "late_fee_short",              value: 25,      description: "Late fee assessed after the 30-minute grace period (USD) — must match SHORT_LATE_FEE in scheduled-reminders.js and extend-rental.js", category: "pricing" },
+  { key: "late_fee_extended",           value: 35,      description: "Late fee assessed after the 3-hour escalation window (USD) — must match EXTENDED_LATE_FEE in scheduled-reminders.js and extend-rental.js", category: "pricing" },
   { key: "auto_block_dates_on_approve", value: true,    description: "Auto-block vehicle dates when booking approved",  category: "automation" },
   { key: "auto_create_revenue_on_pay",  value: true,    description: "Auto-create revenue record when payment received",category: "automation" },
   { key: "auto_update_customer_stats",  value: true,    description: "Auto-update customer stats on booking events",    category: "automation" },
