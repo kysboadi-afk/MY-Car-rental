@@ -7195,8 +7195,10 @@ async function sendAiMessage() {
     clearTimeout(abortTimer);
     aiRemoveTyping();
     let msg = err.message;
-    if (msg.toLowerCase().includes('failed to fetch') || err.name === 'AbortError') {
+    if (err.name === 'AbortError') {
       msg = 'Connection timed out. The request took too long — please try again with a simpler question.';
+    } else if (msg.toLowerCase().includes('failed to fetch')) {
+      msg = 'Could not reach the AI assistant. The server may be temporarily unavailable — please try again in a moment.';
     } else if (msg.includes('OPENAI_API_KEY')) {
       msg = 'OpenAI API key not configured on the server. Set OPENAI_API_KEY in Vercel.';
     }
