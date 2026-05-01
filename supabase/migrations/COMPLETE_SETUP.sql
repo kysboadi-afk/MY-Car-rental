@@ -9294,3 +9294,37 @@ COMMENT ON COLUMN bookings.rental_balance_waived_reason IS 'Mandatory reason sup
 COMMENT ON COLUMN bookings.rental_balance_waived_by     IS 'Admin identifier who applied the waiver.';
 COMMENT ON COLUMN bookings.rental_balance_waived_at     IS 'Timestamp when the waiver was applied.';
 
+-- ===========================================================================
+-- 0121_remove_phantom_vehicles.sql
+-- ===========================================================================
+-- Migration 0121: Remove phantom/stale vehicle rows from Supabase vehicles table.
+--
+-- Root cause: the dashboard's "Available Vehicles" KPI was showing 3 instead of 2.
+-- The canonical fleet is exactly two vehicles: "camry" and "camry2013".
+-- Extra rows (e.g. a legacy "camry2012" alias, leftover slingshot entries, or a
+-- test vehicle created via the admin UI) can survive in the Supabase vehicles table
+-- if they were added before migration 0105 (slingshot deletion) or inserted by the
+-- admin panel when the GitHub vehicles.json save failed.
+--
+-- Fix strategy:
+--   1. Delete any vehicle row whose vehicle_id is NOT in the canonical set AND that
+--      has no referencing bookings (safe — no FK violation risk).
+--   2. For any non-canonical vehicle that DOES have bookings (historical data), mark
+--      it inactive in its JSONB `data` column so it stops being counted in
+--      admin_metrics_v2's available-vehicles tally.
+--
+-- Safe to re-run: both statements are idempotent.
+
+DELETE FROM vehicles
+WHERE vehicle_id NOT IN ('camry', 'camry2013')
+  AND NOT EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{status}', '"inactive"')
+WHERE vehicle_id NOT IN ('camry', 'camry2013')
+  AND EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
