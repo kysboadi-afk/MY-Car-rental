@@ -108,7 +108,7 @@ export async function logAiAction(action, input, output, adminId = "admin") {
 // Columns selected from the Supabase bookings table for AI queries.
 // Keep in sync with DB schema (migration 0019 adds flagged + risk_score).
 const BOOKING_COLUMNS =
-  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, created_at, flagged, risk_score, customers(name, phone, email)";
+  "id, booking_ref, vehicle_id, pickup_date, return_date, pickup_time, return_time, status, deposit_paid, total_price, payment_intent_id, stripe_customer_id, stripe_payment_method_id, created_at, flagged, risk_score, customers(name, phone, email)";
 
 // ── Supabase-first helpers ───────────────────────────────────────────────────
 
@@ -363,18 +363,19 @@ async function toolGetBookings({ vehicleId, status, search, limit = 20 } = {}) {
       if (!error && data) {
         total   = count ?? data.length;
         results = data.map((row) => ({
-          bookingId:  row.booking_ref || String(row.id),
-          name:       row.customers?.name  || "",
-          phone:      row.customers?.phone || "",
-          email:      row.customers?.email || "",
-          vehicleId:  row.vehicle_id || "",
-          pickupDate: row.pickup_date || "",
-          returnDate: row.return_date || "",
-          status:     DB_TO_APP_STATUS[row.status] || row.status,
-          amountPaid: row.deposit_paid || row.total_price || 0,
-          createdAt:  row.created_at || "",
-          flagged:    row.flagged || false,
-          risk_score: row.risk_score || 0,
+          bookingId:    row.booking_ref || String(row.id),
+          name:         row.customers?.name  || "",
+          phone:        row.customers?.phone || "",
+          email:        row.customers?.email || "",
+          vehicleId:    row.vehicle_id || "",
+          pickupDate:   row.pickup_date || "",
+          returnDate:   row.return_date || "",
+          status:       DB_TO_APP_STATUS[row.status] || row.status,
+          amountPaid:   row.deposit_paid || row.total_price || 0,
+          createdAt:    row.created_at || "",
+          flagged:      row.flagged || false,
+          risk_score:   row.risk_score || 0,
+          hasSavedCard: !!(row.stripe_customer_id && row.stripe_payment_method_id),
         }));
         return { total, returned: results.length, bookings: results };
       }
