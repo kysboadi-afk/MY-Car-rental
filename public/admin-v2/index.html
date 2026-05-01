@@ -1782,7 +1782,10 @@
               <div class="card-title">SMS Logs</div>
               <div class="card-sub">Last 100 SMS delivery attempts</div>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="loadSmsLogs()">↻ Refresh</button>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="loadSmsLogs()">↻ Refresh</button>
+              <button class="btn btn-danger btn-sm" onclick="clearSmsLogs()">🗑 Clear</button>
+            </div>
           </div>
           <div id="sms-logs-loading" class="loading" style="display:none;"><div class="loading-spinner"></div><div>Loading…</div></div>
           <div id="sms-logs-error" style="display:none;color:var(--danger);font-size:13px;padding:8px 0;"></div>
@@ -6871,7 +6874,23 @@ async function loadSmsLogs() {
   }
 }
 
-// ── Init ───────────────────────────────────────────────────────────────────
+async function clearSmsLogs() {
+  if (!confirm('Clear all SMS delivery logs? This cannot be undone.')) return;
+  try {
+    const url = `${API_BASE}/api/sms-logs?secret=${encodeURIComponent(adminSecret)}`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    showToast('SMS logs cleared.', 'success');
+    loadSmsLogs();
+  } catch (err) {
+    showToast('Failed to clear SMS logs: ' + err.message, 'error');
+  }
+}
+
+
 document.getElementById('mb-pickup-date').min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
