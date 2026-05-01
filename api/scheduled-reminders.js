@@ -1096,12 +1096,16 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
             const smsSent = await safeSend(booking.phone, render(LATE_FEE_APPLIED, feeVars), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_fee_pending" });
             // 2. Request owner approval before charging
             const approvalSent = await requestLateFeeApproval(booking, feeAmount);
-            if (smsSent || approvalSent) {
-              sentThisBooking = true;
-              sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
-              sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
-              await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
 
+            // Always mark as attempted — even if both SMS and email failed — so the
+            // dedup guard (isSmsLogged) prevents infinite retries on subsequent cron
+            // ticks when the delivery provider is temporarily unavailable.
+            sentThisBooking = true;
+            sentMarks.push({ vehicleId, id, key: "late_fee_pending" });
+            sentMarks.push({ vehicleId, id, key: "_late_fee_amount", value: feeAmount });
+            await logSmsToSupabase(id, "late_fee_pending", returnDateStr);
+
+            if (smsSent || approvalSent) {
               // Persist late_fee_status to Supabase for audit trail (non-fatal).
               try {
                 const sbFee = getSupabaseAdmin();
