@@ -121,10 +121,11 @@ const GITHUB_DATA_BRANCH = process.env.GITHUB_DATA_BRANCH || "main";
 const BOOKED_DATES_PATH  = "booked-dates.json";
 const FLEET_STATUS_PATH  = "fleet-status.json";
 const TRIGGER_WINDOW_MS  = 15 * 60 * 1000;
+const MS_PER_HOUR        = 60 * 60 * 1000;
 // grace_end  = return_time + 30 minutes
 const GRACE_OFFSET_MS    = 30 * 60 * 1000;
 // reset_time = return_time + 3 hours (escalation to higher late fee)
-const LATE_FEE_OFFSET_MS = 3 * 60 * 60 * 1000;
+const LATE_FEE_OFFSET_MS = 3 * MS_PER_HOUR;
 
 // Boundaries (in minutes) for the end-of-rental warning SMS window.
 // Cron runs every 5 min so a 15-min window ensures the message fires exactly once.
@@ -1082,7 +1083,9 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
 
             // Notify customer that the higher late fee now applies.
             // The fee will be included in the total when they extend.
-            const smsSent = await safeSend(booking.phone, render(LATE_ESCALATION, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_fee_pending" });
+            // message_type is "late_escalation" for delivery logging; dedup key is
+            // "late_fee_pending" for backward compatibility with existing sms_logs rows.
+            const smsSent = await safeSend(booking.phone, render(LATE_ESCALATION, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_escalation" });
 
             // Always mark as attempted to prevent infinite retries.
             sentThisBooking = true;
@@ -1103,7 +1106,9 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         !(await isSmsLogged(id, "late_grace_expired", returnDateStr))
       ) {
         logSmsTrigger(id, returnIso, nowIso, "grace_started");
-        const sent = await safeSend(booking.phone, render(LATE_GRACE_STARTED, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_grace_expired" });
+        // message_type is "late_grace_started" for delivery logging; dedup key is
+        // "late_grace_expired" for backward compatibility with existing sms_logs rows.
+        const sent = await safeSend(booking.phone, render(LATE_GRACE_STARTED, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "late_grace_started" });
         if (sent) {
           sentThisBooking = true;
           sentMarks.push({ vehicleId, id, key: "late_grace_expired" });
@@ -2240,7 +2245,7 @@ async function processBalanceDue(allBookings, now, sentMarks) {
 
       // Compute hours since balance_due was set (proxy: booking.updatedAt)
       const sinceMs = now.getTime() - new Date(booking.updatedAt || booking.createdAt || 0).getTime();
-      const sinceHours = sinceMs / 3_600_000;
+      const sinceHours = sinceMs / MS_PER_HOUR;
 
       const v = vars(booking);
 
