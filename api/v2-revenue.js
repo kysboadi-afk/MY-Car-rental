@@ -10,7 +10,6 @@
 //   update      — { secret, action:"update", id, updates:{...} }
 //   delete      — { secret, action:"delete", id }
 //   summary     — { secret, action:"summary" } — per-vehicle aggregated stats
-//   sync        — { secret, action:"sync" } — populate records from bookings.json
 //
 // Error contract:
 //   • READ actions (list, get, summary) return empty state when Supabase is not
@@ -386,17 +385,6 @@ export default async function handler(req, res) {
       // GitHub fallback
       const { data: ghRecords } = await loadRecordsFromGitHub();
       return res.status(200).json(aggregateRecords(ghRecords.filter((r) => !r.sync_excluded && r.payment_status === "paid")));
-    }
-
-    // ── SYNC — deprecated (Supabase is the only source of truth) ────────────
-    // bookings.json has been retired. Revenue records are created atomically
-    // with bookings via the webhook pipeline. This action is a no-op.
-    if (action === "sync") {
-      return res.status(200).json({
-        synced: 0,
-        skipped: 0,
-        message: "Sync from bookings.json is no longer supported — Supabase is the only source of truth. Revenue records are created automatically by the booking pipeline.",
-      });
     }
 
     // ── RECORD EXTENSION FEE ────────────────────────────────────────────────
