@@ -2169,50 +2169,75 @@
       <div class="modal-title">✏️ Edit Booking</div>
       <button class="modal-close" onclick="closeModal('booking-edit-modal')">✕</button>
     </div>
-    <div class="modal-body" style="display:grid;gap:14px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="form-label">Customer Name</label>
-          <input type="text" class="form-input" id="be-name" placeholder="Full name">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Phone</label>
-          <input type="tel" class="form-input" id="be-phone" placeholder="e.g. (310) 555-0100">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" class="form-input" id="be-email" placeholder="customer@email.com">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Pickup Date</label>
-          <input type="date" class="form-input" id="be-pickup-date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Pickup Time</label>
-          <input type="text" class="form-input" id="be-pickup-time" placeholder="e.g. 10:00 AM">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Return Date</label>
-          <input type="date" class="form-input" id="be-return-date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Return Time</label>
-          <input type="text" class="form-input" id="be-return-time" placeholder="e.g. 5:00 PM">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Payment Method</label>
-          <select class="form-input" id="be-payment-method">
-            <option value="">— unchanged —</option>
-            <option value="stripe">Stripe</option>
-            <option value="cash">Cash</option>
-            <option value="zelle">Zelle</option>
-            <option value="venmo">Venmo</option>
-          </select>
-        </div>
-        <div class="form-group" style="grid-column:1/-1;">
-          <label class="form-label">Notes</label>
-          <textarea class="form-textarea" id="be-notes" rows="3" placeholder="Internal notes…" style="font-size:13px;"></textarea>
-        </div>
+    <div class="modal-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;">
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Customer Name</label>
+        <input type="text" class="form-input" id="be-name" placeholder="Full name">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Phone</label>
+        <input type="tel" class="form-input" id="be-phone" placeholder="(310) 555-0100">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="be-email" placeholder="customer@email.com">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Pickup Date</label>
+        <input type="date" class="form-input" id="be-pickup-date">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Pickup Time</label>
+        <input type="text" class="form-input" id="be-pickup-time" placeholder="10:00 AM">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Return Date</label>
+        <input type="date" class="form-input" id="be-return-date">
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Return Time</label>
+        <input type="text" class="form-input" id="be-return-time" placeholder="5:00 PM">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Vehicle</label>
+        <select class="form-input" id="be-vehicle">
+          <option value="camry">Camry 2012</option>
+          <option value="camry2013">Camry 2013 SE</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Booking Status</label>
+        <select class="form-input" id="be-booking-status">
+          <option value="reserved_unpaid">Reserved (Unpaid)</option>
+          <option value="booked_paid">Booked (Paid)</option>
+          <option value="active_rental">Active Rental</option>
+          <option value="overdue">Overdue</option>
+          <option value="completed_rental">Completed</option>
+          <option value="cancelled_rental">Cancelled</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:0;">
+        <label class="form-label">Payment Status</label>
+        <select class="form-input" id="be-payment-status">
+          <option value="">— unchanged —</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Payment Method</label>
+        <select class="form-input" id="be-payment-method">
+          <option value="">— unchanged —</option>
+          <option value="stripe">Stripe</option>
+          <option value="cash">Cash</option>
+          <option value="zelle">Zelle</option>
+          <option value="venmo">Venmo</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;min-width:0;">
+        <label class="form-label">Notes</label>
+        <textarea class="form-textarea" id="be-notes" rows="3" placeholder="Internal notes…"></textarea>
       </div>
     </div>
     <div class="modal-footer">
@@ -3938,8 +3963,11 @@ function openEditBookingModal(bookingId) {
   document.getElementById('be-pickup-time').value    = b.pickupTime    || '';
   document.getElementById('be-return-date').value    = b.returnDate    || '';
   document.getElementById('be-return-time').value    = b.returnTime    || '';
-  document.getElementById('be-payment-method').value = b.paymentMethod || '';
-  document.getElementById('be-notes').value          = b.notes         || '';
+  document.getElementById('be-payment-method').value  = b.paymentMethod  || '';
+  document.getElementById('be-vehicle').value          = b.vehicleId      || 'camry';
+  document.getElementById('be-booking-status').value   = b.status         || '';
+  document.getElementById('be-payment-status').value   = b.paymentStatus  || '';
+  document.getElementById('be-notes').value            = b.notes          || '';
   closeModal('booking-detail-modal');
   openModal('booking-edit-modal');
 }
@@ -3955,25 +3983,31 @@ async function saveEditBooking(btn) {
 
   // Build patch — only include fields that actually changed
   const updates = {};
-  const name    = document.getElementById('be-name').value.trim();
-  const phone   = document.getElementById('be-phone').value.trim();
-  const email   = document.getElementById('be-email').value.trim();
-  const pickup  = document.getElementById('be-pickup-date').value;
-  const pickupT = document.getElementById('be-pickup-time').value.trim();
-  const ret     = document.getElementById('be-return-date').value;
-  const retT    = document.getElementById('be-return-time').value.trim();
-  const pm      = document.getElementById('be-payment-method').value;
-  const notes   = document.getElementById('be-notes').value;
+  const name      = document.getElementById('be-name').value.trim();
+  const phone     = document.getElementById('be-phone').value.trim();
+  const email     = document.getElementById('be-email').value.trim();
+  const pickup    = document.getElementById('be-pickup-date').value;
+  const pickupT   = document.getElementById('be-pickup-time').value.trim();
+  const ret       = document.getElementById('be-return-date').value;
+  const retT      = document.getElementById('be-return-time').value.trim();
+  const newVehicle  = document.getElementById('be-vehicle').value;
+  const bkgStatus   = document.getElementById('be-booking-status').value;
+  const payStatus   = document.getElementById('be-payment-status').value;
+  const pm        = document.getElementById('be-payment-method').value;
+  const notes     = document.getElementById('be-notes').value;
 
-  if (name    !== (b.name         || ''))  updates.customerName  = name;
-  if (phone   !== (b.phone        || ''))  updates.customerPhone = phone;
-  if (email   !== (b.email        || ''))  updates.customerEmail = email;
-  if (pickup  !== (b.pickupDate   || ''))  updates.pickupDate    = pickup;
-  if (pickupT !== (b.pickupTime   || ''))  updates.pickupTime    = pickupT;
-  if (ret     !== (b.returnDate   || ''))  updates.returnDate    = ret;
-  if (retT    !== (b.returnTime   || ''))  updates.returnTime    = retT;
-  if (pm      && pm !== (b.paymentMethod || ''))  updates.paymentMethod = pm;
-  if (notes   !== (b.notes        || ''))  updates.notes         = notes;
+  if (name      !== (b.name           || ''))  updates.customerName  = name;
+  if (phone     !== (b.phone          || ''))  updates.customerPhone = phone;
+  if (email     !== (b.email          || ''))  updates.customerEmail = email;
+  if (pickup    !== (b.pickupDate     || ''))  updates.pickupDate    = pickup;
+  if (pickupT   !== (b.pickupTime     || ''))  updates.pickupTime    = pickupT;
+  if (ret       !== (b.returnDate     || ''))  updates.returnDate    = ret;
+  if (retT      !== (b.returnTime     || ''))  updates.returnTime    = retT;
+  if (newVehicle && newVehicle !== (b.vehicleId     || ''))  updates.vehicleId     = newVehicle;
+  if (bkgStatus  && bkgStatus  !== (b.status        || ''))  updates.status        = bkgStatus;
+  if (payStatus  && payStatus  !== (b.paymentStatus || ''))  updates.paymentStatus = payStatus;
+  if (pm         && pm         !== (b.paymentMethod || ''))  updates.paymentMethod = pm;
+  if (notes     !== (b.notes         || ''))  updates.notes         = notes;
 
   if (!Object.keys(updates).length) {
     showToast('No changes detected.', 'info');
@@ -3994,6 +4028,9 @@ async function saveEditBooking(btn) {
       if (updates.pickupTime    !== undefined) allBookings[idx].pickupTime    = updates.pickupTime;
       if (updates.returnDate    !== undefined) allBookings[idx].returnDate    = updates.returnDate;
       if (updates.returnTime    !== undefined) allBookings[idx].returnTime    = updates.returnTime;
+      if (updates.vehicleId     !== undefined) allBookings[idx].vehicleId     = updates.vehicleId;
+      if (updates.status        !== undefined) allBookings[idx].status        = updates.status;
+      if (updates.paymentStatus !== undefined) allBookings[idx].paymentStatus = updates.paymentStatus;
       if (updates.paymentMethod !== undefined) allBookings[idx].paymentMethod = updates.paymentMethod;
       if (updates.notes         !== undefined) allBookings[idx].notes         = updates.notes;
     }

@@ -490,7 +490,7 @@ export default async function handler(req, res) {
 
       // Build safe update set (timestamp is fixed before retry to stay consistent)
       const safeUpdates = {};
-      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime", "customerName", "customerPhone", "customerEmail", "pickupDate", "pickupTime"];
+      const allowedUpdateFields = ["status", "notes", "amountPaid", "totalPrice", "paymentMethod", "cancelReason", "returnDate", "returnTime", "actualReturnTime", "customerName", "customerPhone", "customerEmail", "pickupDate", "pickupTime", "paymentStatus", "vehicleId"];
       for (const f of allowedUpdateFields) {
         if (Object.prototype.hasOwnProperty.call(updates, f)) {
           safeUpdates[f] = updates[f];
@@ -541,9 +541,11 @@ export default async function handler(req, res) {
       const hasReturnUpdate  = safeUpdates.returnDate !== undefined || safeUpdates.returnTime !== undefined;
       const hasContactUpdate = safeUpdates.customerName !== undefined || safeUpdates.customerPhone !== undefined || safeUpdates.customerEmail !== undefined;
       const hasPickupUpdate  = safeUpdates.pickupDate !== undefined || safeUpdates.pickupTime !== undefined;
-      if (sbInstance && (safeUpdates.status || hasReturnUpdate || hasContactUpdate || hasPickupUpdate)) {
+      const hasPaymentStatusUpdate = safeUpdates.paymentStatus !== undefined;
+      const hasVehicleUpdate = safeUpdates.vehicleId !== undefined;
+      if (sbInstance && (safeUpdates.status || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasVehicleUpdate)) {
         const dbStatus = safeUpdates.status ? APP_TO_DB_STATUS[safeUpdates.status] : null;
-        if (dbStatus || hasReturnUpdate || hasContactUpdate || hasPickupUpdate) {
+        if (dbStatus || hasReturnUpdate || hasContactUpdate || hasPickupUpdate || hasPaymentStatusUpdate || hasVehicleUpdate) {
           try {
             const sbPayload = {
               ...(dbStatus ? { status: dbStatus } : {}),
@@ -559,6 +561,8 @@ export default async function handler(req, res) {
               ...(safeUpdates.customerEmail !== undefined ? { customer_email: safeUpdates.customerEmail } : {}),
               ...(safeUpdates.pickupDate !== undefined ? { pickup_date: safeUpdates.pickupDate } : {}),
               ...(safeUpdates.pickupTime !== undefined ? { pickup_time: parseTime12h(safeUpdates.pickupTime) } : {}),
+              ...(safeUpdates.paymentStatus !== undefined ? { payment_status: safeUpdates.paymentStatus } : {}),
+              ...(safeUpdates.vehicleId !== undefined ? { vehicle_id: safeUpdates.vehicleId } : {}),
             };
 
             // If we already located the Supabase row during validation (Supabase-only
