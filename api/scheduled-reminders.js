@@ -46,7 +46,6 @@ import {
   RETURN_REMINDER_24H,
   ACTIVE_RENTAL_MID,
   ACTIVE_RENTAL_1H_BEFORE_END,
-  PRE_RETURN_LATE_FEE_WARNING,
   LATE_GRACE_STARTED,
   LATE_ESCALATION,
   PAYMENT_FAILED_BALANCE,
@@ -1199,27 +1198,6 @@ export async function processActiveRentals(allBookings, now, sentMarks, critical
         }
       } else if (wndExt1h) {
         console.log(`[SMS_SKIP] ${id} active_rental_1h_before_end: already sent (dedup)`);
-      }
-
-      // ── P3: 1–2 hours before return — late-fee warning ──────────────────────
-      // Fires once in the 60–120 min window before return.
-      // Informs renters of the late-fee schedule and provides an extend link.
-      // Cross-cron cooldown is bypassed because this is time-critical information.
-      if (
-        !sentThisBooking &&
-        minutesUntilReturn <= 120 && minutesUntilReturn > 60 &&
-        !alreadySent(booking, "pre_return_late_fee_warning") &&
-        !(await isSmsLogged(id, "pre_return_late_fee_warning", returnDateStr))
-      ) {
-        logSmsTrigger(id, returnIso, nowIso, "pre_return_late_fee_warning");
-        const sent = await safeSend(booking.phone, render(PRE_RETURN_LATE_FEE_WARNING, v), { booking_ref: id, vehicle_id: vehicleId, message_type: "pre_return_late_fee_warning" });
-        if (sent) {
-          sentThisBooking = true;
-          sentMarks.push({ vehicleId, id, key: "pre_return_late_fee_warning" });
-          await logSmsToSupabase(id, "pre_return_late_fee_warning", returnDateStr);
-        }
-      } else if (minutesUntilReturn <= 120 && minutesUntilReturn > 60) {
-        console.log(`[SMS_SKIP] ${id} pre_return_late_fee_warning: already sent (dedup)`);
       }
 
       // ── P3: ~7–8 hours before return — same-day reminder ────────────────────
