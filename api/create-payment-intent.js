@@ -13,6 +13,7 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { isDatesAndTimesAvailable, isVehicleAvailable } from "./_availability.js";
 import { getVehicleById } from "./_vehicles.js";
 import { normalizeClockTime, formatTime12h } from "./_time.js";
+import { normalizeVehicleId } from "./_vehicle-id.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -213,6 +214,57 @@ export default async function handler(req, res) {
 
     // Generate a stable booking ID that links the PaymentIntent to the booking record.
     const bookingId = "bk-" + crypto.randomBytes(6).toString("hex");
+    const normalizedVehicleId = normalizeVehicleId(assignedVehicleId) || assignedVehicleId;
+
+    // ── Pre-write booking to Supabase BEFORE creating Stripe PI ──────────────
+    // CRITICAL ORDER: the booking row must exist in the DB BEFORE the
+    // PaymentIntent is created.  This guarantees:
+    //   1. The webhook can always resolve booking_ref → booking row.
+    //   2. An orphan Stripe charge (no matching booking) is impossible.
+    //   3. blocked_dates are claimed immediately, preventing double-booking.
+    //
+    // If the pre-write fails we return 503 — no PI is created, no charge occurs.
+    const preWriteRow = {
+      booking_ref:       bookingId,
+      vehicle_id:        normalizedVehicleId || null,
+      pickup_date:       pickup,
+      return_date:       returnDate,
+      pickup_time:       trimmedPickupTime  || null,
+      return_time:       derivedReturnTime  || null,
+      status:            "pending",          // PI not yet created; updated to reserved/booked_paid on payment_intent.succeeded
+      total_price:       afterTaxFullRental, // always the full rental cost
+      deposit_paid:      0,
+      remaining_balance: afterTaxFullRental,
+      payment_status:    "unpaid",
+      payment_method:    "stripe",
+      customer_name:     trimmedName  || null,
+      customer_email:    email        || null,
+      customer_phone:    trimmedPhone || null,
+      renter_phone:      trimmedPhone || null,
+    };
+
+    const { error: preWriteErr } = await sb
+      .from("bookings")
+      .upsert(preWriteRow, { onConflict: "booking_ref" });
+
+    if (preWriteErr) {
+      console.error("[BOOKING_PREWRITE_FAILED]", {
+        bookingId,
+        vehicleId: normalizedVehicleId,
+        pickup,
+        returnDate,
+        error: preWriteErr.message,
+        code:  preWriteErr.code,
+      });
+      return res.status(503).json({ error: "Booking could not be saved. Please try again in a moment." });
+    }
+
+    console.log("[BOOKING_PREWRITE]", {
+      bookingId,
+      vehicleId: normalizedVehicleId,
+      pickup,
+      returnDate,
+    });
 
     const paymentIntentParams = {
       amount: Math.round(totalAmount * 100), // Stripe expects whole cents
@@ -273,8 +325,46 @@ export default async function handler(req, res) {
       })(),
     };
 
-    // All payments use automatic capture
-    const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+    // Create Stripe PaymentIntent — booking row already exists in DB.
+    // If PI creation fails, cancel the pre-written booking so the reserved dates
+    // are freed and the user can try again.
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.create(paymentIntentParams);
+    } catch (piErr) {
+      console.error("[PI_CREATE_FAILED]", {
+        bookingId,
+        vehicleId: normalizedVehicleId,
+        error: piErr.message,
+      });
+      // Cancel the pre-written booking to release the blocked dates.
+      try {
+        await sb
+          .from("bookings")
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .eq("booking_ref", bookingId);
+        console.log("[BOOKING_PREWRITE_CANCELLED]", { bookingId, reason: "PI creation failed" });
+      } catch (cancelErr) {
+        console.error("[BOOKING_PREWRITE_CANCEL_FAILED]", { bookingId, error: cancelErr.message });
+      }
+      return res.status(500).json({ error: "Payment initialization failed. Please try again." });
+    }
+
+    // Link the PaymentIntent ID back to the pre-written booking row so the
+    // webhook can also resolve by payment_intent_id when booking_id is absent.
+    // Non-fatal — the webhook's upsert on payment_intent.succeeded will set it too.
+    try {
+      await sb
+        .from("bookings")
+        .update({ payment_intent_id: paymentIntent.id, updated_at: new Date().toISOString() })
+        .eq("booking_ref", bookingId);
+    } catch (linkErr) {
+      console.warn("[BOOKING_PI_LINK_FAILED]", {
+        bookingId,
+        piId:  paymentIntent.id,
+        error: linkErr.message,
+      });
+    }
 
     res.status(200).json({
       clientSecret: paymentIntent.client_secret,
