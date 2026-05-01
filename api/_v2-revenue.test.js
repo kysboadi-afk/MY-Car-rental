@@ -7,7 +7,6 @@
 //  3. list action: returns Supabase records when available (non-empty)
 //  4. list action: falls back to GitHub records (revenue-records.json) when Supabase is absent
 //  5. create action: inserts to GitHub fallback when Supabase absent
-//  6. sync action: populates records from bookings.json paid bookings
 //
 // Run with: npm test
 
@@ -256,31 +255,6 @@ test("create: saves to GitHub when Supabase not configured", async () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 6. SYNC — deprecated (Supabase is the only source of truth)
 // ═══════════════════════════════════════════════════════════════════════════════
-test("sync: returns no-op message (bookings.json sync is deprecated)", async () => {
-  resetState();
-  ghSha     = "sha-existing";
-  ghRecords = [];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret", action: "sync" }), res);
-  assert.equal(res._status, 200);
-  assert.equal(res._body.synced, 0);
-  assert.ok(res._body.message.includes("no longer supported"), "message should indicate sync is deprecated");
-});
-
-test("sync: always returns synced=0 regardless of input (idempotent no-op)", async () => {
-  resetState();
-  ghSha     = "sha-existing";
-  ghRecords = [
-    { id: "existing", booking_id: "bk-s1", vehicle_id: "camry", gross_amount: 100 },
-  ];
-
-  const res = makeRes();
-  await handler(makeReq({ secret: "test-admin-secret", action: "sync" }), res);
-  assert.equal(res._status, 200);
-  assert.equal(res._body.synced, 0);
-});
-
 test("delete: removes record from Supabase list results", async () => {
   resetState();
   supabaseRecords = [
