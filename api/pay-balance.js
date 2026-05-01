@@ -102,9 +102,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No balance due for this booking." });
     }
 
+    // Find or create a Stripe Customer so the card can be saved for future
+    // off-session charges (e.g., damages, late fees).
+    let stripeCustomerId;
+    try {
+      const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+      if (existingCustomers.data.length > 0) {
+        stripeCustomerId = existingCustomers.data[0].id;
+      } else {
+        const newCustomer = await stripe.customers.create({
+          email,
+          name: trimmedName,
+        });
+        stripeCustomerId = newCustomer.id;
+      }
+    } catch (custErr) {
+      console.error("pay-balance: Stripe Customer create/lookup error:", custErr.message);
+      return res.status(500).json({ error: "Payment initialization failed. Please try again." });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(balanceAmount * 100), // Stripe expects whole cents (pre-tax)
       currency: "usd",
+      customer: stripeCustomerId,
+      // Save the card for future off-session charges (damages, late fees, etc.).
+      setup_future_usage: "off_session",
       receipt_email: email,
       description: `Sly Transportation Services LLC – ${vehicleData.name} Balance Payment`,
       automatic_payment_methods: { enabled: true },
@@ -121,6 +143,7 @@ export default async function handler(req, res) {
         return_date:           returnDate,
         email,
         payment_type:          "balance_payment",
+        stripe_customer_id:    stripeCustomerId,
         original_payment_intent_id: originalPaymentIntentId || depositPaymentIntentId || "",
         deposit_payment_intent_id:  depositPaymentIntentId || originalPaymentIntentId || "",
         deposit_already_paid:  depositPaid.toFixed(2),
