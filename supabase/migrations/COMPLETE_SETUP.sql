@@ -9294,3 +9294,97 @@ COMMENT ON COLUMN bookings.rental_balance_waived_reason IS 'Mandatory reason sup
 COMMENT ON COLUMN bookings.rental_balance_waived_by     IS 'Admin identifier who applied the waiver.';
 COMMENT ON COLUMN bookings.rental_balance_waived_at     IS 'Timestamp when the waiver was applied.';
 
+
+
+-- ===========================================================================
+-- 0121_fix_extension_grouping.sql
+-- ===========================================================================
+-- Migration 0121: fix extension revenue record grouping in Revenue Tracker
+--
+-- Extension records were showing as standalone rows instead of collapsing under
+-- their parent booking.  The booking_revenue_grouped view uses
+-- COALESCE(original_booking_id, booking_id) as the group key.  Records where
+-- original_booking_id is a stale/incorrect value (PI id, different booking ref,
+-- etc.) cause COALESCE to pick the wrong key, creating a phantom group.
+-- Migrations 0084/0085 fixed cases where booking_id was wrong; this migration
+-- fixes the inverse: booking_id is correct but original_booking_id differs.
+--
+-- Pass 1: align original_booking_id with booking_id for mismatched extensions.
+-- Pass 2: refresh booking_revenue_grouped view with booking_id-first COALESCE.
+
+UPDATE revenue_records
+SET    original_booking_id = booking_id,
+       updated_at          = now()
+WHERE  type              = 'extension'
+  AND  sync_excluded     = false
+  AND  is_orphan         = false
+  AND  booking_id          IS NOT NULL
+  AND  original_booking_id IS DISTINCT FROM booking_id
+  AND  EXISTS (
+         SELECT 1
+         FROM   bookings
+         WHERE  booking_ref = revenue_records.booking_id
+       );
+
+CREATE OR REPLACE VIEW booking_revenue_grouped AS
+SELECT
+  COALESCE(booking_id, original_booking_id)             AS booking_group_id,
+  MAX(vehicle_id)                                        AS vehicle_id,
+  MAX(customer_name)                                     AS customer_name,
+  MAX(customer_phone)                                    AS customer_phone,
+  MAX(customer_email)                                    AS customer_email,
+  MIN(pickup_date)                                       AS min_pickup_date,
+  MAX(return_date)                                       AS max_return_date,
+  COALESCE(
+    SUM(gross_amount) FILTER (WHERE is_cancelled = false),
+    0
+  )                                                      AS gross_total,
+  COUNT(*)                                               AS record_count,
+  JSONB_AGG(
+    JSONB_BUILD_OBJECT(
+      'id',                  id,
+      'booking_id',          booking_id,
+      'original_booking_id', original_booking_id,
+      'payment_intent_id',   payment_intent_id,
+      'vehicle_id',          vehicle_id,
+      'customer_name',       customer_name,
+      'customer_phone',      customer_phone,
+      'customer_email',      customer_email,
+      'pickup_date',         pickup_date,
+      'return_date',         return_date,
+      'gross_amount',        gross_amount,
+      'deposit_amount',      deposit_amount,
+      'refund_amount',       refund_amount,
+      'stripe_fee',          stripe_fee,
+      'stripe_net',          stripe_net,
+      'payment_method',      payment_method,
+      'payment_status',      payment_status,
+      'type',                type,
+      'is_cancelled',        is_cancelled,
+      'is_no_show',          is_no_show,
+      'is_orphan',           is_orphan,
+      'notes',               notes,
+      'created_at',          created_at,
+      'updated_at',          updated_at
+    )
+    ORDER BY created_at ASC
+  )                                                      AS records,
+  JSONB_AGG(
+    JSONB_BUILD_OBJECT(
+      'id',                  id,
+      'booking_id',          booking_id,
+      'original_booking_id', original_booking_id,
+      'payment_intent_id',   payment_intent_id,
+      'vehicle_id',          vehicle_id,
+      'pickup_date',         pickup_date,
+      'return_date',         return_date,
+      'gross_amount',        gross_amount,
+      'stripe_fee',          stripe_fee,
+      'payment_status',      payment_status,
+      'type',                type,
+      'created_at',          created_at
+    )
+    ORDER BY created_at ASC
+  ) FILTER (WHERE type = 'extension')                    AS extensions
+FROM revenue_records_effective
+GROUP BY COALESCE(booking_id, original_booking_id);

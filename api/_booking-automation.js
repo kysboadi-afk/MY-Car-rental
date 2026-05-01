@@ -262,11 +262,16 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
     const record = {
       booking_id:          bookingRef,
-      // For extension records, original_booking_id = bookingRef (the canonical
-      // booking_ref of the parent booking) so that all records for the same
-      // booking share the same identifier and group correctly.
+      // For extension records, original_booking_id = bookingRef so all records
+      // for the same booking share the same group key in the Revenue Tracker.
+      // Guard: skip PI ids and synthetic "stripe-..." ids — they must never
+      // be used as group keys or they create phantom standalone rows.
       // For all other types, honour the caller-provided value (rarely set).
-      original_booking_id: recordType === "extension" ? bookingRef : (booking.originalBookingId || null),
+      original_booking_id: (() => {
+        if (recordType !== "extension") return booking.originalBookingId || null;
+        if (!bookingRef || bookingRef.startsWith("pi_") || bookingRef.startsWith("stripe-")) return null;
+        return bookingRef;
+      })(),
       payment_intent_id:   piId || null,
       vehicle_id:          resolvedVehicleId || null,
       customer_name:       normalizeCustomerName(booking.name) || null,

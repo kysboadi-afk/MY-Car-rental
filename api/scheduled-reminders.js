@@ -1992,7 +1992,8 @@ async function runReconciliation() {
           try {
             const extMeta = pi.metadata || {};
             const extRef  = extMeta.booking_id || extMeta.original_booking_id || "";
-            if (!extRef || !extRef.startsWith("bk-")) {
+            // A valid booking_ref starts with "bk-" followed by at least 7 characters (e.g. "bk-9035ea7c4552").
+            if (!extRef || !extRef.startsWith("bk-") || extRef.length < 10) {
               throw new Error(`missing or non-canonical booking_id in metadata ("${extRef}")`);
             }
             // Confirm the booking row exists in Supabase before writing revenue.
@@ -2035,7 +2036,6 @@ async function runReconciliation() {
             }
             await autoCreateRevenueRecord({
               booking_ref:     resolvedExtRef,
-              bookingId:       resolvedExtRef,
               paymentIntentId: pi.id,
               vehicleId:       extMeta.vehicle_id || "",
               name:            extMeta.renter_name  || "",
