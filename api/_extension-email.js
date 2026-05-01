@@ -112,7 +112,7 @@ export function generateExtensionAgreementPdf({
 
     // ── Parties ─────────────────────────────────────────────────────────────────
     sectionHeader("Parties");
-    bodyText("Owner:   SLY Transportation Services \u2014 (213) 916-6606 \u2014 info@slytrans.com");
+    bodyText("Owner:   SLY Transportation Services \u2014 (833) 252-1093 \u2014 info@slytrans.com");
     bodyText(`Renter:  ${renterName || "Not provided"}`);
 
     // ── Renter Information ───────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ export async function sendExtensionConfirmationEmails({
             <tr><td style="padding:8px;border:1px solid #ddd"><strong>Amount Charged</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(amountDollars)}</strong></td></tr>
           </table>
           <p style="margin-top:16px">Your rental period has been updated. Please return the vehicle by <strong>${esc(newReturnDisplay)}</strong>.</p>
-          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+12139166606">(213) 916-6606</a>.</p>
+          <p>If you have any questions, please contact us at <a href="mailto:${esc(OWNER_EMAIL)}">${esc(OWNER_EMAIL)}</a> or call <a href="tel:+18332521093">(833) 252-1093</a>.</p>
           <p><strong>Sly Transportation Services LLC \ud83d\ude97</strong></p>
         `,
         text: [
@@ -333,7 +333,7 @@ export async function sendExtensionConfirmationEmails({
           `Amount Charged : $${amountDollars}`,
           "",
           `Your rental period has been updated. Please return the vehicle by ${newReturnDisplay}.`,
-          `Questions? Contact us at ${OWNER_EMAIL} or call (213) 916-6606.`,
+          `Questions? Contact us at ${OWNER_EMAIL} or call (833) 252-1093.`,
           "",
           "Sly Transportation Services LLC",
         ].filter(Boolean).join("\n"),

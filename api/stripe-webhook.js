@@ -1494,7 +1494,7 @@ async function sendBalancePaidCustomerEmail({
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Balance Paid</strong></td><td style="padding:8px;border:1px solid #ddd">$${esc(normalizeCurrency(amountPaid).toFixed(2))}</td></tr>
         <tr><td style="padding:8px;border:1px solid #ddd"><strong>Total Paid</strong></td><td style="padding:8px;border:1px solid #ddd"><strong>$${esc(normalizeCurrency(totalPrice).toFixed(2))}</strong></td></tr>
       </table>
-      <p>Questions? Call us at <strong>(213) 916-6606</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
+      <p>Questions? Call us at <strong>(833) 252-1093</strong> or visit <a href="https://www.slytrans.com">slytrans.com</a>.</p>
     `,
     text: [
       "✅ Payment Received — You're All Set!",
@@ -1509,7 +1509,7 @@ async function sendBalancePaidCustomerEmail({
       `Balance Paid : $${normalizeCurrency(amountPaid).toFixed(2)}`,
       `Total Paid   : $${normalizeCurrency(totalPrice).toFixed(2)}`,
       "",
-      "Questions? Call (213) 916-6606.",
+      "Questions? Call (833) 252-1093.",
     ].filter(Boolean).join("\n"),
   });
 }

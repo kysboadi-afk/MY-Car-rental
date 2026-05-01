@@ -169,9 +169,9 @@
     <a href="index.html#about" data-i18n="nav.about">About</a>
     <a href="contact.html" aria-current="page" data-i18n="nav.contact">Contact</a>
   </nav>
-  <a href="tel:+12139166606" class="header-phone">
+  <a href="tel:+18332521093" class="header-phone">
     <span class="phone-urgency" data-i18n="nav.callNow">Call Now to Get Approved Today</span>
-    📞 (213) 916-6606
+    📞 (833) 252-1093
   </a>
 </header>
 
@@ -244,7 +244,7 @@
     </form>
 
     <div class="contact-info-row">
-      <span>📞 <a href="tel:+12139166606">(213) 916-6606</a></span>
+      <span>📞 <a href="tel:+18332521093">(833) 252-1093</a></span>
       <span>✉️ <a href="mailto:slyservices@supports-info.com">slyservices@supports-info.com</a></span>
       <span>📍 5101 Santa Monica Blvd, Los Angeles</span>
     </div>
@@ -252,7 +252,7 @@
 </div>
 
 <footer>
-  <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+12139166606" class="footer-phone">(213) 916-6606</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
+  <span data-i18n="footer.copy">&copy; 2026 Sly Transportation Services LLC. All rights reserved.</span> &nbsp;|&nbsp; <a href="tel:+18332521093" class="footer-phone">(833) 252-1093</a> &nbsp;|&nbsp; <a href="privacy-policy.html" class="footer-phone" data-i18n="footer.privacyPolicy">Privacy Policy</a> &nbsp;|&nbsp; <a href="admin-v2/" class="footer-phone" style="opacity:0.5;font-size:11px;">Admin</a>
 </footer>
 
 <script src="la-date.js"></script>
@@ -301,13 +301,13 @@
           window.location.href = "thank-you.html?from=contact";
         } else {
           const data = await res.json().catch(() => ({}));
-          status.textContent = data.error || ct("contact.generalError", "Something went wrong. Please try again or call us at (213) 916-6606.");
+          status.textContent = data.error || ct("contact.generalError", "Something went wrong. Please try again or call us at (833) 252-1093.");
           status.className = "contact-status error";
           btn.disabled = false;
         }
       } catch (err) {
         console.error("Contact form error:", err);
-        status.textContent = ct("contact.networkErrorFull", "Network error. Please check your connection or call us at (213) 916-6606.");
+        status.textContent = ct("contact.networkErrorFull", "Network error. Please check your connection or call us at (833) 252-1093.");
         status.className = "contact-status error";
         btn.disabled = false;
       }

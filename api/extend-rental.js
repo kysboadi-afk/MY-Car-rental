@@ -195,7 +195,7 @@ export default async function handler(req, res) {
     if (!activeBooking) {
       return res.status(404).json({
         error: "No active rental found for this vehicle with the provided contact info. " +
-               "Please check your email or phone number, or call us at (213) 916-6606.",
+               "Please check your email or phone number, or call us at (833) 252-1093.",
       });
     }
 
@@ -543,6 +543,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("extend-rental error:", err);
-    return res.status(500).json({ error: "Failed to create extension payment. Please try again or call (213) 916-6606." });
+    return res.status(500).json({ error: "Failed to create extension payment. Please try again or call (833) 252-1093." });
   }
 }

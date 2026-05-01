@@ -227,8 +227,8 @@ function getVehicleBookingInfo(vehicleId, lang) {
 
   if (!slyBookedDates) {
     return lang === "es"
-      ? "No pude obtener la información de reservas ahora mismo. Llámanos al 📞 (213) 916-6606 para información actualizada."
-      : "I couldn't load the latest booking info right now. Call us at 📞 (213) 916-6606 for up-to-date availability.";
+      ? "No pude obtener la información de reservas ahora mismo. Llámanos al 📞 (833) 252-1093 para información actualizada."
+      : "I couldn't load the latest booking info right now. Call us at 📞 (833) 252-1093 for up-to-date availability.";
   }
 
   var today  = SlyLA.todayISO();
@@ -327,8 +327,8 @@ function buildAvailabilityMessage(lang) {
     ? "📅 Estado actual de disponibilidad:\n\n"
     : "📅 Current availability for all vehicles:\n\n";
   var footer = lang === "es"
-    ? "\n\nPara reservar, visita nuestra página de Autos o llámanos al 📞 (213) 916-6606"
-    : "\n\nTo book, visit our Cars page or call 📞 (213) 916-6606";
+    ? "\n\nPara reservar, visita nuestra página de Autos o llámanos al 📞 (833) 252-1093"
+    : "\n\nTo book, visit our Cars page or call 📞 (833) 252-1093";
 
   return header + lines.join("\n") + footer;
 }
@@ -480,11 +480,11 @@ var botResponses = {
     },
     {
       patterns: ["cancel","cancellation","refund","no show","no-show","noshow"],
-      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (213) 916-6606 or email slyservices@supports-info.com 🙏"
+      reply: "⚠️ No-Refund Policy\n\nAll payments are final once a booking is confirmed.\n\n• Cancellations or no-shows after booking are not eligible for a refund\n• Please review your reservation details carefully before completing payment\n• Refunds may be issued only if the company cancels or cannot fulfill the rental\n\nFor questions, call (833) 252-1093 or email slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contact","phone","call","email","reach","support","help"],
-      reply: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
+      reply: "You can reach us at:\n\n📞 (833) 252-1093\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours. Feel free to ask!"
     },
     {
       patterns: ["pay","payment","stripe","credit","card","paypal"],
@@ -504,7 +504,7 @@ var botResponses = {
     },
     {
       patterns: ["text","sms","notification","notifications","reminder","reminders","message","messages","will i get","will you text","do you text","do you send","what texts","what messages","what notifications","automated message","automated text"],
-      reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (213) 916-6606"
+      reply: "📱 Automated SMS Notifications\n\nHere's every text you'll receive from us:\n\n<strong>Before Pickup</strong>\n  • 24 hrs before — pickup reminder with time & location\n\n<strong>During Your Rental</strong>\n  • Before return window — option to extend your rental\n  • At return time — heads-up that rental time has ended\n  • +1 hr past return — grace period expired notice\n  • +2 hrs past return — late fee assessment (if applicable)\n\n<strong>After Return</strong>\n  • Upon completion — thank-you message\n  • Day 7 — follow-up message\n\nAll texts include a STOP opt-out option.\n\nQuestions? 📞 (833) 252-1093"
     }
   ],
   es: [
@@ -566,11 +566,11 @@ var botResponses = {
     },
     {
       patterns: ["cancelar","cancelación","cancelacion","reembolso","reembolsar","no presentarse"],
-      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (213) 916-6606 o envía un correo a slyservices@supports-info.com 🙏"
+      reply: "⚠️ Política de No Reembolso\n\nTodos los pagos son finales una vez confirmada la reserva.\n\n• Las cancelaciones o no presentaciones después de la reserva no son elegibles para reembolso\n• Revisa los detalles de tu reserva cuidadosamente antes de completar el pago\n• Los reembolsos solo se emiten si la empresa cancela o no puede cumplir con el alquiler\n\nPara preguntas, llama al (833) 252-1093 o envía un correo a slyservices@supports-info.com 🙏"
     },
     {
       patterns: ["contacto","teléfono","telefono","llamar","correo","comunicarme","ayuda","soporte","asistencia"],
-      reply: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nGeneralmente respondemos dentro de pocas horas. ¡No dudes en preguntar!"
+      reply: "Puedes contactarnos en:\n\n📞 (833) 252-1093\n📧 slyservices@supports-info.com\n\nGeneralmente respondemos dentro de pocas horas. ¡No dudes en preguntar!"
     },
     {
       patterns: ["pagar","pago","tarjeta","crédito","credito","débito","debito","cómo pago","como pago"],
@@ -590,7 +590,7 @@ var botResponses = {
     },
     {
       patterns: ["texto","sms","notificación","notificacion","notificaciones","recordatorio","recordatorios","mensaje","mensajes","me van a mandar","van a enviar","mensajes automáticos","mensajes automaticos","qué mensajes","que mensajes"],
-      reply: "📱 Notificaciones SMS Automáticas\n\nEsquema de mensajes que recibirás:\n\n<strong>Antes del recogida</strong>\n  • 24 hrs antes — recordatorio de recogida con hora y ubicación\n\n<strong>Durante tu renta</strong>\n  • Antes del fin — opción para extender tu renta\n  • Al vencer — aviso de que el tiempo de renta terminó\n  • +1 hr vencido — aviso de período de gracia expirado\n  • +2 hrs vencido — cargo por retraso (si aplica)\n\n<strong>Después de devolución</strong>\n  • Al completarse — mensaje de agradecimiento\n  • Día 7 — mensaje de seguimiento\n\nTodos incluyen opción STOP para cancelar.\n\n¿Preguntas? 📞 (213) 916-6606"
+      reply: "📱 Notificaciones SMS Automáticas\n\nEsquema de mensajes que recibirás:\n\n<strong>Antes del recogida</strong>\n  • 24 hrs antes — recordatorio de recogida con hora y ubicación\n\n<strong>Durante tu renta</strong>\n  • Antes del fin — opción para extender tu renta\n  • Al vencer — aviso de que el tiempo de renta terminó\n  • +1 hr vencido — aviso de período de gracia expirado\n  • +2 hrs vencido — cargo por retraso (si aplica)\n\n<strong>Después de devolución</strong>\n  • Al completarse — mensaje de agradecimiento\n  • Día 7 — mensaje de seguimiento\n\nTodos incluyen opción STOP para cancelar.\n\n¿Preguntas? 📞 (833) 252-1093"
     }
   ]
 };
@@ -781,8 +781,8 @@ function buildChatbot() {
         es: "📋 Requisitos para Alquilar\n\n✅ Lo que necesitarás:\n  • Licencia de conducir válida emitida por el gobierno\n  • Debe tener 21 años o más\n  • Al menos 3 meses de experiencia al volante\n  • La licencia no debe estar vencida\n  • Subir una foto de tu licencia durante la reserva"
       },
       contact: {
-        en: "You can reach us at:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
-        es: "Puedes contactarnos en:\n\n📞 (213) 916-6606\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
+        en: "You can reach us at:\n\n📞 (833) 252-1093\n📧 slyservices@supports-info.com\n\nWe typically respond within a few hours!",
+        es: "Puedes contactarnos en:\n\n📞 (833) 252-1093\n📧 slyservices@supports-info.com\n\n¡Generalmente respondemos dentro de pocas horas!"
       },
       availability: {
         en: function() { return buildAvailabilityMessage("en"); },
