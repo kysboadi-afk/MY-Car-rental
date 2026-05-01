@@ -232,7 +232,7 @@ async function isSmsLogged(bookingId, templateKey, returnDateStr) {
  * @param {object} [metadata]      - optional JSON payload (e.g. link validation result)
  */
 const MAX_SMS_LOG_RETRIES  = 3;
-const SMS_LOG_RETRY_BASE_MS = 300; // 300 ms → 600 ms → 1 200 ms
+const SMS_LOG_RETRY_BASE_MS = 300; // 300 ms → 600 ms → 1200 ms
 
 async function logSmsToSupabase(bookingId, templateKey, returnDateStr, metadata) {
   const sb = getSupabaseAdmin();
@@ -1557,12 +1557,12 @@ export async function loadBookingsFromSupabase(sb) {
       try {
         // Fetch all sms_logs rows for these booking refs written in the last 30 days.
         // 30 days covers the longest retention window (7-day retention SMS) plus buffer.
-        const cutoff30d = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
+        const smsLogsCutoffDate = new Date(Date.now() - 30 * 24 * MS_PER_HOUR).toISOString();
         const { data: smsRows, error: smsErr } = await sb
           .from("sms_logs")
           .select("booking_id, template_key, sent_at, return_date_at_send")
           .in("booking_id", bookingRefs)
-          .gte("sent_at", cutoff30d);
+          .gte("sent_at", smsLogsCutoffDate);
         if (smsErr) {
           console.warn("scheduled-reminders loadBookingsFromSupabase: sms_logs lookup failed (non-fatal):", smsErr.message);
         } else {
