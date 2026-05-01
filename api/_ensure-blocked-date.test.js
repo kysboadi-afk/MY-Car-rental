@@ -134,6 +134,7 @@ test("ensureBlockedDate: patches end_time when row exists with null end_time and
   assert.equal(sbState.updateCalls.length, 1, "should call update to patch end_time");
   const updatePayload = sbState.updateCalls[0]?.payload;
   assert.ok(updatePayload?.end_time, "update payload should include end_time");
+  assert.ok(updatePayload?.end_date, "update payload should include end_date");
 });
 
 test("ensureBlockedDate: returns already_exists when row has null end_time but no returnTime to patch with", async () => {

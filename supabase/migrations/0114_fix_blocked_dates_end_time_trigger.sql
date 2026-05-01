@@ -60,6 +60,7 @@ BEGIN
       WHERE vehicle_id  = NEW.vehicle_id
         AND booking_ref = NEW.booking_ref
         AND reason      = 'booking'
+        -- OR: update if either field differs — both are always written together
         AND (end_time IS DISTINCT FROM v_end_time OR end_date IS DISTINCT FROM v_end_date);
 
       -- If no existing row was updated, insert a new one.
