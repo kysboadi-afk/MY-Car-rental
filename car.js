@@ -1044,7 +1044,12 @@ function showVehicleUnavailable(nextAvailableISO, nextAvailableDisplay) {
     const subtitle = extendSection.querySelector(".waitlist-subtitle");
     if (subtitle) {
       if (nextAvailableDisplay) {
-        subtitle.textContent = `This vehicle is currently rented \u2014 available again: ${nextAvailableDisplay}. If you are the current renter, enter your contact info below to extend your rental period.`;
+        subtitle.innerHTML =
+          `This vehicle is currently rented \u2014 next available pickup: <strong style="color:#fbbf24;">${nextAvailableDisplay}</strong>.` +
+          ` If you are the current renter, enter your contact info below to extend your rental period.` +
+          `<span class="waitlist-queue-note" style="display:block;margin-top:8px;">` +
+          `\u23F1 This time reflects a 2-hour preparation window added after the current rental\u2019s confirmed return time.` +
+          `</span>`;
       } else {
         subtitle.textContent = "This vehicle is currently rented. If you are the current renter, enter your contact info below to extend your rental period.";
       }

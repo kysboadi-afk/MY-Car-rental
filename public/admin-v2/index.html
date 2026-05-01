@@ -2745,7 +2745,7 @@ function renderDashboard(data) {
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;">${esc(b.name)}</div>
           <div style="font-size:11px;color:var(--text-sub);">
-            ${esc(getVehicleLabel(b.vehicleId))} · ${esc(b.pickupDate || '')}${b.pickupTime ? ' ' + esc(b.pickupTime) : ''} → ${esc(b.returnDate || '')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}
+            ${esc(getVehicleLabel(b.vehicleId))} · ${esc(b.pickupDate || '')}${b.pickupTime ? ' ' + esc(fmt12h(b.pickupTime)) : ''} → ${esc(b.returnDate || '')}${b.returnTime ? ' ' + esc(fmt12h(b.returnTime)) : ''}
           </div>
         </div>
         <div style="text-align:right;">
@@ -3667,8 +3667,8 @@ function applyBookingFilters() {
       </td>
       <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
       <td>
-        <div>${esc(b.pickupDate || '–')}${b.pickupTime ? ' ' + esc(b.pickupTime) : ''}</div>
-        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(b.returnTime) : ''}</div>
+        <div>${esc(b.pickupDate || '–')}${b.pickupTime ? ' ' + esc(fmt12h(b.pickupTime)) : ''}</div>
+        <div style="font-size:11px;color:var(--text-sub);">→ ${esc(b.returnDate || '–')}${b.returnTime ? ' ' + esc(fmt12h(b.returnTime)) : ''}</div>
         ${b.extensionCount > 0 ? `<span class="badge badge-orange" style="font-size:10px;margin-top:3px;">🔄 ×${b.extensionCount}</span>` : ''}
       </td>
       <td>
@@ -3731,8 +3731,8 @@ function viewBooking(bookingId, vehicleId) {
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Vehicle</div><div style="font-weight:600;">${esc(getVehicleLabel(b.vehicleId) || '–')}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Phone</div><div>${esc(b.phone || '–')}${b.phone ? ` <a href="tel:${esc(b.phone)}" style="color:var(--primary);text-decoration:none;">📞</a>` : ''}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Email</div><div>${esc(b.email || '–')}${b.email ? ` <a href="mailto:${esc(b.email)}" style="color:var(--primary);text-decoration:none;">✉️</a>` : ''}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(b.pickupTime || '')}</div></div>
-      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(b.returnTime || '')}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Pickup Date</div><div>${esc(b.pickupDate || '–')} ${esc(fmt12h(b.pickupTime || ''))}</div></div>
+      <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Return Date</div><div>${esc(b.returnDate || '–')} ${esc(fmt12h(b.returnTime || ''))}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Status</div><div>${bookingStatusBadge(b, derived)}</div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Payment Method</div><div><span class="badge badge-gray">${esc((b.paymentMethod || 'stripe').toUpperCase())}</span></div></div>
       <div><div style="font-size:11px;color:var(--text-sub);text-transform:uppercase;margin-bottom:3px;">Gross Amount</div><div style="font-weight:700;font-size:16px;">$${formatMoney(b.amountGross != null ? b.amountGross : (b.totalPrice || 0))}</div></div>
@@ -3779,7 +3779,7 @@ function viewBooking(bookingId, vehicleId) {
         </div>
         <div>
           <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Return Time (optional)</label>
-          <input type="text" id="bd-return-time" class="form-input" value="${esc(b.returnTime || '')}" placeholder="e.g. 5:00 PM" style="font-size:13px;padding:6px 8px;">
+          <input type="text" id="bd-return-time" class="form-input" value="${esc(fmt12h(b.returnTime || ''))}" placeholder="e.g. 5:00 PM" style="font-size:13px;padding:6px 8px;">
         </div>
         <div style="grid-column:1/-1;">
           <button class="btn btn-secondary" style="font-size:13px;width:100%;"
@@ -4013,8 +4013,8 @@ function loadRawBookings() {
             <div style="font-size:11px;color:var(--text-sub);">${esc(b.phone || b.email || '')}</div>
           </td>
           <td>${esc(getVehicleLabel(b.vehicleId) || '–')}</td>
-          <td>${esc(b.pickupDate || '–')}${b.pickupTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.pickupTime)+'</span>' : ''}</td>
-          <td>${esc(b.returnDate || '–')}${b.returnTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(b.returnTime)+'</span>' : ''}</td>
+          <td>${esc(b.pickupDate || '–')}${b.pickupTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(fmt12h(b.pickupTime))+'</span>' : ''}</td>
+          <td>${esc(b.returnDate || '–')}${b.returnTime ? '<br><span style="font-size:11px;color:var(--text-sub);">'+esc(fmt12h(b.returnTime))+'</span>' : ''}</td>
           <td style="font-weight:600;">$${formatMoney(b.amountPaid || 0)}</td>
           <td><span style="font-weight:600;color:${statusColor};">${statusLabel}</span></td>
           <td style="font-size:11px;color:var(--text-sub);">${esc(b._source || '–')}</td>
@@ -4499,6 +4499,19 @@ function renderMarkdown(str) {
 function formatMoney(n) {
   const num = Number(n) || 0;
   return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function fmt12h(hhmm) {
+  if (!hhmm) return '';
+  const m = String(hhmm).trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?$/i);
+  if (!m) return String(hhmm);
+  if (m[3]) return `${parseInt(m[1], 10)}:${m[2]} ${m[3].toUpperCase()}`;
+  const h = parseInt(m[1], 10);
+  const mins = m[2];
+  if (h === 0)  return `12:${mins} AM`;
+  if (h < 12)   return `${h}:${mins} AM`;
+  if (h === 12) return `12:${mins} PM`;
+  return `${h - 12}:${mins} PM`;
 }
 
 function statusBadge(status) {
