@@ -1080,12 +1080,15 @@ export async function ensureBlockedDate(vehicleId, bookingRef, returnDate, retur
       // Row exists but end_time is null — patch it when returnTime is available.
       // This heals rows created by the on_booking_create trigger before the
       // trigger was updated to include the buffered end_time (migration 0114).
+      // Only end_time is patched here (not end_date) to avoid a unique constraint
+      // violation: end_date is part of the (vehicle_id, start_date, end_date, reason)
+      // index and changing it for an existing row could conflict with another row.
       if (!existing.end_time && returnTime) {
-        const { date: buffEndDate, time: buffEndTime } = buildBufferedEnd(returnDate, returnTime);
+        const { time: buffEndTime } = buildBufferedEnd(returnDate, returnTime);
         if (buffEndTime) {
           const { error: patchErr } = await sb
             .from("blocked_dates")
-            .update({ end_date: buffEndDate, end_time: buffEndTime })
+            .update({ end_time: buffEndTime })
             .eq("id", existing.id);
           if (patchErr) {
             console.error("_booking-automation ensureBlockedDate patch error (non-fatal):", patchErr.message);
@@ -1093,7 +1096,6 @@ export async function ensureBlockedDate(vehicleId, bookingRef, returnDate, retur
             console.log("[BLOCKED_DATE_END_TIME_PATCHED]", {
               vehicle_id:  normalizedVehicleId,
               booking_ref: bookingRef,
-              end_date:    buffEndDate,
               end_time:    buffEndTime,
             });
           }

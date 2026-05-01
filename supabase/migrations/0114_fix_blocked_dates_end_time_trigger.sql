@@ -11,12 +11,13 @@
 --   "Next Available") when end_time is non-null.
 --
 -- Fix:
---   1. Update on_booking_create to compute a buffered end_date + end_time from
+--   1. Update on_booking_create to compute buffered end_date + end_time from
 --      the booking's return_date and return_time (buffer = 2 hours, matching
 --      BOOKING_BUFFER_HOURS in _booking-automation.js).
---   2. Change the INSERT conflict strategy to DO UPDATE SET end_time so that if
---      a row already exists without end_time, it gets patched automatically.
---   3. Backfill all existing blocked_dates rows that still have end_time = NULL
+--      Uses UPDATE-by-booking_ref then INSERT (rather than INSERT + ON CONFLICT
+--      DO UPDATE on the composite key) so the logic is correct even when the
+--      2-hour buffer shifts end_date across midnight.
+--   2. Backfill all existing blocked_dates rows that still have end_time = NULL
 --      using the same 2-hour buffered logic as migration 0094.
 
 -- ── 1. Replace on_booking_create trigger ───────────────────────────────────
@@ -49,13 +50,26 @@ BEGIN
         v_end_time := NULL;
       END IF;
 
-      -- Insert with end_time; on conflict update end_time so trigger-created
-      -- rows are always healed to the latest buffered value.
-      INSERT INTO blocked_dates (vehicle_id, start_date, end_date, end_time, reason, booking_ref)
-      VALUES (NEW.vehicle_id, NEW.pickup_date, v_end_date, v_end_time, 'booking', NEW.booking_ref)
-      ON CONFLICT (vehicle_id, start_date, end_date, reason)
-      DO UPDATE SET end_time = EXCLUDED.end_time
-      WHERE blocked_dates.end_time IS DISTINCT FROM EXCLUDED.end_time;
+      -- First try to patch an existing row by booking_ref (idempotent self-heal).
+      -- This avoids the end_date mismatch that would occur with the composite
+      -- (vehicle_id, start_date, end_date, reason) conflict key when the 2-hour
+      -- buffer shifts end_date across midnight.
+      UPDATE blocked_dates
+      SET end_date = v_end_date,
+          end_time = v_end_time
+      WHERE vehicle_id  = NEW.vehicle_id
+        AND booking_ref = NEW.booking_ref
+        AND reason      = 'booking'
+        AND (end_time IS DISTINCT FROM v_end_time OR end_date IS DISTINCT FROM v_end_date);
+
+      -- If no existing row was updated, insert a new one.
+      -- This is the normal path: the trigger fires on the first INSERT of a
+      -- new booking, before any blocked_dates row exists for it.
+      IF NOT FOUND THEN
+        INSERT INTO blocked_dates (vehicle_id, start_date, end_date, end_time, reason, booking_ref)
+        VALUES (NEW.vehicle_id, NEW.pickup_date, v_end_date, v_end_time, 'booking', NEW.booking_ref)
+        ON CONFLICT (vehicle_id, start_date, end_date, reason) DO NOTHING;
+      END IF;
 
     EXCEPTION WHEN OTHERS THEN
       RAISE WARNING 'on_booking_create: blocked_dates insert failed for booking_ref=% (non-fatal): %',
@@ -83,8 +97,8 @@ $$;
 
 -- ── 2. Backfill existing blocked_dates rows with null end_time ─────────────
 -- For booking-type rows: compute buffered end_date + end_time from the linked
--- booking's return_time.  Update both end_date (for midnight-crossing buffer)
--- and end_time.  Matches the logic in the updated trigger above.
+-- booking's return_time.  Update both end_date (handles midnight-crossing
+-- buffer) and end_time.  Matches the logic in the updated trigger above.
 UPDATE public.blocked_dates bd
 SET
   end_date = (
