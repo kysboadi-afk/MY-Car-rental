@@ -140,13 +140,19 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  if (!process.env.ADMIN_SECRET) {
-    return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
-  }
-  const body = req.body || {};
-  const secret = body.secret || req.query?.secret;
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
-    return res.status(401).json({ error: "Unauthorized" });
+  // Auth: GET is called by Vercel cron (no secret needed); POST is a manual admin
+  // trigger and requires Authorization: Bearer <ADMIN_SECRET|CRON_SECRET>.
+  if (req.method === "POST") {
+    const auth = req.headers.authorization || "";
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    const adminSecret = process.env.ADMIN_SECRET || "";
+    const cronSecret = process.env.CRON_SECRET || "";
+    if (!adminSecret && !cronSecret) {
+      return res.status(500).json({ error: "Server configuration error: ADMIN_SECRET is not set." });
+    }
+    if (!token || ((!adminSecret || token !== adminSecret) && (!cronSecret || token !== cronSecret))) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
   }
 
   if (!process.env.STRIPE_SECRET_KEY) {
