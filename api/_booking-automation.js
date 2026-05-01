@@ -262,6 +262,10 @@ export async function autoCreateRevenueRecord(booking, opts = {}) {
 
     const record = {
       booking_id:          bookingRef,
+      // booking_ref mirrors booking_id — it is a FK column on revenue_records
+      // that references bookings.booking_ref and must be set on every non-orphan
+      // INSERT.  Without it the DB rejects the write with a not-null violation.
+      booking_ref:         bookingRef,
       // For extension records, original_booking_id = bookingRef so all records
       // for the same booking share the same group key in the Revenue Tracker.
       // Guard: skip PI ids and synthetic "stripe-..." ids — they must never
@@ -451,6 +455,7 @@ export async function createOrphanRevenueRecord({
     const gross = Number(amountPaid || 0);
     const { error: insertErr } = await sb.from("revenue_records").insert({
       booking_id:       null,
+      booking_ref:      null,  // orphan — no resolved booking; trigger is_orphan=true escape hatch applies
       payment_intent_id: paymentIntentId,
       vehicle_id:       normalizeVehicleId(vehicleId) || "unknown",
       customer_name:    normalizeCustomerName(name) || null,
