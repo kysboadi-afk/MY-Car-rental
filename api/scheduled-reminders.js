@@ -1430,7 +1430,7 @@ export async function loadBookingsFromSupabase(sb) {
       "pending_verification",
     ];
 
-    // Recently completed = last 8 days (covers 7-day retention window + 4h window + buffer)
+    // Recently completed = last 9 days (covers 7-day retention window + 4h window + buffer)
     const cutoffDate = new Date(Date.now() - 9 * 24 * 3_600_000).toISOString();
 
     let [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
