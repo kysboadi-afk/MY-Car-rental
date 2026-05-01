@@ -262,6 +262,42 @@ async function resolveBookingId(rawRef) {
   }
 }
 
+/**
+ * Resolves a booking_ref by looking up the Supabase bookings table via
+ * payment_intent_id.  Used as a fallback when the metadata booking_id is
+ * absent or does not match any known booking (e.g. orphan PI created before
+ * the booking row was inserted, or a replay where metadata was stripped).
+ *
+ * create-payment-intent.js links payment_intent_id to the booking row
+ * immediately after PI creation, so this lookup is reliable for all PIs
+ * created by the normal booking flow.
+ *
+ * @param {string} paymentIntentId - Stripe PaymentIntent ID (pi_...)
+ * @returns {Promise<string|null>}
+ */
+async function resolveBookingIdByPaymentIntent(paymentIntentId) {
+  if (!paymentIntentId) return null;
+  const sb = getSupabaseAdmin();
+  if (!sb) return null;
+  try {
+    const { data } = await sb
+      .from("bookings")
+      .select("booking_ref")
+      .eq("payment_intent_id", paymentIntentId)
+      .maybeSingle();
+    if (data?.booking_ref) {
+      console.log(`stripe-webhook: resolveBookingIdByPaymentIntent — found booking_ref "${data.booking_ref}" for PI ${paymentIntentId}`);
+      return data.booking_ref;
+    }
+    console.warn(`stripe-webhook: resolveBookingIdByPaymentIntent — no booking found for PI ${paymentIntentId}`);
+    return null;
+  } catch (err) {
+    console.warn(`stripe-webhook: resolveBookingIdByPaymentIntent lookup error (non-fatal): ${err.message}`);
+    return null;
+  }
+}
+
+
 async function bookingExistsInSupabase(bookingId, paymentIntentId) {
   const sb = getSupabaseAdmin();
   if (!sb) return false;
@@ -1029,9 +1065,13 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
   });
 
   // Step 2 — Resolve booking_id
-  // For rental_extension the booking_id/original_booking_id metadata field
-  // is the canonical ref.  For all other rental types the booking_id is in
-  // metadata.  As a final fallback, try to look up the booking by PI ID.
+  // Resolution order (most → least specific):
+  //   a. Caller-supplied bookingId (pre-resolved by the payment-type handler)
+  //   b. metadata.booking_id / booking_ref / original_booking_id — looked up in bookings table
+  //   c. payment_intent_id lookup — create-payment-intent.js links PI to booking row at PI
+  //      creation time, so this resolves any case where metadata booking_id is missing
+  //   d. saveWebhookBookingRecord auto-create (new-booking types only)
+  //   e. Orphan revenue record (last resort — no booking found anywhere)
   let booking_id = opts.bookingId || null;
 
   if (!booking_id) {
@@ -1051,6 +1091,20 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
     }
   }
 
+  // Fallback (c): look up by payment_intent_id.
+  // create-payment-intent.js writes payment_intent_id to the booking row
+  // immediately after PI creation, so this covers cases where booking_id
+  // metadata is missing or stale (e.g. replay, 3DS redirect that lost session).
+  if (!booking_id && paymentIntent.id) {
+    booking_id = await resolveBookingIdByPaymentIntent(paymentIntent.id);
+    if (booking_id) {
+      console.log("[processStripePayment] booking_id resolved via payment_intent_id fallback", {
+        paymentIntentId: paymentIntent.id,
+        booking_id,
+      });
+    }
+  }
+
   if (!booking_id) {
     // Recovery: for new-booking payment types, attempt to create the booking via
     // the full pipeline before giving up.  This guards against timing windows
@@ -1067,12 +1121,13 @@ async function processStripePayment(stripe, paymentIntent, opts = {}) {
       });
       try {
         await saveWebhookBookingRecord(paymentIntent);
-        // Retry booking lookup after creation.
+        // Retry booking lookup after creation — first by metadata ref, then by PI ID.
         const recRef =
           paymentIntent.metadata?.booking_id ||
           paymentIntent.metadata?.booking_ref ||
           paymentIntent.metadata?.original_booking_id;
         if (recRef) booking_id = (await resolveBookingId(recRef)) || recRef;
+        if (!booking_id) booking_id = await resolveBookingIdByPaymentIntent(paymentIntent.id);
       } catch (recErr) {
         console.error("[processStripePayment] auto-create booking failed:", recErr.message, {
           paymentIntentId: paymentIntent.id,

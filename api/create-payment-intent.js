@@ -231,7 +231,7 @@ export default async function handler(req, res) {
       return_date:       returnDate,
       pickup_time:       trimmedPickupTime  || null,
       return_time:       derivedReturnTime  || null,
-      status:            "pending",          // awaiting payment confirmation
+      status:            "pending",          // PI not yet created; updated to reserved/booked_paid on payment_intent.succeeded
       total_price:       afterTaxFullRental, // always the full rental cost
       deposit_paid:      0,
       remaining_balance: afterTaxFullRental,
