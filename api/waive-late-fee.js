@@ -105,8 +105,8 @@ export default async function handler(req, res) {
   }
 
   // ── Determine the full late fee for this booking ──────────────────────────
-  // The maximum possible late fee is EXTENDED_LATE_FEE because that is the
-  // highest fixed amount the system can assess.
+  // maxLateFee is kept as the reference for the "full" waiver amount and for
+  // computing new_late_fee in the response.
   const maxLateFee = EXTENDED_LATE_FEE;
 
   // Resolve the waived amount.
@@ -125,11 +125,6 @@ export default async function handler(req, res) {
     const parsed = Number(waived_amount);
     if (isNaN(parsed) || parsed <= 0) {
       return res.status(400).json({ error: "waived_amount must be a positive number for a partial waiver" });
-    }
-    if (parsed > maxLateFee) {
-      return res.status(400).json({
-        error: `waived_amount (${parsed}) cannot exceed the maximum late fee ($${maxLateFee})`,
-      });
     }
     resolvedWaivedAmount = Math.round(parsed * 100) / 100;
   }
