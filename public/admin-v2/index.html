@@ -3918,7 +3918,7 @@ function confirmLateFeeEdit() {
     secret:        adminSecret,
     action:        'set_late_fee',
     bookingId:     _lfEditBookingId,
-    lateFeeAmount: lateFeeAmount !== null ? lateFeeAmount : undefined,
+    lateFeeAmount: lateFeeAmount,
     lateFeeStatus: status || undefined,
   })
     .then(() => {

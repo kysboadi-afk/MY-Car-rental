@@ -1090,6 +1090,7 @@ export default async function handler(req, res) {
 
       const dismissPatch = {
         late_fee_status:      "dismissed",
+        late_fee_amount:      null,
         late_fee_approved_at: new Date().toISOString(),
         late_fee_approved_by: "admin_panel",
         updated_at:           new Date().toISOString(),
@@ -1131,10 +1132,11 @@ export default async function handler(req, res) {
       if (lateFeeStatus && !VALID_STATUSES.includes(lateFeeStatus)) {
         return res.status(400).json({ error: "Invalid lateFeeStatus" });
       }
-      if (lateFeeAmount != null && (typeof lateFeeAmount !== "number" || lateFeeAmount < 0)) {
+      const hasAmount = "lateFeeAmount" in body;
+      if (hasAmount && lateFeeAmount != null && (typeof lateFeeAmount !== "number" || lateFeeAmount < 0)) {
         return res.status(400).json({ error: "lateFeeAmount must be a non-negative number" });
       }
-      if (lateFeeAmount == null && !lateFeeStatus) {
+      if (!hasAmount && !lateFeeStatus) {
         return res.status(400).json({ error: "At least one of lateFeeAmount or lateFeeStatus is required" });
       }
 
@@ -1142,8 +1144,8 @@ export default async function handler(req, res) {
       if (!sbEdit) return res.status(500).json({ error: "Database not configured" });
 
       const patch = { updated_at: new Date().toISOString() };
-      if (lateFeeAmount != null) patch.late_fee_amount = lateFeeAmount;
-      if (lateFeeStatus)         patch.late_fee_status = lateFeeStatus;
+      if (hasAmount)   patch.late_fee_amount = lateFeeAmount ?? null;
+      if (lateFeeStatus) patch.late_fee_status = lateFeeStatus;
 
       const { data: updatedByRef, error: editErr } = await sbEdit
         .from("bookings")
