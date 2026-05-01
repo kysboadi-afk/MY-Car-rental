@@ -420,6 +420,24 @@ test("waive-late-fee: fee_type=rental_balance partial requires positive amount",
   assert.equal(res._status, 400);
 });
 
+test("waive-late-fee: fee_type=rental_balance partial waiver cannot exceed remaining balance", async () => {
+  reset();
+  sbClient = makeSupabaseClient({
+    bookingRow: makeBookingRow({ remaining_balance: 100 }),
+  });
+  const res = makeRes();
+  await handler(makeReq({
+    secret:        process.env.ADMIN_SECRET,
+    booking_id:    "bk-test-001",
+    fee_type:      "rental_balance",
+    waiver_type:   "partial",
+    waived_amount: 150,  // exceeds remaining balance of 100
+    reason:        "test",
+  }), res);
+  assert.equal(res._status, 400);
+  assert.ok(res._body?.error?.includes("100"), "error should mention the remaining balance");
+});
+
 // ── fee_type: all_fees ────────────────────────────────────────────────────────
 
 test("waive-late-fee: fee_type=all_fees waives both late fee and remaining balance", async () => {

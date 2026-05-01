@@ -1448,16 +1448,27 @@
                 }
                 if (d.is_update) msg += " (Updated existing waiver.)";
                 showWfMsg(msg, "success");
-                // Reset form
-                document.getElementById("wfBookingId").value = "";
+                // Reset action fields but keep booking ref + info panel so the
+                // admin can apply another waiver to the same booking if needed.
                 document.getElementById("wfReason").value    = "";
                 document.getElementById("wfWaivedBy").value  = "";
                 document.getElementById("wfAmount").value    = "";
                 feeTypeEl.value    = "late_fee";
                 waiverTypeEl.value = "full";
-                bookingInfoEl.style.display = "none";
                 waiverTypeGrp.style.display = "block";
                 amountGroup.style.display   = "none";
+                // Refresh the booking info panel to reflect the new state
+                if (bookingInfoEl.style.display !== "none") {
+                  if (d.late_fee_waived_amount !== null) {
+                    document.getElementById("wfInfoLateFee").textContent = fmt(d.late_fee_waived_amount) + " waived";
+                    document.getElementById("wfInfoLateFeeRow").style.display = "flex";
+                  }
+                  if (d.rental_balance_waived_amount !== null) {
+                    document.getElementById("wfInfoBalance").textContent  = fmt(d.new_remaining_balance);
+                    document.getElementById("wfInfoRentalFee").textContent = fmt(d.rental_balance_waived_amount) + " waived";
+                    document.getElementById("wfInfoRentalFeeRow").style.display = "flex";
+                  }
+                }
               }
             })
             .catch(function (err) { showWfMsg("Network error: " + err.message, "error"); })

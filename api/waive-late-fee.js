@@ -168,9 +168,17 @@ export default async function handler(req, res) {
 
   if (resolvedFeeType === "rental_balance" || resolvedFeeType === "all_fees") {
     const currentBalance = Number(booking.remaining_balance || 0);
-    rentalBalanceWaivedAmount = (resolvedFeeType === "all_fees" || effectiveWaiverType === "full")
-      ? currentBalance
-      : parsedAmount;
+    if (resolvedFeeType === "all_fees" || effectiveWaiverType === "full") {
+      rentalBalanceWaivedAmount = currentBalance;
+    } else {
+      // Partial: cap at the current remaining balance so the balance can't go negative
+      if (parsedAmount > currentBalance) {
+        return res.status(400).json({
+          error: `Partial rental balance waiver ($${parsedAmount}) cannot exceed the remaining balance ($${currentBalance})`,
+        });
+      }
+      rentalBalanceWaivedAmount = parsedAmount;
+    }
   }
 
   // ── Build the booking patch ────────────────────────────────────────────────
