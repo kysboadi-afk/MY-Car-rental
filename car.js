@@ -1301,14 +1301,32 @@ async function initDatePickers() {
   function isBooked(date) {
     if (IS_TEST_MODE_OVERRIDE) return false;
     const t = date.getTime();
+    // LA-timezone date string needed for return-time slot checks.
+    const dateStr = window.SlyLA ? window.SlyLA.isoDateInLA(date) : date.toISOString().slice(0, 10);
     if (isSlingshot) {
-      // Date is blocked only when EVERY Slingshot unit is booked on that day.
+      // Full-day block: ALL units must have an active booking covering this date.
       // Uses exclusive end so the return date itself can accept new pickups.
-      return allUnitRanges.every(function(unitRanges) {
+      const allFullDayBlocked = allUnitRanges.every(function(unitRanges) {
         return unitRanges.some(function(r) { return t >= r.from && t < r.to; });
       });
+      if (allFullDayBlocked) return true;
+      // Return-date check: block the date only when EVERY unit's return time
+      // leaves no available pickup slot (return_time + PICKUP_BUFFER_HOURS
+      // pushes the earliest valid slot past all entries in TIME_SLOTS).
+      return allUnitRangesCache.every(function(unitRanges) {
+        const returnRanges = unitRanges.filter(function(r) { return r.to === dateStr; });
+        if (returnRanges.length === 0) return false; // this unit is free → date not blocked
+        return TIME_SLOTS.every(function(slot) { return isSlotBlocked(dateStr, slot, returnRanges); });
+      });
     }
-    return compiledRanges.some(function(r) { return t >= r.from && t < r.to; });
+    // Non-slingshot: standard full-day block (exclusive end).
+    if (compiledRanges.some(function(r) { return t >= r.from && t < r.to; })) return true;
+    // Return-date check: block the date when the active booking's return time
+    // leaves no available pickup slot after applying PICKUP_BUFFER_HOURS.
+    const returnRanges = bookedRangesCache.filter(function(r) { return r.to === dateStr; });
+    return returnRanges.length > 0 && TIME_SLOTS.every(function(slot) {
+      return isSlotBlocked(dateStr, slot, returnRanges);
+    });
   }
 
   const pickupPicker = flatpickr(pickup, {
