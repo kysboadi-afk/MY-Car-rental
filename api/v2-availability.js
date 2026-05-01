@@ -173,13 +173,17 @@ export default async function handler(req, res) {
   }
 
   const sb = getSupabaseAdmin();
-  if (!sb) {
-    return res.status(503).json({ error: "Supabase is not configured; availability check unavailable" });
-  }
 
+  // Validate vehicleId before the Supabase guard so callers get 400 (not 503)
+  // for unknown IDs even when Supabase is unavailable.  getActiveVehicleIds
+  // falls back to the static FLEET_VEHICLE_IDS list gracefully when sb is null.
   const allowedVehicles = await getActiveVehicleIds(sb);
   if (vehicleId && !allowedVehicles.includes(vehicleId)) {
     return res.status(400).json({ error: "Invalid vehicleId" });
+  }
+
+  if (!sb) {
+    return res.status(503).json({ error: "Supabase is not configured; availability check unavailable" });
   }
 
   if (vehicleId) {
