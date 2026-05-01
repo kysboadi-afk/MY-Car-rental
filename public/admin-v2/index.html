@@ -6181,8 +6181,8 @@ function renderSystemSettings() {
     groups[cat].push(s);
   }
 
-  const catLabels = { pricing: 'Pricing', tax: 'Tax', automation: 'Automation', notification: 'Notifications', general: 'General' };
-  const catOrder  = ['pricing', 'tax', 'automation', 'notification', 'general'];
+  const catLabels = { tax: 'Tax', automation: 'Automation', notification: 'Notifications', general: 'General' };
+  const catOrder  = ['tax', 'automation', 'notification', 'general'];
 
   container.innerHTML = catOrder.filter((c) => groups[c]).map((cat) => `
     <div class="form-section" style="max-width:680px;">
