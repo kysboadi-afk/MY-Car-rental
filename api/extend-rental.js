@@ -104,6 +104,7 @@ export default async function handler(req, res) {
     let sbReturnDate = null;       // YYYY-MM-DD from Supabase (may be more recent than bookings.json)
     let sbReturnTime = null;       // HH:MM from Supabase
     let sbActiveBookingRef = null; // canonical booking_ref from Supabase (used for conflict-skip)
+    let sbWaivedAmount = 0;        // admin-applied late-fee waiver (subtracted from late fee below)
 
     if (sb) {
       try {
@@ -114,7 +115,7 @@ export default async function handler(req, res) {
           if (bookingRef) {
             const { data: sbRow } = await sb
               .from("bookings")
-              .select("booking_ref, return_date, return_time, status")
+              .select("booking_ref, return_date, return_time, status, late_fee_waived_amount")
               .eq("booking_ref", bookingRef)
               .maybeSingle();
             if (sbRow && (sbRow.status === "active" || sbRow.status === "active_rental" || sbRow.status === "overdue")) {
@@ -133,6 +134,10 @@ export default async function handler(req, res) {
               if (sbRow.return_time && !activeBooking.returnTime) {
                 sbReturnTime = String(sbRow.return_time).substring(0, 5);
               }
+              // Apply admin-granted late-fee waiver if present.
+              if (sbRow.late_fee_waived_amount) {
+                sbWaivedAmount = Math.max(0, Number(sbRow.late_fee_waived_amount) || 0);
+              }
             }
           }
         } else {
@@ -141,7 +146,7 @@ export default async function handler(req, res) {
           // directly, matching by vehicle_id + email or phone + active status.
           const { data: sbActive } = await sb
             .from("bookings")
-            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone")
+            .select("booking_ref, return_date, return_time, customer_name, customer_email, customer_phone, late_fee_waived_amount")
             .eq("vehicle_id", vehicleId)
             .in("status", ["active", "active_rental", "overdue"]);
 
@@ -182,6 +187,9 @@ export default async function handler(req, res) {
                 sbActiveBookingRef = row.booking_ref || null;
                 sbReturnDate = row.return_date ? String(row.return_date).split("T")[0] : null;
                 sbReturnTime = row.return_time  ? String(row.return_time).substring(0, 5) : null;
+                if (row.late_fee_waived_amount) {
+                  sbWaivedAmount = Math.max(0, Number(row.late_fee_waived_amount) || 0);
+                }
                 break;
               }
             }
@@ -209,7 +217,7 @@ export default async function handler(req, res) {
       try {
         let refQuery = sb
           .from("bookings")
-          .select("booking_ref, return_date, return_time")
+          .select("booking_ref, return_date, return_time, late_fee_waived_amount")
           .eq("vehicle_id", vehicleId)
           .in("status", ["active", "active_rental", "overdue"]);
         if (trimmedEmail) {
@@ -228,6 +236,9 @@ export default async function handler(req, res) {
           }
           if (!sbReturnTime && refRow.return_time) {
             sbReturnTime = String(refRow.return_time).substring(0, 5);
+          }
+          if (!sbWaivedAmount && refRow.late_fee_waived_amount) {
+            sbWaivedAmount = Math.max(0, Number(refRow.late_fee_waived_amount) || 0);
           }
         }
       } catch (refFallbackErr) {
@@ -436,10 +447,16 @@ export default async function handler(req, res) {
     const settings = await loadPricingSettings();
     const pricing = await getVehiclePricing(sb, vehicleId);
 
+    // Fixed late-fee constants.  These are included in the extension total
+    // when the renter is overdue — the fee is never charged separately.
+    const SHORT_LATE_FEE    = 25;  // applied after 30-minute grace period
+    const EXTENDED_LATE_FEE = 35;  // applied after the 3-hour reset window
+
     let extensionAmountPreTax;
     let extensionLabel;
     let extensionDays = null;
     let pricePerDay   = null;
+    let lateFeeIncluded = 0;
 
     {
       // Extension days are counted from effectiveReturnDate (the authoritative
@@ -451,14 +468,46 @@ export default async function handler(req, res) {
 
       const price = computeAmountFromPricing(pricing, days);
 
+      // ── Time-based late fee ─────────────────────────────────────────────────
+      // grace_end  = return_time + 30 min  → SHORT_LATE_FEE applies
+      // reset_time = return_time + 3 hours → EXTENDED_LATE_FEE applies
+      // Always ONE PaymentIntent; late fee is folded into the total.
+      const graceEndMs  = currentReturnMs + 30 * 60 * 1000;        // +30 min
+      const resetTimeMs = currentReturnMs + 3  * 60 * 60 * 1000;   // +3 h
+      const nowMs = Date.now();
+      if (nowMs > resetTimeMs) {
+        lateFeeIncluded = EXTENDED_LATE_FEE;
+      } else if (nowMs > graceEndMs) {
+        lateFeeIncluded = SHORT_LATE_FEE;
+      }
+
+      // ── Apply admin-granted waiver ──────────────────────────────────────────
+      // If the admin applied a full or partial waiver before the extension,
+      // subtract it from the late fee.  The late fee is always floored at 0;
+      // the total is floored at base_price (one day's rental) so the renter
+      // always pays at least the base extension cost.
+      if (sbWaivedAmount > 0 && lateFeeIncluded > 0) {
+        const waiver = Math.min(sbWaivedAmount, lateFeeIncluded);
+        lateFeeIncluded = Math.max(0, lateFeeIncluded - waiver);
+        console.log('[pricing-extension-waiver]', {
+          vehicle:        vehicleId,
+          waiver_applied: waiver,
+          late_fee_after: lateFeeIncluded,
+        });
+      }
+
       console.log('[pricing-extension]', {
         vehicle: vehicleId,
         days,
         pricing,
-        price
+        price,
+        late_fee:       lateFeeIncluded,
+        waived_amount:  sbWaivedAmount,
+        grace_end_iso:  new Date(graceEndMs).toISOString(),
+        reset_time_iso: new Date(resetTimeMs).toISOString(),
       });
 
-      extensionAmountPreTax = price;
+      extensionAmountPreTax = price + lateFeeIncluded;
       extensionDays = days;
       pricePerDay   = pricing.daily_price;
     }
@@ -504,6 +553,10 @@ export default async function handler(req, res) {
         // Return date in effect before this extension — used by the webhook to set
         // the correct pickup_date on the extension revenue record (extension start).
         previous_return_date:  effectiveReturnDate || "",
+        // Late fee folded into total — never charged separately.
+        late_fee_included:     String(lateFeeIncluded),
+        // Amount of late fee waived by admin (0 when no waiver applied).
+        late_fee_waived:       String(sbWaivedAmount),
       },
     });
 
@@ -518,6 +571,7 @@ export default async function handler(req, res) {
           extensionPendingPayment: {
             label:           extensionLabel,
             price:           extensionAmount,
+            lateFeeIncluded,
             newReturnDate,
             newReturnTime:   resolvedReturnTime,
             paymentIntentId: pi.id,
@@ -532,14 +586,16 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      clientSecret:    pi.client_secret,
-      publishableKey:  process.env.STRIPE_PUBLISHABLE_KEY,
-      extensionAmount: extensionAmount.toFixed(2),
+      clientSecret:      pi.client_secret,
+      publishableKey:    process.env.STRIPE_PUBLISHABLE_KEY,
+      extensionAmount:   extensionAmount.toFixed(2),
       extensionLabel,
+      lateFeeIncluded,
+      lateFeeWaived:     sbWaivedAmount,
       newReturnDate,
-      newReturnTime:   resolvedReturnTime,
-      vehicleName:     vehicleData.name,
-      renterName:      activeBooking.name || "",
+      newReturnTime:     resolvedReturnTime,
+      vehicleName:       vehicleData.name,
+      renterName:        activeBooking.name || "",
     });
   } catch (err) {
     console.error("extend-rental error:", err);

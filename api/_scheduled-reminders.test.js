@@ -83,7 +83,11 @@ mock.module("./_sms-templates.js", {
     PICKUP_REMINDER_24H:             "",
     RETURN_REMINDER_24H:             "",
     ACTIVE_RENTAL_1H_BEFORE_END:     "",
+    PRE_RETURN_LATE_FEE_WARNING:     "",
     ACTIVE_RENTAL_MID:               "",
+    LATE_GRACE_STARTED:              "",
+    LATE_ESCALATION:                 "",
+    PAYMENT_FAILED_BALANCE:          "",
     LATE_WARNING_30MIN:              "",
     LATE_AT_RETURN_TIME:             "",
     LATE_GRACE_EXPIRED:              "",
@@ -402,9 +406,10 @@ test("processActiveRentals: sends ended at return_datetime", async () => {
   assert.equal(sentMarks.some((m) => m.key === "late_at_return"), true, "ended should be sent at 08:00 for 08:00 return");
 });
 
-test("processActiveRentals: sends grace at return_datetime +1h", async () => {
+test("processActiveRentals: sends grace at return_datetime +30min", async () => {
   reset();
-  const now = new Date("2026-06-15T09:00:00-07:00");
+  // 8:00 AM return — cron fires at 8:30 AM (exactly at grace_end)
+  const now = new Date("2026-06-15T08:30:00-07:00");
   const allBookings = {
     camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
   };
@@ -412,12 +417,13 @@ test("processActiveRentals: sends grace at return_datetime +1h", async () => {
 
   await processActiveRentals(allBookings, now, sentMarks);
 
-  assert.equal(sentMarks.some((m) => m.key === "late_grace_expired"), true, "grace should be sent at 09:00 for 08:00 return");
+  assert.equal(sentMarks.some((m) => m.key === "late_grace_expired"), true, "grace should be sent at 08:30 for 08:00 return (grace_end = +30 min)");
 });
 
-test("processActiveRentals: sends late fee at return_datetime +2h", async () => {
+test("processActiveRentals: sends late fee escalation at return_datetime +3h", async () => {
   reset();
-  const now = new Date("2026-06-15T10:00:00-07:00");
+  // 8:00 AM return — cron fires at 11:00 AM (exactly at reset_time = +3h)
+  const now = new Date("2026-06-15T11:00:00-07:00");
   const allBookings = {
     camry: [makeBooking({ returnDate: "2026-06-15", returnTime: "8:00 AM" })],
   };
@@ -425,7 +431,7 @@ test("processActiveRentals: sends late fee at return_datetime +2h", async () => 
 
   await processActiveRentals(allBookings, now, sentMarks);
 
-  assert.equal(sentMarks.some((m) => m.key === "late_fee_pending"), true, "late-fee flow should start at 10:00 for 08:00 return");
+  assert.equal(sentMarks.some((m) => m.key === "late_fee_pending"), true, "escalation flow should start at 11:00 for 08:00 return (reset_time = +3h)");
 });
 
 test("processActiveRentals: sends 30-min warning before return", async () => {

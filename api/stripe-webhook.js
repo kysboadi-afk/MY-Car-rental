@@ -1844,6 +1844,7 @@ export default async function handler(req, res) {
                 .update({
                   extend_pending:            false,
                   extension_pending_payment: null,
+                  balance_due:               0,
                   updated_at:                new Date().toISOString(),
                 })
                 .eq("booking_ref", bookingRef);
@@ -2874,6 +2875,49 @@ export default async function handler(req, res) {
     } catch (pspErr) {
       console.warn("stripe-webhook: full_payment processStripePayment failed (non-fatal):", pspErr.message);
     }
+  }
+
+  // ── payment_intent.payment_failed ─────────────────────────────────────────
+  // When a Stripe payment fails, record the outstanding amount on the booking
+  // as balance_due so the customer can be blocked from new bookings and notified
+  // via the balance_due retry SMS system in scheduled-reminders.js.
+  if (event.type === "payment_intent.payment_failed") {
+    const paymentIntent = event.data.object;
+    const piMeta = paymentIntent.metadata || {};
+    const paymentType = piMeta.payment_type || piMeta.type || "";
+    const bookingRef  = piMeta.booking_id || piMeta.original_booking_id || "";
+    const amountDue   = (paymentIntent.amount || 0) / 100;
+
+    console.log("[PAYMENT_FAILED]", {
+      pi_id:        paymentIntent.id,
+      payment_type: paymentType,
+      booking_ref:  bookingRef,
+      amount_due:   amountDue,
+    });
+
+    if (bookingRef && bookingRef.startsWith("bk-") && amountDue > 0) {
+      try {
+        const sbFail = getSupabaseAdmin();
+        if (sbFail) {
+          const { error: failErr } = await sbFail
+            .from("bookings")
+            .update({
+              balance_due: amountDue,
+              updated_at:  new Date().toISOString(),
+            })
+            .eq("booking_ref", bookingRef);
+          if (failErr) {
+            console.warn("[PAYMENT_FAILED] balance_due update failed (non-fatal):", failErr.message);
+          } else {
+            console.log("[PAYMENT_FAILED] balance_due set", { bookingRef, amountDue });
+          }
+        }
+      } catch (failCatchErr) {
+        console.warn("[PAYMENT_FAILED] balance_due update threw (non-fatal):", failCatchErr.message);
+      }
+    }
+
+    return res.status(200).json({ received: true });
   }
 
   return res.status(200).json({ received: true });

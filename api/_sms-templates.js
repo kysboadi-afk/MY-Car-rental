@@ -285,6 +285,63 @@ export const EXTEND_PAYMENT_PENDING =
 // 7. LATE RETURN / OVERTIME SYSTEM
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Sent 1–2 hours before the scheduled return time.
+ * Warns the renter about upcoming late-fee thresholds and includes an extend link.
+ * Variables: customer_name, return_time, extend_link
+ */
+export const PRE_RETURN_LATE_FEE_WARNING =
+  "Hi {customer_name},\n\n" +
+  "Your rental is due at {return_time}.\n\n" +
+  "Please return or extend your booking on time to avoid additional charges.\n\n" +
+  "Late fees:\n" +
+  "\u2022 After 30 minutes: +$25\n" +
+  "\u2022 After 3 hours: higher late fee applies\n\n" +
+  "Extend here:\n" +
+  "{extend_link}\n\n" +
+  "\u2013 SLY Rides\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent after the 30-minute grace period has started.
+ * Informs the renter that a $25 late fee now applies.
+ * Variables: customer_name, extend_link
+ */
+export const LATE_GRACE_STARTED =
+  "Hi {customer_name},\n\n" +
+  "Your rental is now past the grace period.\n\n" +
+  "A $25 late fee now applies.\n\n" +
+  "Extend or return your vehicle now to avoid higher charges.\n\n" +
+  "{extend_link}\n\n" +
+  "\u2013 SLY Rides\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent after the 3-hour escalation window.
+ * Informs the renter that the higher ($35) late fee now applies.
+ * Variables: customer_name, extend_link
+ */
+export const LATE_ESCALATION =
+  "Hi {customer_name},\n\n" +
+  "Your rental has exceeded the late window.\n\n" +
+  "A higher late fee now applies.\n\n" +
+  "Please extend or return immediately to avoid further charges.\n\n" +
+  "{extend_link}\n\n" +
+  "\u2013 SLY Rides\n\n" +
+  "Reply STOP to opt out.";
+
+/**
+ * Sent when a payment fails and a balance remains outstanding.
+ * Variables: customer_name, payment_link
+ */
+export const PAYMENT_FAILED_BALANCE =
+  "Hi {customer_name},\n\n" +
+  "We were unable to process your payment.\n\n" +
+  "Please complete your payment here:\n" +
+  "{payment_link}\n\n" +
+  "\u2013 SLY Rides\n\n" +
+  "Reply STOP to opt out.";
+
 /** Sent 30 minutes before scheduled return. */
 export const LATE_WARNING_30MIN =
   "Your rental is ending soon at {return_time}.\n" +
@@ -440,10 +497,14 @@ export const TEMPLATES = {
   extend_selected_upsell:    EXTEND_SELECTED_UPSELL,
   extend_confirmed_economy:  EXTEND_CONFIRMED_ECONOMY,
   extend_payment_pending:    EXTEND_PAYMENT_PENDING,
-  late_warning_30min:        LATE_WARNING_30MIN,
-  late_at_return_time:       LATE_AT_RETURN_TIME,
-  late_grace_expired:        LATE_GRACE_EXPIRED,
-  late_fee_applied:          LATE_FEE_APPLIED,
+  pre_return_late_fee_warning: PRE_RETURN_LATE_FEE_WARNING,
+  late_grace_started:          LATE_GRACE_STARTED,
+  late_escalation:             LATE_ESCALATION,
+  payment_failed_balance:      PAYMENT_FAILED_BALANCE,
+  late_warning_30min:          LATE_WARNING_30MIN,
+  late_at_return_time:         LATE_AT_RETURN_TIME,
+  late_grace_expired:          LATE_GRACE_EXPIRED,
+  late_fee_applied:            LATE_FEE_APPLIED,
   maintenance_availability_request:   MAINTENANCE_AVAILABILITY_REQUEST,
   maintenance_availability_followup:  MAINTENANCE_AVAILABILITY_FOLLOWUP,
   maintenance_availability_urgent:    MAINTENANCE_AVAILABILITY_URGENT,

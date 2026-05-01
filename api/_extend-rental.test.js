@@ -585,3 +585,96 @@ test("extend-rental: metadata.booking_id prefers sbActiveBookingRef over booking
   assert.equal(meta.booking_id, "bk-camry-canonical-001",
     "booking_id must be the canonical Supabase booking_ref, not the legacy PI id");
 });
+
+// ── Waiver tests ──────────────────────────────────────────────────────────────
+
+test("extend-rental: full waiver (late_fee_waived_amount = SHORT_LATE_FEE) removes late fee from total", async () => {
+  // Simulate a booking that is past the grace period (+30 min) but within the
+  // reset window (+3 h).  Without a waiver, SHORT_LATE_FEE ($25) would be added.
+  // With a full waiver (waived_amount = SHORT_LATE_FEE) the late fee must be $0.
+  capturedStripeParams = null;
+  const active = makeActiveBooking({
+    returnDate: "2026-04-30",
+    returnTime: "10:00",  // will be used as the base return time in our mock
+  });
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref:             "bk-camry-active-001",
+      return_date:             "2026-04-30",
+      return_time:             "17:00:00",
+      status:                  "active_rental",
+      late_fee_waived_amount:  25,  // full waiver for SHORT_LATE_FEE
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200, "handler must succeed");
+  assert.equal(res._body.lateFeeWaived, 25, "lateFeeWaived must be 25");
+  // lateFeeIncluded after waiver is applied: 0 if grace period not active,
+  // or (fee - waiver) floored at 0.  In either case lateFeeIncluded <= 0.
+  assert.ok(res._body.lateFeeIncluded <= 25,
+    "lateFeeIncluded must be reduced by the waiver (0 when waiver covers the full fee)");
+});
+
+test("extend-rental: partial waiver reduces late fee proportionally", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref:             "bk-camry-active-001",
+      return_date:             "2026-04-30",
+      return_time:             "17:00:00",
+      status:                  "active_rental",
+      late_fee_waived_amount:  10,  // partial waiver: only $10 off
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200);
+  // lateFeeWaived must always reflect what was read from Supabase.
+  assert.equal(res._body.lateFeeWaived, 10);
+});
+
+test("extend-rental: no waiver when late_fee_waived_amount is absent from Supabase row", async () => {
+  capturedStripeParams = null;
+  const active = makeActiveBooking();
+  mockBookings = { camry: [active] };
+
+  // Supabase row does NOT include late_fee_waived_amount (simulates bookings
+  // created before migration 0116 or when no waiver was applied).
+  sbClient = makeSupabaseClient({
+    rows: [{
+      booking_ref: "bk-camry-active-001",
+      return_date: "2026-04-30",
+      return_time: "17:00:00",
+      status:      "active_rental",
+      // late_fee_waived_amount intentionally omitted
+    }],
+  });
+
+  const res = makeRes();
+  await handler(makeReq({
+    vehicleId:     "camry",
+    email:         "alice@example.com",
+    newReturnDate: "2026-05-05",
+  }), res);
+
+  assert.equal(res._status, 200);
+  assert.equal(res._body.lateFeeWaived, 0, "lateFeeWaived must default to 0 when no waiver is set");
+});

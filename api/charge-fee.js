@@ -109,13 +109,25 @@ export async function executeChargeFee({ bookingId, chargeType, amount, notes, c
     .from("bookings")
     .select(
       "id, booking_ref, stripe_customer_id, stripe_payment_method_id, vehicle_id, " +
-      "pickup_date, return_date, customers(name, email, phone)"
+      "extension_count, pickup_date, return_date, customers(name, email, phone)"
     )
     .eq("booking_ref", bookingId)
     .maybeSingle();
 
   if (bkErr) throw new Error(`Booking lookup failed: ${bkErr.message}`);
   if (!booking) throw new Error(`Booking "${bookingId}" not found`);
+
+  // ── Double-charge protection for late_fee ────────────────────────────────
+  // If the renter already paid via an extension (extension_count > 0), the
+  // late fee was folded into the extension total.  Block a separate late_fee
+  // charge to prevent double-charging.
+  if (chargeType === "late_fee" && Number(booking.extension_count || 0) > 0) {
+    throw new Error(
+      `A late fee cannot be charged separately for booking "${bookingId}" — ` +
+      "the renter already paid via a rental extension that included the late fee. " +
+      "Double-charging is blocked."
+    );
+  }
 
   if (!booking.stripe_customer_id || !booking.stripe_payment_method_id) {
     throw new Error(
