@@ -4505,9 +4505,13 @@ function fmt12h(hhmm) {
   if (!hhmm) return '';
   const m = String(hhmm).trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?$/i);
   if (!m) return String(hhmm);
-  if (m[3]) return `${parseInt(m[1], 10)}:${m[2]} ${m[3].toUpperCase()}`;
   const h = parseInt(m[1], 10);
   const mins = m[2];
+  if (m[3]) {
+    // Already has AM/PM — only pass through if the hour is in the valid 1–12 range.
+    if (h >= 1 && h <= 12) return `${h}:${mins} ${m[3].toUpperCase()}`;
+    // Hour is out of 12h range (e.g. "13:00 PM"); fall through to 24h conversion.
+  }
   if (h === 0)  return `12:${mins} AM`;
   if (h < 12)   return `${h}:${mins} AM`;
   if (h === 12) return `12:${mins} PM`;
