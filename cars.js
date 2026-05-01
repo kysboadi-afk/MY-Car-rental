@@ -181,6 +181,13 @@ function applyFleetStatus(fleetStatus) {
         const tpl = i18n.t("fleet.nextAvailable") || "Next Available: {date}";
         nextBadge.textContent = tpl.replace("{date}", nextAvailDisplay);
         badge.insertAdjacentElement("afterend", nextBadge);
+
+        const noteEl = document.createElement("span");
+        noteEl.className = "next-available-note";
+        noteEl.setAttribute("data-i18n", "fleet.nextAvailableNote");
+        noteEl.textContent = i18n.t("fleet.nextAvailableNote") ||
+          "This is the earliest pickup time — includes a 2-hour preparation window after the vehicle is returned.";
+        nextBadge.insertAdjacentElement("afterend", noteEl);
       }
 
       if (isReserved) {

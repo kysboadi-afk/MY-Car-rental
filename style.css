@@ -700,11 +700,21 @@ body {
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 20px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   margin-left: 6px;
   background: rgba(251, 191, 36, 0.12);
   color: #fbbf24;
   border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.next-available-note {
+  display: block;
+  font-size: 10px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+  margin-left: 6px;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 /* Payment retry banner — shown when a renter returns after a failed payment */
