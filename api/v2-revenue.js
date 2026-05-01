@@ -184,6 +184,9 @@ export default async function handler(req, res) {
 
       const commonFields = {
         booking_id,
+        // booking_ref mirrors booking_id when it is a real bk- reference; null for
+        // auto-generated "manual-…" ids (no corresponding bookings row to FK against).
+        booking_ref:        body.booking_id || null,
         vehicle_id,
         customer_name:      body.customer_name   || null,
         customer_phone:     body.customer_phone  || null,
@@ -410,6 +413,7 @@ export default async function handler(req, res) {
 
       const commonFields = {
         booking_id:          original_booking_id,
+        booking_ref:         original_booking_id,
         original_booking_id: original_booking_id,
         vehicle_id,
         gross_amount:        resolvedAmount,

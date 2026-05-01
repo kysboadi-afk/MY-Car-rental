@@ -332,6 +332,7 @@ export default async function handler(req, res) {
           const gross = Number(bk.deposit_paid || 0);
           const revRow = {
             booking_id:        bk.booking_ref,
+            booking_ref:       bk.booking_ref,
             payment_intent_id: bk.payment_intent_id || null,
             vehicle_id:        bk.vehicle_id        || null,
             customer_name:     bk.customer_name     || null,
