@@ -76,7 +76,7 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
   try {
-    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, adminOverride, testMode } = req.body;
+    const { vehicleId, name, email, phone, pickup, returnDate, protectionPlan, protectionPlanTier, paymentMode, insuranceCoverageChoice, pickupTime, returnTime, idFileName, insuranceFileName, adminOverride, testMode } = req.body;
     const adminOverrideEnabled = adminOverride === true || /^(true|1)$/i.test(String(adminOverride || ""));
     const testModeEnabled = testMode === true || /^(true|1)$/i.test(String(testMode || ""));
     const testAvailabilityOverride = adminOverrideEnabled && testModeEnabled;
@@ -107,6 +107,21 @@ export default async function handler(req, res) {
     if (insuranceCoverageChoice === "no") {
       if (protectionPlan !== true || !["basic", "standard", "premium"].includes(protectionPlanTier)) {
         return res.status(400).json({ error: "A valid Damage Protection Plan (Basic, Standard, or Premium) is required when you do not have personal auto insurance." });
+      }
+    }
+
+    // Government-issued ID is required for every booking — this server-side check
+    // cannot be bypassed by enabling the payment button via browser DevTools.
+    const trimmedIdFileName = typeof idFileName === "string" ? idFileName.trim() : "";
+    if (!trimmedIdFileName) {
+      return res.status(400).json({ error: "A government-issued ID is required for all bookings. Please upload your Driver's License or ID." });
+    }
+
+    // Proof of insurance is required when the renter claims personal auto coverage.
+    if (insuranceCoverageChoice === "yes") {
+      const trimmedInsuranceFileName = typeof insuranceFileName === "string" ? insuranceFileName.trim() : "";
+      if (!trimmedInsuranceFileName) {
+        return res.status(400).json({ error: "Proof of insurance is required when you select personal auto insurance coverage. Please upload your insurance document." });
       }
     }
 

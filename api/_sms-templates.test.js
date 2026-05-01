@@ -142,16 +142,19 @@ test("BOOKING_CONFIRMED references all key variables", () => {
 
 test("render BOOKING_CONFIRMED fills correctly", () => {
   const msg = render(BOOKING_CONFIRMED, {
-    vehicle:       "Camry 2012",
-    customer_name: "Carlos",
-    pickup_date:   "March 28",
-    pickup_time:   "3:00 PM",
-    location:      DEFAULT_LOCATION,
+    vehicle:          "Camry 2012",
+    customer_name:    "Carlos",
+    pickup_date:      "March 28",
+    pickup_time:      "3:00 PM",
+    return_date:      "April 4",
+    return_time_line: " at 3:00 PM\n",
+    location:         DEFAULT_LOCATION,
   });
   assert.ok(msg.includes("Camry 2012"));
   assert.ok(msg.includes("Carlos"));
   assert.ok(msg.includes("March 28"));
   assert.ok(msg.includes("3:00 PM"));
+  assert.ok(msg.includes("April 4"));
   assert.ok(msg.includes(DEFAULT_LOCATION));
   assert.ok(!msg.includes("{"));
 });
