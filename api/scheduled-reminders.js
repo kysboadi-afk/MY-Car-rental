@@ -59,7 +59,7 @@ import {
 import { loadBookings, saveBookings, normalizePhone, updateBooking } from "./_bookings.js";
 import { upsertContact } from "./_contacts.js";
 import { CARS } from "./_pricing.js";
-import { autoUpsertBooking, autoUpsertCustomer } from "./_booking-automation.js";
+import { autoUpsertBooking, autoUpsertCustomer, autoCreateRevenueRecord } from "./_booking-automation.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
 import { buildLateFeeUrls } from "./_late-fee-token.js";
 import { loadBooleanSetting } from "./_settings.js";
@@ -2021,9 +2021,89 @@ async function runReconciliation() {
       const piMetaReconcile = pi.metadata || {};
       const paymentType = piMetaReconcile.payment_type || piMetaReconcile.type || "";
       if (NON_NEW_BOOKING_TYPES.has(paymentType)) {
-        console.warn(
-          `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`
-        );
+        // rental_extension: the webhook already updated the booking and created the
+        // booking_extensions row.  The only thing that may be missing is the revenue
+        // record (e.g. the webhook returned 500 after updating the booking but before
+        // writing revenue, then Stripe retried past the reconciler window).
+        // Recover it directly via autoCreateRevenueRecord — fully idempotent by PI ID.
+        if (paymentType === "rental_extension") {
+          try {
+            const extMeta = pi.metadata || {};
+            const extRef  = extMeta.booking_id || extMeta.original_booking_id || "";
+            // A valid booking_ref starts with "bk-" followed by at least 7 characters (e.g. "bk-9035ea7c4552").
+            if (!extRef || !extRef.startsWith("bk-") || extRef.length < 10) {
+              throw new Error(`missing or non-canonical booking_id in metadata ("${extRef}")`);
+            }
+            // Confirm the booking row exists in Supabase before writing revenue.
+            const sbExt = getSupabaseAdmin();
+            let resolvedExtRef = null;
+            if (sbExt) {
+              const { data: refRow } = await sbExt
+                .from("bookings")
+                .select("booking_ref")
+                .eq("booking_ref", extRef)
+                .maybeSingle();
+              if (refRow?.booking_ref) resolvedExtRef = refRow.booking_ref;
+            }
+            if (!resolvedExtRef) {
+              throw new Error(`booking_ref "${extRef}" not found in Supabase`);
+            }
+            // Resolve Stripe fee (non-blocking — reconcile.js backfills if missing).
+            let extFeeFields = { stripeFee: null, stripeNet: null };
+            try {
+              const expandedExtPI = await stripe.paymentIntents.retrieve(pi.id, {
+                expand: ["latest_charge.balance_transaction"],
+              });
+              const extCharge = expandedExtPI?.latest_charge;
+              const extBt = extCharge && typeof extCharge === "object" ? extCharge.balance_transaction : null;
+              if (extBt && typeof extBt === "object") {
+                const extFeeCents = extBt.fee != null ? Number(extBt.fee) : null;
+                const extNetCents = extBt.net != null ? Number(extBt.net) : null;
+                if (extFeeCents != null && Number.isFinite(extFeeCents)) {
+                  extFeeFields = {
+                    stripeFee: Math.round(extFeeCents) / 100,
+                    stripeNet: extNetCents != null && Number.isFinite(extNetCents) ? Math.round(extNetCents) / 100 : null,
+                  };
+                }
+              }
+            } catch (extFeeErr) {
+              console.warn(
+                `scheduled-reminders reconciliation: extension PI ${pi.id} fee lookup failed (non-fatal — fee will be backfilled):`,
+                extFeeErr.message
+              );
+            }
+            await autoCreateRevenueRecord({
+              booking_ref:     resolvedExtRef,
+              paymentIntentId: pi.id,
+              vehicleId:       extMeta.vehicle_id || "",
+              name:            extMeta.renter_name  || "",
+              phone:           extMeta.renter_phone || "",
+              email:           extMeta.renter_email || "",
+              // previous_return_date = start of extension window; new_return_date = end.
+              // autoCreateRevenueRecord will override returnDate with bookings.return_date
+              // (source of truth) so stale metadata values are automatically corrected.
+              pickupDate:      extMeta.previous_return_date || "",
+              returnDate:      extMeta.new_return_date      || "",
+              amountPaid:      Math.round(pi.amount_received || pi.amount || 0) / 100,
+              paymentMethod:   "stripe",
+              type:            "extension",
+              ...extFeeFields,
+            }, { strict: false, requireStripeFee: false });
+            repairedPIIds.push(pi.id);
+            console.log(`scheduled-reminders reconciliation: extension revenue record recovered for PI ${pi.id} (booking=${resolvedExtRef})`);
+          } catch (extRecovErr) {
+            failedPIIds.push(pi.id);
+            repairErrors.set(pi.id, extRecovErr.message);
+            console.error(
+              `scheduled-reminders reconciliation: extension revenue recovery FAILED for PI ${pi.id}:`,
+              extRecovErr.message
+            );
+          }
+        } else {
+          console.warn(
+            `scheduled-reminders reconciliation: PI ${pi.id} has payment_type=${paymentType} — skipping auto-repair (manual review needed)`
+          );
+        }
         continue;
       }
 

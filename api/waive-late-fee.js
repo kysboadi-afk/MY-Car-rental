@@ -234,6 +234,7 @@ export default async function handler(req, res) {
   // ── Insert revenue adjustment record(s) ───────────────────────────────────
   const adjustmentBase = {
     booking_id:          bookingRef,
+    booking_ref:         bookingRef,
     original_booking_id: bookingRef,
     vehicle_id:          booking.vehicle_id || null,
     deposit_amount:      0,
