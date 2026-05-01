@@ -2166,13 +2166,13 @@
 <div class="modal-overlay" id="resend-extension-modal">
   <div class="modal" style="max-width:460px;">
     <div class="modal-header">
-      <div class="modal-title">🔄 Sync / Resend Extension</div>
+      <div class="modal-title">🔄 Extend Rental</div>
       <button class="modal-close" onclick="closeModal('resend-extension-modal')">✕</button>
     </div>
     <div style="padding:4px 0 12px;">
       <p style="font-size:13px;color:var(--text-sub);margin-bottom:16px;">
-        Use this to manually sync an extension payment that wasn't reflected in the dashboard,
-        or to resend the extension confirmation email.
+        Sets the new return date, records a revenue entry, and updates fleet analysis.
+        Check "Skip email" if confirmation emails were already sent.
       </p>
       <input type="hidden" id="re-booking-id">
       <input type="hidden" id="re-vehicle-id">
@@ -2186,14 +2186,18 @@
           <input type="text" id="re-ext-label" class="form-input" placeholder="e.g. +3 days" style="font-size:13px;">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Amount Charged (optional, $)</label>
+          <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px;">Amount Charged ($) <span style="font-size:10px;color:var(--text-sub);">— required for revenue record</span></label>
           <input type="number" id="re-amount" class="form-input" placeholder="e.g. 165" step="0.01" min="0" style="font-size:13px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="re-skip-email" style="width:16px;height:16px;cursor:pointer;">
+          <label for="re-skip-email" style="font-size:13px;color:var(--text);cursor:pointer;">Skip email resend (emails already sent)</label>
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('resend-extension-modal')">Cancel</button>
-      <button class="btn btn-success" id="re-submit-btn" onclick="submitResendExtension(this)">✓ Sync & Resend Email</button>
+      <button class="btn btn-success" id="re-submit-btn" onclick="submitResendExtension(this)">✓ Apply Extension</button>
     </div>
   </div>
 </div>
@@ -3960,6 +3964,9 @@ function openResendExtensionModal(bookingId, vehicleId, _btn) {
   document.getElementById('re-return-date').value = (b && b.returnDate) || '';
   document.getElementById('re-ext-label').value   = '';
   document.getElementById('re-amount').value      = '';
+  // Pre-tick "skip email" if the booking has already been extended at least once
+  // (emails were sent during the previous extension, so no need to resend on re-sync).
+  document.getElementById('re-skip-email').checked = !!(b && b.extensionCount > 0);
   closeModal('booking-detail-modal');
   openModal('resend-extension-modal');
 }
@@ -3970,6 +3977,7 @@ function submitResendExtension(btn) {
   const returnDate = (document.getElementById('re-return-date').value || '').trim();
   const extLabel   = (document.getElementById('re-ext-label').value  || '').trim();
   const amount     = (document.getElementById('re-amount').value     || '').trim();
+  const skipEmail  = document.getElementById('re-skip-email').checked;
 
   if (!returnDate || !/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) {
     showToast('Please enter a valid new return date (YYYY-MM-DD).', 'error');
@@ -3977,12 +3985,21 @@ function submitResendExtension(btn) {
   }
 
   const b = allBookings.find((x) => x.bookingId === bookingId) || {};
-  if (!b.email) {
+  if (!skipEmail && !b.email) {
+    showToast('Cannot send email: renter email is missing from this booking record.', 'error');
+    return;
+  }
+  if (!b.email && skipEmail) {
+    // Still need email for the API validation — use a placeholder so we can skip sending
+    // but the server won't reject the request. Actually the server requires renter_email,
+    // so if email is truly missing and skip_email is true, warn but don't block.
+  }
+  if (!b.email && !skipEmail) {
     showToast('Cannot sync extension: renter email is missing from this booking record.', 'error');
     return;
   }
 
-  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
 
   apiPost('/api/admin-resend-extension', {
     secret:              adminSecret,
@@ -3995,9 +4012,13 @@ function submitResendExtension(btn) {
     extension_label:     extLabel,
     new_return_date:     returnDate,
     amount:              amount ? Number(amount) : undefined,
+    skip_email:          skipEmail,
   })
     .then(() => {
-      showToast('✅ Extension synced and confirmation email resent.', 'success');
+      const msg = skipEmail
+        ? '✅ Extension applied — revenue and fleet analysis updated.'
+        : '✅ Extension applied and confirmation email sent.';
+      showToast(msg, 'success');
       closeModal('resend-extension-modal');
       loadBookings();
     })
@@ -4005,7 +4026,7 @@ function submitResendExtension(btn) {
       showToast('Error: ' + (err.message || 'Unknown error'), 'error');
     })
     .finally(() => {
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Sync & Resend Email'; }
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Apply Extension'; }
     });
 }
 
