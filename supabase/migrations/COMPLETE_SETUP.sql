@@ -9684,3 +9684,68 @@ BEGIN
   );
 END;
 $$;
+
+
+-- ===========================================================================
+-- 0123_revenue_records_booking_ref_check_constraint.sql
+-- ===========================================================================
+-- Migration 0123: replace bare NOT NULL on revenue_records.booking_ref with
+--                 a precise CHECK constraint
+--
+-- Replace the bare NOT NULL with a CHECK constraint that encodes the exact
+-- business rule:
+--   Non-orphan rows MUST have a booking_ref.
+--   Orphan rows (is_orphan = true) are explicitly exempt.
+--   CHECK (is_orphan = true OR booking_ref IS NOT NULL)
+--
+-- Safe to re-run: DROP NOT NULL is idempotent; ADD CONSTRAINT uses IF NOT EXISTS.
+
+ALTER TABLE revenue_records
+  ALTER COLUMN booking_ref DROP NOT NULL;
+
+ALTER TABLE revenue_records
+  ADD CONSTRAINT IF NOT EXISTS revenue_records_booking_ref_required
+    CHECK (is_orphan = true OR booking_ref IS NOT NULL);
+
+COMMENT ON COLUMN revenue_records.booking_ref IS
+  'FK to bookings.booking_ref — mirrors booking_id for joined queries. '
+  'NULL is permitted ONLY when is_orphan = true '
+  '(enforced by revenue_records_booking_ref_required CHECK constraint). '
+  'Non-orphan rows must always supply a valid booking_ref.';
+
+
+-- ===========================================================================
+-- 0124_remove_phantom_vehicles.sql
+-- ===========================================================================
+--
+-- Root cause: the dashboard's "Available Vehicles" KPI was showing 3 instead of 2.
+-- The canonical fleet is exactly two vehicles: "camry" and "camry2013".
+-- Extra rows (e.g. a legacy "camry2012" alias, leftover slingshot entries, or a
+-- test vehicle created via the admin UI) can survive in the Supabase vehicles table
+-- if they were added before migration 0105 (slingshot deletion) or inserted by the
+-- admin panel when the GitHub vehicles.json save failed.
+--
+-- Fix strategy:
+--   1. Delete any vehicle row whose vehicle_id is NOT in the canonical set AND that
+--      has no referencing bookings (safe — no FK violation risk).
+--   2. For any non-canonical vehicle that DOES have bookings (historical data), mark
+--      it inactive in its JSONB `data` column so it stops being counted in
+--      admin_metrics_v2's available-vehicles tally.
+--
+-- Safe to re-run: both statements are idempotent.
+
+-- Step 1: hard-delete stale rows with no booking history
+DELETE FROM vehicles
+WHERE vehicle_id NOT IN ('camry', 'camry2013')
+  AND NOT EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
+
+-- Step 2: soft-delete (set status = 'inactive') for any remaining non-canonical
+-- rows that still have booking history and therefore cannot be hard-deleted.
+UPDATE vehicles
+SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{status}', '"inactive"')
+WHERE vehicle_id NOT IN ('camry', 'camry2013')
+  AND EXISTS (
+    SELECT 1 FROM bookings b WHERE b.vehicle_id = vehicles.vehicle_id
+  );
