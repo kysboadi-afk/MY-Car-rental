@@ -177,6 +177,8 @@ You have access to real-time business data through tools. Use them to answer adm
 - **Charge a customer's saved card** via charge_customer_fee (booking_id, charge_type, amount, notes — use get_bookings to find the booking first). Always confirm before executing.
 - **Check if a customer's card is saved** by calling get_bookings (search by name or booking ID) and reading the \`hasSavedCard\` field. \`true\` = card is saved and chargeable; \`false\` = no card on file (booking predates April 7 2026 or customer did not complete Checkout).
 - **View extra charge history** via get_charges (all charges, or filter by booking_id).
+- **Read live public site settings** (logo, phone, business name, hero text, about text, social links, policies) via get_site_content.
+- **Update any public site setting** via update_site_content (settings object with key-value pairs). Changes go live immediately on the public website. Requires confirmation. Supported keys: business_name, logo_url, phone, whatsapp, email, hero_title, hero_subtitle, about_text, instagram_url, facebook_url, tiktok_url, twitter_url, promo_banner_enabled, promo_banner_text, policies_cancellation, policies_damage, policies_fuel, policies_age, service_area_notes, pickup_instructions.
 
 ## Customer paid on website but didn't receive emails (guided flow)
 
@@ -642,7 +644,37 @@ Before the customer confirms payment, the booking form stores their documents in
 
 The Stripe webhook retrieves these documents from \`pending_booking_docs\` and attaches them to the **owner's booking confirmation email** — so the owner always receives a complete record with all documents even if the browser fails to call the email endpoint directly. Once the owner email is sent, \`email_sent\` is set to \`true\` so the email is never sent twice.
 
-When \`resend_booking_confirmation\` is used, the system looks up the booking's stored documents in \`pending_booking_docs\` (regardless of \`email_sent\` status) and, if found, generates a fresh rental agreement PDF from the stored signature and attaches the renter's ID and insurance documents to the owner email — so the owner receives a complete resend with all documents. If no stored documents are found for the booking, the email is sent without attachments and a note is included.`;
+When \`resend_booking_confirmation\` is used, the system looks up the booking's stored documents in \`pending_booking_docs\` (regardless of \`email_sent\` status) and, if found, generates a fresh rental agreement PDF from the stored signature and attaches the renter's ID and insurance documents to the owner email — so the owner receives a complete resend with all documents. If no stored documents are found for the booking, the email is sent without attachments and a note is included.
+
+## Public Website — Site Content
+
+All public-facing text and branding (logo, phone, business name, hero text, about section, social links, policies) is controlled via the \`site_settings\` database table and served to every page by \`/api/site-content\`.
+
+**Reading current site content:**
+Call \`get_site_content()\` to see what is currently set for every key. Do this first before proposing any changes.
+
+**Updating site content (requires confirmation):**
+Call \`update_site_content({ settings: { key: value, … }, confirmed: true })\` to update one or more settings. Only include keys that need to change.
+
+**Common admin requests and how to handle them:**
+
+- "Change the logo" — Ask for the image URL (or inform admin they can upload a new logo in Admin Portal → Settings → Logo). Once you have the URL, call \`update_site_content({ settings: { logo_url: "https://…" } })\`.
+- "Change the phone number" — Call \`update_site_content({ settings: { phone: "+1XXXXXXXXXX" } })\`. This updates the phone on every page (header, footer, contact page) instantly.
+- "Change the business name" — Call \`update_site_content({ settings: { business_name: "New Name LLC" } })\`.
+- "Update the about text" — Call \`update_site_content({ settings: { about_text: "…" } })\`.
+- "Update the hero headline/subtitle" — Use \`hero_title\` and/or \`hero_subtitle\` keys.
+- "Turn on/off the promo banner" — Use \`promo_banner_enabled: true/false\` and optionally \`promo_banner_text\`.
+- "Update social media links" — Use \`instagram_url\`, \`facebook_url\`, \`tiktok_url\`, or \`twitter_url\`.
+- "Update a policy" — Use \`policies_cancellation\`, \`policies_damage\`, \`policies_fuel\`, \`policies_age\`, \`service_area_notes\`, or \`pickup_instructions\`.
+
+**Logo upload workflow:**
+The AI cannot upload image files directly. To change the logo:
+1. Admin uploads the image in Admin Portal → Settings → Logo (click "📁 Upload").
+2. The upload returns a public URL stored in \`logo_url\`.
+3. Alternatively, admin can paste any public image URL and click "Save All Changes".
+4. Once saved, every public page will show the new logo immediately (cache refreshes within 5 minutes).
+If the admin sends an image in the AI chat, acknowledge it but explain the upload must be done via the Settings page. You can then call \`update_site_content\` with the resulting URL once the admin confirms it.`;
+
 
 function buildSystemPrompt() {
   const now = new Date().toISOString();
@@ -886,6 +918,17 @@ function formatConfirmedReply(toolName, args, result) {
       return `✅ ${safe(result.message || "Customer counts updated.")}${result.changes?.length ? `\n${result.changes.map((c) => `- ${safe(c.name)}: ${safe(c.old)} → ${safe(c.new)}`).join("\n")}` : ""}`;
     case "reconcile_stripe":
       return `✅ ${safe(result.message || "Stripe reconciliation complete.")}`;
+    case "get_site_content": {
+      const sc = result.settings || {};
+      const lines = Object.entries(sc)
+        .filter(([, v]) => v !== "" && v !== null && v !== undefined)
+        .map(([k, v]) => `- **${k}**: ${v}`);
+      return lines.length
+        ? `**Current site settings:**\n${lines.join("\n")}`
+        : "No site settings have been saved yet — all defaults are in use.";
+    }
+    case "update_site_content":
+      return `✅ ${safe(result.message || "Site content updated.")}`;
     default:
       return `✅ Action completed: ${JSON.stringify(result)}`;
   }

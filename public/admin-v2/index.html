@@ -1413,6 +1413,25 @@
               </div>
             </div>
 
+            <!-- Logo -->
+            <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Logo</div>
+            <div class="form-grid one">
+              <div class="form-group">
+                <label class="form-label">Logo URL <span style="font-weight:400;color:var(--text-sub)">(used on every public page &amp; favicon)</span></label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <input type="text" class="form-input" id="sc-logo_url" placeholder="https://…" style="flex:1;min-width:200px;" oninput="scPreviewLogo()">
+                  <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0;" title="Upload a new logo image">
+                    📁 Upload
+                    <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="scLogoUpload(this)">
+                  </label>
+                </div>
+                <div id="sc-logo-preview" style="display:none;margin-top:8px;">
+                  <img id="sc-logo-preview-img" src="" alt="Logo preview" style="max-height:60px;max-width:160px;border-radius:6px;border:1px solid var(--border);object-fit:contain;">
+                  <span id="sc-logo-upload-msg" style="font-size:12px;color:var(--text-sub);margin-left:8px;"></span>
+                </div>
+              </div>
+            </div>
+
             <!-- Hero -->
             <div style="font-weight:600;font-size:13px;color:var(--primary);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.05em;">Hero Section</div>
             <div class="form-grid one">
@@ -6800,7 +6819,7 @@ function renderBouncieAuthSection(status) {
 // via the admin-site-settings.js API → Supabase site_settings table.
 
 const SITE_CONTENT_FIELDS = [
-  'business_name', 'phone', 'whatsapp', 'email',
+  'business_name', 'logo_url', 'phone', 'whatsapp', 'email',
   'hero_title', 'hero_subtitle', 'about_text',
   'instagram_url', 'facebook_url', 'tiktok_url', 'twitter_url',
   'promo_banner_enabled', 'promo_banner_text',
@@ -6829,6 +6848,8 @@ function loadSiteContent() {
           el.value = s[key] != null ? String(s[key]) : '';
         }
       }
+      // Trigger logo preview if a URL is already saved
+      scPreviewLogo();
       loading.style.display = 'none';
       form.style.display = '';
       if (data.source === 'default' || !data.source) {
@@ -6881,6 +6902,55 @@ function saveSiteContent() {
     });
 }
 
+
+// ── Logo field helpers (Site Content / Settings page) ─────────────────────
+
+function scPreviewLogo() {
+  const url = (document.getElementById('sc-logo_url')?.value || '').trim();
+  const preview = document.getElementById('sc-logo-preview');
+  const img     = document.getElementById('sc-logo-preview-img');
+  if (!preview || !img) return;
+  if (url) {
+    img.src = url;
+    preview.style.display = '';
+    img.onerror = () => { preview.style.display = 'none'; };
+    img.onload  = () => { preview.style.display = ''; img.onerror = null; };
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+async function scLogoUpload(fileInput) {
+  const file = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  if (!file) return;
+
+  const msgEl = document.getElementById('sc-logo-upload-msg');
+  if (msgEl) { msgEl.style.color = 'var(--text-sub)'; msgEl.textContent = 'Uploading…'; }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const imageData = e.target.result;
+    try {
+      const data = await apiPost('/api/upload-vehicle-image', {
+        secret:    adminSecret,
+        vehicleId: 'site-logo',
+        imageData,
+        mimeType:  file.type,
+        fileName:  file.name,
+      });
+      const urlInput = document.getElementById('sc-logo_url');
+      if (urlInput) {
+        urlInput.value = data.url || '';
+        scPreviewLogo();
+      }
+      if (msgEl) { msgEl.style.color = 'var(--success)'; msgEl.textContent = '✓ Uploaded'; }
+    } catch (err) {
+      if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Upload failed: ' + err.message; }
+    }
+  };
+  reader.readAsDataURL(file);
+}
 
 // ── Vehicle Image Upload Helpers ───────────────────────────────────────────
 // Show a preview whenever the URL input changes.
