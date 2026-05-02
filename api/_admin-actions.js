@@ -38,6 +38,7 @@ import { getBouncieVehicles, loadTrackedVehicles } from "./_bouncie.js";
 import { buildUnifiedConfirmationEmail, buildDocumentNotes, isWebsitePaymentMethod } from "./_booking-confirmation-template.js";
 import { persistBooking } from "./_booking-pipeline.js";
 import { normalizeVehicleId } from "./_vehicle-id.js";
+import { normalizeClockTime } from "./_time.js";
 import { randomBytes } from "crypto";
 import nodemailer from "nodemailer";
 
@@ -1984,6 +1985,79 @@ async function toolUpdateBookingStatus({ bookingId, status }) {
 }
 
 /**
+ * Update only the pickup_time and return_time for a booking without changing
+ * the dates or repricing. Used to correct an incorrect time on an active rental.
+ */
+async function toolUpdateBookingTimes({ bookingId, pickupTime, returnTime }) {
+  if (!bookingId) throw new Error("bookingId is required");
+  if (!pickupTime && !returnTime) throw new Error("At least one of pickupTime or returnTime is required");
+
+  const fPickupTime = pickupTime ? normalizeClockTime(pickupTime) : null;
+  const fReturnTime = returnTime ? normalizeClockTime(returnTime) : null;
+  if (pickupTime && !fPickupTime) throw new Error(`Invalid pickupTime "${pickupTime}". Use HH:MM or H:MM AM/PM format.`);
+  if (returnTime && !fReturnTime) throw new Error(`Invalid returnTime "${returnTime}". Use HH:MM or H:MM AM/PM format.`);
+
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error("Database unavailable");
+
+  // Load current booking row from Supabase
+  const { data: row, error: fetchErr } = await sb
+    .from("bookings")
+    .select("booking_ref, vehicle_id, pickup_time, return_time")
+    .eq("booking_ref", bookingId)
+    .single();
+  if (fetchErr || !row) throw new Error(`Booking not found: ${bookingId}`);
+
+  const patch = {};
+  if (fPickupTime) patch.pickup_time = fPickupTime;
+  if (fReturnTime) patch.return_time = fReturnTime;
+  patch.updated_at = new Date().toISOString();
+
+  const { error: updateErr } = await sb
+    .from("bookings")
+    .update(patch)
+    .eq("booking_ref", bookingId);
+  if (updateErr) throw new Error(`Supabase update failed: ${updateErr.message}`);
+
+  // Audit log (non-fatal)
+  try {
+    const auditChanges = [];
+    if (fPickupTime) auditChanges.push({ field: "pickup_time", oldValue: row.pickup_time || "", newValue: fPickupTime });
+    if (fReturnTime) auditChanges.push({ field: "return_time", oldValue: row.return_time || "", newValue: fReturnTime });
+    await writeAuditLog(bookingId, auditChanges, "admin");
+  } catch (auditErr) {
+    console.warn("toolUpdateBookingTimes: audit log failed (non-fatal):", auditErr.message);
+  }
+
+  // Sync to bookings.json (non-fatal)
+  try {
+    const { data: bookingsData } = await loadBookings();
+    for (const [vid, list] of Object.entries(bookingsData)) {
+      if (!Array.isArray(list)) continue;
+      const booking = list.find((b) => b.bookingId === bookingId);
+      if (booking) {
+        await updateBooking(vid, bookingId, {
+          ...(fPickupTime ? { pickupTime: fPickupTime } : {}),
+          ...(fReturnTime ? { returnTime: fReturnTime } : {}),
+          updatedAt: new Date().toISOString(),
+        });
+        break;
+      }
+    }
+  } catch (jsonErr) {
+    console.warn("toolUpdateBookingTimes: bookings.json update failed (non-fatal):", jsonErr.message);
+  }
+
+  return {
+    success: true,
+    bookingId,
+    ...(fPickupTime ? { pickupTime: fPickupTime } : {}),
+    ...(fReturnTime ? { returnTime: fReturnTime } : {}),
+    message: `Booking times updated successfully.`,
+  };
+}
+
+/**
  * Manually record a rental extension payment (cash, phone, or admin-logged).
  * Updates amountPaid + returnDate on the booking, creates an extension revenue
  * record, and syncs both bookings.json and Supabase.
@@ -3730,6 +3804,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "mark_maintenance",
   "flag_booking",
   "update_booking_status",
+  "update_booking_times",
   "confirm_vehicle_action",
   "update_action_status",
   "send_message_to_driver",
@@ -3790,6 +3865,7 @@ export async function executeAction(toolName, args = {}, { requireConfirmation =
       case "mark_maintenance":         result = await toolMarkMaintenance(args);         break;
       case "flag_booking":             result = await toolFlagBooking(args);             break;
       case "update_booking_status":    result = await toolUpdateBookingStatus(args);     break;
+      case "update_booking_times":     result = await toolUpdateBookingTimes(args);      break;
       case "confirm_vehicle_action":   result = await toolConfirmVehicleAction(args);    break;
       case "update_action_status":     result = await toolUpdateActionStatus(args);      break;
       case "send_message_to_driver":   result = await toolSendMessageToDriver(args);     break;
