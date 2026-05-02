@@ -3,14 +3,19 @@
  * SLYTRANS Fleet Control — AI Voice Assistant
  *
  * Features:
- *  • speak(text, lang)  — TTS via /api/tts  (cached, cancelable)
- *  • Guided Tour        — step-by-step onboarding with element highlights
- *  • Ask Assistant      — text Q&A via /api/admin-chat, response spoken aloud
- *  • Click-Explain      — auto-explain any clicked button (opt-in, debounced)
- *  • Language Toggle    — EN / ES; all speech respects chosen language
+ *  • speak(text, lang)          — TTS via /api/tts (cached, cancelable)
+ *  • Guided Tour                — step-by-step onboarding with element highlights;
+ *                                 pauses after "Click View" step and waits for the
+ *                                 booking-detail modal to actually open before resuming
+ *  • Ask Assistant              — text Q&A via /api/admin-chat, response spoken aloud
+ *  • Context-Aware Click-Explain — opt-in; sends element + section context to
+ *                                  /api/admin-chat for an intelligent 1-sentence
+ *                                  explanation; only fires for scoped actionable
+ *                                  elements (data-explain attribute or allow-list keywords)
+ *  • Language Toggle            — EN / ES; all speech respects chosen language
  *
  * Depends on globals defined in index.html:
- *   API_BASE, adminSecret
+ *   API_BASE, adminSecret, currentPage
  *
  * Mounted automatically on DOMContentLoaded.
  */
@@ -22,10 +27,64 @@
   const PANEL_ID      = 'va-panel';
   const LANG_STORAGE  = 'va_lang';
   const MUTE_STORAGE  = 'va_mute';
-  const DEBOUNCE_MS   = 1200;   // click-explain minimum gap
+  const DEBOUNCE_MS   = 1500;   // click-explain minimum gap
   const MAX_HIGHLIGHT = 4000;   // ms to keep highlight ring visible
+  const VALID_LANGS   = ['en', 'es'];
 
-  // Tour steps: each defines an element selector, heading, and EN/ES script
+  // Keywords that indicate an element is actionable and worth explaining.
+  // Matched case-insensitively against the button's cleaned label text.
+  const EXPLAIN_KEYWORDS = [
+    'extend', 'extension', 'fix', 'create', 'add', 'new',
+    'view', 'open', 'mark', 'cancel', 'approve', 'decline',
+    'charge', 'waive', 'save', 'delete', 'remove', 'edit',
+    'upload', 'sync', 'resend', 'return', 'block', 'unblock',
+    'complete', 'confirm', 'submit', 'flag', 'unflag',
+    'refresh', 'resolve', 'dismiss', 'apply', 'update',
+  ];
+
+  // Human-readable section labels for each dashboard page (EN and ES).
+  const SECTION_LABELS = {
+    dashboard:          { en: 'Dashboard',          es: 'Tablero' },
+    bookings:           { en: 'Bookings',           es: 'Reservas' },
+    'bookings-raw':     { en: 'Raw Bookings',       es: 'Reservas Sin Procesar' },
+    vehicles:           { en: 'Vehicles',           es: 'Vehículos' },
+    'vehicle-profile':  { en: 'Vehicle Profile',    es: 'Perfil del Vehículo' },
+    expenses:           { en: 'Expenses',           es: 'Gastos' },
+    revenue:            { en: 'Revenue',            es: 'Ingresos' },
+    analytics:          { en: 'Analytics',          es: 'Analítica' },
+    customers:          { en: 'Customers',          es: 'Clientes' },
+    'fleet-status':     { en: 'Fleet Status',       es: 'Estado de Flota' },
+    gps:                { en: 'GPS Tracking',       es: 'Rastreo GPS' },
+    'block-dates':      { en: 'Block Dates',        es: 'Bloquear Fechas' },
+    sms:                { en: 'SMS Templates',      es: 'Plantillas SMS' },
+    'late-fees':        { en: 'Late Fees',          es: 'Cargos por Mora' },
+    ai:                 { en: 'AI Assistant',       es: 'Asistente IA' },
+    'system-health':    { en: 'System Health',      es: 'Salud del Sistema' },
+    'system-settings':  { en: 'System Settings',   es: 'Configuración' },
+    'manual-booking':   { en: 'Manual Booking',     es: 'Reserva Manual' },
+    'protection-plans': { en: 'Protection Plans',  es: 'Planes de Protección' },
+    'vehicle-pricing':  { en: 'Vehicle Pricing',   es: 'Precios de Vehículos' },
+  };
+
+  // Modal section overrides: when a modal is open, use this section name instead
+  // of the underlying page.
+  const MODAL_SECTION = {
+    'booking-detail-modal': { en: 'Booking Detail modal',  es: 'modal de Detalle de Reserva' },
+    'booking-edit-modal':   { en: 'Booking Edit modal',    es: 'modal de Edición de Reserva' },
+    'edit-vehicle-modal':   { en: 'Vehicle Edit modal',    es: 'modal de Edición de Vehículo' },
+    'add-vehicle-modal':    { en: 'Add Vehicle modal',     es: 'modal de Agregar Vehículo' },
+    'add-expense-modal':    { en: 'Add Expense modal',     es: 'modal de Agregar Gasto' },
+    'lf-charge-modal':      { en: 'Charge Late Fee modal', es: 'modal de Cobrar Cargo por Mora' },
+    'lf-waive-modal':       { en: 'Waive Late Fee modal',  es: 'modal de Eximir Cargo por Mora' },
+    'lf-edit-modal':        { en: 'Edit Late Fee modal',   es: 'modal de Editar Cargo por Mora' },
+    'resend-extension-modal':{ en: 'Extend Rental modal',  es: 'modal de Extender Alquiler' },
+    'customer-edit-modal':  { en: 'Customer Edit modal',   es: 'modal de Edición de Cliente' },
+    'plan-modal':           { en: 'Protection Plan modal', es: 'modal de Plan de Protección' },
+    'sms-edit-modal':       { en: 'SMS Template modal',    es: 'modal de Plantilla SMS' },
+  };
+
+  // Fixed tour scripts (EN / ES).  Stored separately from runtime state so that
+  // prewarmTourCache() can enqueue TTS fetches before the tour begins.
   const TOUR_STEPS = [
     {
       sel:  '#page-bookings',
@@ -35,27 +94,29 @@
             'filtrar por estado o vehículo, y buscar por nombre o ID del cliente.',
     },
     {
-      sel:  '#bookings-table-wrap',
-      en:   'Each row in the table represents one booking. Click the View button ' +
-            'at the end of any row to open the booking detail panel.',
-      es:   'Cada fila de la tabla representa una reserva. Haga clic en el botón ' +
-            'Ver al final de cualquier fila para abrir el panel de detalle.',
+      // After speaking, tour PAUSES and waits for the booking-detail-modal to open.
+      sel:          '#bookings-table-wrap',
+      waitForModal: '#booking-detail-modal',
+      en:   'Each row represents one booking. Please click the View button on any ' +
+            'row — the guide will continue once the booking detail panel opens.',
+      es:   'Cada fila representa una reserva. Haga clic en el botón Ver de cualquier ' +
+            'fila — el recorrido continuará cuando se abra el panel de detalle.',
     },
     {
-      sel:  '#booking-detail-modal',
-      en:   'This is the Booking Detail modal. It shows customer information, ' +
-            'vehicle, dates, payment status, and all available actions.',
-      es:   'Este es el modal de Detalle de Reserva. Muestra la información del ' +
-            'cliente, vehículo, fechas, estado de pago y todas las acciones disponibles.',
+      sel:          '#booking-detail-modal',
       skipIfHidden: true,
+      en:   'This is the Booking Detail panel. It shows customer information, ' +
+            'vehicle, dates, payment status, and all available actions.',
+      es:   'Este es el panel de Detalle de Reserva. Muestra la información del ' +
+            'cliente, vehículo, fechas, estado de pago y todas las acciones disponibles.',
     },
     {
-      sel:  '#booking-detail-actions',
+      sel:          '#booking-detail-actions',
+      skipIfHidden: true,
       en:   'The action bar lets you mark a booking as active, return the vehicle, ' +
             'extend the rental, or cancel the booking.',
       es:   'La barra de acciones le permite marcar una reserva como activa, ' +
             'devolver el vehículo, extender el alquiler o cancelar la reserva.',
-      skipIfHidden: true,
     },
     {
       sel:  '#page-dashboard',
@@ -81,15 +142,15 @@
   let tourActive      = false;
   let tourStepIndex   = 0;
   let tourAborted     = false;
-  let clickExplain    = false;    // auto click-explain toggle
+  let clickExplain    = false;    // context-aware click-explain toggle
   let lastClickTime   = 0;        // debounce tracker
-  const VALID_LANGS   = ['en', 'es'];
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
   let muted           = localStorage.getItem(MUTE_STORAGE) === 'true';
 
-  // Simple phrase cache: Map<`${lang}:${text}`, ArrayBuffer>
+  // TTS cache: Map<`${lang}:${text}`, ArrayBuffer>
+  // Used for both fixed tour phrases (pre-warmed) and repeated assistant replies.
   const ttsCache = new Map();
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -99,6 +160,22 @@
 
   function getAdminSecret() {
     return (typeof adminSecret !== 'undefined') ? adminSecret : '';
+  }
+
+  /** Returns the currently active section label (prefers an open modal). */
+  function getCurrentSection() {
+    // Check if any known modal is open
+    for (const [modalId, labels] of Object.entries(MODAL_SECTION)) {
+      const el = document.getElementById(modalId);
+      if (el && el.classList.contains('open')) {
+        return labels[lang] || labels.en;
+      }
+    }
+    // Fall back to the current page
+    const page = (typeof currentPage !== 'undefined') ? currentPage : '';
+    const entry = SECTION_LABELS[page];
+    if (entry) return entry[lang] || entry.en;
+    return page || 'Admin Dashboard';
   }
 
   function setLang(l) {
@@ -123,10 +200,10 @@
     const explBtn  = panel.querySelector('#va-expl-btn');
     const stopBtn  = panel.querySelector('#va-stop-btn');
 
-    if (langBtn)  langBtn.textContent  = lang === 'en' ? '🌎 EN' : '🌎 ES';
-    if (muteBtn)  muteBtn.textContent  = muted ? '🔇 Muted' : '🔊 Sound On';
+    if (langBtn)  langBtn.textContent   = lang === 'en' ? '🌎 EN' : '🌎 ES';
+    if (muteBtn)  muteBtn.textContent   = muted ? '🔇 Muted' : '🔊 Sound On';
     if (explBtn)  explBtn.style.opacity = clickExplain ? '1' : '0.55';
-    if (stopBtn)  stopBtn.disabled     = !isSpeaking && !tourActive;
+    if (stopBtn)  stopBtn.disabled      = !isSpeaking && !tourActive;
   }
 
   // ── Audio stop ─────────────────────────────────────────────────────────────
@@ -146,8 +223,48 @@
 
   // ── Core TTS ───────────────────────────────────────────────────────────────
   /**
+   * Fetch TTS audio into the cache without playing it.
+   * Silently ignores errors — cache misses just cause a live fetch at speak() time.
+   */
+  async function prefetchTts(text, speakLang) {
+    speakLang = speakLang || lang;
+    const cacheKey = `${speakLang}:${text}`;
+    if (ttsCache.has(cacheKey)) return;
+
+    try {
+      const res = await fetch(`${getApiBase()}/api/tts`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text, lang: speakLang, secret: getAdminSecret() }),
+      });
+      if (!res.ok) return;
+      const buf = await res.arrayBuffer();
+      if (ttsCache.size >= 80) {
+        ttsCache.delete(ttsCache.keys().next().value);
+      }
+      ttsCache.set(cacheKey, buf);
+    } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * Pre-warm the TTS cache for all fixed tour step scripts in both languages.
+   * Called eagerly on init so tour playback is nearly instant.
+   */
+  async function prewarmTourCache() {
+    const secret = getAdminSecret();
+    if (!secret) return; // not authenticated yet; tour will fetch live
+    const texts = [];
+    for (const step of TOUR_STEPS) {
+      if (step.en) texts.push([step.en, 'en']);
+      if (step.es) texts.push([step.es, 'es']);
+    }
+    // Fire all fetches concurrently; failures are silently ignored
+    await Promise.allSettled(texts.map(([t, l]) => prefetchTts(t, l)));
+  }
+
+  /**
    * Speak text aloud using /api/tts.
-   * Returns a Promise that resolves when playback finishes (or rejects on error).
+   * Returns a Promise that resolves when playback finishes.
    */
   async function speak(text, speakLang) {
     if (muted || !text) return;
@@ -168,11 +285,7 @@
         const res = await fetch(`${getApiBase()}/api/tts`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            text,
-            lang: speakLang,
-            secret: getAdminSecret(),
-          }),
+          body:    JSON.stringify({ text, lang: speakLang, secret: getAdminSecret() }),
         });
 
         if (!res.ok) {
@@ -181,24 +294,21 @@
         }
 
         audioBuffer = await res.arrayBuffer();
-        // Cache up to 50 entries to avoid unbounded growth
-        if (ttsCache.size >= 50) {
-          const firstKey = ttsCache.keys().next().value;
-          ttsCache.delete(firstKey);
+        if (ttsCache.size >= 80) {
+          ttsCache.delete(ttsCache.keys().next().value);
         }
         ttsCache.set(cacheKey, audioBuffer);
       }
 
-      const blob       = new Blob([audioBuffer], { type: 'audio/mpeg' });
-      const blobUrl    = URL.createObjectURL(blob);
-      currentBlobUrl   = blobUrl;
-
-      const audio      = new Audio(blobUrl);
-      currentAudio     = audio;
+      const blob     = new Blob([audioBuffer], { type: 'audio/mpeg' });
+      const blobUrl  = URL.createObjectURL(blob);
+      currentBlobUrl = blobUrl;
+      const audio    = new Audio(blobUrl);
+      currentAudio   = audio;
 
       await new Promise((resolve, reject) => {
-        audio.onended  = resolve;
-        audio.onerror  = reject;
+        audio.onended = resolve;
+        audio.onerror = reject;
         audio.play().catch(reject);
       });
     } catch (err) {
@@ -212,14 +322,45 @@
   function highlightElement(el) {
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.style.outline        = '3px solid #2563eb';
-    el.style.outlineOffset  = '3px';
-    el.style.borderRadius   = '6px';
-    el.style.transition     = 'outline 0.3s';
+    el.style.outline       = '3px solid #2563eb';
+    el.style.outlineOffset = '3px';
+    el.style.borderRadius  = '6px';
+    el.style.transition    = 'outline 0.3s';
     setTimeout(() => {
       el.style.outline       = '';
       el.style.outlineOffset = '';
     }, MAX_HIGHLIGHT);
+  }
+
+  // ── Modal wait helper (MutationObserver) ───────────────────────────────────
+  /**
+   * Returns a Promise that resolves when the element matching `selector` has
+   * the class `open` added to it, or rejects after `timeoutMs`.
+   * The tour calls this to pause until the user clicks "View" and the modal opens.
+   */
+  function waitForModalOpen(selector, timeoutMs = 60000) {
+    return new Promise((resolve, reject) => {
+      const el = document.querySelector(selector);
+      if (!el) { reject(new Error(`Element not found: ${selector}`)); return; }
+
+      // Already open
+      if (el.classList.contains('open')) { resolve(); return; }
+
+      const timer = setTimeout(() => {
+        obs.disconnect();
+        reject(new Error('Timed out waiting for modal'));
+      }, timeoutMs);
+
+      const obs = new MutationObserver(() => {
+        if (el.classList.contains('open')) {
+          clearTimeout(timer);
+          obs.disconnect();
+          resolve();
+        }
+      });
+
+      obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
   }
 
   // ── Guided Tour ────────────────────────────────────────────────────────────
@@ -230,6 +371,9 @@
     tourStepIndex = 0;
     updatePanelState();
 
+    // Navigate to bookings page to anchor the tour
+    if (typeof navigate === 'function') navigate('bookings');
+
     for (let i = 0; i < TOUR_STEPS.length; i++) {
       if (tourAborted) break;
       tourStepIndex = i;
@@ -237,7 +381,7 @@
       const step = TOUR_STEPS[i];
       const el   = step.sel ? document.querySelector(step.sel) : null;
 
-      // Skip hidden steps when element is not visible
+      // Skip hidden steps
       if (step.skipIfHidden && el) {
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) continue;
@@ -247,6 +391,19 @@
       await speak(lang === 'es' ? step.es : step.en);
 
       if (tourAborted) break;
+
+      // If this step requires a user action (e.g. click View to open modal),
+      // pause here and wait for the target modal to gain the .open class.
+      if (step.waitForModal && !tourAborted) {
+        try {
+          await waitForModalOpen(step.waitForModal);
+        } catch (_) {
+          // Timeout or element missing — continue tour anyway
+        }
+        if (tourAborted) break;
+        // Small delay so the modal animation finishes before highlighting
+        await new Promise(r => setTimeout(r, 400));
+      }
     }
 
     tourActive    = false;
@@ -261,6 +418,97 @@
     updatePanelState();
   }
 
+  // ── Context-Aware Click-Explain ────────────────────────────────────────────
+  /**
+   * Build a context object describing what the user clicked and where.
+   * Returns null if the element should not be explained.
+   */
+  function buildClickContext(target) {
+    // Find the nearest actionable element
+    const el = target.closest(
+      'button, [role="button"], .btn, [data-explain], a[onclick]'
+    ) || target;
+
+    // Must have data-explain attribute OR match the keyword allow-list
+    const hasAttr = el.hasAttribute('data-explain');
+
+    const rawLabel = (el.getAttribute('data-explain') ||
+                      el.textContent || el.title || el.ariaLabel || '')
+      .trim()
+      .replace(/[^\x20-\x7E\u00C0-\u024F\u00A0-\u00FF]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 100);
+
+    if (!rawLabel || rawLabel.length < 2) return null;
+    if (/^[✕×✖⊗•·]$/.test(rawLabel)) return null;
+
+    const labelLower = rawLabel.toLowerCase();
+
+    if (!hasAttr) {
+      const matches = EXPLAIN_KEYWORDS.some(kw => labelLower.includes(kw));
+      if (!matches) return null;
+    }
+
+    const section = getCurrentSection();
+    return { element: rawLabel, section };
+  }
+
+  /**
+   * Ask the AI for a concise explanation of the clicked element in context,
+   * then speak the response.
+   */
+  async function explainWithContext(context) {
+    const secret = getAdminSecret();
+    if (!secret) return;
+
+    const langName = lang === 'es' ? 'Spanish' : 'English';
+    const prompt   = `[Voice Assistant] The admin just clicked "${context.element}" ` +
+                     `in the "${context.section}" section of the car rental admin dashboard. ` +
+                     `In exactly 1 short sentence, explain what this action does. ` +
+                     `Respond in ${langName}. Do not start with "This button".`;
+
+    const messages = [{ role: 'user', content: prompt }];
+
+    try {
+      const res = await fetch(`${getApiBase()}/api/admin-chat`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ secret, messages }),
+        signal:  AbortSignal.timeout(20000),
+      });
+
+      if (!res.ok) return;
+      const data  = await res.json();
+      const reply = (data.reply || '').trim().slice(0, 200);
+      if (reply) await speak(reply);
+    } catch (err) {
+      console.warn('[VoiceAssistant] explainWithContext error:', err);
+    }
+  }
+
+  // ── Click-Explain event listener ──────────────────────────────────────────
+  function handleClickExplain(e) {
+    if (!clickExplain || muted) return;
+
+    // Skip clicks inside the voice panel or the ask dialog
+    const panel = document.getElementById(PANEL_ID);
+    if (panel && panel.contains(e.target)) return;
+    const dialog = document.getElementById('va-ask-dialog');
+    if (dialog && dialog.contains(e.target)) return;
+
+    // Debounce
+    const now = Date.now();
+    if (now - lastClickTime < DEBOUNCE_MS) return;
+    lastClickTime = now;
+
+    const context = buildClickContext(e.target);
+    if (!context) return;
+
+    // Fire and forget — non-blocking
+    explainWithContext(context);
+  }
+
   // ── Ask Assistant ─────────────────────────────────────────────────────────
   async function askAssistant(question) {
     if (!question || !question.trim()) return;
@@ -271,11 +519,14 @@
       return;
     }
 
+    const section  = getCurrentSection();
+    const langName = lang === 'es' ? 'Spanish' : 'English';
+
     const messages = [
       {
         role:    'user',
-        content: `[Dashboard Voice Assistant] Answer in 1-2 short sentences. ` +
-                 `Respond in ${lang === 'es' ? 'Spanish' : 'English'}. ` +
+        content: `[Dashboard Voice Assistant] The admin is currently in the "${section}" section. ` +
+                 `Answer in 1-2 short sentences. Respond in ${langName}. ` +
                  `Question: ${question.trim()}`,
       },
     ];
@@ -311,26 +562,25 @@
     const dialog = document.createElement('div');
     dialog.id    = 'va-ask-dialog';
     Object.assign(dialog.style, {
-      position:    'fixed',
-      bottom:      '220px',
-      right:       '20px',
-      background:  '#1a1d27',
-      border:      '1px solid #2a2d3a',
-      borderRadius:'12px',
-      padding:     '16px',
-      width:       '280px',
-      zIndex:      '10000',
-      boxShadow:   '0 8px 32px rgba(0,0,0,0.4)',
+      position:     'fixed',
+      bottom:       '220px',
+      right:        '20px',
+      background:   '#1a1d27',
+      border:       '1px solid #2a2d3a',
+      borderRadius: '12px',
+      padding:      '16px',
+      width:        '280px',
+      zIndex:       '10000',
+      boxShadow:    '0 8px 32px rgba(0,0,0,0.4)',
     });
 
-    const placeholder = lang === 'es'
-      ? 'Escribe tu pregunta…'
-      : 'Type your question…';
-    const btnLabel = lang === 'es' ? 'Preguntar' : 'Ask';
+    const placeholder = lang === 'es' ? 'Escribe tu pregunta…' : 'Type your question…';
+    const btnLabel    = lang === 'es' ? 'Preguntar' : 'Ask';
+    const title       = lang === 'es' ? 'Preguntar al Asistente' : 'Ask Assistant';
 
     dialog.innerHTML = `
       <div style="color:#fff;font-size:13px;font-weight:600;margin-bottom:10px;">
-        🎙️ ${lang === 'es' ? 'Preguntar al Asistente' : 'Ask Assistant'}
+        🎙️ ${title}
       </div>
       <textarea id="va-ask-input"
         placeholder="${placeholder}"
@@ -374,40 +624,6 @@
     });
   }
 
-  // ── Click-Explain listener ─────────────────────────────────────────────────
-  function handleClickExplain(e) {
-    if (!clickExplain || muted) return;
-
-    // Skip clicks inside the voice panel itself
-    const panel = document.getElementById(PANEL_ID);
-    if (panel && panel.contains(e.target)) return;
-
-    // Debounce
-    const now = Date.now();
-    if (now - lastClickTime < DEBOUNCE_MS) return;
-    lastClickTime = now;
-
-    const el    = e.target.closest('button, [role="button"], .btn, a[onclick]') || e.target;
-    const label = (el.textContent || el.title || el.ariaLabel || '')
-                    .trim()
-                    // Strip non-printable characters and collapse whitespace
-                    .replace(/[^\x20-\x7E\u00C0-\u024F\u00A0-\u00FF]/g, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim()
-                    .slice(0, 80);
-
-    if (!label || label.length < 2) return;
-
-    // Skip if it looks like a close / icon-only button
-    if (/^[✕×✖⊗•·]$/.test(label)) return;
-
-    const text = lang === 'es'
-      ? `Este botón le permite ${label.toLowerCase()}.`
-      : `This button lets you ${label.toLowerCase()}.`;
-
-    speak(text);
-  }
-
   // ── Floating Panel ────────────────────────────────────────────────────────
   function mountPanel() {
     if (document.getElementById(PANEL_ID)) return;
@@ -415,20 +631,20 @@
     const panel = document.createElement('div');
     panel.id    = PANEL_ID;
     Object.assign(panel.style, {
-      position:    'fixed',
-      bottom:      '20px',
-      right:       '20px',
-      background:  '#1a1d27',
-      border:      '1px solid #2a2d3a',
-      borderRadius:'14px',
-      padding:     '14px 12px',
-      zIndex:      '9999',
-      boxShadow:   '0 8px 32px rgba(0,0,0,0.45)',
-      display:     'flex',
-      flexDirection:'column',
-      gap:         '7px',
-      width:       '170px',
-      userSelect:  'none',
+      position:      'fixed',
+      bottom:        '20px',
+      right:         '20px',
+      background:    '#1a1d27',
+      border:        '1px solid #2a2d3a',
+      borderRadius:  '14px',
+      padding:       '14px 12px',
+      zIndex:        '9999',
+      boxShadow:     '0 8px 32px rgba(0,0,0,0.45)',
+      display:       'flex',
+      flexDirection: 'column',
+      gap:           '7px',
+      width:         '170px',
+      userSelect:    'none',
     });
 
     const btnStyle = `
@@ -455,12 +671,14 @@
         ⏹ Stop
       </button>
       <div style="display:flex;gap:6px;margin-top:2px;">
-        <button id="va-lang-btn" style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
-                                         padding:6px 6px;font-size:11px;text-align:center;">
+        <button id="va-lang-btn"
+          style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
+                 padding:6px 6px;font-size:11px;text-align:center;">
           🌎 EN
         </button>
-        <button id="va-mute-btn" style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
-                                         padding:6px 6px;font-size:11px;text-align:center;">
+        <button id="va-mute-btn"
+          style="${btnStyle}flex:1;background:#111318;color:#d1d5db;
+                 padding:6px 6px;font-size:11px;text-align:center;">
           🔊 Sound On
         </button>
       </div>
@@ -468,7 +686,6 @@
 
     document.body.appendChild(panel);
 
-    // Wire events
     panel.querySelector('#va-tour-btn').addEventListener('click', () => {
       if (tourActive) stopTour();
       else            startTour();
@@ -503,6 +720,8 @@
     document.addEventListener('click', handleClickExplain);
     // Expose speak() globally for optional use by other scripts
     window.vaSpeak = speak;
+    // Pre-warm tour cache in the background; errors are silently swallowed
+    prewarmTourCache().catch(() => {});
   }
 
   if (document.readyState === 'loading') {
