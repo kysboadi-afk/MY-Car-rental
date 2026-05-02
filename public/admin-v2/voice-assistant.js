@@ -83,7 +83,10 @@
   let tourAborted     = false;
   let clickExplain    = false;    // auto click-explain toggle
   let lastClickTime   = 0;        // debounce tracker
-  let lang            = localStorage.getItem(LANG_STORAGE) || 'en';
+  const VALID_LANGS   = ['en', 'es'];
+  let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
+                          ? localStorage.getItem(LANG_STORAGE)
+                          : 'en';
   let muted           = localStorage.getItem(MUTE_STORAGE) === 'true';
 
   // Simple phrase cache: Map<`${lang}:${text}`, ArrayBuffer>
@@ -99,8 +102,8 @@
   }
 
   function setLang(l) {
-    lang = l;
-    localStorage.setItem(LANG_STORAGE, l);
+    lang = VALID_LANGS.includes(l) ? l : 'en';
+    localStorage.setItem(LANG_STORAGE, lang);
     updatePanelState();
   }
 
@@ -385,7 +388,13 @@
     lastClickTime = now;
 
     const el    = e.target.closest('button, [role="button"], .btn, a[onclick]') || e.target;
-    const label = (el.textContent || el.title || el.ariaLabel || '').trim().slice(0, 80);
+    const label = (el.textContent || el.title || el.ariaLabel || '')
+                    .trim()
+                    // Strip non-printable characters and collapse whitespace
+                    .replace(/[^\x20-\x7E\u00C0-\u024F\u00A0-\u00FF]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                    .slice(0, 80);
 
     if (!label || label.length < 2) return;
 

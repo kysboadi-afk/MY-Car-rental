@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { text, lang = "en", secret } = req.body || {};
+  const { text, secret } = req.body || {};
 
   if (!isAdminAuthorized(secret)) {
     res.writeHead(401, { ...headers, "Content-Type": "application/json" });
@@ -78,15 +78,10 @@ export default async function handler(req, res) {
   try {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Build language instruction for the TTS model
-    const langInstruction = lang === "es"
-      ? "Speak in Spanish."
-      : "Speak in English.";
-
     const mp3 = await openai.audio.speech.create({
       model: TTS_MODEL,
       voice: TTS_VOICE,
-      input: `[${langInstruction}] ${trimmed}`,
+      input: trimmed,
       response_format: "mp3",
     });
 
