@@ -166,9 +166,9 @@ const REPAIR_EXT_1H_UPPER_MIN      =  120; // active_rental_1h_before_end: any t
 const REPAIR_RETURN_24H_LOWER_MIN  =  120; // return_reminder_24h: fire if return is still > 2 h away
 
 // SMS send-window boundaries — messages are only delivered between these hours
-// in America/Los_Angeles time to avoid waking renters outside business hours.
-const SMS_WINDOW_START_HOUR = 8;  // 8:00 AM LA
-const SMS_WINDOW_END_HOUR   = 19; // 7:00 PM LA (exclusive)
+// in America/Los_Angeles (PDT) time to avoid waking renters outside business hours.
+const SMS_WINDOW_START_HOUR = 5;  // 5:00 AM LA (PDT)
+const SMS_WINDOW_END_HOUR   = 22; // 10:00 PM LA (PDT, exclusive)
 
 // Sentinel date used in sms_logs for SMS that are not tied to a specific
 // return date (pickup reminders, unpaid reminders, etc.).  Using a fixed
