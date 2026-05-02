@@ -33,6 +33,21 @@
   const TTS_CACHE_MAX         = 80;         // max cached TTS entries before eviction
   const VALID_LANGS           = ['en', 'es'];
 
+  // Speech priority levels — higher number wins.
+  // Guide audio is never interrupted; assistant and action feedback beat click-explain.
+  const PRIORITY = { explain: 1, assistant: 2, guide: 3 };
+
+  // Canned EN/ES voice confirmations for key admin actions.
+  const ACTION_FEEDBACK = {
+    return:                  { en: 'Vehicle marked as returned.',     es: 'Vehículo marcado como devuelto.' },
+    extend:                  { en: 'Rental extension applied.',       es: 'Extensión de alquiler aplicada.' },
+    return_date:             { en: 'Return date updated.',            es: 'Fecha de devolución actualizada.' },
+    resend_email:            { en: 'Confirmation email sent.',        es: 'Correo de confirmación enviado.' },
+    status_booked_paid:      { en: 'Booking marked as paid.',         es: 'Reserva marcada como pagada.' },
+    status_active_rental:    { en: 'Booking set to active.',          es: 'Reserva activada.' },
+    status_cancelled_rental: { en: 'Booking cancelled.',              es: 'Reserva cancelada.' },
+  };
+
   // Shared voice persona injected into every AI prompt to ensure a consistent tone
   // across click-explain, ask-assistant, and any future AI paths.
   const VOICE_PERSONA =
@@ -155,8 +170,13 @@
   let lastClickTime   = 0;        // debounce tracker for click-explain
   // AbortController for the currently in-flight click-explain fetch.
   // A new eligible click aborts the previous one before starting fresh.
-  let explainController = null;  // Resolve callback exposed so stopTour() can immediately unblock waitForModalOpen.
+  let explainController = null;
+  // Resolve callback exposed so stopTour() can immediately unblock waitForModalOpen.
   let tourWaitResolve = null;
+  // Numeric priority of the audio currently playing (0 = nothing playing).
+  let currentSpeakPriority = 0;
+  // Session-level memory: updated by vaUpdateContext() whenever the admin opens a booking.
+  const sessionCtx = { bookingId: null, vehicle: null, status: null };
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
@@ -229,6 +249,20 @@
     return (ctx.vehicle || ctx.status) ? ctx : null;
   }
 
+  /**
+   * Build a compact session-context suffix for AI prompts.
+   * Uses the persisted sessionCtx object (updated whenever a booking is viewed)
+   * so the AI knows which booking and vehicle the admin is working on even after
+   * a modal has been closed.
+   */
+  function buildSessionContextLine() {
+    const parts = [];
+    if (sessionCtx.vehicle)   parts.push(`vehicle: ${sessionCtx.vehicle}`);
+    if (sessionCtx.status)    parts.push(`status: ${sessionCtx.status}`);
+    if (sessionCtx.bookingId) parts.push(`booking: ${sessionCtx.bookingId}`);
+    return parts.length ? ` Session context — ${parts.join(', ')}.` : '';
+  }
+
   function setLang(l) {
     lang = VALID_LANGS.includes(l) ? l : 'en';
     localStorage.setItem(LANG_STORAGE, lang);
@@ -269,6 +303,7 @@
       currentBlobUrl = null;
     }
     isSpeaking = false;
+    currentSpeakPriority = 0;
     updatePanelState();
   }
 
@@ -314,15 +349,25 @@
   /**
    * Speak text aloud using /api/tts.
    * Returns a Promise that resolves when playback finishes.
+   *
+   * @param {string}  text
+   * @param {string}  [speakLang]    — defaults to current `lang`
+   * @param {number}  [priority]     — one of PRIORITY.*; lower-priority calls are
+   *                                   silently dropped when something higher is playing
    */
-  async function speak(text, speakLang) {
+  async function speak(text, speakLang, priority) {
     if (muted || !text) return;
+
+    const p = (priority !== undefined) ? priority : PRIORITY.assistant;
+    // Respect priority — never interrupt a higher-priority stream.
+    if (isSpeaking && p < currentSpeakPriority) return;
 
     speakLang = speakLang || lang;
     const cacheKey = `${speakLang}:${text}`;
 
     stopAudio();
     isSpeaking = true;
+    currentSpeakPriority = p;
     updatePanelState();
 
     try {
@@ -443,7 +488,7 @@
       }
 
       if (el) highlightElement(el);
-      await speak(lang === 'es' ? step.es : step.en);
+      await speak(lang === 'es' ? step.es : step.en, undefined, PRIORITY.guide);
 
       if (tourAborted) break;
 
@@ -526,6 +571,8 @@
   async function explainWithContext(context, signal) {
     const secret = getAdminSecret();
     if (!secret) return;
+    // Never fire a click-explain during a guided tour — guide has absolute priority.
+    if (tourActive) return;
 
     const langName = lang === 'es' ? 'Spanish' : 'English';
 
@@ -538,7 +585,8 @@
     const prompt =
       `${VOICE_PERSONA} ` +
       `The admin just clicked "${context.element}" in the "${context.section}" section.` +
-      `${extraLine} ` +
+      `${extraLine}` +
+      `${buildSessionContextLine()} ` +
       `In exactly 1 short sentence, explain what this action does. ` +
       `Respond in ${langName}. Do not start with "This button".`;
 
@@ -555,7 +603,7 @@
       if (!res.ok) return;
       const data  = await res.json();
       const reply = (data.reply || '').trim().slice(0, 200);
-      if (reply) await speak(reply);
+      if (reply) await speak(reply, undefined, PRIORITY.explain);
     } catch (err) {
       // AbortError is expected when a new click interrupts the previous one.
       if (err.name !== 'AbortError') {
@@ -618,7 +666,8 @@
       {
         role:    'user',
         content: `${VOICE_PERSONA} ` +
-                 `The admin is currently in the "${section}" section. ` +
+                 `The admin is currently in the "${section}" section.` +
+                 `${buildSessionContextLine()} ` +
                  `Answer in 1-2 short sentences. Respond in ${langName}. ` +
                  `Question: ${question.trim()}`,
       },
@@ -636,13 +685,15 @@
 
       const data  = await res.json();
       const reply = data.reply || '';
-      if (reply) await speak(reply);
+      if (reply) await speak(reply, undefined, PRIORITY.assistant);
     } catch (err) {
       console.warn('[VoiceAssistant] askAssistant error:', err);
       await speak(
         lang === 'es'
           ? 'Lo siento, no pude obtener una respuesta. Por favor intente de nuevo.'
-          : 'Sorry, I could not get a response. Please try again.'
+          : 'Sorry, I could not get a response. Please try again.',
+        undefined,
+        PRIORITY.assistant
       );
     }
   }
@@ -813,6 +864,29 @@
     document.addEventListener('click', handleClickExplain);
     // Expose speak() globally for optional use by other scripts
     window.vaSpeak = speak;
+
+    /**
+     * Update session-level memory.  Call this whenever the admin opens a booking,
+     * so subsequent AI prompts have rich context even after the modal closes.
+     * @param {{ bookingId?: string, vehicle?: string, status?: string }} ctx
+     */
+    window.vaUpdateContext = (ctx) => {
+      if (ctx && typeof ctx === 'object') Object.assign(sessionCtx, ctx);
+    };
+
+    /**
+     * Speak a canned confirmation phrase after a key admin action succeeds.
+     * Plays at PRIORITY.assistant so it never interrupts the guided tour.
+     * @param {string} key  — key from ACTION_FEEDBACK (e.g. 'return', 'extend')
+     */
+    window.vaActionFeedback = (key) => {
+      if (muted) return;
+      const entry = ACTION_FEEDBACK[key];
+      if (!entry) return;
+      const text = lang === 'es' ? entry.es : entry.en;
+      speak(text, undefined, PRIORITY.assistant).catch(() => {});
+    };
+
     // Pre-warm tour cache in the background; errors are silently swallowed
     prewarmTourCache().catch(() => {});
   }

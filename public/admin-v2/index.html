@@ -4436,6 +4436,15 @@ function viewBooking(bookingId, vehicleId) {
     <button class="btn btn-danger" style="opacity:0.75;" onclick="deleteBooking('${esc(b.bookingId || '')}',this)" title="Permanently delete this booking record">🗑 Delete Booking</button>
     <button class="btn btn-secondary" onclick="closeModal('booking-detail-modal')">Close</button>
   `;
+  // Update voice assistant session memory so subsequent AI prompts know which
+  // booking the admin is currently working on.
+  if (typeof window.vaUpdateContext === 'function') {
+    window.vaUpdateContext({
+      bookingId: b.bookingId || null,
+      vehicle:   getVehicleLabel(b.vehicleId) || b.vehicleId || null,
+      status:    b.status || null,
+    });
+  }
   openModal('booking-detail-modal');
 }
 
@@ -4556,6 +4565,7 @@ function handleReturn(bookingRef, btn) {
   apiPost('/api/return-booking', { secret: adminSecret, booking_ref: bookingRef })
     .then(() => {
       showToast('Vehicle returned successfully.', 'success');
+      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('return');
       loadBookings();
     })
     .catch((err) => {
@@ -4578,6 +4588,7 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
     updates: { status },
   }).then(() => {
     showToast('Booking updated to ' + (status.replace(/_/g, ' ')) + '.', 'success');
+    if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('status_' + status);
     // Reload from server to get the authoritative state
     loadBookings();
   }).catch((err) => {
@@ -4606,6 +4617,7 @@ function updateBookingReturnDate(vehicleId, bookingId, btn) {
     secret: adminSecret, action: 'update', vehicleId, bookingId, updates,
   }).then(() => {
     showToast('Return date updated. Availability will refresh shortly.', 'success');
+    if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('return_date');
     closeModal('booking-detail-modal');
     loadBookings();
   }).catch((err) => {
@@ -4620,6 +4632,7 @@ function resendBookingEmail(bookingId, btn) {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'resend_confirmation', bookingId })
     .then((data) => {
       showToast(data.note || '✅ Confirmation email resent to owner and customer.', 'success');
+      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('resend_email');
     })
     .catch((err) => {
       showToast('Error resending email: ' + err.message, 'error');
@@ -4691,6 +4704,7 @@ function submitResendExtension(btn) {
         ? '✅ Extension applied — revenue and fleet analysis updated.'
         : '✅ Extension applied and confirmation email sent.';
       showToast(msg, 'success');
+      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('extend');
       closeModal('resend-extension-modal');
       loadBookings();
     })
