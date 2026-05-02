@@ -35,61 +35,67 @@
   function applySettings(s) {
     // --- Logo ---
     if (s.logo_url) {
-      document.querySelectorAll('img.site-logo, img.ty-logo').forEach(function (img) {
-        img.src = s.logo_url;
-        img.onerror = null; // don't chain error handlers on updates
-      });
-      var favicon = document.querySelector('link[rel="icon"]');
-      if (favicon) favicon.href = s.logo_url;
+      // Only allow http/https/relative URLs to guard against javascript: injection
+      var logoUrl = /^https?:\/\//i.test(s.logo_url) || s.logo_url.startsWith('/')
+        ? s.logo_url : '';
+      if (logoUrl) {
+        document.querySelectorAll('img.site-logo, img.ty-logo').forEach(function (img) {
+          img.src = logoUrl;
+          // Clear stale error handlers to prevent repeated firing on re-apply
+          img.onerror = null;
+        });
+        var favicon = document.querySelector('link[rel="icon"]');
+        if (favicon) favicon.href = logoUrl;
+      }
     }
 
     // --- Phone ---
     if (s.phone) {
       var telHref    = normalizePhoneHref(s.phone);
       var displayNum = formatPhoneDisplay(s.phone);
-      if (!telHref) return;
-
-      // header-phone: update href; update visible text node for simple variants
-      document.querySelectorAll('a.header-phone').forEach(function (a) {
-        a.href = telHref;
-        // Only update text when there are no child <span>/<svg> elements
-        // (those contain translatable "Call Now" copy we don't want to wipe)
-        var hasChildren = !!a.querySelector('span, svg');
-        if (!hasChildren) {
-          a.textContent = '\uD83D\uDCDE ' + displayNum;
-        } else {
-          // Replace the bare text node that shows the phone digits
-          var nodes = a.childNodes;
-          for (var i = nodes.length - 1; i >= 0; i--) {
-            if (nodes[i].nodeType === 3 && /\d{3}/.test(nodes[i].textContent)) {
-              nodes[i].textContent = nodes[i].textContent.replace(
-                /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/,
-                displayNum
-              );
-              break;
+      if (telHref) {
+        // header-phone: update href; update visible text node for simple variants
+        document.querySelectorAll('a.header-phone').forEach(function (a) {
+          a.href = telHref;
+          // Only update text when there are no child <span>/<svg> elements
+          // (those contain translatable "Call Now" copy we don't want to wipe)
+          var hasChildren = !!a.querySelector('span, svg');
+          if (!hasChildren) {
+            a.textContent = '\uD83D\uDCDE ' + displayNum;
+          } else {
+            // Replace the bare text node that shows the phone digits
+            var nodes = a.childNodes;
+            for (var i = nodes.length - 1; i >= 0; i--) {
+              if (nodes[i].nodeType === 3 && /\d{3}/.test(nodes[i].textContent)) {
+                nodes[i].textContent = nodes[i].textContent.replace(
+                  /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/,
+                  displayNum
+                );
+                break;
+              }
             }
           }
-        }
-      });
+        });
 
-      // footer-phone tel: links — only update the ones that are pure phone links
-      document.querySelectorAll('a.footer-phone[href^="tel:"]').forEach(function (a) {
-        a.href = telHref;
-        if (!a.querySelector('*')) {
-          a.textContent = displayNum;
-        }
-      });
+        // footer-phone tel: links — only update the ones that are pure phone links
+        document.querySelectorAll('a.footer-phone[href^="tel:"]').forEach(function (a) {
+          a.href = telHref;
+          if (!a.querySelector('*')) {
+            a.textContent = displayNum;
+          }
+        });
 
-      // Other inline tel: links in the page body (e.g. contact page, thank-you page)
-      document.querySelectorAll('a[href^="tel:"]:not(.header-phone):not(.footer-phone)').forEach(function (a) {
-        a.href = telHref;
-        if (!a.querySelector('*') && /\d{3}/.test(a.textContent)) {
-          a.textContent = a.textContent.replace(
-            /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/,
-            displayNum
-          );
-        }
-      });
+        // Other inline tel: links in the page body (e.g. contact page, thank-you page)
+        document.querySelectorAll('a[href^="tel:"]:not(.header-phone):not(.footer-phone)').forEach(function (a) {
+          a.href = telHref;
+          if (!a.querySelector('*') && /\d{3}/.test(a.textContent)) {
+            a.textContent = a.textContent.replace(
+              /\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}/,
+              displayNum
+            );
+          }
+        });
+      }
     }
 
     // --- Business name (footer copyright) ---

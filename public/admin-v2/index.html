@@ -6906,10 +6906,12 @@ function saveSiteContent() {
 // ── Logo field helpers (Site Content / Settings page) ─────────────────────
 
 function scPreviewLogo() {
-  const url = (document.getElementById('sc-logo_url')?.value || '').trim();
+  const raw     = (document.getElementById('sc-logo_url')?.value || '').trim();
   const preview = document.getElementById('sc-logo-preview');
   const img     = document.getElementById('sc-logo-preview-img');
   if (!preview || !img) return;
+  // Only allow http/https/relative URLs to prevent javascript: injection
+  const url = /^https?:\/\//i.test(raw) || raw.startsWith('/') ? raw : '';
   if (url) {
     img.src = url;
     preview.style.display = '';
