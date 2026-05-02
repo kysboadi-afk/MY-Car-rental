@@ -667,6 +667,31 @@
     .ai-send-btn:hover:not(:disabled) { background: var(--primary-dim); }
     .ai-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .ai-send-btn svg { width: 16px; height: 16px; }
+    .ai-attach-btn {
+      width: 40px; height: 40px; background: var(--bg-card); color: var(--text-sub);
+      border: 1px solid var(--border); border-radius: 10px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center; transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .ai-attach-btn:hover { color: var(--primary); border-color: var(--primary); }
+    .ai-attach-btn svg { width: 16px; height: 16px; }
+    .ai-img-preview-row {
+      padding: 6px 16px 0; display: flex; align-items: center; gap: 8px;
+    }
+    .ai-img-thumb-wrap {
+      position: relative; display: inline-flex;
+    }
+    .ai-img-thumb-wrap img {
+      max-height: 72px; max-width: 120px; border-radius: 6px;
+      border: 1px solid var(--border); object-fit: cover;
+    }
+    .ai-img-clear-btn {
+      position: absolute; top: -6px; right: -6px; width: 18px; height: 18px;
+      background: #374151; color: #fff; border: none; border-radius: 50%;
+      cursor: pointer; font-size: 10px; display: flex; align-items: center;
+      justify-content: center; line-height: 1;
+    }
+    .ai-msg-img { max-width: 220px; border-radius: 8px; margin-top: 6px; display: block; }
 
     /* Right panel */
     .ai-side-panel {
@@ -1885,8 +1910,19 @@
               <button class="ai-chip" onclick="aiChip('What is the current mileage and maintenance status of my fleet?')">🛣️ Fleet mileage</button>
             </div>
 
+            <!-- Image preview (shown when an image is attached before sending) -->
+            <div class="ai-img-preview-row" id="ai-img-preview-row" style="display:none">
+              <div class="ai-img-thumb-wrap">
+                <img id="ai-img-preview-thumb" src="" alt="Attached image">
+                <button class="ai-img-clear-btn" onclick="aiClearImage()" title="Remove image">✕</button>
+              </div>
+            </div>
             <!-- Input row -->
             <div class="ai-input-row">
+              <input type="file" id="ai-img-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="aiHandleImageSelect(this)">
+              <button class="ai-attach-btn" id="ai-attach-btn" onclick="document.getElementById('ai-img-input').click()" title="Attach image">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </button>
               <textarea class="ai-input" id="ai-input" placeholder="Ask AI…" rows="1"
                 onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiMessage();}"
                 oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
@@ -2509,6 +2545,7 @@ let aiHistory      = [];   // { role, content }[] — conversation sent to backe
 let aiTyping       = false;
 let aiInitialized  = false;
 let aiAutoMode     = false;
+let aiPendingImage = null; // { dataUrl: string } — image selected but not yet sent
 
 function aiCompactHistory(history, maxMessages) {
   if (!Array.isArray(history) || history.length === 0) return [];
@@ -7717,6 +7754,7 @@ function toggleAiAutoMode(on) {
 
 function newAiChat() {
   aiClearHistory();
+  aiClearImage();
   const container = document.getElementById('ai-messages');
   container.innerHTML = `<div class="ai-empty" id="ai-empty-state">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -7732,7 +7770,34 @@ function aiChip(text) {
   sendAiMessage();
 }
 
-function aiAppendMessage(role, content, toolCalls) {
+function aiHandleImageSelect(input) {
+  const file = input.files && input.files[0];
+  input.value = ''; // reset so the same file can be re-selected
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Image is too large (max 5 MB)', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    aiPendingImage = { dataUrl: e.target.result };
+    const thumb = document.getElementById('ai-img-preview-thumb');
+    const row   = document.getElementById('ai-img-preview-row');
+    if (thumb) thumb.src = e.target.result;
+    if (row)   row.style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function aiClearImage() {
+  aiPendingImage = null;
+  const thumb = document.getElementById('ai-img-preview-thumb');
+  const row   = document.getElementById('ai-img-preview-row');
+  if (thumb) thumb.src = '';
+  if (row)   row.style.display = 'none';
+}
+
+function aiAppendMessage(role, content, toolCalls, imageDataUrl) {
   const container = document.getElementById('ai-messages');
   const empty     = document.getElementById('ai-empty-state');
   if (empty) empty.remove();
@@ -7742,13 +7807,16 @@ function aiAppendMessage(role, content, toolCalls) {
 
   const initial = role === 'user' ? 'A' : '✦';
   const bubbleContent = role === 'assistant' ? renderMarkdown(content) : esc(content);
+  const imgHtml = (role === 'user' && imageDataUrl)
+    ? `<img class="ai-msg-img" src="${esc(imageDataUrl)}" alt="Attached image">`
+    : '';
   wrap.innerHTML = `
     <div class="ai-msg-avatar">${initial}</div>
     <div>
       ${toolCalls && toolCalls.length ? `<div class="ai-tools-row">${toolCalls.map((t) =>
         `<span class="ai-tool-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-2-2a1 1 0 010-1.4l8-8a1 1 0 011.4 0l2 2z"/></svg>${esc(t)}</span>`
       ).join('')}</div>` : ''}
-      <div class="ai-msg-bubble">${bubbleContent}</div>
+      <div class="ai-msg-bubble">${bubbleContent}${imgHtml}</div>
     </div>`;
 
   container.appendChild(wrap);
@@ -7780,13 +7848,40 @@ async function sendAiMessage() {
   if (aiTyping) return;
   const input = document.getElementById('ai-input');
   const text  = (input.value || '').trim();
-  if (!text) return;
+
+  // Allow sending if there is text OR a pending image
+  if (!text && !aiPendingImage) return;
 
   input.value = '';
   input.style.height = 'auto';
 
-  aiAppendMessage('user', text);
-  aiHistory.push({ role: 'user', content: text });
+  // Capture and clear pending image before async work
+  const pendingImg = aiPendingImage;
+  aiClearImage();
+
+  // Display text in chat (show placeholder if image-only)
+  const displayText = text || '📎 [Image attached]';
+  aiAppendMessage('user', displayText, null, pendingImg ? pendingImg.dataUrl : null);
+
+  // History stores text only — images are too large for localStorage and repeat history
+  aiHistory.push({ role: 'user', content: displayText });
+
+  // Build the messages to send: compact history without current message, then add
+  // current message (with image content array if an image was attached)
+  const historyWithoutLast = aiCompactHistory(aiHistory.slice(0, -1), AI_MAX_REQUEST_MESSAGES - 1);
+  let currentMsg;
+  if (pendingImg) {
+    currentMsg = {
+      role: 'user',
+      content: [
+        ...(text ? [{ type: 'text', text }] : []),
+        { type: 'image_url', image_url: { url: pendingImg.dataUrl, detail: 'auto' } },
+      ],
+    };
+  } else {
+    currentMsg = { role: 'user', content: text };
+  }
+  const messagesToSend = [...historyWithoutLast, currentMsg];
 
   aiTyping = true;
   document.getElementById('ai-send-btn').disabled = true;
@@ -7800,7 +7895,7 @@ async function sendAiMessage() {
   try {
     const data = await apiPost('/api/admin-chat', {
       secret:    adminSecret,
-      messages:  aiCompactHistory(aiHistory, AI_MAX_REQUEST_MESSAGES),
+      messages:  messagesToSend,
       auto_mode: aiAutoMode,
     }, controller.signal);
 
