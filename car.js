@@ -107,6 +107,8 @@ function clearPayError() {
             ? "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day") + " \u2022 " + _t("fleet.priceFrom","from") + " $" + carData.weekly + " / " + _t("fleet.unitWeek","week")
             : "$" + carData.pricePerDay + " / " + _t("fleet.unitDay","day");
         }
+        // Also refresh the earnings block in case the weekly rate changed.
+        updateEarningsBlock();
       }
     })
     .catch(function(err) {
@@ -155,6 +157,53 @@ function normalizeApiVehicle(v) {
   };
 }
 
+// Average weekly rideshare earnings range used in the earnings example block.
+const EARNINGS_EXAMPLE_LOW  = 1200;  // $1,200 low-end weekly rideshare earnings (Los Angeles)
+const EARNINGS_EXAMPLE_HIGH = 1600;  // $1,600 high-end weekly rideshare earnings (Los Angeles)
+
+// ----- Earnings block updater -----
+// Replaces the hardcoded $350 weekly rental and $850–$1,250 take-home estimates
+// with the actual prices for the loaded vehicle.  Called from initCarDisplay() and
+// re-called after every language switch so the amounts stay correct.
+// Uses the existing i18n translation strings as templates, substituting only the
+// dollar amounts so all translated labels remain correct.
+function updateEarningsBlock() {
+  if (!carData || !carData.weekly) return;
+  const weekly = carData.weekly;
+  const takeHomeLow  = EARNINGS_EXAMPLE_LOW  - weekly;
+  const takeHomeHigh = EARNINGS_EXAMPLE_HIGH - weekly;
+  const row2 = document.getElementById("earningsRow2");
+  const row3 = document.getElementById("earningsRow3");
+  if (row2) {
+    // Get translated label ("Weekly rental: …" or "Alquiler semanal: …") and
+    // swap the hardcoded amount for the vehicle's actual weekly rate.
+    const tmpl2 = _t("booking.earningsRow2Html",
+      `Weekly rental: <span class="earnings-yellow">$${weekly}</span>`);
+    row2.innerHTML = tmpl2.replace(/\$[\d,]+/, `$${weekly}`);
+  }
+  if (row3) {
+    // Swap the hardcoded take-home range with values computed from this vehicle's rate.
+    const tmpl3 = _t("booking.earningsRow3Html",
+      `<span class="earnings-green">Estimated take-home:</span> $${takeHomeLow} \u2013 $${takeHomeHigh}`);
+    row3.innerHTML = tmpl3.replace(/\$[\d,]+\s*[\u2013\-]\s*\$[\d,]+/,
+      `$${takeHomeLow} \u2013 $${takeHomeHigh}`);
+  }
+}
+
+// Wrap slyI18n.applyTranslations once so the earnings block is refreshed on every
+// language switch.  Called once after carData is first loaded.
+let _earningsHookInstalled = false;
+function installEarningsTranslationHook() {
+  if (_earningsHookInstalled) return;
+  if (!window.slyI18n || !window.slyI18n.applyTranslations) return;
+  const _origApply = window.slyI18n.applyTranslations;
+  window.slyI18n.applyTranslations = function() {
+    _origApply.call(window.slyI18n);
+    updateEarningsBlock();
+  };
+  _earningsHookInstalled = true;
+}
+
 // ----- Page display initializer -----
 // Called once carData is ready — sets page title, price, and builds the image slider.
 function initCarDisplay() {
@@ -170,6 +219,11 @@ function initCarDisplay() {
   document.getElementById("carPrice").textContent = carData.weekly
     ? `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")} \u2022 ${_t("fleet.priceFrom","from")} $${carData.weekly} / ${_t("fleet.unitWeek","week")}`
     : `$${carData.pricePerDay} / ${_t("fleet.unitDay","day")}`;
+
+  // Populate the earnings block with this vehicle's actual weekly rate and install
+  // the translation hook so language switches keep it correct.
+  updateEarningsBlock();
+  installEarningsTranslationHook();
 
   if (IS_TEST_MODE_OVERRIDE) {
     const bookingSection = document.querySelector(".booking");
