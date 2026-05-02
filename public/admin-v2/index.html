@@ -2413,9 +2413,16 @@ async function loadVehiclesFromApi() {
       if (v.vehicle_id) {
         if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
         if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
+        // Keep VEHICLE_RATES in sync so updateManualPrice() works for new vehicles
+        if (v.daily_price || v.weekly_price) {
+          VEHICLE_RATES[v.vehicle_id] = {
+            perDay:  v.daily_price  || 0,
+            perWeek: v.weekly_price || 0,
+          };
+        }
       }
     });
-    // Populate dynamic vehicle filter dropdowns for Revenue and Expenses
+    // Populate all vehicle <select> dropdowns from the live list
     populateVehicleFilters(vehicles);
   } catch (err) {
     // Network/parse error — continue with hard-coded fallbacks
@@ -2423,17 +2430,52 @@ async function loadVehiclesFromApi() {
   }
 }
 
-/** Populate <select> vehicle filters with live vehicle list. */
+/** Populate ALL vehicle <select> elements with the live vehicle list. */
 function populateVehicleFilters(vehicles) {
-  const filterIds = ['rev-filter-vehicle', 'expense-filter-vehicle'];
-  const opts = vehicles.map((v) =>
+  // ── Filter dropdowns (prefix: "All Vehicles") ──────────────────────────────
+  const filterIds = [
+    'booking-filter-vehicle',
+    'expense-filter-vehicle',
+    'rev-filter-vehicle',
+    'lf-filter-vehicle',
+  ];
+  const filterOpts = vehicles.map((v) =>
     `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
   ).join('');
   for (const id of filterIds) {
     const el = document.getElementById(id);
     if (!el) continue;
-    // Keep the "All Vehicles" option, replace the rest
-    el.innerHTML = '<option value="">All Vehicles</option>' + opts;
+    el.innerHTML = '<option value="">All Vehicles</option>' + filterOpts;
+  }
+
+  // ── Form dropdowns (prefix: "Select vehicle…") ─────────────────────────────
+  const formIds = ['bd-vehicle', 'ub-vehicle', 'exp-vehicle', 'rev-vehicle'];
+  const formOpts = vehicles.map((v) =>
+    `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
+  ).join('');
+  for (const id of formIds) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.innerHTML = '<option value="">Select vehicle…</option>' + formOpts;
+  }
+
+  // ── Manual-booking dropdown (shows daily rate in label) ────────────────────
+  const mbEl = document.getElementById('mb-vehicle');
+  if (mbEl) {
+    const mbOpts = vehicles.map((v) => {
+      const rate = VEHICLE_RATES[v.vehicle_id];
+      const priceLabel = rate && rate.perDay ? ` ($${rate.perDay}/day)` : '';
+      return `<option value="${esc(v.vehicle_id)}">${esc((v.vehicle_name || v.vehicle_id) + priceLabel)}</option>`;
+    }).join('');
+    mbEl.innerHTML = '<option value="">Select vehicle…</option>' + mbOpts;
+  }
+
+  // ── Edit-booking dropdown (no placeholder, pre-selection set later) ─────────
+  const beEl = document.getElementById('be-vehicle');
+  if (beEl) {
+    beEl.innerHTML = vehicles.map((v) =>
+      `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
+    ).join('');
   }
 }
 
