@@ -21,7 +21,8 @@ import { getSupabaseAdmin } from "./_supabase.js";
 import { loadVehicles } from "./_vehicles.js";
 import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 import { updateJsonFileWithRetry } from "./_github-retry.js";
-import { normalizeVehicleId, vehicleIdFamily, uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
+import { normalizeVehicleId, vehicleIdFamily, uiVehicleId } from "./_vehicle-id.js";
+import { getAllVehicleIds } from "./_pricing.js";
 import crypto from "crypto";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
@@ -355,11 +356,14 @@ export default async function handler(req, res) {
             // Override booking_count with counts from the bookings table (source of truth).
             // This ensures camry/camry2012 legacy IDs are collapsed and every booking
             // is counted exactly once, regardless of how many revenue_records it has.
+            // getAllVehicleIds() merges the static fleet list with vehicles registered in
+            // Supabase so newly-added vehicles are included automatically.
             try {
+              const allVehicleIds = await getAllVehicleIds(sb);
               const { data: bRows, error: bErr } = await sb
                 .from("bookings")
                 .select("vehicle_id")
-                .in("vehicle_id", FLEET_DB_VEHICLE_IDS);
+                .in("vehicle_id", allVehicleIds);
               if (!bErr && bRows) {
                 const countsByVehicle = {};
                 for (const row of bRows) {
