@@ -4565,7 +4565,6 @@ function handleReturn(bookingRef, btn) {
   apiPost('/api/return-booking', { secret: adminSecret, booking_ref: bookingRef })
     .then(() => {
       showToast('Vehicle returned successfully.', 'success');
-      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('return');
       loadBookings();
     })
     .catch((err) => {
@@ -4588,7 +4587,6 @@ function updateBookingStatus(vehicleId, bookingId, status, triggerBtn, attempt) 
     updates: { status },
   }).then(() => {
     showToast('Booking updated to ' + (status.replace(/_/g, ' ')) + '.', 'success');
-    if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('status_' + status);
     // Reload from server to get the authoritative state
     loadBookings();
   }).catch((err) => {
@@ -4617,7 +4615,6 @@ function updateBookingReturnDate(vehicleId, bookingId, btn) {
     secret: adminSecret, action: 'update', vehicleId, bookingId, updates,
   }).then(() => {
     showToast('Return date updated. Availability will refresh shortly.', 'success');
-    if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('return_date');
     closeModal('booking-detail-modal');
     loadBookings();
   }).catch((err) => {
@@ -4632,7 +4629,6 @@ function resendBookingEmail(bookingId, btn) {
   apiPost('/api/v2-bookings', { secret: adminSecret, action: 'resend_confirmation', bookingId })
     .then((data) => {
       showToast(data.note || '✅ Confirmation email resent to owner and customer.', 'success');
-      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('resend_email');
     })
     .catch((err) => {
       showToast('Error resending email: ' + err.message, 'error');
@@ -4704,7 +4700,6 @@ function submitResendExtension(btn) {
         ? '✅ Extension applied — revenue and fleet analysis updated.'
         : '✅ Extension applied and confirmation email sent.';
       showToast(msg, 'success');
-      if (typeof window.vaActionFeedback === 'function') window.vaActionFeedback('extend');
       closeModal('resend-extension-modal');
       loadBookings();
     })
@@ -5134,6 +5129,8 @@ function showToast(msg, type = 'info') {
   toast.textContent = msg;
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 3500);
+  // Speak every success confirmation aloud via the voice assistant (non-blocking).
+  if (type === 'success' && typeof window.vaActionSpeak === 'function') window.vaActionSpeak(msg);
 }
 
 // ── Shared Financial Engine ────────────────────────────────────────────────
