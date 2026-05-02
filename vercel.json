@@ -7,9 +7,18 @@
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
       ]
+    },
+    {
+      "source": "/api/tts",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "https://www.slytrans.com" },
+        { "key": "Access-Control-Allow-Methods", "value": "POST, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
+      ]
     }
   ],
   "functions": {
+    "api/tts.js":                           { "maxDuration": 30 },
     "api/admin-chat.js":                    { "maxDuration": 60 },
     "api/sms-webhook.js":                   { "maxDuration": 30 },
     "api/bouncie-sync-cron.js":             { "maxDuration": 30 },

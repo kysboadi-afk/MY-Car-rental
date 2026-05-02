@@ -5180,6 +5180,8 @@ function showToast(msg, type = 'info') {
   toast.textContent = msg;
   container.appendChild(toast);
   setTimeout(() => toast.remove(), 3500);
+  // Speak every success confirmation aloud via the voice assistant (non-blocking).
+  if (type === 'success' && typeof window.vaActionSpeak === 'function') window.vaActionSpeak(msg);
 }
 
 // ── Shared Financial Engine ────────────────────────────────────────────────
@@ -8428,5 +8430,6 @@ async function loadAiInsights() {
 <script>
 </script>
 
+<script src="voice-assistant.js"></script>
 </body>
 </html>
