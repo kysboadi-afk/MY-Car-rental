@@ -145,7 +145,13 @@ export async function loadTrackedVehicles(sb) {
  * inflated DB value.  The only check is that the incoming odometer is a
  * positive number, guarding against a Bouncie API glitch zeroing the record.
  *
- * Mirrors the mileage into the data JSONB for the GitHub fallback path.
+ * Only the dedicated scalar columns (mileage, last_synced_at, updated_at) are
+ * touched — the data JSONB is intentionally NOT rewritten here.  Rewriting the
+ * full JSONB blob would be a read-modify-write operation that races with admin
+ * saves: if an admin changes status from "inactive" → "active" between this
+ * function's SELECT and UPDATE, the UPDATE would silently clobber that change.
+ * All consumers already read mileage from the real mileage column, not from the
+ * JSONB, so skipping the JSONB write is safe.
  *
  * @param {object} sb
  * @param {string} vehicleId
@@ -156,25 +162,11 @@ export async function loadTrackedVehicles(sb) {
 export async function updateVehicleMileage(sb, vehicleId, odometer, lastUpdatedAt) {
   if (!odometer || odometer <= 0) return false;
 
-  const { data: row, error: selectError } = await sb
-    .from("vehicles")
-    .select("data")
-    .eq("vehicle_id", vehicleId)
-    .maybeSingle();
-
-  if (selectError) {
-    console.error("Supabase error in updateVehicleMileage (select):", selectError);
-    throw selectError;
-  }
-
-  const updatedData = { ...(row?.data || {}), mileage: odometer };
-
   const { error } = await sb
     .from("vehicles")
     .update({
       mileage:        odometer,
       last_synced_at: lastUpdatedAt || new Date().toISOString(),
-      data:           updatedData,
       updated_at:     new Date().toISOString(),
     })
     .eq("vehicle_id", vehicleId);
