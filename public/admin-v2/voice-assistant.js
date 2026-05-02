@@ -33,6 +33,13 @@
   const TTS_CACHE_MAX         = 80;         // max cached TTS entries before eviction
   const VALID_LANGS           = ['en', 'es'];
 
+  // Shared voice persona injected into every AI prompt to ensure a consistent tone
+  // across click-explain, ask-assistant, and any future AI paths.
+  const VOICE_PERSONA =
+    'You are a concise, professional voice assistant for a car rental business admin dashboard. ' +
+    'Always respond in plain spoken English (no markdown, no lists, no bullet points). ' +
+    'Keep replies to 1-2 short sentences unless otherwise instructed.';
+
   // Keywords that indicate an element is actionable and worth explaining.
   // Matched case-insensitively against the button's cleaned label text.
   const EXPLAIN_KEYWORDS = [
@@ -146,6 +153,11 @@
   let tourAborted     = false;
   let clickExplain    = false;    // context-aware click-explain toggle
   let lastClickTime   = 0;        // debounce tracker for click-explain
+  // AbortController for the currently in-flight click-explain fetch.
+  // A new eligible click aborts the previous one before starting fresh.
+  let activeExplainController = null;
+  // Resolve callback exposed so stopTour() can immediately unblock waitForModalOpen.
+  let tourWaitResolve = null;
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
@@ -185,6 +197,37 @@
     const entry = SECTION_LABELS[page];
     if (entry) return entry[lang] || entry.en;
     return page || 'Admin Dashboard';
+  }
+
+  /**
+   * Scrape vehicle name and booking status from the open booking-detail-modal.
+   * Returns an object with `vehicle` and/or `status` strings, or null if the
+   * modal is not open or the detail grid cannot be found.
+   */
+  function getBookingContext() {
+    const modal = document.getElementById('booking-detail-modal');
+    if (!modal || !modal.classList.contains('open')) return null;
+
+    const grid = modal.querySelector('.detail-grid');
+    if (!grid) return null;
+
+    const ctx = {};
+    const cells = grid.querySelectorAll(':scope > div');
+
+    for (const cell of cells) {
+      const children = cell.children;
+      if (children.length < 2) continue;
+      const labelText = children[0].textContent.trim().toLowerCase();
+      // Use textContent so HTML badges (spans) are reduced to plain text.
+      const valueText = children[children.length - 1].textContent
+        .replace(/\s+/g, ' ').trim();
+      if (!valueText) continue;
+
+      if (labelText === 'vehicle')  ctx.vehicle = valueText;
+      else if (labelText === 'status')  ctx.status  = valueText;
+    }
+
+    return (ctx.vehicle || ctx.status) ? ctx : null;
   }
 
   function setLang(l) {
@@ -349,20 +392,28 @@
       if (!el) { reject(new Error(`Element not found: ${selector}`)); return; }
 
       // Already open
-      if (el.classList.contains('open')) { resolve(); return; }
+      if (el.classList.contains('open')) { tourWaitResolve = null; resolve(); return; }
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        obs.disconnect();
+        tourWaitResolve = null;
+      };
 
       const timer = setTimeout(() => {
-        obs.disconnect();
+        cleanup();
         reject(new Error('Timed out waiting for modal'));
       }, timeoutMs);
 
       const obs = new MutationObserver(() => {
         if (el.classList.contains('open')) {
-          clearTimeout(timer);
-          obs.disconnect();
+          cleanup();
           resolve();
         }
       });
+
+      // Expose a resolve hook so stopTour() can unblock this wait immediately.
+      tourWaitResolve = () => { cleanup(); resolve(); };
 
       obs.observe(el, { attributes: true, attributeFilter: ['class'] });
     });
@@ -418,6 +469,9 @@
 
   function stopTour() {
     tourAborted = true;
+    // Immediately release any pending waitForModalOpen so the tour loop exits
+    // without waiting up to MAX_MODAL_WAIT_MS.
+    if (tourWaitResolve) { tourWaitResolve(); tourWaitResolve = null; }
     stopAudio();
     tourActive  = false;
     updatePanelState();
@@ -459,22 +513,35 @@
     }
 
     const section = getCurrentSection();
-    return { element: rawLabel, section };
+    // Enrich with vehicle / status from the open booking-detail-modal when available.
+    const bookingCtx = getBookingContext();
+    return { element: rawLabel, section, ...bookingCtx };
   }
 
   /**
    * Ask the AI for a concise explanation of the clicked element in context,
    * then speak the response.
+   * @param {object} context - { element, section, vehicle?, status? }
+   * @param {AbortSignal} [signal] - optional AbortSignal to cancel the fetch
    */
-  async function explainWithContext(context) {
+  async function explainWithContext(context, signal) {
     const secret = getAdminSecret();
     if (!secret) return;
 
     const langName = lang === 'es' ? 'Spanish' : 'English';
-    const prompt   = `[Voice Assistant] The admin just clicked "${context.element}" ` +
-                     `in the "${context.section}" section of the car rental admin dashboard. ` +
-                     `In exactly 1 short sentence, explain what this action does. ` +
-                     `Respond in ${langName}. Do not start with "This button".`;
+
+    // Build optional context lines so the AI can give a richer, specific answer.
+    const extras = [];
+    if (context.vehicle) extras.push(`Vehicle: ${context.vehicle}`);
+    if (context.status)  extras.push(`Booking status: ${context.status}`);
+    const extraLine = extras.length ? ` Additional context — ${extras.join(', ')}.` : '';
+
+    const prompt =
+      `${VOICE_PERSONA} ` +
+      `The admin just clicked "${context.element}" in the "${context.section}" section.` +
+      `${extraLine} ` +
+      `In exactly 1 short sentence, explain what this action does. ` +
+      `Respond in ${langName}. Do not start with "This button".`;
 
     const messages = [{ role: 'user', content: prompt }];
 
@@ -483,7 +550,7 @@
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ secret, messages }),
-        signal:  AbortSignal.timeout(20000),
+        signal:  signal || AbortSignal.timeout(20000),
       });
 
       if (!res.ok) return;
@@ -491,7 +558,10 @@
       const reply = (data.reply || '').trim().slice(0, 200);
       if (reply) await speak(reply);
     } catch (err) {
-      console.warn('[VoiceAssistant] explainWithContext error:', err);
+      // AbortError is expected when a new click interrupts the previous one.
+      if (err.name !== 'AbortError') {
+        console.warn('[VoiceAssistant] explainWithContext error:', err);
+      }
     }
   }
 
@@ -505,7 +575,7 @@
     const dialog = document.getElementById('va-ask-dialog');
     if (dialog && dialog.contains(e.target)) return;
 
-    // Debounce
+    // Debounce — prevents trivial double-clicks from firing twice
     const now = Date.now();
     if (now - lastClickTime < CLICK_EXPLAIN_DEBOUNCE_MS) return;
     lastClickTime = now;
@@ -513,8 +583,23 @@
     const context = buildClickContext(e.target);
     if (!context) return;
 
-    // Fire and forget — non-blocking
-    explainWithContext(context);
+    // Interrupt any currently in-flight explanation (fetch + audio) before
+    // starting the new one.  stopAudio() cancels playback; the AbortController
+    // cancels the pending fetch so the previous explain doesn't speak over the
+    // new one after its network round-trip completes.
+    if (activeExplainController) {
+      activeExplainController.abort();
+      stopAudio();
+    }
+    activeExplainController = new AbortController();
+    const { signal } = activeExplainController;
+
+    explainWithContext(context, signal).finally(() => {
+      // Clear the controller reference once this explain finishes or is aborted.
+      if (activeExplainController && activeExplainController.signal === signal) {
+        activeExplainController = null;
+      }
+    });
   }
 
   // ── Ask Assistant ─────────────────────────────────────────────────────────
@@ -533,7 +618,8 @@
     const messages = [
       {
         role:    'user',
-        content: `[Dashboard Voice Assistant] The admin is currently in the "${section}" section. ` +
+        content: `${VOICE_PERSONA} ` +
+                 `The admin is currently in the "${section}" section. ` +
                  `Answer in 1-2 short sentences. Respond in ${langName}. ` +
                  `Question: ${question.trim()}`,
       },
