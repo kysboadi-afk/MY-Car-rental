@@ -26,15 +26,15 @@ import { loadBookings } from "./_bookings.js";
 import { loadVehicles } from "./_vehicles.js";
 import { loadExpenses } from "./_expenses.js";
 import { getSupabaseAdmin } from "./_supabase.js";
-import { uiVehicleId, FLEET_DB_VEHICLE_IDS } from "./_vehicle-id.js";
+import { uiVehicleId } from "./_vehicle-id.js";
+import { computeAmount, getAllVehicleIds } from "./_pricing.js";
+import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
 // Minimum analysis window in days — ensures utilization % is meaningful for
 // newly-added vehicles that have very few bookings.
 const MIN_UTILIZATION_WINDOW_DAYS = 90;
 // Average days per month (365.25 / 12) used for months_active calculation
 const AVG_DAYS_PER_MONTH = 30.4375;
-import { computeAmount } from "./_pricing.js";
-import { adminErrorMessage, isSchemaError } from "./_error-helpers.js";
 
 const ALLOWED_ORIGINS = ["https://www.slytrans.com", "https://slytrans.com"];
 
@@ -242,18 +242,21 @@ export default async function handler(req, res) {
     // ── Booking counts from bookings table (source of truth for counts) ──────
     // Queried independently of revenue_records so that bookings stored under
     // legacy vehicle IDs (e.g. "camry2012") or without a revenue_record are
-    // never missed.  FLEET_DB_VEHICLE_IDS includes both canonical and legacy
-    // IDs; uiVehicleId() normalises results back to canonical IDs.
+    // never missed.  getAllVehicleIds() merges the static fleet list with any
+    // vehicles registered in the Supabase vehicles table so newly-added vehicles
+    // are automatically included; uiVehicleId() normalises results back to
+    // canonical IDs.
     // bookingMonthlyByVehicle is used by the revenue_trend action for per-month
     // booking counts without relying on revenue_records as the count source.
     const bookingCountsByVehicle  = {};
     const bookingMonthlyByVehicle = {};
     if (sb) {
       try {
+        const allVehicleIds = await getAllVehicleIds(sb);
         const { data: bRows, error: bErr } = await sb
           .from("bookings")
           .select("vehicle_id, pickup_date")
-          .in("vehicle_id", FLEET_DB_VEHICLE_IDS)
+          .in("vehicle_id", allVehicleIds)
           .in("status", [...paidStatuses]);
         if (!bErr && bRows) {
           for (const row of bRows) {

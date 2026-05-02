@@ -1012,8 +1012,6 @@
         <div class="filters-row">
           <select class="filter-select" id="booking-filter-vehicle" onchange="applyBookingFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="booking-filter-status" onchange="applyBookingFilters()">
             <option value="">All Statuses</option>
@@ -1135,8 +1133,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="mb-vehicle" required onchange="updateManualPrice()">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012 ($55/day)</option>
-                  <option value="camry2013">Camry 2013 SE ($55/day)</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1228,8 +1224,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="bd-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012</option>
-                  <option value="camry2013">Camry 2013 SE</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1253,8 +1247,6 @@
                 <label class="form-label">Vehicle *</label>
                 <select class="form-select" id="ub-vehicle">
                   <option value="">Select vehicle…</option>
-                  <option value="camry">Camry 2012</option>
-                  <option value="camry2013">Camry 2013 SE</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1298,8 +1290,6 @@
         <div class="filters-row">
           <select class="filter-select" id="expense-filter-vehicle" onchange="applyExpenseFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="expense-filter-category" onchange="applyExpenseFilters()">
             <option value="">All Categories</option>
@@ -1512,8 +1502,6 @@
         <div class="filters-row">
           <select class="filter-select" id="rev-filter-vehicle" onchange="applyRevenueFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <select class="filter-select" id="rev-filter-status" onchange="applyRevenueFilters()">
             <option value="">All Statuses</option>
@@ -1828,8 +1816,6 @@
           </select>
           <select class="filter-select" id="lf-filter-vehicle" onchange="applyLateFeeFilters()">
             <option value="">All Vehicles</option>
-            <option value="camry">Camry 2012</option>
-            <option value="camry2013">Camry 2013 SE</option>
           </select>
           <input type="text" class="filter-input" id="lf-search" placeholder="Search name or ID…" oninput="applyLateFeeFilters()">
         </div>
@@ -1957,8 +1943,6 @@
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="exp-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group">
@@ -2076,6 +2060,12 @@
         <div id="ev-img-preview" style="margin-top:8px;display:none;"><img id="ev-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
       <div class="form-group full">
+        <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
+        <div id="ev-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('ev')">+ Add Photo</button>
+        <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
+      </div>
+      <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('ev')">
         <div id="ev-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
@@ -2158,6 +2148,12 @@
         </div>
         <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
         <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
+        <div id="av-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('av')">+ Add Photo</button>
+        <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
       </div>
       <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
@@ -2257,8 +2253,6 @@
       <div class="form-group" style="grid-column:1/-1;min-width:0;">
         <label class="form-label">Vehicle</label>
         <select class="form-input" id="be-vehicle">
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group" style="min-width:0;">
@@ -2352,16 +2346,10 @@ const API_BASE = window.location.hostname === 'localhost' || window.location.hos
   ? ''
   : 'https://sly-rides.vercel.app'; // Adjust if deployed to different Vercel URL
 
-const VEHICLE_NAMES = {
-  camry:      'Camry 2012',
-  camry2013:  'Camry 2013 SE',
-};
-
-const VEHICLE_LABELS = {
-  ...VEHICLE_NAMES,
-  'Camry 2012':    'Camry 2012',
-  'Camry 2013 SE': 'Camry 2013 SE',
-};
+// Vehicle name/label lookups are populated dynamically from the API in
+// loadVehiclesFromApi() → VEHICLE_NAMES_DYNAMIC.  No hardcoded entries needed.
+const VEHICLE_NAMES  = {};
+const VEHICLE_LABELS = {};
 
 function getVehicleLabel(id) {
   const key = String(id || '').trim();
@@ -2399,8 +2387,12 @@ function vehicleImgPlaceholder() {
 let VEHICLE_NAMES_DYNAMIC  = {};
 let VEHICLE_IMAGES_DYNAMIC = {};
 
+// The vehicle_id of the first active vehicle returned by the API.
+// Used by openPreviewModal so the preview link is always valid.
+let _firstVehicleId = '';
+
 // Load vehicles from the Supabase-backed API and build dynamic name/image maps.
-// Fails silently so the admin remains usable with hard-coded fallbacks.
+// Fails silently so the admin remains usable.
 // Expected response: array of { vehicle_id, vehicle_name, cover_image, ... }
 // cover_image is already root-relative (e.g. /images/car2.jpg) from the API.
 async function loadVehiclesFromApi() {
@@ -2413,37 +2405,81 @@ async function loadVehiclesFromApi() {
       if (v.vehicle_id) {
         if (v.vehicle_name)  VEHICLE_NAMES_DYNAMIC[v.vehicle_id]  = v.vehicle_name;
         if (v.cover_image)   VEHICLE_IMAGES_DYNAMIC[v.vehicle_id] = v.cover_image;
+        // Keep VEHICLE_RATES in sync so updateManualPrice() works for new vehicles
+        if (v.daily_price || v.weekly_price) {
+          VEHICLE_RATES[v.vehicle_id] = {
+            perDay:  v.daily_price  || 0,
+            perWeek: v.weekly_price || 0,
+          };
+        }
       }
     });
-    // Populate dynamic vehicle filter dropdowns for Revenue and Expenses
+    // Track first vehicle for preview link
+    if (vehicles.length > 0 && vehicles[0].vehicle_id) {
+      _firstVehicleId = vehicles[0].vehicle_id;
+    }
+    // Populate all vehicle <select> dropdowns from the live list
     populateVehicleFilters(vehicles);
   } catch (err) {
-    // Network/parse error — continue with hard-coded fallbacks
-    console.error('admin-v2: failed to load vehicles from API, using fallback values', err);
+    // Network/parse error — admin remains usable, dropdowns may be empty
+    console.error('admin-v2: failed to load vehicles from API', err);
   }
 }
 
-/** Populate <select> vehicle filters with live vehicle list. */
+/** Populate ALL vehicle <select> elements with the live vehicle list. */
 function populateVehicleFilters(vehicles) {
-  const filterIds = ['rev-filter-vehicle', 'expense-filter-vehicle'];
-  const opts = vehicles.map((v) =>
+  // ── Filter dropdowns (prefix: "All Vehicles") ──────────────────────────────
+  const filterIds = [
+    'booking-filter-vehicle',
+    'expense-filter-vehicle',
+    'rev-filter-vehicle',
+    'lf-filter-vehicle',
+  ];
+  const filterOpts = vehicles.map((v) =>
     `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
   ).join('');
   for (const id of filterIds) {
     const el = document.getElementById(id);
     if (!el) continue;
-    // Keep the "All Vehicles" option, replace the rest
-    el.innerHTML = '<option value="">All Vehicles</option>' + opts;
+    el.innerHTML = '<option value="">All Vehicles</option>' + filterOpts;
+  }
+
+  // ── Form dropdowns (prefix: "Select vehicle…") ─────────────────────────────
+  const formIds = ['bd-vehicle', 'ub-vehicle', 'exp-vehicle', 'rev-vehicle'];
+  const formOpts = vehicles.map((v) =>
+    `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
+  ).join('');
+  for (const id of formIds) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.innerHTML = '<option value="">Select vehicle…</option>' + formOpts;
+  }
+
+  // ── Manual-booking dropdown (shows daily rate in label) ────────────────────
+  const mbEl = document.getElementById('mb-vehicle');
+  if (mbEl) {
+    const mbOpts = vehicles.map((v) => {
+      const rate = VEHICLE_RATES[v.vehicle_id];
+      const priceLabel = rate && rate.perDay ? ` ($${rate.perDay}/day)` : '';
+      return `<option value="${esc(v.vehicle_id)}">${esc((v.vehicle_name || v.vehicle_id) + priceLabel)}</option>`;
+    }).join('');
+    mbEl.innerHTML = '<option value="">Select vehicle…</option>' + mbOpts;
+  }
+
+  // ── Edit-booking dropdown (no placeholder, pre-selection set later) ─────────
+  const beEl = document.getElementById('be-vehicle');
+  if (beEl) {
+    beEl.innerHTML = vehicles.map((v) =>
+      `<option value="${esc(v.vehicle_id)}">${esc(v.vehicle_name || v.vehicle_id)}</option>`
+    ).join('');
   }
 }
 
 // Kick off the fetch immediately; UI functions consume the maps whenever they run
 loadVehiclesFromApi();
 
-const VEHICLE_RATES = {
-  camry:      { perDay: 55,  perWeek: 350  },
-  camry2013:  { perDay: 55,  perWeek: 350  },
-};
+// Per-vehicle day/week rates — populated dynamically from loadVehiclesFromApi().
+const VEHICLE_RATES = {};
 
 // ── State ──────────────────────────────────────────────────────────────────
 let adminSecret   = '';
@@ -3226,6 +3262,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-scarcity').value = v.scarcity_text || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
+  renderGallery('ev', Array.isArray(v.gallery_images) ? v.gallery_images : []);
   updateBouncieWarning('ev');
   openModal('edit-vehicle-modal');
 }
@@ -3240,6 +3277,7 @@ async function saveVehicle() {
     purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
     purchase_date:     document.getElementById('ev-purchase-date').value,
     cover_image:       document.getElementById('ev-cover-image').value.trim(),
+    gallery_images:    readGalleryUrls('ev'),
     bouncie_device_id: document.getElementById('ev-bouncie-id').value.trim() || null,
     vin:               document.getElementById('ev-vin').value.trim() || null,
     scarcity_text:     document.getElementById('ev-scarcity').value.trim() || null,
@@ -3615,6 +3653,7 @@ function openAddVehicle() {
   document.getElementById('av-monthly-rate').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
+  renderGallery('av', []);
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
   updateBouncieWarning('av');
@@ -3630,6 +3669,7 @@ async function saveNewVehicle() {
   const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
   const purchaseDate    = document.getElementById('av-purchase-date').value;
   const coverImage      = document.getElementById('av-cover-image').value.trim();
+  const galleryImages   = readGalleryUrls('av');
   const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
   const vin             = document.getElementById('av-vin').value.trim() || null;
   const scarcityText    = document.getElementById('av-scarcity').value.trim() || null;
@@ -3661,6 +3701,7 @@ async function saveNewVehicle() {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
       vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
       ...(vin          ? { vin }          : {}),
       ...(scarcityText ? { scarcityText } : {}),
@@ -5168,9 +5209,19 @@ function openPreviewModal(mode) {
   const iframe = document.getElementById('preview-iframe');
   const isTestMode = mode === 'test';
   const liveUrl = 'https://www.slytrans.com';
+  const vehicleParam = _firstVehicleId || '';
+  if (!vehicleParam) {
+    // No vehicles loaded yet — show an informational message instead of a broken URL
+    const iframe = document.getElementById('preview-iframe');
+    iframe.src = 'about:blank';
+    const modeLabel = document.getElementById('preview-mode-label');
+    if (modeLabel) modeLabel.textContent = 'No vehicles available';
+    document.getElementById('preview-modal-overlay').classList.add('open');
+    return;
+  }
   const previewUrl = isTestMode
-    ? `${liveUrl}/car.html?vehicle=camry&admin_override=true&test_mode=true`
-    : `${liveUrl}/car.html?vehicle=camry`;
+    ? `${liveUrl}/car.html?vehicle=${vehicleParam}&admin_override=true&test_mode=true`
+    : `${liveUrl}/car.html?vehicle=${vehicleParam}`;
   iframe.src = previewUrl;
   const openLink = document.getElementById('preview-open-link');
   if (openLink) openLink.href = previewUrl;
@@ -6839,7 +6890,132 @@ async function handleImageUpload(fileInput, urlInputId, previewContainerId, msgI
   reader.readAsDataURL(file);
 }
 
-// ── System Diagnostics ────────────────────────────────────────────────────
+// ── Vehicle Gallery Helpers ────────────────────────────────────────────────
+
+// Renders the gallery list for a given prefix ('ev' or 'av').
+// urls = array of image URL strings (may be empty).
+function renderGallery(prefix, urls) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (urls || []).forEach(function(url, idx) { _appendGalleryRow(prefix, idx, url); });
+}
+
+// Appends one gallery row at the given index with an optional pre-filled URL.
+function _appendGalleryRow(prefix, idx, url) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.id = prefix + '-gallery-row-' + idx;
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+
+  // Thumbnail
+  const thumb = document.createElement('img');
+  thumb.id = prefix + '-gallery-thumb-' + idx;
+  const safeInitUrl = url && /^(https?:\/\/|\/)/i.test(url) ? url : '';
+  thumb.src = safeInitUrl;
+  thumb.alt = 'Photo ' + (idx + 1);
+  thumb.style.cssText = 'width:60px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border);' + (safeInitUrl ? '' : 'display:none;');
+
+  // URL input
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'form-input';
+  input.id = prefix + '-gallery-url-' + idx;
+  input.value = url || '';
+  input.placeholder = 'https://… or /images/car.jpg';
+  input.style.cssText = 'flex:1;min-width:200px;';
+  input.oninput = function() {
+    const v = input.value.trim();
+    const safe = /^(https?:\/\/|\/)/i.test(v) ? v : '';
+    thumb.src = safe;
+    thumb.style.display = safe ? '' : 'none';
+  };
+
+  // Upload button
+  const uploadLabel = document.createElement('label');
+  uploadLabel.className = 'btn btn-secondary btn-sm';
+  uploadLabel.style.cssText = 'cursor:pointer;white-space:nowrap;';
+  uploadLabel.textContent = '📷 Upload';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif';
+  fileInput.style.display = 'none';
+  fileInput.onchange = function() { handleGalleryUpload(fileInput, prefix, idx); };
+  uploadLabel.appendChild(fileInput);
+
+  // Remove button
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-sm';
+  removeBtn.style.cssText = 'background:none;border:1px solid var(--danger,#ef4444);color:var(--danger,#ef4444);padding:4px 8px;';
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'Remove photo';
+  removeBtn.onclick = function() { removeGalleryItem(prefix, idx); };
+
+  row.appendChild(thumb);
+  row.appendChild(input);
+  row.appendChild(uploadLabel);
+  row.appendChild(removeBtn);
+  list.appendChild(row);
+}
+
+// Adds a new empty gallery row.
+function addGalleryItem(prefix) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  const idx = list.children.length;
+  if (idx >= 10) { showToast('Maximum 10 gallery photos.', 'warning'); return; }
+  _appendGalleryRow(prefix, idx, '');
+}
+
+// Removes a gallery row by index and re-renders to keep indices sequential.
+function removeGalleryItem(prefix, idx) {
+  const urls = readGalleryUrls(prefix);
+  urls.splice(idx, 1);
+  renderGallery(prefix, urls);
+}
+
+// Reads all non-empty gallery URLs from the current DOM rows.
+function readGalleryUrls(prefix) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return [];
+  return Array.from(list.children).map(function(row) {
+    const input = row.querySelector('input[type="text"]');
+    return input ? input.value.trim() : '';
+  }).filter(Boolean);
+}
+
+// Handles file upload for a gallery row: uploads to Supabase and sets the URL.
+function handleGalleryUpload(fileInput, prefix, idx) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  const urlInput = document.getElementById(prefix + '-gallery-url-' + idx);
+  const thumb    = document.getElementById(prefix + '-gallery-thumb-' + idx);
+  if (urlInput) urlInput.value = 'Uploading…';
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = await apiPost('/api/upload-vehicle-image', {
+        secret: adminSecret,
+        vehicleId: (editingVehicleId || document.getElementById('av-id')?.value.trim() || ('img-' + Date.now())),
+        imageData: e.target.result,
+        mimeType: file.type,
+        fileName: file.name,
+      });
+      if (urlInput) urlInput.value = data.url;
+      if (thumb) { thumb.src = data.url; thumb.style.display = ''; }
+    } catch (err) {
+      if (urlInput) urlInput.value = '';
+      showToast('Upload failed: ' + err.message, 'error');
+    }
+    fileInput.value = '';
+  };
+  reader.onerror = function() { if (urlInput) urlInput.value = ''; showToast('Could not read file.', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+
 async function runDiagnostics() {
   const btn = document.getElementById('run-diagnostics-btn');
   const out = document.getElementById('diagnostics-result');
@@ -7248,10 +7424,6 @@ async function clearSmsLogs() {
 document.getElementById('mb-pickup-date').min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 // ── Fleet Status ──────────────────────────────────────────────────────────
-const FLEET_VEHICLES = [
-  { id: 'camry',      name: 'Camry 2012' },
-  { id: 'camry2013',  name: 'Camry 2013 SE' },
-];
 let fleetStatusData = {};
 
 function loadFleetStatusPage() {
@@ -7277,20 +7449,26 @@ function loadFleetStatusPage() {
 function renderFleetStatus() {
   const list = document.getElementById('fleet-status-list');
   if (!list) return;
-  list.innerHTML = FLEET_VEHICLES.map((v) => {
-    const available = fleetStatusData[v.id]?.available ?? true;
+  const vehicleIds = Object.keys(fleetStatusData);
+  if (vehicleIds.length === 0) {
+    list.innerHTML = '<p style="padding:20px;color:var(--muted);">No vehicles found.</p>';
+    return;
+  }
+  list.innerHTML = vehicleIds.map((id) => {
+    const available = fleetStatusData[id]?.available ?? true;
+    const name = getVehicleLabel(id);
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);"
-           data-vehicle-id="${esc(v.id)}">
+           data-vehicle-id="${esc(id)}">
         <div>
-          <div style="font-weight:600;font-size:14px;">${esc(v.name)}</div>
-          <div id="fleet-status-label-${esc(v.id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
+          <div style="font-weight:600;font-size:14px;">${esc(name)}</div>
+          <div id="fleet-status-label-${esc(id)}" style="font-size:12px;margin-top:2px;color:${available ? 'var(--success)' : 'var(--danger)'};">
             ${available ? '● Available for booking' : '● Unavailable (hidden from renters)'}
           </div>
         </div>
         <label class="toggle-switch" title="${available ? 'Click to mark unavailable' : 'Click to mark available'}">
-          <input type="checkbox" id="fleet-toggle-${esc(v.id)}" ${available ? 'checked' : ''}
-            data-vehicle-id="${esc(v.id)}" onchange="handleFleetToggle(this)">
+          <input type="checkbox" id="fleet-toggle-${esc(id)}" ${available ? 'checked' : ''}
+            data-vehicle-id="${esc(id)}" onchange="handleFleetToggle(this)">
           <span class="toggle-track"></span>
         </label>
       </div>`;
@@ -7747,8 +7925,6 @@ async function loadAiInsights() {
         <label class="form-label">Vehicle *</label>
         <select class="form-select" id="rev-vehicle">
           <option value="">Select vehicle…</option>
-          <option value="camry">Camry 2012</option>
-          <option value="camry2013">Camry 2013 SE</option>
         </select>
       </div>
       <div class="form-group">
