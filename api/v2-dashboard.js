@@ -212,8 +212,8 @@ export default async function handler(req, res) {
       ]);
 
     // ── Self-heal: deactivate Supabase vehicle rows absent from vehicles.json ──────
-    // Phantom rows (e.g. legacy "camry2012", "slingshot" left over from old
-    // migrations, or admin-UI vehicles whose GitHub save failed) inflate
+    // Phantom rows (e.g. legacy "camry2012" left over from old migrations, or
+    // admin-UI vehicles whose GitHub save failed) inflate
     // admin_metrics_v2's available-vehicles count.  Silently mark them inactive so
     // the DB stays consistent with vehicles.json — the canonical vehicle source.
     if (sb) {
@@ -225,6 +225,11 @@ export default async function handler(req, res) {
         for (const row of (sbRows || [])) {
           if (canonicalIds.has(row.vehicle_id)) continue; // canonical — keep
           if (row.data?.status === "inactive")  continue; // already deactivated
+          // Skip rows the admin explicitly activated — they may have been
+          // created via the admin UI before or while the vehicles.json sync
+          // was in-flight.  Only phantom rows (status absent or null, i.e.
+          // never set by any admin action) are eligible for deactivation.
+          if (row.data?.status === "active")    continue;
           const newData = { ...(row.data || {}), status: "inactive" };
           deactivations.push(
             sb.from("vehicles")

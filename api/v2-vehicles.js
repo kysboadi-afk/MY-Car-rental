@@ -506,6 +506,18 @@ export default async function handler(req, res) {
                 console.warn("v2-vehicles create: vehicle_pricing upsert failed:", pricingErr.message);
               }
             }
+
+            // Sync vehicles.json so the v2-dashboard self-heal does not mark
+            // this vehicle inactive on the next dashboard load.  This is
+            // fire-and-forget: a GitHub API failure is logged but must not
+            // block the creation response.
+            updateJsonFileWithRetry({
+              load:    loadVehicles,
+              apply:   (data) => { if (!data[vehicleId]) data[vehicleId] = newData; },
+              save:    saveVehicles,
+              message: `v2: Add vehicle ${vehicleId} (${newData.vehicle_name})`,
+            }).catch((e) => console.warn("v2-vehicles create: could not sync vehicles.json:", e?.message));
+
             return res.status(201).json({
               success: true,
               vehicle: {
