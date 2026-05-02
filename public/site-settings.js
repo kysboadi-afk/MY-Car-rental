@@ -112,6 +112,16 @@
       if (aboutEl) aboutEl.textContent = s.about_text;
     }
 
+    // --- Hero image ---
+    if (s.hero_image_url) {
+      var heroUrl = /^https?:\/\//i.test(s.hero_image_url) || s.hero_image_url.startsWith('/')
+        ? s.hero_image_url : '';
+      if (heroUrl) {
+        var heroImg = document.querySelector('img.hero-img');
+        if (heroImg) heroImg.src = heroUrl;
+      }
+    }
+
     // --- Promo banner ---
     if (s.promo_banner_enabled === true || s.promo_banner_enabled === 'true') {
       var banner = document.getElementById('promo-banner');
