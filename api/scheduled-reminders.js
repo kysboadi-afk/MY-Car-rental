@@ -1403,12 +1403,15 @@ async function persistSentMarks(_sentMarks) {
  */
 export async function loadBookingsFromSupabase(sb) {
   try {
-    // SELECT_COLS includes renter_phone (added in migration 0101/0104) and
-    // balance_due (added in migration 0115).
-    // SELECT_COLS_FALLBACK is used if renter_phone doesn't exist yet on the DB
-    // (e.g. dual-0101 conflict where only 0101_sms_delivery_logs ran before
-    // 0103/0104 catch-up migrations were applied).  In that case we fall back to
-    // customer_phone only so the query succeeds.
+    // SELECT_COLS includes renter_phone (added in migration 0101/0104),
+    // balance_due (added in migration 0115), and balance_due_set_at (added in
+    // migration 0120).
+    // SELECT_COLS_FALLBACK is used if the primary query fails with PostgreSQL
+    // error 42703 (undefined column) — e.g. when renter_phone, balance_due, or
+    // balance_due_set_at haven't been added to the live DB yet.  It intentionally
+    // omits those newer columns so the query always succeeds against an older
+    // schema.  balanceDueSetAt falls back to updatedAt/createdAt in the mapping
+    // below, so omitting it here is safe.
     const SELECT_COLS =
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, renter_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
@@ -1419,7 +1422,7 @@ export async function loadBookingsFromSupabase(sb) {
       "booking_ref, vehicle_id, customer_name, customer_email, customer_phone, " +
       "pickup_date, return_date, pickup_time, return_time, status, " +
       "payment_intent_id, completed_at, extension_count, " +
-      "late_fee_status, late_fee_amount, balance_due_set_at, created_at";
+      "late_fee_status, late_fee_amount, updated_at, created_at";
 
     const ACTIVE_STATUSES = [
       // Modern app-layer values
@@ -1450,13 +1453,15 @@ export async function loadBookingsFromSupabase(sb) {
           .order("completed_at", { ascending: false }),
       ]);
 
-    // If the query failed due to renter_phone not existing yet (PostgreSQL error
-    // 42703 — undefined column), retry both queries without renter_phone.
-    // Migration 0104 is the permanent fix; this is a resilience guard.
+    // If the query failed due to a newer column not existing yet (PostgreSQL
+    // error 42703 — undefined column), retry with the minimal fallback column
+    // list which omits renter_phone (0101/0104), balance_due (0115), and
+    // balance_due_set_at (0120).  Running those migrations is the permanent fix.
     if (activeErr && activeErr.code === "42703") {
       console.warn(
-        "scheduled-reminders loadBookingsFromSupabase: renter_phone column missing — " +
-        "retrying without it (run migration 0104 to fix permanently)"
+        "scheduled-reminders loadBookingsFromSupabase: column missing (" +
+        activeErr.message + ") — retrying with fallback columns " +
+        "(run pending migrations 0101/0104/0115/0120 to fix permanently)"
       );
       [{ data: activeRows, error: activeErr }, { data: completedRows, error: completedErr }] =
         await Promise.all([
