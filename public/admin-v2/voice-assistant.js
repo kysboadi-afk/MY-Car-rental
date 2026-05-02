@@ -176,6 +176,8 @@
   // Numeric priority of the audio currently playing (0 = nothing playing).
   let currentSpeakPriority = 0;
   // Session-level memory: updated by vaUpdateContext() whenever the admin opens a booking.
+  // Persists across modal open/close cycles so AI prompts stay contextually aware of the
+  // last booking the admin focused on, even after the detail modal is dismissed.
   const sessionCtx = { bookingId: null, vehicle: null, status: null };
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
@@ -538,10 +540,10 @@
     const rawLabel = (el.getAttribute('data-explain') ||
                       el.textContent || el.title || el.ariaLabel || '')
       .trim()
-      // Keep printable ASCII, Latin-1 supplement, and extended Latin. Strip
-      // emojis, control characters, and other non-Latin Unicode to avoid
-      // sending unexpected characters to the TTS API.
-      .replace(/[^\x20-\x7E\u00C0-\u024F\u00A0-\u00FF]/g, ' ')
+      // Keep printable ASCII and Latin extended (U+00C0–U+024F). Strip emojis,
+      // control characters, and other non-Latin Unicode to avoid sending unexpected
+      // characters to the TTS API.
+      .replace(/[^\x20-\x7E\u00C0-\u024F]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 100);
@@ -884,7 +886,7 @@
       const entry = ACTION_FEEDBACK[key];
       if (!entry) return;
       const text = lang === 'es' ? entry.es : entry.en;
-      speak(text, undefined, PRIORITY.assistant).catch(() => {});
+      speak(text, undefined, PRIORITY.assistant).catch((_e) => { /* non-blocking; TTS errors are silent */ });
     };
 
     // Pre-warm tour cache in the background; errors are silently swallowed
