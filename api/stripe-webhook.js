@@ -1600,6 +1600,7 @@ export default async function handler(req, res) {
         original_booking_id,                    // legacy fallback for historical PIs
         renter_name,
         renter_email,
+        renter_phone:        meta_renter_phone, // phone embedded in PI metadata by extend-rental.js
         extension_label,
         new_return_date,
         new_return_time,
@@ -1706,7 +1707,7 @@ export default async function handler(req, res) {
             vehicleId:              sbExtRow.vehicle_id || vehicle_id,
             status:                 sbExtRow.status,
             name:                   sbExtRow.customer_name || renter_name || "",
-            phone:                  sbExtRow.customer_phone || "",
+            phone:                  sbExtRow.renter_phone || sbExtRow.customer_phone || meta_renter_phone || "",
             email:                  sbExtRow.customer_email || renter_email || "",
             pickupDate:             sbExtRow.pickup_date ? String(sbExtRow.pickup_date).split("T")[0] : "",
             returnDate:             alreadyApplied ? (sbCurrentReturnDate || new_return_date) : new_return_date,
