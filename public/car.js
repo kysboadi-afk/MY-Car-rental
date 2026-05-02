@@ -67,8 +67,8 @@ function clearPayError() {
 // ----- Dynamic Pricing -----
 // Fetches live prices from the admin System Settings (Supabase) so that any
 // rate change in the admin panel is immediately reflected on the booking page.
-// Runs asynchronously after page load — falls back to the hard-coded values
-// above if the API is unreachable or returns an error.
+// Runs asynchronously after page load — falls back to the carData values
+// already loaded from the API if public-pricing is unreachable or returns an error.
 (function loadDynamicPricing() {
   fetch(API_BASE + "/api/public-pricing")
     .then(function(r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
@@ -121,12 +121,11 @@ if (!vehicleId) {
   window.location.href = "index.html";
 }
 
-// carData is populated synchronously for the two existing hardcoded vehicles, or
-// asynchronously via the API for any new vehicle registered in the admin portal.
+// carData is populated asynchronously after fetching from the API for all vehicles.
 let carData = null;
 
-// Builds a cars-compatible data object from a v2-vehicles API response entry so
-// new vehicles work identically to the hardcoded ones without any code changes.
+// Builds a cars-compatible data object from a v2-vehicles API response entry.
+// All vehicles — existing and newly added — load through this path.
 function buildCarDataFromAPI(v) {
   return {
     name:          v.vehicle_name || v.vehicle_id,
@@ -248,8 +247,8 @@ let _pendingPaymentMode = null;
 let selectedProtectionTier = "standard";
 
 
-// For Camry vehicles: show the "Reserve with Deposit" button and the deposit notice so renters
-// can choose between paying a $50 deposit now (rest at pickup) or paying in full today.
+// Show the "Reserve with Deposit" button and deposit notice so renters can choose
+// between paying a $50 deposit now (rest at pickup) or paying in full today.
 {
   const reserveBtnEl = document.getElementById("reserveBtn");
   if (reserveBtnEl) {
