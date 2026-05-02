@@ -155,8 +155,7 @@
   let lastClickTime   = 0;        // debounce tracker for click-explain
   // AbortController for the currently in-flight click-explain fetch.
   // A new eligible click aborts the previous one before starting fresh.
-  let activeExplainController = null;
-  // Resolve callback exposed so stopTour() can immediately unblock waitForModalOpen.
+  let explainController = null;  // Resolve callback exposed so stopTour() can immediately unblock waitForModalOpen.
   let tourWaitResolve = null;
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
@@ -587,17 +586,17 @@
     // starting the new one.  stopAudio() cancels playback; the AbortController
     // cancels the pending fetch so the previous explain doesn't speak over the
     // new one after its network round-trip completes.
-    if (activeExplainController) {
-      activeExplainController.abort();
+    if (explainController) {
+      explainController.abort();
       stopAudio();
     }
-    activeExplainController = new AbortController();
-    const { signal } = activeExplainController;
+    explainController = new AbortController();
+    const { signal } = explainController;
 
     explainWithContext(context, signal).finally(() => {
       // Clear the controller reference once this explain finishes or is aborted.
-      if (activeExplainController && activeExplainController.signal === signal) {
-        activeExplainController = null;
+      if (explainController && explainController.signal === signal) {
+        explainController = null;
       }
     });
   }
