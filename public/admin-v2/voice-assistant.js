@@ -3,15 +3,14 @@
  * SLYTRANS Fleet Control — AI Voice Assistant
  *
  * Features:
- *  • speak(text, lang)          — TTS via /api/tts (cached, cancelable)
- *  • Guided Tour                — step-by-step onboarding with element highlights;
- *                                 pauses after "Click View" step and waits for the
- *                                 booking-detail modal to actually open before resuming
+ *  • speak(text, lang, priority) — TTS via /api/tts (cached, cancelable, priority-gated)
+ *  • Guided Tour                — step-by-step onboarding with element highlights
  *  • Ask Assistant              — text Q&A via /api/admin-chat, response spoken aloud
- *  • Context-Aware Click-Explain — opt-in; sends element + section context to
- *                                  /api/admin-chat for an intelligent 1-sentence
- *                                  explanation; only fires for scoped actionable
- *                                  elements (data-explain attribute or allow-list keywords)
+ *  • Context-Aware Click-Explain — opt-in; explains any actionable element with full
+ *                                  section + session context; covers every page/modal
+ *  • Universal Action Feedback  — hooks showToast; speaks every success toast aloud
+ *  • Session Memory             — auto-tracks current section, open modal, active booking,
+ *                                 customer, and last action via MutationObserver
  *  • Language Toggle            — EN / ES; all speech respects chosen language
  *
  * Depends on globals defined in index.html:
@@ -46,6 +45,7 @@
 
   // Keywords that indicate an element is actionable and worth explaining.
   // Matched case-insensitively against the button's cleaned label text.
+  // Covers every action type across all admin sections.
   const EXPLAIN_KEYWORDS = [
     'extend', 'extension', 'fix', 'create', 'add', 'new',
     'view', 'open', 'mark', 'cancel', 'approve', 'decline',
@@ -53,6 +53,12 @@
     'upload', 'sync', 'resend', 'return', 'block', 'unblock',
     'complete', 'confirm', 'submit', 'flag', 'unflag',
     'refresh', 'resolve', 'dismiss', 'apply', 'update',
+    // Additional actions across all sections
+    'connect', 'disconnect', 'run', 'reset', 'clear', 'relink',
+    'reconcile', 'heal', 'generate', 'send', 'enable', 'disable',
+    'download', 'export', 'import', 'recompute', 'compute',
+    'diagnose', 'check', 'search', 'filter', 'assign', 'transfer',
+    'archive', 'restore', 'duplicate', 'merge', 'split',
   ];
 
   // Human-readable section labels for each dashboard page (EN and ES).
@@ -73,27 +79,30 @@
     'late-fees':        { en: 'Late Fees',          es: 'Cargos por Mora' },
     ai:                 { en: 'AI Assistant',       es: 'Asistente IA' },
     'system-health':    { en: 'System Health',      es: 'Salud del Sistema' },
-    'system-settings':  { en: 'System Settings',   es: 'Configuración' },
+    'system-settings':  { en: 'System Settings',   es: 'Configuración del Sistema' },
     'manual-booking':   { en: 'Manual Booking',     es: 'Reserva Manual' },
     'protection-plans': { en: 'Protection Plans',  es: 'Planes de Protección' },
     'vehicle-pricing':  { en: 'Vehicle Pricing',   es: 'Precios de Vehículos' },
+    settings:           { en: 'Site Settings',      es: 'Configuración del Sitio' },
   };
 
   // Modal section overrides: when a modal is open, use this section name instead
-  // of the underlying page.
+  // of the underlying page.  Covers every modal in the admin dashboard.
   const MODAL_SECTION = {
-    'booking-detail-modal': { en: 'Booking Detail modal',  es: 'modal de Detalle de Reserva' },
-    'booking-edit-modal':   { en: 'Booking Edit modal',    es: 'modal de Edición de Reserva' },
-    'edit-vehicle-modal':   { en: 'Vehicle Edit modal',    es: 'modal de Edición de Vehículo' },
-    'add-vehicle-modal':    { en: 'Add Vehicle modal',     es: 'modal de Agregar Vehículo' },
-    'add-expense-modal':    { en: 'Add Expense modal',     es: 'modal de Agregar Gasto' },
-    'lf-charge-modal':      { en: 'Charge Late Fee modal', es: 'modal de Cobrar Cargo por Mora' },
-    'lf-waive-modal':       { en: 'Waive Late Fee modal',  es: 'modal de Eximir Cargo por Mora' },
-    'lf-edit-modal':        { en: 'Edit Late Fee modal',   es: 'modal de Editar Cargo por Mora' },
-    'resend-extension-modal':{ en: 'Extend Rental modal',  es: 'modal de Extender Alquiler' },
-    'customer-edit-modal':  { en: 'Customer Edit modal',   es: 'modal de Edición de Cliente' },
-    'plan-modal':           { en: 'Protection Plan modal', es: 'modal de Plan de Protección' },
-    'sms-edit-modal':       { en: 'SMS Template modal',    es: 'modal de Plantilla SMS' },
+    'booking-detail-modal':   { en: 'Booking Detail modal',     es: 'modal de Detalle de Reserva' },
+    'booking-edit-modal':     { en: 'Booking Edit modal',       es: 'modal de Edición de Reserva' },
+    'edit-vehicle-modal':     { en: 'Vehicle Edit modal',       es: 'modal de Edición de Vehículo' },
+    'add-vehicle-modal':      { en: 'Add Vehicle modal',        es: 'modal de Agregar Vehículo' },
+    'add-expense-modal':      { en: 'Add Expense modal',        es: 'modal de Agregar Gasto' },
+    'lf-charge-modal':        { en: 'Charge Late Fee modal',    es: 'modal de Cobrar Cargo por Mora' },
+    'lf-waive-modal':         { en: 'Waive Late Fee modal',     es: 'modal de Eximir Cargo por Mora' },
+    'lf-edit-modal':          { en: 'Edit Late Fee modal',      es: 'modal de Editar Cargo por Mora' },
+    'resend-extension-modal': { en: 'Extend Rental modal',      es: 'modal de Extender Alquiler' },
+    'customer-edit-modal':    { en: 'Customer Edit modal',      es: 'modal de Edición de Cliente' },
+    'customer-detail-modal':  { en: 'Customer Detail modal',    es: 'modal de Detalle de Cliente' },
+    'plan-modal':             { en: 'Protection Plan modal',    es: 'modal de Plan de Protección' },
+    'sms-edit-modal':         { en: 'SMS Template modal',       es: 'modal de Plantilla SMS' },
+    'revenue-modal':          { en: 'Revenue Record modal',     es: 'modal de Registro de Ingresos' },
   };
 
   // Fixed tour scripts (EN / ES).  Stored separately from runtime state so that
@@ -167,7 +176,14 @@
   // Session-level memory: updated by vaUpdateContext() whenever the admin opens a booking.
   // Persists across modal open/close cycles so AI prompts stay contextually aware of the
   // last booking the admin focused on, even after the detail modal is dismissed.
-  const sessionCtx = { bookingId: null, vehicle: null, status: null };
+  // Also auto-updated by initContextObservers() via MutationObserver.
+  const sessionCtx = {
+    bookingId:  null,   // last viewed booking ID
+    vehicle:    null,   // vehicle name from last viewed booking
+    status:     null,   // booking status from last viewed booking
+    customer:   null,   // customer name from last viewed customer detail
+    lastAction: null,   // text of the most recent successful action toast
+  };
   let lang            = VALID_LANGS.includes(localStorage.getItem(LANG_STORAGE))
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
@@ -206,6 +222,9 @@
     const page = (typeof currentPage !== 'undefined') ? currentPage : '';
     const entry = SECTION_LABELS[page];
     if (entry) return entry[lang] || entry.en;
+    // Last-resort: read the live page title element so future sections are always named
+    const titleEl = document.getElementById('page-title');
+    if (titleEl && titleEl.textContent.trim()) return titleEl.textContent.trim();
     return page || 'Admin Dashboard';
   }
 
@@ -242,15 +261,18 @@
 
   /**
    * Build a compact session-context suffix for AI prompts.
-   * Uses the persisted sessionCtx object (updated whenever a booking is viewed)
-   * so the AI knows which booking and vehicle the admin is working on even after
-   * a modal has been closed.
+   * Uses the persisted sessionCtx object (auto-updated by MutationObserver whenever
+   * the admin navigates, opens a modal, or completes an action) so the AI always
+   * knows what the admin last did and was looking at.
    */
   function buildSessionContextLine() {
     const parts = [];
-    if (sessionCtx.vehicle)   parts.push(`vehicle: ${sessionCtx.vehicle}`);
-    if (sessionCtx.status)    parts.push(`status: ${sessionCtx.status}`);
-    if (sessionCtx.bookingId) parts.push(`booking: ${sessionCtx.bookingId}`);
+    if (sessionCtx.section)    parts.push(`current section: ${sessionCtx.section}`);
+    if (sessionCtx.vehicle)    parts.push(`vehicle: ${sessionCtx.vehicle}`);
+    if (sessionCtx.status)     parts.push(`status: ${sessionCtx.status}`);
+    if (sessionCtx.bookingId)  parts.push(`booking: ${sessionCtx.bookingId}`);
+    if (sessionCtx.customer)   parts.push(`customer: ${sessionCtx.customer}`);
+    if (sessionCtx.lastAction) parts.push(`last action: ${sessionCtx.lastAction}`);
     return parts.length ? ` Session context — ${parts.join(', ')}.` : '';
   }
 
@@ -857,9 +879,10 @@
     window.vaSpeak = speak;
 
     /**
-     * Update session-level memory.  Call this whenever the admin opens a booking,
-     * so subsequent AI prompts have rich context even after the modal closes.
-     * @param {{ bookingId?: string, vehicle?: string, status?: string }} ctx
+     * Update session-level memory.  Call this whenever the admin opens a booking
+     * or customer record, so subsequent AI prompts have rich context.
+     * Also called automatically by initContextObservers() via MutationObserver.
+     * @param {{ bookingId?: string, vehicle?: string, status?: string, customer?: string }} ctx
      */
     window.vaUpdateContext = (ctx) => {
       if (ctx && typeof ctx === 'object') Object.assign(sessionCtx, ctx);
@@ -870,11 +893,13 @@
      * Called automatically by the showToast() hook in index.html for every
      * success toast, covering all admin actions universally.
      * Strips emojis, checkmarks, and markdown before sending to TTS.
+     * Also stores the cleaned text as sessionCtx.lastAction so the AI knows
+     * what the most recent operation was.
      * Plays at PRIORITY.assistant — never interrupts the guided tour.
      * @param {string} text  — raw toast message
      */
     window.vaActionSpeak = (text) => {
-      if (muted || !text) return;
+      if (!text) return;
       // Strip leading emoji/symbols and common markdown characters; keep spoken words only.
       const clean = String(text)
         .replace(/[\u2000-\u3300\uD800-\uDFFF\u00A9\u00AE\u2122\u2139\u2194-\u2199\u21A9-\u21AA\u231A-\u231B\u2328\u23CF\u23E9-\u23F3\u23F8-\u23FA\u24C2\u25AA-\u25AB\u25B6\u25C0\u25FB-\u25FE\u2600-\u2604\u260E\u2611\u2614-\u2615\u2618\u261D\u2620\u2622-\u2623\u2626\u262A\u262E-\u262F\u2638-\u263A\u2640\u2642\u2648-\u2653\u265F-\u2660\u2663\u2665-\u2666\u2668\u267B\u267E-\u267F\u2692-\u2697\u2699\u269B-\u269C\u26A0-\u26A1\u26AA-\u26AB\u26B0-\u26B1\u26BD-\u26BE\u26C4-\u26C5\u26CE-\u26CF\u26D1\u26D3-\u26D4\u26E9-\u26EA\u26F0-\u26F5\u26F7-\u26FA\u26FD\u2702\u2705\u2708-\u270D\u270F\u2712\u2714\u2716\u271D\u2721\u2728\u2733-\u2734\u2744\u2747\u274C\u274E\u2753-\u2755\u2757\u2763-\u2764\u2795-\u2797\u27A1\u27B0\u27BF\u2934-\u2935\u2B05-\u2B07\u2B1B-\u2B1C\u2B50\u2B55\u3030\u303D\u3297\u3299]/g, '')
@@ -884,11 +909,95 @@
         .trim()
         .slice(0, 160);
       if (clean.length < 3) return;
+      // Always record the last action in session memory regardless of mute state.
+      sessionCtx.lastAction = clean;
+      if (muted) return;
       speak(clean, undefined, PRIORITY.assistant).catch((_e) => { /* non-blocking; TTS errors are silent */ });
     };
 
     // Pre-warm tour cache in the background; errors are silently swallowed
     prewarmTourCache().catch(() => {});
+    // Start self-contained context observers so sessionCtx stays current automatically
+    initContextObservers();
+  }
+
+  // ── Self-contained context observers ─────────────────────────────────────────
+  /**
+   * Observe the DOM for modal open/close events and navigation changes.
+   * This makes the voice assistant self-contained — it automatically tracks what
+   * the admin is looking at without requiring explicit vaUpdateContext() calls
+   * from every action handler.  Also ensures future pages and modals added to
+   * the admin are picked up immediately with no code changes required.
+   */
+  function initContextObservers() {
+    // ── 1. Watch every .modal-overlay for class changes ───────────────────────
+    // When any modal gains the `open` class, scrape its content into sessionCtx.
+    const observeModal = (el) => {
+      if (!el || el._vaObserved) return;
+      el._vaObserved = true;
+      new MutationObserver(() => {
+        const isOpen = el.classList.contains('open');
+        if (!isOpen) return;
+        const id = el.id;
+
+        // Booking detail: scrape vehicle, status, and booking ID
+        if (id === 'booking-detail-modal') {
+          const ctx = getBookingContext();
+          if (ctx) Object.assign(sessionCtx, ctx);
+          // Also try to read the booking ID from the modal heading or hidden field
+          const refEl = el.querySelector('[data-booking-ref], #bd-booking-ref, .modal-booking-ref');
+          if (refEl) sessionCtx.bookingId = refEl.textContent.trim() || refEl.value || sessionCtx.bookingId;
+        }
+
+        // Customer detail: scrape customer name
+        if (id === 'customer-detail-modal') {
+          const nameEl = el.querySelector('.modal-title, h2, h3, .customer-name, [data-customer-name]');
+          if (nameEl) {
+            const name = nameEl.textContent.replace(/Customer Details?/i, '').replace(/[*_`#]/g, '').trim();
+            if (name.length > 1) sessionCtx.customer = name;
+          }
+        }
+
+        // Vehicle edit / add: scrape vehicle name for context
+        if (id === 'edit-vehicle-modal' || id === 'add-vehicle-modal') {
+          const nameEl = el.querySelector('#ev-name, #av-name, [id$="-name"]');
+          if (nameEl && nameEl.value) sessionCtx.vehicle = nameEl.value.trim();
+        }
+      }).observe(el, { attributes: true, attributeFilter: ['class'] });
+    };
+
+    // Observe all modals currently in the DOM
+    document.querySelectorAll('.modal-overlay[id]').forEach(observeModal);
+
+    // ── 2. Watch for future modals added dynamically ───────────────────────────
+    // A lightweight top-level observer that only looks at direct children of body
+    // being added — catches any modals injected after page load.
+    new MutationObserver((mutations) => {
+      for (const mut of mutations) {
+        mut.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.classList && node.classList.contains('modal-overlay') && node.id) {
+            observeModal(node);
+          }
+          // Also catch modals nested inside added containers
+          node.querySelectorAll && node.querySelectorAll('.modal-overlay[id]').forEach(observeModal);
+        });
+      }
+    }).observe(document.body, { childList: true, subtree: false });
+
+    // ── 3. Watch #page-title for navigation changes ────────────────────────────
+    // Any time the admin navigates to a new section, #page-title text updates.
+    // We store it so getCurrentSection() always has a live fallback, and the
+    // AI knows which area of the dashboard the admin is working in right now.
+    const titleEl = document.getElementById('page-title');
+    if (titleEl) {
+      new MutationObserver(() => {
+        // currentPage global is updated by navigate() — getCurrentSection() reads it live.
+        // Watching page-title ensures we catch any programmatic navigation too.
+        const title = titleEl.textContent.trim();
+        if (title) sessionCtx.section = title;
+      }).observe(titleEl, { characterData: true, childList: true, subtree: true });
+    }
   }
 
   if (document.readyState === 'loading') {
