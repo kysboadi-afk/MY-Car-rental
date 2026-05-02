@@ -145,9 +145,8 @@ function getFleetVehicleIds() {
 /** Build the general pricing message for all vehicles in the given language. */
 function buildChatPricingText(lang) {
   var p = getChatPricing(), e = p.economy;
-  var ids = Object.keys(KNOWN_VEHICLE_META).length
-    ? Object.keys(KNOWN_VEHICLE_META)
-    : getFleetVehicleIds();
+  var metaKeys = Object.keys(KNOWN_VEHICLE_META);
+  var ids = metaKeys.length ? metaKeys : getFleetVehicleIds();
 
   function vehicleBlock(id) {
     var meta = getVehicleMeta(id);

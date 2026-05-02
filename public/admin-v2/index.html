@@ -5192,7 +5192,16 @@ function openPreviewModal(mode) {
   const iframe = document.getElementById('preview-iframe');
   const isTestMode = mode === 'test';
   const liveUrl = 'https://www.slytrans.com';
-  const vehicleParam = _firstVehicleId || 'camry';
+  const vehicleParam = _firstVehicleId || '';
+  if (!vehicleParam) {
+    // No vehicles loaded yet — show an informational message instead of a broken URL
+    const iframe = document.getElementById('preview-iframe');
+    iframe.src = 'about:blank';
+    const modeLabel = document.getElementById('preview-mode-label');
+    if (modeLabel) modeLabel.textContent = 'No vehicles available';
+    document.getElementById('preview-modal-overlay').classList.add('open');
+    return;
+  }
   const previewUrl = isTestMode
     ? `${liveUrl}/car.html?vehicle=${vehicleParam}&admin_override=true&test_mode=true`
     : `${liveUrl}/car.html?vehicle=${vehicleParam}`;

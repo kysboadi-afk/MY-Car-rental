@@ -771,6 +771,12 @@
       // Populated from the API — no hardcoded vehicle list.
       var VEHICLES = [];
 
+      function escHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
       function getAdminSecret() {
         return document.getElementById("adminSecret").value;
       }
@@ -859,13 +865,13 @@
       function renderFleetRows(vehicles) {
         var container = document.getElementById("fleetVehicles");
         var html = vehicles.map(function (v) {
-          return '<div class="fleet-vehicle-row" id="fleet-row-' + v.id + '">'
+          return '<div class="fleet-vehicle-row" id="fleet-row-' + escHtml(v.id) + '">'
             + '<div class="fleet-vehicle-info">'
-            + '<div class="fleet-vehicle-name">' + v.name + '</div>'
-            + '<span class="fleet-vehicle-status available" id="fleet-status-text-' + v.id + '">● Available</span>'
+            + '<div class="fleet-vehicle-name">' + escHtml(v.name) + '</div>'
+            + '<span class="fleet-vehicle-status available" id="fleet-status-text-' + escHtml(v.id) + '">● Available</span>'
             + '</div>'
-            + '<label class="toggle-switch" aria-label="Toggle ' + v.name + ' availability">'
-            + '<input type="checkbox" id="toggle-' + v.id + '" checked>'
+            + '<label class="toggle-switch" aria-label="Toggle ' + escHtml(v.name) + ' availability">'
+            + '<input type="checkbox" id="toggle-' + escHtml(v.id) + '" checked>'
             + '<span class="toggle-slider"></span>'
             + '</label>'
             + '</div>';
@@ -877,7 +883,7 @@
       // Populate both vehicle dropdowns from the live vehicle list.
       function populateVehicleDropdowns(vehicles) {
         var opts = vehicles.map(function (v) {
-          return '<option value="' + v.id + '">' + v.name + '</option>';
+          return '<option value="' + escHtml(v.id) + '">' + escHtml(v.name) + '</option>';
         }).join('');
         var sel1 = document.getElementById("vehicleSelect");
         var sel2 = document.getElementById("mbVehicle");
