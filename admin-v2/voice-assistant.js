@@ -27,8 +27,10 @@
 
   // ── Constants ──────────────────────────────────────────────────────────────
   const PANEL_ID              = 'va-panel';
+  const BUBBLE_ID             = 'va-bubble';
   const LANG_STORAGE          = 'va_lang';
   const MUTE_STORAGE          = 'va_mute';
+  const HIDE_STORAGE          = 'va_hidden';
   const CLICK_EXPLAIN_DEBOUNCE_MS = 1500;   // minimum gap between click-explain triggers
   const MAX_HIGHLIGHT         = 4000;       // ms to keep highlight ring visible
   const MAX_MODAL_WAIT_MS     = 60000;      // max ms to wait for a modal to open during tour
@@ -477,6 +479,7 @@
                           ? localStorage.getItem(LANG_STORAGE)
                           : 'en';
   let muted           = localStorage.getItem(MUTE_STORAGE) === 'true';
+  let panelHidden     = localStorage.getItem(HIDE_STORAGE) === 'true';
 
   // TTS cache: Map<`${lang}:${text}`, ArrayBuffer>
   // Used for both fixed tour phrases (pre-warmed) and repeated assistant replies.
@@ -597,6 +600,15 @@
     localStorage.setItem(MUTE_STORAGE, String(m));
     if (m) stopAudio();
     updatePanelState();
+  }
+
+  function setPanelHidden(hidden) {
+    panelHidden = hidden;
+    localStorage.setItem(HIDE_STORAGE, String(hidden));
+    const panel  = document.getElementById(PANEL_ID);
+    const bubble = document.getElementById(BUBBLE_ID);
+    if (panel)  panel.style.display  = hidden ? 'none'  : 'flex';
+    if (bubble) bubble.style.display = hidden ? 'flex'  : 'none';
   }
 
   function updatePanelState() {
@@ -1236,9 +1248,17 @@
     `;
 
     panel.innerHTML = `
-      <div style="color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:0.8px;
-                  text-transform:uppercase;margin-bottom:2px;">
-        Voice Assistant
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+        <span style="color:#9ca3af;font-size:10px;font-weight:700;letter-spacing:0.8px;
+                     text-transform:uppercase;">
+          Voice Assistant
+        </span>
+        <button id="va-hide-btn"
+          title="Hide panel"
+          style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:14px;
+                 line-height:1;padding:0 2px;font-family:inherit;">
+          ✕
+        </button>
       </div>
       <button id="va-tour-btn"     style="${btnStyle}background:#2563eb;color:#fff;">
         📍 Page Guide
@@ -1271,7 +1291,39 @@
 
     document.body.appendChild(panel);
 
-    panel.querySelector('#va-tour-btn').addEventListener('click', () => {
+    // ── Restore bubble (shown when panel is hidden) ──────────────────────────
+    const bubble = document.createElement('button');
+    bubble.id    = BUBBLE_ID;
+    bubble.title = 'Show Voice Assistant';
+    bubble.textContent = '🎙️';
+    Object.assign(bubble.style, {
+      position:     'fixed',
+      bottom:       '20px',
+      right:        '20px',
+      width:        '42px',
+      height:       '42px',
+      borderRadius: '50%',
+      background:   '#2563eb',
+      border:       'none',
+      color:        '#fff',
+      fontSize:     '18px',
+      cursor:       'pointer',
+      zIndex:       '9999',
+      boxShadow:    '0 4px 16px rgba(0,0,0,0.4)',
+      display:      'none',
+      alignItems:   'center',
+      justifyContent: 'center',
+    });
+    document.body.appendChild(bubble);
+    bubble.addEventListener('click', () => setPanelHidden(false));
+
+    // Honour persisted hidden state on load
+    if (panelHidden) {
+      panel.style.display  = 'none';
+      bubble.style.display = 'flex';
+    }
+
+    panel.querySelector('#va-hide-btn').addEventListener('click', () => setPanelHidden(true));
       if (tourActive) stopTour();
       else            startTour();
     });
