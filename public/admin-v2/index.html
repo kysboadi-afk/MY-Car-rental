@@ -2136,6 +2136,26 @@
         <input type="text" class="form-input" id="ev-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
         <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
       </div>
+      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Earnings Block (Booking Page)</div>
+        <div class="form-hint" style="margin-bottom:12px;">These lines appear in the gold earnings box on the booking page. Leave blank to use the default text. The "Weekly rental" and "Estimated take-home" rows are always auto-calculated from the vehicle's weekly rate.</div>
+        <div class="form-group full">
+          <label class="form-label">Tagline</label>
+          <input type="text" class="form-input" id="ev-earnings-tagline" placeholder="e.g. Uber &amp; Lyft Ready • Unlimited Miles" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Section Title</label>
+          <input type="text" class="form-input" id="ev-earnings-title" placeholder="e.g. Driver Earnings Example (Los Angeles)" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Average Weekly Earnings Row</label>
+          <input type="text" class="form-input" id="ev-earnings-row1" placeholder="e.g. Average weekly earnings: $1,200 – $1,600" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Call-to-Action Line</label>
+          <input type="text" class="form-input" id="ev-earnings-cta" placeholder="e.g. Limited vehicles available — reserve today" maxlength="500">
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('edit-vehicle-modal')">Cancel</button>
@@ -2225,6 +2245,26 @@
         <label class="form-label">Scarcity Notice</label>
         <input type="text" class="form-input" id="av-scarcity" placeholder="e.g. 🔥 High demand — reserve today" maxlength="200">
         <div class="form-hint">Short urgency message shown on the car card (optional). Leave blank to hide.</div>
+      </div>
+      <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
+        <div class="form-section-title" style="margin-bottom:12px;">Earnings Block (Booking Page)</div>
+        <div class="form-hint" style="margin-bottom:12px;">These lines appear in the gold earnings box on the booking page. Leave blank to use the default text. The "Weekly rental" and "Estimated take-home" rows are always auto-calculated from the vehicle's weekly rate.</div>
+        <div class="form-group full">
+          <label class="form-label">Tagline</label>
+          <input type="text" class="form-input" id="av-earnings-tagline" placeholder="e.g. Uber &amp; Lyft Ready • Unlimited Miles" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Section Title</label>
+          <input type="text" class="form-input" id="av-earnings-title" placeholder="e.g. Driver Earnings Example (Los Angeles)" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Average Weekly Earnings Row</label>
+          <input type="text" class="form-input" id="av-earnings-row1" placeholder="e.g. Average weekly earnings: $1,200 – $1,600" maxlength="500">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Call-to-Action Line</label>
+          <input type="text" class="form-input" id="av-earnings-cta" placeholder="e.g. Limited vehicles available — reserve today" maxlength="500">
+        </div>
       </div>
       <div class="form-group full" style="padding-top:4px;border-top:1px solid var(--border);margin-top:4px;">
         <div class="form-section-title" style="margin-bottom:12px;">Rental Pricing</div>
@@ -3321,6 +3361,10 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-bouncie-id').value = v.bouncie_device_id || '';
   document.getElementById('ev-vin').value = v.vin || '';
   document.getElementById('ev-scarcity').value = v.scarcity_text || '';
+  document.getElementById('ev-earnings-tagline').value = v.earnings_tagline || '';
+  document.getElementById('ev-earnings-title').value   = v.earnings_title   || '';
+  document.getElementById('ev-earnings-row1').value    = v.earnings_row1    || '';
+  document.getElementById('ev-earnings-cta').value     = v.earnings_cta     || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
   renderGallery('ev', Array.isArray(v.gallery_images) ? v.gallery_images : []);
@@ -3342,6 +3386,10 @@ async function saveVehicle() {
     bouncie_device_id: document.getElementById('ev-bouncie-id').value.trim() || null,
     vin:               document.getElementById('ev-vin').value.trim() || null,
     scarcity_text:     document.getElementById('ev-scarcity').value.trim() || null,
+    earnings_tagline:  document.getElementById('ev-earnings-tagline').value.trim() || null,
+    earnings_title:    document.getElementById('ev-earnings-title').value.trim()   || null,
+    earnings_row1:     document.getElementById('ev-earnings-row1').value.trim()    || null,
+    earnings_cta:      document.getElementById('ev-earnings-cta').value.trim()     || null,
   };
 
   const btn = document.querySelector('#edit-vehicle-modal .modal-footer .btn-primary');
@@ -3713,6 +3761,10 @@ function openAddVehicle() {
   document.getElementById('av-bouncie-id').value = '';
   document.getElementById('av-vin').value = '';
   document.getElementById('av-scarcity').value = '';
+  document.getElementById('av-earnings-tagline').value = '';
+  document.getElementById('av-earnings-title').value   = '';
+  document.getElementById('av-earnings-row1').value    = '';
+  document.getElementById('av-earnings-cta').value     = '';
   document.getElementById('av-daily-rate').value = '';
   document.getElementById('av-weekly-rate').value = '';
   document.getElementById('av-biweekly-rate').value = '';
@@ -3739,6 +3791,10 @@ async function saveNewVehicle() {
   const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
   const vin             = document.getElementById('av-vin').value.trim() || null;
   const scarcityText    = document.getElementById('av-scarcity').value.trim() || null;
+  const earningsTagline = document.getElementById('av-earnings-tagline').value.trim() || null;
+  const earningsTitle   = document.getElementById('av-earnings-title').value.trim()   || null;
+  const earningsRow1    = document.getElementById('av-earnings-row1').value.trim()    || null;
+  const earningsCta     = document.getElementById('av-earnings-cta').value.trim()     || null;
   const dailyRate       = parseFloat(document.getElementById('av-daily-rate').value)    || null;
   const weeklyRate      = parseFloat(document.getElementById('av-weekly-rate').value)   || null;
   const biweeklyRate    = parseFloat(document.getElementById('av-biweekly-rate').value) || null;
@@ -3770,7 +3826,11 @@ async function saveNewVehicle() {
       ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
       ...(vin          ? { vin }          : {}),
-      ...(scarcityText ? { scarcityText } : {}),
+      ...(scarcityText  ? { scarcityText }  : {}),
+      ...(earningsTagline ? { earningsTagline } : {}),
+      ...(earningsTitle   ? { earningsTitle }   : {}),
+      ...(earningsRow1    ? { earningsRow1 }    : {}),
+      ...(earningsCta     ? { earningsCta }     : {}),
       ...(dailyRate    ? { dailyRate }    : {}),
       ...(weeklyRate   ? { weeklyRate }   : {}),
       ...(biweeklyRate ? { biweeklyRate } : {}),
