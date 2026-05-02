@@ -247,7 +247,7 @@ if (!vehicleId) {
 
 // ----- Back Button -----
 document.getElementById("backBtn").addEventListener("click", ()=>{
-  window.location.href = `car.html?vehicle=${vehicleId}`;
+  window.location.href = "cars.html";
 });
 
 // ----- Booking Form Automation -----
