@@ -90,6 +90,10 @@ var fleetVehicleIdsCache = { key: "", ids: [] };
           name: v.vehicle_name || v.vehicle_id,
           icon: icons[i % icons.length],
           type: "economy",
+          daily:    v.daily_price    || null,
+          weekly:   v.weekly_price   || null,
+          biweekly: v.biweekly_price || null,
+          monthly:  v.monthly_price  || null,
         };
       });
       // Invalidate cache so next call to getFleetVehicleIds() rebuilds from new meta
@@ -150,19 +154,24 @@ function buildChatPricingText(lang) {
 
   function vehicleBlock(id) {
     var meta = getVehicleMeta(id);
+    // Use the vehicle's own pricing when available; fall back to fleet economy rates.
+    var daily    = meta.daily    || e.daily;
+    var weekly   = meta.weekly   || e.weekly;
+    var biweekly = meta.biweekly || e.biweekly;
+    var monthly  = meta.monthly  || e.monthly;
     if (lang === "es") {
       return meta.icon + " " + meta.name + "\n" +
-        "  • Diario    — $" + e.daily + " / día\n" +
-        "  • 1 Semana  — $" + e.weekly + " 🚗 Millaje Ilimitado\n" +
-        "  • 2 Semanas — $" + e.biweekly + " 🚗 Millaje Ilimitado\n" +
-        "  • 1 Mes     — $" + e.monthly + " 🚗 Millaje Ilimitado\n" +
+        "  • Diario    — $" + daily + " / día\n" +
+        "  • 1 Semana  — $" + weekly + " 🚗 Millaje Ilimitado\n" +
+        "  • 2 Semanas — $" + biweekly + " 🚗 Millaje Ilimitado\n" +
+        "  • 1 Mes     — $" + monthly + " 🚗 Millaje Ilimitado\n" +
         "  • Sin depósito";
     }
     return meta.icon + " " + meta.name + "\n" +
-      "  • Daily     — $" + e.daily + " / day\n" +
-      "  • 1 Week   — $" + e.weekly + " 🚗 Unlimited Miles\n" +
-      "  • 2 Weeks — $" + e.biweekly + " 🚗 Unlimited Miles\n" +
-      "  • 1 Month  — $" + e.monthly + " 🚗 Unlimited Miles\n" +
+      "  • Daily     — $" + daily + " / day\n" +
+      "  • 1 Week   — $" + weekly + " 🚗 Unlimited Miles\n" +
+      "  • 2 Weeks — $" + biweekly + " 🚗 Unlimited Miles\n" +
+      "  • 1 Month  — $" + monthly + " 🚗 Unlimited Miles\n" +
       "  • No deposit required";
   }
 

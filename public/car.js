@@ -681,10 +681,11 @@ document.getElementById("signAgreementBtn").addEventListener("click", function (
   const paymentTermsBodyEl = document.getElementById("agreementPaymentTermsBody");
   if (paymentTermsBodyEl) {
     paymentTermsBodyEl.removeAttribute("data-i18n");
-    // Camry: full payment online, OR $50 deposit if renter chose "Reserve Now"
+    var depositAmt = (carData && carData.booking_deposit) ? "$" + carData.booking_deposit : "$50";
+    // Full payment online, OR per-vehicle deposit amount if renter chose "Reserve Now"
     paymentTermsBodyEl.textContent = lang === "es"
-      ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran $50 ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
-      : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only $50 is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
+      ? "El pago completo del alquiler se cobra en l\u00EDnea al momento de la reserva. Si el arrendatario elige 'Reservar con dep\u00F3sito', solo se cobran " + depositAmt + " ahora y el saldo restante vence al momento de la recogida. Los pagos atrasados acumulan intereses del 1.5% mensual. Cargo por cheque devuelto (NSF): $35."
+      : "Full rental payment is charged online at the time of booking. If the renter chose \u2018Reserve with Deposit\u2019, only " + depositAmt + " is charged now and the remaining balance is due at pickup. Late payments accrue interest at 1.5% per month. NSF (returned check) fee: $35.";
   }
 
   // Pre-fill the signature field with the renter's name if already typed
