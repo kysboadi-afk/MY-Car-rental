@@ -138,7 +138,14 @@ function normalizeApiVehicle(v) {
     biweekly:      toNum(v.biweekly_price !== undefined ? v.biweekly_price : v.biweekly),
     monthly:       toNum(v.monthly_price  !== undefined ? v.monthly_price  : v.monthly),
     deposit:       toNum(v.deposit),
-    images:        Array.isArray(v.images) ? v.images : (v.cover_image ? [v.cover_image] : []),
+    images:        (function() {
+      if (Array.isArray(v.images) && v.images.length) return v.images;
+      var imgs = v.cover_image ? [v.cover_image] : [];
+      if (Array.isArray(v.gallery_images)) {
+        v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
+      }
+      return imgs.length ? imgs : [];
+    })(),
     make:          v.make  || "",
     model:         v.model || v.vehicle_name || "",
     year:          v.vehicle_year || v.year  || "",

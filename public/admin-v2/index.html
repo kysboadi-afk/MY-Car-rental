@@ -2060,6 +2060,12 @@
         <div id="ev-img-preview" style="margin-top:8px;display:none;"><img id="ev-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
       </div>
       <div class="form-group full">
+        <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
+        <div id="ev-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('ev')">+ Add Photo</button>
+        <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
+      </div>
+      <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
         <input type="text" class="form-input" id="ev-bouncie-id" placeholder="e.g. 865612074262698" maxlength="15" pattern="\d{15}" inputmode="numeric" oninput="updateBouncieWarning('ev')">
         <div id="ev-bouncie-warn" style="display:none;margin-top:4px;font-size:13px;color:var(--warning,#f59e0b);">⚠️ This vehicle is not tracked — no mileage or maintenance alerts.</div>
@@ -2142,6 +2148,12 @@
         </div>
         <div class="form-hint">Enter a URL or upload a photo (max 5 MB). The image will appear on the vehicle card.</div>
         <div id="av-img-preview" style="margin-top:8px;display:none;"><img id="av-img-preview-img" src="" alt="Preview" style="max-width:180px;max-height:120px;border-radius:8px;border:1px solid var(--border);object-fit:cover;"></div>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Gallery Photos <span style="font-weight:400;color:var(--text-sub);font-size:12px;">(shown in the image slider on the booking page)</span></label>
+        <div id="av-gallery-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;width:fit-content;" onclick="addGalleryItem('av')">+ Add Photo</button>
+        <div class="form-hint">Upload or paste URLs for additional photos (max 10). These appear alongside the cover image in the carousel renters see.</div>
       </div>
       <div class="form-group full">
         <label class="form-label">Bouncie Device ID (IMEI)</label>
@@ -3250,6 +3262,7 @@ async function openEditVehicle(vehicleId) {
   document.getElementById('ev-scarcity').value = v.scarcity_text || '';
   document.getElementById('ev-msg').textContent = '';
   previewImage('ev-cover-image', 'ev-img-preview');
+  renderGallery('ev', Array.isArray(v.gallery_images) ? v.gallery_images : []);
   updateBouncieWarning('ev');
   openModal('edit-vehicle-modal');
 }
@@ -3264,6 +3277,7 @@ async function saveVehicle() {
     purchase_price:    parseFloat(document.getElementById('ev-purchase-price').value) || 0,
     purchase_date:     document.getElementById('ev-purchase-date').value,
     cover_image:       document.getElementById('ev-cover-image').value.trim(),
+    gallery_images:    readGalleryUrls('ev'),
     bouncie_device_id: document.getElementById('ev-bouncie-id').value.trim() || null,
     vin:               document.getElementById('ev-vin').value.trim() || null,
     scarcity_text:     document.getElementById('ev-scarcity').value.trim() || null,
@@ -3639,6 +3653,7 @@ function openAddVehicle() {
   document.getElementById('av-monthly-rate').value = '';
   document.getElementById('av-img-preview').style.display = 'none';
   document.getElementById('av-msg').textContent = '';
+  renderGallery('av', []);
   document.getElementById('av-save-btn').disabled = false;
   document.getElementById('av-save-btn').textContent = 'Add Vehicle';
   updateBouncieWarning('av');
@@ -3654,6 +3669,7 @@ async function saveNewVehicle() {
   const purchasePrice   = parseFloat(document.getElementById('av-purchase-price').value) || 0;
   const purchaseDate    = document.getElementById('av-purchase-date').value;
   const coverImage      = document.getElementById('av-cover-image').value.trim();
+  const galleryImages   = readGalleryUrls('av');
   const bouncieDeviceId = document.getElementById('av-bouncie-id').value.trim() || null;
   const vin             = document.getElementById('av-vin').value.trim() || null;
   const scarcityText    = document.getElementById('av-scarcity').value.trim() || null;
@@ -3685,6 +3701,7 @@ async function saveNewVehicle() {
     await apiPost('/api/v2-vehicles', {
       secret: adminSecret, action: 'create',
       vehicleId, vehicleName, type, status, vehicleYear, purchasePrice, purchaseDate, coverImage,
+      ...(galleryImages.length ? { galleryImages } : {}),
       ...(bouncieDeviceId ? { bouncieDeviceId } : {}),
       ...(vin          ? { vin }          : {}),
       ...(scarcityText ? { scarcityText } : {}),
@@ -6873,7 +6890,132 @@ async function handleImageUpload(fileInput, urlInputId, previewContainerId, msgI
   reader.readAsDataURL(file);
 }
 
-// ── System Diagnostics ────────────────────────────────────────────────────
+// ── Vehicle Gallery Helpers ────────────────────────────────────────────────
+
+// Renders the gallery list for a given prefix ('ev' or 'av').
+// urls = array of image URL strings (may be empty).
+function renderGallery(prefix, urls) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (urls || []).forEach(function(url, idx) { _appendGalleryRow(prefix, idx, url); });
+}
+
+// Appends one gallery row at the given index with an optional pre-filled URL.
+function _appendGalleryRow(prefix, idx, url) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.id = prefix + '-gallery-row-' + idx;
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;';
+
+  // Thumbnail
+  const thumb = document.createElement('img');
+  thumb.id = prefix + '-gallery-thumb-' + idx;
+  const safeInitUrl = url && /^(https?:\/\/|\/)/i.test(url) ? url : '';
+  thumb.src = safeInitUrl;
+  thumb.alt = 'Photo ' + (idx + 1);
+  thumb.style.cssText = 'width:60px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border);' + (safeInitUrl ? '' : 'display:none;');
+
+  // URL input
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'form-input';
+  input.id = prefix + '-gallery-url-' + idx;
+  input.value = url || '';
+  input.placeholder = 'https://… or /images/car.jpg';
+  input.style.cssText = 'flex:1;min-width:200px;';
+  input.oninput = function() {
+    const v = input.value.trim();
+    const safe = /^(https?:\/\/|\/)/i.test(v) ? v : '';
+    thumb.src = safe;
+    thumb.style.display = safe ? '' : 'none';
+  };
+
+  // Upload button
+  const uploadLabel = document.createElement('label');
+  uploadLabel.className = 'btn btn-secondary btn-sm';
+  uploadLabel.style.cssText = 'cursor:pointer;white-space:nowrap;';
+  uploadLabel.textContent = '📷 Upload';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/jpeg,image/png,image/webp,image/gif';
+  fileInput.style.display = 'none';
+  fileInput.onchange = function() { handleGalleryUpload(fileInput, prefix, idx); };
+  uploadLabel.appendChild(fileInput);
+
+  // Remove button
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'btn btn-sm';
+  removeBtn.style.cssText = 'background:none;border:1px solid var(--danger,#ef4444);color:var(--danger,#ef4444);padding:4px 8px;';
+  removeBtn.textContent = '✕';
+  removeBtn.title = 'Remove photo';
+  removeBtn.onclick = function() { removeGalleryItem(prefix, idx); };
+
+  row.appendChild(thumb);
+  row.appendChild(input);
+  row.appendChild(uploadLabel);
+  row.appendChild(removeBtn);
+  list.appendChild(row);
+}
+
+// Adds a new empty gallery row.
+function addGalleryItem(prefix) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return;
+  const idx = list.children.length;
+  if (idx >= 10) { showToast('Maximum 10 gallery photos.', 'warning'); return; }
+  _appendGalleryRow(prefix, idx, '');
+}
+
+// Removes a gallery row by index and re-renders to keep indices sequential.
+function removeGalleryItem(prefix, idx) {
+  const urls = readGalleryUrls(prefix);
+  urls.splice(idx, 1);
+  renderGallery(prefix, urls);
+}
+
+// Reads all non-empty gallery URLs from the current DOM rows.
+function readGalleryUrls(prefix) {
+  const list = document.getElementById(prefix + '-gallery-list');
+  if (!list) return [];
+  return Array.from(list.children).map(function(row) {
+    const input = row.querySelector('input[type="text"]');
+    return input ? input.value.trim() : '';
+  }).filter(Boolean);
+}
+
+// Handles file upload for a gallery row: uploads to Supabase and sets the URL.
+function handleGalleryUpload(fileInput, prefix, idx) {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+  const urlInput = document.getElementById(prefix + '-gallery-url-' + idx);
+  const thumb    = document.getElementById(prefix + '-gallery-thumb-' + idx);
+  if (urlInput) urlInput.value = 'Uploading…';
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = await apiPost('/api/upload-vehicle-image', {
+        secret: adminSecret,
+        vehicleId: (editingVehicleId || document.getElementById('av-id')?.value.trim() || ('img-' + Date.now())),
+        imageData: e.target.result,
+        mimeType: file.type,
+        fileName: file.name,
+      });
+      if (urlInput) urlInput.value = data.url;
+      if (thumb) { thumb.src = data.url; thumb.style.display = ''; }
+    } catch (err) {
+      if (urlInput) urlInput.value = '';
+      showToast('Upload failed: ' + err.message, 'error');
+    }
+    fileInput.value = '';
+  };
+  reader.onerror = function() { if (urlInput) urlInput.value = ''; showToast('Could not read file.', 'error'); };
+  reader.readAsDataURL(file);
+}
+
+
 async function runDiagnostics() {
   const btn = document.getElementById('run-diagnostics-btn');
   const out = document.getElementById('diagnostics-result');

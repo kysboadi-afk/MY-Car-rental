@@ -137,7 +137,13 @@ function buildCarDataFromAPI(v) {
     biweekly:      v.biweekly_price || 650,
     monthly:       v.monthly_price  || 1300,
     minRentalDays: 1,
-    images:        v.cover_image ? [v.cover_image] : ["/images/car1.jpg"],
+    images:        (function() {
+      var imgs = v.cover_image ? [v.cover_image] : [];
+      if (Array.isArray(v.gallery_images)) {
+        v.gallery_images.forEach(function(u) { if (u && imgs.indexOf(u) === -1) imgs.push(u); });
+      }
+      return imgs.length ? imgs : ["/images/car1.jpg"];
+    })(),
     make:          v.make          || "",
     model:         v.model         || v.vehicle_name || vehicleId,
     year:          v.vehicle_year  || null,

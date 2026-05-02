@@ -239,7 +239,7 @@ export default async function handler(req, res) {
       const safeUpdates = {};
       const allowedUpdateFields = [
         "purchase_price", "purchase_date", "status",
-        "vehicle_name", "vehicle_year", "type", "cover_image",
+        "vehicle_name", "vehicle_year", "type", "cover_image", "gallery_images",
         "bouncie_device_id", "vin", "scarcity_text",
       ];
       for (const f of allowedUpdateFields) {
@@ -259,6 +259,24 @@ export default async function handler(req, res) {
             safeUpdates[f] = Math.round(n * 100) / 100;
           } else if (f === "cover_image") {
             safeUpdates[f] = typeof val === "string" ? val.trim().slice(0, 500) : "";
+          } else if (f === "gallery_images") {
+            if (!Array.isArray(val)) {
+              return res.status(400).json({ error: "gallery_images must be an array of URLs" });
+            }
+            if (val.length > 10) {
+              return res.status(400).json({ error: "gallery_images: maximum 10 extra photos allowed" });
+            }
+            const safeGallery = [];
+            for (const u of val) {
+              if (typeof u !== "string") continue;
+              const trimmed = u.trim().slice(0, 500);
+              if (!trimmed) continue;
+              if (!/^(https?:\/\/|\/images\/)/i.test(trimmed)) {
+                return res.status(400).json({ error: "gallery_images: each URL must start with https://, http://, or /images/" });
+              }
+              safeGallery.push(trimmed);
+            }
+            safeUpdates[f] = safeGallery;
           } else if (f === "bouncie_device_id") {
             // Accept 15-digit IMEI or empty string (to remove mapping)
             const trimmed = typeof val === "string" ? val.trim() : "";
@@ -366,7 +384,7 @@ export default async function handler(req, res) {
 
     // ── CREATE ──────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate } = body;
+      const { vehicleId, vehicleName, type, vehicleYear, purchasePrice, purchaseDate, status, coverImage, galleryImages, bouncieDeviceId, vin, scarcityText, dailyRate, weeklyRate, biweeklyRate, monthlyRate } = body;
 
       if (!vehicleId || !VEHICLE_ID_RE.test(vehicleId)) {
         return res.status(400).json({ error: "vehicleId must be 2–50 lowercase letters, digits, hyphens, or underscores" });
@@ -428,6 +446,12 @@ export default async function handler(req, res) {
         purchase_date:  (purchaseDate && typeof purchaseDate === "string") ? purchaseDate.slice(0, MAX_PURCHASE_DATE_LEN) : "",
         status:         vehicleStatus,
         cover_image:    typeof coverImage === "string" ? coverImage.trim().slice(0, 500) : "",
+        ...(Array.isArray(galleryImages) && galleryImages.length
+          ? { gallery_images: galleryImages
+              .filter(u => typeof u === "string" && u.trim() && /^(https?:\/\/|\/images\/)/i.test(u.trim()))
+              .map(u => u.trim().slice(0, 500))
+              .slice(0, 10) }
+          : {}),
         ...(vin           ? { vin:           String(vin).trim().slice(0, 50) }         : {}),
         ...(scarcityText  ? { scarcity_text: String(scarcityText).trim().slice(0, 200) } : {}),
         ...(safeBouncieId ? { bouncie_device_id: safeBouncieId } : {}),
